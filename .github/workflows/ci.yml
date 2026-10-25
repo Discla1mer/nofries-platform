@@ -31,6 +31,7 @@ jobs:
           node-version: 22.22.0
       - name: Verify pinned local dependencies
         run: |
+          node --test scripts/tests/check-public-tree.cjs
           node scripts/check-public-tree.js
           node scripts/verify-adm-zip-memory-only.js
           node vendor/node-forge-rsa-validated/build-package.js --check
