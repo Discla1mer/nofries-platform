@@ -35,18 +35,27 @@ disposition. Do not regenerate the baseline to admit a change; remediate the
 dependency or obtain an explicit, bounded review. This is not an extension of
 the exception or authority to deploy.
 
-Protect main with required `application`, `postgres` and `dependencies` checks,
-review requirements, restricted direct pushes, and appropriate fork-workflow
-approval settings before admitting ongoing contributions. Those repository
-settings must be verified by an authorized owner; source alone does not prove
-that they are configured. Keep the production release controller private until a
-separately reviewed handoff binds a public source commit and successful run to
-verified build inputs and recovery evidence. Do not consume arbitrary fork
-artifacts or introduce a privileged workflow that runs their code.
+This repository is the primary home for new application branches and pull
+requests. The proposed main rule requires a pull request, up-to-date `application`,
+`postgres` and `dependencies` checks from GitHub Actions, and resolved review
+conversations. It applies to administrators and forbids force pushes and branch
+deletion. It requires zero GitHub reviewer approvals, with no Code Owner or
+last-push approval gate, so the owner is not required to find a second human or
+approve their own pull request. Independent technical/security review remains an
+engineering requirement. Settings need owner approval and readback; they have
+not been established by a documentation change. Verify appropriate fork-workflow
+approval settings separately. Keep the current private Azure release owner and
+controls until an exact source, identity, recovery and exclusive-deployer handoff
+is qualified. Do not consume arbitrary fork artifacts or introduce a privileged
+workflow that runs their code.
 
-Using this repository for application development moves these three jobs to
-public standard compute. The private repository's existing workflows continue
-when triggered, and private deployment, live provider evaluation, recovery,
-artifact storage and existing retention costs remain separate. Avoid creating
-mirrored development pushes to both repositories; switching the release source
-and retiring duplicate private application checks is a separate reviewed change.
+New application development here uses public standard compute for these three
+jobs. Avoid mirrored development pushes to both repositories. If a release is
+needed before the deployment handoff, the private release owner can review a
+frozen source snapshot while preserving all private gates; that is not a second
+feature-development stream. Private workflows still run when triggered, and
+private deployment, live provider evaluation, recovery, artifact storage and
+existing retention costs remain separate. No private check was disabled or
+skipped by this handover. The target is to reuse the qualified release controllers
+here after the explicit deployment handoff, without a permanent synchronization
+service. Public development and Azure deployment are separate milestones.

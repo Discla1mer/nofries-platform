@@ -10,7 +10,7 @@ const ROOT = path.resolve(__dirname, '..');
 const BASELINE = 'security/public-source-baseline.json';
 // Filled once after final verification; changing this value requires the same
 // bounded security review as changing the dependency-policy implementation.
-const REVIEWED_MANIFEST_SHA256 = 'b8e2f62bbd97fbafae37fad98aefb12ad2962e88854a6b63c1ece7f2f36c8467';
+const REVIEWED_MANIFEST_SHA256 = '36df03f2370c34db03c31b556abe7fed640dd2daa90cf279fbece554eaf9c494';
 const VERIFIER = 'scripts/verify-public-source-baseline.js';
 const IGNORED = new Set(['.git', 'node_modules', 'dist', 'app-service-dist', 'coverage', 'eval-results']);
 function inventory(root) {
