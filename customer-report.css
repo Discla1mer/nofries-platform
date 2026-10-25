@@ -1,0 +1,36 @@
+body[data-page="customer-report"] .report-header,
+body[data-page="customer-report"] .report-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding-block: 22px;
+}
+body[data-page="customer-report"] .report-header img { object-fit: contain; }
+body[data-page="customer-report"] .report-header > a:last-child,
+body[data-page="customer-report"] .report-footer { color: var(--muted); font-size: .9rem; }
+.report-main { max-width: 780px; padding-block: 12px 32px; }
+.report-card { padding: clamp(20px, 5vw, 40px); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.report-card h1 { margin: 12px 0 20px; font-size: clamp(2rem, 6vw, 3rem); line-height: 1.1; letter-spacing: -.04em; }
+.report-card h2 { margin-top: 0; }
+.report-card label { display: block; margin-block: 18px 8px; font-weight: 700; }
+.report-card select, .report-card textarea { display: block; width: 100%; min-width: 0; border: 1px solid var(--muted); border-radius: var(--radius-small); padding: 12px; color: var(--ink); background: var(--page); font: inherit; }
+.report-card textarea { resize: vertical; line-height: 1.5; }
+.report-card .report-help { color: var(--muted); font-size: .9rem; }
+.report-card .report-consent { display: flex; align-items: start; gap: 12px; font-size: .95rem; }
+.report-card .report-consent input { width: 20px; height: 20px; flex: 0 0 20px; margin-top: 2px; accent-color: var(--yellow); }
+.report-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.report-actions .secondary { border: 1px solid var(--muted); color: var(--ink); background: transparent; }
+.report-edit { border: 0; padding: 8px 0; color: var(--green); background: transparent; text-decoration: underline; font: inherit; min-height: 44px; }
+.report-actions .button, #report-preview-button { min-height: 44px; }
+#report-preview { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
+#report-status { min-height: 1.6em; overflow-wrap: anywhere; }
+.report-card :focus-visible, .report-main:focus-visible, .report-header a:focus-visible, .report-footer a:focus-visible { outline: 3px solid var(--yellow); outline-offset: 4px; }
+.report-skip { position: absolute; left: 12px; top: -100px; padding: 12px; color: var(--page); background: var(--yellow); z-index: 10; }
+.report-skip:focus { top: 8px; }
+@media (max-width: 450px) {
+    .report-header .brand { gap: 8px; }
+    .report-header > a:last-child { max-width: 100px; text-align: right; }
+    .report-card { padding: 20px 16px; }
+    .report-actions > button { width: 100%; }
+}

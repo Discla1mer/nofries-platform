@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "writerHead": "8c09c32a6df6d70da87376db25e59c4f31dce48c",
+  "writerTree": "a76ca6fed3e1a5aca90d8db1d65e318f3b0e0384",
+  "fixtureSha256": "a22c13bb573c398e3f41c427931f86a6242701e3d9b137a723126ff3c6e89678",
+  "fixtureTime": "2027-01-24T00:00:00.000Z",
+  "generation": "node scripts/tests/consultant-reader-compatibility.cjs --generate --writer-root <clean frozen writer checkout>",
+  "sourceSha256": {
+    "lib/productionApplication.js": "1f7a9a7a0485aa578d33d3a31966e62a731e7731c9252ba92df652fc9587cc6b",
+    "lib/starterSignupProduction.js": "2220f7b6661d02a7da3076f556f11fea9c88d0ae33d8ee4efcab58669bbac529",
+    "lib/customerSignupProduction.js": "7c492c3c2edff73126ec252a2b211a5b49318c6a6aedae9a9db392988a37ad9b",
+    "api/shared/customerSignup/starterSetupDetails.js": "4d3f6f5796a4ae41974c6801cf80ec5f521fb4902ef6f18b9113538ceed2276c",
+    "api/shared/customerSignup/starterAccountAllocation.js": "72d7d916650f73b769df71b98a60a9391d49b6248a47081650fa5094ca548935",
+    "api/shared/customerSignup/customerStarterPlan.js": "42fff953285ff8cf0d20e7d386dd880402b49f074d8534faae9e3d6fe055a725",
+    "database/migrations/0012_consultant_organisations.sql": "6af2db698dad2710cdd20c10833bdf84df89df2965faa8a11010bd7d1578bcb8"
+  },
+  "interruptions": {
+    "before_claim": "reject first external-claims upload before storage",
+    "incomplete_claim": "reject completion marker upload before storage",
+    "committed_claim": "ordinary completed writer claim, before consent"
+  }
+}

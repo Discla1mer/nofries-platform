@@ -1,0 +1,85 @@
+{
+  "name": "nofries",
+  "version": "2.0.0",
+  "description": "No Fries Dashboard and managed-IT modular monolith",
+  "main": "server.js",
+  "author": "",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "dependencies": {
+    "@azure/identity": "4.13.1",
+    "@azure/keyvault-keys": "4.10.2",
+    "@azure/msal-node": "^5.6.0",
+    "@azure/storage-blob": "^12.31.0",
+    "express": "^4.18.2",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@libsql/linux-x64-gnu": "0.5.29",
+    "@unrs/resolver-binding-linux-x64-gnu": "1.12.2",
+    "adm-zip": "file:vendor/adm-zip-memory-only/adm-zip-memory-only-0.6.0-memory-only.1.tgz",
+    "jest": "30.5.2",
+    "js-yaml": "4.3.2",
+    "node-forge": "file:vendor/node-forge-rsa-validated/nofries-node-forge-rsa-validated-1.4.0-nofries.1.tgz",
+    "promptfoo": "0.124.0",
+    "supertest": "^7.1.1"
+  },
+  "overrides": {
+    "body-parser": "1.20.9",
+    "fast-uri": "3.1.9",
+    "qs": "6.16.0",
+    "@huggingface/transformers": {
+      "sharp": "0.35.5",
+      "onnxruntime-node": {
+        "adm-zip": "file:vendor/adm-zip-memory-only/adm-zip-memory-only-0.6.0-memory-only.1.tgz"
+      }
+    },
+    "hono": "4.13.11",
+    "get-uri@8.0.1": {
+      "basic-ftp": "6.2.1"
+    },
+    "ibm-cloud-sdk-core@5.6.0": {
+      "axios": "1.20.0"
+    },
+    "promptfoo": {
+      "js-yaml": "5.4.2"
+    },
+    "jks-js": {
+      "node-forge": "file:vendor/node-forge-rsa-validated/nofries-node-forge-rsa-validated-1.4.0-nofries.1.tgz"
+    },
+    "proxy-addr": "2.0.8",
+    "@istanbuljs/load-nyc-config@1.1.0": {
+      "js-yaml": "4.3.2"
+    },
+    "global-agent@3.0.0": {
+      "roarr": "3.0.0"
+    }
+  },
+  "jest": {
+    "modulePathIgnorePatterns": [
+      "<rootDir>/app-service-dist/"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/.review-base/"
+    ]
+  },
+  "scripts": {
+    "test": "jest",
+    "test:ci": "jest --runInBand",
+    "test:postgres": "jest --runInBand test/postgresMigration.test.js test/serviceDeskPostgresRepository.test.js test/lifecyclePostgresRepository.test.js test/postgresSignupRegistrationNative.test.js test/improvementPlanPostgres.test.js test/improvementEvidenceLinkPostgres.test.js",
+    "db:migrate": "node scripts/db-migrate.js",
+    "eval:prospect": "node scripts/run-prospect-evals.js --runtime=mock",
+    "eval:prospect:promptfoo": "promptfoo eval --config evals/prospect/promptfooconfig.yaml --no-cache --output eval-results/prospect-promptfoo.json",
+    "check:syntax": "node --test scripts/tests/check-syntax.cjs && node scripts/check-syntax.js",
+    "build": "npm run build:static",
+    "build:static": "node scripts/build-static.js",
+    "build:app-service": "node scripts/build-app-service.js",
+    "verify": "npm run test:ci && npm run eval:prospect && npm run build && npm run check:syntax",
+    "start": "node server.js",
+    "start:app-service": "node app-service.js"
+  },
+  "private": true
+}

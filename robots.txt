@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /scope.html
+Disallow: /scoping
+Disallow: /api/

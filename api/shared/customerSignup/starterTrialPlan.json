@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "planId": "nf-starter-2026-10-r2",
+  "approvalRef": "chatgpt-page:page_30c4fb5854a08191afa936c73b226f69:sequence21:7380e89b-bd54-42e9-bc63-e7e69f4b607f",
+  "approvedAt": "2026-10-15T00:00:00.000Z",
+  "durationMonths": 3,
+  "assessmentSubmissionsPerOrganisation": null,
+  "usersPerOrganisation": 1,
+  "companyOrganisations": 1,
+  "consultantWorkspaces": 1,
+  "consultantClientOrganisations": 3,
+  "priceNzd": 0,
+  "automaticPaidConversion": false,
+  "aiRequests": 0,
+  "evidenceBytes": 0,
+  "reportExports": 0,
+  "deleteDataAtExpiry": false,
+  "readSavedResultsAfterExpiry": true,
+  "termsVersion": "nf-dashboard-2026-10-r3",
+  "termsDigest": "441ae6d803002238cb742349e0789617ba141c2e8cc9c83c524c83015c89bf87"
+}

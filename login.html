@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Sign up / Sign in | No Fries</title>
+<link rel="icon" href="/images/nofrieslogo.png" type="image/png">
+<link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/home.css">
+<script src="/js/organisation-setup.js" defer></script></head>
+<body class="access-page login-page"><a class="skip-link" href="#create-organisation">Skip to sign in</a>
+<header class="site-header shell"><a class="brand" href="/" aria-label="No Fries home"><img class="brand-logo" src="/images/nofrieslogo.png" width="44" height="44" alt=""><span class="brand-copy"><strong>No Fries</strong><span>Dashboard</span></span></a><a class="text-link" href="/">Back to home</a></header>
+<main class="shell access-layout"><div class="access-intro signup-intro"><p class="eyebrow">Your No Fries workspace</p><h2>Start here.<br><span class="access-highlight">Return here.</span></h2><p>One place for your organisations, assessments and progress.</p><ol class="gateway-steps"><li><span aria-hidden="true">1</span><div><strong>Start with your email</strong><p>Use a personal or work address you can access.</p></div></li><li><span aria-hidden="true">2</span><div><strong>Choose your account</strong><p>Choose Company for your own organisation, or Consultant to manage clients.</p></div></li><li><span aria-hidden="true">3</span><div><strong>Continue your work</strong><p>Complete setup and check your organisation’s access.</p></div></li></ol><p class="field-help">Already have an account? Sign in to return to your saved work.</p></div>
+<section class="organisation-card signup-card" id="create-organisation" tabindex="-1" aria-labelledby="organisation-title">
+                    <p class="eyebrow">Your account</p>
+                    <h1 id="organisation-title">Sign up / Sign in</h1>
+                    <p id="organisation-intro">Start with your email, or sign in to your existing account.</p>
+                    <section id="organisation-returning" hidden aria-labelledby="organisation-returning-title">
+                        <h3 id="organisation-returning-title">Already have an account?</h3>
+                        <a class="button" id="organisation-returning-sign-in" href="/api/customer-auth/login">Sign in to your account</a>
+                        <p class="field-help">Use your existing account with Microsoft secure sign-in. You do not need another signup code to return to saved work.</p>
+                    </section>
+                    <div hidden id="organisation-choice" class="signup-choices" role="group" aria-label="Choose your account type">
+                        <button id="organisation-company" class="signup-choice" type="button"><strong>Company</strong><span>I want to assess my organisation’s IT.</span><span class="signup-choice-action">Set up my company <span aria-hidden="true">→</span></span></button>
+                        <button id="organisation-consultant" class="signup-choice" type="button"><strong>Consultant</strong><span>I want to manage assessments for multiple client organisations.</span><span class="signup-choice-action">Set up my consultant account <span aria-hidden="true">→</span></span></button>
+                    </div>
+                    <form id="organisation-form">
+                        <label for="organisation-email">Email address</label>
+                        <input id="organisation-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" maxlength="254" required aria-describedby="work-email-help">
+                        <p id="work-email-help" class="field-help">Personal and work email addresses are welcome.</p>
+                        <button class="button" id="organisation-send" type="submit">Continue with email <span aria-hidden="true">→</span></button>
+                    </form>
+                    <form id="organisation-profile-form" hidden>
+                        <button class="home-link-button" id="organisation-back" type="button">← Change account type</button>
+                        <label id="organisation-name-label" for="organisation-name">Organisation name</label>
+                        <input id="organisation-name" name="organisationName" autocomplete="organization" maxlength="120" required>
+                        <button class="button" type="submit">Continue</button>
+                    </form>
+                    <form id="organisation-code-form" hidden>
+                        <p id="organisation-email-hint"></p>
+                        <label for="organisation-code">Verification code</label>
+                        <input id="organisation-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{8}" minlength="8" maxlength="8" required aria-describedby="organisation-code-help">
+                        <p id="organisation-code-help" class="field-help">Enter the eight-digit code. It expires after 10 minutes.</p>
+                        <button class="button" type="submit">Verify email</button>
+                        <button class="home-link-button" id="organisation-restart" type="button">Use another email or request a new code</button>
+                    </form>
+                    <form id="organisation-details-form" hidden aria-labelledby="organisation-details-title">
+                        <h3 id="organisation-details-title">Who will manage this account?</h3>
+                        <p>Your email is verified. Add the representative details for your organisation’s starter agreement.</p>
+                        <label for="representative-name">Your full name</label>
+                        <input id="representative-name" name="name" autocomplete="name" maxlength="160" required>
+                        <label for="representative-role">Your role</label>
+                        <input id="representative-role" name="role" autocomplete="organization-title" maxlength="120" required>
+                        <label for="representative-address">Organisation or business address</label>
+                        <input id="representative-address" name="address" autocomplete="street-address" maxlength="500" required>
+                        <label for="representative-registration">NZBN <span class="field-help">(optional)</span></label>
+                        <input id="representative-registration" name="registrationId" maxlength="160" aria-describedby="representative-nzbn-help">
+                        <p id="representative-nzbn-help" class="field-help">Your New Zealand Business Number, if you have one.</p>
+                        <label class="organisation-authority-check" for="representative-authority"><input id="representative-authority" name="authorityConfirmed" type="checkbox" required> I am authorised to set up and administer this organisation’s account.</label>
+                        <p class="field-help">Please check these details before continuing. You will review and accept the dashboard terms after signing in.</p>
+                        <button class="button" type="submit">Continue account setup <span aria-hidden="true">→</span></button>
+                    </form>
+                    <section id="organisation-verified" hidden aria-labelledby="organisation-verified-title">
+                        <h3 id="organisation-verified-title">Email verified</h3>
+                        <p id="organisation-verified-name"></p>
+                        <p>Secure sign-in is provided by Microsoft Entra. Use the same email address. You may be asked to use your Microsoft account or an emailed code, followed by multi-factor authentication. Your organisation access is managed by No Fries.</p>
+                        <a class="button" id="organisation-continue" href="/api/customer-auth/login" hidden>Continue secure sign-in</a>
+                    </section>
+                    <p id="organisation-status" role="status" aria-live="polite"></p>
+                    <button class="home-link-button" id="organisation-refresh" type="button">Check setup status</button>
+                    <div id="organisation-switch" hidden>
+                        <button class="home-link-button" id="organisation-leave" type="button" aria-describedby="organisation-leave-help">Use another email</button>
+                        <p id="organisation-leave-help" class="field-help">Your existing account, signup details and saved work are kept.</p>
+                    </div>
+                    <p class="field-help">By requesting a code, you ask No Fries to verify this email for organisation setup. See our <a href="/privacy.html">privacy notice</a>. This does not accept service terms or activate a subscription.</p>
+                    <noscript><p>Enable JavaScript to verify your email and continue.</p></noscript>
+                </section>
+</main><footer class="home-footer"><span>© 2026 No Fries</span><nav aria-label="Footer links"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer></body></html>

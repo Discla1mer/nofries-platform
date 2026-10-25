@@ -1,0 +1,251 @@
+{
+  "basis": "Synthetic legacy response mix reauthored under PROD-003-R1. Expected values use independent integer half-unit arithmetic, not evaluator output. Approved case matches accepted PROD-003 example A. No customer data or automatic legacy conversion.",
+  "input": {
+    "schemaVersion": 1,
+    "scoreContractVersion": "PROD-003-R1",
+    "organisationId": "synthetic-harbour-services",
+    "moduleId": "cyber_security",
+    "assessmentId": "synthetic-accepted-ncsc-001",
+    "assessmentRevision": "rev-1",
+    "profileRef": {
+      "frameworkId": "nz-ncsc-cyber-security-framework",
+      "frameworkVersion": "beta-verified-2026-09-02",
+      "profileId": "nz-ncsc-mcss-2025-v3-sme",
+      "profileVersion": "2026-09-02.1",
+      "catalogueSha256": "32c3f8d154ffe2be9b1270f8fa1234427a05cdea96b231588cce0b147e7d5375",
+      "sourceCatalogueSha256": "26ccecee78ade16607e5e8c194d585dc47c7921f2eea54b2c76776e0d961b6ee"
+    },
+    "scoreAsOf": "2026-09-07T10:00:00.000Z",
+    "scopePopulationSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "evidenceSnapshot": {
+      "id": "synthetic-evidence-snapshot-1",
+      "sha256": "d3a2b80b74c489c8f66883cf2b8ac3d4c97bc4ee50960b4b7a2f8a6a0fe9d558"
+    },
+    "riskContextSnapshot": {
+      "id": "synthetic-risk-snapshot-1",
+      "sha256": "24406ad7610ada725885db43dd6f374fa084eac283122def31dc6ec73190ce7c"
+    },
+    "atomInputs": [
+      {
+        "itemId": "NF-NCSC-MCSS-RM-01-Q1",
+        "response": {
+          "optionId": "partial"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "high",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-MCSS-SA-01-Q1",
+        "response": {
+          "optionId": "yes"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "medium",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-MCSS-AI-01-Q1",
+        "response": {
+          "optionId": "partial"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "high",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-MCSS-SC-01-Q1",
+        "response": {
+          "optionId": "partial"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "medium",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-MCSS-PA-01-Q1",
+        "response": {
+          "optionId": "yes"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "high",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-MCSS-MF-01-Q1",
+        "response": {
+          "optionId": "yes"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "critical",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-MCSS-DU-01-Q1",
+        "response": {
+          "optionId": "partial"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "high",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-MCSS-LP-01-Q1",
+        "response": {
+          "optionId": "partial"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "medium",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-MCSS-DR-01-Q1",
+        "response": {
+          "optionId": "partial"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "high",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-MCSS-RP-01-Q1",
+        "response": {
+          "optionId": "no"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "high",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-CC-PM-01-Q1",
+        "response": {
+          "optionId": "no"
+        },
+        "evidenceState": "not_provided",
+        "statedImpact": "high",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-CC-SV-01-Q1",
+        "response": {
+          "optionId": "partial"
+        },
+        "evidenceState": "attested",
+        "statedImpact": "critical",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-CC-AC-01-Q1",
+        "response": {
+          "optionId": "unknown"
+        },
+        "evidenceState": "not_provided",
+        "statedImpact": "high",
+        "priorityOverlay": "none"
+      },
+      {
+        "itemId": "NF-NCSC-CC-NS-01-Q1",
+        "response": {
+          "optionId": "not_applicable"
+        },
+        "evidenceState": "not_provided",
+        "statedImpact": "low",
+        "priorityOverlay": "none",
+        "applicabilityClaim": {
+          "rationaleSha256": "4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    ]
+  },
+  "expected": {
+    "pending": {
+      "applicableAtoms": 14,
+      "approvedNotApplicableAtoms": 0,
+      "claimedNotApplicableAtoms": 1,
+      "yes": 3,
+      "partial": 7,
+      "no": 2,
+      "unknown": 2,
+      "directUnknown": 1,
+      "missing": 0,
+      "completionNumerator": 12,
+      "completionDenominator": 14,
+      "completionPercentTenths": 857,
+      "lowerCreditUnits": 13,
+      "upperCreditUnits": 17,
+      "denominatorWeight": 14,
+      "lowerPercentTenths": 464,
+      "upperPercentTenths": 607,
+      "providedEvidenceNumerator": 11,
+      "providedEvidencePercentTenths": 786
+    },
+    "approved": {
+      "applicableAtoms": 13,
+      "approvedNotApplicableAtoms": 1,
+      "claimedNotApplicableAtoms": 0,
+      "yes": 3,
+      "partial": 7,
+      "no": 2,
+      "unknown": 1,
+      "directUnknown": 1,
+      "missing": 0,
+      "completionNumerator": 12,
+      "completionDenominator": 13,
+      "completionPercentTenths": 923,
+      "lowerCreditUnits": 13,
+      "upperCreditUnits": 15,
+      "denominatorWeight": 13,
+      "lowerPercentTenths": 500,
+      "upperPercentTenths": 577,
+      "providedEvidenceNumerator": 11,
+      "providedEvidencePercentTenths": 846
+    },
+    "pendingDomainTotals": [
+      {
+        "domainId": "guide-govern",
+        "applicableAtoms": 2,
+        "lowerCreditUnits": 3,
+        "upperCreditUnits": 3,
+        "denominatorWeight": 2,
+        "lowerPercentTenths": 750,
+        "upperPercentTenths": 750
+      },
+      {
+        "domainId": "identify-understand",
+        "applicableAtoms": 1,
+        "lowerCreditUnits": 1,
+        "upperCreditUnits": 1,
+        "denominatorWeight": 1,
+        "lowerPercentTenths": 500,
+        "upperPercentTenths": 500
+      },
+      {
+        "domainId": "prevent-protect",
+        "applicableAtoms": 7,
+        "lowerCreditUnits": 7,
+        "upperCreditUnits": 9,
+        "denominatorWeight": 7,
+        "lowerPercentTenths": 500,
+        "upperPercentTenths": 643
+      },
+      {
+        "domainId": "detect-contain",
+        "applicableAtoms": 2,
+        "lowerCreditUnits": 1,
+        "upperCreditUnits": 3,
+        "denominatorWeight": 2,
+        "lowerPercentTenths": 250,
+        "upperPercentTenths": 750
+      },
+      {
+        "domainId": "respond-recover",
+        "applicableAtoms": 2,
+        "lowerCreditUnits": 1,
+        "upperCreditUnits": 1,
+        "denominatorWeight": 2,
+        "lowerPercentTenths": 250,
+        "upperPercentTenths": 250
+      }
+    ]
+  }
+}

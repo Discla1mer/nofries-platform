@@ -1,0 +1,302 @@
+{
+  "schemaVersion": 1,
+  "status": "published",
+  "publishedAt": "2026-09-02",
+  "framework": {
+    "id": "synthetic-operations-resilience",
+    "version": "1.0",
+    "title": "Synthetic Operations Resilience Framework",
+    "authority": "No Fries test fixtures",
+    "description": "Invented content used only to exercise the generic framework-profile contract.",
+    "sourceIds": [
+      "synthetic-framework-source"
+    ]
+  },
+  "profile": {
+    "id": "synthetic-operations-resilience-baseline",
+    "version": "1.0.0",
+    "title": "Synthetic resilience baseline",
+    "description": "A non-customer, non-production fixture with a deliberately different structure from NCSC.",
+    "effectiveFrom": "2026-09-02",
+    "sourceIds": [
+      "synthetic-framework-source",
+      "synthetic-exercise-source"
+    ]
+  },
+  "statements": {
+    "attribution": "Created by No Fries as synthetic test content.",
+    "basis": "Invented controls demonstrate multi-framework catalogue behaviour and have no external authority.",
+    "claim": "This fixture is not guidance, certification, compliance evidence or a customer assessment.",
+    "limitations": [
+      "The content is intentionally fictional and must never be offered as a production framework.",
+      "Its weights exist only to validate schema behaviour."
+    ]
+  },
+  "sources": [
+    {
+      "id": "synthetic-framework-source",
+      "title": "Synthetic framework source",
+      "url": "https://example.test/synthetic/framework",
+      "authority": "No Fries test fixtures",
+      "version": "1.0",
+      "publishedAt": "2026-09-02",
+      "lastVerifiedAt": "2026-09-02",
+      "rightsStatus": "synthetic",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
+    },
+    {
+      "id": "synthetic-exercise-source",
+      "title": "Synthetic exercise source",
+      "url": "https://example.test/synthetic/exercises",
+      "authority": "No Fries test fixtures",
+      "version": "exercise-v1",
+      "lastVerifiedAt": "2026-09-02",
+      "rightsStatus": "synthetic",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
+  ],
+  "domains": [
+    {
+      "id": "prepare",
+      "order": 10,
+      "title": "Operations",
+      "guidance": {
+        "summary": "Prepare important services before an invented disruption.",
+        "evidenceExamples": [
+          "Synthetic service list"
+        ],
+        "startingActions": [
+          "Choose one invented service."
+        ]
+      },
+      "sourceIds": [
+        "synthetic-framework-source"
+      ]
+    },
+    {
+      "id": "restore",
+      "order": 20,
+      "title": "Operations",
+      "guidance": {
+        "summary": "Restore invented services and learn from a test exercise.",
+        "evidenceExamples": [
+          "Synthetic exercise note"
+        ],
+        "startingActions": [
+          "Run one fictional recovery exercise."
+        ]
+      },
+      "sourceIds": [
+        "synthetic-exercise-source"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "id": "SYN-OR-PRE-01",
+      "domainId": "prepare",
+      "order": 10,
+      "title": "Recovery readiness",
+      "guidance": {
+        "summary": "Document the fictional service and its dependencies.",
+        "evidenceExamples": [
+          "Synthetic dependency map"
+        ],
+        "startingActions": [
+          "Write the invented service name and owner."
+        ]
+      },
+      "sourceIds": [
+        "synthetic-framework-source"
+      ],
+      "sourceReferences": [
+        {
+          "sourceId": "synthetic-framework-source",
+          "referenceId": "SOR-PRE-01",
+          "order": 10
+        }
+      ]
+    },
+    {
+      "id": "SYN-OR-PRE-02",
+      "domainId": "prepare",
+      "order": 20,
+      "title": "Exercise planning",
+      "guidance": {
+        "summary": "Plan a fictional exercise with a bounded objective.",
+        "evidenceExamples": [
+          "Synthetic exercise plan"
+        ],
+        "startingActions": [
+          "Choose a fictional disruption scenario."
+        ]
+      },
+      "sourceIds": [
+        "synthetic-exercise-source"
+      ],
+      "sourceReferences": [
+        {
+          "sourceId": "synthetic-exercise-source",
+          "referenceId": "SOR-PRE-02",
+          "order": 20
+        }
+      ]
+    },
+    {
+      "id": "SYN-OR-RES-01",
+      "domainId": "restore",
+      "order": 30,
+      "title": "Recovery readiness",
+      "guidance": {
+        "summary": "Record what happened in the fictional exercise.",
+        "evidenceExamples": [
+          "Synthetic outcome record"
+        ],
+        "startingActions": [
+          "Record one fictional lesson."
+        ]
+      },
+      "sourceIds": [
+        "synthetic-exercise-source"
+      ],
+      "sourceReferences": [
+        {
+          "sourceId": "synthetic-exercise-source",
+          "referenceId": "SOR-RES-01",
+          "order": 30
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "SYN-Q-01",
+      "controlId": "SYN-OR-PRE-01",
+      "order": 10,
+      "prompt": "Is the fictional service named and owned?",
+      "guidance": {
+        "summary": "Use only synthetic service data.",
+        "evidenceExamples": [
+          "Synthetic service list"
+        ],
+        "startingActions": [
+          "Add an invented owner."
+        ]
+      },
+      "weight": 0.25,
+      "responseOptionIds": [
+        "met",
+        "partly_met",
+        "not_met",
+        "not_applicable"
+      ],
+      "sourceIds": [
+        "synthetic-framework-source"
+      ]
+    },
+    {
+      "id": "SYN-Q-02",
+      "controlId": "SYN-OR-PRE-01",
+      "order": 20,
+      "prompt": "Are the fictional service dependencies listed?",
+      "guidance": {
+        "summary": "Exercise the one-control-to-many-questions mapping.",
+        "evidenceExamples": [
+          "Synthetic dependency map"
+        ],
+        "startingActions": [
+          "Add one invented dependency."
+        ]
+      },
+      "weight": 0.75,
+      "responseOptionIds": [
+        "met",
+        "partly_met",
+        "not_met",
+        "not_applicable"
+      ],
+      "sourceIds": [
+        "synthetic-framework-source"
+      ]
+    },
+    {
+      "id": "SYN-Q-03",
+      "controlId": "SYN-OR-PRE-02",
+      "order": 30,
+      "prompt": "Does the fictional exercise have an objective?",
+      "guidance": {
+        "summary": "Keep the invented exercise objective specific.",
+        "evidenceExamples": [
+          "Synthetic objective"
+        ],
+        "startingActions": [
+          "Write one fictional objective."
+        ]
+      },
+      "weight": 1,
+      "responseOptionIds": [
+        "met",
+        "partly_met",
+        "not_met",
+        "not_applicable"
+      ],
+      "sourceIds": [
+        "synthetic-exercise-source"
+      ]
+    },
+    {
+      "id": "SYN-Q-04",
+      "controlId": "SYN-OR-RES-01",
+      "order": 40,
+      "prompt": "Was one fictional lesson recorded?",
+      "guidance": {
+        "summary": "Capture an invented lesson without customer data.",
+        "evidenceExamples": [
+          "Synthetic lesson"
+        ],
+        "startingActions": [
+          "Write one fictional lesson."
+        ]
+      },
+      "weight": 2,
+      "responseOptionIds": [
+        "met",
+        "partly_met",
+        "not_met",
+        "not_applicable"
+      ],
+      "sourceIds": [
+        "synthetic-exercise-source"
+      ]
+    }
+  ],
+  "responseOptions": [
+    {
+      "id": "met",
+      "label": "Met",
+      "applicable": true,
+      "implementationFactor": 1
+    },
+    {
+      "id": "partly_met",
+      "label": "Partly met",
+      "applicable": true,
+      "implementationFactor": 0.5
+    },
+    {
+      "id": "not_met",
+      "label": "Not met",
+      "applicable": true,
+      "implementationFactor": 0
+    },
+    {
+      "id": "not_applicable",
+      "label": "Not applicable",
+      "applicable": false,
+      "implementationFactor": null
+    }
+  ],
+  "catalogueSha256": "6d8d845b5448030144c49d9fde245a7e5a22d16688276c2bd4fde658cb049c84"
+}

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>No Fries | Customer portal</title>
+    <meta name="description" content="Your No Fries support requests and monthly service proof.">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" sizes="any" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="stylesheet" href="/assets/portal.css">
+</head>
+<body data-page="customer-portal" class="portal-loading">
+    <a class="skip-link" href="#monthlyProof">Skip to Proof every month</a>
+    <header class="portal-header">
+        <a class="portal-brand" href="/portal" aria-label="No Fries customer portal">
+            <img src="/images/nofrieslogo.png" width="46" height="46" alt="No Fries logo">
+            <span><strong>No Fries</strong><small>Customer portal</small></span>
+        </a>
+        <nav aria-label="Customer portal navigation">
+            <a href="#supportTickets">Support</a>
+            <a href="#monthlyProof">Proof every month</a>
+            <form class="sign-out-form" action="/api/auth/logout" method="post">
+                <input type="hidden" name="returnTo" value="/">
+                <button class="sign-out-button" type="submit">Sign out</button>
+            </form>
+        </nav>
+    </header>
+
+    <main id="portalMain">
+        <section class="loading-panel" id="loadingPanel" aria-live="polite">
+            <div class="loading-mark" aria-hidden="true"></div>
+            <p class="eyebrow">Protected customer portal</p>
+            <h1 id="loadingHeading">Checking your Microsoft identity</h1>
+            <p id="loadingMessage">We are confirming your customer membership before loading support information.</p>
+            <p class="loading-status" id="loadingStatus" role="status">No customer information is shown until access is confirmed.</p>
+            <div class="loading-actions" id="loadingActions" hidden>
+                <a class="button button-primary" href="/portal">Retry</a>
+                <a class="button button-secondary" href="/api/auth/login?returnTo=%2Fportal">Sign in again</a>
+            </div>
+            <div class="startup-watchdog" id="startupWatchdog" hidden aria-hidden="true">
+                <strong>The portal is taking longer than expected.</strong>
+                <p>No request has been submitted. <a href="/portal">Retry safely</a>.</p>
+                <code>customer_portal_startup_watchdog</code>
+            </div>
+        </section>
+
+        <div class="portal-app" id="portalApp" hidden>
+            <section class="portal-hero" aria-labelledby="portalHeading">
+                <div>
+                    <p class="eyebrow">Managed IT, made visible</p>
+                    <h1 id="portalHeading">Support when you need it. Proof every month.</h1>
+                    <p class="hero-copy">Raise and follow support requests, then see the service delivered for your business.</p>
+                </div>
+                <aside class="customer-card" aria-label="Signed-in customer">
+                    <span>Customer</span>
+                    <strong id="customerName"></strong>
+                    <small id="signedInUser"></small>
+                    <div class="open-count"><b id="openTicketCount">0</b><span>open tickets</span></div>
+                </aside>
+            </section>
+
+            <section class="portal-section" id="supportTickets" aria-labelledby="ticketsHeading">
+                <div class="section-heading split-heading">
+                    <div>
+                        <p class="eyebrow">Live service desk</p>
+                        <h2 id="ticketsHeading">Support requests</h2>
+                        <p>Requests here are recorded in the production service desk for your company.</p>
+                    </div>
+                    <button class="button button-primary" id="newTicketButton" type="button">New support request</button>
+                </div>
+
+                <div class="ticket-layout">
+                    <div class="ticket-list-panel">
+                        <div class="ticket-filters" role="search" aria-label="Find support requests">
+                            <label for="ticketSearch">Search requests</label>
+                            <input id="ticketSearch" type="search" maxlength="160" placeholder="Request number or subject" autocomplete="off" aria-controls="ticketList">
+                            <label for="ticketStatusFilter">Status</label>
+                            <select id="ticketStatusFilter" aria-controls="ticketList">
+                                <option value="all">All requests</option>
+                                <option value="open">Open</option>
+                                <option value="completed">Completed or closed</option>
+                            </select>
+                            <button class="text-button" id="clearTicketFilters" type="button" disabled>Clear filters</button>
+                        </div>
+                        <p class="ticket-list-count" id="ticketListCount" role="status" aria-live="polite"></p>
+                        <div class="ticket-list" id="ticketList" aria-describedby="ticketListCount"></div>
+                    </div>
+                    <div class="ticket-detail-panel">
+                        <div class="empty-detail" id="ticketEmpty">
+                            <h3>Select a support request</h3>
+                            <p>Choose a ticket to see customer-visible updates and reply.</p>
+                        </div>
+                        <article id="ticketDetail" hidden>
+                            <div class="ticket-toolbar">
+                                <div><p class="eyebrow" id="ticketNumber"></p><h3 id="ticketSummary"></h3></div>
+                                <span class="status-pill" id="ticketStatus"></span>
+                            </div>
+                            <dl class="ticket-facts" id="ticketFacts"></dl>
+                            <h4>Updates</h4>
+                            <ol class="ticket-notes" id="ticketNotes"></ol>
+                            <form class="reply-form" id="replyForm">
+                                <label for="replyMessage">Reply</label>
+                                <textarea id="replyMessage" name="message" rows="4" maxlength="4000" required></textarea>
+                                <p class="safe-input">Unsent replies stay here when you switch tickets. Leaving or reloading this page discards them.</p>
+                                <div class="form-actions">
+                                    <button class="button button-primary" type="submit">Send reply</button>
+                                    <div class="reply-recovery-actions">
+                                        <button class="text-button" id="checkPendingReply" type="button" hidden>Check status again</button>
+                                        <span id="replyStatus" role="status"></span>
+                                    </div>
+                                </div>
+                            </form>
+                        </article>
+                        <form class="new-ticket-form" id="newTicketForm" hidden>
+                            <div class="ticket-toolbar">
+                                <div><p class="eyebrow">Production service desk</p><h3>New support request</h3></div>
+                                <button class="text-button" id="cancelNewTicket" type="button">Close</button>
+                            </div>
+                            <label for="newTicketSummary">What do you need help with?</label>
+                            <input id="newTicketSummary" name="summary" maxlength="160" required autocomplete="off">
+                            <label for="newTicketDescription">Tell us what is happening</label>
+                            <textarea id="newTicketDescription" name="description" rows="7" maxlength="4000" required></textarea>
+                            <label for="newTicketPriority">Impact</label>
+                            <select id="newTicketPriority" name="priority">
+                                <option value="normal">Normal</option>
+                                <option value="high">High</option>
+                                <option value="urgent">Urgent — work is stopped</option>
+                                <option value="low">Low</option>
+                            </select>
+                            <p class="safe-input">Do not include passwords, access codes, payment-card details or other secrets.</p>
+                            <p class="safe-input">Closing this form keeps your unsent draft on this page. Leaving or reloading this page discards it.</p>
+                            <div class="form-actions">
+                                <button class="button button-primary" id="newTicketSubmit" type="submit">Submit request</button>
+                                <div class="reply-recovery-actions">
+                                    <button class="text-button" id="checkPendingCreate" type="button" hidden>Check status again</button>
+                                    <span id="newTicketStatus" role="status"></span>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <section class="portal-section proof-section" id="monthlyProof" tabindex="-1" aria-labelledby="proofHeading">
+                <div class="section-heading split-heading">
+                    <div>
+                        <p class="eyebrow">Proof every month</p>
+                        <h2 id="proofHeading">Your monthly service record</h2>
+                        <p>Issued reports show customer-safe evidence for the services delivered during each completed month.</p>
+                    </div>
+                    <button class="button button-secondary print-button" id="printProofButton" type="button" disabled>Print or save PDF</button>
+                </div>
+                <div class="proof-navigation">
+                    <p class="proof-selection" id="proofSelection">Latest completed month</p>
+                    <button class="button button-secondary" id="latestProofButton" type="button" aria-controls="proofCurrent" disabled>Return to latest month</button>
+                </div>
+                <p class="proof-status" id="proofStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+                <button class="button button-secondary" id="retryProofButton" type="button" aria-controls="proofCurrent" hidden>Try loading report again</button>
+                <div class="proof-current" id="proofCurrent" aria-busy="false"></div>
+                <div class="proof-history-wrap">
+                    <h3>Previous reports</h3>
+                    <div class="proof-history" id="proofHistory"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div class="toast" id="portalToast" role="status" aria-live="polite" hidden></div>
+    <!-- PORTAL_RUNTIME -->
+</body>
+</html>

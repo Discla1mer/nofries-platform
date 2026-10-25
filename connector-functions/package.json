@@ -1,0 +1,10 @@
+{
+  "name": "nofries-agent-connector",
+  "version": "1.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN ../LICENSE.md",
+  "dependencies": {
+    "@azure/identity": "4.13.1",
+    "@azure/storage-blob": "12.31.0"
+  }
+}

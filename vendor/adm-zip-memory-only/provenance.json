@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "capability": "Disk extraction/archive writes retired; memory and filesystem reads retained.",
+  "upstream": {
+    "name": "adm-zip",
+    "version": "0.6.0",
+    "tarball": "https://registry.npmjs.org/adm-zip/-/adm-zip-0.6.0.tgz",
+    "artifact": "upstream-adm-zip-0.6.0.tgz",
+    "integrity": "sha512-XleryMhbuksdKtofnWZ9Sk+4CUTbms4Mb/EU32SZwToAyZ5RgVos/ki8n+yr0LWHOGKuakbXTuuYNHLQjhddgg==",
+    "advisory": "https://github.com/advisories/GHSA-vwc7-r8mq-g2x9"
+  },
+  "fork": {
+    "name": "adm-zip-memory-only",
+    "version": "0.6.0-memory-only.1",
+    "private": true,
+    "published": false,
+    "artifact": "adm-zip-memory-only-0.6.0-memory-only.1.tgz",
+    "integrity": "sha512-JhxYq/kIUiEUy5rsHX9ulnNWG+JIcCZ7RaEAg5x4enVMKVV0W00sxpFLvujAuB17tpt4k08ISYq/LtulZmodiA==",
+    "sha256": "2eeef9ecb11ed9574fc645e1f9a753405a4f91b6ec1056703739fad932a276bd",
+    "bytes": 144929,
+    "registryAuditCoversUpstreamIdentity": false
+  },
+  "sourceChanges": [
+    "README.md",
+    "adm-zip.js",
+    "package.json",
+    "types.d.ts",
+    "util/utils.js"
+  ],
+  "files": [
+    {
+      "path": "LICENSE",
+      "upstreamSha256": "6bb5b2d4c07d793ca928daa63a8899c6914fafb5ac3aa04ec10cae07f3d57dca",
+      "forkSha256": "6bb5b2d4c07d793ca928daa63a8899c6914fafb5ac3aa04ec10cae07f3d57dca",
+      "upstreamBytes": 1106,
+      "forkBytes": 1106
+    },
+    {
+      "path": "README.md",
+      "upstreamSha256": "9d05e156889b1475cdee97a13ed84a4abee0d752b2aaa28ded5359fcf45df901",
+      "forkSha256": "1cee98a8405263deebc83b319359185b1aa91ecd10c39281a03dfc5d89def471",
+      "upstreamBytes": 2894,
+      "forkBytes": 4044
+    },
+    {
+      "path": "adm-zip.js",
+      "upstreamSha256": "f4feddb21980597cd0248c8790922534abfa90c17a483b00ece15e392074ee27",
+      "forkSha256": "4a61c8b63e9432e2c370c95b9320577ff075440fd0538d5f360ce2b7cee91760",
+      "upstreamBytes": 40794,
+      "forkBytes": 31331
+    },
+    {
+      "path": "headers/entryHeader.js",
+      "upstreamSha256": "6ed1ec82e6124d71dbfb4ee6e5dd4c975657854354cf74741427a1862010a664",
+      "forkSha256": "6ed1ec82e6124d71dbfb4ee6e5dd4c975657854354cf74741427a1862010a664",
+      "upstreamBytes": 12717,
+      "forkBytes": 12717
+    },
+    {
+      "path": "headers/index.js",
+      "upstreamSha256": "536e4b5bf009a3d9f6eccfbbc4157cb6de663d889e0826ea5f6e5fa17aaeb8bf",
+      "forkSha256": "536e4b5bf009a3d9f6eccfbbc4157cb6de663d889e0826ea5f6e5fa17aaeb8bf",
+      "upstreamBytes": 94,
+      "forkBytes": 94
+    },
+    {
+      "path": "headers/mainHeader.js",
+      "upstreamSha256": "ed5a2b3fc7c8a6937e07447eb3e55e08a0655d2f24fe04039e7008845d221a25",
+      "forkSha256": "ed5a2b3fc7c8a6937e07447eb3e55e08a0655d2f24fe04039e7008845d221a25",
+      "upstreamBytes": 7141,
+      "forkBytes": 7141
+    },
+    {
+      "path": "methods/deflater.js",
+      "upstreamSha256": "6dc41b2460594cfa5136b797653c166b2f7403820a40f2fca17cca35a5de1b5f",
+      "forkSha256": "6dc41b2460594cfa5136b797653c166b2f7403820a40f2fca17cca35a5de1b5f",
+      "upstreamBytes": 1021,
+      "forkBytes": 1021
+    },
+    {
+      "path": "methods/index.js",
+      "upstreamSha256": "d67714f1a04be942f90be77069af3ff4214aa8ee84b26edeff3a87eb0d8e2dc0",
+      "forkSha256": "d67714f1a04be942f90be77069af3ff4214aa8ee84b26edeff3a87eb0d8e2dc0",
+      "upstreamBytes": 128,
+      "forkBytes": 128
+    },
+    {
+      "path": "methods/inflater.js",
+      "upstreamSha256": "7b62c190669eeefd6b2810a3339d9109ecb219f845fcd12ae93518beec35dc49",
+      "forkSha256": "7b62c190669eeefd6b2810a3339d9109ecb219f845fcd12ae93518beec35dc49",
+      "upstreamBytes": 1146,
+      "forkBytes": 1146
+    },
+    {
+      "path": "methods/zipcrypto.js",
+      "upstreamSha256": "23365c7eda0ea098385dc7ec649517fc110ce2764d2e707c37bf6b528604e25a",
+      "forkSha256": "23365c7eda0ea098385dc7ec649517fc110ce2764d2e707c37bf6b528604e25a",
+      "upstreamBytes": 5806,
+      "forkBytes": 5806
+    },
+    {
+      "path": "package.json",
+      "upstreamSha256": "76a6fc3e9bf811c9ada1173b7a7c0621d36329c29c221428f46f75762d3aeb5a",
+      "forkSha256": "22866a32a53560fdf9beea4ad4b80c90b6b0319bea992a5279089e7d29d86ef3",
+      "upstreamBytes": 1387,
+      "forkBytes": 1364
+    },
+    {
+      "path": "types.d.ts",
+      "upstreamSha256": "98fae6ae2e5d026a91e0316209813ce304069ab85d0471f35152d5db500d23c1",
+      "forkSha256": "50c0858a8ac0e11c97f366af18b81a1787ef5220d877f88ba65056797cbbe185",
+      "upstreamBytes": 9641,
+      "forkBytes": 9964
+    },
+    {
+      "path": "util/constants.js",
+      "upstreamSha256": "208e943a2e5faad056047f3c7991cce3cde637d8e272a564f2546210ebdf2069",
+      "forkSha256": "208e943a2e5faad056047f3c7991cce3cde637d8e272a564f2546210ebdf2069",
+      "upstreamBytes": 6374,
+      "forkBytes": 6374
+    },
+    {
+      "path": "util/decoder.js",
+      "upstreamSha256": "73a0ebb00c4dce2124f07acf0b34374cb03a4384cccd1cd6f58aee27c35953d9",
+      "forkSha256": "73a0ebb00c4dce2124f07acf0b34374cb03a4384cccd1cd6f58aee27c35953d9",
+      "upstreamBytes": 130,
+      "forkBytes": 130
+    },
+    {
+      "path": "util/errors.js",
+      "upstreamSha256": "d2d243647737c795c2db8aeba2e1f3841d5f76370b521d436cf465322dd4aab7",
+      "forkSha256": "d2d243647737c795c2db8aeba2e1f3841d5f76370b521d436cf465322dd4aab7",
+      "upstreamBytes": 2868,
+      "forkBytes": 2868
+    },
+    {
+      "path": "util/fattr.js",
+      "upstreamSha256": "31c93eb386a2bfbf19ad92a6bf20d510a8f1e7e90cc71d33dd888f89da12362d",
+      "forkSha256": "31c93eb386a2bfbf19ad92a6bf20d510a8f1e7e90cc71d33dd888f89da12362d",
+      "upstreamBytes": 1892,
+      "forkBytes": 1892
+    },
+    {
+      "path": "util/index.js",
+      "upstreamSha256": "dc5b230ed853947ea55c0bf69f0e525fbeffefff09aa3da296d541bb8898314e",
+      "forkSha256": "dc5b230ed853947ea55c0bf69f0e525fbeffefff09aa3da296d541bb8898314e",
+      "upstreamBytes": 226,
+      "forkBytes": 226
+    },
+    {
+      "path": "util/utils.js",
+      "upstreamSha256": "f50d229943cce6067a7f09f5e97b4a69157ec11759777382e5ca0ba03671d1e9",
+      "forkSha256": "bf2bb4cd7ad0147fe5467d60d3b02a4be1f7b3b94d0087d45d16e13c7493529a",
+      "upstreamBytes": 13011,
+      "forkBytes": 9443
+    },
+    {
+      "path": "zipEntry.js",
+      "upstreamSha256": "874e9510d362ba7d2cd85e2dcc7a0e7a6caa4de8ddb37fb4d5e68a018cd87a39",
+      "forkSha256": "874e9510d362ba7d2cd85e2dcc7a0e7a6caa4de8ddb37fb4d5e68a018cd87a39",
+      "upstreamBytes": 15173,
+      "forkBytes": 15173
+    },
+    {
+      "path": "zipFile.js",
+      "upstreamSha256": "a709d4f3ee218f457b7e71dd6b22dcf58858cc5410eece4dc4ecd7c4e9a2c027",
+      "forkSha256": "a709d4f3ee218f457b7e71dd6b22dcf58858cc5410eece4dc4ecd7c4e9a2c027",
+      "upstreamBytes": 16516,
+      "forkBytes": 16516
+    }
+  ]
+}

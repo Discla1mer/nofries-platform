@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>No Fries | Service Desk</title>
+    <meta name="description" content="Private No Fries production service desk connected to Autotask.">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" sizes="any" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="stylesheet" href="/assets/support.css">
+</head>
+<body data-page="service-desk" class="support-loading">
+    <header class="support-header">
+        <a class="support-brand" href="/operator" aria-label="No Fries staff workspace">
+            <img src="/images/nofrieslogo.png" width="46" height="46" alt="No Fries logo">
+            <span><strong>No Fries</strong><small>Service desk</small></span>
+        </a>
+        <nav class="support-nav" aria-label="Private workspace navigation">
+            <a href="/operator">Work</a>
+            <a href="/scoping">Sales</a>
+            <a href="/support" aria-current="page">Service desk</a>
+            <form class="sign-out-form" action="/api/auth/logout" method="post">
+                <input type="hidden" name="returnTo" value="/">
+                <button class="sign-out-button" type="submit">Sign out</button>
+            </form>
+        </nav>
+    </header>
+
+    <main>
+        <section class="loading-panel" id="loadingPanel" aria-live="polite">
+            <div class="loading-mark" aria-hidden="true"></div>
+            <p class="eyebrow">Protected workspace</p>
+            <h1 id="loadingHeading">Verifying your Microsoft identity</h1>
+            <p id="loadingMessage">No Fries is checking your tenant and role before loading the service desk.</p>
+            <p class="loading-status" id="loadingStatus" role="status"></p>
+            <div class="loading-actions" id="loadingActions" hidden>
+                <a class="button button-primary" href="/support">Retry</a>
+                <a class="button button-secondary" href="/api/auth/login?returnTo=%2Fsupport">Sign in again</a>
+                <a class="button button-secondary" href="/operator">Open work</a>
+            </div>
+            <div class="startup-fallback" aria-live="polite">
+                <strong>Still waiting?</strong>
+                <p>The service desk startup did not complete. Diagnostic: <code>support_startup_watchdog</code>.</p>
+                <p><a href="/support">Retry</a> or <a href="/api/auth/login?returnTo=%2Fsupport">sign in again</a>.</p>
+            </div>
+        </section>
+
+        <div class="support-app" id="supportApp" hidden>
+            <section class="support-hero">
+                <div>
+                    <p class="eyebrow">Live production service desk</p>
+                    <h1>Customer support tickets in Autotask.</h1>
+                    <p class="hero-copy">View current tickets, create a customer request, and add a customer-visible reply. Submitted changes are written to the production service desk.</p>
+                </div>
+                <div class="tenant-card" aria-label="Current tenant and user">
+                    <span>Signed-in workspace</span>
+                    <strong id="tenantName"></strong>
+                    <small id="userIdentity"></small>
+                </div>
+            </section>
+
+            <section class="production-boundary" aria-label="Production service desk status">
+                <strong id="runtimeStatus">Production</strong>
+                <p id="runtimeMessage">Autotask is the service-desk source of truth. Check the customer and request before submitting a live change.</p>
+            </section>
+
+            <section class="pending-operation" id="pendingOperation" role="status" hidden>
+                <strong>Submission outcome still unresolved</strong>
+                <p id="pendingOperationMessage"></p>
+            </section>
+
+            <div class="desk-layout">
+                <aside class="ticket-rail">
+                    <div class="rail-heading">
+                        <div><p class="eyebrow">Live customer tickets</p><h2>Service desk</h2></div>
+                        <button class="button button-secondary button-small" id="newTicketButton" type="button">New</button>
+                    </div>
+                    <div class="ticket-list" id="ticketList" aria-live="polite"></div>
+                </aside>
+
+                <section class="desk-panel">
+                    <div id="newTicketView">
+                        <div class="section-heading compact">
+                            <p class="eyebrow">New live ticket</p>
+                            <h2>Create a support request</h2>
+                            <p>Use an active governed customer, a verified device, and an authorised requester. Never enter credentials, secrets, recovery codes, or access tokens.</p>
+                        </div>
+                        <div class="setup-empty" id="noReadyCustomers" hidden>
+                            <p class="eyebrow">Customer set-up required</p>
+                            <h3>No customer is eligible for production support.</h3>
+                            <p>Complete customer activation, support authority, SLA, and provider mappings before creating a ticket.</p>
+                            <a class="button button-primary" href="/operator">Review customer set-up</a>
+                        </div>
+                        <form id="ticketForm" class="ticket-form">
+                            <div class="field-row">
+                                <label>
+                                    <span>Customer</span>
+                                    <select id="customerId" name="customerId" required></select>
+                                    <small id="customerReadiness">Governed support customer</small>
+                                </label>
+                                <label>
+                                    <span>Verified device</span>
+                                    <select id="deviceId" name="deviceId" required></select>
+                                </label>
+                            </div>
+                            <div class="field-row">
+                                <label>
+                                    <span>Authorised requester</span>
+                                    <input id="requesterEmail" name="requesterEmail" type="email" maxlength="254" required autocomplete="off">
+                                    <small>Must match the customer support authority.</small>
+                                </label>
+                                <label>
+                                    <span>Intake channel</span>
+                                    <select id="intakeChannel" name="intakeChannel" required>
+                                        <option value="phone">Phone</option>
+                                        <option value="email">Email</option>
+                                        <option value="portal">Customer portal</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <label>
+                                <span>Priority</span>
+                                <select id="priority" name="priority" required>
+                                    <option value="normal">Normal</option>
+                                    <option value="low">Low</option>
+                                    <option value="high">High</option>
+                                    <option value="urgent">Urgent</option>
+                                </select>
+                            </label>
+                            <label><span>Subject</span><input id="subject" name="subject" maxlength="160" required autocomplete="off"></label>
+                            <label>
+                                <span>Customer request</span>
+                                <textarea id="requestText" name="requestText" rows="5" maxlength="8000" required></textarea>
+                            </label>
+                            <div class="form-actions">
+                                <button class="button button-primary" id="createTicketButton" type="submit">Create live ticket</button>
+                                <span class="action-status" id="formStatus" role="status"></span>
+                            </div>
+                        </form>
+                    </div>
+
+                    <article id="ticketView" hidden>
+                        <div class="ticket-toolbar">
+                            <div>
+                                <p class="eyebrow" id="ticketReference"></p>
+                                <h2 id="ticketTitle"></h2>
+                                <p id="ticketMeta"></p>
+                            </div>
+                            <span class="status-pill" id="ticketStatus"></span>
+                        </div>
+
+                        <div class="ticket-action-bar">
+                            <button type="button" class="button button-secondary" id="refreshTicketButton">Refresh from Autotask</button>
+                            <p id="ticketProjectionStatus">Customer-visible service-desk activity is shown below.</p>
+                        </div>
+
+                        <section class="timeline-section">
+                            <div class="section-heading compact"><p class="eyebrow">Customer-visible activity</p><h3>Ticket messages</h3></div>
+                            <ol class="timeline" id="ticketTimeline"></ol>
+                        </section>
+
+                        <section class="detail-card" id="replyCard">
+                            <div class="card-heading">
+                                <div><p class="eyebrow">Live customer update</p><h3>Add a reply</h3></div>
+                                <span class="read-only-badge">Customer visible</span>
+                            </div>
+                            <form id="replyForm" class="ticket-form">
+                                <label>
+                                    <span>Message</span>
+                                    <textarea id="replyMessage" name="message" rows="4" maxlength="8000" required></textarea>
+                                    <small>This message will be published to the customer-visible Autotask ticket.</small>
+                                </label>
+                                <div class="form-actions">
+                                    <button class="button button-primary" id="replyButton" type="submit">Publish live reply</button>
+                                    <span class="action-status" id="replyStatus" role="status"></span>
+                                </div>
+                            </form>
+                        </section>
+                    </article>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <!-- SUPPORT_RUNTIME -->
+</body>
+</html>

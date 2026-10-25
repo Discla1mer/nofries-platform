@@ -1,0 +1,46 @@
+{
+  "name": "adm-zip-memory-only",
+  "version": "0.6.0-memory-only.1",
+  "description": "Private local adm-zip 0.6.0 fork retaining memory/read operations and explicitly disabling all disk extraction and archive writes",
+  "keywords": [
+    "zip",
+    "methods",
+    "archive",
+    "unzip"
+  ],
+  "homepage": "https://github.com/cthackers/adm-zip",
+  "author": "Nasca Iacob <adm-zip@pm.me> (https://github.com/cthackers)",
+  "bugs": {
+    "email": "adm-zip@pm.me",
+    "url": "https://github.com/cthackers/adm-zip/issues"
+  },
+  "license": "MIT",
+  "files": [
+    "adm-zip.js",
+    "headers",
+    "methods",
+    "util",
+    "zipEntry.js",
+    "zipFile.js",
+    "types.d.ts",
+    "LICENSE"
+  ],
+  "main": "adm-zip.js",
+  "types": "types.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cthackers/adm-zip.git"
+  },
+  "engines": {
+    "node": ">=14.0"
+  },
+  "private": true,
+  "upstreamSource": {
+    "name": "adm-zip",
+    "version": "0.6.0",
+    "tarball": "https://registry.npmjs.org/adm-zip/-/adm-zip-0.6.0.tgz",
+    "integrity": "sha512-XleryMhbuksdKtofnWZ9Sk+4CUTbms4Mb/EU32SZwToAyZ5RgVos/ki8n+yr0LWHOGKuakbXTuuYNHLQjhddgg==",
+    "advisory": "https://github.com/advisories/GHSA-vwc7-r8mq-g2x9",
+    "modification": "All disk extraction/archive-write capabilities deliberately retired; this is not an upstream patched release."
+  }
+}

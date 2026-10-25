@@ -1,0 +1,9 @@
+node_modules/
+coverage/
+dist/
+app-service-dist/
+.env
+npm-debug.log*
+.nofries-data/
+.nofries-scope-data/
+eval-results/

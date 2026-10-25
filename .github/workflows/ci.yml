@@ -1,0 +1,102 @@
+name: Public application CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PROMPTFOO_DISABLE_TELEMETRY: '1'
+      PROMPTFOO_DISABLE_UPDATE: '1'
+      PROMPTFOO_DISABLE_SHARE_EMAIL_REQUEST: '1'
+      PROMPTFOO_CONFIG_DIR: ${{ runner.temp }}/promptfoo
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 22.22.0
+      - name: Verify pinned local dependencies
+        run: |
+          node scripts/check-public-tree.js
+          node scripts/verify-adm-zip-memory-only.js
+          node vendor/node-forge-rsa-validated/build-package.js --check
+      - run: npm ci --ignore-scripts --omit=optional --audit=false
+      - run: npm run verify
+      - run: npm run eval:prospect:promptfoo
+      - name: Build runtime package and verify install closure
+        run: |
+          npm run build:app-service
+          cd app-service-dist
+          npm ci --ignore-scripts --omit=dev --omit=optional --dry-run --offline --audit=false
+
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.11-bookworm@sha256:84560e3b9c6874893fc4e2854f5dc3e7c1a37bc9d1dfd7a8c641310ae22ba5ad
+        env:
+          POSTGRES_DB: nofries_ci
+          POSTGRES_USER: nofries_ci_owner
+          POSTGRES_PASSWORD: nofries-ci-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready --username=nofries_ci_owner --dbname=nofries_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 22.22.0
+      - run: npm ci --ignore-scripts --omit=optional --audit=false
+      - name: Apply migrations twice and run native tenant-isolation tests
+        env:
+          NOFRIES_DATABASE_URL: postgresql://nofries_ci_owner:nofries-ci-only-password@127.0.0.1:5432/nofries_ci
+          NOFRIES_TEST_DATABASE_URL: postgresql://nofries_ci_owner:nofries-ci-only-password@127.0.0.1:5432/nofries_ci
+        run: |
+          npm run db:migrate
+          npm run db:migrate
+          npm run test:postgres
+
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 22.22.0
+      - name: Audit both governed closures with the unchanged exact temporary disposition
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit_report() {
+            local report="$1"; shift
+            local status=0
+            timeout 300s "$@" > "$report" || status=$?
+            if [[ "$status" -gt 1 ]]; then exit "$status"; fi
+            test -s "$report"
+          }
+          root_report="$RUNNER_TEMP/root-audit.json"
+          api_report="$RUNNER_TEMP/api-audit.json"
+          audit_report "$root_report" npm audit --package-lock-only --json --audit-level=low
+          audit_report "$api_report" npm --prefix api audit --package-lock-only --omit=dev --json --audit-level=low
+          node scripts/check-dependency-audit.js --dependency-changed --connector-dependency-changed --root-report "$root_report" --api-report "$api_report"

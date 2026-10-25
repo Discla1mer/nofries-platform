@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="560" viewBox="0 0 760 560" role="img" aria-labelledby="title desc">
+  <title id="title">No Fries MSSP account planning dashboard</title>
+  <desc id="desc">Dashboard view with customer records, service gaps, revenue forecast, and proposal export status.</desc>
+  <defs>
+    <linearGradient id="screen" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#172033"/>
+      <stop offset="1" stop-color="#0b101c"/>
+    </linearGradient>
+    <filter id="shadow" x="-12%" y="-18%" width="124%" height="136%">
+      <feDropShadow dx="0" dy="24" stdDeviation="22" flood-color="#000" flood-opacity=".35"/>
+    </filter>
+  </defs>
+  <rect width="760" height="560" rx="28" fill="#080b12"/>
+  <rect x="42" y="42" width="676" height="476" rx="24" fill="url(#screen)" filter="url(#shadow)"/>
+  <rect x="42" y="42" width="676" height="58" rx="24" fill="#101827"/>
+  <circle cx="82" cy="72" r="7" fill="#e11118"/>
+  <circle cx="106" cy="72" r="7" fill="#ffd400"/>
+  <circle cx="130" cy="72" r="7" fill="#29b37a"/>
+  <text x="168" y="78" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Customer account plan</text>
+  <rect x="72" y="132" width="182" height="328" rx="16" fill="#0d1322" stroke="#263247"/>
+  <text x="96" y="166" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Accounts</text>
+  <g fill="#131c2e" stroke="#2f3e56">
+    <rect x="94" y="194" width="136" height="46" rx="10"/>
+    <rect x="94" y="254" width="136" height="46" rx="10"/>
+    <rect x="94" y="314" width="136" height="46" rx="10"/>
+    <rect x="94" y="374" width="136" height="46" rx="10"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700">
+    <text x="112" y="222" fill="#f8fafc">Logistics client</text>
+    <text x="112" y="282" fill="#f8fafc">Finance client</text>
+    <text x="112" y="342" fill="#f8fafc">Retail client</text>
+    <text x="112" y="402" fill="#f8fafc">Health client</text>
+  </g>
+  <rect x="286" y="132" width="188" height="152" rx="16" fill="#0d1322" stroke="#263247"/>
+  <text x="310" y="166" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Service gaps</text>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700">
+    <rect x="310" y="194" width="116" height="28" rx="14" fill="#e11118"/>
+    <text x="326" y="213" fill="#ffffff">MDR coverage</text>
+    <rect x="310" y="232" width="138" height="28" rx="14" fill="#d99a21"/>
+    <text x="326" y="251" fill="#111111">Cloud posture</text>
+  </g>
+  <rect x="506" y="132" width="182" height="152" rx="16" fill="#0d1322" stroke="#263247"/>
+  <text x="530" y="166" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Forecast</text>
+  <polyline points="530,248 560,230 590,238 620,202 654,184" fill="none" stroke="#ffd400" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#ffd400">
+    <circle cx="530" cy="248" r="6"/>
+    <circle cx="560" cy="230" r="6"/>
+    <circle cx="590" cy="238" r="6"/>
+    <circle cx="620" cy="202" r="6"/>
+    <circle cx="654" cy="184" r="6"/>
+  </g>
+  <rect x="286" y="316" width="402" height="144" rx="16" fill="#0d1322" stroke="#263247"/>
+  <text x="310" y="350" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Proposal actions</text>
+  <g fill="#111a2b" stroke="#2f3e56">
+    <rect x="310" y="374" width="354" height="20" rx="10"/>
+    <rect x="310" y="408" width="286" height="20" rx="10"/>
+  </g>
+  <rect x="310" y="374" width="244" height="20" rx="10" fill="#29b37a"/>
+  <rect x="310" y="408" width="174" height="20" rx="10" fill="#e11118"/>
+  <rect x="552" y="346" width="112" height="34" rx="8" fill="#ffd400"/>
+  <text x="580" y="368" fill="#111111" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="800">Export</text>
+</svg>

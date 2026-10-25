@@ -1,0 +1,4 @@
+Contact: mailto:hello@nofries.nz?subject=No%20Fries%20security%20report
+Expires: 2027-08-13T00:00:00.000Z
+Canonical: https://nofries.nz/.well-known/security.txt
+Preferred-Languages: en

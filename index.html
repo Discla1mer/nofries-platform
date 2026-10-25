@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="index, follow">
+    <title>No Fries Dashboard | Your IT position in real time.</title>
+    <meta name="description" content="Assess your IT, save your progress and view results in the No Fries Dashboard. Create or log in to your account.">
+    <link rel="canonical" href="https://nofries.nz/">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://nofries.nz/">
+    <meta property="og:title" content="No Fries Dashboard | Your IT position in real time.">
+    <meta property="og:description" content="Assess your IT, save your progress and view results in the No Fries Dashboard. Create or log in to your account.">
+    <meta name="twitter:card" content="summary">
+    <link rel="icon" type="image/png" href="/images/nofrieslogo.png">
+    <link rel="apple-touch-icon" href="/images/nofrieslogo.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/home.css">
+    <meta id="dashboardApplicationIntegrity" content="DASHBOARD_APP_INTEGRITY">
+    <meta id="dashboardStyleIntegrity" content="DASHBOARD_STYLE_INTEGRITY">
+    <script src="/js/organisation-setup.js" defer></script>
+    <script src="/js/home.js" defer></script>
+    <script src="/js/prospect-assistant.js" defer></script>
+</head>
+<body data-page="dashboard-home" data-product="dashboard" data-dashboard-gateway="true">
+    <a class="skip-link" id="dashboardSkipLink" href="#main-content">Skip to content</a>
+
+    <header class="site-header shell">
+        <a class="brand" href="/" aria-label="No Fries Dashboard home" data-dashboard-home>
+            <img class="brand-logo" src="/images/nofrieslogo.png" width="44" height="44" alt="">
+            <span class="brand-copy"><strong>No Fries</strong><span>Dashboard</span></span>
+        </a>
+        <nav aria-label="Main navigation"><a href="https://news.nofries.nz/" data-dashboard-leave>News</a><a href="/roadmap.html" data-dashboard-leave>Roadmap</a></nav>
+    </header>
+
+    <div class="shell gateway-entry" id="dashboardEntry" role="main">
+        <section id="dashboardStatusPanel" class="gateway-status" aria-labelledby="dashboardHeading" hidden>
+            <h2 id="dashboardHeading" tabindex="-1">Opening your dashboard</h2>
+            <p id="dashboardMessage">Checking your current access.</p>
+            <p id="dashboardStatus" role="status" aria-live="polite"></p>
+            <button class="button" id="dashboardRetry" type="button" hidden>Retry</button>
+            <a class="button" id="dashboardSignIn" href="/login" hidden>Sign up / Sign in</a>
+            <button class="button" id="dashboardSignOut" type="button" hidden>Sign out</button>
+        </section>
+        <section id="dashboardChooser" aria-labelledby="dashboardChooserHeading" hidden>
+            <h2 id="dashboardChooserHeading">Your organisations</h2>
+            <div id="dashboardChoices" role="group" aria-label="Available organisations"></div>
+            <button class="button" id="dashboardMore" type="button" hidden>More organisations</button>
+        </section>
+        <div id="dashboardApp" hidden></div>
+        <div id="gatewayPublic">
+            <section class="gateway-welcome" id="main-content" tabindex="-1" aria-labelledby="home-title">
+                <section class="organisation-card" id="create-organisation" aria-labelledby="organisation-title">
+                    <p class="eyebrow">Your account</p><h2 id="organisation-title">Assess your IT. See where to improve.</h2>
+                    <p>For your company or your clients.</p>
+                    <a class="button" href="/login?intent=create">Create account</a>
+                    <a class="button" href="/login?intent=login">Log in</a>
+                </section>
+                <div class="home-intro">
+                    <p class="eyebrow">Your No Fries dashboard</p>
+                    <h1 id="home-title">Your IT position<br><em>in real time.</em></h1>
+                    <ul class="dashboard-benefits" aria-label="Dashboard benefits">
+                        <li>Assess your IT and cyber security.</li>
+                        <li>Save your progress and return later.</li>
+                        <li>View results from your submitted assessment.</li>
+                    </ul>
+                    <ol class="gateway-steps" aria-label="Getting started">
+                        <li><span>1</span><div><strong>Verify your email</strong><p>Enter the one-time code sent to your inbox.</p></div></li>
+                        <li><span>2</span><div><strong>Choose your account</strong><p>Choose Company for your own organisation, or Consultant to manage clients.</p></div></li>
+                        <li><span>3</span><div><strong>Complete account setup</strong><p>Confirm access and applicable terms before opening your dashboard.</p></div></li>
+                    </ol>
+                </div>
+            </section>
+            <section class="gateway-other-services" id="other-services" aria-labelledby="other-services-title">
+                <div><h2 id="other-services-title">Other services</h2><p>No Fries Managed IT covers agreed user support, work computers and business tools. Protection and backup are selected separately.</p></div>
+                <a href="/managed-it.html">Explore Managed IT <span aria-hidden="true">→</span></a>
+            </section>
+        </div>
+    </div>
+    <footer class="home-footer">
+        <div><span>© 2026 No Fries · Auckland</span><!-- FRONTEND_RELEASE_INFO --></div>
+        <nav aria-label="Footer links">
+            <a href="https://news.nofries.nz/" data-dashboard-leave>News</a>
+
+            <a href="/roadmap.html" data-dashboard-leave>Roadmap</a>
+            <a href="/privacy.html" data-dashboard-leave>Privacy</a>
+            <a href="/terms.html" data-dashboard-leave>Terms</a>
+        </nav>
+    </footer>
+    <!-- DASHBOARD_RUNTIME -->
+
+</body>
+</html>

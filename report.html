@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>Contact No Fries</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/customer-report.css">
+    <script src="/js/customer-report.js" defer></script>
+</head>
+<body data-page="customer-report">
+    <a class="report-skip" href="#report-main">Skip to report</a>
+    <header class="shell report-header">
+        <a class="brand" href="/" aria-label="No Fries home"><img src="/images/nofrieslogo.png" width="44" height="44" alt=""><span>No Fries</span></a>
+        <a href="/">Back to No Fries</a>
+    </header>
+    <main id="report-main" class="shell report-main" tabindex="-1">
+        <section class="report-card" aria-labelledby="report-title">
+            <p class="eyebrow">We’re here to help</p>
+            <h1 id="report-title">Report a bug</h1>
+            <p>Tell us what happened or what could work better. You’ll review the report before opening an email draft to Joel at No Fries.</p>
+            <p class="report-help">This page does not send email. Send the draft from your own email app. We cannot confirm that it was sent or delivered.</p>
+            <form id="report-form">
+                <label for="report-kind">What would you like to share?</label>
+                <select id="report-kind">
+                    <option value="bug">Report a bug</option>
+                    <option value="error">Report a problem</option>
+                    <option value="feedback">Give feedback</option>
+                </select>
+                <label for="report-screen">Where did this happen?</label>
+                <select id="report-screen">
+                    <option value="unspecified">Not sure / general feedback</option>
+                    <option value="signin">Sign in</option>
+                    <option value="signup">Account setup</option>
+                    <option value="dashboard">Dashboard / assessment</option>
+                    <option value="portal">Customer portal</option>
+                    <option value="website">Website</option>
+                </select>
+                <label for="report-description">What happened, or what would you change?</label>
+                <textarea id="report-description" rows="5" maxlength="500" required aria-describedby="report-privacy" placeholder="Describe the problem and what you expected."></textarea>
+                <p id="report-privacy" class="report-help">Keep it brief. Do not include passwords, verification codes, account details, private customer information, screenshots or copied requests. Recognisable credentials, email addresses and links are masked; please still check every word.</p>
+                <button class="button" id="report-preview-button" type="button" disabled>Review report</button>
+            </form>
+            <section id="report-preview" hidden aria-labelledby="report-preview-title">
+                <h2 id="report-preview-title" tabindex="-1">Review your report</h2>
+                <button class="report-edit" id="report-edit" type="button">Edit report</button>
+                <p>To: <strong>joel@nofries.nz</strong>. Only the text below is included. Your email app adds its normal sender details when you send.</p>
+                <p id="report-subject"></p>
+                <label for="report-body">Report content</label>
+                <textarea id="report-body" rows="11" readonly spellcheck="false"></textarea>
+                <p id="report-masking" class="report-help" hidden>Some text was masked for privacy. Check the report and remove anything else you do not want to share.</p>
+                <label class="report-consent" for="report-reviewed"><input id="report-reviewed" type="checkbox">I have checked this report and want to share this text with No Fries.</label>
+                <div class="report-actions">
+                    <button class="button" id="report-open" type="button" disabled>Open email draft</button>
+                    <button class="button secondary" id="report-copy" type="button" disabled>Copy report</button>
+                </div>
+                <p class="report-help">If your email app does not open, copy the report into an email to joel@nofries.nz. Check your sent mail before sending again.</p>
+            </section>
+            <p id="report-status" role="status" aria-live="polite" aria-atomic="true"></p>
+            <noscript><p>This report composer needs JavaScript. You can email joel@nofries.nz directly. Describe the failed step without including passwords, codes or private customer details.</p></noscript>
+        </section>
+    </main>
+    <footer class="shell report-footer"><span>© 2026 No Fries</span><a href="/privacy.html">Privacy</a></footer>
+</body>
+</html>

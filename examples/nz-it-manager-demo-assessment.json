@@ -1,0 +1,204 @@
+{
+  "app": "NoFries",
+  "version": 3,
+  "exportedAt": "2026-06-06T00:00:00.000Z",
+  "state": {
+    "assessmentId": "demo-nz-it-manager-pilot",
+    "client": {
+      "clientName": "Harbour City Services (demo)",
+      "assessorName": "NoFries pilot lead",
+      "reviewDate": "2026-06-06",
+      "targetMaturity": "cmm3",
+      "reportEmail": "it.manager@example.co.nz",
+      "scopeSystems": "Microsoft 365, Entra ID, managed laptops, finance SaaS, public website, VPN, backup platform.",
+      "scopeExclusions": "Demo only. OT, development systems, and physical security are out of scope.",
+      "reviewerName": "IT Manager",
+      "signOffDate": ""
+    },
+    "profile": {
+      "focusRelevant": false,
+      "microsoft365": true,
+      "googleWorkspace": false,
+      "remoteAccess": true,
+      "endpoints": true,
+      "servers": false,
+      "cloudServices": true,
+      "publicWeb": true,
+      "payments": true,
+      "sensitiveData": true
+    },
+    "incident": {
+      "incidentLead": "IT Manager",
+      "privacyOfficer": "Operations Manager",
+      "insurerContact": "Cyber insurer broker, policy number to confirm",
+      "providerContacts": "MSP service desk, Microsoft partner, payroll SaaS support, bank relationship manager",
+      "notes": "Privacy breach decision path needs a named backup owner. Tabletop exercise has not been run this year.",
+      "items": {
+        "firstHour": true,
+        "privacyDecision": false,
+        "ncscReporting": true,
+        "isolationSteps": false,
+        "supplierContacts": true,
+        "exerciseDone": false
+      }
+    },
+    "controls": {
+      "risk-management": {
+        "status": "planned",
+        "evidence": "Cyber actions exist in IT backlog, but not yet linked to the enterprise risk register.",
+        "evidenceConfidence": "attested",
+        "owner": "IT Manager",
+        "lastTested": "",
+        "remediationStatus": "in-progress",
+        "effort": "medium",
+        "dueDate": "2026-07-31",
+        "notes": "Add top cyber risks to the business risk register with owner, rating, treatment, and review date.",
+        "acceptedRisk": ""
+      },
+      "awareness": {
+        "status": "installed",
+        "evidence": "Annual training completion dashboard reviewed. Phishing reporting channel exists.",
+        "evidenceConfidence": "documented",
+        "owner": "Operations Manager",
+        "lastTested": "2026-04-15",
+        "remediationStatus": "in-progress",
+        "effort": "low",
+        "dueDate": "2026-07-15",
+        "notes": "Add short local guidance for invoice fraud, password manager use, and reporting suspicious activity.",
+        "acceptedRisk": ""
+      },
+      "asset-inventory": {
+        "status": "planned",
+        "evidence": "Endpoint list exists in MDM, but SaaS and supplier inventory is incomplete.",
+        "evidenceConfidence": "attested",
+        "owner": "IT Manager",
+        "lastTested": "",
+        "remediationStatus": "in-progress",
+        "effort": "medium",
+        "dueDate": "2026-08-15",
+        "notes": "Create a single list of critical systems, owners, suppliers, and externally facing services.",
+        "acceptedRisk": ""
+      },
+      "secure-configuration": {
+        "status": "installed",
+        "evidence": "Endpoint security baseline and Microsoft Secure Score reviewed.",
+        "evidenceConfidence": "documented",
+        "owner": "MSP",
+        "lastTested": "2026-05-20",
+        "remediationStatus": "in-progress",
+        "effort": "medium",
+        "dueDate": "2026-08-31",
+        "notes": "Record exceptions for legacy macro settings and local admin needs.",
+        "acceptedRisk": ""
+      },
+      "patching": {
+        "status": "installed",
+        "evidence": "Endpoint patch dashboard shows most devices current. Network devices not included.",
+        "evidenceConfidence": "documented",
+        "owner": "MSP",
+        "lastTested": "2026-05-28",
+        "remediationStatus": "in-progress",
+        "effort": "medium",
+        "dueDate": "2026-07-31",
+        "notes": "Add network devices, browser extensions, and public website dependencies to patch reporting.",
+        "acceptedRisk": ""
+      },
+      "mfa-verification": {
+        "status": "verified",
+        "evidence": "Conditional Access export reviewed for administrators, email, VPN, and finance SaaS.",
+        "evidenceConfidence": "documented",
+        "owner": "IT Manager",
+        "lastTested": "2026-06-01",
+        "remediationStatus": "done",
+        "effort": "low",
+        "dueDate": "",
+        "notes": "Review break-glass monitoring and service account exclusions monthly.",
+        "acceptedRisk": ""
+      },
+      "password-manager": {
+        "status": "planned",
+        "evidence": "Shared passwords remain in browser profiles and team documents.",
+        "evidenceConfidence": "attested",
+        "owner": "Operations Manager",
+        "lastTested": "",
+        "remediationStatus": "not-started",
+        "effort": "low",
+        "dueDate": "2026-07-31",
+        "notes": "Select password manager and migrate shared finance, social media, and supplier credentials.",
+        "acceptedRisk": ""
+      },
+      "privileged-access": {
+        "status": "installed",
+        "evidence": "Admin role export reviewed. Quarterly review not yet scheduled.",
+        "evidenceConfidence": "documented",
+        "owner": "IT Manager",
+        "lastTested": "2026-05-30",
+        "remediationStatus": "in-progress",
+        "effort": "medium",
+        "dueDate": "2026-08-15",
+        "notes": "Separate remaining admin accounts and add quarterly privileged access review.",
+        "acceptedRisk": ""
+      },
+      "application-control": {
+        "status": "planned",
+        "evidence": "EDR is deployed. Application control is not yet enabled.",
+        "evidenceConfidence": "attested",
+        "owner": "MSP",
+        "lastTested": "",
+        "remediationStatus": "not-started",
+        "effort": "high",
+        "dueDate": "2026-09-30",
+        "notes": "Pilot monitored application control on finance and executive laptops first.",
+        "acceptedRisk": ""
+      },
+      "internet-facing-segmentation": {
+        "status": "planned",
+        "evidence": "Public website and VPN known. External scan not recently reviewed.",
+        "evidenceConfidence": "attested",
+        "owner": "MSP",
+        "lastTested": "",
+        "remediationStatus": "not-started",
+        "effort": "high",
+        "dueDate": "2026-09-15",
+        "notes": "Run external exposure review and confirm backup/admin systems are segmented from user devices.",
+        "acceptedRisk": ""
+      },
+      "logging-detection": {
+        "status": "installed",
+        "evidence": "Microsoft 365 alerts enabled. Alert routing and response outcomes are not consistently ticketed.",
+        "evidenceConfidence": "documented",
+        "owner": "MSP",
+        "lastTested": "2026-05-10",
+        "remediationStatus": "in-progress",
+        "effort": "medium",
+        "dueDate": "2026-08-31",
+        "notes": "Route high-risk identity and endpoint alerts to a ticket queue with owner and response outcome.",
+        "acceptedRisk": ""
+      },
+      "backups-recovery": {
+        "status": "installed",
+        "evidence": "Backup jobs are green. No recent restore test for finance SaaS export or shared files.",
+        "evidenceConfidence": "documented",
+        "owner": "IT Manager",
+        "lastTested": "2026-03-01",
+        "remediationStatus": "in-progress",
+        "effort": "medium",
+        "dueDate": "2026-07-31",
+        "notes": "Run restore test for finance data, shared files, and key user mailbox.",
+        "acceptedRisk": ""
+      },
+      "incident-response": {
+        "status": "planned",
+        "evidence": "Contact list exists, but privacy decision path and tabletop exercise are incomplete.",
+        "evidenceConfidence": "attested",
+        "owner": "IT Manager",
+        "lastTested": "",
+        "remediationStatus": "in-progress",
+        "effort": "low",
+        "dueDate": "2026-07-31",
+        "notes": "Create one-page first-hour incident guide and run a 45-minute tabletop.",
+        "acceptedRisk": ""
+      }
+    }
+  }
+}

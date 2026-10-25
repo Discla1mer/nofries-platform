@@ -1,0 +1,799 @@
+{
+  "description": "Reduced timestamp/state shapes from the September 7 read-only GitHub audit; fixture identities are remapped in tests and confer no live release authority.",
+  "runs": [
+    {
+      "observedRunId": "33471025029",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-09-01T04:45:16Z",
+        "run_started_at": "2026-09-01T04:45:16Z",
+        "updated_at": "2026-09-01T04:58:11Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-09-01T04:45:16Z",
+          "run_started_at": "2026-09-01T04:45:16Z",
+          "updated_at": "2026-09-01T04:58:11Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33459892996",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-09-01T01:44:25Z",
+        "run_started_at": "2026-09-01T01:44:25Z",
+        "updated_at": "2026-09-01T01:45:02Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-09-01T01:44:25Z",
+          "run_started_at": "2026-09-01T01:44:25Z",
+          "updated_at": "2026-09-01T01:45:02Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33457472151",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-09-01T01:07:07Z",
+        "run_started_at": "2026-09-01T01:07:07Z",
+        "updated_at": "2026-09-01T01:21:57Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-09-01T01:07:07Z",
+          "run_started_at": "2026-09-01T01:07:07Z",
+          "updated_at": "2026-09-01T01:21:57Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33452274176",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-31T23:49:15Z",
+        "run_started_at": "2026-08-31T23:49:15Z",
+        "updated_at": "2026-09-01T00:04:10Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-31T23:49:15Z",
+          "run_started_at": "2026-08-31T23:49:15Z",
+          "updated_at": "2026-09-01T00:04:10Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33443170929",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-31T21:48:11Z",
+        "run_started_at": "2026-08-31T21:48:11Z",
+        "updated_at": "2026-08-31T22:09:06Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-31T21:48:11Z",
+          "run_started_at": "2026-08-31T21:48:11Z",
+          "updated_at": "2026-08-31T22:09:07Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33378653042",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-31T09:38:13Z",
+        "run_started_at": "2026-08-31T09:38:13Z",
+        "updated_at": "2026-08-31T09:46:57Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-31T09:38:13Z",
+          "run_started_at": "2026-08-31T09:38:13Z",
+          "updated_at": "2026-08-31T09:46:57Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33378161803",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-31T09:32:13Z",
+        "run_started_at": "2026-08-31T09:32:13Z",
+        "updated_at": "2026-08-31T09:32:46Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-31T09:32:13Z",
+          "run_started_at": "2026-08-31T09:32:13Z",
+          "updated_at": "2026-08-31T09:32:46Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33341142223",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-30T23:11:15Z",
+        "run_started_at": "2026-08-30T23:11:15Z",
+        "updated_at": "2026-08-30T23:19:56Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T23:11:15Z",
+          "run_started_at": "2026-08-30T23:11:15Z",
+          "updated_at": "2026-08-30T23:19:56Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33339576885",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-30T22:35:51Z",
+        "run_started_at": "2026-08-30T22:35:51Z",
+        "updated_at": "2026-08-30T22:44:27Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T22:35:51Z",
+          "run_started_at": "2026-08-30T22:35:51Z",
+          "updated_at": "2026-08-30T22:44:27Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33334836187",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-30T20:52:11Z",
+        "run_started_at": "2026-08-30T20:52:11Z",
+        "updated_at": "2026-08-30T20:59:40Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T20:52:11Z",
+          "run_started_at": "2026-08-30T20:52:11Z",
+          "updated_at": "2026-08-30T20:59:40Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33332163852",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-30T19:54:37Z",
+        "run_started_at": "2026-08-30T19:54:37Z",
+        "updated_at": "2026-08-30T20:00:01Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T19:54:37Z",
+          "run_started_at": "2026-08-30T19:54:37Z",
+          "updated_at": "2026-08-30T20:00:01Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33329436200",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-30T18:55:36Z",
+        "run_started_at": "2026-08-30T18:55:36Z",
+        "updated_at": "2026-08-30T18:56:14Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T18:55:36Z",
+          "run_started_at": "2026-08-30T18:55:36Z",
+          "updated_at": "2026-08-30T18:56:14Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33295859860",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-30T05:59:05Z",
+        "run_started_at": "2026-08-30T05:59:05Z",
+        "updated_at": "2026-08-30T06:01:08Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T05:59:05Z",
+          "run_started_at": "2026-08-30T05:59:05Z",
+          "updated_at": "2026-08-30T06:01:08Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33295447501",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-30T05:47:06Z",
+        "run_started_at": "2026-08-30T05:47:06Z",
+        "updated_at": "2026-08-30T05:54:49Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T05:47:06Z",
+          "run_started_at": "2026-08-30T05:47:06Z",
+          "updated_at": "2026-08-30T05:54:50Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33294841371",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-30T05:30:22Z",
+        "run_started_at": "2026-08-30T05:30:22Z",
+        "updated_at": "2026-08-30T05:42:34Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T05:30:22Z",
+          "run_started_at": "2026-08-30T05:30:22Z",
+          "updated_at": "2026-08-30T05:42:34Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33293486341",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-30T04:53:31Z",
+        "run_started_at": "2026-08-30T04:53:31Z",
+        "updated_at": "2026-08-30T05:07:12Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T04:53:31Z",
+          "run_started_at": "2026-08-30T04:53:31Z",
+          "updated_at": "2026-08-30T05:07:12Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33291687516",
+      "header": {
+        "run_attempt": 2,
+        "created_at": "2026-08-30T04:04:51Z",
+        "run_started_at": "2026-08-30T04:18:21Z",
+        "updated_at": "2026-08-30T04:28:40Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T04:04:51Z",
+          "run_started_at": "2026-08-30T04:04:51Z",
+          "updated_at": "2026-08-30T04:15:49Z",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "run_attempt": 2,
+          "created_at": "2026-08-30T04:18:22Z",
+          "run_started_at": "2026-08-30T04:18:21Z",
+          "updated_at": "2026-08-30T04:28:40Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33285427578",
+      "header": {
+        "run_attempt": 2,
+        "created_at": "2026-08-30T01:20:02Z",
+        "run_started_at": "2026-08-30T02:46:38Z",
+        "updated_at": "2026-08-30T02:57:50Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T01:20:02Z",
+          "run_started_at": "2026-08-30T01:20:02Z",
+          "updated_at": "2026-08-30T01:30:34Z",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "run_attempt": 2,
+          "created_at": "2026-08-30T02:46:40Z",
+          "run_started_at": "2026-08-30T02:46:38Z",
+          "updated_at": "2026-08-30T02:57:50Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33285044832",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-30T01:10:10Z",
+        "run_started_at": "2026-08-30T01:10:10Z",
+        "updated_at": "2026-08-30T01:14:54Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-30T01:10:10Z",
+          "run_started_at": "2026-08-30T01:10:10Z",
+          "updated_at": "2026-08-30T01:14:55Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33280157122",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-29T23:05:46Z",
+        "run_started_at": "2026-08-29T23:05:46Z",
+        "updated_at": "2026-08-29T23:07:07Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-29T23:05:46Z",
+          "run_started_at": "2026-08-29T23:05:46Z",
+          "updated_at": "2026-08-29T23:07:07Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33273663456",
+      "header": {
+        "run_attempt": 4,
+        "created_at": "2026-08-29T20:30:28Z",
+        "run_started_at": "2026-08-29T22:48:08Z",
+        "updated_at": "2026-08-29T22:55:33Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-29T20:30:28Z",
+          "run_started_at": "2026-08-29T20:30:28Z",
+          "updated_at": "2026-08-29T20:34:57Z",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "run_attempt": 2,
+          "created_at": "2026-08-29T20:41:10Z",
+          "run_started_at": "2026-08-29T20:41:09Z",
+          "updated_at": "2026-08-29T20:46:08Z",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "run_attempt": 3,
+          "created_at": "2026-08-29T22:24:38Z",
+          "run_started_at": "2026-08-29T22:24:37Z",
+          "updated_at": "2026-08-29T22:29:18Z",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "run_attempt": 4,
+          "created_at": "2026-08-29T22:48:09Z",
+          "run_started_at": "2026-08-29T22:48:08Z",
+          "updated_at": "2026-08-29T22:55:34Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33270594613",
+      "header": {
+        "run_attempt": 2,
+        "created_at": "2026-08-29T19:19:53Z",
+        "run_started_at": "2026-08-29T20:14:39Z",
+        "updated_at": "2026-08-29T20:26:51Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-29T19:19:53Z",
+          "run_started_at": "2026-08-29T19:19:53Z",
+          "updated_at": "2026-08-29T19:29:55Z",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "run_attempt": 2,
+          "created_at": "2026-08-29T20:14:40Z",
+          "run_started_at": "2026-08-29T20:14:39Z",
+          "updated_at": "2026-08-29T20:26:52Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33249658717",
+      "header": {
+        "run_attempt": 2,
+        "created_at": "2026-08-29T11:14:30Z",
+        "run_started_at": "2026-08-29T11:21:51Z",
+        "updated_at": "2026-08-29T11:26:53Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-29T11:14:30Z",
+          "run_started_at": "2026-08-29T11:14:30Z",
+          "updated_at": "2026-08-29T11:19:29Z",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "run_attempt": 2,
+          "created_at": "2026-08-29T11:21:52Z",
+          "run_started_at": "2026-08-29T11:21:51Z",
+          "updated_at": "2026-08-29T11:26:53Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33247560046",
+      "header": {
+        "run_attempt": 3,
+        "created_at": "2026-08-29T10:19:34Z",
+        "run_started_at": "2026-08-29T10:59:39Z",
+        "updated_at": "2026-08-29T11:11:40Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-29T10:19:34Z",
+          "run_started_at": "2026-08-29T10:19:34Z",
+          "updated_at": "2026-08-29T10:29:18Z",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "run_attempt": 2,
+          "created_at": "2026-08-29T10:37:15Z",
+          "run_started_at": "2026-08-29T10:37:15Z",
+          "updated_at": "2026-08-29T10:48:39Z",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "run_attempt": 3,
+          "created_at": "2026-08-29T10:59:40Z",
+          "run_started_at": "2026-08-29T10:59:39Z",
+          "updated_at": "2026-08-29T11:11:40Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "33245703102",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-29T09:31:46Z",
+        "run_started_at": "2026-08-29T09:31:46Z",
+        "updated_at": "2026-08-29T09:37:18Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-29T09:31:46Z",
+          "run_started_at": "2026-08-29T09:31:46Z",
+          "updated_at": "2026-08-29T09:37:18Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "32714587431",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-24T10:01:01Z",
+        "run_started_at": "2026-08-24T10:01:01Z",
+        "updated_at": "2026-08-24T10:04:56Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-24T10:01:01Z",
+          "run_started_at": "2026-08-24T10:01:01Z",
+          "updated_at": "2026-08-24T10:04:56Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "32710898554",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-24T09:19:30Z",
+        "run_started_at": "2026-08-24T09:19:30Z",
+        "updated_at": "2026-08-24T09:25:47Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-24T09:19:31Z",
+          "run_started_at": "2026-08-24T09:19:30Z",
+          "updated_at": "2026-08-24T09:25:47Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "32691004805",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-24T04:42:22Z",
+        "run_started_at": "2026-08-24T04:42:22Z",
+        "updated_at": "2026-08-24T04:46:11Z",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-24T04:42:22Z",
+          "run_started_at": "2026-08-24T04:42:22Z",
+          "updated_at": "2026-08-24T04:46:11Z",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "observedRunId": "32681509785",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-24T01:58:39Z",
+        "run_started_at": "2026-08-24T01:58:39Z",
+        "updated_at": "2026-08-24T02:08:27Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-24T01:58:39Z",
+          "run_started_at": "2026-08-24T01:58:39Z",
+          "updated_at": "2026-08-24T02:08:28Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "32672938287",
+      "header": {
+        "run_attempt": 2,
+        "created_at": "2026-08-23T23:12:40Z",
+        "run_started_at": "2026-08-23T23:21:08Z",
+        "updated_at": "2026-08-23T23:31:39Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-23T23:12:40Z",
+          "run_started_at": "2026-08-23T23:12:40Z",
+          "updated_at": "2026-08-23T23:16:12Z",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "run_attempt": 2,
+          "created_at": "2026-08-23T23:21:09Z",
+          "run_started_at": "2026-08-23T23:21:08Z",
+          "updated_at": "2026-08-23T23:31:39Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "32438083627",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-21T01:56:51Z",
+        "run_started_at": "2026-08-21T01:56:51Z",
+        "updated_at": "2026-08-21T02:00:53Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-21T01:56:51Z",
+          "run_started_at": "2026-08-21T01:56:51Z",
+          "updated_at": "2026-08-21T02:00:54Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "32438082645",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-21T01:56:50Z",
+        "run_started_at": "2026-08-21T01:56:50Z",
+        "updated_at": "2026-08-21T01:59:13Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-21T01:56:50Z",
+          "run_started_at": "2026-08-21T01:56:50Z",
+          "updated_at": "2026-08-21T01:59:13Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "32438081550",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-21T01:56:49Z",
+        "run_started_at": "2026-08-21T01:56:49Z",
+        "updated_at": "2026-08-21T01:58:04Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-21T01:56:49Z",
+          "run_started_at": "2026-08-21T01:56:49Z",
+          "updated_at": "2026-08-21T01:58:04Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "observedRunId": "32438080567",
+      "header": {
+        "run_attempt": 1,
+        "created_at": "2026-08-21T01:56:48Z",
+        "run_started_at": "2026-08-21T01:56:48Z",
+        "updated_at": "2026-08-21T01:57:46Z",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "attempts": [
+        {
+          "run_attempt": 1,
+          "created_at": "2026-08-21T01:56:48Z",
+          "run_started_at": "2026-08-21T01:56:48Z",
+          "updated_at": "2026-08-21T01:57:46Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ]
+}

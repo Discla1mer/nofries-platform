@@ -1,0 +1,54 @@
+{
+  "name": "No Fries Redesign Tokens",
+  "description": "Trailhead-inspired token set for the No Fries web app and landing page.",
+  "color": {
+    "blue950": "#061B2B",
+    "blue900": "#08273E",
+    "blue800": "#0B2E4A",
+    "blue700": "#0C5964",
+    "blue600": "#0176D3",
+    "blue500": "#0B8FD3",
+    "blue300": "#74C6F7",
+    "blue200": "#BFE6FF",
+    "blue100": "#DDF2FF",
+    "blue050": "#F3F9FF",
+    "cream100": "#FFF9E8",
+    "cream200": "#F9F4DF",
+    "fryYellow": "#FFD13B",
+    "fryGold": "#FFC72C",
+    "packetRed": "#E84045",
+    "red700": "#B83238",
+    "green700": "#2E844A",
+    "green100": "#EFFAF3",
+    "orange600": "#FE9339",
+    "orange100": "#FFF2E6",
+    "ink": "#102A43",
+    "muted": "#567187",
+    "line": "#D7E7F3",
+    "lineStrong": "#BFD4E6",
+    "white": "#FFFFFF"
+  },
+  "font": {
+    "sans": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Arial, sans-serif",
+    "display": "ui-rounded, Aptos Display, Segoe UI, Inter, system-ui, sans-serif",
+    "serifLogoFallback": "Georgia, Times New Roman, serif"
+  },
+  "radius": {
+    "sm": "12px",
+    "md": "18px",
+    "lg": "28px",
+    "xl": "38px",
+    "pill": "999px"
+  },
+  "shadow": {
+    "sm": "0 4px 18px rgba(8, 39, 62, .08)",
+    "md": "0 18px 60px rgba(8, 39, 62, .14)",
+    "blue": "0 18px 52px rgba(1, 118, 211, .22)"
+  },
+  "status": {
+    "ready": { "background": "#EFFAF3", "text": "#2E844A" },
+    "needsScope": { "background": "#FFF2E6", "text": "#A85400" },
+    "blocker": { "background": "#FFF0F1", "text": "#B83238" },
+    "draft": { "background": "#F3F9FF", "text": "#0C5964" }
+  }
+}

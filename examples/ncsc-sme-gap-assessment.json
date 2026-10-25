@@ -1,0 +1,183 @@
+{
+  "assessmentId": "synthetic-ncsc-gap-001",
+  "organisationId": "synthetic-harbour-services",
+  "title": "Harbour Services (synthetic) foundational cyber-security baseline",
+  "profileId": "nz-ncsc-mcss-2025-v3-sme",
+  "profileVersion": "2026-08-31.1",
+  "assessedAt": "2026-08-31T22:00:00.000Z",
+  "nextReviewAt": "2026-11-30T22:00:00.000Z",
+  "scope": {
+    "statement": "Synthetic assessment of the business-critical cloud identity, email, finance SaaS, managed laptops, public website and backup arrangements.",
+    "minimumStandardsScopeRationale": "The screen prioritises the listed business-critical and externally facing systems. Supplier-managed controls are considered only where the synthetic organisation could reasonably observe or govern them.",
+    "inScopeSystems": [
+      "Cloud identity and email",
+      "Managed laptops",
+      "Finance SaaS",
+      "Public website",
+      "Backup service"
+    ],
+    "exclusions": [
+      "Operational technology",
+      "Personal home networks",
+      "Supplier internal infrastructure"
+    ],
+    "sampledSystems": [
+      "Two synthetic endpoint records",
+      "Synthetic identity policy export",
+      "Synthetic backup and restore record"
+    ],
+    "notes": "Demonstration data only. No real customer, credential, configuration or evidence is represented."
+  },
+  "responses": {
+    "NF-NCSC-MCSS-RM-01": {
+      "response": "partial",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceSummary": "Cyber actions exist in an IT backlog but are not part of the business risk register.",
+      "businessImpact": "high",
+      "action": "Add the top five cyber risks to the business risk register with treatment, owner and review date.",
+      "owner": "Synthetic IT lead",
+      "dueDate": "2026-09-30",
+      "riskDecision": "treat"
+    },
+    "NF-NCSC-MCSS-SA-01": {
+      "response": "yes",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceRefs": [
+        "synthetic:training-completion-2026"
+      ],
+      "evidenceSummary": "Onboarding and annual training records were sampled.",
+      "businessImpact": "medium",
+      "owner": "Synthetic operations lead",
+      "riskDecision": "open"
+    },
+    "NF-NCSC-MCSS-AI-01": {
+      "response": "partial",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceRefs": [
+        "synthetic:endpoint-inventory-export"
+      ],
+      "evidenceSummary": "Endpoints are inventoried; SaaS, data ownership and end-of-support dates are incomplete.",
+      "businessImpact": "high",
+      "action": "Create a single inventory of critical systems, SaaS, data, suppliers, owners and support dates.",
+      "owner": "Synthetic IT lead",
+      "dueDate": "2026-10-15",
+      "riskDecision": "treat"
+    },
+    "NF-NCSC-MCSS-SC-01": {
+      "response": "partial",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceRefs": [
+        "synthetic:configuration-exception-register"
+      ],
+      "evidenceSummary": "A laptop baseline is described, but SaaS configuration and drift review are not evidenced.",
+      "businessImpact": "medium",
+      "owner": "Synthetic IT lead",
+      "dueDate": "2026-11-30",
+      "residualRisk": "Configuration drift outside managed laptops may remain undetected during the current quarter.",
+      "riskDecision": "treat"
+    },
+    "NF-NCSC-MCSS-PA-01": {
+      "response": "yes",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceRefs": [
+        "synthetic:patch-compliance-2026-08"
+      ],
+      "evidenceSummary": "Covered laptops are current and sampled exceptions have owners.",
+      "businessImpact": "high",
+      "owner": "Synthetic MSP",
+      "riskDecision": "open"
+    },
+    "NF-NCSC-MCSS-MF-01": {
+      "response": "yes",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceRefs": [
+        "synthetic:mfa-policy-export"
+      ],
+      "evidenceSummary": "MFA and privileged-user policy coverage were reviewed for the in-scope identity platform.",
+      "businessImpact": "critical",
+      "owner": "Synthetic IT lead",
+      "riskDecision": "open"
+    },
+    "NF-NCSC-MCSS-DU-01": {
+      "response": "partial",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceSummary": "Identity alerts exist, but coverage and alert-to-response evidence are incomplete.",
+      "businessImpact": "high",
+      "action": "Route high-risk identity, email and endpoint alerts to a named queue and record response outcomes.",
+      "owner": "Synthetic MSP",
+      "dueDate": "2026-09-30",
+      "riskDecision": "treat"
+    },
+    "NF-NCSC-MCSS-LP-01": {
+      "response": "partial",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceRefs": [
+        "synthetic:privileged-role-export"
+      ],
+      "evidenceSummary": "Privileged roles were reviewed, but a recurring access review is not scheduled.",
+      "businessImpact": "medium",
+      "owner": "Synthetic IT lead",
+      "dueDate": "2026-10-31",
+      "riskDecision": "treat"
+    },
+    "NF-NCSC-MCSS-DR-01": {
+      "response": "partial",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceRefs": [
+        "synthetic:backup-job-report",
+        "synthetic:restore-sample-2026-07"
+      ],
+      "evidenceSummary": "Backup jobs and one file restore were observed; finance SaaS recovery is not tested.",
+      "businessImpact": "high",
+      "action": "Test restoration of finance data, shared files and one mailbox against agreed recovery needs.",
+      "owner": "Synthetic IT lead",
+      "dueDate": "2026-09-30",
+      "riskDecision": "treat"
+    },
+    "NF-NCSC-MCSS-RP-01": {
+      "response": "no",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceSummary": "A contact list exists, but there is no approved first-hour plan or recent exercise.",
+      "businessImpact": "high",
+      "action": "Create a one-page first-hour incident guide and run a 45-minute account-takeover tabletop.",
+      "owner": "Synthetic business sponsor",
+      "dueDate": "2026-09-30",
+      "riskDecision": "treat"
+    },
+    "NF-NCSC-CC-PM-01": {
+      "response": "no",
+      "evidenceAssurance": "not_provided",
+      "businessImpact": "high",
+      "action": "Select an organisation-managed password manager and migrate shared finance and administrator credentials.",
+      "owner": "Synthetic operations lead",
+      "dueDate": "2026-09-30",
+      "riskDecision": "treat"
+    },
+    "NF-NCSC-CC-SV-01": {
+      "response": "partial",
+      "evidenceAssurance": "customer_asserted",
+      "evidenceSummary": "Finance checks payment-detail changes, but helpdesk identity and MFA-reset checks are informal.",
+      "businessImpact": "critical",
+      "action": "Add out-of-band checks for payment-detail, password-reset, MFA-reset and sensitive-data requests.",
+      "owner": "Synthetic operations lead",
+      "dueDate": "2026-09-30",
+      "riskDecision": "treat"
+    },
+    "NF-NCSC-CC-AC-01": {
+      "response": "unknown",
+      "evidenceAssurance": "not_provided",
+      "businessImpact": "high",
+      "action": "Confirm current script, macro and application controls, then pilot monitored enforcement on finance devices.",
+      "owner": "Synthetic MSP",
+      "dueDate": "2026-10-31",
+      "riskDecision": "open"
+    },
+    "NF-NCSC-CC-NS-01": {
+      "response": "not_applicable",
+      "evidenceAssurance": "not_provided",
+      "businessImpact": "low",
+      "applicabilityRationale": "No organisation-managed office network or site LAN is in scope; personal home networks are excluded and the in-scope services are supplier-managed SaaS.",
+      "riskDecision": "open"
+    }
+  }
+}

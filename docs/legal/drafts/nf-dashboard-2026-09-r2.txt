@@ -1,0 +1,140 @@
+No Fries Production Dashboard Agreement
+Version: nf-dashboard-2026-09-r2
+
+IMPORTANT LIABILITY NOTICE
+
+Clause 12 limits civil liability, including contractual privacy and confidentiality claims where lawful. The proposed aggregate cap is three months of affected dashboard fees for paid access, or NZ$100 for complimentary access, for each contract year. Specified commercial losses are excluded. Clause 12 also contains conditional business-to-business statutory exclusions. Read these provisions before accepting; you may ask to negotiate them or obtain independent legal advice. Mandatory rights and regulatory powers remain unaffected.
+
+1. Parties and agreement
+
+This agreement is between No Fries Limited ("No Fries", "we", "us") and the organisation identified to its authorised representative before acceptance ("Customer", "you"). It covers the No Fries dashboard at nofries.nz. An individual accepts for the Customer only if authorised to bind that organisation. A user without that authority must ask an authorised representative to complete the organisation's agreement.
+
+The Customer acquires the dashboard for business purposes. No Fries Limited is the supplier and contracting party; its representatives act for the company and give no personal guarantee or separate personal contractual undertaking merely by negotiating, signing or administering this agreement. This does not exclude any personal liability imposed by law.
+
+Your order or access schedule must identify the organisation, included product and modules, permitted use, users or user allowance, effective dates, any usage limits and the agreed price, including whether access is complimentary. It must be available to the authorised representative before acceptance. We will not charge for a subscription, convert complimentary access to paid access or purchase services for you without your separate express agreement to the relevant price and scope. The dashboard agreement does not itself authorise payment.
+
+A schedule expressly agreed by both parties prevails over these standard terms only for the provisions it specifically varies. Mandatory legal rights prevail over both. Marketing, previews and roadmap descriptions do not add services to the agreed scope.
+
+2. Dashboard service
+
+We give the Customer a non-exclusive right, during its agreed access period, to use its authorised organisation workspace for its internal IT and cyber planning and governance. The initial available core consists of account access, the agreed assessment, saving and resuming answers, and viewing results. Additional modules or capabilities are included only when expressly agreed and enabled.
+
+Dashboard access is independent of any purchase of managed IT, connectivity, cloud services or third-party tools. It does not include helpdesk support, monitoring, MDR, incident response, remediation, human advisory, audits, certification, licences, provider access or administration of your IT environment. Each such service requires a separate agreement and authority.
+
+Assessments and results depend on your inputs and the identified framework and scoring version. They are decision-support material, not independent verification, a compliance opinion, certification, or a guarantee that an incident will not occur. You remain responsible for decisions about your organisation and for obtaining professional advice where needed. These limitations do not remove our obligation to perform the agreed service with reasonable care and skill.
+
+3. Accounts and organisation authority
+
+Every user must use their own approved identity and the required authentication controls. Do not share accounts, bypass controls, impersonate another person, access another organisation without permission or introduce unlawful or malicious material.
+
+The Customer must identify authorised administrators and promptly tell us when access should change or end. Administrators may manage only the organisation and permissions assigned to them. A membership, invitation, job title, email domain or recorded terms acceptance does not by itself confer authority to bind an organisation, buy a service or access another organisation.
+
+Acceptance and application access are separate. Access starts only when identity, organisation membership, product scope and the relevant readiness checks are satisfied. Revoking access does not erase the historical agreement or its acceptance record.
+
+4. Customer information and confidentiality
+
+You retain your rights in information you supply. You authorise us to process that information only as reasonably necessary to provide, secure, support and recover the agreed dashboard, comply with law and handle related disputes. You must have authority to supply the information and give any notices required to the people concerned.
+
+Use only the information needed for the assessment. Do not enter passwords, authentication tokens, recovery codes, raw security configurations or information outside the agreed data scope. File uploads and external connections require their own enabled and authorised capability.
+
+Each party will protect the other's confidential information using reasonable safeguards and restrict access to people and service providers who need it for the agreed purpose and are subject to appropriate confidentiality obligations. This does not prevent disclosures required by law, disclosures authorised by the other party, or use of information already lawfully public or independently obtained.
+
+We do not acquire ownership of Customer information or a right to sell it. We will not use it to train a general-purpose AI model without a separately agreed lawful arrangement. Customer access to another service or an integration does not authorise us to copy information from that service.
+
+5. Privacy and service providers
+
+We collect account identity and contact details, organisation and permission records, assessment information, agreement acceptance and limited security and operational records for the purposes in clause 4. Required identity and access information is necessary to provide a secure account; if it is not supplied, we may be unable to provide access.
+
+No Fries Limited is the contact for questions about this processing, requests for access or correction, and complaints: hello@nofries.nz. We will verify a requester's identity and authority and handle requests in accordance with applicable law. The Customer remains responsible for its own collection and use of personal information; each party remains responsible for the privacy obligations that apply to it.
+
+Before onboarding, we will make available the applicable privacy notice and service-provider information, including the relevant hosting locations, overseas processing and any optional AI processing. Suppliers may process information only within the agreed purposes and appropriate safeguards. This agreement does not authorise undisclosed overseas processing or a materially new data purpose.
+
+We will maintain reasonable security safeguards and respond to privacy and security incidents affecting the service. We will notify the Customer and relevant people or authorities when required by law, without undue delay. No statement in these terms guarantees that the service is immune to every incident.
+
+6. Optional AI assistance
+
+The manual assessment and deterministic results do not require AI. Where an AI feature is separately enabled within the agreed scope, it may explain questions and propose answers or narrative. AI output may be inaccurate and must be reviewed.
+
+A proposed answer becomes your recorded answer only through your explicit confirmation and the normal authorised save process. AI cannot accept this agreement, establish identity, grant access, make a commercial commitment, change a canonical score independently, or perform an external action merely because it generated a suggestion.
+
+7. Availability, support and changes
+
+We will use reasonable care and skill to operate and maintain the agreed dashboard and address reported faults. You may report dashboard access or functionality problems to hello@nofries.nz. There is no guaranteed response time, uptime percentage or recovery time unless an expressly agreed service schedule sets one.
+
+We may make compatible improvements, maintenance and security changes. We will give reasonable notice of planned material interruption where practicable. We will not use an upgrade to erase your retained assessments, accounts or agreement history. Your obligation to maintain source records does not excuse our agreed data protection and recovery obligations.
+
+A materially adverse change to contracted scope, charges, data purposes or legal terms requires advance notice and the applicable express agreement. We will give at least 30 days' notice of a proposed material change unless an urgent legal or security requirement prevents that notice. Continued use alone will not be recorded as express acceptance of replacement terms. If you do not agree, you may end the affected service before the change takes effect and receive a refund of prepaid fees for the unused affected period.
+
+8. Fees and access period
+
+Only the fees and payment dates expressly agreed in your schedule apply. Amounts and GST treatment must be stated there. Complimentary access has no automatic paid renewal. A new paid period or additional service requires an agreed price and scope.
+
+If a payment is overdue, we will give written notice and a reasonable opportunity of at least 14 days to resolve it before suspending for non-payment. We will consider a genuine dispute raised promptly and in good faith. We will not impose an unagreed penalty.
+
+Unless an expressly agreed schedule provides otherwise, either party may end the dashboard service on 30 days' written notice. We will refund prepaid dashboard fees for the unused period after termination takes effect. Ending dashboard access does not automatically end a separately contracted managed or advisory service.
+
+9. Suspension and termination
+
+We may restrict the minimum necessary access immediately where reasonably needed to contain a credible security risk, unlawful use or unauthorised access. We will explain the reason as soon as it is safe and lawful, provide a way to resolve it and restore access when the reason is addressed.
+
+Either party may terminate for a material breach that remains unresolved 14 days after written notice describing the breach, or immediately where the breach cannot reasonably be remedied. Termination does not cancel rights or obligations already accrued.
+
+On exit, we will provide a reasonable opportunity for an authorised representative to obtain the Customer's retained assessment information in a commonly readable form. Where self-service export is unavailable, the request can be made to hello@nofries.nz. Access revocation and data deletion are distinct actions.
+
+10. Retention and deletion
+
+Our default retention schedule is:
+- assessment responses, actions and evidence metadata: the active relationship plus 12 months after verified customer exit or product closure;
+- evidence bytes and attachments, if separately enabled: the active relationship plus 90 days after verified exit or evidence replacement;
+- issued reports, approvals and agreement decision proof, including the acceptance record: seven years from issue or decision;
+- security and audit events: 13 months from the event;
+- operational diagnostic logs: 30 days;
+- temporary exports: a 24-hour target and seven-day maximum;
+- backups: a rolling 35 days.
+
+These periods are policy defaults, not a claim that every record has a statutory seven-year retention requirement. We will retain personal information only for a lawful purpose and only as long as necessary. A lawful shorter arrangement or a specific statutory duty, dispute or documented legal hold may change the applicable period. We minimise personal fields in long-lived decision proof.
+
+Deletion requests are checked for identity, organisation authority, record class and applicable obligations. Records due for deletion are removed from primary and derivative systems within 30 days of a validated deletion trigger, subject to lawful exceptions; backups expire on their normal rolling schedule. We will explain material exceptions. If a restore reintroduces information already due for deletion, deletion controls must be reapplied before restored service is released.
+
+11. Intellectual property
+
+No Fries and its licensors retain rights in the application, reusable methods, framework implementations and templates. The Customer may use its assessment results and permitted exports internally and share them with its professional advisers and intended business recipients, preserving their limitations and relevant third-party attribution.
+
+This does not transfer ownership of the software, grant a right to resell the dashboard or permit unlawful copying. Nothing restricts rights that cannot lawfully be restricted. Customer-provided material remains the Customer's or its licensors' material.
+
+12. Responsibility, exclusions and liability limits
+
+12.1 Each party is responsible for loss legally recoverable from it, subject to this clause, and must take reasonable steps to mitigate avoidable loss. These provisions apply only to the extent permitted by law. They do not promise immunity from claims or regulatory action.
+
+12.2 Neither party is liable to the other for loss of profit, revenue, anticipated savings, business opportunity or goodwill, or for business interruption, whether those losses are direct or indirect, nor for any other indirect or consequential loss arising out of or in connection with this agreement. Subject to the cap below, reasonable direct costs of restoring Customer information lost because of our breach are not excluded solely because they concern data. The Customer should retain its source information; that responsibility does not remove our agreed safeguards or recovery duties.
+
+12.3 Each party's total aggregate civil liability to the other arising out of or in connection with this agreement for events first occurring in a contract year is limited as follows:
+(a) For a paid dashboard service: the fees, excluding GST, paid or payable for the affected dashboard service attributable to the three calendar months immediately preceding the first event giving rise to a claim in that contract year. If the paid service has operated for less than three months, use three months at its agreed recurring rate immediately before that event. Allocate annual or other prepaid recurring fees proportionately; do not count the entire prepayment. Exclude fees for separately contracted managed, advisory or other services.
+(b) Where the affected access is complimentary when that event first occurs: NZ$100 in total. A subsequent move to paid access does not retrospectively increase that cap for the same event.
+A contract year is each successive 12-month period beginning on the Customer's service commencement date. All claims arising from the same or related acts, omissions or events are treated as one event first occurring when the earliest of them occurred. A continuing event does not renew the cap each year. Multiple allegations, legal grounds, users, modules or claimants claiming through the Customer do not multiply the applicable aggregate cap. Unrelated events first occurring in a later contract year are subject to that later year's aggregate cap. Where several dashboard services are affected in the same year, their applicable three-month fee amounts are combined once; the complimentary-access allowance is a single NZ$100 amount for that year, not an amount per free user or module. An agreed scope covering multiple organisations must identify the contracting Customer; this clause does not purport to bind non-parties.
+
+12.4 The exclusions and cap apply whether a claim is framed in contract, tort (including negligence), misrepresentation, breach of statutory duty or otherwise, but only where that claim may lawfully be excluded or limited. They include claims between the parties for breach of contractual confidentiality, privacy, security and data-handling obligations. They do not restrict an individual's independent statutory rights or the powers of a regulator. This agreement gives no additional indemnity unless the parties expressly agree one in a separate written schedule that also specifies its liability treatment.
+
+12.5 The exclusions and cap do not apply to a party's fraud or deliberate misconduct, liability that cannot lawfully be excluded or limited, the Customer's obligation to pay agreed fees, or our obligation to return prepaid fees expressly refundable under clauses 7 or 8. Ordinary negligence or an accidental confidentiality or privacy breach does not by itself create a further contractual exception to the cap. No other clause silently creates an unlimited damages obligation.
+
+12.6 Business-to-business statutory exclusions. Where both parties are in trade, the dashboard is supplied and acquired in trade for business purposes, this agreement is in writing, and all statutory requirements (including that it is fair and reasonable to be bound) are met:
+(a) the parties agree, under section 43 of the Consumer Guarantees Act 1993, that its provisions will not apply to the supply under this agreement; and
+(b) under section 5D of the Fair Trading Act 1986, the parties agree that sections 9, 12A and 13 of that Act will not apply to dealings between them relating to that supply.
+These exclusions operate only within the scope lawfully permitted by those sections. They do not exclude the rest of the Fair Trading Act, restrict Commerce Commission enforcement, or exclude rights of a consumer or other person where the statutory conditions are not met. If an exclusion is unavailable, the relevant statutory rights remain. Accepting this agreement does not conclusively establish that an exclusion is fair and reasonable. The parties may discuss scope, price and risk allocation before acceptance and each may obtain independent legal advice; no representation is made that either has actually negotiated terms or obtained that advice.
+
+12.7 The limited dashboard scope, agreed charges and risk allocation are relevant to these provisions, but do not automatically establish their enforceability. A separately negotiated change to this clause must identify the affected service and replacement liability allocation in writing. If a provision is unenforceable, it does not remove mandatory rights or invalidate the remaining provisions to the extent they can lawfully operate independently.
+
+13. Disputes, notices and governing law
+
+Contact hello@nofries.nz with a complaint or dispute. Each party will nominate a representative and try in good faith to resolve it promptly. If unresolved after 20 business days, either may propose mediation by agreement. Neither party is prevented from seeking urgent relief, using a statutory complaint process or bringing proceedings.
+
+Notices to No Fries go to hello@nofries.nz; notices to the Customer go to its nominated contact. A party must keep its notice details current. New Zealand law governs this agreement, and the parties submit to the non-exclusive jurisdiction of the New Zealand courts.
+
+14. Explicit acceptance and retained copy
+
+Before acceptance, the authorised representative must be shown the Customer organisation, applicable schedule and this exact agreement version. The representative must deliberately select the acceptance control; it must not be preselected. Signing in, viewing a page, receiving an invitation, using AI or an operator's action is not acceptance.
+
+We retain an acceptance record identifying the verified accepting user, organisation, exact agreement version and text digest, and server-recorded acceptance time. We preserve the corresponding exact agreement text so the record can be understood later. A retry must not manufacture a new acceptance or overwrite historical terms. We will make a copy of the accepted terms and the Customer's acceptance record available to an authorised representative.
+
+No Fries staff, automated agents and AI assistants may not accept on a Customer's behalf. The representative's acceptance does not create additional product permissions or authorise third-party purchases.
+

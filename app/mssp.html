@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>No Fries | Sales</title>
+    <meta name="description" content="Private No Fries sales workspace for customer discovery, service planning and proposals.">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" sizes="any" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="stylesheet" href="/assets/mssp.css">
+</head>
+<body data-page="sales-workspace" class="app-loading">
+    <header class="app-header">
+        <a class="brand" href="/operator" aria-label="No Fries staff workspace">
+            <img src="/images/nofrieslogo.png" width="44" height="44" alt="No Fries logo">
+            <span>
+                <strong>No Fries</strong>
+                <small>Sales</small>
+            </span>
+        </a>
+        <div class="workspace-identity" id="workspaceIdentity" hidden>
+            <span class="tenant-name" id="tenantName"></span>
+            <span class="role-badge" id="roleBadge"></span>
+            <span class="user-name" id="userName"></span>
+            <span class="save-indicator" id="saveIndicator" aria-live="polite"></span>
+        </div>
+        <nav class="header-actions" aria-label="Private workspace navigation">
+            <a href="/operator">Work</a>
+            <a href="/scoping" aria-current="page">Sales</a>
+            <a href="/support">Service desk</a>
+            <form class="sign-out-form" action="/api/auth/logout" method="post">
+                <input type="hidden" name="returnTo" value="/">
+                <button class="sign-out-button" type="submit">Sign out</button>
+            </form>
+        </nav>
+    </header>
+
+    <div class="workspace-layout">
+        <aside class="app-sidebar" id="appSidebar" hidden>
+            <nav aria-label="Workspace navigation">
+                <button type="button" class="nav-item is-active" data-view="overview">
+                    <span aria-hidden="true">⌂</span>
+                    <span>Overview</span>
+                </button>
+                <button type="button" class="nav-item" data-view="customers">
+                    <span aria-hidden="true">◎</span>
+                    <span>Customers</span>
+                </button>
+                <button type="button" class="nav-item" data-view="discovery">
+                    <span aria-hidden="true">✓</span>
+                    <span>Service review</span>
+                </button>
+                <button type="button" class="nav-item" data-view="recommendations">
+                    <span aria-hidden="true">◇</span>
+                    <span>Service plan</span>
+                </button>
+                <button type="button" class="nav-item" data-view="proposals">
+                    <span aria-hidden="true">▤</span>
+                    <span>Proposals</span>
+                </button>
+                <button type="button" class="nav-item" data-view="catalogue">
+                    <span aria-hidden="true">▦</span>
+                    <span>Service catalogue</span>
+                </button>
+                <button type="button" class="nav-item" data-view="admin">
+                    <span aria-hidden="true">⚙</span>
+                    <span>Administration</span>
+                </button>
+            </nav>
+            <section class="sidebar-boundary" aria-label="Data boundary reminder">
+                <strong>Private sales workspace</strong>
+                <p>Use for approved customer reviews, service plans and proposals. Never enter passwords, access tokens, recovery codes or raw security settings.</p>
+            </section>
+        </aside>
+
+        <main class="app-main" id="appMain">
+            <section class="loading-panel" id="loadingPanel" aria-live="polite">
+                <div class="loading-mark" aria-hidden="true"></div>
+                <p class="eyebrow">Protected workspace</p>
+                <h1 id="loadingHeading">Opening Sales</h1>
+                <p id="loadingMessage">No Fries is checking your Microsoft identity and loading customer discovery, service plans and proposals.</p>
+                <p class="loading-status" id="loadingStatus" role="status">This can take a few seconds after the secure service has been idle.</p>
+                <div class="startup-fallback" aria-live="polite">
+                    <strong>Still waiting?</strong>
+                    <p>The workspace startup did not complete. Diagnostic: <code>startup_watchdog</code>.</p>
+                    <p><a href="/scoping">Retry</a> or <a href="/api/auth/login?returnTo=%2Fscoping">sign in again</a>.</p>
+                </div>
+            </section>
+            <div id="viewRoot" hidden></div>
+        </main>
+    </div>
+
+    <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+
+    <dialog class="app-dialog" id="appDialog" aria-labelledby="dialogTitle">
+        <div class="dialog-shell">
+            <div class="dialog-header">
+                <div>
+                    <p class="eyebrow" id="dialogEyebrow">Workspace action</p>
+                    <h2 id="dialogTitle">Action</h2>
+                </div>
+                <button class="icon-button" type="button" data-action="close-dialog" aria-label="Close dialog">×</button>
+            </div>
+            <div id="dialogBody"></div>
+        </div>
+    </dialog>
+    <!-- SCOPING_RUNTIME -->
+</body>
+</html>

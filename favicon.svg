@@ -1,0 +1,7 @@
+<!-- TODO: replace with real logo asset before launch. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="No Fries placeholder icon">
+  <rect width="64" height="64" rx="12" fill="#111111"/>
+  <circle cx="46" cy="18" r="10" fill="#ffd400"/>
+  <path d="M14 46V18h8l16 18V18h10v28h-8L24 28v18z" fill="#ffffff"/>
+  <path d="M14 52h36" stroke="#e11118" stroke-width="5" stroke-linecap="round"/>
+</svg>

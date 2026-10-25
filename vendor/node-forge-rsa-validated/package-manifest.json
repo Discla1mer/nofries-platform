@@ -1,0 +1,17 @@
+{
+  "name": "@nofries/node-forge-rsa-validated",
+  "version": "1.4.0-nofries.1",
+  "private": true,
+  "description": "Private Node-only node-forge 1.4.0 backport of proposed RSA DigestInfo validation fixes",
+  "main": "lib/index.js",
+  "license": "(BSD-3-Clause OR GPL-2.0)",
+  "engines": { "node": ">=22.22.0" },
+  "files": ["lib", "LICENSE", "README.md", "PROVENANCE.json"],
+  "nofriesBackport": {
+    "upstream": "node-forge@1.4.0",
+    "advisory": "GHSA-86w9-cpqp-85rv",
+    "proposal": "https://github.com/digitalbazaar/forge/pull/1157",
+    "sourceCommit": "683ab3344899cc08a581e4d5675a33e87aff7b04",
+    "status": "private backport; upstream proposal remains unmerged"
+  }
+}

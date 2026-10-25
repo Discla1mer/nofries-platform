@@ -1,0 +1,22 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" rx="0" fill="#F3F9FF"/>
+  <path d="M94 165C152 79 286 96 325 200C397 183 479 238 486 324H22C3 252 37 180 94 165Z" fill="#DDF2FF"/>
+  <path d="M854 416C908 347 1024 353 1061 451C1128 438 1200 491 1200 570H761C747 501 794 426 854 416Z" fill="#DDF2FF" opacity=".9"/>
+  <rect x="92" y="82" width="1016" height="466" rx="46" fill="#FFFFFF" stroke="#BFE6FF" stroke-width="3"/>
+  <g transform="translate(140 127) scale(.68)">
+    <circle cx="256" cy="225" r="166" fill="#FFF9E8" stroke="#E23E46" stroke-width="38"/>
+    <path d="M126 90L396 360" stroke="#E23E46" stroke-width="38" stroke-linecap="round"/>
+    <g stroke="#0C5964" stroke-width="14" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M166 210L197 384C201 408 311 408 316 384L348 210C350 199 341 190 330 193C281 207 232 207 183 193C172 190 163 199 166 210Z" fill="#E84045"/>
+      <path d="M189 184L209 94H246L239 186" fill="#FFD13B"/>
+      <path d="M233 186L249 77H288L277 188" fill="#FFD13B"/>
+      <path d="M276 186L298 91H336L313 192" fill="#FFD13B"/>
+      <path d="M183 193C230 218 283 218 331 193" stroke="#FFD13B" stroke-width="12"/>
+    </g>
+  </g>
+  <text x="510" y="225" font-family="Arial, sans-serif" font-size="74" font-weight="900" fill="#0B2E4A">No Fries</text>
+  <text x="514" y="295" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0C5964">MSSP account planning workspace</text>
+  <text x="514" y="356" font-family="Arial, sans-serif" font-size="30" fill="#35556B">Customer records, gaps, services, opportunities, outputs.</text>
+  <rect x="514" y="415" width="214" height="62" rx="31" fill="#0176D3"/>
+  <text x="621" y="456" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="800" fill="white">Open workspace</text>
+</svg>

@@ -1,0 +1,16 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">No Fries logo mark</title>
+  <desc id="desc">A simplified no sign over a fries packet, inspired by the No Fries logo.</desc>
+  <rect width="512" height="512" rx="108" fill="#F9F4DF"/>
+  <circle cx="256" cy="225" r="166" fill="#FFF9E8" stroke="#E23E46" stroke-width="38"/>
+  <path d="M126 90L396 360" stroke="#E23E46" stroke-width="38" stroke-linecap="round"/>
+  <g stroke="#0C5964" stroke-width="14" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M166 210L197 384C201 408 311 408 316 384L348 210C350 199 341 190 330 193C281 207 232 207 183 193C172 190 163 199 166 210Z" fill="#E84045"/>
+    <path d="M189 184L209 94H246L239 186" fill="#FFD13B"/>
+    <path d="M233 186L249 77H288L277 188" fill="#FFD13B"/>
+    <path d="M276 186L298 91H336L313 192" fill="#FFD13B"/>
+    <path d="M183 193C230 218 283 218 331 193" stroke="#FFD13B" stroke-width="12"/>
+  </g>
+  <rect x="90" y="405" width="332" height="64" rx="24" fill="#0C5964"/>
+  <text x="256" y="449" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="36" font-weight="900" fill="#FFF9E8" letter-spacing="1.5">NO FRIES</text>
+</svg>

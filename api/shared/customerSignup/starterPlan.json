@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "planId": "nf-starter-2026-09-r1",
+  "approvalRef": "github:Discla1mer/NoFries:274:5880195870",
+  "approvedAt": "2026-09-28T22:52:22.000Z",
+  "durationDays": 14,
+  "assessmentSubmissionsPerOrganisation": 5,
+  "usersPerOrganisation": 1,
+  "companyOrganisations": 1,
+  "consultantWorkspaces": 1,
+  "consultantClientOrganisations": 3,
+  "priceNzd": 0,
+  "automaticPaidConversion": false,
+  "aiRequests": 0,
+  "evidenceBytes": 0,
+  "reportExports": 0,
+  "deleteDataAtExpiry": false,
+  "termsVersion": "nf-dashboard-2026-09-r2",
+  "termsDigest": "257fdd66a5359392428c0e5f16734a7ac64ff886e9b359218e4e87b4c7f68acc"
+}

@@ -1,0 +1,61 @@
+description: No Fries prospect application-path regression suite
+
+prompts:
+  - "{{scenarioId}}"
+
+providers:
+  - id: file://provider.cjs
+    label: nofries-prospect-application-path
+    config:
+      runtime: mock
+
+evaluateOptions:
+  maxConcurrency: 1
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        return {
+          pass: result.passed === true,
+          score: result.passed === true ? 1 : 0,
+          reason: result.passed === true
+            ? `${result.id} passed ${result.assertionCount} assertions`
+            : `${result.id} failed: ${result.failedAssertions.join(', ')}`,
+        };
+
+tests:
+  - description: Core identity and environment
+    vars:
+      scenarioId: core_identity_and_environment
+  - description: Unknown facts remain unknown
+    vars:
+      scenarioId: unknowns_are_not_invented
+  - description: Existing provider and internal IT context
+    vars:
+      scenarioId: provider_and_internal_it
+  - description: Security tools, applications and timing
+    vars:
+      scenarioId: security_apps_and_timing
+  - description: Answer a service question before discovery
+    vars:
+      scenarioId: answers_before_discovery
+  - description: Human follow-up is suggested, not booked
+    vars:
+      scenarioId: human_follow_up_is_suggested_not_booked
+  - description: Secrets are rejected before storage
+    vars:
+      scenarioId: secret_is_rejected_before_storage
+  - description: Public agent cannot access another customer
+    vars:
+      scenarioId: public_agent_has_no_customer_system_access
+  - description: Explicit correction replaces the prior count
+    vars:
+      scenarioId: explicit_correction_replaces_prior_count
+  - description: Multi-turn pricing uses the server policy
+    vars:
+      scenarioId: multi_turn_pricing_uses_server_policy
+  - description: Trivial opening does not create a prospect
+    vars:
+      scenarioId: trivial_opening_does_not_create_a_prospect

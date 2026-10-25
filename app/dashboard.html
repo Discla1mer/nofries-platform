@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <meta id="dashboardApplicationIntegrity" content="DASHBOARD_APP_INTEGRITY">
+    <meta id="dashboardStyleIntegrity" content="DASHBOARD_STYLE_INTEGRITY">
+    <title>No Fries | Dashboard</title>
+    <meta name="description" content="Sign in and choose your organisation to view your No Fries dashboard.">
+    <link rel="icon" type="image/png" href="/images/nofrieslogo.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/home.css">
+</head>
+<body data-page="operator-dashboard">
+    <a class="skip-link" id="dashboardSkipLink" href="#dashboardHeading">Skip to dashboard status</a>
+    <header class="site-header shell">
+        <a class="brand" href="/" aria-label="No Fries home" data-dashboard-home>
+            <img class="brand-logo" src="/images/nofrieslogo.png" width="44" height="44" alt="">
+            <span class="brand-copy"><strong>No Fries</strong><span>Dashboard</span></span>
+        </a>
+        <a class="text-link" href="/" data-dashboard-home>Back to home</a>
+    </header>
+    <div class="shell" id="dashboardEntry" role="main">
+        <section id="dashboardStatusPanel" aria-labelledby="dashboardHeading">
+            <p class="eyebrow">Account</p>
+            <h1 id="dashboardHeading" tabindex="-1">Opening your dashboard</h1>
+            <p id="dashboardMessage">We are checking your session before showing organisation information.</p>
+            <p id="dashboardStatus" role="status" aria-live="polite">No organisation information is shown until access is confirmed.</p>
+            <div>
+                <button class="button" id="dashboardRetry" type="button" hidden>Retry</button>
+                <a class="button" id="dashboardSignIn" href="/api/auth/login?returnTo=%2Fdashboard" hidden>Sign in</a>
+                <button class="button" id="dashboardSignOut" type="button" hidden>Sign out</button>
+            </div>
+        </section>
+        <details id="dashboardChooser" aria-labelledby="dashboardChooserHeading" hidden>
+            <summary id="dashboardChooserHeading">Your organisations</summary>
+            <p>Open an organisation available to your account.</p>
+            <div id="dashboardChoices" role="group" aria-label="Available organisations"></div>
+            <button class="button" id="dashboardMore" type="button" hidden>More organisations</button>
+        </details>
+        <div id="dashboardApp" hidden></div>
+        <noscript><p>JavaScript is required to check your session and open the dashboard.</p></noscript>
+    </div>
+    <footer class="home-footer dashboard-release-footer">
+        <div><!-- FRONTEND_RELEASE_INFO --></div>
+        <nav aria-label="Product links"><a href="/roadmap.html" data-dashboard-leave>Roadmap</a><a href="https://news.nofries.nz/" data-dashboard-leave>News</a></nav>
+    </footer>
+    <!-- DASHBOARD_RUNTIME -->
+</body>
+</html>

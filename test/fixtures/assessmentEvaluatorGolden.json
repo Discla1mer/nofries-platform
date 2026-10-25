@@ -1,0 +1,153 @@
+{
+  "literalOutputSha256": "20fb6f22d39b7d0ce4050237b079d9285565843ba9935d0d252ab7f9b3f95867",
+  "prod003ExampleA": {
+    "countsCompletion": {
+      "totalAtoms": 14,
+      "applicableAtoms": 13,
+      "approvedNotApplicableAtoms": 1,
+      "claimedNotApplicableAtoms": 0,
+      "yes": 3,
+      "partial": 7,
+      "no": 2,
+      "unknown": 1,
+      "directUnknown": 1,
+      "missing": 0,
+      "completionNumerator": 12,
+      "completionDenominator": 13,
+      "completionStatus": "provisional",
+      "completionPercentTenths": 923,
+      "completionDisplay": "92.3%"
+    },
+    "attainment": {
+      "status": "scored",
+      "creditUnitScale": 2,
+      "lowerCreditUnits": 13,
+      "upperCreditUnits": 15,
+      "denominatorWeight": 13,
+      "lowerPercentTenths": 500,
+      "upperPercentTenths": 577,
+      "lowerDisplay": "50.0%",
+      "upperDisplay": "57.7%"
+    }
+  },
+  "weightedAggregation": {
+    "countsCompletion": {
+      "totalAtoms": 4,
+      "applicableAtoms": 4,
+      "approvedNotApplicableAtoms": 0,
+      "claimedNotApplicableAtoms": 0,
+      "yes": 1,
+      "partial": 1,
+      "no": 1,
+      "unknown": 1,
+      "directUnknown": 1,
+      "missing": 0,
+      "completionNumerator": 3,
+      "completionDenominator": 4,
+      "completionStatus": "provisional",
+      "completionPercentTenths": 750,
+      "completionDisplay": "75.0%"
+    },
+    "attainment": {
+      "status": "scored",
+      "creditUnitScale": 2,
+      "lowerCreditUnits": 5,
+      "upperCreditUnits": 13,
+      "denominatorWeight": 10,
+      "lowerPercentTenths": 250,
+      "upperPercentTenths": 650,
+      "lowerDisplay": "25.0%",
+      "upperDisplay": "65.0%"
+    }
+  },
+  "prod003ExampleB": {
+    "countsCompletion": {
+      "totalAtoms": 4,
+      "applicableAtoms": 3,
+      "approvedNotApplicableAtoms": 1,
+      "claimedNotApplicableAtoms": 0,
+      "yes": 1,
+      "partial": 1,
+      "no": 0,
+      "unknown": 1,
+      "directUnknown": 0,
+      "missing": 1,
+      "completionNumerator": 2,
+      "completionDenominator": 3,
+      "completionStatus": "provisional",
+      "completionPercentTenths": 667,
+      "completionDisplay": "66.7%"
+    },
+    "attainment": {
+      "status": "scored",
+      "creditUnitScale": 2,
+      "lowerCreditUnits": 3,
+      "upperCreditUnits": 5,
+      "denominatorWeight": 3,
+      "lowerPercentTenths": 500,
+      "upperPercentTenths": 833,
+      "lowerDisplay": "50.0%",
+      "upperDisplay": "83.3%"
+    }
+  },
+  "prod003ExampleCPending": {
+    "countsCompletion": {
+      "totalAtoms": 12,
+      "applicableAtoms": 12,
+      "approvedNotApplicableAtoms": 0,
+      "claimedNotApplicableAtoms": 2,
+      "yes": 6,
+      "partial": 2,
+      "no": 2,
+      "unknown": 2,
+      "directUnknown": 0,
+      "missing": 0,
+      "completionNumerator": 10,
+      "completionDenominator": 12,
+      "completionStatus": "provisional",
+      "completionPercentTenths": 833,
+      "completionDisplay": "83.3%"
+    },
+    "attainment": {
+      "status": "scored",
+      "creditUnitScale": 2,
+      "lowerCreditUnits": 14,
+      "upperCreditUnits": 18,
+      "denominatorWeight": 12,
+      "lowerPercentTenths": 583,
+      "upperPercentTenths": 750,
+      "lowerDisplay": "58.3%",
+      "upperDisplay": "75.0%"
+    }
+  },
+  "prod003ExampleCApproved": {
+    "countsCompletion": {
+      "totalAtoms": 12,
+      "applicableAtoms": 10,
+      "approvedNotApplicableAtoms": 2,
+      "claimedNotApplicableAtoms": 0,
+      "yes": 6,
+      "partial": 2,
+      "no": 2,
+      "unknown": 0,
+      "directUnknown": 0,
+      "missing": 0,
+      "completionNumerator": 10,
+      "completionDenominator": 10,
+      "completionStatus": "complete",
+      "completionPercentTenths": 1000,
+      "completionDisplay": "100.0%"
+    },
+    "attainment": {
+      "status": "scored",
+      "creditUnitScale": 2,
+      "lowerCreditUnits": 14,
+      "upperCreditUnits": 14,
+      "denominatorWeight": 10,
+      "lowerPercentTenths": 700,
+      "upperPercentTenths": 700,
+      "lowerDisplay": "70.0%",
+      "upperDisplay": "70.0%"
+    }
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "exceptions": [
+    {
+      "id": "DEP-EXC-001-QS",
+      "status": "accepted",
+      "scope": "build-only",
+      "trackingId": "DEP-001",
+      "severity": "moderate",
+      "advisoryIds": [
+        "GHSA-4MJR-XMP4-GH2G",
+        "GHSA-X5FP-WJ9C-MXMX"
+      ],
+      "surfaces": [
+        "root-all"
+      ],
+      "package": "qs",
+      "version": "6.15.2",
+      "nodePaths": [
+        "node_modules/qs"
+      ],
+      "reachability": "Inherited dependency debt in the unchanged protected-main closure; no new dependency path is accepted by this exception.",
+      "mitigations": [
+        "High or Critical severity always blocks",
+        "Any advisory, version, package, node path or surface change invalidates this exception"
+      ],
+      "affectedCapabilities": [
+        "Express query parsing"
+      ],
+      "owner": "Discla1mer",
+      "acceptedAt": "2026-09-04T00:00:00Z",
+      "expiresAt": "2026-09-07T03:04:54Z",
+      "targetMilestone": "First-Customer Security Gate",
+      "promotionConditions": [
+        "Severity becomes High or Critical",
+        "Dependency path or installed version changes",
+        "Exposure or request limits change"
+      ],
+      "sourceUrls": [
+        "https://github.com/advisories/GHSA-4mjr-xmp4-gh2g",
+        "https://github.com/advisories/GHSA-x5fp-wj9c-mxmx"
+      ]
+    },
+    {
+      "id": "DEP-EXC-001-BODY-PARSER",
+      "status": "accepted",
+      "scope": "build-only",
+      "trackingId": "DEP-001",
+      "severity": "moderate",
+      "advisoryIds": [
+        "GHSA-4MJR-XMP4-GH2G",
+        "GHSA-X5FP-WJ9C-MXMX"
+      ],
+      "surfaces": [
+        "root-all"
+      ],
+      "package": "body-parser",
+      "version": "1.20.6",
+      "nodePaths": [
+        "node_modules/body-parser"
+      ],
+      "reachability": "Transitive inherited finding caused only by the accepted qs closure; no new dependency path is accepted.",
+      "mitigations": [
+        "High or Critical severity always blocks",
+        "Any advisory, version, package, node path or surface change invalidates this exception"
+      ],
+      "affectedCapabilities": [
+        "Express request parsing"
+      ],
+      "owner": "Discla1mer",
+      "acceptedAt": "2026-09-04T00:00:00Z",
+      "expiresAt": "2026-09-07T03:04:54Z",
+      "targetMilestone": "First-Customer Security Gate",
+      "promotionConditions": [
+        "Severity becomes High or Critical",
+        "Dependency path or installed version changes",
+        "Exposure or request limits change"
+      ],
+      "sourceUrls": [
+        "https://github.com/advisories/GHSA-4mjr-xmp4-gh2g",
+        "https://github.com/advisories/GHSA-x5fp-wj9c-mxmx"
+      ]
+    },
+    {
+      "id": "DEP-EXC-001-EXPRESS",
+      "status": "accepted",
+      "scope": "build-only",
+      "trackingId": "DEP-001",
+      "severity": "moderate",
+      "advisoryIds": [
+        "GHSA-4MJR-XMP4-GH2G",
+        "GHSA-X5FP-WJ9C-MXMX"
+      ],
+      "surfaces": [
+        "root-all"
+      ],
+      "package": "express",
+      "version": "4.22.2",
+      "nodePaths": [
+        "node_modules/express"
+      ],
+      "reachability": "Direct inherited finding caused only by the accepted qs closure; no new dependency path is accepted.",
+      "mitigations": [
+        "High or Critical severity always blocks",
+        "Any advisory, version, package, node path or surface change invalidates this exception"
+      ],
+      "affectedCapabilities": [
+        "Express request routing"
+      ],
+      "owner": "Discla1mer",
+      "acceptedAt": "2026-09-04T00:00:00Z",
+      "expiresAt": "2026-09-07T03:04:54Z",
+      "targetMilestone": "First-Customer Security Gate",
+      "promotionConditions": [
+        "Severity becomes High or Critical",
+        "Dependency path or installed version changes",
+        "Exposure or request limits change"
+      ],
+      "sourceUrls": [
+        "https://github.com/advisories/GHSA-4mjr-xmp4-gh2g",
+        "https://github.com/advisories/GHSA-x5fp-wj9c-mxmx"
+      ]
+    }
+  ]
+}
