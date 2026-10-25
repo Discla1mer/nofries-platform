@@ -157,8 +157,32 @@ const server = http.createServer((req, res) => {
             await page.keyboard.press('Enter'); await page.keyboard.press('Tab');
             assert.equal(await page.evaluate(() => document.activeElement.id), 'dashboardSignOut');
             phase = width + ':focus-revalidation';
+            const mountedMain = await page.locator('.dashboard-main').elementHandle();
+            const signOut = await page.locator('#dashboardSignOut').elementHandle();
+            const refreshPaths = [];
+            const refreshResponses = [];
+            const refreshed = page.waitForResponse(response => {
+                const pathname = new URL(response.url()).pathname;
+                if (!['/api/dashboard/session', '/api/dashboard/organisations', '/api/dashboard/bootstrap'].includes(pathname)) return false;
+                assert.equal(response.request().method(), 'GET');
+                assert.equal(response.status(), 200);
+                refreshPaths.push(pathname);
+                refreshResponses.push(response);
+                return pathname === '/api/dashboard/session' && refreshPaths.filter(value => value === pathname).length === 2;
+            });
             await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-            await page.waitForFunction(() => document.body.dataset.dashboardState === 'ready' && document.activeElement.id === 'dashboardHeading');
+            await refreshed;
+            await Promise.all(refreshResponses.map(response => response.finished()));
+            // Let the final response's client continuation settle. A quiet,
+            // unchanged access check must retain the mounted view and focus.
+            await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            assert.deepEqual(refreshPaths.sort(), ['/api/dashboard/bootstrap', '/api/dashboard/organisations', '/api/dashboard/session', '/api/dashboard/session']);
+            assert.equal(await page.evaluate(() => document.body.dataset.dashboardState), 'ready');
+            assert.equal(await page.evaluate(() => document.activeElement.id), 'dashboardSignOut');
+            assert.equal(await signOut.evaluate(node => node === document.activeElement), true);
+            assert.equal(await mountedMain.evaluate(node => node === document.querySelector('.dashboard-main')), true);
+            await signOut.dispose();
+            await mountedMain.dispose();
             phase = width + ':expiry-focus';
             expired = true;
             await page.evaluate(() => window.dispatchEvent(new Event('focus')));
