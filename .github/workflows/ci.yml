@@ -21,7 +21,6 @@ jobs:
       PROMPTFOO_DISABLE_TELEMETRY: '1'
       PROMPTFOO_DISABLE_UPDATE: '1'
       PROMPTFOO_DISABLE_SHARE_EMAIL_REQUEST: '1'
-      PROMPTFOO_CONFIG_DIR: ${{ runner.temp }}/promptfoo
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -38,6 +37,8 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional --audit=false
       - run: npm run verify
       - run: npm run eval:prospect:promptfoo
+        env:
+          PROMPTFOO_CONFIG_DIR: ${{ runner.temp }}/promptfoo
       - name: Build runtime package and verify install closure
         run: |
           npm run build:app-service

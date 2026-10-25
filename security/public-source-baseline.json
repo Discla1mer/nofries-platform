@@ -5,7 +5,7 @@
   "files": {
     ".env.example": "5efea28e14bf9aaef2546b24a1ee7a85433d469d85078b4fc6386de866611f43",
     ".github/actions/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    ".github/workflows/ci.yml": "dc5207b483bf1fb11070ba4ac1b0ac131f266af6be4c4f68f4e5873c770aaf75",
+    ".github/workflows/ci.yml": "f6abeb1daf69c8b4f8ea200bf7efa0d188dc8bb82ee8b36451d918155ca4e015",
     ".gitignore": "a79c100a2fc76caebb07e778731489d9d2cfa1c1f077549ccf81586168113f72",
     ".well-known/security.txt": "55122b800b0b68f0ecb622a97727a38ce84ea10376a5c112650709de29eb1d9f",
     "404.html": "47c5c47fc5a38cd10d4f8ae612c1179c9160278f409bfe6d7ee5e825f58affb8",
