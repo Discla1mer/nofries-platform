@@ -43,6 +43,7 @@ function followUp(dom) {
     const follow = dom.root.querySelector('.picture-follow-up');
     return { follow, filter: follow.querySelector('select'), categories: follow.children.filter(node => node.tagName === 'DETAILS') };
 }
+function metricReviews(dom) { return dom.root.querySelector('.picture-metrics').querySelectorAll('button'); }
 
 test('connected view preserves golden server range, uncertainty and distinct evidence/completion', async () => {
     const dom = setup(); await flush();
@@ -188,6 +189,12 @@ test('zero reported gaps are explicit and do not imply substantiated evidence or
         ['Unresolved answers · 0', 'Reported implementation gaps · 0', 'Supporting-evidence gaps · 14']);
     assert.match(categories[1].textContent, /does not establish control effectiveness/);
     assert.match(categories[2].textContent, /confidence is not assessed/);
+    const metrics = dom.root.querySelector('.picture-metrics').children;
+    assert.equal(metrics[0].querySelector('button'), null);
+    assert.equal(metrics[1].querySelector('button'), null);
+    assert.match(metrics[0].textContent, /No reported implementation gaps in this saved assessment/);
+    assert.match(metrics[1].textContent, /No unresolved answers in this saved assessment/);
+    assert.deepEqual(metricReviews(dom).map(button => button.textContent), ['Review supporting-evidence gaps']);
     dom.controller.destroy();
 });
 
@@ -226,7 +233,7 @@ test('legacy Board options cannot expose another presentation mode or navigation
     assert.equal(dom.root.querySelector('.picture-follow-up-filter').querySelectorAll('select').length, 1);
     assert.equal(dom.root.querySelector('label').textContent, 'Saved assessment');
     assert.deepEqual(dom.root.querySelectorAll('button').map(button => button.textContent),
-        ['Refresh', 'Review supporting-evidence gaps', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
+        ['Refresh', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Review supporting-evidence gaps', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
     assert.equal(opened, 0);
 });
 
@@ -246,6 +253,13 @@ for (const [kind, record, label] of [
     const opened = [];
     const dom = setup({ records: [record], options: { openCyber: id => opened.push(id) } }); await flush();
     assert.deepEqual(opened, []);
+    if (kind === 'draft') {
+        const resume = dom.root.querySelector('.picture-resume');
+        assert.ok(dom.root.children.indexOf(resume) < dom.root.children.indexOf(dom.root.querySelector('.picture-toolbar')));
+        assert.equal(resume.querySelector('progress').value, record.progress.answered);
+        assert.equal(resume.querySelector('progress').max, record.progress.total);
+        assert.ok(resume.textContent.includes(record.scopePopulation.description));
+    }
     click(dom, label);
     assert.deepEqual(opened, [record.assessmentId]);
     assert.equal(dom.root.querySelectorAll('input').length, 0);
@@ -594,28 +608,84 @@ for (const target of ['control', 'toolbar', 'follow-up']) test(`a detached ${tar
     dom.controller.destroy();
 });
 
-test('supporting-evidence review is a native keyboard action that opens and focuses the existing filtered category', async () => {
+test('metric review actions reveal all matching items and focus the correct native category without changing saved totals', async () => {
     const record = mixed(); let reads = 0, lists = 0, writes = 0;
     const client = { list: async () => { lists++; return { assessments: [record], nextAfterAssessmentId: null }; },
         read: async () => { reads++; return { assessment: record }; },
         create: () => writes++, save: () => writes++, submit: () => writes++ };
     const dom = setup({ client }); await flush();
-    const { filter, categories } = followUp(dom), category = categories[2], summary = category.querySelector('summary');
-    change(filter, dom.fixtures.metadata.domains[0].id);
+    const { follow, filter, categories } = followUp(dom);
     const metricText = dom.root.querySelector('.picture-metrics').textContent;
-    const questionIds = category.querySelectorAll('article').filter(article => !article.hidden)
-        .map(article => article.getAttribute('data-question-id'));
-    const control = dom.root.querySelectorAll('button').find(button => button.textContent === 'Review supporting-evidence gaps');
-    assert.ok(control); assert.equal(control.tagName, 'BUTTON'); assert.equal(control.type, 'button');
-    assert.equal(control.getAttribute('aria-controls'), category.id);
-    control.focus(); assert.equal(dom.document.activeElement, control);
-    control.click();
-    assert.equal(category.open, true); assert.equal(dom.document.activeElement, summary);
-    assert.equal(filter.value, dom.fixtures.metadata.domains[0].id);
-    assert.deepEqual(category.querySelectorAll('article').filter(article => !article.hidden)
-        .map(article => article.getAttribute('data-question-id')), questionIds);
-    assert.equal(dom.root.querySelector('.picture-metrics').textContent, metricText);
+    const questionIds = categories.map(category => category.querySelectorAll('article').map(article => article.getAttribute('data-question-id')));
+    const actions = metricReviews(dom);
+    assert.deepEqual(actions.map(control => control.textContent),
+        ['Review 9 implementation gaps', 'Review 2 unresolved answers', 'Review supporting-evidence gaps']);
+    let changeEvents = 0; filter.addEventListener('change', () => changeEvents++);
+    for (const [index, categoryIndex] of [[0, 1], [1, 0], [2, 2]]) {
+        const control = actions[index], category = categories[categoryIndex];
+        assert.equal(control.parentElement.querySelector('h3').textContent,
+            ['Reported implementation', 'Resolved answers', 'Supporting evidence'][index]);
+        assert.equal(control.tagName, 'BUTTON'); assert.equal(control.type, 'button');
+        assert.equal(control.classList.contains('dashboard-button-secondary'), true);
+        assert.equal(control.getAttribute('aria-controls'), category.id);
+        change(filter, 'guide-govern'); categories.forEach(item => { item.open = false; });
+        const eventsBefore = changeEvents;
+        assert.ok(follow.querySelectorAll('article').some(article => article.hidden));
+        control.focus(); control.click();
+        assert.deepEqual(categories.map(item => item.open), categories.map((_, i) => i === categoryIndex));
+        assert.equal(dom.document.activeElement, category.querySelector('summary'));
+        assert.equal(filter.value, ''); assert.equal(changeEvents, eventsBefore);
+        assert.equal(follow.querySelector('.picture-follow-up-status').textContent, 'Showing all functions.');
+        assert.deepEqual(categories.map(item => item.querySelectorAll('article').filter(article => !article.hidden)
+            .map(article => article.getAttribute('data-question-id'))), questionIds);
+        assert.ok(categories.every(item => item.querySelector('.picture-follow-up-empty').hidden));
+        assert.deepEqual(categories.map(item => item.querySelector('summary').textContent),
+            ['Unresolved answers · 2', 'Reported implementation gaps · 9', 'Supporting-evidence gaps · 14']);
+        assert.equal(dom.root.querySelector('.picture-metrics').textContent, metricText);
+    }
     assert.equal(lists, 1); assert.equal(reads, 1); assert.equal(writes, 0); dom.controller.destroy();
+});
+
+for (const target of ['control', 'category', 'filter', 'toolbar', 'follow-up']) test(`detached metric-review ${target} cannot reset filters or move focus`, async () => {
+    const dom = setup(); await flush(); const { follow, filter, categories } = followUp(dom);
+    const reviews = metricReviews(dom); change(filter, 'guide-govern');
+    const text = follow.textContent, visibility = follow.querySelectorAll('article').map(article => article.hidden);
+    const elsewhere = dom.document.createElement('button'); elsewhere.focus();
+    if (target === 'control') reviews.forEach(control => control.remove());
+    else if (target === 'category') categories.forEach(category => category.remove());
+    else if (target === 'filter') filter.remove();
+    else if (target === 'toolbar') filter.parentElement.remove();
+    else follow.remove();
+    reviews.forEach(control => control.click());
+    assert.equal(filter.value, 'guide-govern'); assert.equal(dom.document.activeElement, elsewhere);
+    assert.ok(categories.every(category => !category.open));
+    if (target !== 'category' && target !== 'toolbar' && target !== 'filter') assert.equal(follow.textContent, text);
+    assert.deepEqual(categories.flatMap(category => category.querySelectorAll('article').map(article => article.hidden)), visibility);
+    dom.controller.destroy();
+});
+
+for (const transition of ['refresh', 'selection', 'remount']) test(`old metric-review controls rebound after ${transition} cannot act on either saved result`, async () => {
+    const first = mixed(), second = buildFixtures().tenants[0].assessments.find(record => record.status === 'submitted');
+    let reads = 0, lists = 0;
+    const client = { list: async () => { lists++; return { assessments: [first, second], nextAfterAssessmentId: null }; },
+        read: async assessmentId => { reads++; return { assessment: assessmentId === first.assessmentId ? first : second }; } };
+    const dom = setup({ client, options: { initialAssessmentId: first.assessmentId } }); await flush();
+    const old = followUp(dom), oldMetrics = dom.root.querySelector('.picture-metrics'), reviews = metricReviews(dom);
+    change(old.filter, 'guide-govern'); const oldText = old.follow.textContent;
+    if (transition === 'refresh') click(dom, 'Refresh');
+    else if (transition === 'selection') change(dom.root.querySelector('.picture-toolbar').querySelector('select'), second.assessmentId);
+    else dom.controller = picture.mount(dom.root, { ...dom.options, initialAssessmentId: second.assessmentId });
+    await flush();
+    const current = followUp(dom), currentText = current.follow.textContent;
+    // Reattaching old controls and their targets must not defeat epoch/source binding.
+    dom.root.append(oldMetrics, old.follow);
+    const elsewhere = dom.document.createElement('button'); elsewhere.focus();
+    const requests = [lists, reads]; reviews.forEach(control => control.click());
+    assert.equal(old.filter.value, 'guide-govern'); assert.equal(old.follow.textContent, oldText);
+    assert.equal(current.filter.value, ''); assert.equal(current.follow.textContent, currentText);
+    assert.ok([...old.categories, ...current.categories].every(category => !category.open));
+    assert.equal(dom.document.activeElement, elsewhere); assert.deepEqual([lists, reads], requests);
+    dom.controller.destroy();
 });
 
 function expectedImprovementSelection(record) {
@@ -664,20 +734,18 @@ test('draft, unavailable results and incomplete revision bindings do not expose 
     }
 });
 
-test('refresh and destruction retire both saved-result actions before any late response can restore them', async () => {
+test('refresh and destruction retire saved-result actions before any late response can restore them', async () => {
     const record = mixed(), opened = []; let release;
     const client = { list: async () => ({ assessments: [record], nextAfterAssessmentId: null }),
         read: async () => ({ assessment: record }) };
     const dom = setup({ client, options: { openImprovement: value => opened.push(value) } }); await flush();
-    const oldPlan = planButton(dom), oldReview = dom.root.querySelectorAll('button')
-        .find(button => button.textContent === 'Review supporting-evidence gaps');
-    const oldCategory = followUp(dom).categories[2];
+    const oldPlan = planButton(dom), oldReviews = metricReviews(dom), oldCategories = followUp(dom).categories;
     client.list = () => new Promise(done => { release = done; });
-    click(dom, 'Refresh'); oldPlan.click(); oldReview.click();
-    assert.deepEqual(opened, []); assert.notEqual(oldCategory.open, true);
-    dom.controller.destroy(); oldPlan.click(); oldReview.click();
+    click(dom, 'Refresh'); oldPlan.click(); oldReviews.forEach(control => control.click());
+    assert.deepEqual(opened, []); assert.ok(oldCategories.every(category => !category.open));
+    dom.controller.destroy(); oldPlan.click(); oldReviews.forEach(control => control.click());
     release({ assessments: [record], nextAfterAssessmentId: null }); await flush();
-    assert.deepEqual(opened, []); assert.equal(dom.root.textContent, ''); assert.notEqual(oldCategory.open, true);
+    assert.deepEqual(opened, []); assert.equal(dom.root.textContent, ''); assert.ok(oldCategories.every(category => !category.open));
 });
 
 test('a late unselected submission cannot replace the current planning source or revive its old controls', async () => {
@@ -694,17 +762,17 @@ test('a late unselected submission cannot replace the current planning source or
     current.click(); assert.deepEqual(opened, [expectedImprovementSelection(second)]); dom.controller.destroy();
 });
 
-test('denial and detached result controls cannot open a plan or change the evidence category', async () => {
+test('denial and detached result controls cannot open a plan or change follow-up categories', async () => {
     for (const stop of ['denial', 'detached']) {
         const record = mixed(), opened = []; let denied = false;
         const client = { list: async () => ({ assessments: [record], nextAfterAssessmentId: null }),
             read: async () => { if (denied) throw { statusCode: 403 }; return { assessment: record }; } };
         const dom = setup({ client, options: { openImprovement: value => opened.push(value) } }); await flush();
-        const oldPlan = planButton(dom), oldReview = dom.root.querySelectorAll('button')
-            .find(button => button.textContent === 'Review supporting-evidence gaps'), category = followUp(dom).categories[2];
+        const oldPlan = planButton(dom), oldReviews = metricReviews(dom), categories = followUp(dom).categories;
         if (stop === 'denial') { denied = true; click(dom, 'Refresh'); await flush(); }
-        else { oldPlan.remove(); oldReview.remove(); }
-        oldPlan.click(); oldReview.click(); assert.deepEqual(opened, []); assert.notEqual(category.open, true);
+        else { oldPlan.remove(); oldReviews.forEach(control => control.remove()); }
+        oldPlan.click(); oldReviews.forEach(control => control.click());
+        assert.deepEqual(opened, []); assert.ok(categories.every(category => !category.open));
         if (stop === 'denial') assert.match(dom.root.textContent, /unavailable/);
         dom.controller.destroy();
     }

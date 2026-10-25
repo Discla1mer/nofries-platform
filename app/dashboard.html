@@ -28,15 +28,37 @@
             <h1 id="dashboardHeading" tabindex="-1">Opening your dashboard</h1>
             <p id="dashboardMessage">We are checking your session before showing organisation information.</p>
             <p id="dashboardStatus" role="status" aria-live="polite">No organisation information is shown until access is confirmed.</p>
-            <div>
+            <div class="dashboard-recovery-actions">
                 <button class="button" id="dashboardRetry" type="button" hidden>Retry</button>
                 <a class="button" id="dashboardSignIn" href="/api/auth/login?returnTo=%2Fdashboard" hidden>Sign in</a>
-                <button class="button" id="dashboardSignOut" type="button" hidden>Sign out</button>
             </div>
+            <details class="dashboard-account-menu" id="dashboardAccountMenu" hidden>
+                <summary>Account</summary>
+                <div class="dashboard-account-actions" id="dashboardAccountActions">
+                    <button class="button" id="dashboardSignOut" type="button" hidden>Sign out</button>
+                </div>
+            </details>
         </section>
         <details id="dashboardChooser" aria-labelledby="dashboardChooserHeading" hidden>
             <summary id="dashboardChooserHeading">Your organisations</summary>
             <p>Open an organisation available to your account.</p>
+            <div id="dashboardOrganisationSearchControls" class="organisation-search" hidden>
+                <label for="dashboardOrganisationSearch">Find an organisation</label>
+                <div class="organisation-search-input">
+                    <input id="dashboardOrganisationSearch" type="search" placeholder="Search by organisation name" autocomplete="off" aria-controls="dashboardChoices" aria-describedby="dashboardOrganisationCount">
+                    <button id="dashboardOrganisationClear" type="button" hidden>Clear filters</button>
+                </div>
+                <div class="organisation-status-filter">
+                    <label for="dashboardOrganisationStatus">Organisation status</label>
+                    <select id="dashboardOrganisationStatus" aria-controls="dashboardChoices" aria-describedby="dashboardOrganisationCount">
+                        <option value="all">All organisations</option>
+                        <option value="ready">Setup complete</option>
+                        <option value="setup">Setup in progress</option>
+                    </select>
+                </div>
+                <p id="dashboardOrganisationCount" role="status" aria-atomic="true"></p>
+                <p id="dashboardOrganisationEmpty" hidden>No loaded organisations match these filters. Clear filters or load more organisations.</p>
+            </div>
             <div id="dashboardChoices" role="group" aria-label="Available organisations"></div>
             <button class="button" id="dashboardMore" type="button" hidden>More organisations</button>
         </details>

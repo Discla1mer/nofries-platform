@@ -24,6 +24,15 @@
     const elements = {};
     Object.keys(ids).forEach(function (key) { elements[key] = document.getElementById(ids[key]); });
     if (Object.keys(elements).some(function (key) { return !elements[key]; })) return;
+    const accountMenu = document.getElementById('dashboardAccountMenu');
+    const accountActions = document.getElementById('dashboardAccountActions');
+    const directorySearch = document.getElementById('dashboardOrganisationSearch');
+    const directoryStatus = document.getElementById('dashboardOrganisationStatus');
+    const directorySearchControls = document.getElementById('dashboardOrganisationSearchControls');
+    const directoryClear = document.getElementById('dashboardOrganisationClear');
+    const directoryCount = document.getElementById('dashboardOrganisationCount');
+    const directoryEmpty = document.getElementById('dashboardOrganisationEmpty');
+    const hasDirectorySearch = directorySearch && directorySearchControls && directoryClear && directoryCount && directoryEmpty;
 
     const skipLink = document.getElementById('dashboardSkipLink');
     if (skipLink) skipLink.addEventListener('click', function (event) {
@@ -41,6 +50,53 @@
     // An abandoned fetch is not evidence that its server command was cancelled.
     // Retain one immutable command until an acknowledgement or definite denial.
     let unresolved = null;
+    if (hasDirectorySearch) {
+        directorySearch.addEventListener('input', function () {
+            if (!active || !current(active) || active.authorityPending || active.session?.accountType !== 'consultant') return;
+            active.directorySearch = directorySearch.value;
+            filterDirectory(active);
+        });
+        if (directoryStatus) directoryStatus.addEventListener('change', function () {
+            if (!active || !current(active) || active.authorityPending || active.session?.accountType !== 'consultant') return;
+            active.directoryStatus = ['ready', 'setup'].includes(directoryStatus.value) ? directoryStatus.value : 'all';
+            filterDirectory(active);
+        });
+        directoryClear.addEventListener('click', function () {
+            if (!active || !current(active) || active.authorityPending || active.session?.accountType !== 'consultant') return;
+            active.directorySearch = ''; active.directoryStatus = 'all';
+            filterDirectory(active); directorySearch.focus();
+        });
+    }
+    function filterDirectory(cycle) {
+        if (!hasDirectorySearch || !current(cycle)) return;
+        const rows = Array.from(elements.choices.children).filter(function (row) {
+            return row.getAttribute('data-binding-id') || row.classList.contains('client-workspace-row');
+        });
+        const consultant = cycle.session?.accountType === 'consultant';
+        const query = consultant ? (cycle.directorySearch || '').trim().toLocaleLowerCase() : '';
+        const status = consultant && directoryStatus && ['ready', 'setup'].includes(cycle.directoryStatus) ? cycle.directoryStatus : 'all';
+        const filtered = !!query || status !== 'all';
+        let visible = 0;
+        rows.forEach(function (row) {
+            const ready = !!row.getAttribute('data-binding-id');
+            const name = ready ? row.textContent : row.querySelector('h3').textContent;
+            row.hidden = (!!query && !name.toLocaleLowerCase().includes(query))
+                || (status === 'ready' && !ready) || (status === 'setup' && ready);
+            if (!row.hidden) visible++;
+        });
+        directorySearchControls.hidden = !consultant || !rows.length || !!cycle.authorityPending;
+        directorySearch.value = cycle.directorySearch || '';
+        if (directoryStatus) directoryStatus.value = status;
+        directoryClear.hidden = !directorySearch.value && status === 'all';
+        directoryCount.textContent = filtered ? visible + ' of ' + rows.length + ' loaded organisations shown'
+            : rows.length + (rows.length === 1 ? ' organisation loaded' : ' organisations loaded');
+        directoryEmpty.hidden = !filtered || visible > 0 || !rows.length;
+        directoryEmpty.textContent = status !== 'ready' && cycle.clientHasMore
+            ? 'No loaded organisations match these filters. Clear filters or load more saved setups.'
+            : status !== 'setup' && cycle.directoryHasMore
+            ? 'No loaded organisations match these filters. Clear filters or load more organisations.'
+            : 'No loaded organisations match these filters. Try another name or status, or clear filters.';
+    }
     function currentRoute() {
         const hash = String(window.location.hash || '');
         return ROUTES.includes(hash.slice(1)) ? hash : '';
@@ -56,6 +112,8 @@
     }
     function clearContent() {
         if (portfolioButton) { portfolioButton.hidden = true; portfolioButton.onclick = null; }
+        if (accountMenu) { accountMenu.open = false; accountMenu.hidden = true; }
+        delete elements.status.dataset.accessWarning;
         const activation = document.getElementById('customerActivationControls');
         if (activation) activation.remove();
         const clientSetup = document.getElementById('clientSetupControls');
@@ -69,6 +127,11 @@
         elements.app.replaceChildren();
         elements.entry.setAttribute('role', 'main');
         elements.choices.replaceChildren();
+        if (hasDirectorySearch) {
+            directorySearch.value = ''; directoryCount.textContent = '';
+            if (directoryStatus) directoryStatus.value = 'all';
+            directorySearchControls.hidden = true; directoryEmpty.hidden = true; directoryClear.hidden = true;
+        }
         elements.chooser.hidden = true;
         elements.more.hidden = true;
     }
@@ -86,6 +149,10 @@
             status.focus();
         }
         return true;
+    }
+    function confirmClientDiscard(cycle) {
+        if (blockPendingClientNavigation(cycle)) return false;
+        return !clientDraft(cycle)?.dirty || window.confirm('Discard unsaved organisation details?');
     }
     function begin(draft) {
         dispose(active);
@@ -117,6 +184,7 @@
             }
         }
         document.body.dataset.dashboardState = state;
+        document.body.dataset.dashboardAccountType = cycle.session?.accountType || '';
         elements.panel.hidden = gateway && ['loading', 'unauthenticated'].includes(state) && !hadSession;
         if (skipLink) {
             skipLink.href = state === 'ready' ? '#dashboard-content' : elements.panel.hidden ? '#main-content' : '#dashboardHeading';
@@ -141,6 +209,10 @@
         elements.signIn.hidden = !['unauthenticated', 'expired', 'denied'].includes(state);
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
+        if (accountMenu) {
+            accountMenu.hidden = elements.signOut.hidden;
+            if (accountMenu.hidden) accountMenu.open = false;
+        }
         if (focusHeading !== false && state !== 'loading' && !(gateway && !hadSession)) elements.heading.focus();
     }
     function failure(cycle, error) {
@@ -460,6 +532,7 @@
         }
         async function run(body, cursor) {
             if (!available() || body && writesClosed) return;
+            section.classList.remove('client-workspace-start');
             cycle.clientMutationPending = !!body;
             cycle.clientReadPending = !body;
             cycle.busy = true; section.setAttribute('aria-busy', 'true');
@@ -514,8 +587,12 @@
                 }
                 csrf = response.csrfToken; render(response.state, body && body.requestId);
                 if (!body && cursor !== undefined) {
-                    const firstAction = elements.choices.querySelector('.client-workspace-row button');
-                    heading.tabIndex = -1; (firstAction || heading).focus();
+                    const firstRow = Array.from(elements.choices.children).find(function (row) {
+                        return row.classList.contains('client-workspace-row') && !row.hidden && row.querySelector('button');
+                    });
+                    const firstAction = firstRow && firstRow.querySelector('button');
+                    heading.tabIndex = -1;
+                    (firstAction || (hasDirectorySearch && !directorySearchControls.hidden ? directorySearch : heading)).focus();
                 }
                 if (pending === previous) pending = null;
             } catch (error) {
@@ -523,6 +600,7 @@
                 if ([401, 403].includes(error.status)) {
                     pending = null; captureForm = null; cycle.clientDraft = null; clientNames.clear(); content.replaceChildren();
                     elements.choices.querySelectorAll('.client-workspace-row').forEach(function (row) { row.remove(); });
+                    filterDirectory(cycle);
                 }
                 if (error.status === 401) {
                     const confirmation = element('h3', 'Confirm your sign-in to continue'); confirmation.tabIndex = -1; content.append(confirmation);
@@ -548,6 +626,8 @@
         }
         function form(existing, draft) {
             if (writesClosed) return;
+            if (!draft && !confirmClientDiscard(cycle)) return;
+            section.classList.remove('client-workspace-start');
             requestId = draft ? draft.requestId : existing ? existing.requestId : secureId(); content.replaceChildren();
             const form = element('form'); form.className = 'consultant-client-form'; const inputs = {};
             [['organisationName','Client organisation name',120],['name','Your full name',160],['role','Your role for this client',120],
@@ -564,6 +644,16 @@
             const authority = element('label', 'I am authorised to set up this dashboard and accept the terms for this client.');
             const confirmed = element('input'); confirmed.type = 'checkbox'; confirmed.required = true; authority.prepend(confirmed); form.append(authority);
             const submit = element('button', 'Review client terms'); submit.type = 'submit'; submit.className = 'client-action client-action-primary'; form.append(submit);
+            form.append(button('Cancel', function () {
+                if (!available() || !confirmClientDiscard(cycle)) return;
+                captureForm = null; cycle.clientDraft = null;
+                run().then(function () {
+                    if (!current(cycle)) return;
+                    const add = Array.from(content.querySelectorAll('button')).find(function (node) { return node.textContent === 'Add organisation'; });
+                    heading.tabIndex = -1;
+                    (add || heading).focus();
+                });
+            }));
             form.addEventListener('submit', function (event) {
                 event.preventDefault(); if (!confirmed.checked || cycle.busy) return;
                 const details = {}; ['name','role','address','registrationId'].forEach(function (k) { details[k] = inputs[k].value; }); details.authorityConfirmed = true;
@@ -579,13 +669,18 @@
                 if (pending || cycle.busy) return null;
                 const values = {}; Object.keys(inputs).forEach(function (key) { values[key] = inputs[key].value; });
                 return { requestId: requestId, existing: !!existing, values: values, authorityConfirmed: confirmed.checked, listCursor: listCursor,
+                    dirty: !!confirmed.checked || Object.keys(inputs).some(function (key) {
+                        return !(existing && key === 'organisationName') && !!values[key];
+                    }),
                     generation: cycle.session.generation, bindingId: cycle.session.selectedBindingId };
             };
         }
         function render(state, responseRequestId) {
             captureForm = null;
+            section.classList.remove('client-workspace-start');
             content.replaceChildren(); status.textContent = '';
             if (['clients','clients_read_only'].includes(state?.status)) {
+                section.classList.add('client-workspace-start');
                 const clients = clientList(state);
                 const readOnly = state.status === 'clients_read_only';
                 writesClosed = readOnly;
@@ -609,6 +704,7 @@
                     let action;
                     if (!readOnly && client.status === 'details_required') action = button('Continue details', function () { if (available()) form(client); });
                     if (!readOnly && client.status === 'pending') action = button('Continue setup', function () {
+                        if (!available() || !confirmClientDiscard(cycle)) return;
                         run({ action: 'resume', requestId: client.requestId });
                     });
                     if (action) { action.setAttribute('aria-label', (client.status === 'pending' ? 'Continue setup: ' : 'Continue details: ') + client.organisationName); row.append(action); }
@@ -618,11 +714,14 @@
                     const empty = element('p', 'No organisations available yet.'); empty.className = 'consultant-organisation-empty';
                     elements.choices.append(empty);
                 }
+                cycle.clientHasMore = unlimitedList && state.nextCursor !== null;
+                filterDirectory(cycle);
                 if (readOnly) content.append(element('p', 'Your saved organisation setups have been kept. Further setup steps are currently unavailable.'));
                 else if (unlimitedList || state.remaining > 0) {
                     content.append(element('p', unlimitedList ? 'There is no product limit on the number of organisations you can manage. Each organisation needs its own authorised access and agreed scope.'
                         : state.remaining + (state.remaining === 1 ? ' client slot remains.' : ' client slots remain.')));
-                    content.append(button('Add organisation', function () { if (available()) form(); }));
+                    const add = button('Add organisation', function () { if (available()) form(); });
+                    add.classList.add('client-action-primary'); content.append(add);
                 } else content.append(element('p', 'No client slots remain.'));
                 if (unlimitedList && state.nextCursor !== null) content.append(button('More saved setups', function () { run(undefined, state.nextCursor); }));
                 if (unlimitedList && listCursor !== null) content.append(button('First saved setups', function () { run(undefined, null); }));
@@ -697,8 +796,10 @@
             portfolioButton = document.createElement('button');
             portfolioButton.id = 'consultantPortfolioControls'; portfolioButton.type = 'button';
             portfolioButton.textContent = 'Return to organisations';
-            // A details chooser closes while the dashboard is open.
-            elements.panel.append(portfolioButton);
+            portfolioButton.className = 'button dashboard-account-return';
+            // Keep the same guarded action reachable from the native Account menu.
+            if (accountActions) accountActions.prepend(portfolioButton);
+            else elements.panel.append(portfolioButton);
         }
         portfolioButton.hidden = false;
         portfolioButton.onclick = function () {
@@ -790,7 +891,7 @@
         return JSON.stringify([value.metadata, value.presentationMode, value.context, value.module]);
     }
     function leave(cycle, commit) {
-        if (!current(cycle)) return Promise.resolve(false);
+        if (!current(cycle) || !confirmClientDiscard(cycle)) return Promise.resolve(false);
         const guardedCommit = function () { if (current(cycle)) commit(); };
         if ((cycle.cyber || cycle.improvement) && controller && typeof controller.requestLeave === 'function') return controller.requestLeave(guardedCommit);
         guardedCommit();
@@ -808,7 +909,7 @@
             if (!destination) return;
             if (linkExit) { event.preventDefault(); return; }
             const cycle = active;
-            if (!controller || !current(cycle)) return;
+            if (!current(cycle) || !controller && !clientDraft(cycle)) return;
             event.preventDefault();
             if (cycle.busy || cycle.authorityPending || unresolved) return;
             const exit = { cycle: cycle, committed: false };
@@ -863,12 +964,13 @@
     }
     function renderDirectory(cycle, value, rows, nextAfterBindingId, pageCount) {
         cycle.directoryPageCount = pageCount;
+        cycle.directoryHasMore = nextAfterBindingId !== null;
         const contract = JSON.stringify([value.generation, value.selectedBindingId, rows, nextAfterBindingId]);
         if (cycle.directoryContract === contract) return;
         cycle.directoryRows = rows;
         cycle.directoryContract = contract;
         // Keep incomplete client rows and their focused controls when a fresh
-        // directory read changes only the ready bindings.
+        // directory read changes only the discovered bindings.
         const children = Array.from(elements.choices.children);
         const incomplete = children.filter(function (child) { return child.classList.contains('client-workspace-row'); });
         const existing = new Map(children.filter(function (child) { return child.tagName === 'BUTTON' && child.getAttribute('data-binding-id'); })
@@ -893,8 +995,10 @@
             }
             button.textContent = binding.organisationLabel;
             if (value.accountType === 'consultant') {
+                // Discovery retains bindings even when current membership denies
+                // access. Selection and resource reads establish current access.
                 button.className = 'consultant-organisation-ready';
-                button.setAttribute('aria-label', binding.organisationLabel + ' · Dashboard ready');
+                button.setAttribute('aria-label', binding.organisationLabel + ' · Open to check access');
             }
             button.setAttribute('aria-pressed', String(binding.bindingId === value.selectedBindingId));
             return button;
@@ -907,11 +1011,16 @@
         }
         // Remember focus while its node is still attached. Replacing children
         // may move the browser's activeElement to the document body.
-        const retainFocus = focused && (choices.includes(focused) || incomplete.some(function (row) {
-            return Array.from(row.querySelectorAll('button')).includes(focused);
-        }));
+        const focusedRow = focused && choices.find(function (row) {
+            return row === focused || (incomplete.includes(row) && Array.from(row.querySelectorAll('button')).includes(focused));
+        });
         elements.choices.replaceChildren(...choices);
-        if (retainFocus) focused.focus();
+        filterDirectory(cycle);
+        if (focusedRow) {
+            const target = !focusedRow.hidden && !focused.hidden ? focused
+                : (hasDirectorySearch && !directorySearchControls.hidden ? directorySearch : elements.heading);
+            target.focus();
+        }
         elements.chooser.hidden = !!cycle.authorityPending;
         elements.more.hidden = nextAfterBindingId === null;
         elements.more.onclick = function () {
@@ -921,6 +1030,8 @@
                 let ownsFocus = document.activeElement === elements.more;
                 if (value.accountType === 'consultant') window.history.replaceState(null, '', '#organisations');
                 const next = begin();
+                next.directorySearch = cycle.directorySearch || '';
+                next.directoryStatus = cycle.directoryStatus || 'all';
                 const focusEvents = ['focusin', 'pointerdown', 'keydown', 'blur'];
                 function releaseFocus() {
                     focusEvents.forEach(function (name) { window.removeEventListener(name, movedFocus, true); });
@@ -948,7 +1059,9 @@
                     const ready = Array.from(elements.choices.children).filter(function (node) {
                         return node.tagName === 'BUTTON' && node.getAttribute('data-binding-id');
                     });
-                    const target = ready[rows.length] || ready[ready.length - 1] || elements.heading;
+                    const visible = ready.filter(function (node) { return !node.hidden; });
+                    const target = ready.slice(rows.length).find(function (node) { return !node.hidden; }) || visible[visible.length - 1]
+                        || (hasDirectorySearch && !directorySearchControls.hidden ? directorySearch : elements.heading);
                     target.focus();
                 }).catch(function (error) { failure(next, error); });
             });
@@ -1041,6 +1154,7 @@
                 remember(cycle, confirmed);
                 renderDirectory(cycle, confirmed, choices.rows, choices.nextAfterBindingId, choices.pageCount);
                 elements.status.textContent = previousStatus;
+                delete elements.status.dataset.accessWarning;
                 elements.retry.hidden = true;
                 cycle.quietStatus = undefined;
                 return;
@@ -1070,6 +1184,7 @@
             remember(cycle, confirmed);
             renderDirectory(cycle, confirmed, middle[0].rows, middle[0].nextAfterBindingId, middle[0].pageCount);
             elements.status.textContent = previousStatus;
+            delete elements.status.dataset.accessWarning;
             elements.retry.hidden = true;
             cycle.quietStatus = undefined;
         }).catch(function (error) {
@@ -1080,6 +1195,7 @@
             // A transport failure has not extended authority. Keep the old
             // view only until its original expiry timer, with a retry affordance.
             elements.status.textContent = 'Could not refresh access. Retry when the service is available.';
+            elements.status.dataset.accessWarning = 'true';
             elements.retry.hidden = false;
             cycle.quietRefreshFailed = true;
         }).finally(function () {
@@ -1095,6 +1211,13 @@
         restore();
     });
     window.addEventListener('pageshow', function (event) { if (event && event.persisted) restore(); });
+    window.addEventListener('beforeunload', function (event) {
+        if (!active || !current(active) || !active.session || Date.parse(active.session.expiresAt) <= Date.now()) return;
+        const draft = clientDraft(active);
+        if (!draft?.dirty && !draft?.pending) return;
+        event.preventDefault();
+        event.returnValue = '';
+    });
     window.addEventListener('pagehide', function () {
         if (active) { active.clientDraft = clientDraft(active); active.captureClientDraft = null; }
         dispose(active);

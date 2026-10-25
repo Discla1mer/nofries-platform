@@ -167,6 +167,47 @@ test('only permitted module links and mobile groups exist for viewer and advisor
     }
 });
 
+test('ready Improvement Plan is a direct desktop and mobile task when its workspace is connected', () => {
+    const model = clone(view());
+    model.modules.find(item => item.key === 'improvement_plan').state = 'ready';
+    let opens = 0;
+    const dom = mount(model, { mountImprovement() {
+        opens++;
+        return { destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } };
+    } });
+    const menus = [dom.root.querySelector('.dashboard-rail').querySelector('nav'), dom.root.querySelector('.dashboard-mobile-nav')];
+    for (const menu of menus) {
+        const plan = menu.querySelector('.dashboard-menu-primary').querySelector('[data-module="improvement_plan"]');
+        assert.ok(plan);
+        assert.equal(plan.href, '#improvement-plan');
+        assert.equal(menu.querySelector('.dashboard-menu-other').querySelector('[data-module="improvement_plan"]'), null);
+        assert.equal(menu.querySelectorAll('[data-module="improvement_plan"]').length, 1);
+    }
+    menus[1].querySelector('[data-module="improvement_plan"]').click();
+    assert.equal(opens, 1);
+    assert.equal(dom.root.querySelector('h1').textContent, 'Improvement Plan');
+    assert.equal(dom.window.location.hash, '#improvement-plan');
+    for (const menu of menus) assert.equal(menu.querySelector('[aria-current="page"]').dataset.module, 'improvement_plan');
+});
+
+test('menu promotion does not expose unpermitted tools or advertise an unavailable planning workspace', () => {
+    const connected = () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } });
+    for (const state of ['planned', 'disabled', 'ready']) {
+        const model = clone(view());
+        model.modules.find(item => item.key === 'improvement_plan').state = state;
+        // A ready server projection still needs the actual workspace renderer.
+        const dom = mount(model, state === 'ready' ? {} : { mountImprovement: connected });
+        for (const menu of [dom.root.querySelector('.dashboard-rail').querySelector('nav'), dom.root.querySelector('.dashboard-mobile-nav')]) {
+            assert.equal(menu.querySelector('.dashboard-menu-primary').querySelector('[data-module="improvement_plan"]'), null);
+            assert.ok(menu.querySelector('.dashboard-menu-other').querySelector('[data-module="improvement_plan"]'));
+            assert.equal(menu.querySelectorAll('[data-module="improvement_plan"]').length, 1);
+        }
+    }
+    const viewer = mount(view({ role: 'viewer' }), { mountImprovement: connected });
+    assert.equal(viewer.root.querySelectorAll('[data-module="improvement_plan"]').length, 0);
+    assert.equal(viewer.root.querySelectorAll('[data-module="cyber_security"]').length, 0);
+});
+
 for (const route of ['#ai-governance', '#cyber-security/foreign-record', '#evidence?organisation=foreign', '#%63yber-security', '#unknown', '#__proto__']) {
     test(`unpermitted or object route ${route} returns safely without echoing details`, () => {
         const dom = mount(view({ role: 'viewer' }), { initialRoute: route });
@@ -499,6 +540,63 @@ function historyDom(options = {}) {
     return { ...dom, flushGo: () => { if (pendingMoves.length) move(pendingMoves.shift()); },
         historyState: () => ({ cursor, entries: clone(entries), calls: clone(calls), pendingMoves: [...pendingMoves] }) };
 }
+
+for (const managed of [false, true]) test(`repeating the current Services route preserves Back and Forward (${managed ? 'managed' : 'unmanaged'} history)`, async () => {
+    const dom = historyDom();
+    const options = { initialRoute: 'overview' };
+    if (managed) options.mountCyber = () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } });
+    const controller = shell.mount(dom.root, readyCyber(), options);
+    await controller.navigate('services');
+    const repeatServices = async () => {
+        const before = dom.historyState();
+        dom.root.querySelector('.dashboard-rail').querySelector('[data-module="services"]').click();
+        await tick();
+        assert.equal(dom.historyState().cursor, before.cursor);
+        assert.deepEqual(dom.historyState().entries, before.entries);
+        assert.equal(dom.document.activeElement, dom.root.querySelector('h1'));
+        for (const nav of [dom.root.querySelector('.dashboard-rail'), dom.root.querySelector('.dashboard-mobile-nav')]) {
+            assert.equal(nav.querySelector('[aria-current="page"]').dataset.module, 'services');
+        }
+    };
+    await repeatServices();
+    dom.window.history.back(); await tick(); await tick();
+    assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
+    dom.window.history.forward(); await tick(); await tick();
+    assert.equal(dom.root.querySelector('h1').textContent, 'Services');
+    await controller.navigate('cyber-security');
+    dom.window.history.back(); await tick(); await tick();
+    assert.equal(dom.root.querySelector('h1').textContent, 'Services');
+    await repeatServices();
+    dom.window.history.forward(); await tick(); await tick();
+    assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
+});
+
+test('selecting the current fallback module still replaces an invalid fragment with its canonical route', async () => {
+    const dom = historyDom();
+    dom.window.location.hash = '#unknown'; await tick();
+    const controller = shell.mount(dom.root, view());
+    assert.match(dom.root.textContent, /That view is not available/);
+    await controller.navigate('overview');
+    assert.equal(dom.window.location.hash, '#overview');
+    assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
+    assert.equal(dom.document.activeElement, dom.root.querySelector('h1'));
+    assert.doesNotMatch(dom.root.textContent, /That view is not available/);
+});
+
+test('the current Overview link returns from attention detail without adding a history entry', async () => {
+    const dom = historyDom();
+    dom.window.location.hash = '#overview'; await tick();
+    shell.mount(dom.root, view());
+    dom.root.querySelector('[data-attention="0"]').click();
+    assert.match(dom.root.textContent, /Next action/);
+    const before = dom.historyState();
+    dom.root.querySelector('.dashboard-rail').querySelector('[data-module="overview"]').click();
+    await tick();
+    assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
+    assert.ok(dom.root.querySelector('[data-attention="0"]'));
+    assert.equal(dom.document.activeElement, dom.root.querySelector('h1'));
+    assert.deepEqual(dom.historyState().entries, before.entries);
+});
 
 test('owned Back cancellation restores the cursor and preserves the original forward branch', async () => {
     const dom = historyDom(), child = syntheticChild();

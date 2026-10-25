@@ -115,6 +115,21 @@
                     : 'Each assessment keeps its own scope and date. Scores from different scopes are not combined.'));
             return provenance;
         }
+        function renderResume() {
+            const draft = node('section', 'picture-empty picture-resume');
+            const heading = node('div', 'picture-resume-heading');
+            heading.append(node('h3', '', 'Baseline in progress'));
+            if (typeof options.openCyber === 'function') heading.append(openSavedAssessment('Continue saved assessment'));
+            const saved = node('p', 'picture-large', detail.progress.answered + ' / ' + detail.progress.total + ' responses saved');
+            const progress = node('progress', 'ncsc-saved-progress');
+            progress.max = detail.progress.total; progress.value = detail.progress.answered;
+            progress.setAttribute('aria-label', 'Saved responses');
+            const scope = node('section', 'picture-scope');
+            scope.append(node('h3', '', 'Scope'), node('p', '', detail.scopePopulation.description));
+            draft.append(heading, saved, progress, scope,
+                node('p', 'dashboard-muted', 'Saved progress is not a score. Submit this assessment when it is ready; unknown answers remain visible as uncertainty.'));
+            root.append(draft);
+        }
         function render() {
             if (!live()) return;
             clearExplanation();
@@ -126,6 +141,7 @@
             const status = node('p', 'picture-status', message || (loading ? 'Loading saved assessment…' : ''));
             status.setAttribute('role', 'status'); status.hidden = !message && !loading; root.append(status);
             if (denied) return;
+            if (detail && detail.status !== 'submitted') renderResume();
             if (rows.length) {
                 const toolbar = node('div', 'picture-toolbar');
                 const label = node('label', '', 'Saved assessment'); label.htmlFor = id;
@@ -149,8 +165,9 @@
                 picker.value = selected;
                 picker.addEventListener('change', () => { if (live() && !denied) read(picker.value); });
                 const refresh = button('Refresh', () => load(false)); refresh.disabled = loading;
+                refresh.classList.add('dashboard-button-secondary');
                 toolbar.append(label, picker, refresh);
-                if (after !== null) { const more = button('Load more', () => load(true)); more.disabled = loading; toolbar.append(more); }
+                if (after !== null) { const more = button('Load more', () => load(true)); more.disabled = loading; more.classList.add('dashboard-button-secondary'); toolbar.append(more); }
                 root.append(toolbar);
                 if (after !== null) root.append(node('p', 'dashboard-muted', 'More saved assessments are available. Load more to see them.'));
                 if (!detail) root.append(node('p', 'dashboard-muted', 'Refresh reloads saved assessments. It does not check whether answers still reflect the organisation today.'));
@@ -166,15 +183,11 @@
             const facts = node('p', 'picture-source', 'Saved ' + detail.updatedAt.slice(0, 10) +
                 ' · ' + detail.status + ' · revision ' + detail.revision);
             root.append(facts);
+            if (detail.status !== 'submitted') {
+                root.append(sourceDetails()); return;
+            }
             const scope = node('section', 'picture-scope');
             scope.append(node('h3', '', 'Scope'), node('p', '', detail.scopePopulation.description)); root.append(scope);
-            if (detail.status !== 'submitted') {
-                const draft = node('section', 'picture-empty');
-                draft.append(node('h3', '', 'Baseline in progress'), node('p', 'picture-large', detail.progress.answered + ' / ' + detail.progress.total + ' responses saved'),
-                    node('p', '', 'Saved progress is not a score. Submit this assessment when it is ready; unknown answers remain visible as uncertainty.'));
-                if (typeof options.openCyber === 'function') draft.append(openSavedAssessment('Continue saved assessment'));
-                root.append(draft, sourceDetails()); return;
-            }
             const result = questionnaire.resultModel(detail, metadata, organisationId);
             if (!result) { root.append(node('p', 'ncsc-warning', 'Results are unavailable for this saved submission. No score has been inferred.'), sourceDetails()); return; }
             if (typeof options.openCyber === 'function') root.append(openSavedAssessment('View saved assessment'));
@@ -208,9 +221,9 @@
                 const card = node('section', primary ? 'picture-metric picture-primary' : 'picture-metric');
                 card.append(node('h3', '', label), node('strong', 'picture-large', value), node('p', '', copyText)); metrics.append(card); return card;
             }
-            metric('Reported implementation', result.attainment,
+            const implementationMetric = metric('Reported implementation', result.attainment,
                 'Lower bound: reported implementation. Upper bound: uncertainty from unknown answers and pending N/A claims, not achieved performance.', true);
-            metric('Resolved answers', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + result.pending + ' pending N/A claims. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
+            const completionMetric = metric('Resolved answers', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + result.pending + ' pending N/A claims. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             const evidenceMetric = metric('Supporting evidence', result.substantiated, 'Coverage recorded in this saved assessment. Tested or observed coverage: ' + result.tested + '. This assessment journey does not yet accept evidence uploads or reviews. Zero coverage means evidence has not been supplied here; confidence is not assessed.');
             root.append(metrics);
             const domains = node('section', 'picture-domains');
@@ -289,19 +302,11 @@
                 follow.append(category);
                 return { label, category, summary, items, empty };
             });
-            const evidenceCategory = categoryViews[2], reviewEpoch = epoch, reviewBinding = sourceBinding();
-            evidenceCategory.category.id = id + '-supporting-evidence-gaps';
-            const review = button('Review supporting-evidence gaps', () => {
-                if (!currentSubmitted(reviewEpoch, reviewBinding, review) || follow.parentElement !== root ||
-                    evidenceCategory.category.parentElement !== follow) return;
-                evidenceCategory.category.open = true; evidenceCategory.summary.focus();
-            });
-            review.setAttribute('aria-controls', evidenceCategory.category.id); evidenceMetric.append(review);
-            filter.addEventListener('change', () => {
-                if (!live(filterEpoch) || loading || denied || follow.parentElement !== root ||
-                    filterToolbar.parentElement !== follow || filter.parentElement !== filterToolbar) return;
-                const domain = metadata.domains.find(value => value.id === filter.value);
-                if (filter.value && !domain) return;
+            function currentFilter() {
+                return live(filterEpoch) && !loading && !denied && follow.parentElement === root &&
+                    filterToolbar.parentElement === follow && filter.parentElement === filterToolbar;
+            }
+            function renderFilter(domain) {
                 const counts = categoryViews.map(category => {
                     let shown = 0;
                     category.items.forEach(row => { row.item.hidden = !!domain && row.domainId !== domain.id; if (!row.item.hidden) shown++; });
@@ -311,6 +316,36 @@
                     return shown + ' ' + category.label.toLowerCase();
                 });
                 filterStatus.textContent = domain ? 'Showing ' + domain.title + ': ' + counts.join('; ') + '.' : 'Showing all functions.';
+            }
+            const reviewEpoch = epoch, reviewBinding = sourceBinding();
+            function addReview(card, category, suffix, label) {
+                category.category.id = id + '-' + suffix;
+                const review = button(label, () => {
+                    if (!currentSubmitted(reviewEpoch, reviewBinding, review) || !currentFilter() ||
+                        category.category.parentElement !== follow) return;
+                    // Metric totals cover the whole saved assessment. Reveal all
+                    // matching follow-up items rather than a previously filtered subset.
+                    filter.value = ''; renderFilter(null);
+                    category.category.open = true; category.summary.focus();
+                });
+                review.classList.add('dashboard-button-secondary');
+                review.setAttribute('aria-controls', category.category.id); card.append(review);
+            }
+            const implementationGaps = categoryViews[1].items.length, unresolvedAnswers = categoryViews[0].items.length;
+            if (result.total > 0 && implementationGaps) addReview(implementationMetric, categoryViews[1], 'implementation-gaps',
+                'Review ' + implementationGaps + (implementationGaps === 1 ? ' implementation gap' : ' implementation gaps'));
+            else implementationMetric.append(node('p', 'dashboard-muted', result.total === 0
+                ? 'Implementation gaps not assessed.' : 'No reported implementation gaps in this saved assessment.'));
+            if (result.total > 0 && unresolvedAnswers) addReview(completionMetric, categoryViews[0], 'unresolved-answers',
+                'Review ' + unresolvedAnswers + (unresolvedAnswers === 1 ? ' unresolved answer' : ' unresolved answers'));
+            else completionMetric.append(node('p', 'dashboard-muted', result.total === 0
+                ? 'Unresolved answers not assessed.' : 'No unresolved answers in this saved assessment.'));
+            addReview(evidenceMetric, categoryViews[2], 'supporting-evidence-gaps', 'Review supporting-evidence gaps');
+            filter.addEventListener('change', () => {
+                if (!currentFilter()) return;
+                const domain = metadata.domains.find(value => value.id === filter.value);
+                if (filter.value && !domain) return;
+                renderFilter(domain);
             });
             follow.append(node('p', 'dashboard-muted', 'A question can appear in more than one category. Counts are not a combined total or a risk ranking. Questions follow the profile order; no action is assigned or evidence uploaded here.'));
             root.append(follow);

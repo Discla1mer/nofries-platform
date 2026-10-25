@@ -35,7 +35,7 @@ test('ready workspace destinations lead both menus while other permitted routes 
         assert.equal(primary(menu).querySelector('.dashboard-eyebrow').textContent, 'Workspace');
         assert.deepEqual(moduleKeys(primary(menu)), ['overview', 'cyber_security', 'services']);
         assert.equal(other(menu).tagName, 'DETAILS');
-        assert.equal(other(menu).querySelector('summary').textContent, 'Other workspaces');
+        assert.equal(other(menu).querySelector('summary').textContent, 'More tools');
         assert.ok(!other(menu).open);
         assert.deepEqual(moduleKeys(other(menu)), ['ai_governance', 'it_optimisation', 'improvement_plan', 'evidence', 'board_reports']);
         assert.deepEqual(currentKeys(menu), ['overview']);

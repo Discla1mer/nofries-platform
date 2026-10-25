@@ -76,6 +76,12 @@ function harness(options = {}) {
     document.querySelectorAll = selector => document.body.querySelectorAll(selector);
     document.querySelector = selector => document.body.querySelector(selector);
     elements.dashboardEntry.append(elements.dashboardStatusPanel, elements.dashboardChooser, elements.dashboardApp);
+    if (options.accountMenu) {
+        const menu = document.createElement('details'); menu.id = 'dashboardAccountMenu';
+        const summary = document.createElement('summary'); summary.textContent = 'Account';
+        const actions = document.createElement('div'); actions.id = 'dashboardAccountActions';
+        actions.append(elements.dashboardSignOut); menu.append(summary, actions); elements.dashboardStatusPanel.append(menu);
+    }
     document.head = document.createElement('head');
     const native = [];
     document.head.append = node => { node.parentNode = document.head; native.push(node); document.head.children.push(node); };
@@ -241,7 +247,63 @@ test('a held consultant session times out after 12 seconds without hiding the ac
     const h = await portfolio(); h.event('focus'); await flush(); jest.advanceTimersByTime(12000); await flush();
     expect(h.status).toBe('selection'); expect(h.requests[3].init.signal.aborted).toBe(true);
     expect(h.elements.dashboardStatus.textContent).toContain('Could not refresh access');
+    expect(h.elements.dashboardStatus.dataset.accessWarning).toBe('true');
     expect(h.elements.dashboardRetry.hidden).toBe(false);
+    const form = h.document.getElementById('clientSetupControls');
+    h.elements.dashboardRetry.click(); await flush();
+    expect(h.elements.dashboardStatus.dataset.accessWarning).toBe('true');
+    await h.reply(4, 200, consultant()); await h.reply(5, 200, listing([A])); await h.reply(6, 200, consultant());
+    expect(h.elements.dashboardStatus.dataset.accessWarning).toBeUndefined();
+    expect(h.elements.dashboardRetry.hidden).toBe(true);
+    expect(h.document.getElementById('clientSetupControls')).toBe(form);
+});
+
+test('ready workspace exposes refresh failure without replacing content, then clears it after verified retry', async () => {
+    const h = harness({ hash: '#services' }); await flush(); await h.open();
+    const main = h.elements.dashboardApp.children[0];
+    h.event('focus'); await flush(); await h.reply(4, 503, { code: 'synthetic_outage' });
+    expect(h.status).toBe('ready'); expect(h.elements.dashboardApp.hidden).toBe(false);
+    expect(h.elements.dashboardApp.children[0]).toBe(main);
+    expect(h.elements.dashboardStatus.dataset.accessWarning).toBe('true');
+    expect(h.elements.dashboardRetry.hidden).toBe(false);
+    h.elements.dashboardRetry.click(); await flush();
+    await h.reply(5, 200, state()); await h.reply(6, 200, listing());
+    await h.reply(7, 200, projection()); await h.reply(8, 200, state());
+    expect(h.elements.dashboardStatus.dataset.accessWarning).toBeUndefined();
+    expect(h.elements.dashboardRetry.hidden).toBe(true);
+    expect(h.elements.dashboardApp.children[0]).toBe(main);
+    expect(h.mounts[0].destroy).not.toHaveBeenCalled();
+});
+
+test('native Account actions retain guarded consultant return and disappear after session expiry', async () => {
+    const h = harness({ hash: '#overview', accountMenu: true }); await flush();
+    const value = state(A, GA, { purpose: 'customer', accountType: 'consultant' });
+    await h.open(value);
+    const menu = h.document.getElementById('dashboardAccountMenu');
+    const actions = h.document.getElementById('dashboardAccountActions');
+    const back = h.document.getElementById('consultantPortfolioControls');
+    expect(menu.hidden).toBe(false); expect(back.parentElement).toBe(actions);
+    expect(h.elements.dashboardSignOut.parentElement).toBe(actions);
+    expect(actions.children).toEqual([back, h.elements.dashboardSignOut]);
+    expect(h.document.body.dataset.dashboardAccountType).toBe('consultant');
+    menu.open = true; back.onclick(); await flush();
+    expect(menu.open).toBe(false); expect(back.hidden).toBe(true);
+    await h.reply(4, 200, value); await h.reply(5, 200, listing());
+    expect(h.status).toBe('selection'); expect(menu.hidden).toBe(false);
+    expect(h.window.location.hash).toBe('#organisations');
+    h.event('focus'); await flush(); await h.reply(6, 401, { code: 'synthetic_expiry' });
+    expect(h.status).toBe('expired'); expect(menu.hidden).toBe(true);
+    expect(h.elements.dashboardSignIn.hidden).toBe(false);
+});
+
+test.each(['index.html', 'app/dashboard.html'])('%s keeps one sign-out inside native Account details and recovery outside', file => {
+    const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    const menu = html.match(/<details[^>]*id="dashboardAccountMenu"[^>]*>[\s\S]*?<\/details>/)[0];
+    expect(menu).toContain('<summary>Account</summary>');
+    expect(menu).toContain('id="dashboardSignOut"');
+    expect(html.match(/id="dashboardSignOut"/g)).toHaveLength(1);
+    expect(menu).not.toMatch(/id="dashboard(?:Retry|SignIn)"/);
+    expect(menu).not.toMatch(/role="menu(?:item)?"/);
 });
 test('malformed account session fails closed instead of treating bad authority as an outage', async () => {
     const h = await portfolio(); h.event('focus'); await flush();

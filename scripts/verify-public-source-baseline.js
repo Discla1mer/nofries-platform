@@ -10,7 +10,7 @@ const ROOT = path.resolve(__dirname, '..');
 const BASELINE = 'security/public-source-baseline.json';
 // Filled once after final verification; changing this value requires the same
 // bounded security review as changing the dependency-policy implementation.
-const REVIEWED_MANIFEST_SHA256 = '928561d2125cbf7f40bb2579989943da055f6f4f7b1acd81676668606a058458';
+const REVIEWED_MANIFEST_SHA256 = 'd62765db14b57b7ce919aa3b254e07d196b1385f34ba120685a67586f6a2eadf';
 const VERIFIER = 'scripts/verify-public-source-baseline.js';
 const IGNORED = new Set(['.git', 'node_modules', 'dist', 'app-service-dist', 'coverage', 'eval-results']);
 function inventory(root) {
@@ -34,7 +34,7 @@ function manifestDigest(expected) {
 }
 function verify(root = ROOT, expected = JSON.parse(fs.readFileSync(path.join(root, BASELINE))), reviewedDigest = REVIEWED_MANIFEST_SHA256) {
     if (manifestDigest(expected) !== reviewedDigest) throw new Error('public_source_baseline_not_reviewed');
-    if (expected.schemaVersion !== 1 || expected.sourceHead !== '34db76317b06973a238a2728b486d035193867cc' ||
+    if (expected.schemaVersion !== 1 || expected.sourceHead !== 'a32e1e87be666d5d58b6aba3849f4488de81b821' ||
         expected.expiresAt !== '2026-10-27T00:00:00Z' || !expected.files || !Object.keys(expected.files).length)
         throw new Error('public_source_baseline_invalid');
     if (JSON.stringify(inventory(root)) !== JSON.stringify(expected.files))

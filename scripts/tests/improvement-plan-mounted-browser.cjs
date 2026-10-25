@@ -570,6 +570,7 @@ async function main() {
             assert.equal(fixture.requests.filter(row => row.method === 'POST').length, 1, 'An ambiguous response does not automatically repeat the command');
             await navigate(page, 'services');
             assert.equal(await page.locator('#dashboard-content > header h1').innerText(), 'Improvement Plan');
+            await page.locator('#dashboardAccountMenu > summary').focus(); await page.keyboard.press('Enter');
             await page.locator('#dashboardSignOut').click();
             assert.equal(await retry.isVisible(), true, 'Logout respects the pending child leave lifecycle');
             await page.locator('#dashboardChooser > summary').click();

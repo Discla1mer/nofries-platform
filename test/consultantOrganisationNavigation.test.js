@@ -18,7 +18,9 @@ const GA = 'a'.repeat(64);
 const GB = 'b'.repeat(64);
 const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dashboardMessage', 'dashboardStatus',
     'dashboardRetry', 'dashboardSignIn', 'dashboardSignOut', 'dashboardChooser', 'dashboardChoices',
-    'dashboardMore', 'dashboardApp', 'dashboardApplicationIntegrity', 'dashboardStyleIntegrity', 'dashboardSkipLink'];
+    'dashboardMore', 'dashboardApp', 'dashboardApplicationIntegrity', 'dashboardStyleIntegrity', 'dashboardSkipLink',
+    'dashboardOrganisationSearch', 'dashboardOrganisationStatus', 'dashboardOrganisationSearchControls', 'dashboardOrganisationClear',
+    'dashboardOrganisationCount', 'dashboardOrganisationEmpty'];
 const csrfToken = 'c'.repeat(43);
 const state = (selectedBindingId = null, generation = GA, extra = {}) => ({ schemaVersion: 1, authenticated: true,
     purpose: 'customer', accountType: 'consultant', expiresAt: '2026-09-09T00:30:00.000Z', generation, selectedBindingId, ...extra });
@@ -51,6 +53,8 @@ function harness(hash = '#organisations') {
     document.getElementById = id => elements[id] || findId(document.body, id);
     document.querySelectorAll = selector => document.body.querySelectorAll(selector);
     document.querySelector = selector => document.body.querySelector(selector);
+    const leaveLink = document.createElement('a'); leaveLink.dataset.dashboardLeave = '';
+    leaveLink.setAttribute('href', '/roadmap.html'); document.body.append(leaveLink);
     elements.dashboardEntry.append(elements.dashboardStatusPanel, elements.dashboardChooser, elements.dashboardApp);
     document.head = document.createElement('head'); const native = [];
     document.head.append = node => { native.push(node); document.head.children.push(node); };
@@ -60,6 +64,10 @@ function harness(hash = '#organisations') {
     elements.dashboardStyleIntegrity.setAttribute('content', sri);
     window.location.hash = hash; window.crypto = { randomUUID: crypto.randomUUID }; window.setTimeout = setTimeout;
     window.clearTimeout = clearTimeout;
+    window.confirm = jest.fn(() => false); window.location.assign = jest.fn();
+    const unload = [];
+    const listen = window.addEventListener;
+    window.addEventListener = (name, handler) => { if (name === 'beforeunload') unload.push(handler); listen(name, handler); };
     const requests = []; const fetch = (url, init) => { const work = deferred(); requests.push({ url, init, ...work }); return work.promise; };
     vm.runInContext(SOURCE, vm.createContext({ document, window, fetch, AbortController, Date, console }), { filename: 'dashboard-loader.js' });
     async function reply(index, status, value) {
@@ -71,13 +79,136 @@ function harness(hash = '#organisations') {
         native.slice(-2).forEach(node => node.onload()); await flush();
         await reply(index + 1, 200, value);
     }
-    return { document, window, elements, requests, reply, mount,
+    return { document, window, elements, requests, reply, mount, leaveLink, unload,
         get status() { return document.body.dataset.dashboardState; },
         get back() { return document.getElementById('consultantPortfolioControls'); } };
 }
 
 beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-08T23:30:00.000Z')); });
 afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
+
+function search(h, value) {
+    const input = h.elements.dashboardOrganisationSearch; input.value = value;
+    for (const handler of input.events.input || []) handler();
+}
+
+function filterStatus(h, value) {
+    const select = h.elements.dashboardOrganisationStatus; select.value = value;
+    for (const handler of select.events.change || []) handler();
+}
+
+test('combined name and status filters cover loaded rows without requests and keep exact selection', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(null, GA, { clientSetupAvailable: true }));
+    await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Māori client')]));
+    await h.reply(2, 200, clients([client(C, 'Draft client', 'pending')]));
+    const input = h.elements.dashboardOrganisationSearch; input.focus(); search(h, ' CLIENT ');
+    expect(h.elements.dashboardChoices.children.map(node => node.hidden)).toEqual([true, false, false]);
+    expect(h.elements.dashboardOrganisationCount.textContent).toBe('2 of 3 loaded organisations shown');
+    expect(h.document.activeElement).toBe(input); expect(h.requests).toHaveLength(3);
+    const status = h.elements.dashboardOrganisationStatus; status.focus(); filterStatus(h, 'ready');
+    expect(h.elements.dashboardChoices.children.map(node => node.hidden)).toEqual([true, false, true]);
+    expect(h.elements.dashboardOrganisationCount.textContent).toBe('1 of 3 loaded organisations shown');
+    expect(h.document.activeElement).toBe(status); expect(h.requests).toHaveLength(3);
+    filterStatus(h, 'setup');
+    expect(h.elements.dashboardChoices.children.map(node => node.hidden)).toEqual([true, true, false]);
+    search(h, 'no match'); expect(h.elements.dashboardOrganisationEmpty.hidden).toBe(false);
+    h.elements.dashboardOrganisationClear.click();
+    expect(input.value).toBe(''); expect(h.document.activeElement).toBe(input);
+    expect(status.value).toBe('all'); expect(h.elements.dashboardOrganisationClear.hidden).toBe(true);
+    expect(h.elements.dashboardChoices.children.every(node => !node.hidden)).toBe(true);
+    search(h, 'MĀORI'); filterStatus(h, 'ready'); h.elements.dashboardChoices.children[1].click(); await flush();
+    expect(JSON.parse(h.requests[3].init.body).bindingId).toBe(B);
+    await h.reply(3, 403, { code: 'dashboard_binding_denied' });
+    expect(input.value).toBe(''); expect(h.elements.dashboardOrganisationCount.textContent).toBe('');
+    expect(status.value).toBe('all');
+    expect(h.elements.dashboardOrganisationSearchControls.hidden).toBe(true);
+    expect(h.elements.dashboardChoices.children).toHaveLength(0);
+});
+
+test('a filtered unfinished organisation resumes its own request ID', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(null, GA, { clientSetupAvailable: true }));
+    await h.reply(1, 200, listing([row(A, 'Own consultancy')]));
+    await h.reply(2, 200, clients([client(B, 'Pending client', 'pending')]));
+    search(h, 'Pending'); filterStatus(h, 'setup'); h.elements.dashboardChoices.children[1].querySelector('button').click(); await flush();
+    expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'resume', requestId: B });
+});
+
+test('combined filters survive ready pagination and focus a matching loaded row', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'First organisation')], A));
+    search(h, 'Second'); filterStatus(h, 'ready');
+    expect(h.elements.dashboardOrganisationEmpty.textContent).toContain('load more organisations');
+    h.elements.dashboardMore.focus(); h.elements.dashboardMore.onclick(); await flush();
+    expect(h.requests[2].url).toBe('/api/dashboard/organisations?limit=50&afterBindingId=' + A);
+    await h.reply(2, 200, listing([row(B, 'Second organisation')]));
+    expect(h.elements.dashboardOrganisationSearch.value).toBe('Second');
+    expect(h.elements.dashboardOrganisationStatus.value).toBe('ready');
+    expect(h.elements.dashboardChoices.children.map(node => node.hidden)).toEqual([true, false]);
+    expect(h.elements.dashboardOrganisationCount.textContent).toBe('1 of 2 loaded organisations shown');
+    expect(h.elements.dashboardMore.hidden).toBe(true);
+    expect(h.document.activeElement).toBe(h.elements.dashboardChoices.children[1]);
+    expect(h.requests.every(request => request.init.method === 'GET')).toBe(true);
+});
+
+test.each(['clients', 'clients_read_only'])('combined filters and visible focus survive %s saved-setup paging without writes', async status => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(null, GA, { clientSetupAvailable: true }));
+    await h.reply(1, 200, listing([row(A, 'Own consultancy')]));
+    const page = (records, nextCursor) => ({ csrfToken, state: { status, remaining: null, nextCursor, clients: records } });
+    await h.reply(2, 200, page([client(B, 'Earlier setup', 'pending')], 'next_page'));
+    search(h, 'Matching'); filterStatus(h, 'setup');
+    expect(h.elements.dashboardOrganisationEmpty.textContent).toContain('load more saved setups');
+    const controls = h.document.getElementById('clientSetupControls');
+    controls.querySelectorAll('button').find(button => button.textContent === 'More saved setups').click(); await flush();
+    expect(h.requests[3].url).toBe('/api/customer-signup/clients?cursor=next_page');
+    await h.reply(3, 200, page([client(C, 'Other setup', 'pending'), client(D, 'Matching setup', 'pending')], 'last_page'));
+    expect(h.elements.dashboardOrganisationSearch.value).toBe('Matching');
+    expect(h.elements.dashboardOrganisationStatus.value).toBe('setup');
+    expect(h.elements.dashboardChoices.children.map(row => row.hidden)).toEqual([true, true, false]);
+    expect(h.document.activeElement).toBe(status === 'clients_read_only' ? h.elements.dashboardOrganisationSearch
+        : h.elements.dashboardChoices.children[2].querySelector('button'));
+    controls.querySelectorAll('button').find(button => button.textContent === 'More saved setups').click(); await flush();
+    await h.reply(4, 200, page([client(B, 'Unmatched setup', 'pending')], null));
+    expect(h.elements.dashboardOrganisationEmpty.hidden).toBe(false);
+    expect(h.document.activeElement).toBe(h.elements.dashboardOrganisationSearch);
+    if (status === 'clients_read_only') expect(controls.querySelectorAll('button').map(button => button.textContent)).toEqual(['First saved setups']);
+    expect(h.requests.every(request => request.init.method === 'GET')).toBe(true);
+});
+
+test('fresh directory removes a matching row while retaining both filters and select focus', async () => {
+    const h = harness(); await flush(); const account = state();
+    await h.reply(0, 200, account); await h.reply(1, 200, listing([row(A, 'First organisation'), row(B, 'Former client')]));
+    const input = h.elements.dashboardOrganisationSearch; search(h, 'Former');
+    const status = h.elements.dashboardOrganisationStatus; status.focus(); filterStatus(h, 'ready');
+    h.window.dispatch('focus'); await flush();
+    await h.reply(2, 200, account); await h.reply(3, 200, listing([row(A, 'First organisation')]));
+    await h.reply(4, 200, account);
+    expect(input.value).toBe('Former'); expect(status.value).toBe('ready'); expect(h.document.activeElement).toBe(status);
+    expect(h.elements.dashboardChoices.textContent).not.toContain('Former client');
+    expect(h.elements.dashboardOrganisationCount.textContent).toBe('0 of 1 loaded organisations shown');
+    expect(h.elements.dashboardOrganisationEmpty.hidden).toBe(false);
+    expect(h.requests.every(request => request.init.method === 'GET')).toBe(true);
+});
+
+test.each([
+    ['Former client renamed', false],
+    ['Renamed client', true]
+])('fresh directory keeps keyboard focus visible after a retained organisation becomes %s', async (label, hidden) => {
+    const h = harness(); await flush(); const account = state();
+    await h.reply(0, 200, account); await h.reply(1, 200, listing([row(A, 'First organisation'), row(B, 'Former client')]));
+    search(h, 'Former');
+    const focused = h.elements.dashboardChoices.children[1]; focused.focus();
+    h.window.dispatch('focus'); await flush();
+    await h.reply(2, 200, account); await h.reply(3, 200, listing([row(A, 'First organisation'), row(B, label)]));
+    await h.reply(4, 200, account);
+    expect(h.elements.dashboardChoices.children[1]).toBe(focused);
+    expect(focused.hidden).toBe(hidden);
+    expect(h.elements.dashboardOrganisationSearch.value).toBe('Former');
+    expect(h.document.activeElement).toBe(hidden ? h.elements.dashboardOrganisationSearch : focused);
+    expect(h.requests.every(request => request.init.method === 'GET')).toBe(true);
+});
 
 test('consultant sees both distinct ready binding IDs, pending setup once, and no ready setup duplicate', async () => {
     const h = harness(); await flush();
@@ -88,11 +219,108 @@ test('consultant sees both distinct ready binding IDs, pending setup once, and n
     expect(choices).toHaveLength(3);
     expect(choices.slice(0, 2).map(item => item.textContent)).toEqual(['Shared name', 'Shared name']);
     expect(choices.slice(0, 2).map(item => item.getAttribute('aria-label'))).toEqual([
-        'Shared name · Dashboard ready', 'Shared name · Dashboard ready']);
+        'Shared name · Open to check access', 'Shared name · Open to check access']);
     expect(choices[2].textContent).toContain('Draft client');
     expect(h.document.getElementById('clientSetupControls').textContent).toContain('Add organisation');
     choices[1].click(); await flush();
     expect(JSON.parse(h.requests[3].init.body).bindingId).toBe(B);
+});
+
+test('status-only filtering includes saved pending and details rows but never grants a saved ready record access', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(null, GA, { clientSetupAvailable: true }));
+    await h.reply(1, 200, listing([row(A, 'Authorised dashboard')]));
+    await h.reply(2, 200, clients([client(B, 'Saved ready record', 'ready'),
+        client(C, 'Pending setup', 'pending'), client(D, 'Details setup', 'details_required')]));
+    filterStatus(h, 'setup');
+    expect(h.elements.dashboardChoices.children.map(node => node.hidden)).toEqual([true, false, false]);
+    expect(h.elements.dashboardOrganisationCount.textContent).toBe('2 of 3 loaded organisations shown');
+    expect(h.elements.dashboardOrganisationClear.hidden).toBe(false);
+    expect(h.elements.dashboardChoices.textContent).not.toContain('Saved ready record');
+    filterStatus(h, 'ready');
+    expect(h.elements.dashboardChoices.children.filter(node => !node.hidden).map(node => node.getAttribute('data-binding-id'))).toEqual([A]);
+    expect(h.elements.dashboardOrganisationCount.textContent).toBe('1 of 3 loaded organisations shown');
+    expect(h.requests).toHaveLength(3);
+});
+
+test('setup filter survives ready pagination without focusing a hidden dashboard or promising setup results from it', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'First organisation')], A));
+    filterStatus(h, 'setup');
+    expect(h.elements.dashboardOrganisationEmpty.hidden).toBe(false);
+    expect(h.elements.dashboardOrganisationEmpty.textContent).not.toContain('load more organisations');
+    h.elements.dashboardMore.focus(); h.elements.dashboardMore.onclick(); await flush();
+    await h.reply(2, 200, listing([row(B, 'Second organisation')]));
+    expect(h.elements.dashboardOrganisationStatus.value).toBe('setup');
+    expect(h.elements.dashboardChoices.children.every(node => node.hidden)).toBe(true);
+    expect(h.elements.dashboardOrganisationCount.textContent).toBe('0 of 2 loaded organisations shown');
+    expect(h.document.activeElement).toBe(h.elements.dashboardOrganisationSearch);
+    expect(h.requests.every(request => request.init.method === 'GET')).toBe(true);
+});
+
+test('ready filter does not promise dashboard matches from saved-setup pagination', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(null, GA, { clientSetupAvailable: true }));
+    await h.reply(1, 200, listing([row(A, 'Authorised dashboard')]));
+    await h.reply(2, 200, { csrfToken, state: { status: 'clients_read_only', remaining: null,
+        nextCursor: 'next_page', clients: [client(B, 'Saved setup', 'pending')] } });
+    search(h, 'Saved'); filterStatus(h, 'ready');
+    expect(h.elements.dashboardOrganisationEmpty.hidden).toBe(false);
+    expect(h.elements.dashboardOrganisationEmpty.textContent).not.toContain('load more saved setups');
+    expect(h.elements.dashboardOrganisationCount.textContent).toBe('0 of 2 loaded organisations shown');
+    expect(h.requests).toHaveLength(3);
+});
+
+test('changed access generation resets both filters before a new directory can render', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'First organisation')]));
+    search(h, 'First'); filterStatus(h, 'setup');
+    h.window.dispatch('focus'); await flush();
+    await h.reply(2, 200, state(null, GB));
+    expect(h.elements.dashboardOrganisationSearch.value).toBe('');
+    expect(h.elements.dashboardOrganisationStatus.value).toBe('all');
+    expect(h.elements.dashboardChoices.children).toHaveLength(0);
+    expect(h.elements.dashboardOrganisationSearchControls.hidden).toBe(true);
+    await h.reply(3, 200, state(null, GB)); await h.reply(4, 200, listing([row(B, 'New organisation')]));
+    expect(h.elements.dashboardChoices.children.map(node => node.hidden)).toEqual([false]);
+    expect(h.elements.dashboardOrganisationCount.textContent).toBe('1 organisation loaded');
+});
+
+test('expiry clears both filters and a late quiet refresh cannot restore stale rows', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'First organisation')]));
+    search(h, 'First'); filterStatus(h, 'ready');
+    h.window.dispatch('focus'); await flush(); await h.reply(2, 200, state());
+    expect(h.requests[3].url).toBe('/api/dashboard/organisations?limit=50');
+    jest.advanceTimersByTime(60 * 60 * 1000); await flush();
+    expect(h.status).toBe('expired');
+    expect(h.elements.dashboardOrganisationSearch.value).toBe('');
+    expect(h.elements.dashboardOrganisationStatus.value).toBe('all');
+    expect(h.elements.dashboardOrganisationSearchControls.hidden).toBe(true);
+    await h.reply(3, 200, listing([row(A, 'Stale organisation')]));
+    expect(h.elements.dashboardChoices.children).toHaveLength(0);
+    expect(h.elements.dashboardOrganisationCount.textContent).toBe('');
+    expect(h.requests).toHaveLength(4);
+});
+
+test.each([null, A])('discovery does not claim access for a retained suspended binding (selected %s)', async selected => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(selected));
+    await h.reply(1, 200, listing([row(A, 'Retained client')]));
+    const choice = h.elements.dashboardChoices.children[0];
+    expect(choice.getAttribute('aria-label')).toBe('Retained client · Open to check access');
+    expect(choice.getAttribute('aria-pressed')).toBe(String(selected === A));
+    const css = fs.readFileSync(path.join(__dirname, '../home.css'), 'utf8');
+    expect(css).toMatch(/\.consultant-organisation-ready::after\s*\{\s*content: 'Open to check access'/);
+    expect(h.requests).toHaveLength(2);
+    choice.click(); await flush();
+    expect(h.requests[2].url).toBe('/api/dashboard/selection');
+    expect(JSON.parse(h.requests[2].init.body).bindingId).toBe(A);
+    await h.reply(2, 403, { code: 'dashboard_access_denied' });
+    expect(h.status).toBe('denied');
+    expect(h.elements.dashboardChoices.children).toHaveLength(0);
+    expect(h.elements.dashboardApp.hidden).toBe(true);
+    expect(h.requests).toHaveLength(3);
 });
 
 test('empty message follows validated reads, and Company has no client setup', async () => {
@@ -157,4 +385,123 @@ test('directory keeps validated page cursor and foreign selection denial clears 
     expect(JSON.parse(h.requests[3].init.body).bindingId).toBe(B);
     await h.reply(3, 403, { code: 'dashboard_binding_denied' });
     expect(h.status).toBe('denied'); expect(h.elements.dashboardChoices.children).toHaveLength(0);
+});
+
+async function addClientForm(saved = []) {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(null, GA, { clientSetupAvailable: true }));
+    await h.reply(1, 200, listing([row(A, 'Own consultancy')]));
+    await h.reply(2, 200, clients(saved));
+    const section = h.document.getElementById('clientSetupControls');
+    section.querySelectorAll('button').find(node => node.textContent === 'Add organisation').click();
+    const form = section.querySelector('form');
+    return Object.assign(h, { section, form, input: name => form.querySelectorAll('input').find(node => node.name === name),
+        cancel: form.querySelectorAll('button').find(node => node.textContent === 'Cancel') });
+}
+
+test('Cancel leaves an empty new organisation form without confirmation or a write', async () => {
+    const h = await addClientForm();
+    expect(h.cancel).toBeDefined(); h.cancel.click(); await flush();
+    expect(h.window.confirm).not.toHaveBeenCalled();
+    expect(h.requests[3].url).toBe('/api/customer-signup/clients');
+    expect(h.requests[3].init.method).toBe('GET');
+    await h.reply(3, 200, clients([]));
+    expect(h.section.querySelector('form')).toBeNull();
+    expect(h.document.activeElement.textContent).toBe('Add organisation');
+});
+
+test('Cancel keeps unsent fields on refusal and discards only after confirmation', async () => {
+    const h = await addClientForm(); h.input('organisationName').value = 'Unsent client';
+    h.input('role').value = 'Consultant';
+    h.cancel.click(); await flush();
+    expect(h.requests.length).toBe(3); expect(h.input('role').value).toBe('Consultant');
+    expect(h.section.querySelector('form') === h.form).toBe(true);
+    h.window.confirm.mockReturnValue(true); h.cancel.click(); await flush();
+    expect(h.requests[3].init.method).toBe('GET');
+    await h.reply(3, 200, clients([]));
+    expect(h.section.querySelector('form')).toBeNull();
+    h.section.querySelectorAll('button').find(node => node.textContent === 'Add organisation').click();
+    expect(h.section.querySelector('form').querySelectorAll('input').every(input => !input.value && !input.checked)).toBe(true);
+});
+
+test.each(['organisation', 'sign out'])('unsent client details guard %s and preserve exact confirmed navigation', async action => {
+    const h = await addClientForm(); h.input('name').value = 'Synthetic consultant';
+    const navigate = () => action === 'organisation' ? h.elements.dashboardChoices.children[0].click() : h.elements.dashboardSignOut.click();
+    navigate(); await flush();
+    expect(h.requests.length).toBe(3); expect(h.section.querySelector('form') === h.form).toBe(true);
+    expect(h.window.confirm).toHaveBeenCalledWith('Discard unsaved organisation details?');
+    h.window.confirm.mockReturnValue(true); navigate(); await flush();
+    expect(h.requests[3].url).toBe(action === 'organisation' ? '/api/dashboard/selection' : '/api/dashboard/logout');
+    expect(h.requests[3].init.method).toBe('POST');
+    if (action === 'organisation') expect(JSON.parse(h.requests[3].init.body)).toMatchObject({ bindingId: A, expectedGeneration: GA });
+    else expect(JSON.parse(h.requests[3].init.body)).toEqual({});
+});
+
+test.each(['pending', 'details_required'])('switching to %s saved setup protects the unsent form', async status => {
+    const h = await addClientForm([client(B, 'Saved client', status)]); h.input('address').value = 'Synthetic address';
+    const saved = h.elements.dashboardChoices.children[1].querySelector('button');
+    saved.click(); await flush();
+    expect(h.requests.length).toBe(3); expect(h.section.querySelector('form') === h.form).toBe(true);
+    h.window.confirm.mockReturnValue(true); saved.click(); await flush();
+    if (status === 'pending') expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'resume', requestId: B });
+    else {
+        expect(h.requests.length).toBe(3);
+        expect(h.section.querySelector('form').querySelector('input').value).toBe('Saved client');
+    }
+});
+
+test('the read-only saved organisation name alone does not make its details form dirty', async () => {
+    const h = await addClientForm([client(B, 'Saved client', 'details_required')]);
+    h.elements.dashboardChoices.children[1].querySelector('button').click();
+    h.elements.dashboardSignOut.click(); await flush();
+    expect(h.window.confirm).not.toHaveBeenCalled();
+    expect(h.requests[3].url).toBe('/api/dashboard/logout');
+});
+
+test('ordinary footer navigation protects the unsent form but modified clicks retain it without prompting', async () => {
+    const h = await addClientForm(); h.input('organisationName').value = 'Unsent client';
+    const click = event => { for (const fn of h.leaveLink.events.click) fn(event); };
+    click({ ctrlKey: true, preventDefault: jest.fn() }); await flush();
+    expect(h.window.confirm).not.toHaveBeenCalled(); expect(h.window.location.assign).not.toHaveBeenCalled();
+    const event = { preventDefault: jest.fn() }; click(event); await flush();
+    expect(event.preventDefault).toHaveBeenCalled(); expect(h.window.location.assign).not.toHaveBeenCalled();
+    expect(h.section.querySelector('form') === h.form).toBe(true);
+    h.window.confirm.mockReturnValue(true); click(event); await flush();
+    expect(h.window.location.assign).toHaveBeenCalledWith('/roadmap.html');
+    expect(h.requests.length).toBe(3);
+});
+
+test('reload warning covers typed fields and authority confirmation, and clears with expiry', async () => {
+    const h = await addClientForm();
+    const fire = () => { const event = { preventDefault: jest.fn() }; h.unload.forEach(fn => fn(event)); return event; };
+    expect(fire().preventDefault).not.toHaveBeenCalled();
+    const authority = h.form.querySelectorAll('input').find(node => node.type === 'checkbox'); authority.checked = true;
+    const dirty = fire(); expect(dirty.preventDefault).toHaveBeenCalled(); expect(dirty.returnValue).toBe('');
+    authority.checked = false; h.input('role').value = 'Consultant';
+    expect(fire().preventDefault).toHaveBeenCalled();
+    jest.advanceTimersByTime(60 * 60 * 1000); await flush();
+    expect(h.status).toBe('expired'); expect(h.window.confirm).not.toHaveBeenCalled();
+    expect(fire().preventDefault).not.toHaveBeenCalled();
+});
+
+test('an unresolved create stays blocked and warns on unload instead of offering to discard the command', async () => {
+    const h = await addClientForm();
+    ['organisationName', 'name', 'role', 'address'].forEach(name => { h.input(name).value = 'Synthetic ' + name; });
+    h.form.querySelectorAll('input').find(node => node.type === 'checkbox').checked = true;
+    for (const fn of h.form.events.submit) fn({ preventDefault() {} }); await flush();
+    await h.reply(3, 503, { code: 'temporarily_unavailable' });
+    h.elements.dashboardSignOut.click(); await flush();
+    expect(h.requests.length).toBe(4); expect(h.window.confirm).not.toHaveBeenCalled();
+    expect(h.section.textContent).toContain('Check and resume saved setup');
+    const event = { preventDefault: jest.fn() }; h.unload.forEach(fn => fn(event));
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(h.section.querySelectorAll('button').some(node => node.textContent === 'Cancel')).toBe(false);
+});
+
+test('access revocation clears an unsent client draft without a discard prompt', async () => {
+    const h = await addClientForm(); h.input('organisationName').value = 'Unsent client';
+    h.window.dispatch('focus'); await flush();
+    await h.reply(3, 403, { code: 'dashboard_access_denied' });
+    expect(h.status).toBe('denied'); expect(h.document.getElementById('clientSetupControls')).toBeNull();
+    expect(h.window.confirm).not.toHaveBeenCalled();
 });

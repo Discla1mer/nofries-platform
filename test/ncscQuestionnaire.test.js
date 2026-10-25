@@ -263,6 +263,7 @@ function interactiveDom() {
     return dom;
 }
 const byId = (ui, id) => ui.root.querySelectorAll('[id]').find(element => element.id === id);
+const savedActions = ui => ui.root.querySelector('.ncsc-assessment-list')?.querySelectorAll('button') || [];
 const control = (ui, label) => ui.root.querySelectorAll('button').find(element => element.textContent === label);
 function event(element, name) {
     if (!element) throw new Error(`Missing ${name} control`);
@@ -295,12 +296,205 @@ async function createInUi(h, options = {}) {
     return ui;
 }
 async function resumeUi(h, options = {}) {
-    const ui = mountUi(h, options); await until(() => ui.root.querySelectorAll('button').some(button => / · .*answered$/.test(button.textContent)));
-    ui.root.querySelectorAll('button').find(button => / · .*answered$/.test(button.textContent)).click();
+    const ui = mountUi(h, options); await until(() => savedActions(ui).length > 0);
+    savedActions(ui)[0].click();
     await until(() => byId(ui, 'ncsc-question-index')); return ui;
 }
 
 describe('saved assessment list pagination and resume', () => {
+    async function paginationFocusFixture(options = {}) {
+        const h = await backend(), gate = deferred();
+        for (const id of ['assessment-first', 'assessment-hidden', 'assessment-next']) {
+            await h.execute(createCommand(id, 'seed-' + id));
+        }
+        let hold = true;
+        const list = jest.fn(async input => {
+            if (input.afterAssessmentId && hold) { hold = false; await gate.promise; }
+            return h.client.list({ ...input, limit: input.afterAssessmentId ? 2 : 1 });
+        });
+        const ui = mountUi(h, { ...options, client: { ...h.client, list } });
+        await until(() => savedActions(ui).length === 1);
+        return { h, ui, gate, list };
+    }
+
+    test.each(['editable', 'read-only'])('pagination focus follows the first newly visible %s record', async presentationMode => {
+        const { h, ui, gate, list } = await paginationFocusFixture({ presentationMode });
+        try {
+            enter(byId(ui, 'ncsc-assessment-search'), 'assessment-next');
+            const filter = byId(ui, 'ncsc-assessment-status'); filter.value = 'unfinished'; event(filter, 'change');
+            const more = control(ui, 'Load more assessments'); more.focus(); more.click(); more.click();
+            expect(list).toHaveBeenCalledTimes(2);
+            expect(control(ui, 'Load more assessments').disabled).toBe(true);
+            gate.resolve(); await until(() => savedActions(ui).length === 1);
+            expect(ui.document.activeElement === savedActions(ui)[0]).toBe(true);
+            expect(byId(ui, 'ncsc-assessment-search').value).toBe('assessment-next');
+            expect(byId(ui, 'ncsc-assessment-status').value).toBe('unfinished');
+            expect(h.calls.map(call => call.url)).toEqual([PREFIX + '?limit=1', PREFIX + '?limit=2&afterAssessmentId=assessment-first']);
+            expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
+            expect(h.records).toHaveLength(3);
+        } finally { gate.resolve(); ui.controller.destroy(); }
+    });
+
+    test('pagination focus returns to search when the last page adds no matching rows', async () => {
+        const { h, ui, gate } = await paginationFocusFixture();
+        try {
+            enter(byId(ui, 'ncsc-assessment-search'), 'absent-reference');
+            const more = control(ui, 'Load more assessments'); more.focus(); more.click();
+            gate.resolve(); await until(() => !control(ui, 'Load more assessments'));
+            expect(savedActions(ui)).toHaveLength(0);
+            expect(ui.document.activeElement === byId(ui, 'ncsc-assessment-search')).toBe(true);
+            expect(byId(ui, 'ncsc-assessment-search').value).toBe('absent-reference');
+            expect(h.records).toHaveLength(3);
+        } finally { gate.resolve(); ui.controller.destroy(); }
+    });
+
+    test('failed pagination returns focus to its retryable More control without changing the cursor', async () => {
+        const { h, ui, gate, list } = await paginationFocusFixture();
+        try {
+            const more = control(ui, 'Load more assessments'); more.focus(); more.click();
+            gate.reject({ code: 'ncsc_unavailable', statusCode: 503 });
+            await until(() => control(ui, 'Load more assessments')?.disabled === false);
+            expect(ui.document.activeElement === control(ui, 'Load more assessments')).toBe(true);
+            expect(savedActions(ui)).toHaveLength(1);
+            expect(ui.root.querySelector('.ncsc-status').textContent).not.toBe('');
+            control(ui, 'Load more assessments').click();
+            await until(() => savedActions(ui).length === 3);
+            expect(list.mock.calls.slice(1).map(([input]) => input.afterAssessmentId)).toEqual(['assessment-first', 'assessment-first']);
+            expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
+            expect(h.records).toHaveLength(3);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test.each(['outside', 'search', 'existing action', 'details', 'away then heading'])('pagination does not take focus after movement to %s', async destination => {
+        const { ui, gate } = await paginationFocusFixture();
+        try {
+            const more = control(ui, 'Load more assessments'); more.focus(); more.click();
+            const heading = byId(ui, 'ncsc-title');
+            // This structural DOM has no native blur dispatch; emulate that event.
+            event(heading, 'blur');
+            let target;
+            if (destination === 'outside' || destination === 'away then heading') target = ui.document.createElement('button');
+            else if (destination === 'search') target = byId(ui, 'ncsc-assessment-search');
+            else if (destination === 'details') target = ui.root.querySelector('.ncsc-assessment-list').querySelector('summary');
+            else target = savedActions(ui)[0];
+            target.focus();
+            if (destination === 'away then heading') { heading.focus(); target = heading; }
+            gate.resolve(); await until(() => savedActions(ui).length === 3);
+            expect(ui.document.activeElement === (target.id ? byId(ui, target.id) : target)).toBe(true);
+        } finally { gate.resolve(); ui.controller.destroy(); }
+    });
+
+    test('denied pagination clears the list without focusing a saved record or retry', async () => {
+        const { ui, gate } = await paginationFocusFixture();
+        try {
+            const more = control(ui, 'Load more assessments'); more.focus(); more.click();
+            gate.reject({ code: 'ncsc_access_denied', statusCode: 403 });
+            await until(() => ui.root.textContent.includes('This assessment is not available.'));
+            expect(savedActions(ui)).toHaveLength(0);
+            expect(control(ui, 'Load more assessments')).toBeUndefined();
+            expect(ui.document.activeElement === byId(ui, 'ncsc-title')).toBe(true);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('returning after incomplete submission validation reloads the list and preserves the saved answers', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        try {
+            choose(ui, 0, 'yes'); choose(ui, 1, 'partial');
+            control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 1.'));
+            const saved = clone(h.records), assessmentId = h.records[0].assessmentId;
+            control(ui, 'Submit assessment').click();
+            expect(ui.root.querySelector('.ncsc-errors').querySelectorAll('a')).toHaveLength(12);
+            const requests = h.calls.length;
+            control(ui, 'Back to assessments').click();
+            await until(() => savedActions(ui).length === 1);
+            expect(ui.root.textContent).not.toContain('Loading assessments.');
+            expect(ui.root.textContent).not.toContain('Please check these answers');
+            expect(ui.root.querySelector('.ncsc-errors').hidden).toBe(true);
+            expect(h.calls.slice(requests).map(call => [call.init.method, call.url])).toEqual([['GET', PREFIX + '?limit=50']]);
+            expect(h.records).toEqual(saved);
+            savedActions(ui)[0].click(); await until(() => byId(ui, 'ncsc-question-index'));
+            expect(h.calls.at(-1).url).toBe(PREFIX + '/' + assessmentId);
+            expect(ui.root.textContent).toContain('Saved responses: 2 of 14 selected');
+            expect(ui.root.textContent).not.toContain('Please check these answers');
+            expect(h.records).toEqual(saved);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('returning from invalid empty scope clears validation without creating an assessment', async () => {
+        const h = await backend(), ui = mountUi(h);
+        try {
+            await until(() => control(ui, 'Start an assessment'));
+            control(ui, 'Start an assessment').click(); control(ui, 'Create assessment').click();
+            expect(ui.root.querySelector('.ncsc-errors').hidden).toBe(false);
+            control(ui, 'Back to assessments').click();
+            await until(() => ui.root.textContent.includes('No saved assessments yet.'));
+            expect(ui.root.textContent).not.toContain('Please check these answers');
+            expect(ui.root.querySelector('.ncsc-errors').hidden).toBe(true);
+            expect(h.records).toHaveLength(0);
+            expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('search and status combine without reads, preserve focus, recover from no matches and resume the exact record', async () => {
+        const h = await backend();
+        await h.execute(createCommand('assessment-draft', 'seed-draft'));
+        await h.execute(createCommand('assessment-submitted', 'seed-submitted'));
+        await h.execute(saveCommand('assessment-submitted', 0, 'save-submitted', allResponses()));
+        await h.execute(submitCommand('assessment-submitted', 1, 'submit-record'));
+        const ui = mountUi(h); await until(() => savedActions(ui).length === 2);
+        const search = byId(ui, 'ncsc-assessment-search'), filter = byId(ui, 'ncsc-assessment-status');
+        expect(savedActions(ui).map(button => button.textContent)).toEqual(['Continue assessment', 'View results']);
+        search.focus(); enter(search, ' ASSESSMENT-SUBMITTED ');
+        expect(savedActions(ui).map(button => button.textContent)).toEqual(['View results']);
+        expect(ui.document.activeElement).toBe(search);
+        filter.value = 'unfinished'; event(filter, 'change');
+        expect(savedActions(ui)).toHaveLength(0);
+        expect(ui.root.querySelector('.ncsc-assessment-empty').hidden).toBe(false);
+        expect(ui.root.textContent).toContain('0 of 2 loaded assessments shown');
+        control(ui, 'Clear filters').click();
+        expect(search.value).toBe(''); expect(filter.value).toBe('all');
+        expect(ui.document.activeElement).toBe(search); expect(savedActions(ui)).toHaveLength(2);
+        enter(search, projectNcscSummary([...h.versions.values()][0]).createdAt.slice(0, 10));
+        expect(savedActions(ui)).toHaveLength(2);
+        filter.value = 'submitted'; event(filter, 'change');
+        expect(savedActions(ui)).toHaveLength(1); expect(h.calls).toHaveLength(1);
+        savedActions(ui)[0].click(); await until(() => Boolean(byId(ui, 'ncsc-question-index')));
+        expect(h.calls.at(-1).url).toBe(PREFIX + '/assessment-submitted');
+        expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
+        expect(h.records).toHaveLength(4); ui.controller.destroy();
+    });
+
+    test('filters persist through pagination and disclose the loaded-record boundary', async () => {
+        const h = await backend();
+        const ids = ['assessment-first', 'assessment-next'];
+        for (const id of ids) await h.execute(createCommand(id, 'seed-' + id));
+        const list = jest.fn(input => h.client.list({ ...input, limit: 1 }));
+        const ui = mountUi(h, { client: { ...h.client, list } }); await until(() => savedActions(ui).length === 1);
+        enter(byId(ui, 'ncsc-assessment-search'), 'assessment-next');
+        const filter = byId(ui, 'ncsc-assessment-status'); filter.value = 'unfinished'; event(filter, 'change');
+        expect(savedActions(ui)).toHaveLength(0);
+        expect(ui.root.textContent).toContain('Search and filters cover loaded assessments.');
+        control(ui, 'Load more assessments').click(); await until(() => savedActions(ui).length === 1);
+        expect(byId(ui, 'ncsc-assessment-search').value).toBe('assessment-next');
+        expect(byId(ui, 'ncsc-assessment-status').value).toBe('unfinished');
+        expect(ui.root.textContent).toContain('1 of 2 loaded assessments shown');
+        expect(ui.root.textContent).not.toContain('Search and filters cover loaded assessments.');
+        expect(h.calls).toHaveLength(2);
+        savedActions(ui)[0].click(); await until(() => Boolean(byId(ui, 'ncsc-question-index')));
+        expect(h.calls.at(-1).url).toBe(PREFIX + '/assessment-next');
+        expect(h.records).toHaveLength(2); ui.controller.destroy();
+    });
+
+    test('read-only saved cards offer viewing and never imply editing', async () => {
+        const h = await backend(); await h.execute(createCommand());
+        const ui = mountUi(h, { presentationMode: 'read-only' }); await until(() => savedActions(ui).length === 1);
+        expect(savedActions(ui)[0].textContent).toBe('View assessment');
+        expect(control(ui, 'Start an assessment')).toBeUndefined();
+        expect(ui.root.querySelector('progress').value).toBe(0);
+        expect(ui.root.querySelector('progress').max).toBe(14);
+        ui.controller.destroy();
+    });
+
     test('an explicit saved target performs one fresh exact read without list/create/save/submit', async () => {
         const h = await backend();
         await h.execute(createCommand('assessment-target', 'seed-target', 'Synthetic exact target scope.'));
@@ -502,12 +696,12 @@ describe('saved assessment list pagination and resume', () => {
             await h.execute(createCommand('saved-while-list-loading', 'create-during-list', 'Retained saved scope.'));
             control(ui, 'Back to assessments').click();
             if (outcome === 'discard scope') control(ui, 'Discard unsent changes').click();
-            await until(() => ui.root.querySelectorAll('button').some(item => / · .*0\/14 answered$/.test(item.textContent)));
+            await until(() => savedActions(ui).length > 0);
             expect(listReads).toBe(2);
             expect(ui.root.textContent).not.toContain('Loading assessments.');
             expect(ui.root.textContent).not.toContain('Unsent scope to discard.');
             gate.resolve(); await pause(); await pause();
-            expect(ui.root.querySelectorAll('button').filter(item => / · .*0\/14 answered$/.test(item.textContent))).toHaveLength(1);
+            expect(savedActions(ui)).toHaveLength(1);
             expect(ui.root.textContent).not.toContain('No saved assessments yet.');
             expect(h.records).toHaveLength(1);
         } finally { gate.resolve(); ui.controller.destroy(); }
@@ -521,7 +715,7 @@ describe('saved assessment list pagination and resume', () => {
         await until(() => h.records.length === 1 && !ui.root.querySelector('dialog'));
         await until(() => Boolean(control(ui, 'Start an assessment')));
         expect(control(ui, 'Save progress')).toBeUndefined();
-        const savedRow = ui.root.querySelectorAll('button').find(item => / · .*0\/14 answered$/.test(item.textContent));
+        const savedRow = savedActions(ui)[0];
         expect(savedRow).toBeDefined();
         expect(h.calls.filter(item => item.url === PREFIX + '?limit=50')).toHaveLength(2);
         savedRow.click(); await until(() => control(ui, 'Save progress'));
@@ -550,7 +744,7 @@ describe('saved assessment list pagination and resume', () => {
         expect(ui.root.textContent).not.toContain('No saved assessments yet.');
         expect(control(ui, 'Retry loading assessments')).toBeDefined();
         control(ui, 'Retry loading assessments').click();
-        await until(() => ui.root.querySelectorAll('button').some(item => / · .*0\/14 answered$/.test(item.textContent)));
+        await until(() => savedActions(ui).length > 0);
         expect(h.records).toHaveLength(1); expect(listReads).toBe(3);
         ui.controller.destroy();
     });
@@ -916,10 +1110,10 @@ describe('question assistance source integration', () => {
         const id = metadata().questions[0].id, notes = byId(ui, 'ncsc-assistance-notes-' + id);
         const staleExplain = control(ui, 'Explain this question');
         enter(notes, 'Do not retain on reopen'); control(ui, 'Back to assessments').click();
-        await until(() => ui.root.querySelectorAll('button').some(b => / · .*answered$/.test(b.textContent)));
+        await until(() => savedActions(ui).length > 0);
         enter(notes, 'Detached stale event'); staleExplain.click();
         expect(assistance.suggest).not.toHaveBeenCalled();
-        ui.root.querySelectorAll('button').find(b => / · .*answered$/.test(b.textContent)).click();
+        savedActions(ui)[0].click();
         await until(() => byId(ui, 'ncsc-assistance-notes-' + id));
         expect(byId(ui, 'ncsc-assistance-notes-' + id).value).toBe('');
         ui.controller.destroy();
@@ -1149,8 +1343,8 @@ describe('submitted assessment results', () => {
     test('an old submitted response cannot populate a replacement tenant mount', async () => {
         const { h } = await submitted(), wait = deferred();
         const ui = mountUi(h, { client: { ...h.client, read: async (...args) => { const response = await h.client.read(...args); await wait.promise; return response; } } });
-        await until(() => ui.root.querySelectorAll('button').some(button => / · .*answered$/.test(button.textContent)));
-        ui.root.querySelectorAll('button').find(button => / · .*answered$/.test(button.textContent)).click();
+        await until(() => savedActions(ui).length > 0);
+        savedActions(ui)[0].click();
         const replacementBackend = await backend({ tenantId: 'synthetic-results-other' });
         const replacement = mountUi(replacementBackend, { dom: ui });
         await until(() => replacement.root.textContent.includes('No saved assessments yet.'));
@@ -1500,7 +1694,7 @@ describe('questionnaire public controls and retained mutation intent', () => {
         choose(ui, 0, 'no'); control(ui, 'Save progress').click();
         await until(() => h.records.filter(row => row.action === 'save').length === 2);
         control(ui, 'Back to assessments').click();
-        await until(() => ui.root.textContent.includes('Resume saved progress'));
+        await until(() => savedActions(ui).length === 1);
         expect(h.records.some(row => row.action === 'submit')).toBe(false);
         ui.controller.destroy();
     });
@@ -1614,8 +1808,8 @@ describe('questionnaire public controls and retained mutation intent', () => {
         await a.execute(createCommand('assessment-a', 'create-a', 'Tenant A secret draft')); await b.execute(createCommand('assessment-a', 'create-a', 'Tenant B retained text'));
         const gate = deferred(), pending = jest.fn(async (...args) => { await gate.promise; return a.client.read(...args); });
         const dom = interactiveDom(), old = mountUi(a, { dom, client: { ...a.client, read: pending } });
-        await until(() => old.root.querySelectorAll('button').some(button => / · .*answered$/.test(button.textContent)));
-        old.root.querySelectorAll('button').find(button => / · .*answered$/.test(button.textContent)).click(); await until(() => pending.mock.calls.length === 1);
+        await until(() => savedActions(old).length > 0);
+        savedActions(old)[0].click(); await until(() => pending.mock.calls.length === 1);
         const fresh = await resumeUi(b, { dom }); const stable = fresh.root.textContent, focus = fresh.document.activeElement;
         gate.resolve(); await pause(); await pause(); old.controller.destroy();
         expect(fresh.root.textContent).toBe(stable); expect(fresh.document.activeElement).toBe(focus);
@@ -1674,8 +1868,8 @@ describe('questionnaire boundary and navigation regressions', () => {
         if (kind === 'extra') value.assessment.profileRef.additionalProfile = 'unaccepted';
         if (kind === 'nonenumerable') Object.defineProperty(value.assessment.profileRef, 'frameworkId', { enumerable: false });
         const ui = mountUi(h, { client: { ...h.client, read: async () => value } });
-        await until(() => ui.root.querySelectorAll('button').some(item => / · .*answered$/.test(item.textContent)));
-        ui.root.querySelectorAll('button').find(item => / · .*answered$/.test(item.textContent)).click();
+        await until(() => savedActions(ui).length > 0);
+        savedActions(ui)[0].click();
         await until(() => ui.root.textContent.includes('The saved assessment could not be loaded.'));
         expect(control(ui, 'Retry loading this assessment')).toBeDefined();
         expect(byId(ui, 'ncsc-question-index')).toBeUndefined();

@@ -225,8 +225,8 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             }
             async function resume(transport) {
                 const ui = uiFor(transport);
-                await until(() => ui.root.querySelectorAll('button').some(item => / · .*answered$/.test(item.textContent)));
-                ui.root.querySelectorAll('button').find(item => / · .*answered$/.test(item.textContent)).click();
+                await until(() => ui.root.querySelector('.ncsc-assessment-list')?.querySelectorAll('button').length > 0);
+                ui.root.querySelector('.ncsc-assessment-list').querySelectorAll('button')[0].click();
                 await until(() => id(ui, 'ncsc-question-index')); return ui;
             }
 

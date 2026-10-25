@@ -125,6 +125,29 @@ describe('saved assessment explanation projection', () => {
 });
 
 describe('explicit saved explanation controller', () => {
+    test.each(['range', 'unresolved', 'actions'])('exact citations are retained in closed source disclosures for %s', async topic => {
+        const source = saved('mixed'), view = ui(source);
+        const labels = { range: 'Saved range', unresolved: 'Unresolved answers', actions: 'Framework starting actions' };
+        control(view, labels[topic]).click(); control(view, 'Explain this saved result').click(); await pause();
+        const result = project(source, topic), region = view.root.querySelector('[aria-label="Saved explanation"]');
+        expect(region.querySelectorAll('p').map(item => item.textContent)).toEqual(result.blocks.map(block => block.text));
+        const disclosures = region.querySelectorAll('details'), citedBlocks = result.blocks.filter(block => block.citations.length);
+        expect(disclosures).toHaveLength(citedBlocks.length);
+        expect(region.children.some(item => item.tagName === 'UL')).toBe(false);
+        disclosures.forEach((details, index) => {
+            expect(Boolean(details.open)).toBe(false);
+            expect(details.children[0].tagName).toBe('SUMMARY');
+            expect(details.children[0].textContent).toBe('Sources and calculation details');
+            const expected = citedBlocks[index].citations.map(citation => citation.kind === 'saved'
+                ? 'Saved assessment ' + citation.assessmentId + ', revision ' + citation.revision +
+                    ' · ' + citation.revisionSha256 + ' · ' + citation.field
+                : 'Accepted catalogue ' + citation.profileRef.profileId + ' ' + citation.profileRef.profileVersion +
+                    ' · ' + citation.profileRef.catalogueSha256 + ' · metadata.' + citation.field);
+            expect(details.querySelectorAll('li').map(item => item.textContent)).toEqual(expected);
+        });
+        expect(view.client.read).toHaveBeenCalledTimes(1);
+        view.controller.destroy();
+    });
     test('topic and clear rerenders preserve keyboard focus with themed control targets', async () => {
         const source = saved('mixed'), view = ui(source);
         let button = control(view, 'Unresolved answers'); button.focus(); button.click();

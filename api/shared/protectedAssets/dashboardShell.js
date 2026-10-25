@@ -28,7 +28,9 @@
         // Presentation priority only: destinations still come from the current
         // server-filtered registry, and readiness comes from its display state.
         const primary = available.filter(function (item) {
-            return ['overview', 'cyber_security', 'services'].includes(item.key) && stateFor(item.key) === 'ready';
+            const implemented = ['overview', 'cyber_security', 'services'].includes(item.key) ||
+                item.key === 'improvement_plan' && typeof options.mountImprovement === 'function';
+            return implemented && stateFor(item.key) === 'ready';
         });
         const secondary = available.filter(function (item) { return !primary.includes(item); });
         const pictureAvailable = typeof options.mountPicture === 'function' && model.modules.some(function (item) {
@@ -90,7 +92,7 @@
             nav.append(links);
             if (!secondary.length) return;
             const other = element('details', 'dashboard-menu-other');
-            other.append(element('summary', '', 'Other workspaces'));
+            other.append(element('summary', '', 'More tools'));
             secondary.forEach(function (item) {
                 const labels = { ready: 'Available', planned: 'Coming next', disabled: 'Unavailable' };
                 other.append(routeLink(item, null, labels[stateFor(item.key)]));
@@ -193,10 +195,11 @@
                 if (focus) main.querySelector('h1').focus();
                 return;
             }
+            const repeatedRoute = current.key === target.key && win && win.location.hash === '#' + target.route;
             current = target;
             status.hidden = !!requested || !route;
-            status.textContent = requested || !route ? '' : 'That view is not available. Showing an authorised module.';
-            if (changeLocation) pushEntry(current.route);
+            status.textContent = requested || !route ? '' : 'That view is not available for this organisation. Showing ' + target.label + '.';
+            if (changeLocation && !repeatedRoute) pushEntry(current.route);
             render(initialAssessmentId, sourceAssessment); updateNavigation();
             if (focus) main.querySelector('h1').focus();
         }
@@ -400,7 +403,7 @@
         }
         function renderModule() {
             const section = panel('Your ' + current.label.toLowerCase() + ' workspace is coming next',
-                'This module is included for your organisation. Its assessment, evidence or reporting workflow has not been connected in this build.');
+                'This tool is included for your organisation and is not available yet.');
             section.append(element('p', '', 'No assessment is started, evidence uploaded or report issued from this screen.'));
             const home = available.find(function (item) { return item.key === 'overview'; });
             if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));

@@ -222,12 +222,14 @@
                 if (block.title) region.append(node('h5', block.title));
                 region.append(node('p', block.text));
                 if (block.citations.length) {
+                    const sources = node('details'); sources.className = 'ncsc-result-provenance';
+                    sources.append(node('summary', 'Sources and calculation details'));
                     const references = node('ul'); references.className = 'ncsc-explanation-citations';
                     block.citations.forEach(function (citation) {
                         references.append(node('li', citation.kind === 'saved' ? 'Saved assessment ' + citation.assessmentId + ', revision ' + citation.revision +
                             ' · ' + citation.revisionSha256 + ' · ' + citation.field : 'Accepted catalogue ' + citation.profileRef.profileId + ' ' + citation.profileRef.profileVersion +
                             ' · ' + citation.profileRef.catalogueSha256 + ' · metadata.' + citation.field));
-                    }); region.append(references);
+                    }); sources.append(references); region.append(sources);
                 }
             }); root.append(region); restoreFocus(focus);
         }

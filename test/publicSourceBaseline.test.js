@@ -7,7 +7,7 @@ test.each(['addition', 'removal', 'content', 'empty-baseline', 'symlink', 'sourc
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nf-public-source-'));
     try {
         fs.writeFileSync(path.join(root, 'auth.js'), 'reviewed');
-        const expected = {schemaVersion:1,sourceHead:'34db76317b06973a238a2728b486d035193867cc',expiresAt:'2026-10-27T00:00:00Z',files:inventory(root)};
+        const expected = {schemaVersion:1,sourceHead:'a32e1e87be666d5d58b6aba3849f4488de81b821',expiresAt:'2026-10-27T00:00:00Z',files:inventory(root)};
         const reviewedDigest = manifestDigest(expected);
         expect(() => verify(root,expected,reviewedDigest)).not.toThrow();
         if (kind === 'addition') fs.writeFileSync(path.join(root,'new.js'),'new');

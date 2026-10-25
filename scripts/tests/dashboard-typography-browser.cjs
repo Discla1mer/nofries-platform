@@ -92,6 +92,8 @@ async function fixtureApplication(seed, metadata, settings, makeTransport, selec
     }
     document.body.dataset.dashboardState = 'ready';
     document.getElementById('dashboardSignOut').hidden = false;
+    const accountMenu = document.getElementById('dashboardAccountMenu');
+    if (accountMenu) { accountMenu.hidden = false; accountMenu.open = true; }
     document.getElementById('dashboardChooser').hidden = false;
     document.getElementById('dashboardChoices').append(Object.assign(document.createElement('button'),
         { type: 'button', textContent: seed.model.context.displayName }));

@@ -153,6 +153,8 @@ const server = http.createServer((req, res) => {
             results.push({ width, scenario, jobTitle: enteredJobTitle, readyFocus: initialFocus });
             assert.equal(initialFocus, 'dashboardHeading', 'Ready heading must remain focusable with actual protected CSS');
             await page.keyboard.press('Tab');
+            assert.equal(await page.evaluate(() => document.activeElement.matches('#dashboardAccountMenu > summary')), true);
+            await page.keyboard.press('Enter'); await page.keyboard.press('Tab');
             assert.equal(await page.evaluate(() => document.activeElement.id), 'dashboardSignOut');
             phase = width + ':focus-revalidation';
             await page.evaluate(() => window.dispatchEvent(new Event('focus')));

@@ -15,7 +15,7 @@ const BLOCKING_SEVERITIES = new Set(['high', 'critical']);
 // anew; this is deliberately separate from the Moderate build-only registry.
 const MSAL_ADVISORY = 'GHSA-XCX6-JX8P-X3H5';
 const MSAL_ACCEPTED_UNTIL = Date.parse('2026-10-27T00:00:00Z');
-const MSAL_REVIEWED_BASE = 'c29c7a6d031782fb1bb6b67b3a7a5ea7544161ca';
+const MSAL_REVIEWED_BASE = '80b2f1805e8428118b9e49b5d618a31ea2111a45';
 const MSAL_REVIEWED_FILES = new Set([
     '.agent/plans/2026-10-24-msal-temporary-audit-exception.md',
     'AGENTS.md', 'SECURITY.md', 'package.json', 'package-lock.json',

@@ -177,6 +177,27 @@ async function reachMore(page, from, end) {
             results.push({ width, organisations: 105, nativeKeys: '50→100→105, first-new-row focus, late selection', passed: true });
             await page.close();
         }
+        const filtered = await open(320);
+        await filtered.getByRole('searchbox', { name: 'Find an organisation' }).fill('organisation 105');
+        assert.equal(await filtered.locator('#dashboardChoices > button:visible').count(), 0);
+        assert.ok((await filtered.locator('#dashboardOrganisationEmpty').textContent()).includes('load more organisations'));
+        await filtered.locator('#dashboardMore').focus(); await filtered.keyboard.press('Enter');
+        await filtered.waitForFunction(() => document.querySelectorAll('#dashboardChoices > .consultant-organisation-ready').length === 100);
+        assert.equal((await active(filtered)).id, 'dashboardOrganisationSearch', 'no matching new rows return focus to search');
+        assert.equal(await filtered.locator('#dashboardOrganisationSearch').inputValue(), 'organisation 105');
+        assert.equal(await filtered.locator('#dashboardChoices > button:visible').count(), 0);
+        await filtered.locator('#dashboardMore').focus(); await filtered.keyboard.press('Enter');
+        await filtered.waitForFunction(() => document.querySelectorAll('#dashboardChoices > .consultant-organisation-ready').length === 105);
+        await checkRow(filtered, 104);
+        assert.equal(await filtered.locator('#dashboardChoices > button:visible').count(), 1);
+        assert.equal(await filtered.locator('#dashboardOrganisationCount').textContent(), '1 of 105 loaded organisations shown');
+        assert.equal(await filtered.locator('#dashboardMore').isVisible(), false);
+        await filtered.locator('#dashboardOrganisationClear').focus(); await filtered.keyboard.press('Enter');
+        assert.equal((await active(filtered)).id, 'dashboardOrganisationSearch');
+        assert.equal(await filtered.locator('#dashboardChoices > button:visible').count(), 105);
+        results.push({ width: 320, case: 'search survives two pages; native focus reaches matching row or search; clear restores list', passed: true });
+        await filtered.close();
+
         const moved = await open(390);
         await reachMore(moved, 0, 50);
         gate = { seen: deferred(), release: deferred() };
@@ -211,10 +232,13 @@ async function reachMore(page, from, end) {
 
         for (const width of [1440, 390, 320]) {
             const page = await open(width, { route: '#overview', setupAvailable: true });
-            assert.equal(await page.locator('#consultantPortfolioControls').isVisible(), true);
+            assert.equal(await page.locator('#consultantPortfolioControls').isVisible(), false);
             assert.equal(await page.locator('#clientSetupControls').count(), 0);
-            await page.locator('#dashboardChooserHeading').focus(); await page.keyboard.press('Enter');
-            await rows(page).first().focus(); // Initial position in the expanded chooser.
+            await page.locator('#dashboardAccountMenu > summary').focus(); await page.keyboard.press('Enter');
+            assert.equal(await page.locator('#consultantPortfolioControls').isVisible(), true);
+            await page.locator('#consultantPortfolioControls').focus(); await page.keyboard.press('Enter');
+            await page.waitForFunction(() => document.body.dataset.dashboardState === 'selection');
+            await rows(page).first().focus(); // Initial position after the guarded portfolio return.
             await reachMore(page, 0, 50); await page.keyboard.press('Enter');
             await page.waitForFunction(() => document.body.dataset.dashboardState === 'selection' &&
                 document.querySelectorAll('#dashboardChoices > .consultant-organisation-ready').length === 100 &&
@@ -239,7 +263,7 @@ async function reachMore(page, from, end) {
                 'GET /api/dashboard/organisations?limit=50&afterBindingId=' + bindings[49].bindingId,
                 'GET /api/dashboard/session'
             ], 'focus storm must validate only the two loaded pages and final session witness');
-            assert.equal(await page.locator('#dashboardChooser input[type="search"]').count(), 0);
+            assert.equal(await page.locator('#dashboardChooser input[type="search"]').count(), 1);
             await page.keyboard.press('Space');
             await page.waitForFunction(() => document.body.dataset.dashboardState === 'ready');
             assert.equal(selected, bindings[50].bindingId);
@@ -248,6 +272,7 @@ async function reachMore(page, from, end) {
             assert.ok((await page.locator('#dashboardHeading').textContent()).includes(bindings[50].organisationLabel));
             await page.waitForLoadState('networkidle');
             const beforeReturn = requests.length;
+            await page.locator('#dashboardAccountMenu > summary').focus(); await page.keyboard.press('Enter');
             await page.locator('#consultantPortfolioControls').focus(); await page.keyboard.press('Enter');
             await page.waitForFunction(() => document.body.dataset.dashboardState === 'selection');
             await page.waitForLoadState('networkidle');
@@ -259,8 +284,8 @@ async function reachMore(page, from, end) {
             // Chromium may refresh the favicon after replaceState; measure the API contract.
             assert.ok(requests.slice(beforeReturn).filter(req => req.path.startsWith('/api/')).every(req => req.method === 'GET' &&
                 ['/api/dashboard/session', '/api/dashboard/organisations', '/api/customer-signup/clients'].includes(req.path)));
-            results.push({ width, case: 'mounted More → stable bounded focus refresh → explicit selection → Return',
-                organisations: 100, organisationSearch: 'not provided by existing UI', passed: true });
+            results.push({ width, case: 'Account Return → More → stable bounded focus refresh → explicit selection → Account Return',
+                organisations: 100, organisationSearch: 'available for loaded organisations', passed: true });
             await page.close();
         }
         const company = await open(390, { accountType: 'company', route: '#overview' });

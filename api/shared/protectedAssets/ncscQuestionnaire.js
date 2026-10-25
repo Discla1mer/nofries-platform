@@ -301,6 +301,8 @@
         const assistanceNotes = new Map();
         let activeQuestion = 0;
         let summaries = [];
+        let listSearch = '';
+        let listStatus = 'all';
         let nextAfter = null;
         let listLoaded = false;
         let loading = false;
@@ -565,45 +567,108 @@
             if (!pending && !busy && !conflict) statusText = '';
             updateStatus();
         }
+        function returnToList() {
+            abortRequests(); epoch += 1; loading = false;
+            acknowledged = null; selected = null; drafts.clear(); assistanceNotes.clear();
+            // Validation belongs to the departed form. Clear it before the list
+            // renders, because its question controls and drafts no longer exist.
+            view = 'list'; declaration = ''; errors = []; statusText = ''; loadList(false);
+        }
         function renderAssessmentRead() {
             const target = selected;
             if (!loading) content.append(button('Retry loading this assessment', function () {
                 if (!loading && selected === target && !acknowledged) openAssessment(target);
             }));
-            content.append(button('Back to assessments', function () { requestLeave(function () {
-                abortRequests(); epoch += 1; loading = false;
-                selected = null; acknowledged = null; drafts.clear(); assistanceNotes.clear();
-                view = 'list'; statusText = ''; loadList(false);
-            }); }, 'dashboard-text-button'));
+            content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
         }
         function renderList() {
-            content.append(node('p', '', 'Resume saved progress or start an assessment. Drafts that were not saved do not survive a refresh.'));
-            if (editable) content.append(button('Start an assessment', function () {
+            const introduction = node('div', 'ncsc-assessment-intro');
+            introduction.append(node('p', '', 'Pick up where you left off, or view the results of a submitted assessment. Only saved progress appears here.'));
+            if (editable) introduction.append(button('Start an assessment', function () {
                 view = 'create'; declaration = ''; errors = []; render();
                 const scope = content.querySelector('textarea'); if (scope) scope.focus();
-            }));
+            }, summaries.length ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button'));
+            content.append(introduction);
             if (!loading && listLoaded && !summaries.length) content.append(node('p', '', 'No saved assessments yet.'));
-            const list = node('ul', 'ncsc-assessment-list');
-            summaries.forEach(function (item, index) {
-                const row = node('li'); const open = button(item.createdAt.slice(0, 10) + ' · ' + item.status + ' · ' + item.progress.answered + '/' + item.progress.total + ' answered', function () {
-                    requestLeave(function () { openAssessment(item.assessmentId); });
-                }, 'dashboard-text-button');
-                const reference = node('p', 'dashboard-muted ncsc-preserve-text', 'Last saved: ' + item.updatedAt.replace('T', ' ').replace('Z', ' UTC') + '\nAssessment reference: ' + item.assessmentId);
-                reference.id = 'ncsc-assessment-reference-' + index; open.setAttribute('aria-describedby', reference.id);
-                row.append(open, reference); list.append(row);
+            const filters = node('div', 'ncsc-assessment-filters');
+            const searchLabel = node('label', '', 'Find a saved assessment'); searchLabel.htmlFor = 'ncsc-assessment-search';
+            const search = node('input'); search.type = 'search'; search.id = searchLabel.htmlFor;
+            search.placeholder = 'Date or assessment reference'; search.value = listSearch;
+            search.setAttribute('aria-describedby', 'ncsc-assessment-filter-note');
+            const statusLabel = node('label', '', 'Status'); statusLabel.htmlFor = 'ncsc-assessment-status';
+            const filter = node('select'); filter.id = statusLabel.htmlFor;
+            [['all', 'All assessments'], ['unfinished', 'In progress'], ['submitted', 'Submitted']].forEach(function (entry) {
+                const option = node('option', '', entry[1]); option.value = entry[0]; filter.append(option);
             });
+            filter.value = listStatus;
+            const searchField = node('div'), statusField = node('div');
+            searchField.append(searchLabel, search); statusField.append(statusLabel, filter); filters.append(searchField, statusField);
+            const list = node('ul', 'ncsc-assessment-list');
+            const count = node('p', 'dashboard-muted'); count.setAttribute('role', 'status'); count.setAttribute('aria-atomic', 'true');
+            const note = node('p', 'dashboard-muted', nextAfter !== null
+                ? 'Search and filters cover loaded assessments. Load more to include more saved records.'
+                : 'Search by the date created, date last saved, or assessment reference.');
+            note.id = 'ncsc-assessment-filter-note';
+            const empty = node('div', 'ncsc-assessment-empty');
+            empty.append(node('p', '', 'No loaded assessments match your search and status.'));
+            const clear = button('Clear filters', function () {
+                listSearch = ''; listStatus = 'all'; search.value = ''; filter.value = 'all'; updateList(); search.focus();
+            }, 'dashboard-button dashboard-button-secondary');
+            empty.append(clear);
+            function updateList() {
+                if (!live() || view !== 'list') return;
+                list.replaceChildren();
+                const query = listSearch.trim().toLowerCase();
+                summaries.forEach(function (item, index) {
+                    const submitted = item.status === 'submitted';
+                    if (listStatus === 'submitted' && !submitted || listStatus === 'unfinished' && submitted ||
+                        query && ![item.assessmentId, item.createdAt, item.updatedAt].some(function (value) { return value.toLowerCase().includes(query); })) return;
+                    const row = node('li', 'ncsc-assessment-card');
+                    const heading = node('div', 'ncsc-assessment-card-heading');
+                    heading.append(node('h3', '', 'Assessment started ' + item.createdAt.slice(0, 10)),
+                        node('span', 'dashboard-badge', submitted ? 'Submitted' : item.status === 'created' ? 'Not started' : 'In progress'));
+                    const saved = node('p', 'ncsc-assessment-saved', item.progress.answered + ' of ' + item.progress.total + ' responses saved');
+                    const progress = node('progress', 'ncsc-saved-progress'); progress.max = item.progress.total; progress.value = item.progress.answered;
+                    progress.setAttribute('aria-label', 'Saved responses');
+                    const action = submitted ? 'View results' : editable ? 'Continue assessment' : 'View assessment';
+                    const open = button(action, function () { requestLeave(function () { openAssessment(item.assessmentId); }); },
+                        submitted || !editable ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button');
+                    open.id = 'ncsc-assessment-open-' + index; open.dataset.assessmentId = item.assessmentId;
+                    const reference = node('p', 'dashboard-muted ncsc-preserve-text', 'Last saved: ' + item.updatedAt.replace('T', ' ').replace('Z', ' UTC') + '\nAssessment reference: ' + item.assessmentId);
+                    reference.id = 'ncsc-assessment-reference-' + index; open.setAttribute('aria-describedby', reference.id);
+                    const details = node('details', 'ncsc-assessment-reference'), summary = node('summary', '', 'Saved record details');
+                    summary.id = 'ncsc-assessment-details-' + index; details.append(summary, reference);
+                    row.append(heading, saved, progress,
+                        node('p', 'dashboard-muted ncsc-assessment-date', 'Last saved ' + item.updatedAt.slice(0, 10)), open, details); list.append(row);
+                });
+                const matches = list.children.length;
+                count.textContent = matches + ' of ' + summaries.length + ' loaded assessments shown';
+                empty.hidden = matches !== 0 || !summaries.length;
+            }
+            search.addEventListener('input', function () { listSearch = search.value; updateList(); });
+            filter.addEventListener('change', function () { listStatus = filter.value; updateList(); });
+            if (summaries.length) content.append(filters, note, count, empty);
+            updateList();
             content.append(list);
             if (listLoaded && nextAfter !== null) {
-                const more = button('Load more assessments', function () { loadList(true); }); more.disabled = loading; content.append(more);
+                const more = button('Load more assessments', function () { loadList(true); }, 'dashboard-button dashboard-button-secondary');
+                more.id = 'ncsc-assessment-more'; more.disabled = loading; content.append(more);
             }
             if (!loading && !listLoaded) content.append(button('Retry loading assessments', function () { loadList(false); }));
         }
         async function loadList(append) {
             if (!live() || loading) return;
+            const previousIds = new Set(summaries.map(function (item) { return item.assessmentId; }));
+            let ownsFocus = append && doc.activeElement === root.querySelector('[id="ncsc-assessment-more"]');
+            let appended = false;
+            function releaseFocus() { ownsFocus = false; }
             // An old empty page cannot establish that a fresh list is empty.
             // Failed replacement reads must retain an explicit retry path.
             if (!append) { listLoaded = false; summaries = []; nextAfter = null; }
             const expected = epoch; loading = true; statusText = ''; render();
+            // The disabled loading control temporarily hands focus to the heading.
+            // Any deliberate move away cancels this request's eventual handoff.
+            if (ownsFocus) heading.addEventListener('blur', releaseFocus);
             try {
                 const result = await call('list', { limit: 50, afterAssessmentId: append ? nextAfter : null }, expected);
                 if (!result) return;
@@ -611,8 +676,23 @@
                 const map = new Map((append ? summaries : []).map(function (item) { return [item.assessmentId, item]; }));
                 result.assessments.forEach(function (item) { map.set(item.assessmentId, copy(item)); });
                 summaries = Array.from(map.values()); nextAfter = result.nextAfterAssessmentId; listLoaded = true;
+                appended = append;
             } catch (error) { if (live(expected)) fixedFailure(error); }
-            finally { if (live(expected)) { loading = false; render(); } }
+            finally {
+                heading.removeEventListener('blur', releaseFocus);
+                if (live(expected)) {
+                    const restorePageFocus = ownsFocus && doc.activeElement === heading && view === 'list' && !leave;
+                    loading = false; render();
+                    if (restorePageFocus) {
+                        const list = root.querySelector('.ncsc-assessment-list');
+                        const firstNew = appended && list && Array.from(list.querySelectorAll('button')).find(function (control) {
+                            return !previousIds.has(control.dataset.assessmentId);
+                        });
+                        const target = firstNew || root.querySelector('[id="ncsc-assessment-more"]') || root.querySelector('[id="ncsc-assessment-search"]');
+                        if (target && !target.disabled) target.focus();
+                    }
+                }
+            }
         }
         async function openAssessment(id) {
             if (!live() || loading && view === 'assessment' && selected === id) return;
@@ -638,11 +718,7 @@
             content.children[content.children.length - 1].id = 'ncsc-scope-help';
             controls = node('div', 'ncsc-actions');
             const start = button('Create assessment', createAssessment); start.dataset.mutation = 'true';
-            controls.append(start, button('Back to assessments', function () { requestLeave(function () {
-                abortRequests(); epoch += 1; loading = false;
-                acknowledged = null; selected = null; drafts.clear(); assistanceNotes.clear();
-                view = 'list'; declaration = ''; statusText = ''; loadList(false);
-            }); }, 'dashboard-text-button'));
+            controls.append(start, button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
             content.append(controls);
             if (pending) renderPending();
         }
@@ -661,9 +737,7 @@
             const progress = acknowledged.progress;
             content.append(node('p', 'ncsc-saved-progress', 'Saved responses: ' + progress.answered + ' of ' + progress.total + ' selected; ' + progress.missing + ' unanswered; ' + progress.unknown + ' Unknown; ' + progress.notApplicableClaims + ' pending N/A claims.'));
             content.append(node('p', 'dashboard-muted', 'Saved resolved answers: ' + (progress.answered - progress.unknown - progress.notApplicableClaims) + ' of ' + progress.total + ' (Yes, Partial or No). Unknown and pending N/A are saved responses but remain unresolved.'));
-            content.append(button('Back to assessments', function () { requestLeave(function () {
-                epoch += 1; acknowledged = null; selected = null; drafts.clear(); assistanceNotes.clear(); view = 'list'; statusText = ''; loadList(false);
-            }); }, 'dashboard-text-button'));
+            content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
             const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description)); content.append(declarationPanel);
             if (sealed) {
                 content.append(node('p', 'ncsc-sealed', 'Submitted ' + acknowledged.submission.submittedAt + ' at revision ' + acknowledged.submission.revision + '. Answers below are the saved, read-only submission.'));

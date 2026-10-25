@@ -329,7 +329,12 @@ async function guardTour(page, base, route, width, extra) {
     await page.locator('#ncsc-scope').fill(draft);
     for (const target of ['organisation', 'signout', 'public-link']) {
         if (target === 'organisation') { await readyChooser(page); await page.locator('#dashboardChoices button').last().click(); }
-        else if (target === 'signout') await page.locator('#dashboardSignOut').click();
+        else if (target === 'signout') {
+            if (!await page.locator('#dashboardAccountMenu').evaluate(node => node.open)) {
+                await page.locator('#dashboardAccountMenu > summary').focus(); await page.keyboard.press('Enter');
+            }
+            await page.locator('#dashboardSignOut').click();
+        }
         else {
             const link = page.locator('footer a[data-dashboard-leave]').first();
             await link.focus(); await page.keyboard.press('Enter');

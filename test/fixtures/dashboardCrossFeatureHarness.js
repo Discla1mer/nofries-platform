@@ -156,7 +156,7 @@ async function harness(accountType) {
         for (const handler of node.events[type] || []) handler({ currentTarget: node, target: node, preventDefault() {} });
     }
     async function resume() {
-        const saved = elements.dashboardApp.querySelectorAll('button').filter(node => / · .*answered$/.test(node.textContent));
+        const saved = elements.dashboardApp.querySelector('.ncsc-assessment-list')?.querySelectorAll('button') || [];
         expect(saved).toHaveLength(1); const index = requests.length; saved[0].click(); await flush(); await serve(index);
     }
     function choose(index, option) {
