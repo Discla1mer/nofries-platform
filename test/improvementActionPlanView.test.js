@@ -65,6 +65,7 @@ function cardFacts(card) {
     return { ...facts(card.children.find(child => child.tagName === 'DL')), ...facts(identifiers.querySelector('dl')) };
 }
 const history = card => card.children.find(child => child.tagName === 'DETAILS' && child.children[0].textContent.startsWith('Action history'));
+const evidence = card => card.children.find(child => child.tagName === 'DETAILS' && child.children[0].textContent === 'Supporting evidence');
 const cards = dom => dom.root.querySelectorAll('article');
 const card = (dom, actionId) => cards(dom).find(value => cardFacts(value)['Action ID'] === actionId);
 
@@ -97,15 +98,15 @@ test('workflow completion, blocks and reopened history retain exact global revis
     const completedModel = model.actions.find(value => value.actionId === state.proposals[3].actionId);
     expect(completedModel.completion.at < model.updatedAt).toBe(true);
     expect(cardFacts(completed)).toMatchObject({ 'Workflow completed at (UTC)': completedModel.completion.at, 'Completion note': NOTE,
-        'Completion evidence reference (unverified)': REFERENCE,
         'Completion meaning': 'Workflow completed; control implementation has not been verified.' });
+    expect(facts(evidence(completed).querySelector('dl'))['Completion evidence reference (unverified)']).toBe(REFERENCE);
     expect(cardFacts(card(dom, state.proposals[2].actionId))['Block reason']).toBe(REASON);
     expect(cardFacts(reopened)).not.toHaveProperty('Completion note');
     expect(cardFacts(reopened)).not.toHaveProperty('Completion evidence reference (unverified)');
     expect(history(reopened).textContent).toContain(NOTE);
     expect(history(reopened).textContent).toContain(REFERENCE);
     const action = model.actions.find(value => value.actionId === state.proposals[4].actionId);
-    expect(reopened.querySelectorAll('h4').map(value => value.textContent)).toEqual(action.history.map(event => 'Plan revision ' + event.revision + ' · ' + event.label));
+    expect(history(reopened).querySelectorAll('h4').map(value => value.textContent)).toEqual(action.history.map(event => 'Plan revision ' + event.revision + ' · ' + event.label));
     expect(action.history[0].revision).toBeGreaterThan(1); // Global revisions retain gaps from other actions.
     action.history.forEach(event => expect(history(reopened).textContent).toContain(event.at + ' (UTC)'));
     for (const tag of ['a', 'img', 'script', 'svg', 'iframe', 'button', 'input', 'select', 'form']) expect(dom.root.querySelectorAll(tag)).toEqual([]);
@@ -116,10 +117,61 @@ test('native details/summary history controls preserve default browser keyboard 
     expect(dom.root.querySelectorAll('details').filter(element => element.children[0].textContent.startsWith('Action history'))).toHaveLength(cards(dom).length);
     dom.root.querySelectorAll('details').forEach(element => {
         expect(element.children[0].tagName).toBe('SUMMARY');
-        expect(element.children[0].textContent).toMatch(/^(Action history \(\d+ events\)|Action identifiers|Source and plan metadata|Counts and filters)$/);
+        expect(element.children[0].textContent).toMatch(/^(Action history \(\d+ events\)|Supporting evidence|Action identifiers|Source and plan metadata|Counts and filters)$/);
         expect(element.getAttribute('role')).toBeNull(); expect(element.children[0].getAttribute('role')).toBeNull();
         expect(element.children[0].getAttribute('tabindex')).toBeNull(); expect(element.children[0].events).toEqual({});
     });
+});
+
+test('each action exposes retained evidence claims with separate assessment provenance and explicit unknown document facts', () => {
+    const model = presentation(), before = clone(model), dom = render(model);
+    model.actions.forEach(action => {
+        const section = evidence(card(dom, action.actionId));
+        expect(section.getAttribute('open')).toBeNull();
+        expect(facts(section.querySelectorAll('dl')[0])).toEqual({
+            'Assessment evidence claim': action.labels.evidenceState,
+            ...(action.completion === null ? {} : {
+                'Completion evidence reference (unverified)': action.evidence.completionReference,
+                'Completion reference recorded at (UTC)': action.completion.at
+            }),
+            'Verification': action.completion === null ? 'No verification recorded' : 'Not verified'
+        });
+        expect(facts(section.querySelectorAll('dl')[1])).toEqual({
+            'Assessment ID': model.source.assessmentId, 'Assessment revision': model.source.assessmentRevision,
+            'Assessment scored at (UTC)': model.source.scoreAsOf
+        });
+        expect(section.textContent).toContain('No supporting document version is linked to this action');
+        expect(section.textContent).toContain('its date and version are unknown.');
+        expect(section.textContent).toContain('Completing an action does not verify a control or change scores.');
+        if (action.completion === null) expect(section.textContent).toContain('No completion evidence reference is recorded for the current action.');
+        expect(section.querySelectorAll('a')).toEqual([]);
+    });
+    expect(model).toEqual(before);
+});
+
+test('reopening removes the current evidence reference without presenting its historical date as current evidence', () => {
+    const state = mixed(), model = presentation(state), dom = render(model);
+    const action = card(dom, state.proposals[4].actionId), current = evidence(action);
+    const values = facts(current.querySelector('dl'));
+    expect(values.Verification).toBe('No verification recorded');
+    expect(values).not.toHaveProperty('Completion evidence reference (unverified)');
+    expect(values).not.toHaveProperty('Completion reference recorded at (UTC)');
+    expect(current.textContent).toContain('its date and version are unknown.');
+    expect(current.textContent).not.toContain(REFERENCE);
+    expect(history(action).textContent).toContain(REFERENCE);
+    expect(current.textContent).toContain('Review the assessment claim and Action history for earlier records.');
+});
+
+test.each([
+    ['independently_reviewed_current', 'Independently reviewed as current'],
+    ['tested_or_observed_current', 'Tested or observed as current'],
+    ['stale', 'Stale'], ['unavailable', 'Unavailable'], ['not_provided', 'Not provided']
+])('assessment claim %s does not become document verification or a fabricated version/date', (state, label) => {
+    const model = clone(presentation()); model.actions[0].evidence.assessmentState = state; model.actions[0].labels.evidenceState = label;
+    const section = evidence(cards(render(model))[0]), values = facts(section.querySelector('dl'));
+    expect(values).toMatchObject({ 'Assessment evidence claim': label, 'Verification': 'No verification recorded' });
+    expect(section.textContent).toContain('The assessment claim and completion reference are self-reported.');
+    expect(section.textContent).toContain('its date and version are unknown.');
 });
 
 test('compact heading leads with action summary while verbose source, counts and identifiers use native disclosures', () => {
