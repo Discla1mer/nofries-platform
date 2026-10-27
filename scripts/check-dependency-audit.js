@@ -127,6 +127,61 @@ function assertReviewedSourceScope() {
     require('./verify-public-source-baseline').verify();
 }
 
+// npm aliases can install MSAL under an arbitrary package path. Use both
+// package identity and dependency declarations rather than trusting the path.
+// An unresolved or malformed MSAL alias represents an unknown closure node.
+function lockedMsalNodes(lock) {
+    const nodes = new Map();
+    for (const [nodePath, entry] of Object.entries(lock.packages)) {
+        if (nodePath.endsWith('/@azure/msal-node') || entry?.name === '@azure/msal-node') {
+            nodes.set(nodePath, entry?.name && entry.name !== '@azure/msal-node' ? null : entry);
+        }
+        for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+            for (const [alias, declaration] of Object.entries(entry?.[field] || {})) {
+                if (typeof declaration !== 'string' ||
+                    !/^npm:@azure\/msal-node(?:@|$)/.test(declaration)) continue;
+                const validDeclaration = /^npm:@azure\/msal-node(?:@[^\s@][^@]*)?$/.test(declaration) &&
+                    declaration.trim() === declaration;
+                let directory = nodePath;
+                let resolved = null;
+                if (/^(?:@[^/]+\/)?[^/.][^/]*$/.test(alias)) {
+                    while (true) {
+                        if (path.posix.basename(directory) !== 'node_modules') {
+                            const candidate = (directory ? directory + '/' : '') + 'node_modules/' + alias;
+                            if (Object.hasOwn(lock.packages, candidate)) { resolved = candidate; break; }
+                        }
+                        if (!directory) break;
+                        const parent = path.posix.dirname(directory);
+                        if (parent === directory) break;
+                        directory = parent === '.' ? '' : parent;
+                    }
+                }
+                if (!validDeclaration || !resolved ||
+                    (lock.packages[resolved]?.name && lock.packages[resolved].name !== '@azure/msal-node')) {
+                    nodes.set(`${nodePath}:${field}:${alias}`, null);
+                } else {
+                    nodes.set(resolved, lock.packages[resolved]);
+                }
+            }
+        }
+    }
+    return [...nodes.entries()];
+}
+
+// Fail closed on unknown or prerelease declarations. Only canonical stable
+// versions conclusively outside GHSA-xcx6-jx8p-x3h5 can retire the exception.
+function hasRemediatedMsalClosure(lock) {
+    return lockedMsalNodes(lock).every(([, entry]) => {
+        const match = typeof entry?.version === 'string' &&
+            /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(entry.version);
+        if (!match) return false;
+        const versions = match.slice(1).map(Number);
+        if (!versions.every(Number.isSafeInteger)) return false;
+        const [major, minor] = versions;
+        return major < 5 || major > 7 || (major === 7 && minor >= 1);
+    });
+}
+
 function stripTemporaryMsalFindings(surfaceId, report, lock, now = new Date(), npmVersion = null) {
     if (!report || report.auditReportVersion !== 2 || report.error ||
         !report.vulnerabilities || typeof report.vulnerabilities !== 'object' ||
@@ -139,8 +194,7 @@ function stripTemporaryMsalFindings(surfaceId, report, lock, now = new Date(), n
     const observed = Object.keys(reviewed).filter((packageName) =>
         Object.hasOwn(vulnerabilities, packageName));
     if (observed.length === 0) {
-        if (Object.keys(lock.packages).some((nodePath) =>
-            nodePath.endsWith('/@azure/msal-node'))) {
+        if (!hasRemediatedMsalClosure(lock)) {
             throw new Error(`${surfaceId}: temporary ${MSAL_ADVISORY} finding missing for the vulnerable locked closure`);
         }
         return { report, accepted: [] };
@@ -426,6 +480,20 @@ function sortedMap(value) {
     return Object.fromEntries(Object.entries(value || {}).sort(([left], [right]) => left.localeCompare(right)));
 }
 
+// This is a reviewed cross-major compatibility override, not general API
+// override permission. The exact direct pin and every locked MSAL node bind it
+// to the API closure audited and exercised by the offline SDK tests.
+function isReviewedApiMsalOverride(surfaceId, manifest, lock) {
+    if (surfaceId !== 'api-runtime' ||
+        manifest.dependencies?.['@azure/msal-node'] !== '7.1.1' ||
+        JSON.stringify(manifest.overrides) !==
+            JSON.stringify({ '@azure/identity': { '@azure/msal-node': '7.1.1' } }) ||
+        lock.packages['node_modules/@azure/identity']?.version !== '4.13.1') return false;
+    const nodes = lockedMsalNodes(lock);
+    return nodes.length === 1 && nodes[0][0] === 'node_modules/@azure/msal-node' &&
+        nodes[0][1]?.version === '7.1.1';
+}
+
 function validateManifestLock(surfaceId, manifest, lock, { allowManifestOverrides = false } = {}) {
     if (!lock || lock.lockfileVersion !== 3 || !lock.packages || !lock.packages['']) {
         throw new Error(`${surfaceId}: package lock must use lockfileVersion 3 with a root package entry`);
@@ -438,7 +506,12 @@ function validateManifestLock(surfaceId, manifest, lock, { allowManifestOverride
             throw new Error(`${surfaceId}: ${field} does not exactly match the package lock root entry`);
         }
     }
-    if (!allowManifestOverrides && manifest.overrides && Object.keys(manifest.overrides).length > 0) {
+    if (Object.hasOwn(manifest, 'overrides') && (!manifest.overrides ||
+        typeof manifest.overrides !== 'object' || Array.isArray(manifest.overrides))) {
+        throw new Error(`${surfaceId}: malformed manifest overrides require an explicitly audited install closure`);
+    }
+    if (!allowManifestOverrides && manifest.overrides && Object.keys(manifest.overrides).length > 0 &&
+        !isReviewedApiMsalOverride(surfaceId, manifest, lock)) {
         throw new Error(`${surfaceId}: manifest overrides require an explicitly audited install closure`);
     }
 }
