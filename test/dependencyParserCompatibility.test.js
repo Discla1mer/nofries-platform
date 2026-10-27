@@ -50,7 +50,7 @@ describe('Express parser dependency compatibility', () => {
             }
         );
 
-        expect(qsPackage.version).toBe('6.16.0');
+        expect(qsPackage.version).toBe('6.16.1');
         expect(parseExcessArray).toThrow(RangeError);
         expect(parseExcessArray).toThrow(/array limit exceeded/i);
     });
@@ -109,4 +109,23 @@ describe('Express parser dependency compatibility', () => {
         expect(limitResponse.body.type).toBe('parameters.too.many');
         expect(Object.prototype.hasOwnProperty.call(Object.prototype, POLLUTION_KEY)).toBe(false);
     });
+
+    // GHSA-6pq8-jhm2-2vcw: comma serialization must safely handle values
+    // reconstructed from untrusted parsed queries or JSON on both encoder paths.
+    test.each([false, true])('comma stringify handles hostile coercion with encodeValuesOnly=%s', encodeValuesOnly => {
+        const options = { arrayFormat: 'comma', encodeValuesOnly };
+        const vectors = [
+            qs.parse('a[0][toString]=x', { allowPrototypes: true }),
+            JSON.parse('{"a":[{"toString":"x"}]}'),
+            qs.parse('a[][b]=c', { plainObjects: true }),
+            JSON.parse('{"a":[[{"toString":"x"}]]}')
+        ];
+        for (const vector of vectors) {
+            expect(qs.stringify(vector, options)).toBe('a=%5Bobject%20Object%5D');
+        }
+        expect(qs.stringify({ a: ['alpha', 'beta'] }, options))
+            .toBe(encodeValuesOnly ? 'a=alpha,beta' : 'a=alpha%2Cbeta');
+        expect(qs.stringify({ a: [{ toString() { return 'z'; } }] }, options)).toBe('a=z');
+    });
+
 });

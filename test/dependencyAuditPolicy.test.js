@@ -210,6 +210,110 @@ describe('build-lane dependency audit policy', () => {
         }, removedLock, MSAL_NOW).accepted).toEqual([]);
     });
 
+    test('retires acceptance only for conclusively remediated full MSAL closures after expiry', () => {
+        const lock = msalLockFixture();
+        for (const node of ROOT_MSAL_NODES) lock.packages[node].version = '7.1.1';
+        const report = { auditReportVersion: 2, vulnerabilities: {} };
+        expect(stripTemporaryMsalFindings('root-all', report, lock,
+            new Date('2026-10-28T00:00:00Z'))).toEqual({ report, accepted: [] });
+        for (const version of ['6.0.1', '7.0.1', '7.1.1-beta.1', 'garbage', undefined, '07.1.1']) {
+            const hidden = structuredClone(lock);
+            hidden.packages['node_modules/optional-sdk/node_modules/@azure/msal-node'] = { version };
+            expect(() => stripTemporaryMsalFindings('root-all', report, hidden,
+                new Date('2026-10-28T00:00:00Z'))).toThrow(/finding missing/);
+        }
+        for (const severity of ['moderate', 'high', 'critical']) {
+            const unrelated = { auditReportVersion: 2, vulnerabilities: { other: {
+                name: 'other', severity, nodes: ['node_modules/other'],
+                via: [{ url: 'https://github.com/advisories/GHSA-other' }]
+            } } };
+            lock.packages['node_modules/other'] = { version: '1.0.0' };
+            const result = stripTemporaryMsalFindings('root-all', unrelated, lock,
+                new Date('2026-10-28T00:00:00Z'));
+            expect(result.accepted).toEqual([]);
+            expect(evaluateFindings(normaliseAuditReport('root-all', result.report, lock), {
+                dependencyChanged: true, exceptions: [], now: NOW
+            }).blocked).toHaveLength(1);
+        }
+    });
+
+    test('recognizes MSAL identity and aliases, including hidden, malformed and unresolved copies', () => {
+        const report = { auditReportVersion: 2, vulnerabilities: {} };
+        const now = new Date('2026-10-28T00:00:00Z');
+        const make = () => ({ packages: {
+            '': { dependencies: { 'legacy-msal': 'npm:@azure/msal-node@7.0.1' } },
+            'node_modules/@azure/msal-node': { version: '7.1.1' },
+            'node_modules/legacy-msal': { name: '@azure/msal-node', version: '7.0.1' }
+        } });
+        const reject = lock => expect(() => stripTemporaryMsalFindings('root-all', report, lock, now))
+            .toThrow(/finding missing/);
+        reject(make());
+        const identityOnly = make(); delete identityOnly.packages[''].dependencies;
+        reject(identityOnly);
+        const declarationOnly = make(); delete declarationOnly.packages['node_modules/legacy-msal'].name;
+        reject(declarationOnly);
+        for (const version of [undefined, null, 'garbage', '7.1.1-beta.1']) {
+            const lock = make(); lock.packages['node_modules/legacy-msal'].version = version; reject(lock);
+        }
+        const unresolved = make(); delete unresolved.packages['node_modules/legacy-msal']; reject(unresolved);
+        const malformed = make();
+        malformed.packages[''].dependencies['legacy-msal'] = 'npm:@azure/msal-node@';
+        malformed.packages['node_modules/legacy-msal'].version = '7.1.1'; reject(malformed);
+        malformed.packages[''].dependencies['legacy-msal'] = 'npm:@azure/msal-node@@7.1.1'; reject(malformed);
+        const conflicting = make(); conflicting.packages['node_modules/legacy-msal'] = { name: 'other', version: '7.1.1' };
+        reject(conflicting);
+        const nested = make(); delete nested.packages[''];
+        nested.packages['node_modules/optional-sdk'] = { optionalDependencies: {
+            'legacy-msal': 'npm:@azure/msal-node@7.0.1'
+        } };
+        delete nested.packages['node_modules/legacy-msal'].name; reject(nested);
+        nested.packages['node_modules/legacy-msal'].version = '7.1.1';
+        expect(stripTemporaryMsalFindings('root-all', report, nested, now)).toEqual({ report, accepted: [] });
+        // Resolve the nearest nested copy rather than accepting a safe hoisted alias.
+        nested.packages['node_modules/optional-sdk/node_modules/legacy-msal'] = { version: '7.0.1' };
+        reject(nested);
+    });
+
+    test('admits only the reviewed API Identity override and exact audited MSAL closure', () => {
+        const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../api/package.json')));
+        const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '../api/package-lock.json')));
+        expect(() => validateManifestLock('api-runtime', manifest, lock)).not.toThrow();
+        for (const overrides of [
+            { '@azure/msal-node': '7.1.1' },
+            { '@azure/identity': { '@azure/msal-node': '^7.1.1' } },
+            { '@azure/identity': { '@azure/msal-node': '7.1.2' } },
+            { '@azure/identity': '4.13.1' },
+            { ...manifest.overrides, other: '1.0.0' },
+            ['7.1.1'], [], null, '7.1.1', ''
+        ]) expect(() => validateManifestLock('api-runtime', { ...manifest, overrides }, lock))
+            .toThrow(/explicitly audited/);
+        for (const mutate of [
+            value => { value.packages['node_modules/@azure/msal-node'].version = '7.0.1'; },
+            value => { value.packages['node_modules/@azure/identity'].version = '4.14.0'; },
+            value => { value.packages['node_modules/other/node_modules/@azure/msal-node'] = { version: '7.1.1' }; }
+        ]) {
+            const changed = structuredClone(lock); mutate(changed);
+            expect(() => validateManifestLock('api-runtime', manifest, changed)).toThrow(/explicitly audited/);
+        }
+        for (const version of ['7.0.1', '7.1.1', undefined]) {
+            const aliasedManifest = structuredClone(manifest), aliasedLock = structuredClone(lock);
+            aliasedManifest.dependencies['legacy-msal'] = 'npm:@azure/msal-node@7.0.1';
+            aliasedLock.packages[''].dependencies['legacy-msal'] = aliasedManifest.dependencies['legacy-msal'];
+            aliasedLock.packages['node_modules/legacy-msal'] = { name: '@azure/msal-node', version };
+            expect(() => validateManifestLock('api-runtime', aliasedManifest, aliasedLock)).toThrow(/explicitly audited/);
+            delete aliasedLock.packages['node_modules/legacy-msal'].name;
+            expect(() => validateManifestLock('api-runtime', aliasedManifest, aliasedLock)).toThrow(/explicitly audited/);
+        }
+        const identityAlias = structuredClone(lock);
+        identityAlias.packages['node_modules/hidden'] = { name: '@azure/msal-node', version: '7.0.1' };
+        expect(() => validateManifestLock('api-runtime', manifest, identityAlias)).toThrow(/explicitly audited/);
+        const changed = structuredClone(manifest);
+        changed.dependencies['@azure/msal-node'] = '^7.1.1';
+        const drift = structuredClone(lock); drift.packages[''].dependencies = changed.dependencies;
+        expect(() => validateManifestLock('api-runtime', changed, drift)).toThrow(/explicitly audited/);
+        expect(() => validateManifestLock('other', manifest, lock)).toThrow(/explicitly audited/);
+    });
+
     test('blocks source changes outside the exact reviewed dependency and audit files', () => {
         expect(() => validateReviewedSourceScope([
             'package-lock.json', 'scripts/check-dependency-audit.js'
