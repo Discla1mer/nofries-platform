@@ -77,7 +77,7 @@ async function keyboardOpen(page, summary) {
         await page.keyboard.press('Tab');
         if (await summary.evaluate(node => node === document.activeElement)) { reached = true; break; }
     }
-    assert.equal(reached, true, 'History summary is reachable through native Tab navigation');
+    assert.equal(reached, true, 'Disclosure summary is reachable through native Tab navigation');
     const focus = await summary.evaluate(node => {
         const style = getComputedStyle(node);
         return { visible: node.matches(':focus-visible'), style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
@@ -157,7 +157,25 @@ async function main() {
             assert.equal(facts[models.completedIndex]['Completion note'], NOTE);
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, width + ': collapsed overflow');
             if (width === 390 || width === 1280) await page.screenshot({ path: path.join(artifacts, width + '-ready.png'), fullPage: false });
+            const completed = page.locator('article').nth(models.completedIndex);
+            const evidence = completed.locator('details').filter({ has: page.locator('summary', { hasText: /^Supporting evidence$/ }) });
+            await keyboardOpen(page, evidence.locator('summary'));
+            const evidenceFacts = await evidence.locator('dl').first().evaluate(list => Object.fromEntries([...list.querySelectorAll('dt')]
+                .map(term => [term.textContent, term.nextElementSibling.textContent])));
+            assert.equal(evidenceFacts['Completion evidence reference (unverified)'], REFERENCE);
+            assert.equal(evidenceFacts['Completion reference recorded at (UTC)'], models.mixed.actions[models.completedIndex].completion.at);
+            assert.match(await evidence.innerText(), /its date and version are unknown/);
+            assert.equal(evidenceFacts.Verification, 'Not verified');
+            assert.match(await evidence.innerText(), /Assessment source/);
+            assert.equal(await evidence.locator('a, img, script').count(), 0);
+            if (width === 390 || width === 1280) await evidence.screenshot({ path: path.join(artifacts, width + '-supporting-evidence.png') });
             const reopened = page.locator('article').nth(models.reopenedIndex);
+            const emptyEvidence = reopened.locator('details').filter({ has: page.locator('summary', { hasText: /^Supporting evidence$/ }) });
+            await keyboardOpen(page, emptyEvidence.locator('summary'));
+            assert.match(await emptyEvidence.innerText(), /No completion evidence reference is recorded for the current action/);
+            assert.equal((await emptyEvidence.innerText()).includes(REFERENCE), false);
+            assert.equal((await emptyEvidence.innerText()).includes('Completion reference recorded at (UTC)'), false);
+            if (width === 390) await emptyEvidence.screenshot({ path: path.join(artifacts, width + '-empty-evidence.png') });
             const history = reopened.locator('details').filter({ has: page.locator('summary', { hasText: /^Action history/ }) });
             await keyboardOpen(page, history.locator('summary'));
             assert.match(await history.innerText(), /Completed[\s\S]*Reopened/);
@@ -168,7 +186,7 @@ async function main() {
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, width + ': expanded overflow');
             assert.equal(await page.locator('#plan a, #plan img, #plan script, #plan svg, #plan iframe, #plan button, #plan input, #plan select, #plan textarea, #plan form').count(), 0);
             assert.ok((await page.locator('#plan').innerText()).includes('No updates recorded for this action.'));
-            cases.push({ width, state: 'ready', actions: models.mixed.actions.length, keyboardHistory: 'pass', retainedHistory: 'pass', overflow: 'none' });
+            cases.push({ width, state: 'ready', actions: models.mixed.actions.length, keyboardEvidence: 'pass', keyboardHistory: 'pass', retainedHistory: 'pass', overflow: 'none' });
             for (const state of ['filtered', 'empty']) {
                 await page.evaluate(model => NoFriesImprovementActionPlanView.mount(document.querySelector('#plan'), model), models[state]);
                 const text = await page.locator('#plan').innerText();

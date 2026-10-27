@@ -26,7 +26,8 @@ const ncscDenied = () => new NcscAssessmentError('ncsc_access_denied', 403);
 function createDashboardResourceRuntime(options) {
     const binder = createDashboardRequestDatabase(options);
     // Capture the validated trusted opt-in before any request or await. The
-    // production host supplies none while schema/audit readiness is unproved.
+    // production host forwards its explicit Improvement setting; each release
+    // must qualify schema/audit readiness before enabling that setting.
     const improvementEnabled = options.improvementEnabled === true;
     const queueClock = options.clock;
     const requests = new WeakMap();
