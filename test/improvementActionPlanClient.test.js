@@ -100,6 +100,116 @@ test('mount uses actual retained IDs and unchanged renderer through canonical re
     expect(h.options.newId).not.toHaveBeenCalled();
 });
 
+test('queue handoff reads and focuses the exact action outside the loaded plan page without writes', async () => {
+    const saved = seed('plan-z'), actionId = saved.proposals[3].actionId;
+    const target = { planId: saved.planId, actionId, planRevision: 0 };
+    const h = harness({ options: { initialTarget: target }, respond(path, body, state) {
+        state.plans.set(saved.planId, saved);
+        return { status: 200, value: path.includes('/plans?') ? page() : presentation(saved) };
+    } });
+    target.planId = 'mutated'; target.actionId = 'mutated';
+    expect(await h.controller.ready).toBe(true);
+    expect(h.request.mock.calls).toEqual([
+        ['/api/dashboard/improvement/plans?limit=20'],
+        ['/api/dashboard/improvement/view?planId=plan-z'],
+        ['/api/dashboard/improvement/editor?planId=plan-z']
+    ]);
+    expect(h.root.querySelector('select').value).toBe('plan-z');
+    expect(h.root.querySelectorAll('select').find(node => node.getAttribute('aria-label') === 'Improvement action').value).toBe(actionId);
+    expect(h.document.activeElement.tagName).toBe('ARTICLE'); expect(h.document.activeElement.textContent).toContain(actionId);
+    expect(h.root.textContent).toContain('Selected action and current options loaded.');
+    expect(h.options.newId).not.toHaveBeenCalled();
+});
+
+test('queue handoff opens the fresh action state and reports a changed observed revision', async () => {
+    const before = seed(), actionId = before.proposals[4].actionId;
+    const after = append(before, 'assign', { ownerSubjectKey: ACTOR, dueDate: '2026-10-03' }, actionId);
+    const h = harness({ plan: after, options: { initialTarget: { planId: 'plan-a', actionId, planRevision: 0 } } });
+    expect(await h.controller.ready).toBe(true);
+    expect(h.root.textContent).toContain('This plan changed since the work queue was checked.');
+    expect(h.document.activeElement.textContent).toContain('2026-10-03');
+    expect(h.root.querySelector('select').children.find(option => option.value === 'plan-a').textContent).toContain('revision 1');
+});
+
+test('queue handoff focuses the exact retained card even when the current plan is read-only', async () => {
+    const actionId = seed().proposals[5].actionId;
+    const h = harness({ canWrite: false, options: { initialTarget: { planId: 'plan-a', actionId, planRevision: 0 } } });
+    expect(await h.controller.ready).toBe(true);
+    expect(h.document.activeElement.tagName).toBe('ARTICLE'); expect(h.document.activeElement.textContent).toContain(actionId);
+    expect(button(h, 'Assign to me')).toBeUndefined();
+});
+
+test.each(['missing-plan', 'missing-action'])('a queue %s is not silently replaced by a different saved plan or action', async kind => {
+    const target = { planId: 'plan-z', actionId: kind === 'missing-action' ? 'removed-action' : seed('plan-z').proposals[0].actionId, planRevision: 0 };
+    const h = harness({ options: { initialTarget: target }, respond(path) {
+        if (path.includes('/plans?')) return { status: 200, value: page() };
+        return kind === 'missing-plan' ? { status: 404, value: { code: 'improvement_plan_not_found' } } :
+            { status: 200, value: presentation(seed('plan-z')) };
+    } });
+    expect(await h.controller.ready).toBe(false);
+    expect(h.root.querySelectorAll('article')).toEqual([]);
+    expect(h.root.textContent).toContain('This action is no longer available');
+    expect(h.request.mock.calls.some(([path]) => path.includes('/editor?'))).toBe(false);
+    expect(await h.controller.refresh()).toBe(false);
+    expect(h.request.mock.calls.filter(([path]) => path.includes('/view?')).map(([path]) => path))
+        .toEqual(['/api/dashboard/improvement/view?planId=plan-z', '/api/dashboard/improvement/view?planId=plan-z']);
+});
+
+test('explicit target opening rechecks view and editor and respects unsaved action changes', async () => {
+    const h = harness(); await h.controller.ready;
+    const actionId = seed().proposals[2].actionId, target = { planId: 'plan-a', actionId, planRevision: 0 };
+    expect(await h.controller.openTarget(target)).toBe(true);
+    expect(h.request.mock.calls.slice(-2)).toEqual([
+        ['/api/dashboard/improvement/view?planId=plan-a'], ['/api/dashboard/improvement/editor?planId=plan-a']
+    ]);
+    button(h, 'Assign to me').click(); const count = h.request.mock.calls.length;
+    expect(await h.controller.openTarget({ ...target, actionId: seed().proposals[0].actionId })).toBe(false);
+    expect(h.request).toHaveBeenCalledTimes(count); expect(form(h)).toBeDefined();
+});
+
+test('an uncertain action command blocks exact target navigation', async () => {
+    const h = harness(); await h.controller.ready;
+    h.request.mockResolvedValueOnce({ status: 503, value: { code: 'unavailable' } });
+    const actionId = seed().proposals[0].actionId;
+    expect(await h.controller.execute({ planId: 'plan-a', type: 'assign', operationId: 'queue-pending', expectedRevision: 0,
+        actionId, payload: { ownerSubjectKey: ACTOR, dueDate: '2026-10-03' } })).toBe(false);
+    const count = h.request.mock.calls.length;
+    expect(await h.controller.openTarget({ planId: 'plan-a', actionId, planRevision: 0 })).toBe(false);
+    expect(h.request).toHaveBeenCalledTimes(count);
+});
+
+test('invalid target inputs are rejected without reading accessors, sending requests or replacing current state', async () => {
+    const h = harness(); await h.controller.ready; const count = h.request.mock.calls.length, before = h.root.textContent;
+    const valid = { planId: 'plan-a', actionId: seed().proposals[0].actionId, planRevision: 0 }, getter = jest.fn();
+    const accessor = { ...valid }; Object.defineProperty(accessor, 'planId', { enumerable: true, get: getter });
+    for (const target of [null, accessor, { ...valid, tenantId: 'foreign' }, { ...valid, planRevision: -1 }, { ...valid, planId: '../other' }]) {
+        expect(await h.controller.openTarget(target)).toBe(false);
+    }
+    expect(getter).not.toHaveBeenCalled(); expect(h.request).toHaveBeenCalledTimes(count); expect(h.root.textContent).toBe(before);
+    expect(() => mount(h.root, { ...h.options, initialTarget: accessor })).toThrow('improvement_client_invalid');
+    expect(getter).not.toHaveBeenCalled();
+});
+
+test.each(['destroy', 'scope'])('late queue target editor results cannot revive %s access or focus', async kind => {
+    const waiting = deferred(), actionId = seed().proposals[4].actionId;
+    const h = harness({ options: { initialTarget: { planId: 'plan-a', actionId, planRevision: 0 } }, editorRespond: () => waiting.promise });
+    await settle(); expect(h.request.mock.calls.at(-1)[0]).toContain('/editor?');
+    if (kind === 'destroy') h.controller.destroy(); else h.state.current = false;
+    waiting.resolve({ status: 200, value: editorContext(h.state) });
+    expect(await h.controller.ready).toBe(false); expect(h.root.textContent).toBe('');
+    expect(h.document.activeElement?.tagName).not.toBe('ARTICLE');
+});
+
+test.each([401, 403])('a target editor denial %i clears the displayed plan and disables all further target reads', async status => {
+    const actionId = seed().proposals[0].actionId;
+    const h = harness({ options: { initialTarget: { planId: 'plan-a', actionId, planRevision: 0 } },
+        editorRespond: () => ({ status, value: { code: 'access_denied' } }) });
+    expect(await h.controller.ready).toBe(false); expect(h.root.querySelectorAll('article')).toEqual([]);
+    const count = h.request.mock.calls.length;
+    expect(await h.controller.openTarget({ planId: 'plan-a', actionId, planRevision: 0 })).toBe(false);
+    expect(h.request).toHaveBeenCalledTimes(count);
+});
+
 test('a selected saved assessment is snapshotted but never automatically generates or guesses a plan ID', async () => {
     const selected = source(), expected = clone(selected), h = harness({ options: { sourceAssessment: selected } });
     selected.assessmentId = 'changed'; selected.profileRef.profileId = 'changed';

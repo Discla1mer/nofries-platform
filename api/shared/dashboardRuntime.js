@@ -14,6 +14,9 @@ const { createImprovementActionPlanSource } = require('./improvementPlan/improve
 const { ImprovementPlanServiceError, normaliseImprovementCommand, normaliseImprovementSelector, serviceError } = require('./improvementPlan/improvementPlanService');
 const { normaliseImprovementActionListSelector, normaliseImprovementPlanPage,
     actionListError } = require('./improvementPlan/improvementActionListService');
+const { ImprovementActionListError } = require('./improvementPlan/improvementActionListProjection');
+const { ConsultantWorkQueueError, normaliseConsultantWorkQueuePage,
+    createConsultantWorkQueueService } = require('./improvementPlan/consultantWorkQueueService');
 const { apiSecurityHeaders } = require('./securityHeaders');
 
 const denied = () => new DashboardPersistenceError('access_denied', 403);
@@ -25,6 +28,7 @@ function createDashboardResourceRuntime(options) {
     // Capture the validated trusted opt-in before any request or await. The
     // production host supplies none while schema/audit readiness is unproved.
     const improvementEnabled = options.improvementEnabled === true;
+    const queueClock = options.clock;
     const requests = new WeakMap();
     // Correlation only. Authority and active SQL handles never enter this store.
     const correlation = new AsyncLocalStorage();
@@ -198,6 +202,75 @@ function createDashboardResourceRuntime(options) {
         return freeze({ status, headers: apiSecurityHeaders({ 'Content-Type': 'application/json; charset=utf-8' }),
             body: { code }, isRaw: false });
     }
+    function readWorkQueue(request, transport, input) {
+        let expectedGeneration, page;
+        try {
+            if (!improvementEnabled || !request || typeof request !== 'object') throw denied();
+            expectedGeneration = digest(fields(copy(transport, 16384), ['expectedGeneration']).expectedGeneration);
+            page = normaliseConsultantWorkQueuePage(input);
+        } catch (error) { return Promise.reject(queueError(error)); }
+        const key = JSON.stringify(page), existing = requests.get(request);
+        if (existing) return existing.mode === 'portfolio' && existing.expectedGeneration === expectedGeneration && existing.key === key
+            ? existing.promise.then(value => { assertWorkQueueDisclosure(request); return value; })
+            : Promise.reject(new ConsultantWorkQueueError('work_queue_access_denied', 403));
+        const entry = { mode: 'portfolio', expectedGeneration, key, promise: null, assertDisclosure: null };
+        entry.promise = Promise.resolve().then(async () => {
+            const portfolio = await binder.bindPortfolioRequest(request, { expectedGeneration });
+            entry.assertDisclosure = () => portfolio.assertDisclosure();
+            const targets = new Map();
+            async function target(bindingId) {
+                if (!targets.has(bindingId)) targets.set(bindingId, (async () => {
+                    const binding = await portfolio.bindTarget(bindingId);
+                    const requestContext = createTenantRequestContext({
+                        authenticate: async candidate => { if (candidate !== request) throw denied(); return binding.identity; },
+                        resolveScope: async (candidate, identity) => {
+                            if (candidate !== request) throw denied(); principal(identity, binding.identity); return binding.scope;
+                        },
+                        createRequestId: () => binding.requestId, clock: () => binding.resolvedAt
+                    });
+                    const context = await requestContext.resolve(request);
+                    return { binding, requestContext, context };
+                })());
+                return targets.get(bindingId);
+            }
+            async function read(bindingId, name, selected) {
+                let pair;
+                try {
+                    const boundTarget = await target(bindingId);
+                    pair = boundTarget.binding.createOperation('improvement.list', boundTarget.context);
+                    const source = createImprovementActionPlanSource({ database: pair.database, clock: pair.clock,
+                        audit: pair.audit, requestContext: boundTarget.requestContext });
+                    const value = await source[name](request, selected);
+                    pair.clock(); return value;
+                } finally { if (pair) pair.finish(); }
+            }
+            const result = await createConsultantWorkQueueService({ generation: expectedGeneration, clock: queueClock,
+                listBindings: pageInput => portfolio.listBindings(pageInput),
+                plans: (bindingId, pageInput) => read(bindingId, 'plans', pageInput),
+                list: (bindingId, selector) => read(bindingId, 'list', selector),
+                finish: () => portfolio.finish(), assertDisclosure: () => portfolio.assertDisclosure() }).read(page);
+            portfolio.assertDisclosure();
+            return result;
+        }).catch(error => { throw queueError(error); });
+        requests.set(request, entry);
+        return entry.promise;
+    }
+    function assertWorkQueueDisclosure(request) {
+        try {
+            const entry = requests.get(request);
+            if (!entry || entry.mode !== 'portfolio' || !entry.assertDisclosure) throw denied();
+            return entry.assertDisclosure();
+        } catch (error) { throw queueError(error); }
+    }
+    function queueError(error) {
+        if (error instanceof ConsultantWorkQueueError) return error;
+        if ((error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' ||
+            error instanceof ImprovementActionListError && error.code === 'improvement_list_access_denied' ||
+            error instanceof ImprovementPlanServiceError && error.code === 'improvement_access_denied') && error.statusCode === 403) {
+            return new ConsultantWorkQueueError('work_queue_access_denied', 403);
+        }
+        return new ConsultantWorkQueueError();
+    }
     function handleHostResource(request, transport) {
         let selected;
         try {
@@ -218,7 +291,7 @@ function createDashboardResourceRuntime(options) {
         requests.set(request, entry);
         return entry.promise;
     }
-    return Object.freeze({ forRequest, handleHostResource });
+    return Object.freeze({ forRequest, handleHostResource, ...(improvementEnabled ? { readWorkQueue, assertWorkQueueDisclosure } : {}) });
 }
 
 module.exports = { createDashboardResourceRuntime };

@@ -102,7 +102,8 @@ function frozen(value) {
 }
 
 function authorityFixture(options = {}) {
-    const example = ncscFixture({ ...options, now: NOW, tenantId: 'request-guard-tenant', organisationId: 'request-guard-org', capacity: 3 });
+    const fixtureUuid = n => uuid(n + (options.idOffset || 0));
+    const example = ncscFixture({ ...options, now: NOW, tenantId: options.tenantId || 'request-guard-tenant', organisationId: options.organisationId || 'request-guard-org', capacity: 3 });
     if (options.membershipEndsAt) {
         example.state.membershipState.memberships[0].validUntil = options.membershipEndsAt;
         example.state.membershipState.invitations[0].validUntil = options.membershipEndsAt;
@@ -113,29 +114,29 @@ function authorityFixture(options = {}) {
         issuer: 'https://identity.example.test/runtime/v2.0', identityTenantId: SUBJECT.split(':')[0], oid: SUBJECT.split(':')[1],
         audience: 'synthetic-runtime-client' };
     const member = example.state.membershipState.memberships[0];
-    const approved = { schemaVersion: 1, operationType: 'publish_existing_membership', bindingId: uuid(3), scope: clone(example.scope),
+    const approved = { schemaVersion: 1, operationType: 'publish_existing_membership', bindingId: fixtureUuid(3), scope: clone(example.scope),
         membershipId: member.membershipId, invitationId: member.invitationId, grantEvidenceId: member.grantEvidenceId,
         identity, validFrom: member.validFrom, validUntil: member.validUntil };
     const admission = domain.applyAdmissionCommand({ predecessor: null, command: { schemaVersion: 1,
-        operationType: 'publishAdmissionDecision', operationId: uuid(4), actorSubjectKey: SUBJECT, authorityId: uuid(5),
+        operationType: 'publishAdmissionDecision', operationId: fixtureUuid(4), actorSubjectKey: SUBJECT, authorityId: fixtureUuid(5),
         expectedRevision: null, expectedHeadSha256: null, payload: { target: example.scope,
             identityPolicyRef: { policyId: identity.policyId, policyRevision: identity.policyRevision }, approvedEffectSha256: hash(approved),
             evidenceRefs: [{ kind: 'approval', id: 'synthetic-approval', sha256: '1'.repeat(64) }], validFrom: START, validUntil: options.admissionEndsAt || END } },
         facts: { occurredAt: START } }).record;
     const { schemaVersion, operationType, ...approvedFields } = approved;
-    const binding = domain.publishExistingMembershipBinding({ ...approvedFields, receiptId: uuid(6), operationId: uuid(7),
+    const binding = domain.publishExistingMembershipBinding({ ...approvedFields, receiptId: fixtureUuid(6), operationId: fixtureUuid(7),
         authorityRef: { authorityId: admission.authorityId, revision: admission.revision, sha256: admission.decisionSha256 },
         actorSubjectKey: SUBJECT, at: START, currentAuthority: example.state }).binding;
-    const seed = { identityPayload: identity, instanceId: uuid(1), restoreEpoch: uuid(2), issuedAt: START, expiresAt: options.sessionEndsAt || END };
+    const seed = { identityPayload: identity, instanceId: fixtureUuid(1), restoreEpoch: fixtureUuid(2), issuedAt: START, expiresAt: options.sessionEndsAt || END };
     const session = domain.applySessionCommand({ predecessor: null, command: { schemaVersion: 1, operationType: 'activateCustomerSession',
-        operationId: uuid(8), sessionSha256: '2'.repeat(64), actorSubjectKey: SUBJECT, payload: { seed, bindingId: binding.bindingId } },
+        operationId: fixtureUuid(8), sessionSha256: '2'.repeat(64), actorSubjectKey: SUBJECT, payload: { seed, bindingId: binding.bindingId } },
         facts: { occurredAt: NOW, generationToken: '3'.repeat(64), binding } }).record;
     const instance = { schemaVersion: 1, instanceId: seed.instanceId, revision: 1, restoreEpoch: seed.restoreEpoch,
         ingressStatus: 'enabled', changedAt: START, evidenceRef: 'synthetic-instance-approval', evidenceSha256: '4'.repeat(64) };
     const rows = {
         instance: { instance_id: instance.instanceId, revision: instance.revision, restore_epoch: instance.restoreEpoch,
             ingress_status: instance.ingressStatus, changed_at: instance.changedAt, evidence_ref: instance.evidenceRef,
-            evidence_sha256: instance.evidenceSha256, record_sha256: hash(instance), head_receipt_id: uuid(9) },
+            evidence_sha256: instance.evidenceSha256, record_sha256: hash(instance), head_receipt_id: fixtureUuid(9) },
         session: Object.fromEntries(Object.entries(session).filter(([key]) => key !== 'schemaVersion').map(([key, value]) => [snake(key), clone(value)])),
         binding: { ...Object.fromEntries(Object.entries(binding).filter(([key]) => !['schemaVersion', 'scope', 'identity', 'origin', 'authorityRef'].includes(key))
             .map(([key, value]) => [snake(key), clone(value)])), tenant_id: example.scope.tenantId, organisation_id: example.scope.organisationId,
@@ -161,7 +162,7 @@ function harness(fixtureOptions = {}) {
     async function answer(sql, params) {
         if (sql === 'SELECT controlled_pending') return { rows: [{ value: 1 }] };
         if (sql === 'SET LOCAL statement_timeout = 0' && params.length === 0) return { rows: [] };
-        if (/^(BEGIN|COMMIT|ROLLBACK)(?:\s|$)/i.test(sql) || /^SET LOCAL ROLE nofries_runtime\b/i.test(sql)
+        if (/^(BEGIN|COMMIT|ROLLBACK)(?:\s|$)/i.test(sql) || /^SET LOCAL ROLE (?:nofries_runtime|nofries_dashboard_subject_reader)\b/i.test(sql)
             || /SELECT[\s\S]*(?:set_config|pg_advisory_xact_lock)/i.test(sql)) return { rows: [] };
         const fixed = [['dashboard_runtime_instance', 'instance'], ['dashboard_session_gates', 'session'],
             ['dashboard_identity_bindings', 'binding'], ['dashboard_admission_authorities', 'head'], ['dashboard_admission_decisions', 'admission']];
@@ -211,11 +212,183 @@ function harness(fixtureOptions = {}) {
     return { ...f, state, options, pool, requests, request, binder, bind, context };
 }
 
+describe('read-only portfolio request authority', () => {
+    const { ImprovementActionListError } = require('../api/shared/improvementPlan/improvementActionListProjection');
+    function portfolioHarness(options = {}) {
+        const f = harness(options), second = authorityFixture({ ...options, tenantId: 'portfolio-second-tenant',
+            organisationId: 'portfolio-second-org', idOffset: 1000 });
+        f.options.improvementEnabled = true;
+        const clients = [f, second];
+        for (const client of clients) {
+            client.snapshot.entitlementState.grants.find(g => g.grantId === 'synthetic-product').modules.push('improvement_plan');
+            client.snapshot.entitlementState.grants.forEach(g => g.modules.sort());
+            for (const assignment of client.snapshot.advisorAssignments) {
+                assignment.modules = ['improvement_plan']; assignment.permissions = ['improvement.read'];
+            }
+        }
+        const snapshot = async (_, target) => {
+            const found = clients.find(client => client.example.scope.tenantId === target.tenantId && client.example.scope.organisationId === target.organisationId);
+            if (!found) throw new Error('unexpected tenant');
+            return clone(found.snapshot);
+        };
+        dataStorage.loadSnapshotForShare.mockImplementation(snapshot);
+        dataStorage.loadSnapshotForUpdate.mockImplementation(snapshot);
+        f.state.hook = async event => {
+            if (event.phase === 'after') {
+                if (event.sql.startsWith('SELECT binding_id, organisation_label, tenant_id')) {
+                    event.result.rows = clients.filter(client => !event.params[2] || client.binding.bindingId > event.params[2])
+                        .slice(0, event.params[3]).map(client => ({ binding_id: client.binding.bindingId,
+                            organisation_label: client.binding.organisationLabel, ...Object.fromEntries(['tenant_id', 'organisation_id', 'identity_sha256', 'subject_key']
+                                .map(key => [key, client.rows.binding[key]])) }));
+                } else {
+                    const tables = [['dashboard_identity_bindings', 'binding', 'bindingId'],
+                        ['dashboard_admission_authorities', 'head', 'authorityId'], ['dashboard_admission_decisions', 'admission', 'authorityId']];
+                    for (const [table, key, identifier] of tables) if (event.sql.includes('FROM nofries.' + table)) {
+                        const found = clients.find(client => (identifier === 'bindingId' ? client.binding.bindingId : client.admission.authorityId) === event.params[0]);
+                        event.result.rows = found && found.rows[key] ? [clone(found.rows[key])] : [];
+                    }
+                }
+            }
+            if (f.state.queueHook) await f.state.queueHook(event);
+        };
+        const binder = f.binder();
+        const bindPortfolio = (request = f.request()) => binder.bindPortfolioRequest(request, { expectedGeneration: f.session.generationToken });
+        return { ...f, second, clients, binder, bindPortfolio };
+    }
+    async function readTarget(f, portfolio, bindingId, work = async () => 'retained-action') {
+        const binding = await portfolio.bindTarget(bindingId), context = await f.context(binding);
+        const pair = binding.createOperation('improvement.list', context);
+        try { return await pair.database.withTenantTransaction(binding.scope.tenantId, tx => work(pair, tx, context)); }
+        finally { pair.finish(); }
+    }
+    test('reads two independently authorised tenants without changing selected binding or generation', async () => {
+        const f = portfolioHarness(), original = clone(f.rows.session), portfolio = await f.bindPortfolio();
+        const page = await portfolio.listBindings({ afterBindingId: null, limit: 10 });
+        expect(page.bindings.map(row => row.bindingId)).toEqual(f.clients.map(client => client.binding.bindingId));
+        expect(page.bindings.every(row => Object.keys(row).sort().join(',') === 'bindingId,organisationLabel')).toBe(true);
+        for (const target of page.bindings) {
+            await expect(readTarget(f, portfolio, target.bindingId, async (pair, tx, context) => {
+                await tx.query('SELECT controlled_pending');
+                const event = pair.audit.createEvent(context, { action: 'improvement.read', module: 'improvement_plan', result: 'succeeded' });
+                await pair.audit.writeEvent(event);
+                return context.scope.organisationId;
+            })).resolves.toBe(f.clients.find(client => client.binding.bindingId === target.bindingId).example.scope.organisationId);
+        }
+        await portfolio.finish();
+        expect(f.rows.session).toEqual(original);
+        expect([...f.state.auditRows.values()].map(row => row.organisation_id)).toEqual(f.clients.map(client => client.example.scope.organisationId));
+        expect(f.state.trace.some(row => /UPDATE nofries\.dashboard_session_gates/.test(row.sql))).toBe(false);
+        expect(f.state.borrows).toBe(f.state.released);
+    });
+    test('refuses unenumerated targets, substituted contexts and every write operation', async () => {
+        const f = portfolioHarness(), portfolio = await f.bindPortfolio();
+        await expect(portfolio.bindTarget(f.second.binding.bindingId)).rejects.toMatchObject({ code: 'improvement_list_access_denied' });
+        await portfolio.listBindings({ afterBindingId: null, limit: 10 });
+        const first = await portfolio.bindTarget(f.binding.bindingId), second = await portfolio.bindTarget(f.second.binding.bindingId);
+        const firstContext = await f.context(first), secondContext = await f.context(second);
+        expect(() => second.createOperation('improvement.list', firstContext)).toThrow(ImprovementActionListError);
+        expect(() => second.createOperation('improvement.execute', secondContext)).toThrow();
+        await expect(readTarget(f, portfolio, f.second.binding.bindingId, (_, tx) => tx.query('DELETE FROM nofries.dashboard_improvement_heads')))
+            .rejects.toMatchObject({ code: 'improvement_list_unavailable' });
+        expect(f.state.trace.some(row => row.sql.startsWith('DELETE'))).toBe(false);
+        await portfolio.finish();
+    });
+    test('rechecks earlier successful targets before aggregate disclosure and withholds a revoked result', async () => {
+        const f = portfolioHarness(), portfolio = await f.bindPortfolio();
+        await portfolio.listBindings({ afterBindingId: null, limit: 10 });
+        await readTarget(f, portfolio, f.binding.bindingId);
+        await readTarget(f, portfolio, f.second.binding.bindingId);
+        f.snapshot.flags.enabled.improvement_plan = false;
+        await expect(portfolio.finish()).rejects.toMatchObject({ code: 'improvement_list_access_denied', statusCode: 403 });
+        await expect(portfolio.listBindings({ afterBindingId: null, limit: 1 })).rejects.toMatchObject({ code: 'improvement_list_unavailable' });
+        expect(f.state.borrows).toBe(f.state.released);
+    });
+    test.each(['binding', 'admission', 'membership', 'entitlement'])('independently rejects a target with revoked %s', async kind => {
+        const f = portfolioHarness(), portfolio = await f.bindPortfolio();
+        await portfolio.listBindings({ afterBindingId: null, limit: 10 });
+        if (kind === 'binding') f.second.rows.binding = null;
+        if (kind === 'admission') f.second.rows.head = null;
+        if (kind === 'membership') f.second.snapshot.membershipState.memberships[0].status = 'revoked';
+        if (kind === 'entitlement') f.second.snapshot.flags.enabled.improvement_plan = false;
+        await expect(readTarget(f, portfolio, f.second.binding.bindingId)).rejects.toMatchObject({ code: 'improvement_list_access_denied' });
+        await expect(readTarget(f, portfolio, f.binding.bindingId)).resolves.toBe('retained-action');
+        await portfolio.finish();
+    });
+    test('rejects a directory result from another subject before minting target authority', async () => {
+        const f = portfolioHarness(), portfolio = await f.bindPortfolio();
+        f.state.queueHook = event => {
+            if (event.phase === 'after' && event.sql.startsWith('SELECT binding_id, organisation_label, tenant_id')) event.result.rows[0].subject_key = 'foreign-subject';
+        };
+        await expect(portfolio.listBindings({ afterBindingId: null, limit: 10 })).rejects.toMatchObject({ code: 'improvement_list_unavailable' });
+    });
+    test('pins request mode and rejects reuse as selected-organisation authority', async () => {
+        const f = portfolioHarness(), request = f.request(), portfolio = await f.bindPortfolio(request);
+        expect(await f.bindPortfolio(request)).toBe(portfolio);
+        await expect(f.binder.bindRequest(request, { expectedGeneration: f.session.generationToken })).rejects.toMatchObject({ code: 'dashboard_access_denied' });
+        await portfolio.finish();
+    });
+    test('withholds the aggregate when the parent generation changes between target reads and finish', async () => {
+        const f = portfolioHarness(), portfolio = await f.bindPortfolio();
+        await portfolio.listBindings({ afterBindingId: null, limit: 1 });
+        await readTarget(f, portfolio, f.binding.bindingId);
+        f.rows.session.generation_token = '9'.repeat(64);
+        await expect(portfolio.finish()).rejects.toMatchObject({ code: 'improvement_list_access_denied' });
+    });
+    test('retains target expiry checks after final COMMIT settles', async () => {
+        const cutoff = '2026-09-07T09:00:01.000Z';
+        const f = portfolioHarness({ grantEndsAt: cutoff }), portfolio = await f.bindPortfolio();
+        await portfolio.listBindings({ afterBindingId: null, limit: 1 });
+        await readTarget(f, portfolio, f.binding.bindingId);
+        f.state.queueHook = event => { if (event.phase === 'after' && event.sql === 'COMMIT') f.state.at = cutoff; };
+        await expect(portfolio.finish()).rejects.toMatchObject({ code: 'improvement_list_access_denied' });
+        expect(f.state.borrows).toBe(f.state.released);
+    });
+    test.each(['target', 'deadline'])('rechecks %s expiry in the caller continuation after finish resolves', async boundary => {
+        const cutoff = '2026-09-07T09:00:01.000Z';
+        const f = portfolioHarness(boundary === 'target' ? { grantEndsAt: cutoff } : {}), portfolio = await f.bindPortfolio();
+        await portfolio.listBindings({ afterBindingId: null, limit: 1 });
+        await readTarget(f, portfolio, f.binding.bindingId);
+        await portfolio.finish();
+        expect(portfolio.assertDisclosure()).toBe(NOW);
+        f.state.at = boundary === 'target' ? cutoff : '2026-09-07T09:01:00.000Z';
+        expect(() => portfolio.assertDisclosure()).toThrow(ImprovementActionListError);
+        try { portfolio.assertDisclosure(); } catch (error) {
+            expect(error.code).toBe(boundary === 'target' ? 'improvement_list_access_denied' : 'improvement_list_unavailable');
+        }
+        f.state.at = NOW;
+        expect(() => portfolio.assertDisclosure()).toThrow(ImprovementActionListError);
+    });
+    test('takes final shared-client SHARE locks in scope order without upgrading or changing action-read locks', async () => {
+        const f = portfolioHarness(), portfolio = await f.bindPortfolio();
+        await portfolio.listBindings({ afterBindingId: null, limit: 10 });
+        await readTarget(f, portfolio, f.binding.bindingId);
+        await readTarget(f, portfolio, f.second.binding.bindingId);
+        const actionUpdateReads = dataStorage.loadSnapshotForUpdate.mock.calls.length;
+        expect(actionUpdateReads).toBeGreaterThan(0);
+        dataStorage.loadSnapshotForShare.mockClear();
+        await portfolio.finish();
+        expect(dataStorage.loadSnapshotForShare.mock.calls.map(([, target]) => target.tenantId))
+            .toEqual([f.second.example.scope.tenantId, f.example.scope.tenantId]);
+        expect(dataStorage.loadSnapshotForUpdate).toHaveBeenCalledTimes(actionUpdateReads);
+        expect(portfolio.assertDisclosure()).toBe(NOW);
+    });
+    test('supports bounded directory continuation and rejects malformed bounds', async () => {
+        const f = portfolioHarness(), portfolio = await f.bindPortfolio();
+        for (const limit of [0, 11, 1.5]) await expect(portfolio.listBindings({ afterBindingId: null, limit })).rejects.toMatchObject({ statusCode: 400 });
+        const first = await portfolio.listBindings({ afterBindingId: null, limit: 1 });
+        expect(first.nextAfterBindingId).toBe(f.binding.bindingId);
+        const second = await portfolio.listBindings({ afterBindingId: first.nextAfterBindingId, limit: 1 });
+        expect(second.bindings).toEqual([{ bindingId: f.second.binding.bindingId, organisationLabel: f.second.binding.organisationLabel }]);
+        expect(second.nextAfterBindingId).toBeNull();
+        await portfolio.finish();
+    });
+});
+
 describe('Dashboard request database closed trusted composition', () => {
     test('exports only the binding factory and rejects extra capabilities before any dependency is called', () => {
         const f = harness();
         expect(Object.keys(require('../api/shared/database/dashboardRequestDatabase'))).toEqual(['createDashboardRequestDatabase']);
-        expect(Object.keys(f.binder())).toEqual(['bindRequest', 'handleHostResource']);
+        expect(Object.keys(f.binder())).toEqual(['bindRequest', 'handleHostResource', 'bindPortfolioRequest']);
         expect(() => factory({ ...f.options, database: {} })).toThrow(DashboardPersistenceError);
         expect(f.options.clock).not.toHaveBeenCalled(); expect(f.pool.connect).not.toHaveBeenCalled();
     });
