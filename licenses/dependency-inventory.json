@@ -540,7 +540,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@azure/msal-node",
-      "version": "5.6.0",
+      "version": "7.1.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -548,7 +548,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@azure/msal-node/node_modules/@azure/msal-common",
-      "version": "16.13.0",
+      "version": "16.14.3",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -7516,7 +7516,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/promptfoo/node_modules/@azure/identity/node_modules/@azure/msal-common",
-      "version": "16.14.1",
+      "version": "16.14.3",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -7524,7 +7524,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/promptfoo/node_modules/@azure/identity/node_modules/@azure/msal-node",
-      "version": "6.0.1",
+      "version": "7.1.1",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -7532,7 +7532,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/promptfoo/node_modules/@azure/msal-common",
-      "version": "16.14.2",
+      "version": "16.14.3",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -7540,7 +7540,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/promptfoo/node_modules/@azure/msal-node",
-      "version": "7.0.1",
+      "version": "7.1.1",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -7892,7 +7892,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/qs",
-      "version": "6.16.0",
+      "version": "6.16.1",
       "license": "BSD-3-Clause",
       "development": false,
       "optional": false
@@ -9404,7 +9404,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/@azure/msal-node",
-      "version": "5.6.0",
+      "version": "7.1.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9412,7 +9412,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/@azure/msal-node/node_modules/@azure/msal-common",
-      "version": "16.13.0",
+      "version": "16.14.3",
       "license": "MIT",
       "development": false,
       "optional": false
