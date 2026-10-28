@@ -45,11 +45,13 @@
     let active = null;
     let controller = null;
     let portfolioButton = null;
+    let portfolioNavigation = null;
     let hadSession = false;
     let linkExit = null;
     // An abandoned fetch is not evidence that its server command was cancelled.
     // Retain one immutable command until an acknowledgement or definite denial.
     let unresolved = null;
+    const commandContinuations = new WeakMap();
     if (hasDirectorySearch) {
         directorySearch.addEventListener('input', function () {
             if (!active || !current(active) || active.authorityPending || active.session?.accountType !== 'consultant') return;
@@ -112,6 +114,7 @@
     }
     function clearContent() {
         if (portfolioButton) { portfolioButton.hidden = true; portfolioButton.onclick = null; }
+        if (portfolioNavigation) { portfolioNavigation.remove(); portfolioNavigation = null; }
         if (accountMenu) { accountMenu.open = false; accountMenu.hidden = true; }
         delete elements.status.dataset.accessWarning;
         const activation = document.getElementById('customerActivationControls');
@@ -170,6 +173,7 @@
             loading: ['Opening your dashboard', 'Checking your current access.', 'Please wait.'],
             selection: ['Choose an organisation', 'Select the organisation you want to view.', 'Your selection will be checked before the dashboard opens.'],
             ready: ['Your dashboard', 'Choose another organisation or sign out when finished.', 'Dashboard ready.'],
+            queue: ['Work queue', 'Follow up on saved improvement actions across your organisations.', 'Each organisation is checked before its actions are shown.'],
             unauthenticated: ['Sign in to your dashboard', 'Use the email address for your No Fries account.', 'You are not signed in.'],
             expired: ['Your session has expired', 'Sign in again to continue.', 'Dashboard content has been cleared.'],
             denied: ['Dashboard access is unavailable', 'Your current identity does not have the required access.', 'No dashboard content is displayed.'],
@@ -191,7 +195,7 @@
             skipLink.textContent = state === 'ready' ? 'Skip to dashboard content' : elements.panel.hidden ? 'Skip to content' : 'Skip to dashboard status';
         }
         if (elements.chooser.tagName === 'DETAILS') elements.chooser.open = state !== 'ready';
-        if (publicGateway) publicGateway.hidden = ['ready', 'selection'].includes(state);
+        if (publicGateway) publicGateway.hidden = ['ready', 'selection', 'queue'].includes(state);
         if (state === 'selection' && cycle.session?.accountType === 'consultant') {
             const owner = cycle.session.clientSetupAvailable === true;
             copy[0] = 'Your consultant account';
@@ -213,6 +217,7 @@
             accountMenu.hidden = elements.signOut.hidden;
             if (accountMenu.hidden) accountMenu.open = false;
         }
+        if (['ready', 'selection', 'queue'].includes(state) && cycle.session?.accountType === 'consultant') consultantNavigation(cycle, state);
         if (focusHeading !== false && state !== 'loading' && !(gateway && !hadSession)) elements.heading.focus();
     }
     function failure(cycle, error) {
@@ -384,6 +389,12 @@
         return session(requireSuccess(await request(cycle, '/api/dashboard/session', undefined, undefined, undefined, refresh)));
     }
     async function execute(cycle, pending) {
+        const continuation = commandContinuations.get(pending);
+        if (pending.kind === 'selection' && continuation && continuation.target.bindingId === pending.body.bindingId) {
+            cycle.workQueueTarget = continuation.target;
+            cycle.workQueueFilters = continuation.filters;
+            cycle.workQueueFocus = continuation.focus;
+        }
         const paths = { initialize: '/api/dashboard/session', selection: '/api/dashboard/selection', logout: '/api/dashboard/logout' };
         const result = await request(cycle, paths[pending.kind], pending.body);
         if (!current(cycle)) return;
@@ -420,6 +431,7 @@
             return;
         }
         const value = session(requireSuccess(result));
+        if (cycle.workQueueTarget && value.selectedBindingId !== cycle.workQueueTarget.bindingId) throw invalid();
         remember(cycle, value);
         // Navigation records the chosen view, never authority. Keep it across
         // focus/pageshow rechecks after a consultant selects a client.
@@ -427,6 +439,9 @@
             window.history.replaceState(null, '', '#overview');
         }
         const snapshot = Object.freeze({ generation: value.generation, selectedBindingId: value.selectedBindingId });
+        if (value.accountType === 'consultant' && window.location.hash === '#work-queue' && !cycle.openSelection) {
+            mountWorkQueue(cycle); return;
+        }
         const prefetchProjection = value.selectedBindingId !== null && !(value.accountType === 'consultant' &&
             !cycle.openSelection && (cycle.forcePortfolio || !currentRoute()));
         // Both reads depend only on this fresh session. Reconciliation failure
@@ -458,6 +473,9 @@
         if (!sameSession(value, fresh)) {
             if (transitions >= MAX_RECONCILIATIONS) throw invalid();
             const next = begin();
+            next.workQueueTarget = cycle.workQueueTarget;
+            next.workQueueFilters = cycle.workQueueFilters;
+            next.workQueueFocus = cycle.workQueueFocus;
             reconcile(next, transitions + 1, false).catch(function (error) { failure(next, error); });
             return;
         }
@@ -811,6 +829,241 @@
             });
         };
     }
+    function consultantNavigation(cycle, state) {
+        if (portfolioNavigation) portfolioNavigation.remove();
+        const nav = document.createElement('nav'); nav.className = 'consultant-navigation';
+        nav.setAttribute('aria-label', 'Consultant workspace');
+        [['Organisations', '#organisations', state === 'selection'], ['Work queue', '#work-queue', state === 'queue']].forEach(function (item) {
+            const button = document.createElement('button'); button.type = 'button'; button.textContent = item[0];
+            if (item[2]) button.setAttribute('aria-current', 'page');
+            button.addEventListener('click', function () {
+                if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved || item[2]) return;
+                leave(cycle, function () {
+                    window.history.replaceState(null, '', item[1]);
+                    const next = begin(); next.forcePortfolio = true;
+                    next.workQueueFilters = cycle.workQueueFilters;
+                    next.workQueueFocus = cycle.workQueueFocus;
+                    reconcile(next, 0, false).catch(function (error) { failure(next, error); });
+                });
+            });
+            nav.append(button);
+        });
+        elements.panel.append(nav); portfolioNavigation = nav;
+    }
+    function queuePage(value) {
+        const token = function (text) { return typeof text === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(text); };
+        const integer = function (number) { return Number.isSafeInteger(number) && number >= 0; };
+        const dateOnly = function (date) { return date === null || typeof date === 'string' && /^(?!0000)\d{4}-\d{2}-\d{2}$/.test(date) &&
+            canonicalDate(date + 'T00:00:00.000Z'); };
+        if (!value || value.schemaVersion !== 1 || !canonicalDate(value.asOf) || value.dueDateBasis !== 'UTC_calendar_day' ||
+            !Array.isArray(value.rows) || value.rows.length > 50 || !Array.isArray(value.organisations) || value.organisations.length > 50 ||
+            !value.coverage || value.coverage.basis !== 'current_page' || !integer(value.coverage.checkedOrganisations) ||
+            !integer(value.coverage.partialOrganisations) || !integer(value.coverage.unavailableOrganisations) || typeof value.coverage.complete !== 'boolean' ||
+            value.nextCursor !== null && (typeof value.nextCursor !== 'string' || !value.nextCursor || value.nextCursor.length > 4096)) throw invalid();
+        const organisations = new Map();
+        value.organisations.forEach(function (organisation) {
+            if (!UUID.test(organisation.bindingId) || !validLabel(organisation.organisationLabel) || organisations.has(organisation.bindingId) ||
+                !['checked', 'partial', 'unavailable'].includes(organisation.state) || !integer(organisation.plansChecked)) throw invalid();
+            organisations.set(organisation.bindingId, organisation);
+        });
+        const seen = new Set();
+        value.rows.forEach(function (row) {
+            const organisation = organisations.get(row.bindingId);
+            const key = [row.bindingId, row.planId, row.actionId].join('/');
+            if (!organisation || organisation.state === 'unavailable' || row.organisationLabel !== organisation.organisationLabel ||
+                !token(row.planId) || !token(row.actionId) || !integer(row.planRevision) || row.planRevision > 1024 || seen.has(key) ||
+                typeof row.suggestedAction !== 'string' || !row.suggestedAction.trim() || row.suggestedAction.length > 4000 ||
+                !['open', 'in_progress', 'blocked', 'completed'].includes(row.status) || typeof row.assigned !== 'boolean' ||
+                row.ownerEligibility !== 'not_checked' || !dateOnly(row.dueDate) || !row.assigned && row.dueDate !== null ||
+                typeof row.isOverdue !== 'boolean' || row.isOverdue !== (row.status !== 'completed' && row.dueDate !== null && row.dueDate < value.asOf.slice(0, 10)) ||
+                row.blockedReason !== null && (typeof row.blockedReason !== 'string' || row.blockedReason.length > 4000)) throw invalid();
+            seen.add(key);
+        });
+        return value;
+    }
+    function mountWorkQueue(cycle) {
+        if (!current(cycle) || cycle.session?.accountType !== 'consultant') throw invalid();
+        cycle.workQueue = true; cycle.busy = false;
+        elements.chooser.hidden = true; elements.app.hidden = false;
+        const root = elements.app;
+        root.classList.add('consultant-work-queue');
+        const filters = Object.assign({ query: '', organisation: '', status: 'unfinished', attention: 'all' }, cycle.workQueueFilters || {});
+        cycle.workQueueFilters = filters;
+        let disposed = false, loading = false, page = null, cursor = null, version = 0;
+        function live() { return !disposed && current(cycle); }
+        function element(tag, text, className) {
+            const node = document.createElement(tag); if (text !== undefined) node.textContent = text;
+            if (className) node.className = className; return node;
+        }
+        function button(text, action, className) {
+            const node = element('button', text, className); node.type = 'button'; node.addEventListener('click', action); return node;
+        }
+        const introduction = element('p', 'Saved Improvement Plan actions. Filters apply to the current page. Returning to the queue starts a fresh scan from the first page.', 'work-queue-intro');
+        const controls = element('div', undefined, 'work-queue-filters');
+        const searchLabel = element('label', 'Search actions or organisations');
+        const search = element('input'); search.type = 'search'; search.id = 'workQueueSearch'; search.autocomplete = 'off';
+        search.value = filters.query; searchLabel.append(search); controls.append(searchLabel);
+        function select(label, id, choices, key) {
+            const wrapper = element('label', label), control = element('select'); control.id = id;
+            choices.forEach(function (choice) { const option = element('option', choice[1]); option.value = choice[0]; control.append(option); });
+            control.value = filters[key]; wrapper.append(control); controls.append(wrapper);
+            control.addEventListener('change', function () { filters[key] = control.value; render(); });
+            return control;
+        }
+        const organisations = select('Organisation on this page', 'workQueueOrganisation', [['', 'All shown organisations']], 'organisation');
+        select('Action status', 'workQueueStatus', [['unfinished', 'Unfinished'], ['completed', 'Completed'], ['all', 'All actions']], 'status');
+        select('Needs attention', 'workQueueAttention', [['all', 'All'], ['overdue', 'Overdue'], ['soon', 'Due soon'], ['blocked', 'Blocked'], ['unassigned', 'Unassigned']], 'attention');
+        const clear = button('Clear filters', function () {
+            Object.assign(filters, { query: '', organisation: '', status: 'unfinished', attention: 'all' });
+            search.value = ''; organisations.value = '';
+            controls.querySelectorAll('select').forEach(function (node) {
+                if (node.id === 'workQueueStatus') node.value = 'unfinished';
+                if (node.id === 'workQueueAttention') node.value = 'all';
+            });
+            render(); search.focus();
+        }, 'work-queue-secondary');
+        controls.append(clear);
+        const status = element('p', '', 'work-queue-coverage'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+        const checked = element('p', '', 'work-queue-checked');
+        const list = element('div', undefined, 'work-queue-groups'); list.id = 'workQueueResults';
+        const pager = element('div', undefined, 'work-queue-pager');
+        const first = button('First actions', function () { load(null, true); }, 'work-queue-secondary');
+        const more = button('Next actions', function () { if (page && page.nextCursor !== null) load(page.nextCursor, true); });
+        const refresh = button('Refresh actions', function () { load(null, true); }, 'work-queue-secondary');
+        pager.append(first, more, refresh); first.hidden = true; more.hidden = true;
+        search.setAttribute('aria-controls', list.id); search.addEventListener('input', function () { filters.query = search.value; render(); });
+        root.replaceChildren(introduction, controls, status, checked, list, pager);
+        function visible(row) {
+            if (filters.status === 'unfinished' && row.status === 'completed' || filters.status === 'completed' && row.status !== 'completed') return false;
+            if (filters.organisation && row.bindingId !== filters.organisation) return false;
+            const query = filters.query.trim().toLocaleLowerCase();
+            if (query && !(row.organisationLabel + ' ' + row.suggestedAction).toLocaleLowerCase().includes(query)) return false;
+            if (filters.attention === 'overdue') return row.isOverdue;
+            if (filters.attention === 'blocked') return row.status === 'blocked';
+            if (filters.attention === 'unassigned') return !row.assigned;
+            if (filters.attention === 'soon') {
+                const today = page.asOf.slice(0, 10);
+                const through = new Date(Date.parse(today + 'T00:00:00.000Z') + 6 * 86400000).toISOString().slice(0, 10);
+                return row.status !== 'completed' && row.dueDate !== null && row.dueDate >= today && row.dueDate <= through;
+            }
+            return true;
+        }
+        function render() {
+            if (!live() || loading || !page) return;
+            list.replaceChildren();
+            const rows = page.rows.filter(visible);
+            status.textContent = rows.length + (rows.length === 1 ? ' action shown' : ' actions shown') + ' · ' + page.coverage.checkedOrganisations +
+                (page.coverage.checkedOrganisations === 1 ? ' organisation fully checked on this page.' : ' organisations fully checked on this page.') +
+                (page.coverage.partialOrganisations ? ' ' + page.coverage.partialOrganisations + ' partly checked.' : '') +
+                (page.coverage.unavailableOrganisations ? ' ' + page.coverage.unavailableOrganisations + ' unavailable; their actions are not shown.' : '') +
+                (page.nextCursor !== null ? ' More actions or organisations are available.' : ' No further pages.');
+            checked.textContent = 'Dates use UTC · Checked ' + page.asOf.slice(0, 10) + ' ' + page.asOf.slice(11, 16) + ' UTC';
+            page.organisations.forEach(function (organisation) {
+                if (filters.organisation && filters.organisation !== organisation.bindingId) return;
+                const items = rows.filter(function (row) { return row.bindingId === organisation.bindingId; });
+                if (!items.length && organisation.state !== 'unavailable') return;
+                const section = element('section', undefined, 'work-queue-group');
+                section.append(element('h2', organisation.organisationLabel));
+                if (organisation.state === 'unavailable') section.append(element('p', 'Improvement actions are currently unavailable for this organisation.', 'work-queue-empty'));
+                items.sort(function (left, right) {
+                    const a = [left.dueDate || '9999-99-99', left.planId, left.actionId].join('/');
+                    const b = [right.dueDate || '9999-99-99', right.planId, right.actionId].join('/'); return a < b ? -1 : a > b ? 1 : 0;
+                }).forEach(function (row) {
+                    const article = element('article', undefined, 'work-queue-action');
+                    const content = element('div', undefined, 'work-queue-action-copy');
+                    content.append(element('h3', row.suggestedAction));
+                    if (row.status === 'blocked' && row.blockedReason) content.append(element('p', row.blockedReason, 'work-queue-blocked-reason'));
+                    const facts = element('div', undefined, 'work-queue-facts');
+                    const labels = { open: 'Open', in_progress: 'In progress', blocked: 'Blocked', completed: 'Completed' };
+                    facts.append(element('span', labels[row.status], 'work-queue-badge work-queue-status-' + row.status),
+                        element('span', row.assigned ? 'Assigned (eligibility not checked)' : 'Unassigned'),
+                        element('span', row.dueDate === null ? 'No due date' : (row.isOverdue ? 'Overdue · ' : 'Due ') + row.dueDate,
+                            row.isOverdue ? 'work-queue-overdue' : ''));
+                    content.append(facts);
+                    const open = button('Open action', function () { openAction(row); });
+                    open.setAttribute('aria-label', 'Open action: ' + row.suggestedAction + ' · ' + organisation.organisationLabel);
+                    open.dataset.workQueueAction = [row.bindingId, row.planId, row.actionId].join('/');
+                    article.append(content, open); section.append(article);
+                });
+                list.append(section);
+            });
+            if (!rows.length) list.prepend(element('p', page.rows.length ? 'No actions on this page match these filters.'
+                : 'No saved actions were returned on this page. Other organisations may still need to be checked.', 'work-queue-empty'));
+            first.hidden = cursor === null; more.hidden = page.nextCursor === null;
+            more.disabled = false; first.disabled = false; refresh.disabled = false;
+        }
+        function openAction(row) {
+            if (!live() || loading || cycle.authorityPending || unresolved || !page || !page.rows.includes(row)) return;
+            leave(cycle, function () {
+                cycle.workQueueFocus = [row.bindingId, row.planId, row.actionId].join('/');
+                const next = begin(); next.workQueueFilters = filters; next.workQueueFocus = cycle.workQueueFocus;
+                next.workQueueTarget = Object.freeze({ bindingId: row.bindingId, planId: row.planId, actionId: row.actionId, planRevision: row.planRevision });
+                window.history.replaceState(null, '', '#improvement-plan');
+                try {
+                    const pending = command('selection', { bindingId: row.bindingId, expectedGeneration: cycle.session.generation, operationId: secureId() });
+                    commandContinuations.set(pending, { target: next.workQueueTarget, filters: filters, focus: next.workQueueFocus });
+                    execute(next, pending).catch(function (error) { failure(next, error); });
+                } catch (error) { failure(next, error); }
+            });
+        }
+        async function load(nextCursor, focus) {
+            if (!live() || loading) return;
+            loading = true; const ownVersion = ++version; page = null;
+            const focusOrigin = document.activeElement;
+            let ownsFocus = focus ? [first, more, refresh].includes(focusOrigin) : focusOrigin === elements.heading;
+            let disabledPagerBlurPending = false;
+            const focusEvents = ['focusin', 'pointerdown', 'keydown', 'blur'];
+            function movedFocus(event) {
+                // Chromium can deliver the blur after disabling our pager.
+                // Ignore only that element's first disabled blur; user input
+                // and window blur still relinquish ownership below.
+                if (disabledPagerBlurPending && event && event.type === 'blur' && event.target === focusOrigin && focusOrigin.disabled) {
+                    disabledPagerBlurPending = false; return;
+                }
+                if (event && event.type === 'focusin' && [focusOrigin, document.body, document.documentElement].includes(event.target)) return;
+                ownsFocus = false;
+            }
+            function releaseFocus() { focusEvents.forEach(function (name) { window.removeEventListener(name, movedFocus, true); }); }
+            focusEvents.forEach(function (name) { window.addEventListener(name, movedFocus, true); });
+            cycle.cleanup.push(releaseFocus);
+            list.replaceChildren(); checked.textContent = ''; status.textContent = 'Checking current access and saved actions…';
+            const unselected = element('option', 'All shown organisations'); unselected.value = ''; organisations.replaceChildren(unselected); organisations.value = '';
+            organisations.disabled = true;
+            disabledPagerBlurPending = [first, more, refresh].includes(focusOrigin);
+            first.disabled = true; more.disabled = true; refresh.disabled = true;
+            try {
+                const fresh = await readSession(cycle);
+                if (!live() || version !== ownVersion) return;
+                if (!sameSession(fresh, cycle.session)) { restore(); return; }
+                const path = '/api/dashboard/work-queue?limit=50' + (nextCursor === null ? '' : '&cursor=' + encodeURIComponent(nextCursor));
+                const data = queuePage(requireSuccess(await request(cycle, path, undefined, fresh.generation)));
+                const confirmed = await readSession(cycle);
+                if (!live() || version !== ownVersion) return;
+                if (!sameSession(fresh, confirmed)) { restore(); return; }
+                remember(cycle, confirmed); cursor = nextCursor; page = data; loading = false;
+                const all = element('option', 'All shown organisations'); all.value = ''; organisations.replaceChildren(all);
+                page.organisations.forEach(function (item) { const option = element('option', item.organisationLabel); option.value = item.bindingId; organisations.append(option); });
+                if (filters.organisation && !page.organisations.some(function (item) { return item.bindingId === filters.organisation; })) filters.organisation = '';
+                organisations.value = filters.organisation; organisations.disabled = false; render();
+                if (focus && ownsFocus) { status.tabIndex = -1; status.focus(); }
+                else if (ownsFocus && cycle.workQueueFocus) {
+                    const prior = Array.from(list.querySelectorAll('button')).find(function (node) { return node.dataset.workQueueAction === cycle.workQueueFocus; });
+                    if (prior) prior.focus(); cycle.workQueueFocus = null;
+                }
+            } catch (error) {
+                if (!live() || version !== ownVersion) return;
+                loading = false; page = null; list.replaceChildren(); checked.textContent = '';
+                if (error && ([401, 403, 409].includes(error.status) || error.expired)) { failure(cycle, error); return; }
+                status.textContent = 'Work queue is currently unavailable. Refresh actions to try again.';
+                first.hidden = true; more.hidden = true; refresh.disabled = false;
+            } finally { releaseFocus(); }
+        }
+        controller = { destroy: function () { disposed = true; version++; page = null; root.classList.remove('consultant-work-queue'); root.replaceChildren(); },
+            requestLeave: function (commit) { if (!live()) return Promise.resolve(false); commit(); return Promise.resolve(true); },
+            refresh: function () { return load(null, false); } };
+        show(cycle, 'queue');
+        load(null, false);
+    }
     async function cyberOptions(cycle, snapshot, organisationId) {
         const value = requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
         if (!current(cycle)) throw invalid();
@@ -863,8 +1116,11 @@
         if (!factory || typeof factory.mount !== 'function') throw invalid();
         return function (root, presentation) {
             if (!current(cycle) || cycle.authorityPending) throw invalid();
-            return factory.mount(root, {
+            const result = factory.mount(root, {
                 organisationId: organisationId,
+                ...(cycle.workQueueTarget && cycle.workQueueTarget.bindingId === snapshot.selectedBindingId
+                    ? { initialTarget: { planId: cycle.workQueueTarget.planId, actionId: cycle.workQueueTarget.actionId,
+                        planRevision: cycle.workQueueTarget.planRevision } } : {}),
                 sourceAssessment: presentation && presentation.sourceAssessment,
                 newId: secureId,
                 isCurrent: function () { return current(cycle) && !cycle.authorityPending; },
@@ -880,6 +1136,8 @@
                     return result;
                 }
             });
+            cycle.workQueueTarget = null;
+            return result;
         };
     }
     function cyberContract(value) {
@@ -1125,12 +1383,17 @@
         // Share current fresh reads only while they are pending. Completion,
         // failure or pagehide permits the next return to check authority anew.
         if (active && current(active) && active.reconciling && !unresolved) return;
-        const cycle = begin(clientDraft(active));
+        const previous = active;
+        const cycle = begin(clientDraft(previous));
+        cycle.workQueueTarget = previous && previous.workQueueTarget;
+        cycle.workQueueFilters = previous && previous.workQueueFilters;
+        cycle.workQueueFocus = previous && previous.workQueueFocus;
         if (unresolved) { cycle.busy = false; show(cycle, unresolved.kind === 'logout' ? 'signout' : 'unavailable'); return; }
         reconcile(cycle, 0, true).catch(function (error) { failure(cycle, error); });
     }
     function revalidate(cycle) {
         if (!current(cycle) || cycle.revalidating) return;
+        if (cycle.workQueue && controller && typeof controller.refresh === 'function') { controller.refresh(); return; }
         const account = !controller && document.body.dataset.dashboardState === 'selection' && !currentRoute();
         const previousStatus = cycle.quietStatus === undefined ? elements.status.textContent : cycle.quietStatus;
         cycle.quietStatus = previousStatus;

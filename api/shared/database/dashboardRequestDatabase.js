@@ -366,23 +366,24 @@ async function locator(inv) {
     }
 }
 async function businessContext(inv, tx, routing) {
-    await enter(inv, tx, routing.scope, routing.gate.selectedBindingId); await firstFences(inv, tx);
+    const bindingId = routing.portfolio ? routing.bindingId : routing.gate.selectedBindingId;
+    await enter(inv, tx, routing.scope, bindingId); await firstFences(inv, tx);
     const instance = await loadInstance(inv, tx), gate = await loadGate(inv, tx);
     currentInstance(inv, instance, inv.now()); currentGate(inv, gate, inv.now());
     if (!equal(gate, routing.gate) || !equal(instance, routing.instance)) inv.deny();
-    const hint = await loadBinding(inv, tx, gate.selectedBindingId);
+    const hint = await loadBinding(inv, tx, bindingId);
     currentBinding(inv, hint, routing.scope, inv.now());
-    await settings(inv, tx, routing.scope, gate.selectedBindingId, hint.authorityRef.authorityId);
+    await settings(inv, tx, routing.scope, bindingId, hint.authorityRef.authorityId);
     await fence(inv, tx, 71003, hint.authorityRef.authorityId);
     const admissions = await loadAdmissions(inv, tx, hint, routing.scope);
-    const binding = await loadBinding(inv, tx, gate.selectedBindingId);
+    const binding = await loadBinding(inv, tx, bindingId);
     if (!equal(binding, hint)) inv.deny();
     const at = inv.now(); currentBinding(inv, binding, routing.scope, at); currentAdmission(inv, admissions, routing.scope, binding, at);
     return { tx, gate, instance, binding, admissions, scope: routing.scope };
 }
-async function loadAuthority(inv, operation, context) {
+async function loadAuthority(inv, operation, context, shared = false) {
     try {
-        return await (['ncsc.execute', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ? dataStorage.loadSnapshotForUpdate : dataStorage.loadSnapshotForShare)(
+        return await (!shared && ['ncsc.execute', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ? dataStorage.loadSnapshotForUpdate : dataStorage.loadSnapshotForShare)(
             Object.freeze({ query: (sql, params) => inv.query(context.tx, sql, params) }), context.scope);
     } catch (error) {
         if (error instanceof DashboardPersistenceError && error.statusCode === 404) inv.deny();
@@ -392,7 +393,7 @@ async function loadAuthority(inv, operation, context) {
 async function finalCheck(inv, operation, context, resolvedAt) {
     await capture(inv); await externalEpoch(inv);
     const instance = await loadInstance(inv, context.tx), gate = await loadGate(inv, context.tx);
-    const binding = await loadBinding(inv, context.tx, context.gate.selectedBindingId);
+    const binding = await loadBinding(inv, context.tx, context.binding.bindingId);
     if (!equal(gate, context.gate) || !equal(instance, context.instance) || !equal(binding, context.binding)) inv.deny();
     const admissions = await loadAdmissions(inv, context.tx, binding, context.scope);
     if (!equal(admissions, context.admissions)) inv.deny();
@@ -405,6 +406,11 @@ async function finalCheck(inv, operation, context, resolvedAt) {
     inv.now();
 }
 function currentAuthorityAt(inv, operation, evidence, at) {
+    if (operation.name === 'portfolio.finish') {
+        currentInstance(inv, evidence.instance, at); currentGate(inv, evidence.gate, at);
+        for (const target of evidence.targets) currentAuthorityAt(inv, target.operation, target.evidence, at);
+        return;
+    }
     if (operation.name === 'host.resource') return hostAuthorityAt(inv, operation, evidence, at);
     const { instance, gate, binding, admissions, authority, scope: target, resolvedAt, quota } = evidence;
     currentInstance(inv, instance, at); currentGate(inv, gate, at);
@@ -581,7 +587,8 @@ async function writeAudit(inv, operation, event) {
 
 function operationPair(inv, database, routing, resolvedAt, name, context) {
     const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name);
-    if (!known || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true || inv.owner) {
+    if (!known || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true || inv.owner ||
+        routing.portfolio && name !== 'improvement.list') {
         throw mapped(privateError(false), known ? name : 'admission.read');
     }
     try { inv.now(); } catch (error) { throw mapped(error, name); }
@@ -661,6 +668,12 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
                         query(sql, params) {
                             if (operation.active !== active || inv.owner !== operation || operation.finished || active.phase !== 'work') return Promise.reject(mapped(privateError(false), name));
                             if (active.failure) return Promise.reject(active.failure);
+                            // Portfolio consumers receive retained-read ports only.
+                            // The separately paired audit sink owns its fixed INSERT.
+                            if (routing.portfolio && (typeof sql !== 'string' || !/^\s*SELECT\b/i.test(sql) || sql.includes(';'))) {
+                                active.failure = mapped(privateError(false), name);
+                                return Promise.reject(active.failure);
+                            }
                             const pending = inv.query(tx, sql, params)
                                 .catch(error => { if (!active.failure) active.failure = error; throw error; })
                                 .finally(() => active.pending.delete(pending));
@@ -685,7 +698,9 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
                     await finalCheck(inv, operation, active.context, resolvedAt);
                     inv.now(); return value;
                 });
-                inv.now(); return result;
+                inv.now();
+                if (routing.portfolio) routing.readContext = context;
+                return result;
             } catch (error) {
                 // A later invocation failure outranks this attempt's final
                 // authority latch, but never erases real control uncertainty.
@@ -1199,6 +1214,160 @@ async function hostOperation(inv, routing, resource) {
     } finally { retire(); operation.finished = true; inv.owner = null; }
 }
 
+// A portfolio invocation retains the original gate, not a synthetic selection.
+// Routing identifiers come only from the subject-restricted directory and never
+// turn a directory row into permission. Every read uses the ordinary scoped
+// authority evaluator. Final disclosure rechecks all read targets under locks
+// held in one transaction, so another target's awaited I/O cannot expose a
+// previously revoked client's data.
+async function portfolioParent(inv, tx, routing) {
+    await capture(inv); await externalEpoch(inv);
+    await enter(inv, tx); await firstFences(inv, tx);
+    const instance = await loadInstance(inv, tx), gate = await loadGate(inv, tx), at = inv.now();
+    currentInstance(inv, instance, at); currentGate(inv, gate, at);
+    if (!equal(instance, routing.instance) || !equal(gate, routing.gate)) inv.deny();
+    return { instance, gate };
+}
+async function portfolioTransaction(inv, routing, work, seal) {
+    if (inv.owner) throw mapped(privateError(false), 'improvement.list');
+    const operation = { name: 'portfolio.finish', active: { finalAuthority: null, finalFailure: null,
+        phase: 'entering', commitNotSent: null }, finished: false, denial: null };
+    inv.owner = operation;
+    let client, started = false, discard = false;
+    try {
+        inv.now();
+        client = checkedClient(inv, await inv.options.pool.connect()); inv.now();
+        try { await client.query('BEGIN'); started = true; }
+        catch (_) { discard = true; inv.unavailable(); }
+        const parent = await portfolioParent(inv, client, routing);
+        const result = await work(client, operation, parent);
+        const finalParent = await portfolioParent(inv, client, routing);
+        operation.active.finalAuthority = Object.freeze({ ...finalParent,
+            targets: operation.active.finalAuthority?.targets || [] });
+        operation.active.phase = 'finalizing'; inv.now();
+        try { await client.query('COMMIT'); started = false; }
+        catch (error) {
+            if (operation.active.commitNotSent) throw operation.active.commitNotSent;
+            throw error instanceof PostgresDatabaseError ? error : new PostgresDatabaseError('postgres_commit_failed');
+        }
+        inv.now();
+        if (seal) seal(operation.active.finalAuthority);
+        return result;
+    } catch (error) { throw mapped(error, 'improvement.list', operation.denial); }
+    finally {
+        if (started && client) { try { await client.query('ROLLBACK'); } catch (_) { discard = true; } }
+        if (client) { try { client.release(discard); } catch (_) { /* No driver detail crosses the boundary. */ } }
+        operation.active.phase = 'settled'; operation.finished = true; inv.owner = null;
+    }
+}
+function portfolioBinding(inv, routing, resolvedAt) {
+    const database = checkedDatabase(inv), targets = new Map();
+    const identity = freeze({ authenticated: true, subjectKey: subjectOf(inv.capture.identityPayload) });
+    let closed = false, busy = false, disclosure = null, disclosureFailure = null;
+    function available() {
+        if (closed || busy || inv.owner) throw mapped(privateError(false), 'improvement.list');
+        try { inv.now(); } catch (error) { throw mapped(error, 'improvement.list'); }
+    }
+    return Object.freeze({ requestId: inv.capture.requestId, identity, resolvedAt,
+        async listBindings(input) {
+            available();
+            let page;
+            try {
+                page = fields(copy(input, MAX_SMALL), ['afterBindingId', 'limit']);
+                if (page.afterBindingId !== null) uuid(page.afterBindingId);
+                if (!Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > 10) throw new Error();
+            } catch (_) { throw new ImprovementActionListError('improvement_list_input_invalid', 400); }
+            busy = true;
+            try {
+                return await portfolioTransaction(inv, routing, async tx => {
+                    await inv.query(tx, 'SET LOCAL ROLE nofries_dashboard_subject_reader');
+                    const result = await inv.query(tx, 'SELECT binding_id, organisation_label, tenant_id, organisation_id, identity_sha256, subject_key ' +
+                        'FROM nofries.dashboard_identity_bindings WHERE identity_sha256 = $1 AND subject_key = $2 ' +
+                        'AND ($3::uuid IS NULL OR binding_id > $3::uuid) ORDER BY binding_id LIMIT $4',
+                    [hash(inv.capture.identityPayload), subjectOf(inv.capture.identityPayload), page.afterBindingId, page.limit + 1]);
+                    const selected = inv.inspect(() => {
+                        if (!result || isProxy(result)) throw new Error();
+                        const descriptor = Object.getOwnPropertyDescriptor(result, 'rows');
+                        if (!descriptor || !Object.hasOwn(descriptor, 'value') || isProxy(descriptor.value) ||
+                            !Array.isArray(descriptor.value) || descriptor.value.length > page.limit + 1) throw new Error();
+                        return copy(descriptor.value, MAX_SMALL * (page.limit + 1));
+                    });
+                    let after = page.afterBindingId;
+                    const admitted = selected.map(raw => inv.inspect(() => {
+                        const row = fields(raw, ['binding_id', 'organisation_label', 'tenant_id', 'organisation_id', 'identity_sha256', 'subject_key']);
+                        uuid(row.binding_id);
+                        const targetScope = freeze(scope({ tenantId: row.tenant_id, organisationId: row.organisation_id }));
+                        if (row.identity_sha256 !== hash(inv.capture.identityPayload) || row.subject_key !== identity.subjectKey ||
+                            after !== null && row.binding_id <= after || typeof row.organisation_label !== 'string' ||
+                            !row.organisation_label || row.organisation_label.length > 200 || /[\u0000-\u001f\u007f]/.test(row.organisation_label)) throw new Error();
+                        after = row.binding_id;
+                        inv.charge(row);
+                        return { bindingId: row.binding_id, organisationLabel: row.organisation_label, scope: targetScope };
+                    }));
+                    for (const target of admitted.slice(0, page.limit)) {
+                        const previous = targets.get(target.bindingId);
+                        if (previous && (!equal(previous.scope, target.scope) || previous.organisationLabel !== target.organisationLabel)) inv.deny();
+                        if (!previous) targets.set(target.bindingId, { ...routing, ...target, portfolio: true, readContext: null });
+                    }
+                    return freeze({ schemaVersion: 1, bindings: admitted.slice(0, page.limit).map(({ bindingId, organisationLabel }) => ({ bindingId, organisationLabel })),
+                        nextAfterBindingId: admitted.length > page.limit ? admitted[page.limit - 1].bindingId : null });
+                });
+            } finally { busy = false; }
+        },
+        async bindTarget(bindingId) {
+            available();
+            const target = targets.get(bindingId);
+            if (!target) throw mapped(privateError(true), 'improvement.list');
+            return Object.freeze({ requestId: inv.capture.requestId, identity, scope: target.scope, resolvedAt,
+                createOperation(name, context) {
+                    available();
+                    return operationPair(inv, database, target, resolvedAt, name, context);
+                } });
+        },
+        async finish() {
+            available(); busy = true;
+            try {
+                await portfolioTransaction(inv, routing, async (tx, operation, parent) => {
+                    const evidence = [];
+                    const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+                    // Different consultants have different binding IDs for the
+                    // same clients. Lock shared tenant rows in scope order.
+                    const ordered = [...targets.values()].filter(value => value.readContext).sort((a, b) =>
+                        compare(a.scope.tenantId, b.scope.tenantId) || compare(a.scope.organisationId, b.scope.organisationId) || compare(a.bindingId, b.bindingId));
+                    for (const target of ordered) {
+                        const child = { name: 'improvement.list', context: target.readContext, quota: null };
+                        const context = await businessContext(inv, tx, target);
+                        // Final disclosure only reads authority and never upgrades
+                        // these locks. SHARE excludes mutations while remaining
+                        // compatible with starter-client retries, which hold the
+                        // consultant's parent SHARE before locking their client.
+                        const authority = await loadAuthority(inv, child, context, true);
+                        const frame = { instance: context.instance, gate: context.gate, binding: context.binding,
+                            admissions: context.admissions, authority, scope: context.scope, resolvedAt, quota: null };
+                        currentAuthorityAt(inv, child, frame, inv.now());
+                        evidence.push({ operation: child, evidence: frame });
+                        // Time predicates for earlier targets remain live during
+                        // every later awaited read, through COMMIT and disclosure.
+                        operation.active.finalAuthority = Object.freeze({ ...parent, targets: evidence.slice() });
+                    }
+                }, evidence => { disclosure = evidence; });
+            } finally { busy = false; closed = true; }
+        },
+        assertDisclosure() {
+            if (disclosureFailure) throw disclosureFailure;
+            try {
+                if (!closed || busy || !disclosure || inv.owner) throw privateError(false);
+                const at = inv.now();
+                currentAuthorityAt(inv, { name: 'portfolio.finish' }, disclosure, at);
+                return at;
+            } catch (error) {
+                disclosureFailure = mapped(error, 'improvement.list');
+                throw disclosureFailure;
+            }
+        }
+    });
+}
+
 function createDashboardRequestDatabase(input) {
     const options = configuration(input), requests = new WeakMap();
     function bindRequest(request, transport) {
@@ -1227,6 +1396,32 @@ function createDashboardRequestDatabase(input) {
                 return Object.freeze({ requestId: inv.capture.requestId, identity, scope: routing.scope, resolvedAt,
                     createOperation: (name, context) => operationPair(inv, database, routing, resolvedAt, name, context) });
             } catch (error) { throw mapped(error); }
+        }).then(resolveBinding, rejectBinding);
+        return entry.promise;
+    }
+    function bindPortfolioRequest(request, transport) {
+        let expectedGeneration;
+        try {
+            if (!request || typeof request !== 'object' || isProxy(request) || options.improvementEnabled !== true) throw privateError(true);
+            expectedGeneration = digest(fields(copy(transport, MAX_SMALL), ['expectedGeneration']).expectedGeneration);
+        } catch (_) { return Promise.reject(mapped(privateError(true), 'improvement.list')); }
+        const existing = requests.get(request);
+        if (existing) return existing.mode === 'portfolio' && existing.expectedGeneration === expectedGeneration ? existing.promise :
+            Promise.reject(mapped(privateError(true), 'improvement.list'));
+        let resolveBinding, rejectBinding;
+        const entry = { mode: 'portfolio', expectedGeneration, promise: new Promise((resolve, reject) => { resolveBinding = resolve; rejectBinding = reject; }) };
+        requests.set(request, entry);
+        let inv;
+        try { inv = invocation(options, request, expectedGeneration); }
+        catch (error) { rejectBinding(mapped(error, 'improvement.list')); return entry.promise; }
+        Promise.resolve().then(async () => {
+            try {
+                await capture(inv);
+                if (inv.capture.kind !== 'customer') inv.deny();
+                await externalEpoch(inv);
+                const routing = await locator(inv), resolvedAt = inv.now();
+                return portfolioBinding(inv, routing, resolvedAt);
+            } catch (error) { throw mapped(error, 'improvement.list'); }
         }).then(resolveBinding, rejectBinding);
         return entry.promise;
     }
@@ -1264,7 +1459,7 @@ function createDashboardRequestDatabase(input) {
         }).then(resolveHost, rejectHost);
         return entry.promise;
     }
-    return Object.freeze({ bindRequest, handleHostResource });
+    return Object.freeze({ bindRequest, handleHostResource, bindPortfolioRequest });
 }
 
 module.exports = { createDashboardRequestDatabase };
