@@ -39,7 +39,7 @@
         root.append(metrics(), pipeline());
         const pilot = pilotCustomerSection();
         if (pilot) root.append(pilot);
-        root.append(dattoRmmSection(), serviceProofSection(), operatorTasksSection(), exceptionsSection(), organisationsSection());
+        root.append(dattoRmmSection(), serviceProofSection(), recurringControlsSection(), operatorTasksSection(), exceptionsSection(), organisationsSection());
         loadingPanel.hidden = true;
         root.hidden = false;
         document.body.classList.remove('operator-loading');
@@ -326,6 +326,94 @@
             cards,
             recent
         ]);
+    }
+
+    function recurringControlsSection() {
+        const section = el('section', { className: 'console-section', ariaLabel: 'Recurring service reviews and controls' }, [
+            sectionTitle('Recurring service reviews and controls',
+                'Saved service-control schedules, not assessment-review schedules. A generated task does not mean a review is complete or evidence is verified.'),
+            el('p', { text: 'This snapshot includes up to 200 schedules and 100 recent runs. Older records may not be included. Refresh to read the current records.' })
+        ]);
+        const controls = state.customerControls;
+        if (!controls || !Array.isArray(controls.schedules) || !Array.isArray(controls.recentRuns)) {
+            section.append(el('p', { className: 'empty-state', text: 'Recurring service-control records are unavailable in this snapshot.' }));
+            return section;
+        }
+        const organisations = new Map();
+        (state.organisations || []).forEach(organisation => {
+            if (!organisation || typeof organisation.organisationId !== 'string') return;
+            const id = organisation.organisationId;
+            organisations.set(id, organisations.has(id) ? null : organisation);
+        });
+        const schedules = controls.schedules.slice(0, 200).filter(schedule => schedule &&
+            typeof schedule.id === 'string' && schedule.id && typeof schedule.jobType === 'string' && schedule.jobType &&
+            typeof schedule.organisationId === 'string' && organisations.get(schedule.organisationId));
+        if (!schedules.length) {
+            section.append(el('p', { className: 'empty-state', text: 'No recurring service schedules for the loaded organisations are included in this snapshot.' }));
+            return section;
+        }
+        const titles = { connector_freshness: 'Connector freshness', sla_exception_review: 'SLA exception review',
+            monthly_proof: 'Monthly Proof preparation', managed_count_reconciliation: 'Managed-count reconciliation',
+            quarterly_service_review: 'Service review' };
+        const cadenceLabels = { daily: 'Daily', monthly: 'Monthly', quarterly: 'Quarterly' };
+        const runLabels = { generated: 'Task generated', completed: 'Run recorded completed', failed: 'Run failed', dead_letter: 'Run needs operator attention' };
+        schedules.forEach(schedule => {
+            const organisation = organisations.get(schedule.organisationId);
+            const title = Object.hasOwn(titles, schedule.jobType) ? titles[schedule.jobType] : 'Service control';
+            const detail = el('details', { className: 'organisation-card' }, [
+                el('summary', { text: `${organisation.displayName || 'Organisation'} · ${title}` })
+            ]);
+            const facts = el('dl', { className: 'known-grid' });
+            const fact = (label, value) => facts.append(el('dt', { text: label }), el('dd', { text: value }));
+            const due = recurringControlTime(schedule.nextDueAt, schedule.timezone);
+            fact('Schedule state', schedule.enabled === true ? 'Enabled' : schedule.enabled === false ? 'Paused' : 'Unknown');
+            fact('Recorded cadence', Object.hasOwn(cadenceLabels, schedule.cadence) ? cadenceLabels[schedule.cadence] : 'Unknown');
+            fact('Time zone', due.timezone);
+            fact('Next scheduled (local)', due.local);
+            fact('Next scheduled (UTC)', due.utc);
+            const matching = controls.recentRuns.slice(0, 100).filter(run => run &&
+                run.scheduleId === schedule.id && run.organisationId === schedule.organisationId && run.jobType === schedule.jobType);
+            const dated = matching.filter(run => recurringControlInstant(run.scheduledFor))
+                .sort((left, right) => right.scheduledFor.localeCompare(left.scheduledFor));
+            const latest = dated[0];
+            if (!matching.length) fact('Latest included run', 'No run included in this snapshot');
+            else if (dated.length !== matching.length || dated.length > 1 && dated[1].scheduledFor === latest.scheduledFor) {
+                fact('Latest included run', 'Unavailable: included run dates are invalid or ambiguous');
+            } else {
+                fact('Latest included run', Object.hasOwn(runLabels, latest.status) ? runLabels[latest.status] : 'Unknown');
+                const runTime = recurringControlTime(latest.scheduledFor, schedule.timezone);
+                fact('Run scheduled for (local)', runTime.local);
+                fact('Run scheduled for (UTC)', runTime.utc);
+            }
+            detail.append(facts); section.append(detail);
+        });
+        return section;
+    }
+
+    function recurringControlInstant(value) {
+        if (typeof value !== 'string' || !/^(?!0000)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) return null;
+        const date = new Date(value);
+        return Number.isFinite(date.getTime()) && date.toISOString() === value ? date : null;
+    }
+
+    function recurringControlTime(value, timezone) {
+        const date = recurringControlInstant(value);
+        const missingDate = value === null || value === undefined || value === '';
+        const result = { utc: date ? value : missingDate ? 'Not recorded' : 'Unavailable: invalid date',
+            local: date ? 'Unavailable: no valid time zone' : missingDate ? 'Not recorded' : 'Unavailable: invalid date',
+            timezone: timezone === null || timezone === undefined || timezone === '' ? 'Not recorded' : 'Unavailable: invalid time zone' };
+        if (typeof timezone !== 'string' || !timezone || timezone.length > 80 || timezone.trim() !== timezone || /^[+-]/.test(timezone)) return result;
+        try {
+            const format = new Intl.DateTimeFormat('en-NZ-u-nu-latn', { timeZone: timezone, hourCycle: 'h23',
+                year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'longOffset' });
+            result.timezone = timezone;
+            if (date) {
+                const parts = Object.fromEntries(format.formatToParts(date).map(part => [part.type, part.value]));
+                const offset = parts.timeZoneName === 'GMT' ? 'GMT+00:00' : parts.timeZoneName;
+                result.local = `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} ${offset}`;
+            }
+        } catch (_) { /* Keep an explicit unavailable state; never use the browser's zone. */ }
+        return result;
     }
 
     function dattoRmmSection() {
