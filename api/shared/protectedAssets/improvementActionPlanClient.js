@@ -86,6 +86,12 @@
         PROFILE.forEach(key => key.endsWith('Sha256') ? digest(value.profileRef[key]) : text(value.profileRef[key], 200));
         return value;
     }
+    function actionTarget(input) {
+        if (input === undefined || input === null) return null;
+        const value = fields(copy(input, 4096), ['planId', 'actionId', 'planRevision']);
+        identifier(value.planId); identifier(value.actionId); number(value.planRevision, 1024);
+        return value;
+    }
     function command(input) {
         const value = fields(copy(input, 16384), ['planId', 'type', 'operationId', 'expectedRevision', 'actionId', 'payload']);
         identifier(value.planId); identifier(value.operationId);
@@ -114,6 +120,7 @@
             typeof options.request !== 'function' || typeof options.isCurrent !== 'function' || typeof options.newId !== 'function' ||
             !view || typeof view.mount !== 'function' || typeof view.mountLoading !== 'function') invalid();
         const organisationId = identifier(options.organisationId), initialSource = source(options.sourceAssessment);
+        let target = actionTarget(options.initialTarget);
         const request = options.request, isCurrent = options.isCurrent, newId = options.newId, doc = root.ownerDocument;
         if (mounted.has(root)) mounted.get(root).destroy();
         let alive = true, denied = false, serial = 0, busy = false, scope = null, rows = [], next = null;
@@ -156,7 +163,7 @@
         }));
         actionPicker.addEventListener('change', function () {
             if (!active() || busy || pending || draft || !editor || !model || !editor.actions.some(row => row.actionId === actionPicker.value)) return;
-            selectedAction = actionPicker.value; render();
+            target = null; selectedAction = actionPicker.value; render();
         });
         let focusAfterRead = null;
         function clearView() {
@@ -367,18 +374,27 @@
                 message = rows.length ? 'Choose a saved plan or refresh the selected plan.' : 'No saved improvement plans are available for this organisation.';
                 if (!more) clearView();
                 busy = false; render();
+                if (!more && target) return readView(target.planId, target);
                 if (!more && (selected !== null || !initialSource && rows.length)) return readView(selected || rows[0].planId);
                 return true;
             } catch (_) { if (active() && token === serial) unavailable(null, false); return false; }
             finally { if (alive && token === serial) { busy = false; render(); } }
         }
-        async function readView(planId) {
+        async function readView(planId, exactTarget) {
             if (!active() || busy || pending || draft || scope === null) return false;
-            const token = ++serial; busy = true; clearView(); rendered = view.mountLoading(content); message = 'Loading improvement actions…'; render();
+            const token = ++serial; let targetLoaded = false;
+            busy = true; clearView(); rendered = view.mountLoading(content); message = 'Loading improvement actions…'; render();
             try {
                 const result = response(await request('/api/dashboard/improvement/view?planId=' + encodeURIComponent(planId)));
                 if (!active() || token !== serial) return false;
-                if (result.status !== 200) { unavailable(result.status, false); return false; }
+                if (result.status !== 200) {
+                    unavailable(result.status, false);
+                    if (exactTarget && result.status === 404) {
+                        selected = null; selectedRevision = null; selectedAction = null;
+                        message = 'This action is no longer available in this organisation. Return to the work queue or refresh to check again.'; render();
+                    }
+                    return false;
+                }
                 const value = fields(copy(result.value, 8388608), ['schemaVersion', 'scope', 'planRevision', 'updatedAt', 'asOf',
                     'dueDateBasis', 'source', 'priority', 'order', 'filters', 'counts', 'actions', 'presentationVersion', 'notices']);
                 fields(value.scope, ['tenantId', 'organisationId', 'planId']);
@@ -394,6 +410,10 @@
                 });
                 if (generatedPlanId === planId && (!value.source || value.source.assessmentId !== initialSource.assessmentId ||
                     value.source.evaluationOutputSha256 !== initialSource.outputSha256)) invalid();
+                if (exactTarget && !actionIds.has(exactTarget.actionId)) {
+                    clearView(); selected = null; selectedRevision = null; selectedAction = null;
+                    message = 'This action is no longer available in this plan. Return to the work queue or refresh to check again.'; render(); return false;
+                }
                 selected = planId; selectedRevision = value.planRevision; clearView(); rendered = view.mount(content, value);
                 // The reused renderer withholds invalid presentations. An editor
                 // is offered only beside its successfully rendered plan panel.
@@ -407,15 +427,35 @@
                     return false;
                 }
                 editor = editorContext(editorResult.value, model);
-                if (!editor.actions.some(action => action.actionId === selectedAction)) selectedAction = editor.actions[0]?.actionId || null;
-                message = 'Saved plan and current action options loaded.'; render(); return true;
+                if (exactTarget) selectedAction = exactTarget.actionId;
+                else if (!editor.actions.some(action => action.actionId === selectedAction)) selectedAction = editor.actions[0]?.actionId || null;
+                message = exactTarget ? value.planRevision !== exactTarget.planRevision ?
+                    'This plan changed since the work queue was checked. The selected action shows the current saved state.' :
+                    'Selected action and current options loaded.' : 'Saved plan and current action options loaded.';
+                targetLoaded = !!exactTarget; render(); return true;
             } catch (_) { if (active() && token === serial) unavailable(null, false); return false; }
-            finally { if (alive && token === serial) { busy = false; render(); } }
+            finally {
+                if (alive && token === serial) {
+                    busy = false;
+                    if (targetLoaded) focusAfterRead = null;
+                    render();
+                    if (targetLoaded && active() && rendered) rendered.focusAction(exactTarget.actionId);
+                }
+            }
         }
         function refresh() { return readPage(null, false); }
         function select(planId) {
             if (!active() || busy || pending || draft || !rows.some(row => row.planId === planId) && planId !== selected) return Promise.resolve(false);
+            target = null;
             return readView(planId);
+        }
+        function openTarget(input) {
+            if (!active() || busy || pending || draft || scope === null) return Promise.resolve(false);
+            let checked;
+            try { checked = actionTarget(input); if (!checked) invalid(); }
+            catch (_) { return Promise.resolve(false); }
+            target = checked;
+            return readView(checked.planId, checked);
         }
         async function submit() {
             if (!active() || busy || pending === null || scope === null) return false;
@@ -449,6 +489,7 @@
                 pending = command({ planId, type: 'generate', operationId, expectedRevision: null, actionId: null,
                     payload: { assessmentId: initialSource.assessmentId, assessmentRevision: initialSource.revision,
                         assessmentRevisionSha256: initialSource.revisionSha256 } });
+                target = null;
             } catch (_) { unavailable(null, false); return Promise.resolve(false); }
             return submit();
         }
@@ -463,7 +504,7 @@
         }
         function retry() { return submit(); }
         function destroy() {
-            if (!alive) return; alive = false; serial++; pending = null; scope = null; rows = []; selectedAction = null; focusAfterRead = null; removeDraft(); clearView();
+            if (!alive) return; alive = false; serial++; pending = null; scope = null; rows = []; selectedAction = null; target = null; focusAfterRead = null; removeDraft(); clearView();
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
         }
         function requestLeave(commit) {
@@ -474,7 +515,7 @@
         }
         let resolveReady;
         const ready = new Promise(resolve => { resolveReady = resolve; });
-        controller = Object.freeze({ ready, destroy, requestLeave, refresh, select, generate, execute, retry });
+        controller = Object.freeze({ ready, destroy, requestLeave, refresh, select, openTarget, generate, execute, retry });
         mounted.set(root, controller); root.replaceChildren(toolbar, status, editorPanel, content); render();
         readPage(null, false).then(resolveReady, function () { resolveReady(false); });
         return controller;

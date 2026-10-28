@@ -28,20 +28,21 @@ test('account creation and login have distinct entries and availability is expli
     assert.doesNotMatch(html, /id="organisation-form"/);
     const accountCard = html.slice(html.indexOf('id="create-organisation"'), html.indexOf('class="home-intro"'));
     assert.match(accountCard, /id="organisation-title">Assess your IT\. See where to improve\./);
-    assert.match(accountCard, /For your company or your clients\./);
+    assert.doesNotMatch(accountCard, /For your company or your clients\./);
+    assert.doesNotMatch(html, /<ol\b[^>]*\bclass="gateway-steps"/);
     assert.deepEqual([...accountCard.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)]
         .map(match => [match[1], match[2].trim()]), [['/login?intent=create', 'Create account'], ['/login?intent=login', 'Log in']]);
     assert.doesNotMatch(accountCard, /Create \/ Login|→/);
     assert.doesNotMatch(accountCard, /Start here\. Return here\.|Personal and work email|Already signed up\?/);
-    assert.match(html, /one-time code sent to your inbox/);
-    assert.match(html, /Choose Company for your own organisation, or Consultant to manage clients/);
-    assert.match(html, /Confirm access and applicable terms before opening your dashboard/);
+    assert.doesNotMatch(html, /one-time code sent to your inbox/);
+    assert.doesNotMatch(html, /Choose Company for your own organisation, or Consultant to manage clients/);
+    assert.doesNotMatch(html, /Confirm access and applicable terms before opening your dashboard/);
     assert.doesNotMatch(html, /restricted beta|two-user limit|fixed beta cohort/i);
 });
 
 test('existing account access and pending setup do not claim membership or consent', () => {
     assert.match(html, /Checking your current access/);
-    assert.match(html, /Confirm access and applicable terms/);
+    assert.doesNotMatch(html, /Confirm access and applicable terms/);
     assert.doesNotMatch(html, /membership (?:is |has been )?granted|terms (?:are |have been )?accepted/i);
     const login = fs.readFileSync(path.join(root, 'login.html'), 'utf8');
     assert.match(login, /does not accept service terms or activate a subscription/);

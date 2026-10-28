@@ -87,6 +87,42 @@ function noPrivateWork(h) {
 }
 beforeEach(() => resetAbuseProtectionForTests());
 
+test('work queue remains unavailable without explicit Improvement runtime readiness', async () => {
+    const h = harness({ enabled: false });
+    closed(await request(h.app).get('/api/dashboard/work-queue'), 404, 'dashboard_not_found');
+    expect(h.store.loadSession).not.toHaveBeenCalled(); noPrivateWork(h);
+});
+test.each(['', '?limit=1', '?limit=50'])('canonical work queue %s requires authentication and private JSON headers', async query => {
+    const h = harness();
+    closed(await request(h.app).get('/api/dashboard/work-queue' + query), 401, 'dashboard_authentication_required');
+    noPrivateWork(h);
+});
+test.each(['post', 'put', 'delete'])('work queue rejects %s and never installs a write capability', async method => {
+    const h = harness(), result = await request(h.app)[method]('/api/dashboard/work-queue');
+    closed(result, 405, 'dashboard_method_not_allowed'); expect(result.headers.allow).toBe('GET');
+    expect(h.store.loadSession).not.toHaveBeenCalled(); noPrivateWork(h);
+});
+test.each(['?limit=0', '?limit=51', '?limit=01', '?limit=%31', '?limit=2&limit=3', '?cursor=', '?cursor=e30',
+    '?tenantId=foreign', '?bindingId=foreign', '?cursor=%61', '?cursor=%ZZ', '?cursor=a+b'])
+('work queue rejects closed or noncanonical selector %s before providers', async query => {
+    const h = harness(), result = await request(h.app).get('/api/dashboard/work-queue' + query);
+    expect(result.status).toBe(400); expect(Object.keys(result.body)).toEqual(['code']);
+    expect(h.store.loadSession).not.toHaveBeenCalled(); noPrivateWork(h);
+});
+test('work queue rejects an operator session before any portfolio SQL', async () => {
+    const h = harness(), cookie = await h.login();
+    closed(await request(h.app).get('/api/dashboard/work-queue').set('Cookie', cookie)
+        .set('X-NoFries-Dashboard-Generation', GENERATION), 403, 'dashboard_access_denied');
+    noPrivateWork(h);
+});
+test('work queue requires a generation and rejects GET bodies before database work', async () => {
+    const h = harness(), cookie = await h.login();
+    closed(await request(h.app).get('/api/dashboard/work-queue').set('Cookie', cookie), 403, 'dashboard_access_denied');
+    closed(await request(h.app).get('/api/dashboard/work-queue').set('Content-Type', 'text/plain').send('unexpected'),
+        400, 'dashboard_input_invalid');
+    noPrivateWork(h);
+});
+
 test.each([
     ['get', 'plans', 401], ['get', 'list?planId=plan-a', 401], ['get', 'view?planId=plan-a', 401], ['get', 'editor?planId=plan-a', 401],
     ['get', 'execute', 405], ['post', 'plans', 405], ['get', 'unknown', 404]

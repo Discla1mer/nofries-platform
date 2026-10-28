@@ -139,6 +139,15 @@ function createImprovementRequestFixture(fixtureOptions = {}) {
         }
         if (/^SET LOCAL (?:statement_timeout|ROLE nofries_runtime)\b/i.test(sql) ||
             /SELECT[\s\S]*(?:set_config|pg_advisory_xact_lock)/i.test(sql)) return { rows: [] };
+        if (sql === 'SET LOCAL ROLE nofries_dashboard_subject_reader') return { rows: [] };
+        if (sql.startsWith('SELECT binding_id, organisation_label, tenant_id, organisation_id, identity_sha256, subject_key FROM nofries.dashboard_identity_bindings')) {
+            const row = f.rows.binding;
+            if (!row || row.identity_sha256 !== params[0] || row.subject_key !== params[1] ||
+                params[2] !== null && row.binding_id <= params[2]) return { rows: [] };
+            return { rows: [{ binding_id: row.binding_id, organisation_label: row.organisation_label,
+                tenant_id: row.tenant_id, organisation_id: row.organisation_id,
+                identity_sha256: row.identity_sha256, subject_key: row.subject_key }] };
+        }
         const fixed = [['dashboard_runtime_instance', 'instance'], ['dashboard_session_gates', 'session'],
             ['dashboard_identity_bindings', 'binding'], ['dashboard_admission_authorities', 'head'],
             ['dashboard_admission_decisions', 'admission']];

@@ -17,6 +17,7 @@ const { createNcscAssessmentHandlers } = require('./ncscAssessmentHandlers');
 const { ImprovementPlanServiceError, normaliseImprovementCommand, normaliseImprovementSelector } = require('./improvementPlan/improvementPlanService');
 const { ImprovementActionListError } = require('./improvementPlan/improvementActionListProjection');
 const { normaliseImprovementActionListSelector, normaliseImprovementPlanPage } = require('./improvementPlan/improvementActionListService');
+const { ConsultantWorkQueueError, normaliseConsultantWorkQueuePage } = require('./improvementPlan/consultantWorkQueueService');
 const { DashboardPersistenceError } = require('./appLifecycle/postgresDashboardBootstrap');
 const { DashboardOnboardingError } = require('./appLifecycle/dashboardOnboardingDomain');
 const { copy, fields, freeze, uuid, digest, instant } = require('./appLifecycle/dashboardRuntimeRecords');
@@ -91,6 +92,11 @@ function failure(error, category) {
     } else if (error instanceof EvidenceMetadataError) {
         const known = { evidence_input_invalid: 400, evidence_access_denied: 403,
             evidence_not_found: 404, evidence_unavailable: 503 };
+        if (own(known, error.code) && known[error.code] === error.statusCode) { status = error.statusCode; code = error.code; }
+    } else if (error instanceof ConsultantWorkQueueError) {
+        const known = { work_queue_input_invalid: 400, work_queue_access_denied: 403,
+            work_queue_changed: 409, work_queue_unavailable: 503 };
+        code = 'work_queue_unavailable';
         if (own(known, error.code) && known[error.code] === error.statusCode) { status = error.statusCode; code = error.code; }
     } else if (error instanceof ImprovementPlanServiceError || error instanceof ImprovementActionListError) {
         const known = error instanceof ImprovementActionListError ? {
@@ -410,6 +416,7 @@ function createDashboardRuntimeHandlers(configuration) {
         const query = split < 0 ? null : snapshot.url.slice(split + 1);
         const prefix = '/api/dashboard/';
         const route = path.startsWith(prefix) ? path.slice(prefix.length) : '';
+        const workQueue = improvementEnabled && route === 'work-queue';
         let resource = null, ncscRoute = null, improvementRoute = null;
         if (improvementEnabled && ['improvement/plans', 'improvement/list', 'improvement/view', 'improvement/editor', 'improvement/execute'].includes(route)) {
             improvementRoute = route.slice('improvement/'.length);
@@ -427,18 +434,35 @@ function createDashboardRuntimeHandlers(configuration) {
             }
         }
         const methods = { session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], evidence: ['GET'] };
-        if (ncscRoute === null && improvementRoute === null && !own(methods, route)) {
+        if (!workQueue && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
             try { resource = hostResourceForRoute(route); } catch (_) { fail(404, 'dashboard_not_found'); }
         }
         entry.category = improvementRoute !== null ? 'improvement' : ncscRoute === null ? route : 'ncsc';
-        const allow = improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
+        const allow = workQueue ? ['GET'] : improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
             : ncscRoute !== null ? (ncscRoute === '' ? ['GET', 'POST'] : ncscRoute.includes('/') ? ['POST'] : ['GET']) : resource ? ['GET'] : methods[route];
         if (!allow.includes(snapshot.method)) fail(405, 'dashboard_method_not_allowed', { Allow: allow.join(', ') });
         const directory = { limit: 50, afterBindingId: null };
         let evidenceSelector = null;
         let improvementSelector = null;
+        let workQueueSelector = null;
         const ncscQuery = {};
-        if (improvementRoute === 'plans') {
+        if (workQueue) {
+            const values = {};
+            if (query !== null) {
+                if (!query || query.length > 3072) bad();
+                for (const pair of query.split('&')) {
+                    const pieces = pair.split('=');
+                    if (pieces.length !== 2 || !['limit', 'cursor'].includes(pieces[0]) || own(values, pieces[0])) bad();
+                    let decoded;
+                    try { decoded = decodeURIComponent(pieces[1]); } catch (_) { bad(); }
+                    if (encodeURIComponent(decoded) !== pieces[1]) bad();
+                    values[pieces[0]] = decoded;
+                }
+            }
+            if (own(values, 'limit') && !/^(?:[1-9]|[1-4][0-9]|50)$/.test(values.limit)) bad();
+            workQueueSelector = normaliseConsultantWorkQueuePage({ limit: own(values, 'limit') ? Number(values.limit) : 50,
+                cursor: values.cursor ?? null });
+        } else if (improvementRoute === 'plans') {
             const values = {};
             if (query !== null) {
                 if (!query || query.length > 2048) bad();
@@ -513,7 +537,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 } else { try { directory.afterBindingId = uuid(value); } catch (_) { bad(); } }
             }
         } else if (query !== null) bad();
-        return freeze({ route, resource, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector });
+        return freeze({ route, resource, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
     }
     async function readWire(original, entry, snapshot) {
         entry.phase = 'wire';
@@ -639,10 +663,18 @@ function createDashboardRuntimeHandlers(configuration) {
                 next: result.phase === 'prepared' ? 'customer_terms' : 'owner_finalisation' });
         }
         let expectedGeneration = null;
-        if (selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
+        if (selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
             const generations = snapshot.headers['x-nofries-dashboard-generation'];
             try { if (generations.length !== 1) throw new Error(); expectedGeneration = digest(generations[0]); }
             catch (_) { fail(403, 'dashboard_access_denied'); }
+        }
+        if (selected.workQueueSelector) {
+            if (!isCustomer(privateRequest.headers.cookie)) fail(403, 'dashboard_access_denied');
+            const approved = await approvedCustomerBinding(privateRequest);
+            if (approved.accountType !== 'consultant') fail(403, 'dashboard_access_denied');
+            entry.disclosureCheck = () => resources.assertWorkQueueDisclosure(privateRequest);
+            return response(200, await bounded(() => resources.readWorkQueue(privateRequest,
+                { expectedGeneration }, selected.workQueueSelector)));
         }
         if (selected.improvementRoute !== null) {
             return response(200, await bounded(async () => {
@@ -752,6 +784,7 @@ function createDashboardRuntimeHandlers(configuration) {
             try {
                 hostClock(); const value = await execute(original, entry);
                 try { hostClock(); } catch (error) { if (!ambiguousResponses.has(value)) throw error; }
+                if (entry.disclosureCheck) entry.disclosureCheck();
                 if (entry.resource && value.status >= 400) {
                     const code = value.body && value.body.code;
                     if (value.status === 403 && code === 'dashboard_access_denied' || value.status === 503 &&

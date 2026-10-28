@@ -165,9 +165,15 @@
     function mount(root, presentation) {
         if (!root || !root.ownerDocument || typeof root.replaceChildren !== 'function') throw new Error('improvement_view_root_required');
         if (mounted.has(root)) mounted.get(root).destroy();
-        const doc = root.ownerDocument;
+        const doc = root.ownerDocument, actionCards = new Map();
         const controller = Object.freeze({ destroy() {
+            actionCards.clear();
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
+        }, focusAction(actionId) {
+            if (mounted.get(root) !== controller || typeof actionId !== 'string') return false;
+            const card = actionCards.get(actionId);
+            if (!card) return false;
+            card.focus(); return true;
         } });
         mounted.set(root, controller);
         function node(tag, className, value) {
@@ -221,6 +227,7 @@
                 'No retained improvement actions. Check that this is the assessment version you intended to review.'));
             model.actions.forEach(action => {
                 const card = node('article', 'dashboard-panel');
+                card.setAttribute('tabindex', '-1'); actionCards.set(action.actionId, card);
                 card.append(node('h3', '', action.controlId + ' · ' + action.labels.kind), node('span', 'dashboard-badge', action.labels.status),
                     node('p', 'ncsc-preserve-text', action.rationale.suggestedAction));
                 const facts = node('dl');
@@ -231,10 +238,26 @@
                 if (action.blockedReason !== null) fact(facts, 'Block reason', action.blockedReason);
                 if (action.completion !== null) {
                     fact(facts, 'Workflow completed at (UTC)', action.completion.at); fact(facts, 'Completion note', action.completion.note);
-                    fact(facts, 'Completion evidence reference (unverified)', action.evidence.completionReference === null ? 'Not recorded' : action.evidence.completionReference);
                     fact(facts, 'Completion meaning', 'Workflow completed; control implementation has not been verified.');
                 }
                 card.append(facts);
+                const evidence = disclosure('Supporting evidence'), evidenceFacts = node('dl');
+                evidence.append(node('p', 'dashboard-muted', 'The assessment claim and completion reference are self-reported. No supporting document version is linked to this action; its date and version are unknown.'));
+                fact(evidenceFacts, 'Assessment evidence claim', action.labels.evidenceState);
+                if (action.evidence.completionReference === null) {
+                    evidence.append(node('p', '', 'No completion evidence reference is recorded for the current action. Review the assessment claim and Action history for earlier records.'));
+                } else {
+                    fact(evidenceFacts, 'Completion evidence reference (unverified)', action.evidence.completionReference);
+                    fact(evidenceFacts, 'Completion reference recorded at (UTC)', action.completion === null ? 'Unknown' : action.completion.at);
+                }
+                fact(evidenceFacts, 'Verification', action.evidence.completionVerification === 'not_verified' ? 'Not verified' : 'No verification recorded');
+                evidence.append(evidenceFacts, node('p', 'dashboard-muted', 'Completing an action does not verify a control or change scores.'));
+                evidence.append(node('h4', '', 'Assessment source'));
+                const assessmentFacts = node('dl');
+                [['Assessment ID', model.source.assessmentId], ['Assessment revision', model.source.assessmentRevision],
+                    ['Assessment scored at (UTC)', model.source.scoreAsOf]]
+                    .forEach(pair => fact(assessmentFacts, pair[0], pair[1]));
+                evidence.append(assessmentFacts); card.append(evidence);
                 const identifiers = disclosure('Action identifiers'), idFacts = node('dl');
                 [['Owner ID', action.ownerSubjectKey === null ? 'Unassigned' : action.ownerSubjectKey],
                     ['Owner eligibility', 'Current eligibility not checked'], ['Action ID', action.actionId],
@@ -255,6 +278,7 @@
             });
             root.replaceChildren(panel);
         } catch (_) {
+            actionCards.clear();
             const error = node('p', 'dashboard-status-panel', 'Improvement action plan is unavailable. Refresh the page to try again. ' +
                 'If the problem continues, contact your support team.'); error.setAttribute('role', 'status'); root.replaceChildren(error);
         }
