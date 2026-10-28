@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="index, follow">
-    <title>No Fries Dashboard | Your IT position in real time.</title>
-    <meta name="description" content="Assess your IT, save your progress and view results in the No Fries Dashboard. Create or log in to your account.">
+    <title>No Fries Dashboard | Clearer IT. Confident next steps.</title>
+    <meta name="description" content="Understand your IT and cyber security, see where the gaps are and decide what needs attention. Start with a guided assessment in the No Fries Dashboard.">
     <link rel="canonical" href="https://nofries.nz/">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://nofries.nz/">
-    <meta property="og:title" content="No Fries Dashboard | Your IT position in real time.">
-    <meta property="og:description" content="Assess your IT, save your progress and view results in the No Fries Dashboard. Create or log in to your account.">
+    <meta property="og:title" content="No Fries Dashboard | Clearer IT. Confident next steps.">
+    <meta property="og:description" content="Understand your IT and cyber security, see where the gaps are and decide what needs attention. Start with a guided assessment in the No Fries Dashboard.">
     <meta name="twitter:card" content="summary">
     <link rel="icon" type="image/png" href="/images/nofrieslogo.png">
     <link rel="apple-touch-icon" href="/images/nofrieslogo.png">
@@ -30,7 +30,7 @@
             <img class="brand-logo" src="/images/nofrieslogo.png" width="44" height="44" alt="">
             <span class="brand-copy"><strong>No Fries</strong><span>Dashboard</span></span>
         </a>
-        <nav aria-label="Main navigation"><a href="https://news.nofries.nz/" data-dashboard-leave>News</a><a href="/roadmap.html" data-dashboard-leave>Roadmap</a></nav>
+        <nav aria-label="Main navigation"><a href="https://news.nofries.nz/" data-dashboard-leave>News</a><a href="/roadmap.html" data-dashboard-leave>Roadmap</a><a class="homepage-login" href="/login?intent=login">Log in <span aria-hidden="true">↗</span></a></nav>
     </header>
 
     <div class="shell gateway-entry" id="dashboardEntry" role="main">
@@ -73,24 +73,43 @@
         </section>
         <div id="dashboardApp" hidden></div>
         <div id="gatewayPublic">
-            <section class="gateway-welcome" id="main-content" tabindex="-1" aria-labelledby="home-title">
-                <section class="organisation-card" id="create-organisation" aria-labelledby="organisation-title">
-                    <p class="eyebrow">Your account</p><h2 id="organisation-title">Assess your IT. See where to improve.</h2>
-                    <a class="button" href="/login?intent=create">Create account</a>
-                    <a class="button" href="/login?intent=login">Log in</a>
-                </section>
-                <div class="home-intro">
-                    <p class="eyebrow">Your No Fries dashboard</p>
-                    <h1 id="home-title">Your IT position<br><em>in real time.</em></h1>
-                    <ul class="dashboard-benefits" aria-label="Dashboard benefits">
-                        <li>Assess your IT and cyber security.</li>
-                        <li>Save your progress and return later.</li>
-                        <li>View results from your submitted assessment.</li>
-                    </ul>
+            <section class="gateway-welcome homepage-hero" id="main-content" tabindex="-1" aria-labelledby="home-title">
+                <div class="home-intro homepage-intro">
+                    <p class="eyebrow homepage-eyebrow"><span aria-hidden="true"></span> The No Fries Dashboard</p>
+                    <h1 id="home-title">Clearer IT.<br><em>Confident<br>next steps.</em></h1>
+                    <p class="homepage-lead">Understand where your IT and cyber security stand. See the gaps, make informed decisions and start improving.</p>
+                    <div class="homepage-actions" id="create-organisation" aria-label="Your account">
+                        <a class="button homepage-primary" href="/login?intent=create">Create account <span aria-hidden="true">→</span></a>
+                        <a class="homepage-secondary" href="#dashboard-benefits">Explore the dashboard <span aria-hidden="true">↓</span></a>
+                    </div>
+                    <p class="homepage-reassurance">Works alongside your existing IT team or provider.</p>
                 </div>
+                <figure class="homepage-preview" aria-labelledby="preview-caption">
+                    <div class="preview-topbar"><span class="preview-wordmark"><span aria-hidden="true">◈</span> NO FRIES <span>Dashboard</span></span><span class="preview-example">Example</span></div>
+                    <div class="preview-content">
+                        <div class="preview-heading"><div><p class="eyebrow">Your organisation</p><h2>A clearer picture.</h2></div><span class="preview-assessment-icon" aria-hidden="true">↗</span></div>
+                        <div class="preview-assessment"><span class="preview-check" aria-hidden="true">✓</span><div><strong>Cyber security assessment</strong><p>From your answers to a useful overview.</p></div></div>
+                        <div class="preview-topics" aria-label="Example assessment topics">
+                            <div><span class="preview-topic-icon" aria-hidden="true">01</span><span>People &amp; access</span><span class="preview-tag">Review</span></div>
+                            <div><span class="preview-topic-icon" aria-hidden="true">02</span><span>Systems &amp; protection</span><span class="preview-tag">Review</span></div>
+                            <div><span class="preview-topic-icon" aria-hidden="true">03</span><span>Backup &amp; recovery</span><span class="preview-tag">Review</span></div>
+                        </div>
+                        <div class="preview-next"><span class="preview-next-icon" aria-hidden="true">↗</span><div><span>Your next conversation</span><strong>What needs attention first?</strong><p>Use your results to plan the way forward.</p></div></div>
+                    </div>
+                    <figcaption id="preview-caption">An illustrative view of assessment topics, not a live result.</figcaption>
+                </figure>
+            </section>
+            <section class="homepage-benefits" id="dashboard-benefits" aria-labelledby="benefits-title">
+                <div class="homepage-section-heading"><p class="eyebrow">Less guesswork. More direction.</p><h2 id="benefits-title">Make sense of your IT.</h2><p>Start with what you know. Find out what to ask next.</p></div>
+                <ol class="homepage-benefit-grid" aria-label="Dashboard benefits">
+                    <li><span class="homepage-benefit-number" aria-hidden="true">01 / ASSESS</span><h3>Know where you stand.</h3><p>A guided cyber security assessment helps you take stock of your current practices against NCSC guidelines.</p></li>
+                    <li><span class="homepage-benefit-number" aria-hidden="true">02 / UNDERSTAND</span><h3>See what needs attention.</h3><p>Turn your answers into a clearer view of the gaps, so you can decide where to focus your time and effort.</p></li>
+                    <li><span class="homepage-benefit-number" aria-hidden="true">03 / MOVE FORWARD</span><h3>Have better IT conversations.</h3><p>Use your assessment results as a practical starting point with your team, consultant or IT provider.</p></li>
+                </ol>
+                <p class="homepage-assessment-note">Your results reflect the answers you provide. Save your progress and return when you’re ready.</p>
             </section>
             <section class="gateway-other-services" id="other-services" aria-labelledby="other-services-title">
-                <div><h2 id="other-services-title">Other services</h2><p>No Fries Managed IT covers agreed user support, work computers and business tools. Protection and backup are selected separately.</p></div>
+                <div><p class="eyebrow">Optional support</p><h2 id="other-services-title">Need a hand with the day-to-day?</h2><p>No Fries Managed IT covers agreed user support, work computers and business tools. Protection and backup are selected separately.</p></div>
                 <a href="/managed-it.html">Explore Managed IT <span aria-hidden="true">→</span></a>
             </section>
         </div>

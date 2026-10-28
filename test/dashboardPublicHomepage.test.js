@@ -13,12 +13,15 @@ const controller = fs.readFileSync(path.join(root, 'js', 'home.js'), 'utf8');
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
 
 test('public identity and metadata lead with the standalone Dashboard', () => {
-    assert.match(html, /<title>No Fries Dashboard \| Your IT position in real time\.<\/title>/);
+    assert.match(html, /<title>No Fries Dashboard \| Clearer IT\. Confident next steps\.<\/title>/);
     assert.match(html, /data-product="dashboard"/);
-    assert.match(html, /property="og:title" content="No Fries Dashboard \| Your IT position in real time\."/);
+    assert.match(html, /property="og:title" content="No Fries Dashboard \| Clearer IT\. Confident next steps\."/);
     assert.equal((html.match(/<h1\b/g) || []).length, 1);
-    assert.match(html, /id="home-title">Your IT position<br><em>in real time\.<\/em>/);
-    assert.match(html, /Assess your IT, save your progress and view results in the No Fries Dashboard/);
+    assert.match(html, /id="home-title">Clearer IT\.<br><em>Confident<br>next steps\.<\/em>/);
+    assert.match(html, /Start with a guided assessment in the No Fries Dashboard/);
+    assert.doesNotMatch(html, /in real time|continuous monitoring|automatically updated/i);
+    assert.match(html, /An illustrative view of assessment topics, not a live result\./);
+    assert.match(html, /Your results reflect the answers you provide\./);
     assert.doesNotMatch(html, /Built from the assessment answers you submit; update them as your IT changes\./);
     assert.doesNotMatch(html, /Automatic updates and connected data feeds are planned\. Managed IT and advisory services are optional\./);
 });
@@ -26,13 +29,16 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
 test('account creation and login have distinct entries and availability is explicit', () => {
     assert.match(html, /id="dashboardSignIn" href="\/login" hidden>Sign up \/ Sign in/);
     assert.doesNotMatch(html, /id="organisation-form"/);
-    const accountCard = html.slice(html.indexOf('id="create-organisation"'), html.indexOf('class="home-intro"'));
-    assert.match(accountCard, /id="organisation-title">Assess your IT\. See where to improve\./);
+    const accountCard = html.match(/<div class="homepage-actions"[\s\S]*?<\/div>/)[0];
+    assert.match(accountCard, /id="create-organisation"/);
     assert.doesNotMatch(accountCard, /For your company or your clients\./);
     assert.doesNotMatch(html, /<ol\b[^>]*\bclass="gateway-steps"/);
     assert.deepEqual([...accountCard.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)]
-        .map(match => [match[1], match[2].trim()]), [['/login?intent=create', 'Create account'], ['/login?intent=login', 'Log in']]);
-    assert.doesNotMatch(accountCard, /Create \/ Login|→/);
+        .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]), [['/login?intent=create', 'Create account'], ['#dashboard-benefits', 'Explore the dashboard']]);
+    assert.match(html, /class="homepage-login" href="\/login\?intent=login"/);
+    assert.equal((html.match(/href="\/login\?intent=create"/g) || []).length, 1);
+    assert.match(html, /id="dashboard-benefits"/);
+    assert.doesNotMatch(accountCard, /Create \/ Login/);
     assert.doesNotMatch(accountCard, /Start here\. Return here\.|Personal and work email|Already signed up\?/);
     assert.doesNotMatch(html, /one-time code sent to your inbox/);
     assert.doesNotMatch(html, /Choose Company for your own organisation, or Consultant to manage clients/);
@@ -59,7 +65,7 @@ test('public customer links exclude the separate staff entry', () => {
         ['https://news.nofries.nz/', '/roadmap.html', '/privacy.html', '/terms.html']);
     const mainNav = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
     assert.deepEqual([...mainNav.matchAll(/href="([^"]+)"/g)].map(match => match[1]),
-        ['https://news.nofries.nz/', '/roadmap.html']);
+        ['https://news.nofries.nz/', '/roadmap.html', '/login?intent=login']);
 });
 
 test('the homepage keeps only one compact MSP section below its Dashboard entry', () => {
