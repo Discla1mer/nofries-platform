@@ -96,9 +96,12 @@ testCase('dashboard access and planned automation are stated without new service
     assert.doesNotMatch(text(html), /NZ\$|\$\d|24\/7|guaranteed|unlimited|certified|response time|service-level agreement/i);
 });
 
-testCase('viewing the source page introduces no form, independent bot or background side effect', () => {
-    assert.doesNotMatch(html, /<form\b|<script\b|<iframe\b|<dialog\b|\bon\w+=|data-start-discovery|id="prospect-assistant"/i);
-    assert.doesNotMatch(html, /\/api\/|\/scope\.html|api\/shared\/serviceScope|\bfetch\s*\(|localStorage|sessionStorage/);
+testCase('the source page allows only the optional aggregate script and no independent bot or form', () => {
+    const analytics = '<script src="/js/website-analytics.js" defer></script>';
+    assert.equal(html.split(analytics).length - 1, 1);
+    const withoutAnalytics = html.replace(analytics, '');
+    assert.doesNotMatch(withoutAnalytics, /<form\b|<script\b|<iframe\b|<dialog\b|\bon\w+=|data-start-discovery|id="prospect-assistant"/i);
+    assert.doesNotMatch(withoutAnalytics, /\/api\/|\/scope\.html|api\/shared\/serviceScope|\bfetch\s*\(|localStorage|sessionStorage/);
     assert.match(html, /href="\/managed-it\.css"/);
     const styles = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(match => match[1]);
     assert.deepEqual(styles, ['/style.css', '/home.css', '/managed-it.css']);

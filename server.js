@@ -417,6 +417,16 @@ app.get('/release.json', (req, res) => {
     res.sendFile(path.join(__dirname, 'api', 'shared', 'releaseManifest.json'));
 });
 
+// This namespace owns its limiter and parser before generic per-address limiting.
+const websiteAnalytics = require('./api/shared/websiteAnalyticsRuntime').createRuntime({ env: apiEnvironment,
+    identityStore: configuration.dashboard?.browserAuthOptions?.store });
+app.use('/api/website-analytics', applyApiSecurityHeaders, applyPrivateHeaders,
+    express.raw({ type: () => true, limit: '512b' }), asyncRoute(async (req, res) => {
+        const result = await websiteAnalytics(req, req.path);
+        Object.entries(result.headers).forEach(([key, value]) => res.setHeader(key, value));
+        return result.status === 204 ? res.status(204).end() : res.status(result.status).json(result.body);
+    }));
+
 app.use('/api', applyApiSecurityHeaders, applyPrivateHeaders, rateLimitApiRequests);
 // These exact protected routes own their bounded wire parsing before the
 // application's general JSON parser. There is no production composition.
