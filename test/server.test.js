@@ -347,16 +347,20 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
     test('public root presents the dashboard and optional managed IT without exposing protected workspace material', async () => {
         const response = await request(app).get('/');
         expect(response.status).toBe(200);
-        expect(response.text).toContain('href="/login?intent=create">Create account</a>');
-        expect(response.text).toContain('href="/login?intent=login">Log in</a>');
-        expect(response.text).toContain('Other services');
+        for (const [intent, label] of [['create', 'Create account'], ['login', 'Log in']]) {
+            const links = [...response.text.matchAll(new RegExp('<a\\b[^>]*\\bhref="/login\\?intent=' + intent + '">([\\s\\S]*?)</a>', 'g'))];
+            expect(links).toHaveLength(1);
+            expect(links[0][1].replace(/<span aria-hidden="true">[^<]*<\/span>/g, '').trim()).toBe(label);
+        }
+        expect(response.text).toContain('<p class="eyebrow">Optional support</p>');
+        expect(response.text).toContain('id="other-services-title">Need a hand with the day-to-day?</h2>');
         expect(response.text).toContain('Public help only. No access to your organisation, forms or assessments. Keep private information out.');
         expect(response.text).not.toContain('Tell us about your people, devices and current set-up.');
         expect(response.text).not.toContain('one useful question at a time');
         expect(response.text).not.toContain('Plan your Lean Managed IT service.');
         expect(response.text).toContain('Protection and backup are selected separately.');
         expect(response.text).not.toContain('id="managed-it-per-user-price"');
-        expect(response.text).toContain('Your IT position in real time.');
+        expect(response.text).toContain('<title>No Fries Dashboard | Clearer IT. Confident next steps.</title>');
         expect(response.text).not.toContain('Automatic updates and connected data feeds are planned');
         expect(response.text).toContain('data-assistant-help-only="true"');
         expect(response.text).not.toContain('NZ$119 + GST');

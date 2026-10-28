@@ -69,8 +69,11 @@ test('the customer entry builds within the SWA limit with API routes and securit
         expect(html.match(/<body\b[^>]*>/)[0]).toContain('data-customer-provider="auto"');
         expect(html).toContain('id="dashboardSignIn" href="/login"');
         if (file === 'index.html') {
-            expect(html).toContain('href="/login?intent=create">Create account</a>');
-            expect(html).toContain('href="/login?intent=login">Log in</a>');
+            for (const [intent, label] of [['create', 'Create account'], ['login', 'Log in']]) {
+                const links = [...html.matchAll(new RegExp('<a\\b[^>]*\\bhref="/login\\?intent=' + intent + '">([\\s\\S]*?)</a>', 'g'))];
+                expect(links).toHaveLength(1);
+                expect(links[0][1].replace(/<span aria-hidden="true">[^<]*<\/span>/g, '').trim()).toBe(label);
+            }
         }
         const runtime = html.match(/<script id="dashboardRuntime">([\s\S]*?)<\/script>/)[1];
         const hash = "'sha256-" + crypto.createHash('sha256').update(runtime).digest('base64') + "'";

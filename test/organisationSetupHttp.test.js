@@ -22,11 +22,11 @@ test('root serves the real dashboard loader and index canonicalises to root with
     const hash = crypto.createHash('sha256').update(script).digest('base64');
     expect(root.headers['content-security-policy']).toContain("'sha256-" + hash + "'");
     expect(root.headers['cache-control']).toContain('no-store');
-    const accountCard = root.text.slice(root.text.indexOf('id="create-organisation"'), root.text.indexOf('class="home-intro"'));
+    const accountCard = root.text.match(/<div class="homepage-actions"[\s\S]*?<\/div>/)[0];
     expect([...accountCard.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)]
-        .map(match => [match[1], match[2].trim()]))
-        .toEqual([['/login?intent=create', 'Create account'], ['/login?intent=login', 'Log in']]);
-    expect(accountCard).not.toContain('→');
+        .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]))
+        .toEqual([['/login?intent=create', 'Create account'], ['#dashboard-benefits', 'Explore the dashboard']]);
+    expect(root.text).toContain('class="homepage-login" href="/login?intent=login"');
     expect(root.text).not.toContain('id="organisation-company"');
     const login = await request(app).get('/login');
     expect(login.status).toBe(200); expect(login.headers['cache-control']).toContain('no-store');
