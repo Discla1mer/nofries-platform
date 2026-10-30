@@ -14,7 +14,8 @@ const defaultRateLimits = {
     apiScopeVerify: { windowMs: 10 * 60 * 1000, max: 20 },
     apiScopeContent: { windowMs: 15 * 60 * 1000, max: 120 },
     apiProspectSession: { windowMs: 10 * 60 * 1000, max: 30 },
-    apiProspectChat: { windowMs: 10 * 60 * 1000, max: 20 }
+    apiProspectChat: { windowMs: 10 * 60 * 1000, max: 20 },
+    apiWebsiteAnalytics: { windowMs: 10 * 60 * 1000, max: 60 }
 };
 
 const defaultBlockedUserAgentFragments = [

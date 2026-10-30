@@ -32,9 +32,18 @@ test('rejects origins, unbounded fields and methods; honors privacy signals', as
 test('unconfigured and exhausted instances fail without recording or storing identities', async () => {
     expect((await createRuntime({ env, store: null })(post(event), '/events')).status).toBe(503);
     const handler = createRuntime({ env, store, clock: () => 1000 });
-    for (let i = 0; i < 300; i++) await handler(get(), '/counter');
+    for (let i = 0; i < 300; i++) await handler(get({ 'x-forwarded-for': `203.0.113.${i % 250}` }), '/status');
     expect((await handler(post(event), '/events')).status).toBe(429);
     expect(store.record).not.toHaveBeenCalled();
+});
+test('one client cannot exhaust the shared budget for everyone else', async () => {
+    const handler = createRuntime({ env, store, clock: () => 5000 });
+    const noisy = { 'x-forwarded-for': '198.51.100.7' };
+    let limited = 0;
+    for (let i = 0; i < 80; i++) if ((await handler(post(event, noisy), '/events')).status === 429) limited++;
+    expect(limited).toBe(20);
+    expect((await handler(post(event, { 'x-forwarded-for': '198.51.100.8' }), '/events')).status).toBe(204);
+    expect((await handler(get({ 'x-forwarded-for': '198.51.100.9' }), '/status')).body).toEqual({ status: 'available' });
 });
 test('real BFF cookie verifier rejects anonymous, forged, expired, revoked and customer cookies', async () => {
     const { MemoryBrowserSessionStore } = require('../api/shared/browserSessionStore');
@@ -55,14 +64,14 @@ test('real BFF cookie verifier rejects anonymous, forged, expired, revoked and c
 test('App Service terminates disabled analytics methods before generic API limiter', async () => {
     const app = require('../server').createNoFriesApp();
     const request = require('supertest');
-    for (const result of [await request(app).get('/api/website-analytics/counter'), await request(app).post('/api/website-analytics/events').send({}), await request(app).delete('/api/website-analytics/summary')]) {
+    for (const result of [await request(app).get('/api/website-analytics/status'), await request(app).post('/api/website-analytics/events').send({}), await request(app).delete('/api/website-analytics/summary')]) {
         expect(result.status).toBe(503); expect(result.headers['cache-control']).toMatch(/no-store/); expect(result.headers['x-ratelimit-limit']).toBeUndefined();
     }
 });
 test('Function bindings and SWA routes expose only exact paths and guard summary in runtime', () => {
     const fs = require('fs'), path = require('path'), root = path.resolve(__dirname, '..');
     const config = JSON.parse(fs.readFileSync(path.join(root, 'staticwebapp.config.json')));
-    for (const [name, suffix] of [['websiteAnalyticsCounter', 'counter'], ['websiteAnalyticsEvents', 'events'], ['websiteAnalyticsSummary', 'summary']]) {
+    for (const [name, suffix] of [['websiteAnalyticsStatus', 'status'], ['websiteAnalyticsEvents', 'events'], ['websiteAnalyticsSummary', 'summary']]) {
         const binding = require(`../api/${name}/function.json`).bindings[0];
         expect(binding).toMatchObject({ route: `website-analytics/${suffix}`, authLevel: 'anonymous' });
         const routes = config.routes.filter(r => r.route === `/api/website-analytics/${suffix}`);

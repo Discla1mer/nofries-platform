@@ -41,7 +41,7 @@ const server = http.createServer((req, res) => {
     if (url.pathname.startsWith('/api/')) {
         res.setHeader('Content-Type', 'application/json');
         // Deliberately unavailable analytics: collection must not follow this response.
-        if (url.pathname === '/api/website-analytics/counter') { res.statusCode = 503; return res.end('{"status":"unavailable"}'); }
+        if (url.pathname === '/api/website-analytics/status') { res.statusCode = 503; return res.end('{"status":"unavailable"}'); }
         // Deliberately unavailable signup; unauthenticated gateway; public mock session only.
         if (url.pathname === '/api/prospect/session') {
             return res.end(JSON.stringify({ assistant: { publicHelpOnly: true, publicHelpProtocol: 'public-help-v1', runtime: { mode: 'mock' } } }));

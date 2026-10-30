@@ -3,25 +3,13 @@
     if (window.__nofriesWebsiteAnalytics) return;
     window.__nofriesWebsiteAnalytics = true;
     const blocked = navigator.globalPrivacyControl === true || navigator.doNotTrack === '1' || window.doNotTrack === '1';
-    const count = document.getElementById('website-view-count');
-    const since = document.getElementById('website-view-since');
     const page = ({ '/': 'home', '/managed-it.html': 'managed-it', '/roadmap.html': 'roadmap', '/privacy.html': 'privacy', '/terms.html': 'terms', '/login': 'login', '/login.html': 'login' })[location.pathname];
     if (!page) return;
-    function readCounter() {
-        return fetch('/api/website-analytics/counter', { credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer' })
-            .then(r => r.ok ? r.json() : Promise.reject()).then(value => {
-                if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'since,status,total' || value.status !== 'available') throw Error();
-                const empty = value.total === null && value.since === null;
-                const date = typeof value.since === 'string' && /^\d{4}-\d\d-\d\d$/.test(value.since) && Number.isFinite(Date.parse(value.since + 'T00:00:00Z')) && new Date(value.since + 'T00:00:00Z').toISOString().slice(0, 10) === value.since;
-                if (!empty && !(Number.isSafeInteger(value.total) && value.total >= 0 && value.total <= 1000000000 && date)) throw Error();
-                if (count) {
-                    count.textContent = empty ? '—' : String(value.total).padStart(6, '0');
-                    since.textContent = empty ? ' unavailable' : ` since ${value.since} UTC`;
-                }
-                return true;
-            }).catch(() => { if (count) { count.textContent = '—'; since.textContent = ' unavailable'; } return false; });
-    }
-    const enabled = readCounter();
+    // Probe availability once; no counts are shown publicly.
+    const enabled = blocked ? Promise.resolve(false) : fetch('/api/website-analytics/status', { credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer' })
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(value => Boolean(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).join(',') === 'status' && value.status === 'available'))
+        .catch(() => false);
     function referrer() {
         if (!document.referrer) return 'direct';
         try { const host = new URL(document.referrer).hostname.toLowerCase();
@@ -40,7 +28,7 @@
     }
     function send(payload) {
         if (blocked) return;
-        enabled.then(available => { if (!available) return; return fetch('/api/website-analytics/events', { method: 'POST', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), keepalive: true }).then(response => { if (response.ok && payload.event === 'view' && page === 'home') readCounter(); }).catch(() => {}); });
+        enabled.then(available => { if (!available) return; return fetch('/api/website-analytics/events', { method: 'POST', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), keepalive: true }).catch(() => {}); });
     }
     let pending = false;
     function visibleView() {

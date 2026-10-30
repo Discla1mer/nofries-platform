@@ -5,7 +5,7 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "route": "website-analytics/counter"
+      "route": "website-analytics/status"
     },
     {
       "type": "http",

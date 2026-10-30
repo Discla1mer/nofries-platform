@@ -3,6 +3,7 @@ const { productionStore, validEvent } = require('./websiteAnalytics');
 const { apiSecurityHeaders } = require('./securityHeaders');
 const { getProductRequestIdentity } = require('./identity');
 const { resolveTenantAccess } = require('./tenantAccess');
+const { checkRateLimit, getClientKeyFromHeaders } = require('./abuseProtection');
 const response = (status, body = { status: 'unavailable' }) => ({ status, headers: apiSecurityHeaders({ 'Content-Type': 'application/json; charset=utf-8' }), body });
 const header = (req, key) => String(req.headers?.[key] || '').trim();
 // Shared by every runtime instance in this process; timed-out checks retain a slot
@@ -25,12 +26,12 @@ function createRuntime({ env = process.env, store, identityStore, getIdentity = 
     return async function handle(req, path) {
         const now = clock();
         if (now - windowStart >= 60000 || now < windowStart) { windowStart = now; requests = 0; }
+        // Per-client budget first, so one caller cannot exhaust the shared instance ceiling.
+        if (!checkRateLimit('apiWebsiteAnalytics', getClientKeyFromHeaders(req.headers || {}, req.ip), env).allowed) return response(429);
         if (++requests > 300) return response(429);
         if (!storage) return response(503);
-        if (path === '/counter' && req.method === 'GET') {
-            try { const doc = await storage.read(); return response(200, { status: 'available', total: doc ? doc.home : null, since: doc ? doc.start : null }); }
-            catch (_) { return response(503); }
-        }
+        // Availability probe only: no counts are exposed publicly.
+        if (path === '/status' && req.method === 'GET') return response(200, { status: 'available' });
         if (path === '/events' && req.method === 'POST') {
             if (header(req, 'dnt') === '1' || header(req, 'sec-gpc') === '1') return response(204);
             if (!sameOrigin(req, env) || !/^application\/json(?:\s*;|$)/i.test(header(req, 'content-type'))) return response(400, { status: 'invalid' });
