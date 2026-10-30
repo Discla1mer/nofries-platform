@@ -167,7 +167,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             else if (route === 'capabilities') body = await checked(() => capabilities(actor, checked));
             else if (route === 'document') { body = buildDashboardAdminDocument(); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'app.css') { body = dashboardAdminCss; contentType = 'text/css; charset=utf-8'; }
-            else { body = ['dashboardAdmin.js', 'signupQueue.js'].map(file => fs.readFileSync(path.join(__dirname, '../protectedAssets', file), 'utf8')).join('\n'); contentType = 'application/javascript; charset=utf-8'; }
+            else { body = ['dashboardAdmin.js', 'signupQueue.js', 'websiteUsage.js'].map(file => fs.readFileSync(path.join(__dirname, '../protectedAssets', file), 'utf8')).join('\n'); contentType = 'application/javascript; charset=utf-8'; }
             // A parent session or role may have been revoked during source I/O.
             // Re-read it before releasing even already-buffered results/assets.
             const current = await checked(() => principal(request, actor));

@@ -92,9 +92,9 @@ test('service pricing remains server-owned rather than embedded in the homepage'
 
 test('gateway template includes only reviewed public scripts and a hash-bound loader marker', () => {
     const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
-    assert.equal(scripts.length, 3);
+    assert.equal(scripts.length, 4);
     assert.deepEqual(scripts.map(match => match[1].match(/src="([^"]+)"/)[1]),
-        ['/js/organisation-setup.js', '/js/home.js', '/js/prospect-assistant.js']);
+        ['/js/organisation-setup.js', '/js/home.js', '/js/prospect-assistant.js', '/js/website-analytics.js']);
     assert.ok(scripts.every(match => match[2].trim() === ''));
     assert.doesNotMatch(html, /\bon(?:click|load|error|submit)\s*=/i);
     assert.doesNotMatch(html, /(?:src|href)="(?:\/api\/dashboard\/(?:app\.js|bootstrap)|\/test\/fixtures\/)/);
