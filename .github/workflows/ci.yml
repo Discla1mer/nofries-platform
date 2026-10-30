@@ -32,7 +32,8 @@ jobs:
         with:
           node-version: 22.22.0
       - run: npm ci --ignore-scripts --omit=optional --audit=false
-      - run: npx jest --runInBand --shard=${{ matrix.shard }}/4
+      - name: Run Jest shard
+        run: npx jest --runInBand --shard=${{ matrix.shard }}/4
 
   build:
     runs-on: ubuntu-latest
