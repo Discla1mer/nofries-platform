@@ -28,7 +28,8 @@ const CONFIG = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', '
     'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
 const AUTH = ['env', 'store', 'clientApplication', 'cryptoProvider', 'randomBytes'];
 const STORE = ['createTransaction', 'consumeTransaction', 'deleteTransaction', 'createSession', 'loadSession', 'deleteSession'];
-const HEADER_NAMES = ['cookie', 'origin', 'sec-fetch-site', 'x-nofries-dashboard-generation', 'x-nofries-dashboard-purpose', 'content-type', 'content-encoding'];
+const HEADER_NAMES = ['cookie', 'origin', 'sec-fetch-site', 'x-nofries-dashboard-generation', 'x-nofries-dashboard-purpose',
+    'x-nofries-dashboard-capabilities', 'content-type', 'content-encoding'];
 const MAX_WIRE = 524288;
 const unavailable = () => new BrowserAuthError(503, 'browser_auth_dashboard_unavailable');
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -736,6 +737,11 @@ function createDashboardRuntimeHandlers(configuration) {
             return response(200, { schemaVersion: 1, authenticated: true, purpose: value.purpose, expiresAt: value.expiresAt,
                 generation: value.generation, selectedBindingId: value.selectedBindingId,
                 ...(customerAccount?.accountType ? { accountType: customerAccount.accountType } : {}),
+                // Existing open dashboards validate an exact session shape.
+                // Negotiate display metadata; this does not grant queue access.
+                ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
+                    snapshot.headers['x-nofries-dashboard-capabilities'][0] === 'work-queue-v1' &&
+                    improvementEnabled && customerAccount?.accountType === 'consultant' ? { workQueueAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }
         if (selected.route === 'session') {

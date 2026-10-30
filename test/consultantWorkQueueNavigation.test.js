@@ -20,7 +20,8 @@ const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dash
     'dashboardOrganisationSearch', 'dashboardOrganisationStatus', 'dashboardOrganisationSearchControls', 'dashboardOrganisationClear',
     'dashboardOrganisationCount', 'dashboardOrganisationEmpty'];
 const state = (selectedBindingId = A, generation = GA, extra = {}) => ({ schemaVersion: 1, authenticated: true,
-    purpose: 'customer', accountType: 'consultant', expiresAt: '2026-09-09T00:30:00.000Z', generation, selectedBindingId, ...extra });
+    purpose: 'customer', accountType: 'consultant', workQueueAvailable: true,
+    expiresAt: '2026-09-09T00:30:00.000Z', generation, selectedBindingId, ...extra });
 const response = (status, value) => ({ status, ok: status >= 200 && status < 300, redirected: false, type: 'basic',
     headers: { get: () => 'application/json; charset=utf-8' }, json: async () => value });
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
@@ -117,6 +118,99 @@ async function selectedPlan(h, index) {
 }
 beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date(NOW)); });
 afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
+
+function withoutQueue(account = state()) { const value = { ...account }; delete value.workQueueAvailable; return value; }
+const directoryPage = () => ({ schemaVersion: 1, bindings: [{ bindingId: A, organisationLabel: 'Kauri client' }], nextAfterBindingId: null });
+
+test('new client negotiates the optional field on every session read, not queue reads', async () => {
+    const h = harness(); await ready(h);
+    button(h, 'Refresh actions').click(); await flush();
+    await h.reply(4, 200, state()); await h.reply(5, 200, page()); await h.reply(6, 200, state());
+    expect(h.status).toBe('queue');
+    const sessions = h.requests.filter(item => item.url === '/api/dashboard/session');
+    expect(sessions).toHaveLength(5);
+    for (const item of h.requests) {
+        expect(item.init.method).toBe('GET');
+        if (item.url === '/api/dashboard/session') {
+            expect(item.init.headers['X-NoFries-Dashboard-Capabilities']).toBe('work-queue-v1');
+        } else expect(item.init.headers).not.toHaveProperty('X-NoFries-Dashboard-Capabilities');
+    }
+});
+
+test.each(['#organisations', '#work-queue'])('unadvertised queue at %s returns to the directory without requests or selection writes', async hash => {
+    const h = harness(hash), account = withoutQueue();
+    await flush(); await h.reply(0, 200, account); await h.reply(1, 200, directoryPage());
+    expect(h.status).toBe('selection'); expect(button(h, 'Work queue')).toBeUndefined();
+    expect(h.window.location.hash).toBe('#organisations');
+    expect(h.requests.map(item => item.url)).toEqual(['/api/dashboard/session', '/api/dashboard/organisations?limit=50']);
+    expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
+    expect(h.requests[0].init.headers['X-NoFries-Dashboard-Capabilities']).toBe('work-queue-v1');
+});
+
+test.each([true, false])('selected organisation keeps its overview with queue availability %s independent of module readiness', async enabled => {
+    const h = harness('#overview'), account = enabled ? state() : withoutQueue();
+    await flush(); await h.reply(0, 200, account); await h.reply(1, 200, directoryPage());
+    const model = JSON.parse(JSON.stringify(projectDashboard(fixture({ now: NOW }))));
+    model.modules.find(item => item.key === 'improvement_plan').state = 'disabled';
+    await h.reply(2, 200, model); h.loadAssets(); await flush(); await h.reply(3, 200, account);
+    expect(h.status).toBe('ready'); expect(h.window.location.hash).toBe('#overview');
+    expect(!!button(h, 'Work queue')).toBe(enabled);
+    expect(h.requests.some(item => item.url.startsWith('/api/dashboard/work-queue'))).toBe(false);
+    expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
+});
+
+test.each([false, 'true', 1, null])('malformed queue capability %p fails closed before further reads', async capability => {
+    const h = harness(); await flush(); await h.reply(0, 200, state(A, GA, { workQueueAvailable: capability }));
+    expect(h.status).toBe('unavailable'); expect(h.requests).toHaveLength(1); expect(h.queue.children).toHaveLength(0);
+});
+
+test.each([
+    { accountType: 'company' },
+    { purpose: 'operator_dashboard', accountType: undefined },
+    { accountType: undefined }
+])('non-consultant cannot advertise a queue capability (%p)', async overrides => {
+    const account = state(A, GA, overrides);
+    if (account.accountType === undefined) delete account.accountType;
+    const h = harness(); await flush(); await h.reply(0, 200, account);
+    expect(h.status).toBe('unavailable'); expect(h.requests).toHaveLength(1);
+});
+
+test.each(['before queue read', 'before disclosure'])('capability removal %s reconciles without disclosing stale actions or writing selection', async phase => {
+    const h = harness(), absent = withoutQueue(); await flush(); await h.reply(0, 200, state());
+    let next;
+    if (phase === 'before queue read') { await h.reply(1, 200, absent); next = 2; }
+    else {
+        await h.reply(1, 200, state()); await h.reply(2, 200, page());
+        expect(h.queue.textContent).not.toContain('Review backups');
+        await h.reply(3, 200, absent); next = 4;
+    }
+    await h.reply(next, 200, absent); await h.reply(next + 1, 200, directoryPage());
+    expect(h.status).toBe('selection'); expect(h.window.location.hash).toBe('#organisations');
+    expect(button(h, 'Work queue')).toBeUndefined(); expect(h.queue.textContent).not.toContain('Review backups');
+    expect(h.requests.filter(item => item.url.startsWith('/api/dashboard/work-queue'))).toHaveLength(phase === 'before queue read' ? 0 : 1);
+    expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
+});
+
+test('capability removal during refresh discards displayed queue and keeps selected organisation unchanged', async () => {
+    const h = harness(); await ready(h); expect(titles(h)).toEqual(['Review backups']);
+    button(h, 'Refresh actions').click(); await flush();
+    await h.reply(4, 200, withoutQueue()); await h.reply(5, 200, withoutQueue());
+    await h.reply(6, 200, directoryPage());
+    expect(h.status).toBe('selection'); expect(button(h, 'Work queue')).toBeUndefined();
+    expect(h.queue.textContent).not.toContain('Review backups');
+    expect(h.requests.filter(item => item.url.startsWith('/api/dashboard/work-queue'))).toHaveLength(1);
+    expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
+});
+
+test('unexpected 404 after advertised availability keeps explicit Organisations recovery without writes', async () => {
+    const h = harness(); await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, state());
+    await h.reply(2, 404, { code: 'dashboard_not_found' });
+    expect(h.status).toBe('queue'); expect(h.queue.textContent).toContain('Return to Organisations');
+    button(h, 'Organisations').click(); await flush();
+    await h.reply(3, 200, withoutQueue()); await h.reply(4, 200, directoryPage());
+    expect(h.status).toBe('selection'); expect(button(h, 'Work queue')).toBeUndefined();
+    expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
+});
 
 test('queue reads current authority without directory or selection writes and hides rows until final confirmation', async () => {
     const h = harness(); await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, state());
@@ -298,6 +392,7 @@ test('opening an action writes only exact client selection and hands its target 
     await ready(h, page([target], { organisations: [organisation(B, 'Target client')] }));
     button(h, 'Open action').click(); await flush();
     expect(h.requests[4].url).toBe('/api/dashboard/selection'); expect(h.requests[4].init.method).toBe('POST');
+    expect(h.requests[4].init.headers).not.toHaveProperty('X-NoFries-Dashboard-Capabilities');
     expect(JSON.parse(h.requests[4].init.body)).toEqual({ bindingId: B, expectedGeneration: GA, operationId: expect.any(String) });
     expect(h.window.location.hash).toBe('#improvement-plan');
     await selectedPlan(h, 4);

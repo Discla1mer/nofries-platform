@@ -99,6 +99,85 @@ async function login(services) {
     return { started, input, result, cookie: firstCookie(result) };
 }
 
+const queueCapabilityHeader = 'X-NoFries-Dashboard-Capabilities';
+const queueCapabilityRequests = [
+    { name: 'old client without header', raw: [], advertised: false },
+    { name: 'exact capability', raw: [queueCapabilityHeader, 'work-queue-v1'], advertised: true }
+];
+const otherQueueCapabilityRequests = [
+    { name: 'lowercase header name', raw: [queueCapabilityHeader.toLowerCase(), 'work-queue-v1'], advertised: true },
+    { name: 'mixed-case header name', raw: ['x-NoFries-DASHBOARD-capabilities', 'work-queue-v1'], advertised: true },
+    { name: 'duplicate exact values', raw: [queueCapabilityHeader, 'work-queue-v1', queueCapabilityHeader, 'work-queue-v1'], advertised: false },
+    { name: 'case-insensitive duplicate', raw: [queueCapabilityHeader, 'work-queue-v1', queueCapabilityHeader.toLowerCase(), 'work-queue-v1'], advertised: false },
+    { name: 'duplicate unknown value', raw: [queueCapabilityHeader, 'work-queue-v1', queueCapabilityHeader, 'unknown'], advertised: false },
+    { name: 'comma-combined values', raw: [queueCapabilityHeader, 'work-queue-v1, work-queue-v1'], advertised: false },
+    { name: 'combined with unknown capability', raw: [queueCapabilityHeader, 'work-queue-v1, unknown'], advertised: false },
+    { name: 'unknown version', raw: [queueCapabilityHeader, 'work-queue-v2'], advertised: false },
+    { name: 'value case changed', raw: [queueCapabilityHeader, 'WORK-QUEUE-V1'], advertised: false },
+    { name: 'leading whitespace', raw: [queueCapabilityHeader, ' work-queue-v1'], advertised: false },
+    { name: 'trailing whitespace', raw: [queueCapabilityHeader, 'work-queue-v1 '], advertised: false },
+    { name: 'empty value', raw: [queueCapabilityHeader, ''], advertised: false },
+    { name: 'non-token value', raw: [queueCapabilityHeader, 'work queue v1'], advertised: false },
+    { name: 'normalized header without raw occurrence', raw: [], normalizedOnly: 'work-queue-v1', advertised: false }
+];
+const queueCapabilityCases = [
+    ...[true, false].flatMap(enabled => ['staff', 'legacy', 'external'].flatMap(provider =>
+        (provider === 'staff' ? [null] : ['consultant', 'company', null]).flatMap(accountType =>
+            queueCapabilityRequests.map(request => ({ enabled, provider, accountType, request, header: request.name }))))),
+    ...['legacy', 'external'].flatMap(provider => otherQueueCapabilityRequests.map(request =>
+        ({ enabled: true, provider, accountType: 'consultant', request, header: request.name })))
+];
+test.each(queueCapabilityCases)
+('session capability preserves old wire shape unless negotiated ($enabled, $provider, $accountType, $header)', async ({ enabled, provider, accountType, request: capability }) => {
+    const h = fixture();
+    if (enabled) h.options.improvementEnabled = true;
+    const binding = jest.fn(async () => ({ bindingId: id(90), scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
+        ...(accountType ? { accountType } : {}) }));
+    h.options.customer.resolveActivationBinding = binding;
+    h.options.externalCustomer.resolveActivationBinding = binding;
+    // Isolate only the already-validated persisted session projection. Provider
+    // login/recheck, approved account binding and the HTTP response are genuine;
+    // native request tests separately cover SQL authority and tenant isolation.
+    const readSession = jest.fn(async () => ({ purpose: provider === 'staff' ? 'operator_dashboard' : 'customer',
+        expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90) }));
+    let host;
+    jest.isolateModules(() => {
+        const runtime = require('../api/shared/appLifecycle/postgresDashboardRuntimeRepository');
+        const replacement = jest.spyOn(runtime, 'createPostgresDashboardRuntimeRepository').mockReturnValue({ readSession });
+        try { host = require('../api/shared/dashboardRuntimeHandlers').createDashboardRuntimeHandlers(h.options); }
+        finally { replacement.mockRestore(); }
+    });
+    const services = provider === 'staff' ? host.authServices : provider === 'legacy' ? host.authServices.customer : host.authServices.externalCustomer;
+    const issued = await login(services);
+    const request = () => {
+        const req = new (require('node:http').IncomingMessage)(new (require('node:net').Socket)());
+        req.method = 'GET'; req.url = '/api/dashboard/session';
+        req.headers = { cookie: issued.cookie }; req.rawHeaders = ['cookie', issued.cookie, ...capability.raw];
+        for (let index = 0; index < capability.raw.length; index += 2) {
+            const name = capability.raw[index].toLowerCase(), value = capability.raw[index + 1];
+            req.headers[name] = Object.hasOwn(req.headers, name) ? req.headers[name] + ', ' + value : value;
+        }
+        if (capability.normalizedOnly) req.headers[queueCapabilityHeader.toLowerCase()] = capability.normalizedOnly;
+        req.complete = true; req.push(null); return req;
+    };
+    const response = await host.handleRequest(request());
+    expect(response.status).toBe(200);
+    expect(response.headers['Cache-Control']).toBe('private, no-store, max-age=0');
+    const advertised = enabled && accountType === 'consultant' && capability.advertised;
+    expect(response.body).toEqual({ schemaVersion: 1, authenticated: true,
+        purpose: provider === 'staff' ? 'operator_dashboard' : 'customer',
+        expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90),
+        ...(accountType ? { accountType } : {}), ...(advertised ? { workQueueAvailable: true } : {}) });
+    expect(binding).toHaveBeenCalledTimes(provider === 'staff' ? 0 : 1);
+    expect(readSession).toHaveBeenCalledTimes(1);
+    // A previously advertised capability does not survive lost authentication.
+    h.store.sessions.clear();
+    const denied = await host.handleRequest(request());
+    expect(denied.status).toBe(401); expect(denied.body).not.toHaveProperty('workQueueAvailable');
+    expect(readSession).toHaveBeenCalledTimes(1);
+    expect(binding).toHaveBeenCalledTimes(provider === 'staff' ? 0 : 1);
+});
+
 test('direct dashboard composer rejects an environment secret accessor without invoking it', () => {
     const h = fixture(), read = jest.fn(() => { throw new Error('legacy secret read'); });
     h.options.externalCustomer.client = { clientAssertion: jest.fn() };
