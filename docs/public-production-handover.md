@@ -2,8 +2,8 @@
 
 This draft adds offline provenance checks for a future move to
 `Discla1mer/nofries-platform`. It does not add a deployment workflow or give this
-repository production authority. The current release owner continues their work
-independently; activation requires a separate, reviewed handover.
+repository production authority. The release coordinator retains deployment control;
+activation requires a separate, reviewed handover.
 
 The public baseline is
 [`a6bba1f0a8fca813ff9a5a2aa7410222ea8ec234`](https://github.com/Discla1mer/nofries-platform/commit/a6bba1f0a8fca813ff9a5a2aa7410222ea8ec234).
