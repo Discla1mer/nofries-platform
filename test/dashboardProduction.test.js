@@ -183,6 +183,21 @@ test.each([undefined, '', 'false'])('NCSC absent or disabled %p preserves unavai
         .get('/api/dashboard/ncsc/assessments');
     expect(response.status).toBe(404); expect(d.pool.connect).not.toHaveBeenCalled();
 });
+test.each([undefined, '', 'false', 'true'])('Improvement flag %p controls queue route availability without authentication or SQL', async enabled => {
+    const d = dependencies(), env = environment();
+    if (enabled === undefined) delete env.NOFRIES_DASHBOARD_IMPROVEMENT_ENABLED;
+    else env.NOFRIES_DASHBOARD_IMPROVEMENT_ENABLED = enabled;
+    const configuration = createProductionDashboardConfiguration(env, d);
+    if (enabled === 'true') expect(configuration.improvementEnabled).toBe(true);
+    else expect(configuration).not.toHaveProperty('improvementEnabled');
+    const response = await require('supertest')(require('../server').createNoFriesApp({ dashboard: configuration }))
+        .get('/api/dashboard/work-queue');
+    expect(response.status).toBe(enabled === 'true' ? 401 : 404);
+    expect(response.body.code).toBe(enabled === 'true' ? 'dashboard_authentication_required' : 'dashboard_not_found');
+    expect(response.body).not.toHaveProperty('workQueueAvailable');
+    expect(d.pool.connect).not.toHaveBeenCalled();
+});
+
 test.each(['TRUE', '1', true, ' true '])('invalid NCSC flag %p fails before provider construction', enabled => {
     const d = dependencies();
     expect(() => createProductionDashboardConfiguration(environment({ NOFRIES_DASHBOARD_NCSC_ENABLED: enabled }), d))

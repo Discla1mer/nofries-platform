@@ -360,7 +360,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(response.text).not.toContain('Plan your Lean Managed IT service.');
         expect(response.text).toContain('Protection and backup are selected separately.');
         expect(response.text).not.toContain('id="managed-it-per-user-price"');
-        expect(response.text).toContain('<title>No Fries Dashboard | Clearer IT. Confident next steps.</title>');
+        expect(response.text).toContain('<title>No Fries Dashboard | Your risk posture on a page.</title>');
         expect(response.text).not.toContain('Automatic updates and connected data feeds are planned');
         expect(response.text).toContain('data-assistant-help-only="true"');
         expect(response.text).not.toContain('NZ$119 + GST');

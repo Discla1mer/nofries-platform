@@ -244,21 +244,24 @@
         if (!fields(value, ['schemaVersion', 'authenticated', 'purpose', 'expiresAt', 'generation', 'selectedBindingId',
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
             value.schemaVersion !== 1 || value.authenticated !== true || !['operator_dashboard', 'customer'].includes(value.purpose) ||
             Object.prototype.hasOwnProperty.call(value, 'activationAvailable') && (value.activationAvailable !== true || value.purpose !== 'operator_dashboard') ||
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
             Object.prototype.hasOwnProperty.call(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant') ||
+            Object.prototype.hasOwnProperty.call(value, 'workQueueAvailable') && (value.workQueueAvailable !== true || value.accountType !== 'consultant') ||
             !canonicalDate(value.expiresAt) || typeof value.generation !== 'string' || !DIGEST.test(value.generation) ||
             value.selectedBindingId !== null && (typeof value.selectedBindingId !== 'string' || !UUID.test(value.selectedBindingId))) throw invalid();
         if (Date.parse(value.expiresAt) <= Date.now()) { const error = invalid(); error.expired = true; throw error; }
         return Object.freeze({ purpose: value.purpose, generation: value.generation, selectedBindingId: value.selectedBindingId, expiresAt: value.expiresAt,
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
+            ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
             ...(value.accountType ? { accountType: value.accountType } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'accountType']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -360,6 +363,9 @@
             if (refresh) refresh.requests.add(cancel);
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
+            if (body === undefined && path === '/api/dashboard/session') {
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1';
+            }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
             if (csrf !== undefined) headers['X-CSRF-Token'] = csrf;
@@ -440,7 +446,9 @@
         }
         const snapshot = Object.freeze({ generation: value.generation, selectedBindingId: value.selectedBindingId });
         if (value.accountType === 'consultant' && window.location.hash === '#work-queue' && !cycle.openSelection) {
-            mountWorkQueue(cycle); return;
+            if (value.workQueueAvailable === true) { mountWorkQueue(cycle); return; }
+            window.history.replaceState(null, '', '#organisations');
+            cycle.forcePortfolio = true;
         }
         const prefetchProjection = value.selectedBindingId !== null && !(value.accountType === 'consultant' &&
             !cycle.openSelection && (cycle.forcePortfolio || !currentRoute()));
@@ -833,7 +841,9 @@
         if (portfolioNavigation) portfolioNavigation.remove();
         const nav = document.createElement('nav'); nav.className = 'consultant-navigation';
         nav.setAttribute('aria-label', 'Consultant workspace');
-        [['Organisations', '#organisations', state === 'selection'], ['Work queue', '#work-queue', state === 'queue']].forEach(function (item) {
+        const items = [['Organisations', '#organisations', state === 'selection']];
+        if (cycle.session.workQueueAvailable === true) items.push(['Work queue', '#work-queue', state === 'queue']);
+        items.forEach(function (item) {
             const button = document.createElement('button'); button.type = 'button'; button.textContent = item[0];
             if (item[2]) button.setAttribute('aria-current', 'page');
             button.addEventListener('click', function () {
@@ -882,7 +892,7 @@
         return value;
     }
     function mountWorkQueue(cycle) {
-        if (!current(cycle) || cycle.session?.accountType !== 'consultant') throw invalid();
+        if (!current(cycle) || cycle.session?.accountType !== 'consultant' || cycle.session.workQueueAvailable !== true) throw invalid();
         cycle.workQueue = true; cycle.busy = false;
         elements.chooser.hidden = true; elements.app.hidden = false;
         const root = elements.app;
@@ -1054,7 +1064,7 @@
                 if (!live() || version !== ownVersion) return;
                 loading = false; page = null; list.replaceChildren(); checked.textContent = '';
                 if (error && ([401, 403, 409].includes(error.status) || error.expired)) { failure(cycle, error); return; }
-                status.textContent = 'Work queue is currently unavailable. Refresh actions to try again.';
+                status.textContent = 'Work queue is currently unavailable. Return to Organisations or refresh actions to try again.';
                 first.hidden = true; more.hidden = true; refresh.disabled = false;
             } finally { releaseFocus(); }
         }
