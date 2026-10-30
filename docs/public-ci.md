@@ -1,7 +1,10 @@
 # Public application checks
 
-The public workflow runs three independent jobs on standard Ubuntu runners:
-application checks, native PostgreSQL checks, and dependency policy. It runs for
+The public workflow reports three required checks from standard Ubuntu runners:
+application checks, native PostgreSQL checks, and dependency policy. The
+`application` check is a gate over four parallel Jest shards (`unit`, each
+running its files serially) and a `build` job (evaluations, static and App
+Service packaging, syntax). It fails unless every one of those jobs succeeded. It runs for
 pull requests, pushes to main and manual dispatch. The token is read-only,
 checkout does not persist credentials, actions and the database image are pinned,
 and no secrets, environments, OIDC tokens, paid providers or deployment jobs are

@@ -8,7 +8,7 @@ const { createHash } = require('node:crypto');
 
 const PUBLIC_REPOSITORY = Object.freeze({ full_name: 'Discla1mer/nofries-platform', id: 1433679464 });
 const CI_PATH = '.github/workflows/ci.yml';
-const CI_WORKFLOW_SHA256 = 'f6abeb1daf69c8b4f8ea200bf7efa0d188dc8bb82ee8b36451d918155ca4e015';
+const CI_WORKFLOW_SHA256 = '090f984cfa7f7d20b62b8d8c4293155dea455302a15c2dba46162b8d884189c8';
 const CI_SOURCES = Object.freeze({
     'package.json': '4af8ad027823d04805c98fe893e6a95c44b568c3f1e29935c4b6397e87a5145d',
     'scripts/ci-journey-sequencer.js': '0cfe1e2f72d1694b604621b65d85ab7617032dcc985b8f13ce666f2c65f00306',
@@ -16,9 +16,18 @@ const CI_SOURCES = Object.freeze({
     'scripts/check-dependency-audit.js': '5de53625d16faed5ff9269ae6e6c86035b31210374ecc1af91ab4f5218374e4a'
 });
 const CI_STEPS = Object.freeze({
-    application: Object.freeze(['Verify pinned local dependencies',
-        'Run npm ci --ignore-scripts --omit=optional --audit=false', 'Run npm run verify',
-        'Run npm run eval:prospect:promptfoo', 'Build runtime package and verify install closure']),
+    'unit (1/4)': Object.freeze(['Run npm ci --ignore-scripts --omit=optional --audit=false',
+        'Run Jest shard']),
+    'unit (2/4)': Object.freeze(['Run npm ci --ignore-scripts --omit=optional --audit=false',
+        'Run Jest shard']),
+    'unit (3/4)': Object.freeze(['Run npm ci --ignore-scripts --omit=optional --audit=false',
+        'Run Jest shard']),
+    'unit (4/4)': Object.freeze(['Run npm ci --ignore-scripts --omit=optional --audit=false',
+        'Run Jest shard']),
+    build: Object.freeze(['Verify pinned local dependencies',
+        'Run npm ci --ignore-scripts --omit=optional --audit=false', 'Run npm run eval:prospect', 'Run npm run build',
+        'Run npm run check:syntax', 'Run npm run eval:prospect:promptfoo', 'Build runtime package and verify install closure']),
+    application: Object.freeze(['Require all application jobs to succeed']),
     postgres: Object.freeze(['Run npm ci --ignore-scripts --omit=optional --audit=false',
         'Apply migrations twice and run native tenant-isolation tests']),
     dependencies: Object.freeze(['Audit both governed closures with the unchanged exact temporary disposition'])

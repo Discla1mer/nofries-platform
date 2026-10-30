@@ -51,7 +51,7 @@ function fixture(stage = 'first-public') {
             workflowBytes: fs.readFileSync(path.join(root, '.github/workflows/ci.yml')),
             sourceBytes: Object.fromEntries(Object.keys(CI_SOURCES).map(name => [name, fs.readFileSync(path.join(root, name))])),
             run: run('ci', expected.ci), attempt: run('ci', expected.ci), runAfter: run('ci', expected.ci),
-            listing: listing(), listingAfter: listing(), jobs: { total_count: 3,
+            listing: listing(), listingAfter: listing(), jobs: { total_count: Object.keys(CI_STEPS).length,
                 jobs: Object.entries(CI_STEPS).map(([name, steps], index) => ({
                     id: 601 + index, name, run_id: 101, run_attempt: 1, head_sha: SOURCE_SHA,
                     status: 'completed', conclusion: 'success', started_at: '2026-01-01T11:42:00Z', completed_at: '2026-01-01T11:49:00Z',
@@ -156,7 +156,7 @@ const invalidHandover = {
     'mixed-attempt jobs': e => { e.ci.jobs.jobs[0].run_attempt += 1; },
     'duplicate job': e => { e.ci.jobs.jobs[1] = e.ci.jobs.jobs[0]; },
     'missing native job': e => { e.ci.jobs.jobs.splice(1, 1); },
-    'skipped verification': e => { e.ci.jobs.jobs[0].steps[2].conclusion = 'skipped'; },
+    'skipped verification': e => { e.ci.jobs.jobs[0].steps[1].conclusion = 'skipped'; },
     'duplicate step': e => { e.ci.jobs.jobs[0].steps.push(e.ci.jobs.jobs[0].steps[0]); },
     'stale CI': e => { e.ci.jobs.jobs[0].started_at = '2025-12-30T10:00:00Z'; e.ci.jobs.jobs[0].completed_at = '2025-12-30T11:00:00Z'; },
     'future CI': e => { e.ci.jobs.jobs[0].completed_at = '2026-01-01T12:01:00Z'; },
