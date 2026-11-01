@@ -1627,57 +1627,9 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/@isaacs/cliui",
-      "version": "8.0.2",
-      "license": "ISC",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@isaacs/cliui/node_modules/ansi-regex",
-      "version": "6.3.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@isaacs/cliui/node_modules/ansi-styles",
-      "version": "6.2.3",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@isaacs/cliui/node_modules/emoji-regex",
-      "version": "9.2.2",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@isaacs/cliui/node_modules/string-width",
-      "version": "5.1.2",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@isaacs/cliui/node_modules/strip-ansi",
-      "version": "7.2.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@isaacs/cliui/node_modules/wrap-ansi",
-      "version": "8.1.0",
-      "license": "MIT",
+      "path": "node_modules/@isaacs/nonrecursive-glob-match",
+      "version": "1.0.3",
+      "license": "BlueOak-1.0.0",
       "development": true,
       "optional": false
     },
@@ -2875,14 +2827,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/@pkgjs/parseargs",
-      "version": "0.11.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/@pkgr/core",
       "version": "0.3.6",
       "license": "MIT",
@@ -3876,7 +3820,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/balanced-match",
-      "version": "1.0.2",
+      "version": "4.0.4",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -3965,14 +3909,6 @@
       "lockfile": "package-lock.json",
       "path": "node_modules/brace-expansion",
       "version": "5.0.12",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/brace-expansion/node_modules/balanced-match",
-      "version": "4.0.4",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -4571,14 +4507,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/eastasianwidth",
-      "version": "0.2.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/ecdsa-sig-formatter",
       "version": "1.0.11",
       "license": "Apache-2.0",
@@ -5164,26 +5092,10 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/follow-redirects",
-      "version": "1.16.1",
+      "version": "1.16.2",
       "license": "MIT",
       "development": true,
       "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/foreground-child",
-      "version": "3.3.1",
-      "license": "ISC",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/foreground-child/node_modules/signal-exit",
-      "version": "4.1.0",
-      "license": "ISC",
-      "development": true,
-      "optional": false
     },
     {
       "lockfile": "package-lock.json",
@@ -5372,7 +5284,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/glob",
-      "version": "13.0.6",
+      "version": "14.0.3",
       "license": "BlueOak-1.0.0",
       "development": true,
       "optional": false
@@ -5910,14 +5822,6 @@
       "path": "node_modules/istextorbinary",
       "version": "9.5.0",
       "license": "Artistic-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/jackspeak",
-      "version": "3.4.3",
-      "license": "BlueOak-1.0.0",
       "development": true,
       "optional": false
     },
@@ -6636,7 +6540,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/minimatch",
-      "version": "10.2.6",
+      "version": "11.0.3",
       "license": "BlueOak-1.0.0",
       "development": true,
       "optional": false
@@ -7171,14 +7075,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/package-json-from-dist",
-      "version": "1.0.1",
-      "license": "BlueOak-1.0.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/parse-json",
       "version": "5.2.0",
       "license": "MIT",
@@ -7228,7 +7124,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/path-scurry",
-      "version": "2.0.2",
+      "version": "3.0.0",
       "license": "BlueOak-1.0.0",
       "development": true,
       "optional": false
@@ -7236,7 +7132,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/path-scurry/node_modules/lru-cache",
-      "version": "11.5.2",
+      "version": "11.5.3",
       "license": "BlueOak-1.0.0",
       "development": true,
       "optional": false
@@ -8595,23 +8491,7 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/string-width-cjs",
-      "version": "4.2.3",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/strip-ansi",
-      "version": "6.0.1",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/strip-ansi-cjs",
       "version": "6.0.1",
       "license": "MIT",
       "development": true,
@@ -8726,46 +8606,6 @@
       "path": "node_modules/test-exclude",
       "version": "7.0.2",
       "license": "ISC",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/test-exclude/node_modules/brace-expansion",
-      "version": "2.1.7",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/test-exclude/node_modules/glob",
-      "version": "10.5.0",
-      "license": "ISC",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/test-exclude/node_modules/glob/node_modules/minimatch",
-      "version": "9.0.9",
-      "license": "ISC",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/test-exclude/node_modules/lru-cache",
-      "version": "10.4.3",
-      "license": "ISC",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/test-exclude/node_modules/path-scurry",
-      "version": "1.11.1",
-      "license": "BlueOak-1.0.0",
       "development": true,
       "optional": false
     },
@@ -9116,14 +8956,6 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/wrap-ansi",
-      "version": "7.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/wrap-ansi-cjs",
       "version": "7.0.0",
       "license": "MIT",
       "development": true,
