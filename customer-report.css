@@ -26,7 +26,7 @@ body[data-page="customer-report"] .report-footer { color: var(--muted); font-siz
 #report-preview { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
 #report-status { min-height: 1.6em; overflow-wrap: anywhere; }
 .report-card :focus-visible, .report-main:focus-visible, .report-header a:focus-visible, .report-footer a:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
-.report-skip { position: absolute; left: 12px; top: -100px; padding: 12px; color: var(--page); background: var(--yellow); z-index: 10; }
+.report-skip { position: absolute; left: 12px; top: -100px; padding: 12px; color: var(--ink); background: var(--yellow); z-index: 10; }
 .report-skip:focus { top: 8px; }
 @media (max-width: 450px) {
     .report-header .brand { gap: 8px; }
