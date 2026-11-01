@@ -346,12 +346,12 @@ async function brandChecks(page, name) {
             font: body.fontFamily, card: card ? getComputedStyle(card).backgroundColor : null };
     });
     assert.deepEqual(brand.tokens, brand.rootTokens, name + ': page overrides the shared brand palette');
-    assert.deepEqual(brand.tokens, { '--page': '#08100f', '--paper': '#111b1a', '--line': '#2a3b38', '--muted': '#a9bbb7',
-        '--green': '#6cd8c9', '--yellow': '#ffd400', '--ink': '#f6faf9' }, name + ': shared brand palette drift');
+    assert.deepEqual(brand.tokens, { '--page': '#ece6da', '--paper': '#f6f2ea', '--line': '#d3c9b7', '--muted': '#5f574b',
+        '--green': '#7a5711', '--yellow': '#e5b53b', '--ink': '#17140f' }, name + ': shared brand palette drift');
     assert.deepEqual(brand.logo, { path: '/images/nofrieslogo.png', width: 44, height: 44, loaded: true }, name + ': canonical logo drift');
     assert.deepEqual(brand.icons, [{ path: '/images/nofrieslogo.png', type: 'image/png' }], name + ': missing or placeholder tab icon');
     assert.match(brand.font, /^Inter, ui-sans-serif, system-ui/);
-    if (brand.card) assert.equal(brand.card, 'rgb(17, 27, 26)', name + ': account surface drift');
+    if (brand.card) assert.equal(brand.card, 'rgb(246, 242, 234)', name + ': account surface drift');
     return brand;
 }
 
