@@ -34,13 +34,18 @@
                 send.disabled = false;
                 return;
             }
+            if (!payload || payload.received !== true) {
+                status.textContent = 'We could not confirm your enquiry was sent. ' + FALLBACK;
+                send.disabled = false;
+                return;
+            }
             form.reset();
             status.textContent = 'Thanks — your enquiry has been sent. We will reply by email.';
             if (window.plausible) {
                 window.plausible('Enquiry Sent');
             }
         } catch (error) {
-            status.textContent = 'Your enquiry could not be sent. ' + FALLBACK;
+            status.textContent = 'We could not confirm your enquiry was sent. ' + FALLBACK;
         }
         send.disabled = false;
     });
