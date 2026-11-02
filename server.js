@@ -55,6 +55,8 @@ const {
     ScopeAccessError
 } = require('./api/shared/scopeAccess');
 const { getServiceScope } = require('./api/shared/serviceScope');
+const { createEnquiryService } = require('./api/shared/enquiry');
+const { errorResult: enquiryErrorResult } = require('./api/enquiry');
 const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
 const { createAuthLoginFunction } = require('./api/authLogin');
@@ -637,6 +639,28 @@ app.post('/api/scope/request', asyncRoute(async (req, res) => {
         res.status(200).json(result);
     } catch (error) {
         sendScopeError(res, error);
+    }
+}));
+
+const enquiryService = createEnquiryService();
+app.post('/api/enquiry', asyncRoute(async (req, res) => {
+    if (requestBodySize(req) > 16 * 1024) {
+        return res.status(413).json({ error: 'Request body is too large', code: 'request_too_large' });
+    }
+    try {
+        assertSameOriginForMutation(req);
+    } catch (error) {
+        return sendResult(res, enquiryErrorResult(error));
+    }
+    const limit = checkRateLimit('apiEnquiry', getClientKeyFromHeaders(req.headers, req.ip || req.socket.remoteAddress), apiEnvironment);
+    Object.entries(rateLimitHeaders(limit)).forEach(([name, value]) => value && res.setHeader(name, value));
+    if (!limit.allowed) {
+        return res.status(429).json({ error: 'Too many enquiries have been sent. Please wait and try again.' });
+    }
+    try {
+        res.status(200).json(await enquiryService.submitEnquiry(req.body || {}));
+    } catch (error) {
+        sendResult(res, enquiryErrorResult(error, { log: console }));
     }
 }));
 

@@ -468,6 +468,41 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(operatorShell.text).not.toContain('/api/lifecycle/app.js');
     });
 
+    test('public contact page posts enquiries to the owner by email', async () => {
+        const page = await request(app).get('/contact.html');
+        expect(page.status).toBe(200);
+        expect(page.text).toContain('/js/contact.js');
+        expect(page.text).toContain('name="website"');
+        expect((await request(app).get('/js/contact.js')).status).toBe(200);
+
+        const previousFetch = global.fetch;
+        const sent = [];
+        global.fetch = jest.fn(async (url, options) => {
+            sent.push({ url, body: JSON.parse(options.body) });
+            return { ok: true, status: 200 };
+        });
+        try {
+            const response = await request(app)
+                .post('/api/enquiry')
+                .set('x-forwarded-for', '192.0.2.81')
+                .send({ name: 'Aroha Smith', email: 'aroha@example.co.nz', message: 'Please call about an assessment.', website: '' });
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual({ received: true });
+            expect(response.headers['cache-control']).toContain('no-store');
+            expect(sent).toHaveLength(1);
+            expect(sent[0].body).toMatchObject({ to: ['hello@nofries.nz'], reply_to: 'aroha@example.co.nz' });
+
+            const crossSite = await request(app)
+                .post('/api/enquiry')
+                .set('sec-fetch-site', 'cross-site')
+                .send({ name: 'X', email: 'x@example.com', message: 'Cross-site attempt here.' });
+            expect(crossSite.status).toBe(403);
+            expect(sent).toHaveLength(1);
+        } finally {
+            global.fetch = previousFetch;
+        }
+    });
+
     test('email verification unlocks the server-side standard scope once', async () => {
         const previousFetch = global.fetch;
         const sent = [];
