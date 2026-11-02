@@ -108,3 +108,26 @@ test('an already redeemed exact guest can receive a capability without resetting
     expect(send.mock.calls[0][0].sendInvitationMessage).toBe(true);
     expect(send.mock.calls[0][0]).not.toHaveProperty('resetRedemption');
 });
+
+test('a delivered invitation cannot recreate a fenced subject on resumed finalization', async () => {
+    const h = customerProductionHarness(), authorityContainer = h.getContainer('customer-authority');
+    const guest = { id: uid(3), mail: 'synthetic-fenced@example.test', userType: 'Guest' };
+    let blocked = true;
+    const withSubjectWrite = jest.fn(async (_key, write) => { if (blocked) throw new Error('target_fenced'); return write(); });
+    const graph = { findGuestsByEmail: async () => [], createInvitation: jest.fn(async () => ({ status: 'PendingAcceptance', invitedUser: guest })) };
+    const input = { requestId: uid(45), approval: { email: guest.mail, displayName: 'Synthetic', tenantId: 'synthetic-tenant',
+        organisationId: 'synthetic-org', termsVersion: h.termsVersion, termsDigest: h.termsDigest,
+        scheduleId: 'synthetic-schedule', scheduleDigest: 'f'.repeat(64), expiresAt: h.state.now + 3600000,
+        authorityExpiresAt: h.state.now + 86400000 }, identityTenantId: uid(1), identityPolicyId: 'customer-policy',
+        publicOrigin: h.env.NOFRIES_PUBLIC_URL, graph,
+        invitations: new AzureBlobSignupInvitationStore({ containerClient: h.getContainer('nofries-browser-auth') }),
+        authorityContainer, withSubjectWrite, now: () => h.state.now };
+    const key = `customer-subjects/${subjectHash(uid(1) + ':' + uid(3))}.json`;
+    await expect(provisionCustomerInvitation(input)).rejects.toThrow('target_fenced');
+    expect(authorityContainer.records.has(key)).toBe(false);
+    expect(withSubjectWrite.mock.calls[0][0]).toBe(key);
+    blocked = false;
+    await expect(provisionCustomerInvitation(input)).resolves.toHaveProperty('subjectKey');
+    expect(authorityContainer.records.has(key)).toBe(true);
+    expect(graph.createInvitation).toHaveBeenCalledTimes(1);
+});

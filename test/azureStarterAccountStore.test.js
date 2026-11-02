@@ -101,6 +101,20 @@ test('wrong keys and invalid ETags do not reach storage', async () => {
     await assert.rejects(h.store.replace(starterAccountKey(h.proof.email), '*', account), /starter_store_version_invalid/);
     assert.equal(h.calls.length, 0);
 });
+
+test('injected writer exclusion prevents both account creation and replacement', async () => {
+    const h = fixture(), account = await h.allocator.reserveInitial(h.proof), key = starterAccountKey(h.proof.email);
+    const before = await h.store.load(key), targets = [];
+    const guarded = new AzureStarterAccountStore(h.container, { withWrite: async (target, _write) => {
+        targets.push(target); throw new Error('target_fenced');
+    } });
+    h.calls.length = 0;
+    await assert.rejects(guarded.create(key, account), /target_fenced/);
+    await assert.rejects(guarded.replace(key, before.version, account), /target_fenced/);
+    assert.deepEqual(targets, Array(2).fill('customer-starter/' + key + '.json'));
+    assert.equal(h.calls.filter(c => c.op === 'write').length, 0);
+    assert.deepEqual(await h.store.load(key), before);
+});
 test('missing container, unreadable content, oversized blobs and corrupt plans fail closed', async () => {
     const h = fixture(), key = starterAccountKey(h.proof.email);
     assert.equal(await h.store.load(key), null);

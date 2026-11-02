@@ -40,9 +40,11 @@ function nextCursor(accountId, token) {
 // lived browser sessions, have no TTL and must be included in recovery. This
 // adapter grants no authority and never writes the independent authority store.
 class AzureStarterAccountStore {
-    constructor(container) {
+    constructor(container, { withWrite = (_key, write) => write() } = {}) {
         if (!container || typeof container.getBlockBlobClient !== 'function') fail('starter_store_configuration_invalid');
+        if (typeof withWrite !== 'function') fail('starter_store_configuration_invalid');
         this.container = container;
+        this.withWrite = withWrite;
     }
     blob(key) {
         if (typeof key !== 'string' || !/^starter-accounts\/[a-f0-9]{64}$/.test(key)) fail('starter_store_key_invalid');
@@ -76,15 +78,17 @@ class AzureStarterAccountStore {
     async write(key, value, conditions) {
         const body = Buffer.from(JSON.stringify(value));
         if (!body.length || body.length > MAX_BYTES) fail('starter_store_record_invalid');
-        try {
-            await this.blob(key).uploadData(body, { conditions, abortSignal: AbortSignal.timeout(5000),
-                blobHTTPHeaders: { blobContentType: 'application/json', blobCacheControl: 'no-store' } });
-            return true;
-        } catch (error) {
-            if (error?.statusCode === 412 && error.code === 'ConditionNotMet' ||
-                error?.statusCode === 409 && error.code === 'BlobAlreadyExists') return false;
-            fail('starter_store_unavailable');
-        }
+        return this.withWrite('customer-starter/' + key + '.json', async () => {
+            try {
+                await this.blob(key).uploadData(body, { conditions, abortSignal: AbortSignal.timeout(5000),
+                    blobHTTPHeaders: { blobContentType: 'application/json', blobCacheControl: 'no-store' } });
+                return true;
+            } catch (error) {
+                if (error?.statusCode === 412 && error.code === 'ConditionNotMet' ||
+                    error?.statusCode === 409 && error.code === 'BlobAlreadyExists') return false;
+                fail('starter_store_unavailable');
+            }
+        });
     }
     async create(key, input) {
         const value = this.checked(key, input);

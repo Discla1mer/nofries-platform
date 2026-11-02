@@ -53,9 +53,10 @@ function validateRetainedExternalStarterClaim(retained, { account: rawAccount, d
 // terms or grants dashboard membership. Its immutable record makes generated
 // IDs recoverable before the separate authority write. Completed missing or
 // changed authority is never silently recreated.
-function createExternalStarterClaim({ container, invitations, identityPolicyId, providerKey, readOtherAuthority, now = Date.now }) {
+function createExternalStarterClaim({ container, invitations, identityPolicyId, providerKey, readOtherAuthority,
+    withSubjectWrite = (_key, write) => write(), now = Date.now }) {
     if (!container || typeof container.getBlockBlobClient !== 'function' || typeof readOtherAuthority !== 'function' ||
-        !/^[a-f0-9]{64}$/.test(providerKey) || typeof identityPolicyId !== 'string' || !identityPolicyId) fail();
+        typeof withSubjectWrite !== 'function' || !/^[a-f0-9]{64}$/.test(providerKey) || typeof identityPolicyId !== 'string' || !identityPolicyId) fail();
     async function read(key) {
         try {
             const response = await container.getBlockBlobClient(key).download(0, LIMIT + 1, { abortSignal: AbortSignal.timeout(5000) });
@@ -124,7 +125,9 @@ function createExternalStarterClaim({ container, invitations, identityPolicyId, 
             catch (error) { if (!equal(await invitations.read(invitation.tokenDigest), invitation)) throw error; }
         } else if (!equal(beforeInvitation, invitation)) fail();
         await beforeMutation();
-        if (!equal(await create(subjectPath, entry), entry)) fail();
+        await withSubjectWrite(subjectPath, async () => {
+            if (!equal(await create(subjectPath, entry), entry)) fail();
+        });
         const completion = { schemaVersion: 1, claimSha256: hash(retained) };
         if (!equal(await create(completePath, completion), completion)) fail();
         await beforeMutation();

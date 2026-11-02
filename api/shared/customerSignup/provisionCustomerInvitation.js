@@ -34,10 +34,10 @@ const upload = (blob, record, conditions) => blob.uploadData(Buffer.from(JSON.st
 async function provisionCustomerInvitation({ requestId, expectedAuthorityRevision = null, approval: input,
     identityTenantId, identityPolicyId, publicOrigin, graph, invitations, authorityContainer, now = Date.now,
     initialBindingId = null, readOtherAuthority = async () => null, verifyDelivery = async () => true,
-    sendMemberInvitation }) {
+    sendMemberInvitation, withSubjectWrite = (_key, write) => write() }) {
     requestId = uuid(requestId);
     if (initialBindingId !== null) uuid(initialBindingId);
-    if (typeof readOtherAuthority !== 'function' || typeof verifyDelivery !== 'function' || initialBindingId !== null && expectedAuthorityRevision !== null) conflict();
+    if (typeof withSubjectWrite !== 'function' || typeof readOtherAuthority !== 'function' || typeof verifyDelivery !== 'function' || initialBindingId !== null && expectedAuthorityRevision !== null) conflict();
     if (expectedAuthorityRevision !== null) revision(expectedAuthorityRevision);
     if (sendMemberInvitation !== undefined && (typeof sendMemberInvitation !== 'function' || typeof graph.findUsersByEmail !== 'function')) conflict();
     const findAccounts = sendMemberInvitation ? graph.findUsersByEmail : graph.findGuestsByEmail;
@@ -124,13 +124,16 @@ async function provisionCustomerInvitation({ requestId, expectedAuthorityRevisio
         }
         if (attempt.phase !== 'delivered') conflict();
         const entry = authority(attempt.entry, attempt.entry.subjectKey, now());
-        const subjectBlob = authorityContainer.getBlockBlobClient(`customer-subjects/${subjectHash(entry.subjectKey)}.json`);
-        const current = await read(subjectBlob);
-        if (!current || canonicalDigest(current.record) !== canonicalDigest(entry)) {
-            if (attempt.prior ? !current || current.etag !== attempt.prior.etag ||
-                canonicalDigest(current.record) !== canonicalDigest(attempt.prior.record) : current !== null) conflict();
-            await upload(subjectBlob, entry, current ? { ifMatch: current.etag } : { ifNoneMatch: '*' });
-        }
+        const subjectPath = `customer-subjects/${subjectHash(entry.subjectKey)}.json`;
+        await withSubjectWrite(subjectPath, async () => {
+            const subjectBlob = authorityContainer.getBlockBlobClient(subjectPath);
+            const current = await read(subjectBlob);
+            if (!current || canonicalDigest(current.record) !== canonicalDigest(entry)) {
+                if (attempt.prior ? !current || current.etag !== attempt.prior.etag ||
+                    canonicalDigest(current.record) !== canonicalDigest(attempt.prior.record) : current !== null) conflict();
+                await upload(subjectBlob, entry, current ? { ifMatch: current.etag } : { ifNoneMatch: '*' });
+            }
+        });
         const result = { subjectKey: entry.subjectKey, invitationId: entry.invitationId, status: 'pending_admission' };
         await checkpoint({ ...attempt, phase: 'complete', result });
         return Object.freeze(result);

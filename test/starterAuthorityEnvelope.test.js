@@ -46,7 +46,7 @@ test('legacy authority arithmetic is exact and the new envelope still rejects pr
     assert.throws(() => starterAuthorityExpiry(Date.parse('2026-10-14T23:59:59.999Z'), THREE_MONTH_PLAN_ID));
 });
 
-async function externalClaimFixture() {
+async function externalClaimFixture(withSubjectWrite) {
     const at = Date.parse('2027-01-24T00:00:00.000Z'), subjectKey = crypto.randomUUID() + ':' + crypto.randomUUID();
     const providerKey = 'c'.repeat(64), identityPolicyId = 'synthetic-calendar-envelope', blobs = new Map(), invitationRows = new Map();
     let accountRow;
@@ -74,11 +74,27 @@ async function externalClaimFixture() {
             blobs.set(key, Buffer.from(bytes));
         }
     }; } };
-    const claim = createExternalStarterClaim({ container, providerKey, identityPolicyId, now: () => at,
+    const claim = createExternalStarterClaim({ container, providerKey, identityPolicyId, withSubjectWrite, now: () => at,
         readOtherAuthority: async () => null, invitations: { read: async key => invitationRows.get(key) || null,
             create: async record => { invitationRows.set(record.tokenDigest, clone(record)); return true; } } });
     return { claim, account, saved, subjectKey, providerKey, identityPolicyId, blobs, at };
 }
+
+test('an interrupted external claim cannot publish a fenced subject and resumes after release', async () => {
+    let blocked = true; const targets = [];
+    const f = await externalClaimFixture(async (key, write) => {
+        targets.push(key); if (blocked) throw new Error('target_fenced'); return write();
+    });
+    const input = { account: f.account, details: f.saved, subjectKey: f.subjectKey, beforeMutation: async () => {} };
+    const key = `customer-subjects/${subjectHash(f.subjectKey)}.json`;
+    await assert.rejects(f.claim(input), /target_fenced/);
+    assert.equal(f.blobs.has(key), false);
+    assert.equal([...f.blobs.keys()].some(k => k.endsWith('.complete.json')), false);
+    blocked = false;
+    const entry = await f.claim(input);
+    assert.deepEqual(JSON.parse(f.blobs.get(key)), entry);
+    assert.deepEqual(targets, [key, key]);
+});
 
 test('actual external claim persists and replays an envelope covering the original account and its later client', async () => {
     const f = await externalClaimFixture(), input = { account: f.account, details: f.saved,

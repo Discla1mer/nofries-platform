@@ -131,7 +131,9 @@ async function inspectIdentity(graph, records, a, identityTenantId) {
 // approval are both necessary. Existing durable binding permits safe recovery
 // after transient cleanup, but cannot change scope or authorize a replacement.
 async function provisionVerifiedOrganisationSetup({ approval: input, setupStore, authorityContainer,
-    identityTenantId, identityPolicyId, publicOrigin, graph, invitations, beforeMutation = async () => {}, inspectOnly = false, now = Date.now }) {
+    identityTenantId, identityPolicyId, publicOrigin, graph, invitations, beforeMutation = async () => {},
+    withSubjectWrite, inspectOnly = false, now = Date.now }) {
+    if (withSubjectWrite !== undefined && typeof withSubjectWrite !== 'function') fail();
     const a = approvalRecord(input), requestId = a.requestId;
     const context = { identityTenantId, identityPolicyId, publicOrigin };
     const records = createCustomerRecords({ authorityContainer, sessionContainer: null });
@@ -183,7 +185,8 @@ async function provisionVerifiedOrganisationSetup({ approval: input, setupStore,
     const { schemaVersion, requestId: ignoredRequest, approvalId, representativeAuthorityEvidenceId, invitationApprovalEvidenceId,
         approvedAt, organisationName, expectedAuthorityRevision, ...invitationApproval } = a;
     const result = await provisionCustomerInvitation({ requestId, expectedAuthorityRevision, approval: invitationApproval,
-        identityTenantId, identityPolicyId, publicOrigin, graph, invitations, authorityContainer, now });
+        identityTenantId, identityPolicyId, publicOrigin, graph, invitations, authorityContainer, now,
+        withSubjectWrite });
     const completion = { schemaVersion: 1, requestId, bindingSha256: canonicalDigest(binding), result, completedAt: now() };
     completionRecord(completion, binding);
     const prior = await read(authorityContainer, key('completions', requestId));
