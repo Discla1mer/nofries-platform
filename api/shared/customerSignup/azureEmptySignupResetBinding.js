@@ -15,9 +15,21 @@ function createAzureEmptySignupResetBinding({ accountContainer, authorityContain
     const blobFor = key => containerFor(key).getBlockBlobClient(key);
     const current = async key => {
         const held = context.getStore();
-        if (!held || held.closed || !held.keys.includes(key)) fail('fence_required');
+        if (!held || held.closed || held.settling || !held.keys.includes(key)) fail('fence_required');
         await held.locks[held.keys.indexOf(key)].assertCurrent();
+        if (held.closed || held.settling) fail('fence_required');
         return held;
+    };
+    const mutation = async (key, effect) => {
+        const held = context.getStore();
+        if (!held || held.closed || held.settling) fail('fence_required');
+        held.pending++;
+        try {
+            await current(key);
+            if (held.closed || held.settling) fail('fence_required');
+            held.touched = true;
+            try { return await effect(); } catch (error) { held.uncertain = true; throw error; }
+        } finally { held.pending--; }
     };
     async function withExclusiveTarget(binding, work) {
         const operationId = binding?.request?.operationId, bindingSha256 = binding?.plan?.bindingSha256;
@@ -25,7 +37,8 @@ function createAzureEmptySignupResetBinding({ accountContainer, authorityContain
         if (!UUID.test(operationId || '') || !/^[a-f0-9]{64}$/.test(bindingSha256 || '') || typeof work !== 'function') fail('invalid_binding');
         keys.forEach(containerFor);
         if (!keys[0].startsWith('customer-starter/') || !keys[1].startsWith('customer-subjects/')) fail('invalid_binding');
-        const owner = { operationId, bindingSha256 }, held = { keys, locks: [], closed: false, touched: false, uncertain: false };
+        const owner = { operationId, bindingSha256 }, held = { keys, locks: [], closed: false,
+            touched: false, uncertain: false, pending: 0, settling: false };
         try { for (const key of keys) held.locks.push(await acquireRecordFence(containerFor(key), key, owner)); }
         catch (error) {
             for (const lock of held.locks) { try { await lock.release(); } catch (_) {} }
@@ -39,8 +52,10 @@ function createAzureEmptySignupResetBinding({ accountContainer, authorityContain
         };
         const settle = async next => {
             if (held.closed) fail('fence_settled');
+            if (held.settling || held.pending) fail('fence_busy');
             if (next === null && held.uncertain) fail('mutation_outcome_unconfirmed');
-            await mark(next);
+            held.settling = true;
+            try { await mark(next); } catch (error) { held.settling = false; throw error; }
             // Commit the outcome before cleanup. Release failures never turn a
             // completed operation back into a pending, supposedly retained one.
             settled = true; held.closed = true;
@@ -52,7 +67,9 @@ function createAzureEmptySignupResetBinding({ accountContainer, authorityContain
         });
         try {
             await mark(owner);
-            return await context.run(held, () => work(fence));
+            const result = await context.run(held, () => work(fence));
+            if (held.pending) fail('fence_outcome_unconfirmed');
+            return result;
         } finally {
             // A failed/uncertain marker write leaves all locks held. Otherwise an
             // untouched refusal can clear its markers, and a write keeps them.
@@ -65,17 +82,9 @@ function createAzureEmptySignupResetBinding({ accountContainer, authorityContain
     const blobs = Object.freeze({
         async readCurrent(key) { return readBlob(blobFor(key)); },
         async readVersion(key, versionId) { return (await readBlob(blobFor(key).withVersion(versionId)))?.bytes ?? null; },
-        async remove(key, options) {
-            const held = await current(key); held.touched = true;
-            try { await blobFor(key).delete({ conditions: { ...options?.conditions } }); }
-            catch (error) { held.uncertain = true; throw error; }
-        },
-        async restore(key, bytes, options) {
-            const held = await current(key); held.touched = true;
-            try { await blobFor(key).uploadData(Buffer.from(bytes), { conditions: { ...options?.conditions },
-                blobHTTPHeaders: { blobContentType: 'application/json' } }); }
-            catch (error) { held.uncertain = true; throw error; }
-        }
+        remove: (key, options) => mutation(key, () => blobFor(key).delete({ conditions: { ...options?.conditions } })),
+        restore: (key, bytes, options) => mutation(key, () => blobFor(key).uploadData(Buffer.from(bytes),
+            { conditions: { ...options?.conditions }, blobHTTPHeaders: { blobContentType: 'application/json' } }))
     });
     return Object.freeze({ withExclusiveTarget, blobs });
 }

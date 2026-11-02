@@ -144,3 +144,27 @@ test('ports refuse unrelated keys and writes outside their exact invocation', as
     await expect(binding.blobs.remove(KEYS.account, {})).rejects.toThrow('fence_required');
     await expect(binding.blobs.restore(KEYS.account, Buffer.from('x'), {})).rejects.toThrow('fence_required');
 });
+
+test('completion cannot release locks ahead of a delayed mutation port', async () => {
+    const f = fixture(), binding = f.bindingFor(), { plan } = await f.coordinator(binding).inventory(f.request);
+    let resume, pause = false;
+    const wait = new Promise(resolve => { resume = resolve; }), get = f.starter.getBlockBlobClient;
+    f.starter.getBlockBlobClient = key => {
+        const blob = get(key);
+        return { ...blob, getBlobLeaseClient(id) { const lease = blob.getBlobLeaseClient(id);
+            return { ...lease, async renewLease() {
+                await lease.renewLease();
+                if (pause) { pause = false; await wait; }
+            } }; } };
+    };
+    await binding.withExclusiveTarget(target(f, plan), async fence => {
+        pause = true;
+        const pending = binding.blobs.remove(KEYS.account, { conditions: { ifMatch: plan.records.account.etag } });
+        try {
+            await expect(fence.complete()).rejects.toThrow('fence_busy');
+            await expect(f.appWrite('account')).rejects.toBeDefined();
+        } finally { resume(); await pending; }
+        await fence.retain();
+    });
+    await expect(f.appWrite('account')).rejects.toThrow('fence_held_by_other_operation');
+});
