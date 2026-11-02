@@ -32,10 +32,8 @@ const server = http.createServer((request, response) => {
 });
 
 async function openAssessment(page) {
-    const cyber = page.locator('.dashboard-module-link[data-module="cyber_security"]');
-    if (await cyber.isVisible()) await cyber.click();
-    else await page.getByRole('navigation', { name: 'Dashboard tasks', exact: true })
-        .getByRole('button', { name: 'Assess', exact: true }).click();
+    // The desktop rail and the mobile task bar both render this link; use the one shown at this width.
+    await page.locator('.dashboard-module-link[data-module="cyber_security"]').filter({ visible: true }).click();
     await page.locator('.ncsc-assessment-list button').first().click();
     await page.locator('#ncsc-question-index').waitFor();
 }
