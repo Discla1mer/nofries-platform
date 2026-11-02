@@ -139,3 +139,50 @@ describe('enquiry function', () => {
         expect(context.res.body).toEqual({ error: 'Please enter a valid email address.', code: 'invalid_enquiry' });
     });
 });
+
+describe('contact form progressive enhancement', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const vm = require('node:vm');
+    const html = fs.readFileSync(path.join(__dirname, '../contact.html'), 'utf8');
+    const script = fs.readFileSync(path.join(__dirname, '../js/contact.js'), 'utf8');
+
+    test('without JavaScript, submission stays disabled and native submission uses POST', () => {
+        expect(html).toMatch(/<form\b[^>]*id="contact-form"[^>]*method="post"/);
+        expect(html).toMatch(/<button\b[^>]*id="contact-send"[^>]*type="submit"[^>]*\bdisabled/);
+        expect(html).toMatch(/<noscript>[\s\S]*mailto:hello@nofries.nz[\s\S]*<\/noscript>/);
+    });
+
+    function browser(attachFails = false) {
+        const send = { disabled: true };
+        let submit;
+        const form = {
+            reportValidity: () => false,
+            addEventListener(type, handler) {
+                expect(send.disabled).toBe(true);
+                if (attachFails) throw new Error('Handler unavailable');
+                if (type === 'submit') submit = handler;
+            }
+        };
+        const document = {
+            body: { dataset: { page: 'contact' } },
+            getElementById: id => ({ 'contact-form': form, 'contact-send': send, 'contact-status': {} })[id]
+        };
+        return { send, run: () => vm.runInNewContext(script, { document }), submit: () => submit };
+    }
+
+    test('enables submission only after attaching a handler that cancels native navigation', async () => {
+        const page = browser();
+        page.run();
+        expect(page.send.disabled).toBe(false);
+        const event = { preventDefault: jest.fn() };
+        await page.submit()(event);
+        expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    });
+
+    test('leaves submission disabled when handler attachment fails', () => {
+        const page = browser(true);
+        expect(page.run).toThrow('Handler unavailable');
+        expect(page.send.disabled).toBe(true);
+    });
+});

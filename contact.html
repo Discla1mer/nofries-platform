@@ -27,7 +27,7 @@
             <h1>Talk to No Fries</h1>
             <p>Tell us a little about your organisation and what you need. We reply from hello@nofries.nz, usually within one business day.</p>
 
-            <form id="contact-form" class="contact-form" novalidate>
+            <form id="contact-form" class="contact-form" method="post" novalidate>
                 <label for="contact-name">Your name</label>
                 <input id="contact-name" name="name" autocomplete="name" maxlength="120" required>
 
@@ -46,8 +46,9 @@
                     <input id="contact-website" name="website" tabindex="-1" autocomplete="off">
                 </div>
 
-                <button class="button" id="contact-send" type="submit">Send enquiry</button>
+                <button class="button" id="contact-send" type="submit" disabled>Send enquiry</button>
                 <p id="contact-status" class="contact-status" role="status" aria-live="polite"></p>
+                <noscript><p>Please email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a> to send your enquiry.</p></noscript>
             </form>
 
             <p>Prefer email? Write to <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>. See the <a href="/privacy.html">privacy statement</a> for how enquiries are handled.</p>

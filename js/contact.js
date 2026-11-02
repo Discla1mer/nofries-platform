@@ -44,4 +44,5 @@
         }
         send.disabled = false;
     });
+    send.disabled = false;
 }());

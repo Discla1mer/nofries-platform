@@ -1611,7 +1611,7 @@ describe('ready Cyber composition', () => {
     const footerTargets = [
         [false, 0, '/roadmap.html'], [false, 1, 'https://news.nofries.nz/'],
         [true, 0, 'https://news.nofries.nz/'], [true, 1, '/roadmap.html'],
-        [true, 2, '/privacy.html'], [true, 3, '/terms.html']
+        [true, 2, '/contact.html'], [true, 3, '/privacy.html'], [true, 4, '/terms.html']
     ];
     test.each(footerTargets)('footer gateway=%s link=%s preserves draft, focus and first destination %s', async (gateway, index, target) => {
         const h = harness({ gateway, cyber: true, hash: '#cyber-security' }); await ready(h);
@@ -1654,7 +1654,7 @@ describe('ready Cyber composition', () => {
         { defaultPrevented: true }, { target: '_blank' }, { target: 'other-window' }, { download: '' }])
         ('footer native activation %j retains the current draft', async attributes => {
             const h = harness({ gateway: true, cyber: true, hash: '#cyber-security' }); await ready(h);
-            const input = unsavedScope(h), link = h.footerLinks[3], extra = { ...attributes };
+            const input = unsavedScope(h), link = h.footerLinks.find(link => link.href === '/terms.html'), extra = { ...attributes };
             for (const name of ['target', 'download']) if (Object.hasOwn(extra, name)) { link.setAttribute(name, extra[name]); delete extra[name]; }
             const event = h.linkClick(link, extra); await flush();
             expect(event.defaultPrevented).toBe(Boolean(attributes.defaultPrevented));
@@ -1664,7 +1664,7 @@ describe('ready Cyber composition', () => {
     test('footer Save waits for a create acknowledgement and retains the original target across repeated exits', async () => {
         const stored = await records();
         const h = harness({ gateway: true, cyber: true, hash: '#cyber-security' }); await ready(h);
-        await ncscReply(h, 5, 200, stored.list()); unsavedScope(h); h.linkClick(h.footerLinks[3]);
+        await ncscReply(h, 5, 200, stored.list()); unsavedScope(h); h.linkClick(h.footerLinks.find(link => link.href === '/terms.html'));
         control(h, 'Save and leave').click(); control(h, 'Save and leave').click(); await flush();
         h.linkClick(h.footerLinks[0]); h.homeClick(); control(h, 'Discard unsent changes').click(); await flush();
         expect(h.requests).toHaveLength(7); expect(h.window.location.assign).not.toHaveBeenCalled();
@@ -1704,7 +1704,7 @@ describe('ready Cyber composition', () => {
         expect(h.window.location.assign).not.toHaveBeenCalled(); expect(h.elements.dashboardApp.querySelector('dialog')).toBeNull();
         expect(h.elements.dashboardApp.textContent).toContain('Resolve the running or unconfirmed operation');
         const result = stored.execute(stored.command(h.requests[7])); await ncscReply(h, 7, 200, result);
-        h.linkClick(h.footerLinks[2]); await flush(); expect(h.window.location.assign.mock.calls).toEqual([['/privacy.html']]);
+        h.linkClick(h.footerLinks.find(link => link.href === '/privacy.html')); await flush(); expect(h.window.location.assign.mock.calls).toEqual([['/privacy.html']]);
     });
     test('footer retains draft and leave decisions through a quiet access refresh', async () => {
         const h = harness({ gateway: true, cyber: true, hash: '#cyber-security' }); await ready(h); const input = unsavedScope(h);
