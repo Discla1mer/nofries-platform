@@ -199,6 +199,26 @@ describe('contact form progressive enhancement', () => {
         expect(page.send.disabled).toBe(true);
     });
 
+    test('cancels native navigation before validation can fail', async () => {
+        const page = browser();
+        const event = { preventDefault: jest.fn() };
+        page.form.reportValidity.mockImplementation(() => {
+            expect(event.preventDefault).toHaveBeenCalledTimes(1);
+            throw new Error('Validation unavailable');
+        });
+        page.run();
+        await expect(page.submit()(event)).rejects.toThrow('Validation unavailable');
+        expect(page.fetchImpl).not.toHaveBeenCalled();
+        expect(page.form.reset).not.toHaveBeenCalled();
+        expect(page.values).toEqual({ ...VALID, website: '' });
+    });
+
+    test('no submit control can override the POST fallback with GET', () => {
+        const form = html.match(/<form\b[^>]*id="contact-form"[\s\S]*?<\/form>/)[0];
+        expect(form).not.toMatch(/\bformmethod\s*=/i);
+        expect(form).not.toMatch(/\bformaction\s*=/i);
+    });
+
     test.each([
         ['HTML instead of JSON', '<!doctype html><title>Contact</title>'],
         ['malformed JSON', '{"received":'],
