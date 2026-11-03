@@ -124,17 +124,27 @@ test('package checks reuse real builders through focused tests, with offline ins
     packageCheck({ log: quiet, execute(command, args) {
         calls.push([command, args]); return { status: 0, stdout: 'a'.repeat(40) + '\n' };
     } });
-    assert.equal(calls.length, 5);
-    assert.deepEqual(calls[1][1], ['scripts/stamp-release.js', 'a'.repeat(40), '1']);
-    assert.ok(calls[2][1].includes('test/appServicePackage.test.js'));
-    assert.ok(calls[2][1].includes('test/customerStaticBuild.test.js'));
-    for (const [, args] of calls.slice(3)) for (const flag of ['--dry-run', '--offline', '--ignore-scripts', '--audit=false']) assert.ok(args.includes(flag));
-    assert.equal(calls[4][1].includes('--omit=optional'), false);
+    assert.equal(calls.length, 3);
+    assert.ok(calls[0][1].includes('test/appServicePackage.test.js'));
+    assert.ok(calls[0][1].includes('test/customerStaticBuild.test.js'));
+    for (const [, args] of calls.slice(1)) for (const flag of ['--dry-run', '--offline', '--ignore-scripts', '--audit=false']) assert.ok(args.includes(flag));
+    assert.equal(calls[2][1].includes('--omit=optional'), false);
 });
-for (const failAt of [1, 2, 3, 4]) test(`package stage ${failAt} failure cannot report success`, () => {
-    let n = -1;
+test('package checks work without a release stamper or generated release identity', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nofries-pr-package-'));
+    try {
+        packageCheck({ root: dir, log: quiet, execute(command, args) {
+            assert.notEqual(command, 'git');
+            assert.doesNotMatch(args.join(' '), /stamp-release|build-unified-packages|releaseManifest/);
+            return { status: 0 };
+        } });
+        assert.deepEqual(fs.readdirSync(dir), []);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+for (const failAt of [1, 2, 3]) test(`package stage ${failAt} failure cannot report success`, () => {
+    let n = 0;
     assert.throws(() => packageCheck({ log: quiet, execute() {
-        n++; return { status: n === failAt ? 1 : 0, stdout: 'a'.repeat(40) + '\n' };
+        n++; return { status: n === failAt ? 1 : 0 };
     } }), new RegExp(`release_preflight_package_failed:${failAt}`));
     assert.equal(n, failAt);
 });

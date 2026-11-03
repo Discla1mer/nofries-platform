@@ -48,10 +48,7 @@ function audit({ root = ROOT, execute = run, log = console.log } = {}) {
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 function packageCheck({ root = ROOT, execute = run, log = console.log } = {}) {
-    const shaResult = execute('git', ['rev-parse', 'HEAD'], options(root, true));
-    if (!succeeded(shaResult) || !/^[a-f0-9]{40}\n?$/.test(shaResult.stdout || '')) throw new Error('release_preflight_source_invalid');
     const commands = [
-        [process.execPath, ['scripts/stamp-release.js', shaResult.stdout.trim(), '1']],
         // These existing focused tests execute both real build scripts and
         // validate runtime inclusion/exclusion, routes and SWA size limits.
         [process.execPath, ['node_modules/jest/bin/jest.js', '--runInBand', '--runTestsByPath',

@@ -31,9 +31,8 @@ even when another fails. Reports are private temporary files and removed on exit
 The package step still runs after an audit failure when dependency installation
 succeeded; an audit failure still fails the overall job.
 
-`package` uses the existing stamper with the checkout SHA and synthetic run ID 1,
-then runs the existing `appServicePackage.test.js` and `customerStaticBuild.test.js`
-suites. These execute the real App Service/static builders and check package
+`package` runs the existing `appServicePackage.test.js` and `customerStaticBuild.test.js`
+suites without stamping release identity. These execute the real App Service/static builders and check package
 inclusions/exclusions, runtime-only manifest, customer routes, headers and SWA
 configuration size. The generated runtime and API installs use the release's omit
 flags with `--dry-run --offline --ignore-scripts --audit=false`. Missing cache or
@@ -62,8 +61,8 @@ remain in their existing lanes.
 
 ## Local checks and limits
 
-Use a disposable checkout: the existing builders replace `dist`/`app-service-dist`
-and the stamper changes the local release manifest. After the standard root install:
+Use a disposable checkout: the existing builders replace `dist`/`app-service-dist`.
+After the standard root install:
 
 ```sh
 node --test scripts/tests/pr-release-preflight.cjs
