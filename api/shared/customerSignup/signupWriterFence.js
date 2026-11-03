@@ -34,8 +34,10 @@ function createSignupWriterFence({ container, scopeId }) {
         if (typeof work !== 'function') fail();
         const current = held.getStore();
         if (current?.scopeId === scopeId) {
-            if (reset !== null || current.reset !== null || !current.open) fail();
-            await current.check(); return work();
+            if (reset !== null || current.reset !== null) fail();
+            current.assertOpen(); current.pending++;
+            try { await current.check(); current.assertOpen(); return await work(); }
+            finally { current.pending--; }
         }
         const ready = { schemaVersion: 1, writerContract: CONTRACT, scopeId, reset: null };
         const leaseId = randomUUID(), client = blob(), lease = client.getBlobLeaseClient(leaseId);
@@ -45,11 +47,13 @@ function createSignupWriterFence({ container, scopeId }) {
             abortSignal: AbortSignal.timeout(4000), blobHTTPHeaders: { blobContentType: 'application/json', blobCacheControl: 'no-store' } }); }
         catch (e) { if (![409, 412].includes(e?.statusCode)) fail(); }
         try { await lease.acquireLease(-1, { abortSignal: AbortSignal.timeout(4000) }); } catch (_) { fail(); }
-        let release = reset === null;
-        const context = { scopeId, reset, open: true, uncertain: false, async check() {
-            if (!context.open || context.uncertain) fail();
+        let release = reset === null, failed = false;
+        const context = { scopeId, reset, open: true, uncertain: false, pending: 0,
+            assertOpen() { if (!context.open || context.uncertain) fail(); }, async check() {
+            context.assertOpen();
             try { await lease.renewLease({ abortSignal: AbortSignal.timeout(4000) }); }
             catch (_) { context.uncertain = true; fail(); }
+            context.assertOpen();
         } };
         try {
             const value = await read();
@@ -59,14 +63,29 @@ function createSignupWriterFence({ container, scopeId }) {
                 await client.uploadData(Buffer.from(JSON.stringify({ ...ready, reset })), { conditions: { leaseId },
                     abortSignal: AbortSignal.timeout(4000), blobHTTPHeaders: { blobContentType: 'application/json', blobCacheControl: 'no-store' } });
             }
-            return await held.run(context, () => work(Object.freeze({ check: context.check, async complete() {
-                if (reset === null) fail(); await context.check();
-                await client.uploadData(Buffer.from(JSON.stringify(ready)), { conditions: { leaseId }, abortSignal: AbortSignal.timeout(4000) });
-                release = true;
+            const result = await held.run(context, () => work(Object.freeze({ check: context.check, async complete() {
+                if (reset === null) fail();
+                context.assertOpen(); context.pending++;
+                try {
+                    await observe(context, () => client.uploadData(Buffer.from(JSON.stringify(ready)), {
+                        conditions: { leaseId }, abortSignal: AbortSignal.timeout(4000) }));
+                    context.assertOpen(); release = true;
+                } finally { context.pending--; }
             } })));
+            context.open = false;
+            if (context.pending) { context.uncertain = true; fail(); }
+            return result;
+        } catch (error) {
+            failed = true; throw error;
         } finally {
             context.open = false;
-            if (release && !context.uncertain) { try { await lease.releaseLease({ abortSignal: AbortSignal.timeout(4000) }); } catch (_) { fail(); } }
+            // Latch retention at owner exit. Late success cannot prove that the
+            // callback joined its work, nor may it reopen or release this lease.
+            if (context.pending) context.uncertain = true;
+            if (release && !context.uncertain) {
+                try { await lease.releaseLease({ abortSignal: AbortSignal.timeout(4000) }); }
+                catch (_) { context.uncertain = true; if (!failed) fail(); }
+            }
         }
     }
     return Object.freeze({ readReset: async () => { try { return (await read()).reset; } catch (e) { if (e?.statusCode === 404 && e.code === 'BlobNotFound') return null; throw e; } }, withWriter: work => run(null, work), withReset: (reset, work) => run(reset, work) });
@@ -78,18 +97,23 @@ function wrapSignupWriters(value, fence) {
 }
 // Observe errors before adapters translate or reconcile them. A timed-out
 // remote write may still land; even a swallowed error must retain the lease.
-async function observeWrite(work) {
-    const context = held.getStore();
+function observeWrite(work) { return observe(held.getStore(), work); }
+async function observe(context, work) {
     // Recheck ownership immediately before dispatch and after acknowledgement.
     // A deliberate break never allows an old worker to continue or release
     // another holder's lease. Already-dispatched remote writes remain uncertain.
-    if (context) await context.check();
-    try { const result = await work(); if (context) await context.check(); return result; }
+    if (context) { context.assertOpen(); context.pending++; }
+    try {
+        if (context) { await context.check(); context.assertOpen(); }
+        const result = await work();
+        if (context) { await context.check(); context.assertOpen(); }
+        return result;
+    }
     catch (error) {
         if (context && !(error?.statusCode === 412 && error.code === 'ConditionNotMet' ||
             error?.statusCode === 409 && error.code === 'BlobAlreadyExists')) context.uncertain = true;
         throw error;
-    }
+    } finally { if (context) context.pending--; }
 }
 function observeContainer(container, fence = null) {
     const write = work => fence ? fence.withWriter(() => observeWrite(work)) : observeWrite(work);
