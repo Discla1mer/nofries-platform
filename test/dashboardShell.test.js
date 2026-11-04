@@ -691,3 +691,33 @@ test('disabled Board Reports keeps the disabled label even when Cyber picture is
     assert.doesNotMatch(board.root.textContent, /Draft assessment snapshot/);
     assert.match(board.root.textContent, /temporarily unavailable/);
 });
+
+test('access labels distinguish planned tools from available tools and make no purchase claim', () => {
+    const dom = mount(view(), { initialRoute: 'ai-governance' });
+    assert.match(dom.root.textContent, /Dashboard access/);
+    assert.match(dom.root.textContent, /Govern · assessments and planning/);
+    assert.match(dom.root.textContent, /Coming soon/);
+    assert.doesNotMatch(dom.root.textContent, /Included|Dashboard subscription/);
+    assert.match(dom.root.textContent, /separate agreement on price and scope/);
+});
+
+test('optional services link authorised users back to assessment next steps', () => {
+    const model = clone(view()); model.modules.find(item => item.key === 'cyber_security').state = 'ready';
+    const dom = mount(model, { initialRoute: 'services', mountCyber: () => ({ destroy() {} }) });
+    assert.match(dom.root.textContent, /Fix these first/);
+    assert.match(dom.root.textContent, /does not purchase or activate a service/);
+    assert.match(dom.root.textContent, /IT and security advice/);
+    buttons(dom).find(item => item.textContent === 'Open Cyber Security assessments').click();
+    assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
+    const restricted = mount(view({ role: 'viewer' }), { initialRoute: 'services' });
+    assert.ok(!buttons(restricted).some(item => item.textContent === 'Open Cyber Security assessments'));
+});
+
+test('snapshot time is presented in New Zealand local time while preserving the machine datetime', () => {
+    const model = clone(view()); model.generatedAt = '2026-11-03T23:30:00.000Z';
+    const dom = mount(model), stamp = dom.root.querySelector('time');
+    assert.equal(stamp.dateTime, model.generatedAt);
+    assert.match(stamp.textContent, /4 Nov 2026/);
+    assert.match(stamp.textContent, /12:30/);
+    assert.doesNotMatch(stamp.textContent, /T23:30/);
+});

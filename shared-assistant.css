@@ -36,7 +36,7 @@
     box-shadow: 0 4px 18px #0005;
 }
 .nf-assistant-launcher img { display: block; width: 44px; height: 44px; object-fit: contain; }
-.nf-assistant-launcher-label { font-size: 11px; font-weight: 750; line-height: 1.3; }
+.nf-assistant-launcher-label { font-size: 12px; font-weight: 750; line-height: 1.3; }
 .nf-assistant-panel {
     position: fixed;
     inset: auto;
@@ -58,23 +58,23 @@
 .nf-assistant-panel[open] { display: flex; flex-direction: column; }
 .nf-assistant-header { position: sticky; top: 0; z-index: 1; display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px 6px; background: #10231c; }
 .nf-assistant-header p, .nf-assistant-header h2 { margin: 0; }
-.nf-assistant-header p { color: var(--nf-assistant-muted); font-size: 11px; }
+.nf-assistant-header p { color: var(--nf-assistant-muted); font-size: 12px; }
 .nf-assistant-header h2 { font-size: 20px; line-height: 1.3; }
 .nf-assistant-close { flex: 0 0 40px; width: 40px; height: 40px; border: 1px solid #547167; border-radius: 10px; color: var(--nf-assistant-ink); background: transparent; font-size: 24px; }
 .nf-assistant-boundary { margin: 6px 16px 12px; color: var(--nf-assistant-muted); font-size: 12px; }
 .nf-assistant[data-shared-assistant] .prospect-assistant { display: flex; flex: 1 0 auto; flex-direction: column; min-width: 0; min-height: 0; max-height: none; padding: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .nf-assistant[data-shared-assistant] .assistant-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 16px 8px; border: 0; }
-.nf-assistant[data-shared-assistant] .assistant-runtime { display: inline-block; padding: 2px 7px; border: 1px solid #547167; border-radius: 20px; color: #9fe5d3; font-size: 11px; }
+.nf-assistant[data-shared-assistant] .assistant-runtime { display: inline-block; padding: 2px 7px; border: 1px solid #547167; border-radius: 20px; color: #9fe5d3; font-size: 12px; }
 .nf-assistant[data-shared-assistant] .assistant-runtime.is-unavailable { color: #ffc1b8; }
 .nf-assistant[data-shared-assistant] .assistant-messages { display: grid; align-content: start; gap: 14px; min-height: 80px; max-height: 36dvh; margin: 0; padding: 10px 16px; overflow: auto; overscroll-behavior: contain; }
 .nf-assistant[data-shared-assistant] .assistant-message { display: grid; gap: 3px; max-width: 95%; }
-.nf-assistant[data-shared-assistant] .assistant-message > span { color: var(--nf-assistant-muted); font-size: 11px; }
+.nf-assistant[data-shared-assistant] .assistant-message > span { color: var(--nf-assistant-muted); font-size: 12px; }
 .nf-assistant[data-shared-assistant] .assistant-message p { margin: 0; padding: 9px 11px; border: 1px solid #496358; border-radius: 10px; color: #f5f7f6; background: #091810; font-size: 16px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .nf-assistant[data-shared-assistant] .assistant-message.is-user { justify-self: end; }
 .nf-assistant[data-shared-assistant] .assistant-message.is-user p { background: #283322; }
 .nf-assistant[data-shared-assistant] .assistant-message.is-error p { border-color: #e6a59a; }
 .nf-assistant[data-shared-assistant] .assistant-prompts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 10px 16px; overflow: visible; }
-.nf-assistant[data-shared-assistant] .assistant-prompts button { min-height: 36px; padding: 6px 9px; border: 1px solid #547167; border-radius: 10px; color: #d9e8e2; background: #183328; white-space: normal; text-align: left; font-size: 12px; }
+.nf-assistant[data-shared-assistant] .assistant-prompts button { min-height: 44px; padding: 6px 9px; border: 1px solid #547167; border-radius: 10px; color: #d9e8e2; background: #183328; white-space: normal; text-align: left; font-size: 12px; }
 .nf-assistant[data-shared-assistant] .assistant-form { display: block; margin: 0; padding: 4px 16px 0; border: 0; background: transparent; box-shadow: none; }
 .nf-assistant-input-label { display: block; margin-bottom: 5px; color: var(--nf-assistant-muted); font-size: 12px; }
 .nf-assistant-compose { display: flex; align-items: flex-end; gap: 8px; scroll-margin-block: calc(var(--nf-assistant-header-height, 0px) + 12px) 12px; }
@@ -82,12 +82,12 @@
 .nf-assistant[data-shared-assistant] .assistant-form textarea::placeholder { color: #a4b7af; }
 .nf-assistant[data-shared-assistant] .assistant-form button { flex: 0 0 auto; min-width: 56px; min-height: 44px; padding: 8px; border: 0; border-radius: 8px; color: #11221b; background: #ffe05a; font-size: 14px; font-weight: 750; }
 .nf-assistant[data-shared-assistant] button:disabled { cursor: default; opacity: .6; }
-.nf-assistant[data-shared-assistant] .assistant-progress { margin: 8px 16px 0; color: var(--nf-assistant-muted); font-size: 11px; }
-.nf-assistant[data-shared-assistant] #assistant-reset, .nf-assistant[data-shared-assistant] .nf-assistant-actions button { min-height: 36px; padding: 6px 9px; border: 1px solid #547167; border-radius: 8px; color: #d9e8e2; background: #183328; font-weight: 500; }
+.nf-assistant[data-shared-assistant] .assistant-progress { margin: 8px 16px 0; color: var(--nf-assistant-muted); font-size: 12px; }
+.nf-assistant[data-shared-assistant] #assistant-reset, .nf-assistant[data-shared-assistant] .nf-assistant-actions button { min-height: 44px; padding: 6px 9px; border: 1px solid #547167; border-radius: 8px; color: #d9e8e2; background: #183328; font-weight: 500; }
 .nf-assistant-actions { display: flex; gap: 8px; margin-top: 6px; }
-.nf-assistant-compose-hint, .nf-assistant-history { margin: 5px 0 0; color: var(--nf-assistant-muted); font-size: 11px; }
+.nf-assistant-compose-hint, .nf-assistant-history { margin: 5px 0 0; color: var(--nf-assistant-muted); font-size: 12px; }
 .nf-assistant-history { margin: 8px 16px 0; }
-.nf-assistant-footer { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 16px; padding: 12px 16px; font-size: 12px; }
+.nf-assistant-footer { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 16px; padding: 12px 16px; font-size: 14px; }
 .nf-assistant-handoff { margin: 0 16px; }
 @media (max-width: 480px) {
     .nf-assistant-launcher { right: calc(12px + env(safe-area-inset-right, 0px) + var(--nf-assistant-right-offset)); bottom: calc(12px + env(safe-area-inset-bottom, 0px) + var(--nf-assistant-bottom-offset) + var(--nf-assistant-dashboard-bottom)); width: 56px; min-height: 62px; }
@@ -119,3 +119,29 @@
         padding-right: calc(56px + 12px + env(safe-area-inset-right, 0px) + 8px);
     }
 }
+
+/* Public entry pages keep help in the document flow, so it cannot cover a
+   primary action while scrolling or filling a form. A header trigger remains
+   available before the form; the same dialog and public-only client are used. */
+body:is(.access-page, [data-dashboard-gateway="true"]:not([data-dashboard-state="ready"])) > .nf-assistant[data-shared-assistant] {
+    display: flex;
+    justify-content: flex-end;
+    width: min(1180px, calc(100% - 40px));
+    margin: 12px auto;
+}
+body:is(.access-page, [data-dashboard-gateway="true"]:not([data-dashboard-state="ready"])) > .nf-assistant .nf-assistant-launcher {
+    position: static;
+    width: auto;
+    min-height: 44px;
+    flex-direction: row;
+    gap: 8px;
+    padding: 6px 12px;
+}
+body:is(.access-page, [data-dashboard-gateway="true"]:not([data-dashboard-state="ready"])) > .nf-assistant .nf-assistant-launcher img { width: 32px; height: 32px; }
+body:is(.access-page, [data-dashboard-gateway="true"]:not([data-dashboard-state="ready"])) > .nf-assistant .nf-assistant-launcher-label { font-size: 14px; }
+body:is(.access-page, [data-dashboard-gateway="true"]:not([data-dashboard-state="ready"])) > .nf-assistant .nf-assistant-panel {
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+}
+body:is(.access-page, [data-dashboard-gateway="true"]:not([data-dashboard-state="ready"])):has(> .nf-assistant[data-shared-assistant]) > .home-footer { padding-right: 0; }
+.assistant-header-help { min-height: 44px; padding: 8px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: .2em; }

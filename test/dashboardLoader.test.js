@@ -1767,7 +1767,7 @@ describe('ready Cyber composition', () => {
             expect(h.elements.gatewayPublic.hidden).toBe(true);
             expect(input.value).toBe('Synthetic unsaved scope');
             expect(h.mounts[0].destroy).not.toHaveBeenCalled();
-            expect(h.elements.dashboardApp.textContent).toContain('This operation is unconfirmed.');
+            expect(h.elements.dashboardApp.textContent).toContain('We could not confirm whether your changes were saved.');
             h.homeClick(); await flush();
             expect(h.elements.dashboardApp.textContent).toContain('Resolve the running or unconfirmed operation');
             expect(h.requests).toHaveLength(7);
@@ -1861,7 +1861,7 @@ describe('ready Cyber composition', () => {
         const h = harness({ cyber: true, hash: '#cyber-security' }); await openedRecord(h, stored);
         selectAnswer(h);
         expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
-        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('1 with unsaved changes');
+        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('Unsaved changes');
         expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/\*$/);
         h.homeClick(); control(h, 'Discard unsent changes').click(); await flush();
         expect(h.requests.filter(request => request.init.method === 'POST')).toHaveLength(0);
@@ -1870,7 +1870,7 @@ describe('ready Cyber composition', () => {
         expect(reopened.elements.dashboardApp.querySelectorAll('input').find(item => item.type === 'radio' && item.checked).value).toBe('yes');
         expect(reopened.elements.dashboardApp.textContent).toContain('Saved revision 1');
         expect(reopened.elements.dashboardApp.querySelector('.ncsc-status').textContent).not.toContain('unsaved changes');
-        expect(reopened.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).not.toContain('unsaved changes');
+        expect(reopened.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).not.toMatch(/unsaved changes/i);
         expect(reopened.document.getElementById('ncsc-question-index').children.every(option => !/\*$/.test(option.textContent))).toBe(true);
         expect(reopened.document.getElementById('ncsc-question-index-help').textContent).toContain('* marks unsaved changes');
         reopened.homeClick(); await flush();
@@ -2033,11 +2033,11 @@ describe('ready Cyber composition', () => {
         const bytes = h.requests[6].init.body;
         const unavailable = { code: 'ncsc_unavailable' };
         await h.reply(6, 503, unavailable, { headers: { get: key => key.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null }, text: async () => JSON.stringify(unavailable) });
-        expect(app.textContent).toContain('Operation unconfirmed');
+        expect(app.textContent).toContain('We could not confirm whether your changes were saved.');
         h.window.dispatch('focus'); await flush(); await h.reply(7, 503, { code: 'dashboard_unavailable' });
         expect(app.hidden).toBe(false); expect(h.mounts[0].destroy).not.toHaveBeenCalled();
         h.click('dashboardRetry'); await flush(); await refresh(h, 8);
-        expect(app.textContent).toContain('Operation unconfirmed');
+        expect(app.textContent).toContain('We could not confirm whether your changes were saved.');
         button('Retry same operation').click(); await flush();
         expect(h.requests[13].init.body).toBe(bytes);
         expect(h.requests[13].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);

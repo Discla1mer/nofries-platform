@@ -139,9 +139,13 @@
             else open({ opener: launcher });
         });
         closeButton.addEventListener('click', close);
-        dialog.addEventListener('keydown', event => {
-            if (event.key === 'Escape' && !event.isComposing) { event.preventDefault(); close(); }
-        });
+        function escape(event) {
+            if (dialog.open && event.key === 'Escape' && !event.isComposing) { event.preventDefault(); close(); }
+        }
+        dialog.addEventListener('keydown', escape);
+        // Public help is non-modal: Escape must still dismiss it after Tab moves
+        // to a page control. The close handler preserves that control's focus.
+        document.addEventListener('keydown', escape);
         dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
         dialog.addEventListener('close', () => {
             // A queued native close event may arrive after a deliberate reopen.

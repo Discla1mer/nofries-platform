@@ -93,7 +93,8 @@ async function metrics(page) {
         return { footer: rect(footer), footerScrollWidth: footer.scrollWidth, footerClientWidth: footer.clientWidth,
             documentWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth,
             launcher: rect(launcher), launcherStyle: { color: getComputedStyle(launcher).color,
-                background: getComputedStyle(launcher).backgroundColor, right: getComputedStyle(launcher).right }, links };
+                background: getComputedStyle(launcher).backgroundColor, right: getComputedStyle(launcher).right,
+                position: getComputedStyle(launcher).position }, links };
     });
 }
 const cases = [
@@ -145,9 +146,13 @@ async function run() {
                 if (link.inViewport) check(link.hits.every(Boolean), 'full exposed target at footer end: ' + link.href);
             }
             check(closed.footerScrollWidth <= closed.footerClientWidth + 1, 'footer reflows inside own box');
-            check(closed.launcher.width === (scenario.width <= 480 ? 56 : 64), 'launcher width retained');
+            const inFlow = route === '/' || route === '/signup';
+            if (inFlow) {
+                check(closed.launcherStyle.position === 'static', 'entry-page help stays in flow');
+                check(closed.launcher.width >= 44 && closed.launcher.height >= 44, 'in-flow help has a 44px target');
+            } else check(closed.launcher.width === (scenario.width <= 480 ? 56 : 64), 'floating launcher width retained');
             check(closed.launcherStyle.color === 'rgb(245, 247, 246)' && closed.launcherStyle.background === 'rgb(16, 35, 28)', 'launcher palette retained');
-            if (scenario.safe) check(parseFloat(closed.launcherStyle.right) === 36, 'actual24px right safe-area env');
+            if (scenario.safe && !inFlow) check(parseFloat(closed.launcherStyle.right) === 36, 'actual24px right safe-area env');
             // Native Tab sequence from immediately before the first footer action.
             await footerLinks.first().focus(); await page.keyboard.press('Shift+Tab');
             const keyboard = [];

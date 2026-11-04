@@ -72,7 +72,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .dashboard-button-secondary { background: transparent; border-color: var(--dashboard-control-border); color: var(--dashboard-ink); }
 .dashboard-button-secondary:hover { background: var(--dashboard-navy); border-color: var(--dashboard-blue); }
 .nofries-dashboard a.dashboard-button { color: #111816; }
-.dashboard-button:disabled { cursor: wait; opacity: .65; }
+.dashboard-button:disabled, .dashboard-text-button:disabled { cursor: not-allowed; opacity: 1; background: #263330; border-color: #53645e; color: #b0beb8; box-shadow: none; }
 .dashboard-text-button:hover { text-decoration: underline; }
 .dashboard-service-cards { margin-top: 1.5rem; }
 .dashboard-service-cards .dashboard-panel { display: flex; flex-direction: column; align-items: start; gap: .4rem; }
@@ -192,7 +192,7 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-questionnaire textarea, .ncsc-questionnaire select { color: var(--dashboard-ink, #f6faf9); background: var(--dashboard-surface, #111b1a); border: 1px solid var(--dashboard-control-border, #708a84); border-radius: .4rem; padding: .75rem; }
 .ncsc-questionnaire textarea { display: block; width: 100%; resize: vertical; min-height: 8rem; line-height: 1.5; margin: .5rem 0; }
 .ncsc-questionnaire select { display: block; width: 100%; min-height: 3rem; margin: .5rem 0 1.5rem; }
-.ncsc-questionnaire button:disabled { cursor: default; opacity: .55; }
+.ncsc-questionnaire button:disabled { cursor: not-allowed; opacity: 1; background: #263330; border-color: #53645e; color: #b0beb8; }
 .ncsc-questionnaire [aria-invalid="true"] { border-color: #ef665b; outline-color: #ef665b; }
 .ncsc-questionnaire a, .ncsc-questionnaire button, .ncsc-questionnaire summary { overflow-wrap: anywhere; }
 .ncsc-questionnaire :focus-visible { outline: 3px solid var(--dashboard-yellow, #ffd400); outline-offset: 4px; }
@@ -236,7 +236,7 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-guidance p, .ncsc-provenance p, .ncsc-scope p { margin-top: .75rem; }
 .ncsc-preserve-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ncsc-answer { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
-.ncsc-answer legend { font-size: var(--dashboard-font-section); font-weight: var(--dashboard-weight-emphasis); line-height: 1.4; padding: 0 0 1rem; }
+.ncsc-answer legend { display: block; margin-bottom: .75rem; scroll-margin-block: 1rem; outline-offset: 6px; font-size: var(--dashboard-font-section); font-weight: var(--dashboard-weight-emphasis); line-height: 1.4; padding: 0 0 1rem; }
 .ncsc-option { display: flex; align-items: center; gap: .85rem; min-height: 3rem; padding: .8rem 1rem; margin-bottom: .55rem; border: 1px solid var(--dashboard-line, #2a3b38); border-radius: .5rem; background: var(--dashboard-surface, #111b1a); cursor: pointer; }
 .ncsc-option:focus-within { border-color: var(--dashboard-blue, #6cd8c9); }
 .ncsc-option:has(input:checked) { border-color: var(--dashboard-blue, #6cd8c9); background: color-mix(in srgb, var(--dashboard-blue, #6cd8c9) 12%, var(--dashboard-surface, #111b1a)); box-shadow: inset 3px 0 0 var(--dashboard-blue, #6cd8c9); }
@@ -405,3 +405,26 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden]) > .dashboard-menu-primary):not(:has(#dashboardApp .ncsc-questionnaire)) .home-footer a { scroll-margin-block-end: 8px; }
     .nofries-dashboard:has(.dashboard-mobile-nav > .dashboard-menu-primary) .picture-toolbar select { scroll-margin-block: 8px; }
 }
+
+/* Leave whole labels readable on the smallest phones. */
+@media (max-width: 25rem) {
+    .nofries-dashboard .dashboard-mobile-nav .dashboard-icon { display: none; }
+    .nofries-dashboard .dashboard-mobile-nav .dashboard-task { justify-content: center; text-align: center; overflow-wrap: normal; word-break: normal; }
+    .ncsc-option { gap: .6rem; padding: .65rem .75rem; }
+}
+
+/* Keep submission, confirmation and the first next steps easy to scan. */
+.ncsc-final-submission, .ncsc-submit-review, .ncsc-next-steps {
+    min-width: 0; padding: 1.25rem; margin: 1rem 0;
+    border: 1px solid var(--dashboard-line); border-radius: .7rem;
+    background: var(--dashboard-surface);
+}
+.ncsc-final-submission { flex-basis: 100%; }
+.ncsc-submit-review { border-color: var(--dashboard-yellow); background: var(--dashboard-navy); }
+.ncsc-submit-review button { margin: .4rem .5rem .4rem 0; }
+.ncsc-submit-review h3, .ncsc-sealed { scroll-margin-block: 1rem; }
+.ncsc-submit-review h3:focus, .ncsc-sealed:focus { outline: 3px solid var(--dashboard-yellow); outline-offset: 6px; }
+.ncsc-next-steps ol { padding-left: 1.4rem; }
+.ncsc-next-steps li { margin-bottom: 1.25rem; }
+.ncsc-next-steps li > :last-child { margin-bottom: 0; }
+.ncsc-character-count { color: var(--dashboard-muted); font-size: var(--dashboard-font-small); }

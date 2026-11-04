@@ -625,3 +625,19 @@ test('resize never scrolls or focuses the composer when another control is activ
     expect(h.document.activeElement).toBe(h.launcher);
     expect(count(h, '/chat')).toBe(0);
 });
+
+test('Escape dismisses public help after keyboard focus moves to the page without stealing it', async () => {
+    const h = harness(); h.launcher.fire('click'); await settle();
+    h.elements.get('assistant-input').value = 'Keep my question';
+    const outside = h.element(); outside.focus();
+    let prevented = false;
+    h.document.fire('keydown', { key: 'Escape', preventDefault() { prevented = true; } });
+    await settle();
+    expect(prevented).toBe(true);
+    expect(h.dialog.open).toBe(false);
+    expect(h.document.activeElement).toBe(outside);
+    expect(h.elements.get('assistant-input').value).toBe('Keep my question');
+    prevented = false;
+    h.document.fire('keydown', { key: 'Escape', preventDefault() { prevented = true; } });
+    expect(prevented).toBe(false);
+});

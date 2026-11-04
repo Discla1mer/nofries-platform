@@ -1267,3 +1267,23 @@ body[data-dashboard-gateway="true"]:has(#dashboardStatusPanel:not([hidden])) .ho
     .preview-topics > div { gap: 8px; font-size: .75rem; }
 }
 @media (prefers-reduced-motion: reduce) { html:has(.homepage-hero) { scroll-behavior: auto; } }
+
+/* Sign-up steps and persistent field validation. */
+.gateway-steps li[aria-current="step"] > span { background: var(--green); color: var(--page); border-color: var(--green); }
+.gateway-steps li[aria-current="step"] strong { text-decoration: underline; text-underline-offset: 4px; }
+.organisation-card .signup-errors { border: 2px solid #ffae91; border-radius: 9px; padding: 12px 16px; margin-block: 16px; }
+.organisation-card .signup-field-error { margin: 0; color: #ffb59e; font-size: .875rem; }
+.organisation-card [aria-invalid="true"] { border-color: #ffae91; }
+.organisation-card #organisation-title { scroll-margin-top: 20px; outline-offset: 6px; }
+.organisation-card #organisation-returning:has(.text-link) h3,
+.organisation-card #organisation-returning:has(.text-link) .field-help { display: none; }
+
+/* Small labels and public links remain readable at 320px. */
+.home-footer, .home-footer a { font-size: .875rem; }
+.homepage-eyebrow, .homepage-section-heading > .eyebrow, .homepage-benefit-number,
+.preview-wordmark, .preview-wordmark > span:last-child, .preview-example,
+.preview-heading .eyebrow, .preview-topic-icon, .preview-tag, .preview-next div > span,
+.homepage-preview figcaption, .preview-assessment p, .preview-next p,
+#gatewayPublic .gateway-other-services .eyebrow { font-size: .8125rem; }
+#dashboard-benefits h2 { scroll-margin-block-start: 1rem; }
+#dashboard-benefits h2:focus { outline: 3px solid var(--yellow); outline-offset: 6px; }

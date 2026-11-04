@@ -13,11 +13,11 @@ const controller = fs.readFileSync(path.join(root, 'js', 'home.js'), 'utf8');
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
 
 test('public identity and metadata lead with the standalone Dashboard', () => {
-    assert.match(html, /<title>No Fries Dashboard \| Your risk posture on a page\.<\/title>/);
+    assert.match(html, /<title>No Fries Dashboard \| Understand your cyber security\.<\/title>/);
     assert.match(html, /data-product="dashboard"/);
-    assert.match(html, /property="og:title" content="No Fries Dashboard \| Your risk posture on a page\."/);
+    assert.match(html, /property="og:title" content="No Fries Dashboard \| Understand your cyber security\."/);
     assert.equal((html.match(/<h1\b/g) || []).length, 1);
-    assert.match(html, /id="home-title">Your risk <br><em>posture on <br>a page\.<\/em>/);
+    assert.match(html, /id="home-title">Understand your <br><em>cyber security\.<\/em>/);
     assert.doesNotMatch(html, /Clearer IT\. Confident next steps\.|Clearer IT\.<br>/i);
     assert.equal((html.match(/See a view of your IT and cyber security practices based on your answers\./g) || []).length, 3);
     assert.doesNotMatch(html, /in real time|continuous monitoring|automatically updated/i);

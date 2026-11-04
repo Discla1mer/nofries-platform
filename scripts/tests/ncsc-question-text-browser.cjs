@@ -39,7 +39,7 @@ const server = http.createServer((request, response) => {
 });
 
 async function openAssessment(page) {
-    const cyber = page.locator('.dashboard-module-link[data-module="cyber_security"]');
+    const cyber = page.locator('.dashboard-module-link[data-module="cyber_security"]:visible');
     if (await cyber.isVisible()) await cyber.click();
     else {
         await page.getByRole('navigation', { name: 'Dashboard tasks', exact: true })
@@ -133,7 +133,7 @@ function check(metric, prefix) {
             await no.focus(); await page.keyboard.press('Space');
             await picker.selectOption('2'); await picker.selectOption('1');
             assert.equal(await page.locator('.ncsc-question input[value="no"]').isChecked(), true, 'navigation retains the local answer');
-            assert.match(await page.locator('.ncsc-status').textContent(), /unsaved changes/);
+            assert.match(await page.locator('#ncsc-draft-progress').textContent(), /Unsaved changes/);
             check(await measure(page, 1), width + '/dirty-answer');
             const last = metadata.questions.length - 1;
             await picker.selectOption(String(last));
@@ -141,7 +141,7 @@ function check(metric, prefix) {
             await page.locator('.ncsc-question textarea').first().fill('Synthetic pending exclusion.');
             check(await measure(page, last), width + '/dirty-pending-na');
             await page.getByRole('button', { name: 'Save progress', exact: true }).click();
-            await page.waitForFunction(() => document.querySelector('.ncsc-status')?.textContent.includes('Your progress is saved.'));
+            await page.waitForFunction(() => document.querySelector('.ncsc-save-status')?.textContent.includes('Your progress is saved.'));
             await picker.selectOption('1');
             assert.equal(await page.locator('.ncsc-question input[value="no"]').isChecked(), true, 'save retains the selected answer');
             check(await measure(page, 1), width + '/saved-answer');

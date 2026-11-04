@@ -32,7 +32,7 @@ const server = http.createServer((request, response) => {
 });
 
 async function openAssessment(page) {
-    const cyber = page.locator('.dashboard-module-link[data-module="cyber_security"]');
+    const cyber = page.locator('.dashboard-module-link[data-module="cyber_security"]:visible');
     if (await cyber.isVisible()) await cyber.click();
     else await page.getByRole('navigation', { name: 'Dashboard tasks', exact: true })
         .getByRole('button', { name: 'Assess', exact: true }).click();
@@ -142,7 +142,7 @@ function fits(metric) {
             assert.equal(await page.locator('.ncsc-answer input[value="partial"]').isChecked(), true);
             await picker.selectOption('1'); await picker.selectOption('0');
             assert.equal(await page.locator('.ncsc-answer input[value="partial"]').isChecked(), true, 'Navigation retains the unsaved answer');
-            assert.match(await page.locator('.ncsc-status').textContent(), /unsaved changes/);
+            assert.match(await page.locator('#ncsc-draft-progress').textContent(), /Unsaved changes/);
             // This seeded draft has unanswered questions. Submission must stop at
             // client validation, retain the hint and error, and issue no command.
             await page.getByRole('button', { name: 'Submit assessment', exact: true }).click();

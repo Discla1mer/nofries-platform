@@ -161,9 +161,13 @@ The closed success envelopes are:
 ```
 
 A summary includes only `assessmentId`, `moduleId`, `profileRef`, `status`,
-`revision`, `revisionSha256`, `createdAt`, `updatedAt` and `progress`. Detail adds
-the scope description, responses with optional rationale text, and either null
-submission or `{ revision, submittedAt, responseSetSha256, evaluation }`.
+`revision`, `revisionSha256`, `createdAt`, `updatedAt`, `progress` and
+`scopePopulation.description`. The list scope description is a display label,
+limited to 160 Unicode code points plus an ellipsis when longer; detail retains
+the complete, unchanged scope description. The browser also accepts older list
+responses without this label during rollout. Detail adds responses with optional
+rationale text, and either null submission or
+`{ revision, submittedAt, responseSetSha256, evaluation }`.
 Evaluation is the accepted evaluator's canonical serialized output. Internal
 membership, advisor, authority, usage, policy, audit, receipt and evaluation-input
 envelopes are never returned. There is no new retry timestamp or replay marker;

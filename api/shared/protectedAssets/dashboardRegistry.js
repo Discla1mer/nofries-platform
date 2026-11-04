@@ -21,18 +21,18 @@
             permission: row[4], icon: row[5], order: order });
     }));
     const services = Object.freeze([
-        ['fractional_advisory', 'Fractional CIO, CTO and CISO', 'Direction and decisions within an agreed assignment.'],
-        ['managed_endpoint', 'IRMM / RMM monitoring', 'Monitoring for explicitly covered devices and sites.'],
-        ['endpoint_security', 'MDR / endpoint security', 'Security coverage and escalation must be verified separately.'],
-        ['tier1_support', 'Tier 1 support', 'Support hours and response commitments follow the signed scope.'],
-        ['managed_it_core', 'Managed IT', 'A service package, not automatic access to its components.'],
-        ['work_file_backup', 'Work-file backup', 'Recovery scope and protected data must be agreed.'],
-        ['microsoft_365_admin', 'Microsoft 365 administration', 'Your tenant and licences remain customer-owned.'],
-        ['google_workspace_admin', 'Google Workspace administration', 'Your tenant and licences remain customer-owned.'],
-        ['supplier_coordination', 'Supplier coordination', 'Supplier actions require explicit customer authority.'],
-        ['monthly_proof', 'Monthly service proof', 'Issued service records require verified source evidence.'],
-        ['customer_onboarding', 'Customer onboarding', 'Activation follows an approved onboarding plan.'],
-        ['ai_service_desk', 'AI-assisted service desk', 'Assistance does not authorise supplier actions.']
+        ['fractional_advisory', 'IT and security advice', 'Part-time technology and security leadership to help you choose what to improve first.'],
+        ['managed_endpoint', 'Device monitoring and maintenance', 'Help keep agreed computers and devices updated and spot problems early.'],
+        ['endpoint_security', 'Threat monitoring and response', 'Help detect and respond to suspicious activity on agreed computers and devices.'],
+        ['tier1_support', 'Everyday IT support', 'Help with everyday computer and account problems, during agreed support hours.'],
+        ['managed_it_core', 'Managed IT', 'An agreed package of IT support and maintenance; its individual services must be confirmed.'],
+        ['work_file_backup', 'Work-file backup', 'Help protect copies of your business files and check they can be restored.'],
+        ['microsoft_365_admin', 'Microsoft 365 administration', 'Help manage your Microsoft work accounts and settings. Your organisation keeps ownership of its accounts and licences.'],
+        ['google_workspace_admin', 'Google Workspace administration', 'Help manage your Google work accounts and settings. Your organisation keeps ownership of its accounts and licences.'],
+        ['supplier_coordination', 'Supplier coordination', 'Help work with your IT suppliers, with your permission before supplier actions.'],
+        ['monthly_proof', 'Monthly service reports', 'A record of completed work, backed by checked evidence.'],
+        ['customer_onboarding', 'Getting set up', 'Help plan and set up the services you have agreed to use.'],
+        ['ai_service_desk', 'AI-assisted help desk', 'Help describe IT problems and find the next step. Supplier actions still need your permission.']
     ].map(function (row) { return Object.freeze({ key: row[0], label: row[1], description: row[2] }); }));
 
     function resolveRoute(route, permitted) {

@@ -227,3 +227,13 @@ testCase('secondary and non-primary pointers do not authorise backdrop dismissal
         f.open(id); f.surface(dialog, 99, 120, extra); assert.equal(dialog.open, true);
     }
 });
+
+testCase('Explore the dashboard moves keyboard focus to the destination heading', () => {
+    const f = fixture();
+    let focused = false, scrolled = false, prevented = false;
+    const heading = { focus(options) { focused = options.preventScroll; }, scrollIntoView(options) { scrolled = options.block === 'start'; } };
+    f.dialogs.set('dashboard-benefits', { querySelector() { return heading; } });
+    f.click({ target: { closest(selector) { return selector === 'a[href="#dashboard-benefits"]' ? {} : null; } },
+        preventDefault() { prevented = true; } });
+    assert.equal(heading.tabIndex, -1); assert.ok(focused); assert.ok(scrolled); assert.ok(prevented);
+});

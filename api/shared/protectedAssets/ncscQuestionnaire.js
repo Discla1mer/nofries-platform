@@ -312,6 +312,9 @@
         let conflict = false;
         let currentChecked = true;
         let statusText = '';
+        let recoveredDraft = [];
+        let submitReview = false;
+        let saveStatus;
         let errors = [];
         let leave = null;
         let view = 'list';
@@ -334,13 +337,13 @@
         const controller = { requestLeave: requestLeave, destroy: destroy };
         mounted.set(root, controller);
         root.replaceChildren(); root.classList.add('ncsc-questionnaire');
-        const heading = node('h2', '', metadata.title); heading.id = 'ncsc-title';
+        const heading = node('h2', '', 'Cyber security check'); heading.id = 'ncsc-title';
         status = node('p', 'ncsc-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.setAttribute('aria-atomic', 'true');
         root.append(heading, status);
 
         function live(expected) { return !disposed && mounted.get(root) === controller && (expected === undefined || expected === epoch); }
         function needsUnloadWarning() {
-            return live() && view !== 'denied' && (!!pending || (view === 'create' ? declaration.trim().length > 0 : dirtyEntries().length > 0));
+            return live() && view !== 'denied' && (!!pending || (view === 'create' ? declaration !== 'Whole organisation' && declaration.trim().length > 0 : dirtyEntries().length > 0));
         }
         function beforeUnload(event) {
             if (!needsUnloadWarning()) { syncUnloadWarning(); return; }
@@ -360,7 +363,7 @@
         }
         function button(label, action, cls) {
             const result = node('button', cls || 'dashboard-button', label); const createdEpoch = epoch;
-            result.type = 'button'; result.addEventListener('click', function () { if (live(createdEpoch) && !result.disabled) action(); });
+            result.type = 'button'; result.addEventListener('click', function () { if (live(createdEpoch) && root.contains(result) && !result.disabled) action(); });
             return result;
         }
         function newId() {
@@ -432,16 +435,29 @@
                 questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
             });
             const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length;
-            questionProgress.textContent = (sealed || !editable ? 'Saved answers: ' : 'Local draft: ') + answered + ' of ' + questions.length +
-                ' answers selected · ' + resolved + ' resolved · ' + missing + ' unanswered' + (dirty ? ' · ' + dirty + ' with unsaved changes' : '') + '. Counts are not a score.';
+            questionProgress.textContent = 'Question ' + (activeQuestion + 1) + ' of ' + questions.length + ' · ' + answered + ' answered · ' + (sealed ? 'Submitted' : dirty ? 'Unsaved changes' : 'Saved');
+            const submitTitle = root.querySelector('[id="ncsc-submit-title"]');
+            if (submitTitle) submitTitle.textContent = missing ? missing + ' unanswered · Review and submit when ready' : 'All answered: Review and submit';
             if (navigationSummary) navigationSummary.textContent = 'Question ' + (activeQuestion + 1) + ' of ' + questions.length + ' · ' + missing + ' unanswered';
             if (nextUnanswered) nextUnanswered.disabled = unansweredIndex(activeQuestion) === -1;
             if (nextUnresolved) nextUnresolved.disabled = unresolvedIndex(activeQuestion) === -1;
         }
         function deny() {
+            recoveredDraft = dirtyEntries().map(function (entry) { return copy(entry.value); });
+            if (view === 'create' && declaration.trim()) recoveredDraft = [{ scope: declaration }];
             abortRequests(); epoch += 1; selected = null; acknowledged = null; drafts.clear(); assistanceNotes.clear(); summaries = [];
             pending = null; busy = false; loading = false; declaration = ''; errors = []; conflict = false;
             finishLeave(false); view = 'denied'; statusText = ''; render();
+        }
+        function renderDenied() {
+            content.append(node('p', '', 'This assessment is not available. Sign in again to check your access.'));
+            if (recoveredDraft.length) {
+                content.append(node('h3', '', 'Your unsaved changes'), node('p', '', 'Copy these changes before signing in again. Saved assessment data has been cleared from this view.'));
+                const label = node('label', '', 'Unsaved changes to copy'); label.htmlFor = 'ncsc-recovery-draft';
+                const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8;
+                input.value = recoveredDraft.map(function (entry) { const option = optionById.get(entry.optionId); return entry.scope ? 'Scope: ' + entry.scope : questionById.get(entry.itemId).prompt + '\n' + (option ? option.label : 'Answer cleared') + (entry.rationale ? '\n' + entry.rationale.text : ''); }).join('\n\n'); content.append(label, input);
+            }
+            const signin = node('a', 'dashboard-button', 'Sign in again'); signin.href = '/login?reauthenticate=1'; content.append(signin);
         }
         function fixedFailure(error) {
             if (error && (error.statusCode === 403 || error.code === 'ncsc_access_denied')) { deny(); return; }
@@ -450,7 +466,7 @@
                 : error && error.code === 'ncsc_request_too_large'
                 ? 'This assessment is too large for this operation. Your saved answers and unsent text remain here. ' + (view === 'create' ? 'Shorten the scope description, then try again.' : acknowledged && acknowledged.revision >= SAVE_CEILING ? 'This assessment has reached its save limit. Start a new assessment with shorter rationales.' : 'Shorten one or more rationales, save the corrected draft, then try again.')
                 : error && error.code === 'ncsc_submission_unavailable' ? 'Submission is not available yet. Your saved answers remain editable.'
-                : error && error.code === 'ncsc_quota_exceeded' ? 'Submission is unavailable under the current allowance. Your saved answers remain available.'
+                : error && error.code === 'ncsc_quota_exceeded' ? 'You have reached the submission allowance. Your saved answers remain available. Contact your organisation administrator to check your allowance, or keep reviewing this draft.'
                 : view === 'list' ? 'The assessment service is unavailable. Retry loading the list to check your saved work.'
                 : 'The assessment service is unavailable. Your unsent draft remains in this view.';
             updateStatus();
@@ -459,7 +475,7 @@
             const section = node('details', 'ncsc-provenance');
             section.append(node('summary', '', 'About this questionnaire and its sources'));
             [metadata.description, metadata.claim, metadata.attribution].forEach(function (text) { if (text) section.append(node('p', '', text)); });
-            (Array.isArray(metadata.limitations) ? metadata.limitations : [metadata.limitations]).forEach(function (text) { if (text) section.append(node('p', '', text)); });
+            (Array.isArray(metadata.limitations) ? metadata.limitations : [metadata.limitations]).forEach(function (text) { if (text && !text.startsWith('Paid or customer-facing release requires')) section.append(node('p', '', text)); });
             if (metadata.licence) {
                 const link = node('a', '', metadata.licence.label + ' (opens in a new tab)');
                 if (metadata.licence.url === 'https://creativecommons.org/licenses/by/4.0/') link.href = metadata.licence.url;
@@ -520,10 +536,10 @@
         function restoreFocus(region, saved, fallback) {
             if (!saved || !live()) return;
             const replacement = saved.id && region.querySelector('[id="' + saved.id + '"]');
-            const target = replacement && !replacement.disabled ? replacement : fallback;
+            const target = replacement && !replacement.disabled ? replacement : saved.id === 'ncsc-save' && saveStatus ? saveStatus : fallback;
             if (!target) return;
-            if (target === fallback) target.tabIndex = -1;
-            target.focus();
+            if (target === fallback || target === saveStatus) target.tabIndex = -1;
+            target.focus({ preventScroll: true });
             if (target === replacement && typeof target.setSelectionRange === 'function' && Number.isInteger(saved.start)) {
                 target.setSelectionRange(saved.start, saved.end);
             }
@@ -531,6 +547,7 @@
         function render() {
             if (!live()) return;
             const focused = captureFocus(root);
+            const scrollX = win && win.scrollX, scrollY = win && win.scrollY;
             questionIndex = null; questionProgress = null; navigationSummary = null; nextUnanswered = null; nextUnresolved = null;
             // Keep the live region attached so asynchronous updates change an
             // existing accessible status rather than insert prefilled content.
@@ -538,7 +555,7 @@
             errorBox = node('div', 'ncsc-errors'); errorBox.tabIndex = -1;
             content = node('section', 'ncsc-content');
             root.append(errorBox, content);
-            if (view === 'denied') content.append(node('p', '', 'This assessment is not available. Reopen the dashboard through your authenticated organisation context.'));
+            if (view === 'denied') renderDenied();
             else if (view === 'create') renderCreate();
             else if (acknowledged) renderAssessment();
             else if (view === 'assessment' && selected) renderAssessmentRead();
@@ -549,21 +566,33 @@
             root.append(provenance()); updateStatus(); renderErrors();
             if (leave) renderLeave();
             else restoreFocus(root, focused, heading);
+            if (focused && win && typeof win.scrollTo === 'function' && Number.isFinite(scrollY)) win.scrollTo(scrollX, scrollY);
         }
         function updateStatus() {
             syncUnloadWarning();
             if (!live() || !status) return;
-            const saved = acknowledged ? 'Saved revision ' + acknowledged.revision + '. ' + acknowledged.progress.answered + ' of ' + acknowledged.progress.total + ' answered. ' : '';
+            const saved = acknowledged ? acknowledged.status === 'submitted' ? 'Submitted. Your answers are now read-only. ' : 'Your progress is saved. ' : '';
             const dirty = dirtyEntries().length;
-            status.textContent = statusText || (busy ? 'Saving. ' + saved : loading ?
+            status.hidden = !!acknowledged && acknowledged.status !== 'submitted';
+            status.textContent = statusText || (busy ? 'Saving your answers…' : loading ?
                 view === 'assessment' && !acknowledged ? 'Loading the selected assessment.' : 'Loading assessments.'
-                : saved + (dirty ? dirty + (dirty === 1 ? ' answer has' : ' answers have') + ' unsaved changes.' : ''));
+                : dirty ? dirty + (dirty === 1 ? ' answer has' : ' answers have') + ' unsaved changes. Use Save progress before leaving.' : saved);
+            if (saveStatus) saveStatus.textContent = status.textContent;
             if (controls) controls.querySelectorAll('button').forEach(function (control) {
                 if (control.dataset.mutation === 'true') control.disabled = busy || !!pending || conflict || !currentChecked;
             });
             updateQuestionNavigation();
         }
         function edited() {
+            submitReview = false;
+            const review = root.querySelector('.ncsc-submit-review'); if (review) review.remove();
+            const previousErrors = errors.length;
+            errors = errors.filter(function (error) {
+                if (error.id === 'scope') return !validText(declaration);
+                const entry = drafts.get(error.id), value = entry && entry.value;
+                return !value || value.optionId === null || value.optionId === 'not_applicable' && (!value.rationale || !validText(value.rationale.text));
+            });
+            if (previousErrors !== errors.length) renderErrors();
             if (!pending && !busy && !conflict) statusText = '';
             updateStatus();
         }
@@ -583,11 +612,13 @@
         }
         function renderList() {
             const introduction = node('div', 'ncsc-assessment-intro');
-            introduction.append(node('p', '', 'Pick up where you left off, or view the results of a submitted assessment. Only saved progress appears here.'));
+            introduction.append(node('p', '', '14 questions, about 15–20 minutes, adapted from New Zealand National Cyber Security Centre (NCSC) guidance. Pick up where you left off, or view results and next steps from a submitted assessment. Only saved progress appears here.'));
             if (editable) introduction.append(button('Start an assessment', function () {
-                view = 'create'; declaration = ''; errors = []; render();
+                view = 'create'; declaration = 'Whole organisation'; errors = []; render();
                 const scope = content.querySelector('textarea'); if (scope) scope.focus();
             }, summaries.length ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button'));
+            const examples = node('details', 'ncsc-answer-examples'); examples.append(node('summary', '', 'Example answers before you start'), node('p', '', 'Yes: all parts are in place. Partial: some parts are in place. No: none are in place yet. Unknown: you need to check. For example, backups run but nobody has tested restoring a file: choose Partial.'));
+            introduction.append(examples);
             content.append(introduction);
             if (!loading && listLoaded && !summaries.length) content.append(node('p', '', 'No saved assessments yet.'));
             const filters = node('div', 'ncsc-assessment-filters');
@@ -625,7 +656,7 @@
                         query && ![item.assessmentId, item.createdAt, item.updatedAt].some(function (value) { return value.toLowerCase().includes(query); })) return;
                     const row = node('li', 'ncsc-assessment-card');
                     const heading = node('div', 'ncsc-assessment-card-heading');
-                    heading.append(node('h3', '', 'Assessment started ' + item.createdAt.slice(0, 10)),
+                    heading.append(node('h3', '', 'Assessment started ' + localDate(item.createdAt)),
                         node('span', 'dashboard-badge', submitted ? 'Submitted' : item.status === 'created' ? 'Not started' : 'In progress'));
                     const saved = node('p', 'ncsc-assessment-saved', item.progress.answered + ' of ' + item.progress.total + ' responses saved');
                     const progress = node('progress', 'ncsc-saved-progress'); progress.max = item.progress.total; progress.value = item.progress.answered;
@@ -634,12 +665,13 @@
                     const open = button(action, function () { requestLeave(function () { openAssessment(item.assessmentId); }); },
                         submitted || !editable ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button');
                     open.id = 'ncsc-assessment-open-' + index; open.dataset.assessmentId = item.assessmentId;
-                    const reference = node('p', 'dashboard-muted ncsc-preserve-text', 'Last saved: ' + item.updatedAt.replace('T', ' ').replace('Z', ' UTC') + '\nAssessment reference: ' + item.assessmentId);
+                    const reference = node('p', 'dashboard-muted ncsc-preserve-text', 'Last saved: ' + localDate(item.updatedAt) + '\nAssessment reference: ' + item.assessmentId);
                     reference.id = 'ncsc-assessment-reference-' + index; open.setAttribute('aria-describedby', reference.id);
                     const details = node('details', 'ncsc-assessment-reference'), summary = node('summary', '', 'Saved record details');
                     summary.id = 'ncsc-assessment-details-' + index; details.append(summary, reference);
+                    if (item.scopePopulation) row.append(node('p', 'ncsc-assessment-scope', item.scopePopulation.description));
                     row.append(heading, saved, progress,
-                        node('p', 'dashboard-muted ncsc-assessment-date', 'Last saved ' + item.updatedAt.slice(0, 10)), open, details); list.append(row);
+                        node('p', 'dashboard-muted ncsc-assessment-date', 'Last saved ' + localDate(item.updatedAt)), open, details); list.append(row);
                 });
                 const matches = list.children.length;
                 count.textContent = matches + ' of ' + summaries.length + ' loaded assessments shown';
@@ -689,7 +721,7 @@
                             return !previousIds.has(control.dataset.assessmentId);
                         });
                         const target = firstNew || root.querySelector('[id="ncsc-assessment-more"]') || root.querySelector('[id="ncsc-assessment-search"]');
-                        if (target && !target.disabled) target.focus();
+                        if (target && !target.disabled) target.focus({ preventScroll: true });
                     }
                 }
             }
@@ -705,11 +737,11 @@
                 acknowledged = cleanDetail(result.assessment, id); resetDrafts();
                 activeQuestion = acknowledged.status === 'submitted' ? 0 : Math.max(0, unansweredIndex(-1));
             } catch (error) { if (live(expected)) fixedFailure(error); }
-            finally { if (live(expected)) { loading = false; render(); } }
+            finally { if (live(expected)) { loading = false; render(); if (acknowledged && acknowledged.status !== 'submitted') focusQuestion(); } }
         }
         function renderCreate() {
             const renderedEpoch = epoch;
-            content.append(node('p', '', 'Describe the organisation, systems and people covered. This is your declaration, not verified inventory. It cannot be changed after creation.'));
+            content.append(node('p', '', 'Start with Whole organisation, or edit this to name the people, systems and locations you want to check. Review it before creating: the scope is saved with this assessment. To assess a different scope later, start a new assessment.'));
             const label = node('label', '', 'Assessment scope'); label.setAttribute('for', 'ncsc-scope');
             const input = node('textarea', 'ncsc-textarea'); input.id = 'ncsc-scope'; input.value = declaration; input.rows = 5; input.readOnly = busy || !!pending;
             input.setAttribute('aria-describedby', 'ncsc-scope-help'); input.required = true;
@@ -735,12 +767,19 @@
             const renderedEpoch = epoch;
             const sealed = acknowledged.status === 'submitted';
             const progress = acknowledged.progress;
-            content.append(node('p', 'ncsc-saved-progress', 'Saved responses: ' + progress.answered + ' of ' + progress.total + ' selected; ' + progress.missing + ' unanswered; ' + progress.unknown + ' Unknown; ' + progress.notApplicableClaims + ' pending N/A claims.'));
-            content.append(node('p', 'dashboard-muted', 'Saved resolved answers: ' + (progress.answered - progress.unknown - progress.notApplicableClaims) + ' of ' + progress.total + ' (Yes, Partial or No). Unknown and pending N/A are saved responses but remain unresolved.'));
+            const definitions = node('details', 'ncsc-progress-help');
+            definitions.append(node('summary', '', 'How answers and saving work'),
+                node('p', '', 'Save progress records your answers. Navigation does not save automatically. Unknown is a valid answer when you need to check with someone.'),
+                node('p', '', 'Resolved means Yes, Partial or No, not necessarily implemented. N/A claims need an explanation and stay unresolved until approved. Counts are not a score.'),
+                node('p', '', 'Saved responses: ' + progress.answered + ' of ' + progress.total + ' selected; ' + progress.missing + ' unanswered; ' + progress.unknown + ' Unknown; ' + progress.notApplicableClaims + ' pending N/A claims.'),
+                node('p', '', 'Saved revision ' + acknowledged.revision + '. Saved resolved answers: ' + (progress.answered - progress.unknown - progress.notApplicableClaims) + ' of ' + progress.total + ' (Yes, Partial or No).'));
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
-            const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description)); content.append(declarationPanel);
+            const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description));
+            if (editable && !sealed) declarationPanel.append(button('Start again with a different scope', function () { requestLeave(function () { acknowledged = null; selected = null; drafts.clear(); view = 'create'; declaration = 'Whole organisation'; errors = []; render(); content.querySelector('textarea').focus(); }); }, 'dashboard-text-button'));
+            content.append(declarationPanel);
             if (sealed) {
-                content.append(node('p', 'ncsc-sealed', 'Submitted ' + acknowledged.submission.submittedAt + ' at revision ' + acknowledged.submission.revision + '. Answers below are the saved, read-only submission.'));
+                const submitted = node('section', 'ncsc-sealed'); submitted.id = 'ncsc-submitted'; submitted.tabIndex = -1;
+                submitted.append(node('h3', '', 'Assessment submitted'), node('p', '', 'Submitted ' + localDate(acknowledged.submission.submittedAt) + '. Answers below are the saved, read-only submission.')); content.append(submitted);
                 renderResults(acknowledged.submission.results);
                 if (dirtyEntries().length) {
                     const unsent = node('details', 'ncsc-warning'); unsent.append(node('summary', '', 'Unsubmitted local changes (' + dirtyEntries().length + ')'));
@@ -764,19 +803,25 @@
             index.value = String(activeQuestion);
             index.addEventListener('change', function () { const i = Number(index.value); if (live(renderedEpoch) && index.parentElement === content && Number.isInteger(i) && i >= 0 && i < questions.length) { activeQuestion = i; renderQuestion(); } });
             content.append(indexLabel, index);
-            const indexHelp = node('p', 'dashboard-muted', 'The full question is below. * marks unsaved changes.');
+            const indexHelp = node('p', 'dashboard-muted', '* marks unsaved changes. Not sure? Unknown is fine.');
             indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
             if (editable && !sealed) {
-                const save = button('Save progress', function () { saveAll(false); }); save.dataset.mutation = 'true';
+                const save = button('Save progress', function () { saveAll(false); }, 'dashboard-button dashboard-button-secondary'); save.id = 'ncsc-save'; save.dataset.mutation = 'true';
+                if (!saveStatus) saveStatus = node('p', 'ncsc-save-status'); else saveStatus.remove(); saveStatus.id = 'ncsc-save-status'; saveStatus.setAttribute('role', 'status'); saveStatus.setAttribute('aria-live', 'polite'); saveStatus.setAttribute('aria-atomic', 'true');
                 const final = node('section', 'ncsc-final-submission'); final.setAttribute('aria-labelledby', 'ncsc-submit-title');
-                const title = node('h3', '', 'Finish this baseline'); title.id = 'ncsc-submit-title';
+                const title = node('h3', '', 'Review and submit when you are ready'); title.id = 'ncsc-submit-title';
                 const consequence = node('p', 'dashboard-muted', 'Submitting makes this baseline read-only. Your latest answers are saved first. You can keep saving progress until you are ready.'); consequence.id = 'ncsc-submit-consequence';
-                const submit = button('Submit assessment', submitAssessment, 'dashboard-text-button'); submit.dataset.mutation = 'true'; submit.setAttribute('aria-describedby', consequence.id);
-                final.append(title, consequence, submit); controls.append(save, final);
+                const submit = button('Submit assessment', reviewSubmission); submit.id = 'ncsc-submit'; submit.dataset.mutation = 'true'; submit.setAttribute('aria-describedby', consequence.id);
+                final.append(title, consequence, submit); controls.append(save, saveStatus, final);
+                controls.addEventListener('pointerdown', function (event) {
+                    // A second press on disabled Save must not blur the nearby status into the page.
+                    if (save.disabled && (event.target === save || save.contains(event.target))) event.preventDefault();
+                });
+                if (submitReview) renderSubmitReview(final);
             }
-            content.append(controls);
+            content.append(controls, definitions);
             content.append(node('p', 'dashboard-muted', 'Resolved means answered Yes, Partial or No; it does not mean implemented. Submission requires an answer to every question and a rationale for each N/A; Unknown and pending N/A are allowed. A submitted baseline is read-only and is not a certification.'));
         }
         function canEdit() { return editable && acknowledged && acknowledged.status !== 'submitted' && !conflict && !(pending && pending.command.action === 'submit'); }
@@ -784,8 +829,12 @@
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
             content.append(panel);
+            renderNextSteps(panel);
             if (!results) {
-                panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'));
+                panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your submitted answers and next steps remain below.'),
+                    button('Retry loading results', async function () {
+                        if (loading) return; const expected = epoch; await refreshCurrent(false, expected); if (live(expected)) render();
+                    }, 'dashboard-button dashboard-button-secondary'));
                 return;
             }
             panel.append(node('p', 'dashboard-muted', 'These results describe the saved submission and its declared scope. They are gap indicators, not an audit or certification.'));
@@ -817,6 +866,43 @@
             provenance.append(node('p', '', 'Percentages are supplied by the deterministic server evaluator. This view does not recalculate them. Input fingerprints identify the saved calculation; they are not downloadable evidence.'));
             const list = node('dl'); results.inputs.forEach(function (row) { list.append(node('dt', '', row[0]), node('dd', '', row[1])); }); provenance.append(list); panel.append(provenance);
         }
+        function localDate(value) {
+            return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
+        }
+        function renderNextSteps(panel) {
+            const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Fix these first'));
+            section.append(node('p', '', 'Start with the gaps you reported, then check what you are unsure about with your IT provider. This list groups your answers; it is not a calculated risk ranking.'));
+            const list = node('ol'), summary = ['Cyber security assessment', 'Scope: ' + acknowledged.scopePopulation.description, 'Submitted: ' + localDate(acknowledged.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
+            ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
+                questions.filter(function (question) { return savedAnswer(question.id).optionId === optionId; }).forEach(function (question) {
+                    const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
+                    const label = optionById.get(optionId).label;
+                    const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
+                    const title = (control ? control.title : question.prompt) + ' — ' + label;
+                    const item = node('li'); item.append(node('strong', '', title), node('p', '', action)); list.append(item); summary.push(title + ': ' + action);
+                });
+            });
+            section.append(list);
+            if (!list.children.length) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
+            const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with your IT provider'));
+            const label = node('label', '', 'Copy this summary into an email or document'); label.htmlFor = 'ncsc-provider-summary';
+            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.join('\n'); handoff.append(label, input); section.append(handoff); panel.append(section);
+        }
+        function reviewSubmission() {
+            if (!live() || busy || pending || conflict || !currentChecked || !validateDraft(true)) return;
+            submitReview = true; render();
+            const title = root.querySelector('[id="ncsc-confirm-title"]'); if (title) title.focus();
+        }
+        function renderSubmitReview(parent) {
+            const review = node('section', 'ncsc-submit-review'); review.setAttribute('aria-labelledby', 'ncsc-confirm-title');
+            const title = node('h3', '', 'Confirm your submission'); title.id = 'ncsc-confirm-title'; title.tabIndex = -1;
+            review.append(title, node('p', '', 'Your latest answers will be saved, then this assessment becomes read-only. Next you will see results and a list of gaps to discuss with your IT provider.'));
+            const unknown = questions.filter(function (question) { return ['unknown', 'not_applicable'].includes(drafts.get(question.id).value.optionId); });
+            review.append(node('p', '', unknown.length ? 'These answers still need checking. You can submit them as they are:' : 'Every question has an answer.'));
+            const list = node('ul'); unknown.forEach(function (question) { list.append(node('li', '', question.prompt + ' — ' + optionById.get(drafts.get(question.id).value.optionId).label)); }); review.append(list);
+            const confirm = button('Confirm submission', function () { if (!submitReview) return; submitReview = false; submitAssessment(); }); confirm.id = 'ncsc-confirm-submit'; confirm.dataset.mutation = 'true';
+            review.append(confirm, button('Keep reviewing', function () { submitReview = false; render(); const submit = root.querySelector('[id="ncsc-submit"]'); if (submit) submit.focus(); }, 'dashboard-text-button')); parent.append(review);
+        }
         function renderQuestion() {
             if (!live() || !questionRegion || !acknowledged) return;
             abortAssistance();
@@ -830,8 +916,14 @@
             questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
             const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', question.prompt));
             const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
-            const hint = node('p', 'ncsc-input-guidance', inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
+            const hint = node('p', 'ncsc-input-guidance', question.smallBusiness ? 'For a small business, this means… ' + question.smallBusiness.meaning : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
             hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
+            if (question.smallBusiness) {
+                fieldset.append(node('p', 'ncsc-input-example', 'Example: ' + question.smallBusiness.example));
+                const parts = node('details'); parts.append(node('summary', '', 'What to check')); const checks = node('ul');
+                question.smallBusiness.checks.forEach(function (text) { checks.append(node('li', '', text)); }); parts.append(checks); fieldset.append(parts);
+            }
+            fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
             const writable = canEdit();
             question.responseOptionIds.forEach(function (id) {
                 const option = optionById.get(id); const label = node('label', 'ncsc-option');
@@ -858,14 +950,44 @@
                 const rationale = node('textarea', 'ncsc-textarea'); rationale.id = 'ncsc-rationale-' + question.id; rationale.value = entry.value.rationale ? entry.value.rationale.text : '';
                 rationale.rows = 6; rationale.required = true; rationale.readOnly = !writable;
                 rationale.setAttribute('aria-describedby', 'ncsc-rationale-help-' + question.id);
-                const help = node('p', 'dashboard-muted', 'Explain why this does not apply, in up to 4,000 characters. This remains unresolved and included in the score denominator unless formally approved. N/A approval is not available in this journey.'); help.id = 'ncsc-rationale-help-' + question.id;
+                const help = node('p', 'dashboard-muted', 'Explain why this does not apply. Your answer stays as something to check; it is not counted as implemented. N/A approval is not available in this journey.'); help.id = 'ncsc-rationale-help-' + question.id;
+                const counter = node('p', 'ncsc-character-count'); counter.id = 'ncsc-rationale-count-' + question.id;
+                counter.textContent = rationale.value.length + ' / 4,000 characters'; rationale.setAttribute('aria-describedby', help.id + ' ' + counter.id);
                 rationale.addEventListener('input', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit()) return;
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });
+                    counter.textContent = rationale.value.length + ' / 4,000 characters';
+                    if (rationale.value.length > 4000 && !errors.some(function (error) { return error.id === question.id; })) { errors.push({ id: question.id, message: textError(rationale.value, false) }); renderErrors(); }
                     edited();
                 });
-                questionRegion.append(label, rationale, help);
+                questionRegion.append(label, rationale, help, counter);
             }
+            const nav = node('div', 'ncsc-question-navigation');
+            const previous = button('Previous question', function () {
+                if (questionRegion.contains(previous) && activeQuestion > 0) { activeQuestion -= 1; renderAssessmentQuestion(); }
+            }); previous.disabled = activeQuestion === 0;
+            const next = button('Next question', function () {
+                if (questionRegion.contains(next) && activeQuestion < questions.length - 1) { activeQuestion += 1; renderAssessmentQuestion(); }
+            }); next.disabled = activeQuestion === questions.length - 1;
+            navigationSummary = node('span', 'ncsc-navigation-summary');
+            const navigationActions = node('div', 'ncsc-navigation-actions'); navigationActions.append(previous, next);
+            nextUnanswered = null;
+            if (acknowledged.status !== 'submitted') {
+                const jump = button('Next unanswered question', function () {
+                    if (!questionRegion.contains(jump)) return;
+                    const index = unansweredIndex(activeQuestion);
+                    if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
+                }, 'dashboard-text-button');
+                nextUnanswered = jump; navigationActions.append(jump);
+            }
+            const unresolved = button('Next unresolved question', function () {
+                if (!questionRegion.contains(unresolved)) return;
+                const index = unresolvedIndex(activeQuestion);
+                if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
+            }, 'dashboard-text-button');
+            nextUnresolved = unresolved; navigationActions.append(unresolved);
+            nav.append(navigationSummary, navigationActions); questionRegion.append(nav); updateQuestionNavigation();
+            questionRegion.append(node('p', 'dashboard-muted', 'Unresolved includes unanswered, Unknown and pending N/A. Unknown and pending N/A remain valid responses for submission.'));
             if (writable) {
                 const clear = button('Clear answer', function () {
                     drafts.set(question.id, { value: { itemId: question.id, optionId: null, rationale: null }, generation: ++editGeneration }); renderQuestion(); edited();
@@ -898,37 +1020,12 @@
             }
             questionRegion.append(guidance);
             renderAssistance(question, writable);
-            const nav = node('div', 'ncsc-question-navigation');
-            const previous = button('Previous question', function () {
-                if (questionRegion.contains(previous) && activeQuestion > 0) { activeQuestion -= 1; renderAssessmentQuestion(); }
-            }); previous.disabled = activeQuestion === 0;
-            const next = button('Next question', function () {
-                if (questionRegion.contains(next) && activeQuestion < questions.length - 1) { activeQuestion += 1; renderAssessmentQuestion(); }
-            }); next.disabled = activeQuestion === questions.length - 1;
-            navigationSummary = node('span', 'ncsc-navigation-summary');
-            const navigationActions = node('div', 'ncsc-navigation-actions'); navigationActions.append(previous, next);
-            nextUnanswered = null;
-            if (acknowledged.status !== 'submitted') {
-                const jump = button('Next unanswered question', function () {
-                    if (!questionRegion.contains(jump)) return;
-                    const index = unansweredIndex(activeQuestion);
-                    if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
-                }, 'dashboard-text-button');
-                nextUnanswered = jump; navigationActions.append(jump);
-            }
-            const unresolved = button('Next unresolved question', function () {
-                if (!questionRegion.contains(unresolved)) return;
-                const index = unresolvedIndex(activeQuestion);
-                if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
-            }, 'dashboard-text-button');
-            nextUnresolved = unresolved; navigationActions.append(unresolved);
-            nav.append(navigationSummary, navigationActions); questionRegion.append(nav); updateQuestionNavigation();
-            questionRegion.append(node('p', 'dashboard-muted', 'Unresolved includes unanswered, Unknown and pending N/A. Unknown and pending N/A remain valid responses for submission.'));
             applyInlineErrors();
             restoreFocus(questionRegion, focused, fieldset.querySelector('legend'));
         }
         function renderAssistance(question, writable) {
             if (acknowledged.status === 'submitted') assistanceNotes.clear();
+            if (!writable || !options.assistance || typeof options.assistance.suggest !== 'function') return;
             const panel = node('details', 'ncsc-guidance');
             panel.append(node('summary', '', 'Help me answer this question'));
             panel.append(node('p', '', question.guidance && question.guidance.summary || question.prompt));
@@ -1015,7 +1112,12 @@
         function renderAssessmentQuestion() {
             if (!live()) return;
             const index = content.querySelector('select'); if (index) index.value = String(activeQuestion);
-            renderQuestion(); const legend = questionRegion.querySelector('legend'); legend.tabIndex = -1; legend.focus();
+            renderQuestion(); focusQuestion();
+        }
+        function focusQuestion() {
+            const legend = questionRegion && questionRegion.querySelector('legend'); if (!legend) return;
+            legend.tabIndex = -1; legend.focus();
+            if (typeof legend.scrollIntoView === 'function') legend.scrollIntoView({ block: 'start' });
         }
         function validateDraft(requireComplete) {
             errors = [];
@@ -1119,7 +1221,13 @@
             if (!live() || busy || pending && !retry) return false;
             const expected = epoch;
             if (!retry) pending = { command: command, captures: captures, uncertain: false };
-            const operation = pending; busy = true; statusText = ''; render();
+            const operation = pending; const focusBeforeMutation = doc.activeElement; busy = true; statusText = '';
+            operation.restoreSave = focusBeforeMutation && (focusBeforeMutation.id === 'ncsc-save' || focusBeforeMutation.id === 'ncsc-save-status');
+            // Preserve the mounted Save button and layout while the request is in flight.
+            if (command.action === 'save') {
+                updateStatus();
+                if (operation.restoreSave && saveStatus) { saveStatus.tabIndex = -1; saveStatus.focus({ preventScroll: true }); }
+            } else render();
             let failed = false;
             try {
                 const result = await call(command.action, command, expected);
@@ -1136,7 +1244,7 @@
                         }
                     });
                 }
-                pending = null; busy = false; errors = []; statusText = 'Saved revision ' + acknowledged.revision + '. ' + (dirtyEntries().length ? 'Newer edits are still unsaved.' : 'Your progress is saved.');
+                pending = null; busy = false; errors = []; statusText = acknowledged.status === 'submitted' ? 'Submitted. Your answers are now read-only.' : dirtyEntries().length ? 'Newer edits are still unsaved.' : 'Your progress is saved.';
                 if (operation.uncertain) {
                     if (!await refreshCurrent(false, expected)) return false;
                     statusText = conflict ? 'The current saved version differs from your draft. Choose how to continue.' : 'The operation is confirmed and the current saved version has been checked. Review any unsent changes before saving again.';
@@ -1149,7 +1257,7 @@
                 if (error && (error.statusCode === 403 || error.code === 'ncsc_access_denied')) { deny(); return false; }
                 const ambiguous = !error || error.ambiguous === true || error.statusCode === 503 || ![400, 403, 404, 405, 409, 413].includes(error.statusCode);
                 if (ambiguous) {
-                    operation.uncertain = true; statusText = 'This operation is unconfirmed. Retry the same operation to establish its result. Unsent changes remain here.';
+                    operation.uncertain = true; statusText = 'We could not confirm whether your changes were saved. Retry safely using the button below. Your unsent changes remain here.';
                 } else {
                     pending = null;
                     if (error.statusCode === 409 && command.action !== 'create' && !['ncsc_quota_exceeded', 'ncsc_submission_unavailable'].includes(error.code)) await refreshCurrent(true, expected);
@@ -1159,8 +1267,14 @@
             } finally {
                 if (live(expected)) {
                     const focusFailure = failed && (doc.activeElement === heading || doc.activeElement === status) && !leave && view !== 'denied';
+                    const restoreSave = operation.restoreSave && doc.activeElement === saveStatus;
                     busy = false; render();
-                    if (focusFailure) { status.tabIndex = -1; status.focus(); }
+                    if (restoreSave && !pending && !conflict) { const save = root.querySelector('[id="ncsc-save"]'); if (save && !save.disabled) save.focus({ preventScroll: true }); }
+                    if (!failed && command.action === 'submit' && acknowledged && acknowledged.status === 'submitted') {
+                        const submitted = root.querySelector('[id="ncsc-submitted"]'); if (submitted) { submitted.focus(); if (typeof submitted.scrollIntoView === 'function') submitted.scrollIntoView({ block: 'start' }); }
+                    }
+                    if (!failed && command.action === 'create') focusQuestion();
+                    if (focusFailure) { const feedback = status.hidden && saveStatus ? saveStatus : status; feedback.tabIndex = -1; feedback.focus({ preventScroll: true }); }
                 }
             }
         }
@@ -1192,12 +1306,16 @@
         }
         function renderPending() {
             const panel = node('section', 'ncsc-warning');
-            panel.append(node('h3', '', busy ? 'Operation in progress' : 'Operation unconfirmed'), node('p', '', 'The exact operation is retained in this view. Leaving cannot discard it while its result is unknown.'));
+            panel.append(node('h3', '', busy ? 'Saving your changes' : 'Check whether your changes were saved'), node('p', '', 'Retrying will not create a duplicate. Keep this page open until we can confirm the result.'));
             if (!busy) panel.append(button('Retry same operation', function () { if (pending && !busy) perform(pending.command, pending.captures, true); }));
             content.append(panel);
         }
         function renderConflict() {
             const panel = node('section', 'ncsc-warning'); panel.append(node('h3', '', 'Saved answers need review'), node('p', '', 'Your unsaved answers are retained. Choose whether to reapply them to the current saved revision or use the saved answers.'));
+            const differences = node('ul'); dirtyEntries().forEach(function (entry) {
+                const local = optionById.get(entry.value.optionId), saved = savedAnswer(entry.value.itemId), remote = optionById.get(saved.optionId);
+                differences.append(node('li', '', questionById.get(entry.value.itemId).prompt + ' — Your draft: ' + (local ? local.label : 'Unanswered') + (entry.value.rationale ? ' (' + entry.value.rationale.text + ')' : '') + '; saved: ' + (remote ? remote.label : 'Unanswered') + (saved.rationale ? ' (' + saved.rationale.text + ')' : '')));
+            }); panel.append(differences);
             panel.append(button('Reload current saved answers', async function () { const expected = epoch; await refreshCurrent(true, expected); if (live(expected)) render(); }));
             if (acknowledged.status !== 'submitted') {
                 const keep = button('Keep my draft on current revision', function () { if (!currentChecked) return; conflict = false; statusText = 'Draft retained on the current revision. Review it and save explicitly.'; render(); });
@@ -1205,7 +1323,7 @@
             }
             panel.append(button('Use saved answers', function () { resetDrafts(); conflict = !currentChecked; errors = []; statusText = 'Showing saved answers.'; render(); }, 'dashboard-text-button')); content.append(panel);
         }
-        function hasDraft() { return view === 'create' ? declaration.length > 0 : dirtyEntries().length > 0; }
+        function hasDraft() { return view === 'create' ? declaration !== 'Whole organisation' && declaration.length > 0 : dirtyEntries().length > 0; }
         function requestLeave(commit) {
             if (!live()) return Promise.resolve(false);
             if (leave) return leave.promise;
@@ -1266,7 +1384,7 @@
                     let ancestor = decision.focus;
                     while (ancestor && ancestor !== root) ancestor = ancestor.parentElement;
                     if (ancestor === root) decision.focus.focus();
-                    else { const target = questionRegion && questionRegion.querySelector('textarea') || root.querySelector('h2'); if (target) { target.tabIndex = -1; target.focus(); } }
+                    else { const target = questionRegion && questionRegion.querySelector('textarea') || root.querySelector('h2'); if (target) { target.tabIndex = -1; target.focus({ preventScroll: true }); } }
                 }
             }
             decision.resolve(allowed === true && live());
@@ -1277,7 +1395,7 @@
             syncUnloadWarning();
             if (leave) { leave.resolve(false); leave = null; }
             removeDialog(); dialog = null;
-            pending = null; drafts.clear(); assistanceNotes.clear(); summaries = []; selected = null; acknowledged = null; declaration = ''; errors = []; workshopPanel = null;
+            pending = null; recoveredDraft = []; drafts.clear(); assistanceNotes.clear(); summaries = []; selected = null; acknowledged = null; declaration = ''; errors = []; workshopPanel = null;
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
         }
         render();

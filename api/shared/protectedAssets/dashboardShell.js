@@ -7,8 +7,8 @@
 
     const mounted = new WeakMap();
     let mountSequence = 0;
-    const moduleStates = { ready: 'Included', planned: 'Included · workspace coming next', disabled: 'Included · unavailable' };
-    const serviceStates = { not_included: 'Available to scope', disabled: 'Included · unavailable', setup_required: 'Waiting for setup' };
+    const moduleStates = { ready: 'Available', planned: 'Coming soon', disabled: 'Unavailable' };
+    const serviceStates = { not_included: 'Separate agreement needed', disabled: 'Unavailable', setup_required: 'Waiting for setup' };
     const metricLabels = { implementation: 'Implementation attainment', evidence: 'Evidence confidence', risk: 'Risk priority', trend: 'Trend' };
 
     // The shell performs no authorisation, storage or scoring. An explicitly
@@ -120,8 +120,9 @@
             const nav = element('nav'); nav.setAttribute('aria-label', 'Workspace');
             appendMenu(nav, false);
             const subscription = element('div', 'dashboard-subscription');
-            subscription.append(element('span', 'dashboard-eyebrow', 'Dashboard subscription'), element('strong', '', model.subscription),
-                element('p', '', 'Managed and advisory services are scoped separately.'));
+            subscription.append(element('span', 'dashboard-eyebrow', 'Dashboard access'),
+                element('strong', '', model.subscription === 'Govern' ? 'Govern · assessments and planning' : 'Score · assessments'),
+                element('p', '', 'Paid services require a separate agreement on price and scope.'));
             rail.append(brand, context, nav, subscription);
             const workspace = element('div', 'dashboard-workspace');
             const top = element('header', 'dashboard-topbar');
@@ -260,14 +261,15 @@
                 subnav.append.apply(subnav, siblings.map(function (item) { return routeLink(item); })); main.append(subnav);
             }
             if (stateFor(current.key) === 'disabled') {
-                main.append(panel('This module is temporarily unavailable', 'Your subscription includes this module, but it has not been enabled. Other included modules remain available.'));
+                main.append(panel('This module is temporarily unavailable', 'This tool has not been enabled for your organisation. You can keep using the other available tools.'));
             } else if (current.key === 'overview') renderOverview();
             else if (current.key === 'services') renderServices();
             else if (current.key === 'cyber_security' && stateFor(current.key) === 'ready' && typeof options.mountCyber === 'function') renderCyber(initialAssessmentId);
             else if (current.key === 'improvement_plan' && stateFor(current.key) === 'ready' && typeof options.mountImprovement === 'function') renderImprovement(sourceAssessment);
             else renderModule();
             const footer = element('footer', 'dashboard-provenance');
-            const stamp = element('time', '', model.generatedAt.replace('T', ' ').replace('.000Z', ' UTC'));
+            const stamp = element('time', '', new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland',
+                day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(model.generatedAt)));
             stamp.dateTime = model.generatedAt;
             footer.append(element('span', '', 'Display snapshot · '), stamp,
                 element('p', '', 'Assessment indicators are not audit, assurance or certification.'));
@@ -403,15 +405,17 @@
         }
         function renderModule() {
             const section = panel('Your ' + current.label.toLowerCase() + ' workspace is coming next',
-                'This tool is included for your organisation and is not available yet.');
+                'This tool is planned and is not available yet.');
             section.append(element('p', '', 'No assessment is started, evidence uploaded or report issued from this screen.'));
             const home = available.find(function (item) { return item.key === 'overview'; });
             if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
             main.append(section);
         }
         function renderServices() {
-            main.append(element('p', 'dashboard-intro', 'What is included, what needs setup and what can be scoped separately?'));
-            const subscription = panel('No Fries ' + model.subscription, 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
+            main.append(element('p', 'dashboard-intro', 'Need help making improvements? Start with the “Fix these first” list in your Cyber Security results and share its summary with your IT provider.'));
+            const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
+            if (cyber) main.append(button('Open Cyber Security assessments', function () { navigate(cyber.route, true); }));
+            const subscription = panel('Optional help from No Fries', 'These services need a separate agreement on price and scope. Creating an account or opening this page does not purchase or activate a service.');
             subscription.classList.add('dashboard-subscription-panel'); main.append(subscription);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {
@@ -420,10 +424,10 @@
                 card.append(badge(serviceStates[service.state]));
                 const detail = element('div', 'dashboard-service-detail'); detail.hidden = true;
                 detail.append(element('p', '', service.state === 'not_included'
-                    ? 'Next step: agree the organisation, coverage, deliverables, term and commercial scope with No Fries.'
+                    ? 'Next step: discuss the help you need with No Fries and agree the work, price and duration before anything starts.'
                     : service.state === 'disabled'
-                    ? 'This included service is disabled in the current build. No Fries must confirm readiness before enabling it; a provider connection alone will not activate it.'
-                    : 'Next step: verify the agreed assignment, coverage and any required provider connection before activation.'),
+                    ? 'This service is currently unavailable. No Fries must confirm it is ready before enabling it; a provider connection alone will not activate it.'
+                    : 'Next step: confirm the agreed work and the accounts or devices it covers before setup.'),
                     element('p', 'dashboard-muted', 'This is information only. No request, purchase, assignment or activation has been submitted.'));
                 const control = button(service.state === 'not_included' ? 'How to scope this service'
                     : service.state === 'disabled' ? 'About availability' : 'What is needed for setup', function () {

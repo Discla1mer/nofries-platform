@@ -242,11 +242,13 @@ function projectionFixture(submitted = false) {
 
 test('public summary and detail use closed named fields and keep internal actors and records private', () => {
     const fixture = projectionFixture(), summary = projectNcscSummary(fixture), detail = projectNcscDetail(fixture);
-    const summaryKeys = ['assessmentId', 'moduleId', 'profileRef', 'status', 'revision', 'revisionSha256', 'createdAt', 'updatedAt', 'progress'];
+    const summaryKeys = ['assessmentId', 'moduleId', 'profileRef', 'status', 'revision', 'revisionSha256', 'createdAt', 'updatedAt', 'progress', 'scopePopulation'];
     expect(Object.keys(summary).sort()).toEqual(summaryKeys.sort());
-    expect(Object.keys(detail).sort()).toEqual([...summaryKeys, 'scopePopulation', 'responses', 'submission'].sort());
+    expect(Object.keys(detail).sort()).toEqual([...summaryKeys, 'responses', 'submission'].sort());
     expect(summary.progress).toEqual({ total: 14, answered: 14, missing: 0, unknown: 1, notApplicableClaims: 1 });
     expect(detail.scopePopulation).toEqual({ description: 'Synthetic declared population' });
+    expect(summary.scopePopulation).toEqual(detail.scopePopulation);
+    expect(Object.isFrozen(summary.scopePopulation)).toBe(true);
     expect(detail.responses.find(item => item.itemId === firstId)).toEqual({ itemId: firstId, optionId: 'not_applicable',
         rationale: { text: 'Pending N/A rationale' } });
     expect(detail.submission).toBeNull();
@@ -256,6 +258,13 @@ test('public summary and detail use closed named fields and keep internal actors
         expect(publicJson).not.toContain(sentinel);
     }
     expect(Object.isFrozen(detail.responses[0])).toBe(true);
+});
+
+test('list scope labels stay bounded without truncating full details or splitting Unicode characters', () => {
+    const fixture = projectionFixture();
+    fixture.envelope.scopePopulation.body.description = '🏢'.repeat(1000);
+    expect(projectNcscSummary(fixture).scopePopulation.description).toBe('🏢'.repeat(160) + '…');
+    expect(projectNcscDetail(fixture).scopePopulation.description).toBe('🏢'.repeat(1000));
 });
 
 test('submitted projection retains exact evaluator output and seal without input or internal actor fields', () => {

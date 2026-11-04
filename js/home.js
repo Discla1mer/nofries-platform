@@ -42,6 +42,18 @@
     });
     document.addEventListener('click', function (event) {
         if (!event.target || typeof event.target.closest !== 'function') return;
+        const explore = event.target.closest('a[href="#dashboard-benefits"]');
+        if (explore) {
+            const section = document.getElementById('dashboard-benefits');
+            const heading = section && section.querySelector('h2');
+            if (heading) {
+                event.preventDefault();
+                heading.tabIndex = -1;
+                heading.focus({ preventScroll: true });
+                heading.scrollIntoView({ block: 'start', behavior: 'auto' });
+            }
+            return;
+        }
         const opener = event.target.closest('[data-dialog]');
         if (opener) {
             const dialog = document.getElementById(opener.dataset.dialog);
