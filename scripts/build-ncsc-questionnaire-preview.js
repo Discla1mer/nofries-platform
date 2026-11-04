@@ -74,8 +74,10 @@ function createSyntheticTransport(seed, metadata, settings) {
             notApplicableClaims: responses.filter(row => row.optionId === 'not_applicable').length };
     }
     function summary(detail) {
-        return Object.fromEntries(['assessmentId', 'moduleId', 'profileRef', 'status', 'revision',
-            'revisionSha256', 'createdAt', 'updatedAt', 'progress'].map(key => [key, clone(detail[key])]));
+        const characters = Array.from(detail.scopePopulation.description);
+        return { ...Object.fromEntries(['assessmentId', 'moduleId', 'profileRef', 'status', 'revision',
+            'revisionSha256', 'createdAt', 'updatedAt', 'progress'].map(key => [key, clone(detail[key])])),
+            scopePopulation: { description: characters.slice(0, 160).join('') + (characters.length > 160 ? '…' : '') } };
     }
     function execute(command) {
         const key = JSON.stringify([command.assessmentId, command.idempotencyKey]);

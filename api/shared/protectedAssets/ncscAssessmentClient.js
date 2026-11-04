@@ -149,10 +149,16 @@
             if (typeof option.applicable !== 'boolean') invalid();
         }
         for (const question of questions.values()) {
-            record(question, ['id', 'controlId', 'order', 'prompt', 'guidance', 'responseOptionIds'], ['sources']);
+            record(question, ['id', 'controlId', 'order', 'prompt', 'guidance', 'responseOptionIds'], ['sources', 'smallBusiness']);
             if (!controls.has(question.controlId)) invalid();
             integer(question.order, 1000000); text(question.prompt); guidance(question.guidance);
             if (Object.hasOwn(question, 'sources')) sourceLinks(question.sources);
+            if (Object.hasOwn(question, 'smallBusiness')) {
+                record(question.smallBusiness, ['meaning', 'example', 'checks']);
+                text(question.smallBusiness.meaning); text(question.smallBusiness.example);
+                strings(question.smallBusiness.checks);
+                if (!question.smallBusiness.checks.length || question.smallBusiness.checks.length > 8) invalid();
+            }
             if (!Array.isArray(question.responseOptionIds) || !question.responseOptionIds.length ||
                 new Set(question.responseOptionIds).size !== question.responseOptionIds.length ||
                 question.responseOptionIds.some(id => !options.has(id))) invalid();
@@ -243,7 +249,11 @@
             if (PROFILE_FIELDS.some(key => value[key] !== metadata.profileRef[key])) invalid();
         }
         function summary(value, detail) {
-            record(value, detail ? SUMMARY_FIELDS.concat(['scopePopulation', 'responses', 'submission']) : SUMMARY_FIELDS);
+            // Older list responses omit the scope. Accept that rollout shape,
+            // but validate the declared description whenever it is supplied.
+            record(value, detail ? SUMMARY_FIELDS.concat(['scopePopulation', 'responses', 'submission']) : SUMMARY_FIELDS,
+                detail ? [] : ['scopePopulation']);
+            if (Object.hasOwn(value, 'scopePopulation')) text(record(value.scopePopulation, ['description']).description);
             identifier(value.assessmentId); profile(value.profileRef); digest(value.revisionSha256);
             if (value.moduleId !== metadata.moduleId || !['created', 'in-progress', 'submitted'].includes(value.status)) invalid();
             integer(value.revision, 128); timestamp(value.createdAt); timestamp(value.updatedAt);
