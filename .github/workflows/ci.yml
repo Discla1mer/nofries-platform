@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   application:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       PROMPTFOO_DISABLE_TELEMETRY: '1'
@@ -46,7 +46,7 @@ jobs:
           npm ci --ignore-scripts --omit=dev --omit=optional --dry-run --offline --audit=false
 
   postgres:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
       postgres:
@@ -77,7 +77,7 @@ jobs:
           npm run test:postgres
 
   dependencies:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
