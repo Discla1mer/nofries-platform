@@ -7,7 +7,8 @@ const { inspectHandover, checkRun, checkRecovery, PUBLIC_REPOSITORY, CI_SOURCES,
     require('../scripts/release/public-repository-handover');
 
 // Every run, source SHA, private repository ID and package below is synthetic.
-// Read only the already-public CI command graph, so profile drift fails visibly.
+// Keep the accepted historical profile distinct from current, unadmitted CI.
+// The fixture retains the original approved bytes; production hashes stay unchanged.
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const root = path.resolve(__dirname, '..');
 const repo = { ...PUBLIC_REPOSITORY, fork: false };
@@ -48,7 +49,7 @@ function fixture(stage = 'first-public') {
         source: { repository: { ...repo, default_branch: 'main', archived: false, disabled: false },
             before: branch(), after: branch(), inventoryBytes: Buffer.from('synthetic exact source inventory') },
         ci: { collectedAt: '2026-01-01T11:59:00Z',
-            workflowBytes: fs.readFileSync(path.join(root, '.github/workflows/ci.yml')),
+            workflowBytes: fs.readFileSync(path.join(root, 'test/fixtures/public-ci-reviewed.yml')),
             sourceBytes: Object.fromEntries(Object.keys(CI_SOURCES).map(name => [name, fs.readFileSync(path.join(root, name))])),
             run: run('ci', expected.ci), attempt: run('ci', expected.ci), runAfter: run('ci', expected.ci),
             listing: listing(), listingAfter: listing(), jobs: { total_count: 3,
@@ -96,6 +97,12 @@ function fixture(stage = 'first-public') {
     }
     return { evidence, expected, recovery, run };
 }
+
+test('current runner-pinned CI remains unadmitted by the unchanged handover profile', () => {
+    const { evidence, expected } = fixture();
+    evidence.ci.workflowBytes = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'));
+    expect(() => inspectHandover(evidence, expected)).toThrow('public_handover_refused:unreviewed_ci_workflow');
+});
 
 test.each(['first-public', 'public'])('%s provenance remains an offline check with no deployment authority', stage => {
     const { evidence, expected, recovery } = fixture(stage);
