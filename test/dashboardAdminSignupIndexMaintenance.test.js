@@ -611,3 +611,22 @@ test('unresolved families survive runtime epoch changes while unrelated source w
     await expect(h.rebuild()).rejects.toMatchObject(unavailable);
     expect(h.ticket(key).family).toEqual(family);
 });
+
+test('reset journals a tombstone, preserves other accounts, and permits a fresh allocation on the same key', async () => {
+    const old = account(1), other = account(2), h = harness([old, other]); await h.rebuild();
+    const key = starterAccountKey(old.email), path = 'customer-starter/' + key + '.json', version = (await h.store.load(key)).version;
+    await h.index.resetAccount({ key, version, planSha256: 'a'.repeat(64), async mutate() { h.blobs.delete(path); return { status: 'reset' }; } });
+    expect((await h.index.readCurrentIndex()).sourceReferences.map(r => r.entry.binding.accountId)).toEqual([other.accountId]);
+    const fresh = account(3); fresh.email = old.email;
+    expect(await h.index.accountStore.create(key, fresh)).toBe(true);
+    const current = await h.index.readCurrentIndex();
+    expect(current.sourceReferences.find(r => r.accountKey === key).entry.binding.accountId).toBe(fresh.accountId);
+    expect(JSON.stringify(h.ticket(key))).not.toContain(old.email);
+});
+test('an unconfirmed reset cannot publish complete coverage or permit stale listing disclosure', async () => {
+    const value = account(), h = harness([value]); await h.rebuild(); const key = starterAccountKey(value.email);
+    await expect(h.index.resetAccount({ key, version: (await h.store.load(key)).version, planSha256: 'a'.repeat(64),
+        mutate: async () => ({ status: 'pending' }) })).rejects.toMatchObject(unavailable);
+    await expect(h.index.readCurrentIndex()).rejects.toMatchObject(unavailable);
+    expect(await h.store.load(key)).not.toBeNull();
+});

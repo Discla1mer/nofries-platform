@@ -299,6 +299,7 @@ function createSignupIndexMaintenance(input) {
             const current = new Map(refs.map(ref => [ref.accountKey, ref]));
             for (const entry of settled) {
                 if (entry.generation <= retained.writerGeneration) continue;
+                if (entry.reference === null) { current.delete(entry.accountKey); continue; }
                 const old = current.get(entry.reference.accountKey);
                 if (old && old.entry.binding.accountId !== entry.reference.entry.binding.accountId) fail();
                 current.set(entry.reference.accountKey, entry.reference);
@@ -315,6 +316,21 @@ function createSignupIndexMaintenance(input) {
         create: (key, value) => write('create', key, null, value),
         replace: (key, version, value) => write('replace', key, version, value) });
     return Object.freeze({ accountStore,
+        async resetAccount({ key, version, planSha256, mutate }) {
+            if (!KEY.test(key) || !ETAG.test(version) || typeof mutate !== 'function') fail(); digest(planSha256);
+            return run(async context => {
+                const before = await config.accountStore.load(key); context.check();
+                if (!before || before.version !== version || before.record.activation !== null) fail();
+                const receipt = await journal.register(context, 'reset', key, version, planSha256);
+                context.check();
+                const result = await mutate(); context.check();
+                if (result?.status !== 'reset' || !await journal.settle(context, receipt)) fail();
+                // Publish the tombstone before releasing the common writer
+                // fence. A new allocation can then use a genuinely new ID.
+                await build(context, false); context.check();
+                return result;
+            });
+        },
         inspect(readOptions = {}) { return run(async context => {
             const currentEpoch = await epoch(context), current = await journal.loadHead(context, true);
             if (current) {
