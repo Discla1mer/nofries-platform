@@ -1,3 +1,8 @@
+jest.mock('../api/shared/enquiryRateLimit', () => {
+    const reserve = jest.fn(async () => ({ allowed: true }));
+    return { createEnquiryRateLimiter: () => ({ reserve }), reserveForTests: reserve };
+});
+
 const request = require('supertest');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -501,6 +506,23 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         } finally {
             global.fetch = previousFetch;
         }
+    });
+
+    test.each([429, 503])('App Service refuses email with shared-limit HTTP %s', async status => {
+        const reserve = require('../api/shared/enquiryRateLimit').reserveForTests;
+        if (status === 429) reserve.mockResolvedValueOnce({ allowed: false, retryAfter: 3606 });
+        else reserve.mockRejectedValueOnce(new Error('private@example.invalid'));
+        const fetchSpy = jest.spyOn(global, 'fetch');
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const response = await request(app).post('/api/enquiry').set('x-forwarded-for', '192.0.2.82')
+                .send({ name: 'Private', email: 'private@example.invalid', message: 'Synthetic message text' });
+            expect(response.status).toBe(status);
+            expect(response.body.error).toContain('was not sent');
+            expect(fetchSpy).not.toHaveBeenCalled();
+            expect(JSON.stringify(warn.mock.calls)).not.toContain('private@example.invalid');
+            if (status === 429) expect(response.headers['retry-after']).toBe('3606');
+        } finally { fetchSpy.mockRestore(); warn.mockRestore(); }
     });
 
     test('email verification unlocks the server-side standard scope once', async () => {
