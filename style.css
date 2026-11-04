@@ -473,3 +473,9 @@ body[data-page="public-error"] .public-panel { min-width: 0; gap: 16px; }
 body[data-page="public-error"] .public-panel h1 { font-size: clamp(2rem, 6vw, 3.5rem); line-height: 1.12; letter-spacing: -.035em; overflow-wrap: anywhere; }
 body[data-page="public-error"] .public-panel p { margin-bottom: 0; overflow-wrap: anywhere; }
 body[data-page="public-error"] .public-panel .button { max-width: 100%; color: #111816; text-align: center; }
+.contact-form { display: grid; gap: 8px; max-width: 640px; margin-top: 8px; }
+.contact-form label { margin-top: 10px; font-size: .78rem; font-weight: 850; }
+.contact-form input, .contact-form textarea { width: 100%; min-height: 48px; border: 1px solid var(--line-strong); border-radius: var(--radius-small); padding: 10px 13px; color: var(--ink); background: #0a1312; font: inherit; }
+.contact-form textarea { min-height: 160px; resize: vertical; }
+.contact-form .button { justify-self: start; margin-top: 16px; }
+.contact-status { min-height: 1.5em; font-weight: 700; }
