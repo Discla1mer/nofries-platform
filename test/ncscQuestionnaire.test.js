@@ -1522,7 +1522,9 @@ describe('questionnaire form accessibility', () => {
         expect(ui.root.querySelector('[role="status"]')).toBe(status);
         expect(status.getAttribute('aria-live')).toBe('polite'); expect(status.getAttribute('aria-atomic')).toBe('true');
         expect(status.textContent).toContain('Retry the same operation');
-        expect(ui.document.activeElement).toBe(outsideFocus ? outside : status);
+        expect(ui.document.activeElement).toBe(outsideFocus ? outside : byId(ui, 'ncsc-save-status'));
+        expect(byId(ui, 'ncsc-save-status').getAttribute('aria-live')).toBe('polite');
+        expect(byId(ui, 'ncsc-save-status').textContent).toBe(status.textContent);
         expect(save).toHaveBeenCalledTimes(1); expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
 
@@ -2073,7 +2075,7 @@ describe('questionnaire boundary and navigation regressions', () => {
         expect(ui.root.querySelectorAll('input').every(input => input.disabled)).toBe(true);
         old.checked = true; event(old, 'change'); gate.resolve(); await until(() => ui.root.querySelector('.ncsc-sealed'));
         expect(byId(ui, `ncsc-answer-${metadata().questions[0].id}-yes`).checked).toBe(true);
-        expect(ui.root.querySelectorAll('textarea')).toHaveLength(0); expect(submit).toHaveBeenCalledTimes(1); ui.controller.destroy();
+        expect(ui.root.querySelectorAll('textarea').filter(input => !input.readOnly)).toHaveLength(0); expect(submit).toHaveBeenCalledTimes(1); ui.controller.destroy();
     });
 
     test('remote submission shows only sealed server answers and labels divergent local text separately', async () => {
@@ -2083,8 +2085,11 @@ describe('questionnaire boundary and navigation regressions', () => {
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Unsubmitted local changes'));
         expect(byId(ui, `ncsc-answer-${metadata().questions[0].id}-yes`).checked).toBe(true);
         expect(byId(ui, `ncsc-answer-${metadata().questions[0].id}-not_applicable`).checked).toBe(false);
-        expect(ui.root.querySelectorAll('textarea')).toHaveLength(0);
+        expect(ui.root.querySelectorAll('textarea').filter(input => !input.readOnly)).toHaveLength(0);
         expect(ui.root.textContent).toContain('Unsubmitted local claim');
+        expect(byId(ui, 'ncsc-provider-summary').value).not.toContain('Unsubmitted local claim');
+        expect(byId(ui, 'ncsc-provider-summary').value).not.toContain('N/A');
+        expect(byId(ui, 'ncsc-provider-summary').readOnly).toBe(true);
         expect(control(ui, 'Review and submit')).toBeUndefined(); expect(h.records).toHaveLength(3);
         expect(ui.window.listenerCount('beforeunload')).toBe(1);
         control(ui, 'Use saved answers').click();
@@ -2756,6 +2761,40 @@ describe('final submission review step', () => {
         const h = await sparseDraft(), ui = await resumeUi(h, { presentationMode: 'read-only' });
         try {
             expect(control(ui, 'Review and submit')).toBeUndefined(); expect(control(ui, 'Save and submit assessment')).toBeUndefined();
+            expect(ui.root.querySelector('.ncsc-status').hidden).toBe(false);
+            expect(ui.root.querySelector('.ncsc-status').getAttribute('aria-live')).toBe('polite');
+            expect(byId(ui, 'ncsc-save-status')).toBeUndefined();
+        } finally { ui.controller.destroy(); }
+    });
+});
+
+
+describe('reconciled persona journey', () => {
+    test('a successful save restores its button and a detached second click cannot leave the assessment', async () => {
+        const h = await backend(), gate = deferred();
+        const ui = await createInUi(h, { client: { ...h.client, save: async (...args) => { await gate.promise; return h.client.save(...args); } } });
+        try {
+            choose(ui, 0, 'partial');
+            const save = control(ui, 'Save progress'); save.focus(); save.click(); save.click();
+            expect(save.disabled).toBe(true);
+            gate.resolve(); await until(() => control(ui, 'Save progress') && !control(ui, 'Save progress').disabled);
+            expect(ui.document.activeElement).toBe(control(ui, 'Save progress'));
+            save.click();
+            expect(byId(ui, 'ncsc-question-index')).toBeDefined();
+            expect(h.records.filter(record => record.action === 'save')).toHaveLength(1);
+        } finally { gate.resolve(); ui.controller.destroy(); }
+    });
+
+    test('submitted gaps and a copyable provider summary remain available when score results fail', async () => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand('assessment-a', 0, 'all-partial', allResponses('partial'))); await h.execute(submitCommand());
+        const result = clone(await h.client.read('assessment-a')); result.assessment.submission.evaluation = null;
+        const read = jest.fn(async () => result), ui = await resumeUi(h, { client: { ...h.client, read } });
+        try {
+            expect(ui.root.querySelector('.ncsc-next-steps').querySelectorAll('li')).toHaveLength(14);
+            expect(byId(ui, 'ncsc-provider-summary').value).toContain('Partial');
+            const before = h.records.length; control(ui, 'Retry loading results').click(); await until(() => read.mock.calls.length === 2);
+            expect(h.records).toHaveLength(before);
+            expect(byId(ui, 'ncsc-provider-summary').readOnly).toBe(true);
         } finally { ui.controller.destroy(); }
     });
 });
