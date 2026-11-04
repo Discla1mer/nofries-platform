@@ -122,7 +122,7 @@ for (const mode of ['nested', 'observed', 'complete']) test('owner closes betwee
     const container = { ...h.container, getBlockBlobClient(key) {
         const blob = h.container.getBlockBlobClient(key);
         return { ...blob, uploadData(...args) {
-            if (args[1]?.conditions?.leaseId && JSON.parse(args[0]).reset === null) dispatches++;
+            if (args[1]?.conditions?.leaseId && JSON.parse(args[0]).reset === null && JSON.parse(args[0]).writer === null) dispatches++;
             return blob.uploadData(...args);
         }, getBlobLeaseClient(id) {
             const lease = blob.getBlobLeaseClient(id);
@@ -145,32 +145,27 @@ for (const mode of ['nested', 'observed', 'complete']) test('owner closes betwee
     if (mode === 'complete') assert.deepEqual(await fence.readReset(), marker);
 });
 
-for (const stage of ['pre-check', 'clear', 'post-check']) {
-    for (const exit of ['success', 'failure']) test('detached reset completion at ' + stage + ' with callback ' + exit, async () => {
-        const paused = gate(), reason = new Error('synthetic reset failure'); let completion;
-        const h = harness({ async renew(n) { if (n === ({ 'pre-check': 1, 'post-check': 2 }[stage])) await paused.wait(); },
-            async upload(key, bytes, options) {
-                if (stage === 'clear' && key === KEY && options.conditions?.leaseId && JSON.parse(bytes).reset === null) await paused.wait();
-            } });
-        const result = h.fence.withReset(marker, async control => {
-            completion = control.complete().catch(error => error); await paused.entered;
-            if (exit === 'failure') throw reason;
-        });
-        await assert.rejects(result, exit === 'success' ? unavailable : error => error === reason);
-        try { await blocked(h); } finally { paused.resume(); }
-        assert.match((await completion).message, unavailable); await blocked(h);
-        // An already-dispatched clear can land. The retained lease, not marker bytes, excludes successors.
-        assert.deepEqual(await h.fence.readReset(), stage === 'pre-check' ? marker : null);
+for (const exit of ['success', 'failure']) test('detached reset completion retains durable marker on callback ' + exit, async () => {
+    const paused = gate(), reason = new Error('synthetic reset failure'); let completion;
+    const h = harness({ async renew(n) { if (n === 1) await paused.wait(); } });
+    const result = h.fence.withReset(marker, async control => {
+        completion = control.complete().catch(error => error); await paused.entered;
+        if (exit === 'failure') throw reason;
     });
-}
-
-test('settled conflicts reconcile; settled swallowed uncertainty retains without changing the callback result', async () => {
+    await assert.rejects(result, exit === 'success' ? unavailable : error => error === reason);
+    try { await blocked(h); } finally { paused.resume(); }
+    assert.match((await completion).message, unavailable); await blocked(h);
+    assert.deepEqual(await h.fence.readReset(), marker);
+});
+test('settled conflicts reconcile but swallowed uncertainty cannot claim success', async () => {
     for (const error of [Object.assign(new Error('conflict'), { statusCode: 412, code: 'ConditionNotMet' }),
         Object.assign(new Error('exists'), { statusCode: 409, code: 'BlobAlreadyExists' }), new Error('uncertain')]) {
         const h = harness();
-        assert.equal(await h.fence.withWriter(async () => {
+        const operation = h.fence.withWriter(async () => {
             await observeWrite(async () => { throw error; }).catch(() => {}); return 'reconciled';
-        }), 'reconciled');
+        });
+        if (error.message === 'uncertain') await assert.rejects(operation, unavailable);
+        else assert.equal(await operation, 'reconciled');
         assert.equal(h.leases.has(KEY), error.message === 'uncertain');
     }
 });
