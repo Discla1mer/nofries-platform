@@ -95,7 +95,8 @@ describe('accepted questionnaire metadata and closed browser client', () => {
             ['controls', ['id', 'domainId', 'order', 'title', 'guidance']],
             ['questions', ['id', 'controlId', 'order', 'prompt', 'guidance', 'responseOptionIds']],
             ['responseOptions', ['id', 'label', 'applicable']]]) {
-            expect(display[collection]).toEqual(source[collection].map(row => ({
+            const canonical = collection === 'questions' ? display[collection].map(({ smallBusiness, ...row }) => row) : display[collection];
+            expect(canonical).toEqual(source[collection].map(row => ({
                 ...Object.fromEntries(fields.map(field => [field, row[field]])),
                 ...(collection === 'questions' ? { sources: row.sourceIds.map(id => {
                     const reference = source.sources.find(item => item.id === id);
