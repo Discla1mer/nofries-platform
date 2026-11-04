@@ -6,7 +6,11 @@ App Service/Functions instances must share the same primary Azure block blob.
 ETag/If-Match serializes reservations; Azure's response Date supplies the clock.
 Permits persist across worker restarts and are never refunded, including provider
 failures or uncertain writes. A six-second retention margin covers the five-second
-operation deadline and Date precision. Heavy contention fails closed after eight
+operation deadline and Date precision. The independent deadline returns 503 even
+if credential acquisition ignores cancellation; late work cannot send or retry.
+At most 64 unsettled reservations are retained per limiter instance; excess local
+work fails closed until capacity is released. Streams and deadline timers are
+cleaned up, while ambiguous stored permits are never refunded. Heavy contention fails closed after eight
 conflicts. An attacker can exhaust this global cap; the manual email fallback
 remains available. This cap bounds email attempts, not ingress/storage costs.
 

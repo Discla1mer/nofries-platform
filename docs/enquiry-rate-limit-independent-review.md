@@ -1,47 +1,49 @@
-# Independent review of public #60
+# Independent review and closure of public #60
 
-Reviewed `fef62a1e7eb34698c305bd54bafcd89e286e865d`, stacked on #42.
-Verdict: **HOLD for the bounded-response gap below.** Atomic quota reservation
-is supported by the tests; production configuration and email delivery are not
-verified. This review branch changes only tests and this document, not runtime
-code, deployment wiring or settings.
+Base: `fef62a1e7eb34698c305bd54bafcd89e286e865d`, stacked on #42.
+The follow-up closes the two code/test gaps below. Production configuration and
+actual inbox delivery remain unverified; the operator checklist still applies.
+Final-head repeat-run and hosted CI evidence is recorded on #686.
 
-## Finding R1 — high: the five-second limit does not bound the HTTP response
+## R1 — independent response deadline
 
-`api/shared/enquiryRateLimit.js` awaits download, body iteration and upload
-directly. `AbortSignal.timeout(5000)` requests cancellation; `checkDeadline()`
-only runs after the awaited operation settles. There is no independent timer
-that settles the reservation promise. A dependency that does not honour the
-signal keeps `/api/enquiry` pending and withholds the clear 503 response.
+Previously, cancellation alone left the HTTP handler waiting for managed-identity
+acquisition, body EOF or upload completion. A real-SDK reproduction confirmed an
+aborted signal with no response after 5.25 seconds.
 
-The new real-SDK reproduction uses the locked `@azure/identity` 4.13.1 and
-`@azure/storage-blob` 12.31.0. It pauses only MSAL's token acquisition dependency
-inside a real `ManagedIdentityCredential`; the real BlobClient authentication
-pipeline receives the abort signal. After 5.25 seconds the signal is aborted,
-but the HTTP handler still has no response. Only releasing token acquisition
-with an error produces the sanitised 503. No Azure or email request is sent.
-The installed credential's `getToken()` calls `acquireToken({ resource })`
-without forwarding the caller's abort signal to that operation.
+The whole reservation now races an independent five-second deadline. Timeout
+aborts transport, destroys the current stream and returns the sanitised 503
+without email. Late downloads are destroyed, late upload/conflict/error outcomes
+cannot send or retry, and ambiguous committed permits remain charged. Timers are
+cleared on every returned result; late rejections are observed. Since an SDK
+credential can ignore cancellation, each limiter retains at most 64 unsettled
+operations; additional requests fail closed immediately until work settles.
+This bounds local work, not the shared 20-per-hour email quota.
 
-Additional deterministic reproductions pause an injected body stream and upload
-across cancellation. These show the same await boundary, not an assertion that
-the normal Azure HTTP transport ignores abort. A late upload still consumes a
-permit and does not authorise an email: the failure is availability, not a
-demonstrated quota bypass.
+The tests now assert acceptance, using a controlled clock rather than sleeping:
+503 before token/upload settlement or body EOF, no provider call, stream disposal,
+no late retry, and recovery of the in-flight capacity after a late rejection.
+They exercise the real locked identity/blob SDK authentication pipeline without
+network credentials, plus explicit storage dependency barriers.
 
-The original test named `timeout` rejects immediately; the late-write test
-advances the clock only when the write finishes. Neither proves response latency.
+## R2 — deterministic process fixture and cleanup
 
-Required closure: give the entire reservation an independent deadline covering
-credential acquisition, download, body consumption, conflict retries and upload.
-Cancel underlying work where supported; ensure late completion cannot return
-permission or continue retrying, and retain uncertain committed permits. Handle
-late rejection and destroy stalled streams so repeated timeouts do not leak work.
-Then change the three **KNOWN GAP** reproductions to assert a bounded 503 before
-releasing the blocked dependency, no email, and safe late completion. Green CI
-for these current characterisation tests means the defects were reproduced,
-**not** that this acceptance criterion passed. No runtime fix is included in this
-review-only PR.
+Hosted run #97 timed out in the former cross-process test, then Jest reported
+open asynchronous work until the job was cancelled. The old fixture awaited
+child exit and store close without deadlines; those waits could outlive Jest's
+30-second timeout. The log does not identify which wait originally stalled.
+
+The replacement waits for worker READY messages, then releases all workers.
+A server-side event barrier forces four reads of the same ETag and the test
+requires at least three CAS conflicts. It preserves the 20-send cap and restart
+assertions. Results travel over IPC; workers explicitly exit after the result
+callback, and the parent waits for close rather than racing stdout against exit.
+Every ready/result/store wait has a named deadline. The complete scenario is
+bounded to 25 seconds inside the unchanged 30-second test limit. A finally block
+kills unfinished workers, awaits their close, destroys sockets, closes the store
+and removes its temporary directory. A fault test deliberately stalls a worker
+and holds a store socket open, proving failure cleanup and directory removal.
+There are no fixed sleeps, increased Jest/workflow timeouts or force-exit flags.
 
 ## Atomicity and race windows
 
@@ -51,7 +53,7 @@ review-only PR.
   There is no check-then-unconditional-write window or per-instance fallback.
 - The existing independent-process fixture exercises real SDK requests against
   a persistent HTTP store, including worker/store restart and saturation.
-  The new barrier test makes two handlers read the final free slot before either
+  The additional barrier test makes two handlers read the final free slot before either
   writes. The winner commits but loses its response (503); the loser re-reads the
   saturated counter (429). Both send zero emails and the counter holds 20 permits.
 - Crashes, provider failures and ambiguous writes consume capacity without
@@ -61,8 +63,7 @@ review-only PR.
   contract. This is not a live Azure concurrency test.
 - Once failures settle, missing/denied/corrupt storage returns a sanitised 503,
   exhaustion returns 429/Retry-After, and neither calls Resend. Browser tests prove
-  returned errors preserve form values. During R1's stall, the browser remains
-  waiting because its fetch also has no independent deadline.
+  returned errors preserve form values. R1 now bounds server-side waiting for the shared limiter; unrelated client/network outages still depend on browser network handling.
 
 ## Exact production prerequisites — inspect/configure only in a separate task
 
@@ -99,7 +100,7 @@ resource, app setting, permission, credential or state blob.
 
 ## Azure / Resend acceptance checklist retained for Fry
 
-1. Close R1 and obtain green final-head CI; record the exact #42/#60/review heads
+1. Obtain green final-head CI for this closure; record the exact #42/#60/review heads
    intended for release. Confirm both serving routes run that code.
 2. Check all settings, shared blob, identity data access and network prerequisites
    above without revealing secrets. Do not assume infrastructure deploys them.
@@ -120,8 +121,14 @@ resource, app setting, permission, credential or state blob.
 Reproduce locally:
 `npm test -- --runInBand test/enquiryRateLimitReview.test.js test/enquiryRateLimit.test.js test/enquiryRateLimitProcesses.test.js test/enquiry.test.js`
 
-Initial focused result: **55 tests passed in four suites**, including the four
-new review tests. Hosted full application and PostgreSQL results belong on #686.
+The targeted suite covers deadline acceptance, forced cross-process conflicts,
+worker/store restart, quota conservation, failure cleanup and retained form data.
+On Node 22.22.0, 20 consecutive independent Jest invocations passed all 60
+targeted tests (1,200 passes, zero failures/timeouts). Each invocation includes
+the race/restart scenario and deliberate stalled-worker/open-socket cleanup.
+Wall time per invocation: 2.146–4.231 seconds (median 2.405 seconds), with a
+45-second external watchdog. The additional route/package suites passed 172
+tests. Hosted full-suite results and the exact candidate head belong on #686.
 
 Primary contracts: [Azure concurrency](https://learn.microsoft.com/en-us/azure/storage/blobs/concurrency-manage),
 [Put Blob authorisation](https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob),

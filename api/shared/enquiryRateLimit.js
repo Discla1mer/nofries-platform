@@ -6,6 +6,8 @@ const LIMIT = 20;
 const WINDOW_MS = 60 * 60 * 1000;
 const TIMEOUT_MS = 5000;
 const MAX_BYTES = 1024;
+// Bound retained work even when an SDK credential ignores cancellation forever.
+const MAX_IN_FLIGHT = 64;
 const BLOB_PATH = '/enquiry-rate-limit/public-enquiry-v1.json';
 
 function configuredClient(env) {
@@ -25,20 +27,36 @@ function configuredClient(env) {
 
 function createEnquiryRateLimiter({ env = process.env, client } = {}) {
     let blob = client;
+    let active = 0;
     return {
         async reserve() {
+            if (active >= MAX_IN_FLIGHT) throw new Error('enquiry_rate_limit_unavailable');
+            active += 1;
             const started = performance.now();
-            const abortSignal = AbortSignal.timeout(TIMEOUT_MS);
+            const controller = new AbortController();
+            const abortSignal = controller.signal;
+            let stream, timer;
+            const disposeStream = () => { if (stream && !stream.destroyed) stream.destroy(); };
             const checkDeadline = () => {
                 if (abortSignal.aborted || performance.now() - started >= TIMEOUT_MS) throw new Error('deadline');
             };
-            try {
+            const deadline = new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                    reject(new Error('deadline'));
+                    controller.abort();
+                    disposeStream();
+                }, TIMEOUT_MS);
+            });
+            const work = (async () => {
                 blob ||= configuredClient(env);
                 for (let attempt = 0; attempt < 8; attempt += 1) {
                     checkDeadline();
                     const response = await blob.download(0, MAX_BYTES + 1, { abortSignal, maxRetryRequests: 0 });
+                    stream = response.readableStreamBody;
+                    checkDeadline();
                     let raw = '';
-                    for await (const chunk of response.readableStreamBody) {
+                    for await (const chunk of stream) {
+                        checkDeadline();
                         raw += chunk.toString('utf8');
                         if (Buffer.byteLength(raw) > MAX_BYTES) throw new Error('oversized state');
                     }
@@ -74,12 +92,24 @@ function createEnquiryRateLimiter({ env = process.env, client } = {}) {
                     }
                 }
                 throw new Error('contention');
+            })().finally(() => {
+                active -= 1;
+                disposeStream();
+            });
+            try {
+                // Observe both outcomes, including rejection/completion after the
+                // caller has received 503. Late work can never authorise email.
+                return await Promise.race([work, deadline]);
             } catch (_) {
                 // SDK errors can include URLs, headers and response bodies.
                 throw new Error('enquiry_rate_limit_unavailable');
+            } finally {
+                clearTimeout(timer);
+                controller.abort();
+                disposeStream();
             }
         }
     };
 }
 
-module.exports = { createEnquiryRateLimiter, LIMIT, WINDOW_MS, TIMEOUT_MS };
+module.exports = { createEnquiryRateLimiter, LIMIT, WINDOW_MS, TIMEOUT_MS, MAX_IN_FLIGHT };
