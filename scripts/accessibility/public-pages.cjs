@@ -24,6 +24,8 @@ const server = http.createServer((req, res) => {
             res.setHeader('x-nofries-customer-entry', 'legacy');
             return res.end(JSON.stringify({ state: 'start' }));
         }
+        // Read-only availability. The form stays off; this is not a submission.
+        if (url.pathname === '/api/enquiry') return res.end(JSON.stringify({ available: false, promote: false }));
         if (['/api/auth/me', '/api/dashboard/access', '/api/dashboard/session', '/api/customer-auth/session', '/api/external-customer-auth/session'].includes(url.pathname)) {
             res.writeHead(401); return res.end('{}');
         }

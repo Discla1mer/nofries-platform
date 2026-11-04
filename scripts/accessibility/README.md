@@ -17,7 +17,9 @@ Account/session responses are synthetic. No forms or chat messages are submitted
 Seven built public pages are checked at 1280 and 320 CSS pixels, at 100% and 200%
 text, with help open and closed: home, login, Managed IT, privacy, terms, roadmap
 and report. The contact form joins automatically when #42 supplies it; its absence
-is printed as a deferred capability, not a pass. Text enlargement snapshots every
+is printed as a deferred capability, not a pass. The loopback answers
+`GET /api/enquiry` with the form switched off (`available` and `promote`
+both false). Any other enquiry request, including POST, still fails the run. Text enlargement snapshots every
 computed font size before doubling it, verifies the actual resulting sizes and
 leaves the viewport/device scale unchanged. This is a text-resize simulation,
 not browser chrome zoom. No screenshot-only clipping is used to simulate mobile.
