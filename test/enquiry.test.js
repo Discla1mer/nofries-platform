@@ -153,6 +153,18 @@ describe('contact form progressive enhancement', () => {
         expect(html).toMatch(/<noscript>[\s\S]*mailto:hello@nofries.nz[\s\S]*<\/noscript>/);
     });
 
+    test('contact home link matches the managed IT accessible name and fields use cream paper', () => {
+        expect(html).toMatch(/aria-label="No Fries Managed IT home"/);
+        expect(html).toMatch(/<strong>No Fries<\/strong> <span>Managed IT<\/span>/);
+        expect(html).not.toMatch(/<strong>No Fries<\/strong><span>Managed IT<\/span>/);
+        const css = fs.readFileSync(path.join(__dirname, '../style.css'), 'utf8');
+        const fields = css.match(/\.contact-form input, \.contact-form textarea \{[^}]+\}/);
+        expect(fields).not.toBeNull();
+        expect(fields[0]).toContain('color: var(--ink)');
+        expect(fields[0]).toContain('background: var(--paper)');
+        expect(fields[0]).not.toContain('#0a1312');
+    });
+
     function browser(attachFails = false, response, availability = async () => ({ available: true })) {
         const send = { disabled: true };
         const status = { textContent: '' };
