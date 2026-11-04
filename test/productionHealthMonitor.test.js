@@ -47,6 +47,7 @@ test('healthy external endpoint cannot mask broken legacy state in the hosted de
     expect(r.results[7]).toMatchObject({ check: '/api/customer-signup/state', ok: false, status: 503 });
 });
 test.each([buildSignupUnavailableDocument(), legacyDocument + externalDocument,
+    hostedDocument.replace("createSignupClient({ fetch: window.fetch.bind(window),\ncreateAccount:", "unrecognisedLegacyBootstrap:"),
     hostedDocument.replace("if (providers[0] === 'external')", "if (providers[0] === 'legacy')")])('unknown or changed bootstrap fails closed without guessing a provider', async html => {
     const r = await report({ '/signup': { text: html } });
     expect(r.ok).toBe(false); expect(r.results[7]).toMatchObject({ check: 'signup provider selection', ok: false });

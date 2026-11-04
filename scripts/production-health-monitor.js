@@ -54,9 +54,9 @@ function parseJson(response) {
 // the default else branch; an external literal alone does not select it.
 function signupProvider(html = '') {
     const configs = [...html.matchAll(/const transportClient = transport\.createSignupClient\(\{ fetch: window\.fetch\.bind\(window\),\s*(customerTransport: 'external',\s*)?createAccount:/g)];
-    if (configs.length === 1) return configs[0][1] ? 'external' : 'legacy';
     const dispatcher = html.indexOf("const providers = new URLSearchParams(window.location.search || '').getAll('provider');");
     const branch = html.indexOf("if (providers[0] === 'external') {\n");
+    if (dispatcher < 0 && branch < 0 && configs.length === 1) return configs[0][1] ? 'external' : 'legacy';
     if (configs.length === 2 && configs[0][1] && !configs[1][1] && dispatcher >= 0 && branch > dispatcher &&
         branch < configs[0].index && html.slice(configs[0].index, configs[1].index).includes("\n} else {\n'use strict';\n(() => {\n")) return 'legacy';
     return null; // Unknown/changed bootstrap must not guess a healthy provider.
