@@ -111,7 +111,9 @@ async function layout(page) {
         overflow: [...document.querySelectorAll('h1,h2,h3,p,label,input,textarea,select,button,a')].filter(el => {
             const r = el.getBoundingClientRect(), s = getComputedStyle(el);
             return r.width && r.height && s.visibility !== 'hidden' && !el.matches('.skip-link,.report-skip') &&
-                (r.right > innerWidth + 1 || r.left < -1 || el.scrollWidth > el.clientWidth + 1 && ['hidden', 'clip'].includes(s.overflowX));
+                (r.right > innerWidth + 1 || r.left < -1 ||
+                    el.scrollWidth > el.clientWidth + 1 && ['hidden', 'clip'].includes(s.overflowX) ||
+                    el.scrollHeight > el.clientHeight + 1 && ['hidden', 'clip'].includes(s.overflowY));
         }).map(el => ({ tag: el.tagName, id: el.id, class: el.className, text: el.textContent.trim().slice(0, 55) })) }));
 }
 (async () => {
