@@ -365,7 +365,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(response.text).not.toContain('Plan your Lean Managed IT service.');
         expect(response.text).toContain('Protection and backup are selected separately.');
         expect(response.text).not.toContain('id="managed-it-per-user-price"');
-        expect(response.text).toContain('<title>No Fries Dashboard | Your risk posture on a page.</title>');
+        expect(response.text).toContain('<title>No Fries Dashboard | Clearer IT. Confident next steps.</title>');
         expect(response.text).not.toContain('Automatic updates and connected data feeds are planned');
         expect(response.text).toContain('data-assistant-help-only="true"');
         expect(response.text).not.toContain('NZ$119 + GST');
@@ -471,6 +471,20 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(operatorShell.text).toContain('>Service desk</a>');
         expect(operatorShell.text).toContain('/js/operator-loader.js');
         expect(operatorShell.text).not.toContain('/api/lifecycle/app.js');
+    });
+
+    test('enquiry availability is a non-cacheable public read with no configuration disclosure', async () => {
+        const key = process.env.RESEND_API_KEY;
+        try {
+            delete process.env.RESEND_API_KEY;
+            const response = await request(app).get('/api/enquiry');
+            expect(response.status).toBe(200);
+            expect(response.headers['cache-control']).toContain('no-store');
+            expect(response.body).toEqual({ available: false, promote: false });
+        } finally {
+            if (key === undefined) delete process.env.RESEND_API_KEY;
+            else process.env.RESEND_API_KEY = key;
+        }
     });
 
     test('public contact page posts enquiries to the owner by email', async () => {

@@ -56,6 +56,14 @@ Provider errors are reduced to fixed codes before logging.
    code back. Disable the endpoint if rolling back to code without the shared
    gate, unless an independently verified upstream cap already protects it.
 
+8. Follow [enquiry activation](enquiry-activation.md): initially leave
+   `NOFRIES_ENQUIRY_DELIVERY_VERIFIED` unset/false. Confirm GET `/api/enquiry`
+   reports `available: true, promote: false` without sending or consuming quota.
+   After the authorised inbox delivery check in step 5 passes, set the flag to
+   exactly `true` on every runtime and reload. With #43, the homepage then changes
+   to Get early access; absent configuration or failed status reads retain signup.
+   Clear the flag before delivery changes or on observed delivery failure.
+
 ## Evidence boundary
 
 Tests use independent processes, real Azure SDK clients and a file-backed HTTP

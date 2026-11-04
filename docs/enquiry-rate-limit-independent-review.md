@@ -1,7 +1,8 @@
 # Independent review and closure of public #60
 
 Base: `fef62a1e7eb34698c305bd54bafcd89e286e865d`, stacked on #42.
-The follow-up closes the two code/test gaps below. Production configuration and
+The fixes from #65 are now carried into refreshed #60, closing the two
+code/test gaps below without requiring a fourth merge. Production configuration and
 actual inbox delivery remain unverified; the operator checklist still applies.
 Final-head repeat-run and hosted CI evidence is recorded on #686.
 
@@ -80,6 +81,7 @@ hostname and slot so no old sender can bypass the gate.
 | `NOFRIES_MANAGED_IDENTITY_CLIENT_ID` | User-assigned managed identity client ID if that identity is used; otherwise omit for system-assigned identity. Do not confuse this with the identity's principal/object ID. |
 | `RESEND_API_KEY` | Present, valid, allowed to send from the selected domain; inspect presence/permissions without displaying the value. |
 | `NOFRIES_ENQUIRY_EMAIL_FROM` | Approved sender on a verified Resend domain. If absent, code falls back to `NOFRIES_SCOPE_EMAIL_FROM`; explicitly confirm which sender is used. |
+| `NOFRIES_ENQUIRY_DELIVERY_VERIFIED` | Default unset/false; exactly `true` only after authorised inbox proof. Required by #43 for homepage promotion, together with valid provider and limiter configuration. |
 | `NOFRIES_ENQUIRY_TO` | Omit for `hello@nofries.nz`, or set exactly that mailbox for this rollout. Code accepts other nonempty configured recipients; this operator constraint is not enforced by an allowlist. |
 
 Resources: one Azure Storage account, dedicated **private** `enquiry-rate-limit`
@@ -123,7 +125,8 @@ Reproduce locally:
 
 The targeted suite covers deadline acceptance, forced cross-process conflicts,
 worker/store restart, quota conservation, failure cleanup and retained form data.
-On Node 22.22.0, 20 consecutive independent Jest invocations passed all 60
+Historical #65 evidence at `25b8da3` (refreshed-head results are on #686):
+on Node 22.22.0, 20 consecutive independent Jest invocations passed all 60
 targeted tests (1,200 passes, zero failures/timeouts). Each invocation includes
 the race/restart scenario and deliberate stalled-worker/open-socket cleanup.
 Wall time per invocation: 2.146–4.231 seconds (median 2.405 seconds), with a

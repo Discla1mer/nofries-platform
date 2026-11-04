@@ -643,6 +643,9 @@ app.post('/api/scope/request', asyncRoute(async (req, res) => {
 }));
 
 const enquiryService = createEnquiryService();
+app.get('/api/enquiry', (_req, res) => {
+    res.set('Cache-Control', 'no-store').json(enquiryService.availability());
+});
 app.post('/api/enquiry', asyncRoute(async (req, res) => {
     if (requestBodySize(req) > 16 * 1024) {
         return res.status(413).json({ error: 'Request body is too large', code: 'request_too_large' });

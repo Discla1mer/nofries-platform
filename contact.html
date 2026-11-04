@@ -7,14 +7,15 @@
     <meta name="description" content="Send No Fries an enquiry about managed IT or a cyber gap assessment.">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/style.css">
+    <script src="/js/enquiry-availability.js" defer></script>
     <script src="/js/contact.js" defer></script>
 </head>
 <body data-page="contact">
     <main class="public-shell">
         <header class="public-header">
-            <a class="login-brand" href="/" aria-label="No Fries home">
+            <a class="login-brand" href="/" aria-label="No Fries Managed IT home">
                 <img src="/images/nofrieslogo.png" width="44" height="44" alt="No Fries logo">
-                <div><strong>No Fries</strong><span>Managed IT</span></div>
+                <div><strong>No Fries</strong> <span>Managed IT</span></div>
             </a>
             <nav aria-label="Contact navigation">
                 <a href="/">Managed IT</a>
@@ -47,7 +48,7 @@
                 </div>
 
                 <button class="button" id="contact-send" type="submit" disabled>Send enquiry</button>
-                <p id="contact-status" class="contact-status" role="status" aria-live="polite"></p>
+                <p id="contact-status" class="contact-status" role="status" aria-live="polite">Checking form availability…</p>
                 <noscript><p>Please email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a> to send your enquiry.</p></noscript>
             </form>
 

@@ -153,7 +153,19 @@ describe('contact form progressive enhancement', () => {
         expect(html).toMatch(/<noscript>[\s\S]*mailto:hello@nofries.nz[\s\S]*<\/noscript>/);
     });
 
-    function browser(attachFails = false, response) {
+    test('contact home link matches the managed IT accessible name and fields use cream paper', () => {
+        expect(html).toMatch(/aria-label="No Fries Managed IT home"/);
+        expect(html).toMatch(/<strong>No Fries<\/strong> <span>Managed IT<\/span>/);
+        expect(html).not.toMatch(/<strong>No Fries<\/strong><span>Managed IT<\/span>/);
+        const css = fs.readFileSync(path.join(__dirname, '../style.css'), 'utf8');
+        const fields = css.match(/\.contact-form input, \.contact-form textarea \{[^}]+\}/);
+        expect(fields).not.toBeNull();
+        expect(fields[0]).toContain('color: var(--ink)');
+        expect(fields[0]).toContain('background: var(--paper)');
+        expect(fields[0]).not.toContain('#0a1312');
+    });
+
+    function browser(attachFails = false, response, availability = async () => ({ available: true })) {
         const send = { disabled: true };
         const status = { textContent: '' };
         const values = { ...VALID, website: '' };
@@ -179,23 +191,37 @@ describe('contact form progressive enhancement', () => {
         }
         return {
             send, status, form, values, fetchImpl, plausible,
-            run: () => vm.runInNewContext(script, { document, FormData, fetch: fetchImpl, window: { plausible } }),
+            run: () => vm.runInNewContext(script, { document, FormData, fetch: fetchImpl, window: { plausible, enquiryAvailability: availability } }),
             submit: () => submit
         };
     }
 
+    test.each(['unconfigured', 'unreachable', 'missing client'])('keeps the form disabled and offers email when %s', async mode => {
+        const availability = mode === 'unconfigured' ? async () => ({ available: false }) :
+            mode === 'unreachable' ? async () => { throw Error('unavailable'); } : null;
+        const page = browser(false, undefined, availability);
+        await page.run();
+        expect(page.send.disabled).toBe(true);
+        expect(page.status.textContent).toContain('Please email hello@nofries.nz');
+        const event = { preventDefault: jest.fn() };
+        await page.submit()(event);
+        expect(event.preventDefault).toHaveBeenCalledTimes(1);
+        expect(page.fetchImpl).not.toHaveBeenCalled();
+        expect(page.form.reset).not.toHaveBeenCalled();
+    });
+
     test('enables submission only after attaching a handler that cancels native navigation', async () => {
         const page = browser();
-        page.run();
+        await page.run();
         expect(page.send.disabled).toBe(false);
         const event = { preventDefault: jest.fn() };
         await page.submit()(event);
         expect(event.preventDefault).toHaveBeenCalledTimes(1);
     });
 
-    test('leaves submission disabled when handler attachment fails', () => {
+    test('leaves submission disabled when handler attachment fails', async () => {
         const page = browser(true);
-        expect(page.run).toThrow('Handler unavailable');
+        await expect(page.run()).rejects.toThrow('Handler unavailable');
         expect(page.send.disabled).toBe(true);
     });
 
@@ -206,7 +232,7 @@ describe('contact form progressive enhancement', () => {
             expect(event.preventDefault).toHaveBeenCalledTimes(1);
             throw new Error('Validation unavailable');
         });
-        page.run();
+        await page.run();
         await expect(page.submit()(event)).rejects.toThrow('Validation unavailable');
         expect(page.fetchImpl).not.toHaveBeenCalled();
         expect(page.form.reset).not.toHaveBeenCalled();
@@ -230,7 +256,7 @@ describe('contact form progressive enhancement', () => {
         ['numeric confirmation', '{"received":1}']
     ])('retains the enquiry and reports uncertainty for HTTP 200 with %s', async (_label, body) => {
         const page = browser(false, new Response(body, { status: 200 }));
-        page.run();
+        await page.run();
         page.form.reportValidity.mockReturnValue(true);
         await page.submit()({ preventDefault: jest.fn() });
         expect(page.status.textContent).toBe('We could not confirm your enquiry was sent. Please email hello@nofries.nz instead.');
@@ -242,7 +268,7 @@ describe('contact form progressive enhancement', () => {
 
     test('clears the enquiry and reports success only after the API confirms receipt', async () => {
         const page = browser(false, Response.json({ received: true }));
-        page.run();
+        await page.run();
         page.form.reportValidity.mockReturnValue(true);
         await page.submit()({ preventDefault: jest.fn() });
         expect(page.fetchImpl).toHaveBeenCalledTimes(1);
@@ -262,7 +288,7 @@ describe('contact form progressive enhancement', () => {
     test.each([429, 503])('retains the enquiry and shows HTTP %s errors even when the response claims receipt', async (status) => {
         const error = 'The enquiry form is not available right now. Please email hello@nofries.nz.';
         const page = browser(false, Response.json({ received: true, error }, { status }));
-        page.run();
+        await page.run();
         page.form.reportValidity.mockReturnValue(true);
         await page.submit()({ preventDefault: jest.fn() });
         expect(page.status.textContent).toBe(error);
@@ -275,7 +301,7 @@ describe('contact form progressive enhancement', () => {
     test('retains the enquiry and reports uncertainty after a network failure', async () => {
         const page = browser();
         page.fetchImpl.mockRejectedValue(new Error('Network unavailable'));
-        page.run();
+        await page.run();
         page.form.reportValidity.mockReturnValue(true);
         await page.submit()({ preventDefault: jest.fn() });
         expect(page.status.textContent).toBe('We could not confirm your enquiry was sent. Please email hello@nofries.nz instead.');

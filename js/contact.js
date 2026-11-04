@@ -1,4 +1,4 @@
-(function () {
+(async function () {
     if (!document.body || document.body.dataset.page !== 'contact') {
         return;
     }
@@ -8,8 +8,14 @@
     const send = document.getElementById('contact-send');
     const FALLBACK = 'Please email hello@nofries.nz instead.';
 
+    let available = false;
+
     form.addEventListener('submit', async function (event) {
         event.preventDefault();
+        if (!available) {
+            status.textContent = 'The enquiry form is not available right now. ' + FALLBACK;
+            return;
+        }
         if (!form.reportValidity()) {
             return;
         }
@@ -49,5 +55,9 @@
         }
         send.disabled = false;
     });
-    send.disabled = false;
+    try {
+        available = (await window.enquiryAvailability()).available === true;
+    } catch (_) { /* Missing client script also fails closed. */ }
+    send.disabled = !available;
+    status.textContent = available ? '' : 'The enquiry form is not available right now. ' + FALLBACK;
 }());

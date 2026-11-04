@@ -10,12 +10,21 @@ const MAX_BYTES = 1024;
 const MAX_IN_FLIGHT = 64;
 const BLOB_PATH = '/enquiry-rate-limit/public-enquiry-v1.json';
 
-function configuredClient(env) {
+function configuredBlobUrl(env) {
     const url = new URL(env.NOFRIES_ENQUIRY_RATE_LIMIT_BLOB_URL || '');
     if (url.protocol !== 'https:' || !/^[a-z0-9]{3,24}\.blob\.core\.windows\.net$/.test(url.hostname) ||
         url.port || url.username || url.password || url.search || url.hash || url.pathname !== BLOB_PATH) {
         throw new Error('invalid limiter configuration');
     }
+    return url;
+}
+
+function isEnquiryRateLimitConfigured(env) {
+    try { configuredBlobUrl(env); return true; } catch (_) { return false; }
+}
+
+function configuredClient(env) {
+    const url = configuredBlobUrl(env);
     const { BlockBlobClient } = require('@azure/storage-blob');
     const { ManagedIdentityCredential } = require('@azure/identity');
     const clientId = String(env.NOFRIES_MANAGED_IDENTITY_CLIENT_ID || '').trim();
@@ -112,4 +121,4 @@ function createEnquiryRateLimiter({ env = process.env, client } = {}) {
     };
 }
 
-module.exports = { createEnquiryRateLimiter, LIMIT, WINDOW_MS, TIMEOUT_MS, MAX_IN_FLIGHT };
+module.exports = { isEnquiryRateLimitConfigured, createEnquiryRateLimiter, LIMIT, WINDOW_MS, TIMEOUT_MS, MAX_IN_FLIGHT };

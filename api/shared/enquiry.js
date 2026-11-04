@@ -4,7 +4,7 @@
 // the existing Resend integration and is not stored. Only plain text is sent, so
 // submitted content is never interpreted as HTML by the receiving mail client.
 
-const { createEnquiryRateLimiter } = require('./enquiryRateLimit');
+const { createEnquiryRateLimiter, isEnquiryRateLimitConfigured } = require('./enquiryRateLimit');
 
 const LIMITS = Object.freeze({ name: 120, email: 254, organisation: 160, message: 4000 });
 const MIN_MESSAGE = 10;
@@ -109,7 +109,11 @@ function createEnquiryService({ env = process.env, fetchImpl = (...args) => fetc
         }
         return { received: true };
     }
-    return { submitEnquiry };
+    function availability() {
+        const available = Boolean(deliveryConfig(env)) && isEnquiryRateLimitConfigured(env);
+        return { available, promote: available && env.NOFRIES_ENQUIRY_DELIVERY_VERIFIED === 'true' };
+    }
+    return { submitEnquiry, availability };
 }
 
 module.exports = { createEnquiryService, validateEnquiry, EnquiryError, LIMITS };

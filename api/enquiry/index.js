@@ -12,6 +12,10 @@ const MAX_REQUEST_BYTES = 16 * 1024;
 
 function createEnquiryFunction(service = createEnquiryService()) {
     return async function enquiry(context, req) {
+        if (req.method === 'GET') {
+            context.res = json(200, service.availability(), { 'Cache-Control': 'no-store' });
+            return;
+        }
         const headers = req.headers || {};
         if (isBlockedUserAgent(getHeader(headers, 'user-agent'))) {
             context.res = json(403, { error: 'Request blocked' });
