@@ -64,7 +64,7 @@ Review/release order: current public main `00bf0f0f85990bc95f9bf060b612e934ea608
 | `test/dashboardLoader.test.js` | Deferred with shell/homepage changes. |
 | `test/dashboardPublicHomepage.test.js` | Preserve current-main expectations; no frozen rollback. |
 | `test/dashboardShell.test.js` | Deferred with shell wording. |
-| `test/fixtures/dashboardDom.js` | Frozen broad fixture rewrite not needed by retained assertions; unchanged. |
+| `test/fixtures/dashboardDom.js` | Final slice: port the frozen native DOM `contains` method used by the detached-control guard; browser behavior and assertions stay intact. |
 | `test/homeDialogInteraction.test.js` | Deferred with homepage dialog work. |
 | `test/integration/ncscAssessmentPostgres.js` | Adapt only the closed list-field expectation for #67's display label; preserve #27's complete submission review integration. Native CI remains required. |
 | `test/ncscAssessmentList.test.js` | #67: legacy/malformed/bounded-page labels plus immutable scope hash and hostile replacement commands. |
