@@ -224,9 +224,19 @@ async function recoveryHierarchy(page, audit, name) {
         const primary = audit.actions.filter(action => action.background[3] === 1 && action.background[0] >= 200 &&
             action.background[1] >= 150 && action.background[2] <= 60);
         assert.equal(primary.length, 1, name + ': recovery must have one yellow primary action');
-        const secondary = audit.actions.find(action => action.name === 'Sign in again');
-        assert.ok(secondary && secondary.background[3] === 0 && secondary.borderStyle !== 'none' && secondary.borderContrast >= 3,
-            name + ': sign-in recovery needs a readable outlined secondary action');
+        if (current.name === 'unavailable') {
+            // An unconfirmed signup deliberately offers no retry: restarting
+            // sign-in is its safe primary action, unlike a saved setup resume.
+            assert.equal(primary[0].name, 'Sign in again', name + ': unconfirmed signup must restart sign-in');
+            assert.equal(await page.getByRole('link', { name: 'Sign in again', exact: true }).getAttribute('href'),
+                '/api/external-customer-auth/login');
+            assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).count(), 0,
+                name + ': unconfirmed signup must not invite another submission');
+        } else {
+            const secondary = audit.actions.find(action => action.name === 'Sign in again');
+            assert.ok(secondary && secondary.background[3] === 0 && secondary.borderStyle !== 'none' && secondary.borderContrast >= 3,
+                name + ': sign-in recovery needs a readable outlined secondary action');
+        }
     }
 }
 
