@@ -3,7 +3,7 @@
 This is an independent, default-off GitHub Actions monitor of https://nofries.nz.
 It does not deploy, roll back, sign in, create accounts or alter customer data.
 The only POST is an alert to Joel's chosen destination after a failed check.
-No production credentials are used. PR CI uses synthetic fixtures, never the
+No application credentials are used. PR CI uses synthetic fixtures, never the
 webhook or live app. No dependency install is needed for scheduled monitoring.
 
 ## Checks and limits
@@ -14,8 +14,8 @@ signup-state endpoints. Pages must return HTML/200; health must report `ok`/200.
 Reuse public PR #17's audited unauthenticated GET paths and provider selection:
 the signup provider selected by the served page must return `create_account`/200;
 an inactive provider's 410 is permitted. No sign-in initiation routes are called.
-Because #17 is still separate, this PR does not import its optional write-capable
-CLI or copy its release workflow. There is no merge dependency or file overlap.
+Because #17 is still separate, this PR shares its route semantics without importing
+its optional write-capable CLI. There is no merge dependency or file overlap.
 
 Each request has a 10-second total deadline and 1 MiB response limit, no retries,
 cookies or redirect following. HTTPS must validate its hostname and certificate
