@@ -16,7 +16,10 @@ With `RESEND_API_KEY` and `NOFRIES_ENQUIRY_EMAIL_FROM` (or the existing
 `NOFRIES_SCOPE_EMAIL_FROM` fallback) configured, the form can be used for an
 explicitly authorised delivery check. `NOFRIES_ENQUIRY_TO` defaults to
 `hello@nofries.nz`; verify any override goes to that mailbox. The shared limiter
-in #60 adds its own configuration prerequisite and always gates actual sends.
+requires a valid `NOFRIES_ENQUIRY_RATE_LIMIT_BLOB_URL` for availability and always
+gates actual sends. GET validates only URL shape, without acquiring a managed
+identity token or reading/writing storage. It cannot prove blob existence,
+permissions, reachability or Resend health.
 
 The homepage in #43 retains main's signup link unless availability is true AND
 `NOFRIES_ENQUIRY_DELIVERY_VERIFIED` is exactly `true`. This flag is an operator
