@@ -76,7 +76,7 @@ async function launch(origin) {
         const selector = s => 'document.querySelector(' + JSON.stringify(s) + ')';
         async function click(s, twice = false) {
             await wait(selector(s) + ' && !' + selector(s) + '.disabled', 'enabled ' + s);
-            await evaluate(selector(s) + '.scrollIntoView({block:"center"})');
+            await evaluate(selector(s) + '.scrollIntoView({block:"center",behavior:"instant"})');
             const box = await evaluate('(()=>{const r=' + selector(s) + '.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2};})()');
             for (let count = 1; count <= (twice ? 2 : 1); count++) {
                 await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...box, button: 'left', clickCount: count });
@@ -100,7 +100,7 @@ async function launch(origin) {
             assert.equal(measured.after, measured.before * factor, 'Text really doubles; device scale/viewport zoom is not substituted'); return measured;
         }
         return { version: version.product, errors, unexpected, send, evaluate, wait, click, fill, textScale, close,
-            async navigate(url, width) { await send('Emulation.setDeviceMetricsOverride', { width, height: width === 320 ? 700 : 900, deviceScaleFactor: 1, mobile: false }); await send('Page.navigate', { url }); await wait('location.href === ' + JSON.stringify(url) + ' && document.readyState === "complete"'); } };
+            async navigate(url, width) { await send('Emulation.setDeviceMetricsOverride', { width, height: width === 320 ? 700 : 900, deviceScaleFactor: 1, mobile: false }); await send('Page.navigate', { url }); await wait('location.href.split("#")[0] === ' + JSON.stringify(url.split('#')[0]) + ' && document.readyState === "complete"'); } };
     } catch (error) { await close(); throw error; }
 }
 module.exports = { launch };
