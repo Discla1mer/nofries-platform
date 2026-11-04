@@ -13,13 +13,13 @@ const controller = fs.readFileSync(path.join(root, 'js', 'home.js'), 'utf8');
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
 
 test('public identity and metadata lead with the standalone Dashboard', () => {
-    assert.match(html, /<title>No Fries Dashboard \| Your risk posture on a page\.<\/title>/);
+    assert.match(html, /<title>No Fries Dashboard \| Clearer IT\. Confident next steps\.<\/title>/);
     assert.match(html, /data-product="dashboard"/);
-    assert.match(html, /property="og:title" content="No Fries Dashboard \| Your risk posture on a page\."/);
+    assert.match(html, /property="og:title" content="No Fries Dashboard \| Clearer IT\. Confident next steps\."/);
     assert.equal((html.match(/<h1\b/g) || []).length, 1);
-    assert.match(html, /id="home-title">Your risk <br><em>posture on <br>a page\.<\/em>/);
-    assert.doesNotMatch(html, /Clearer IT\. Confident next steps\.|Clearer IT\.<br>/i);
-    assert.equal((html.match(/See a view of your IT and cyber security practices based on your answers\./g) || []).length, 3);
+    assert.match(html, /id="home-title">Clearer IT\.<br><em>Confident<br>next steps\.<\/em>/);
+    assert.equal((html.match(/Understand your IT and cyber security, see where the gaps are and decide what needs attention\./g) || []).length, 2);
+    assert.match(html, /Understand where your IT and cyber security stand\. See the gaps, make informed decisions and start improving\./);
     assert.doesNotMatch(html, /in real time|continuous monitoring|automatically updated/i);
     assert.match(html, /An illustrative view of assessment topics, not a live result\./);
     assert.match(html, /Your results reflect the answers you provide\./);
