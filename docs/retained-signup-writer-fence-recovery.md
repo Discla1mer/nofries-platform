@@ -13,7 +13,7 @@ Before connecting any recovery host, owners must decide and document who can req
 Qualification needs evidence for the actual deployed target, including:
 
 - Exact source revision and deployment identity, target and provider binding, operation ID, request and plan digests, and the retained fence's durable identity and generation.
-- Complete writer participation and exclusion of alternate or older writers, including proof that in-flight calls cannot outlive the retained fence or bypass it.
+- Complete writer participation and exclusion of alternate or older writers, including proof that in-flight calls cannot outlive the retained fence or bypass it. This includes a reset completion's already-dispatched marker clear, which may land after its callback returns.
 - Durable ownership and serialization across process loss, concurrent recovery attempts and writers, with stale handles unable to complete or release a newer fence.
 - Current inventory, immutable original record versions and hashes, conditional storage semantics, and reconciliation of ambiguous responses. Raw captures and customer data belong in the approved restricted evidence store, not this repository or its logs.
 - An authenticated, attributable approval and an immutable audit trail covering inspection, decision, execution and outcome, including failures and uncertain effects.
