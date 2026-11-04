@@ -49,6 +49,19 @@ function parseJson(response) {
     try { return JSON.parse(response.text); } catch (_) { return null; }
 }
 
+// Inspect only the known source-owned bootstrap shape; never execute remote JS.
+// /signup has no query/cookies. Hosted output embeds external first, legacy in
+// the default else branch; an external literal alone does not select it.
+function signupProvider(html = '') {
+    const configs = [...html.matchAll(/const transportClient = transport\.createSignupClient\(\{ fetch: window\.fetch\.bind\(window\),\s*(customerTransport: 'external',\s*)?createAccount:/g)];
+    if (configs.length === 1) return configs[0][1] ? 'external' : 'legacy';
+    const dispatcher = html.indexOf("const providers = new URLSearchParams(window.location.search || '').getAll('provider');");
+    const branch = html.indexOf("if (providers[0] === 'external') {\n");
+    if (configs.length === 2 && configs[0][1] && !configs[1][1] && dispatcher >= 0 && branch > dispatcher &&
+        branch < configs[0].index && html.slice(configs[0].index, configs[1].index).includes("\n} else {\n'use strict';\n(() => {\n")) return 'legacy';
+    return null; // Unknown/changed bootstrap must not guess a healthy provider.
+}
+
 async function checkHealth({ requestImpl = request, now = Date.now() } = {}) {
     const responses = new Map();
     // Sequential bounded requests avoid a burst against the public API limiter.
@@ -64,13 +77,13 @@ async function checkHealth({ requestImpl = request, now = Date.now() } = {}) {
     }
     const health = responses.get('/api/health');
     add('/api/health', health.status === 200 && parseJson(health)?.status === 'ok', health.status);
-    const external = /customerTransport:\s*'external'/.test(responses.get('/signup').text || '');
-    const selected = external ? '/api/external-customer-signup/state' : '/api/customer-signup/state';
+    const provider = signupProvider(responses.get('/signup').text);
+    const selected = provider === null ? null : provider === 'external' ? '/api/external-customer-signup/state' : '/api/customer-signup/state';
     const signup = responses.get(selected);
-    add(selected, signup.status === 200 && parseJson(signup)?.state?.status === 'create_account', signup.status);
+    add(selected || 'signup provider selection', !!signup && signup.status === 200 && parseJson(signup)?.state?.status === 'create_account', signup?.status);
     // Inspect certificates on every required response; the inactive signup
     // provider may legitimately return 410 but cannot mask the selected provider.
-    const required = [...PAGES, '/api/health', selected];
+    const required = [...PAGES, '/api/health', ...(selected ? [selected] : [])];
     const expiry = required.map(path => Date.parse(responses.get(path).validTo));
     const days = Math.floor((Math.min(...expiry) - now) / 86400000);
     add('HTTPS certificate valid with at least 30 days remaining', Number.isFinite(days) && days >= EXPIRY_DAYS);

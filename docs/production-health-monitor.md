@@ -14,7 +14,10 @@ Probe `/`, `/signup`, `/login`, `/dashboard`, `/terms.html`, `/privacy.html`,
 `/api/health`, and both public signup-state endpoints. Pages require HTML/200 and
 health requires `ok`/200. The provider selected by the signup page must return
 `create_account`/200; an inactive provider's 410 is permitted. No auth-start routes
-are called. A certificate validated for its hostname and chain, with at least
+are called. The known hosted document embeds both runtimes: unqualified `/signup`
+uses its legacy default branch. A standalone external document selects external.
+Unknown/changed bootstrap shapes fail closed; remote JavaScript is never executed.
+A certificate validated for its hostname and chain, with at least
 30 days remaining, is required on every selected response.
 
 Reuse [#17](https://github.com/Discla1mer/nofries-platform/pull/17)'s audited GET

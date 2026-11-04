@@ -3,11 +3,20 @@ const https = require('node:https');
 const fs = require('node:fs');
 const { EventEmitter } = require('node:events');
 const { PATHS, checkHealth, request, run, main, formatReport, smokeReport } = require('../scripts/production-health-monitor');
+const { buildSignupDocument, buildHostedSignupDocument, buildSignupUnavailableDocument } = require('../lib/signupDocument');
+const { withHashBoundSharedAssistantDocument } = require('../lib/withHashBoundSharedAssistantDocument');
+const sources = { clientSource: fs.readFileSync(require.resolve('../api/shared/customerSignup/signupClient.js'), 'utf8'),
+    journeySource: fs.readFileSync(require.resolve('../api/shared/customerSignup/signupJourney.js'), 'utf8') };
+const legacyDocument = buildSignupDocument({ ...sources, customerLogin: true }).html;
+const externalDocument = buildSignupDocument({ ...sources, customerLogin: true, customerTransport: 'external' }).html;
+const hostedDocument = withHashBoundSharedAssistantDocument(buildHostedSignupDocument(sources), {
+    prospectSource: fs.readFileSync(require.resolve('../js/prospect-assistant.js'), 'utf8'),
+    sharedSource: fs.readFileSync(require.resolve('../js/shared-assistant.js'), 'utf8') }).html;
 const NOW = Date.parse('2026-11-05T00:00:00Z');
 const validTo = new Date(NOW + 60 * 86400000).toUTCString();
 const env = { NOFRIES_MONITOR_ENABLED: 'true', NOFRIES_MONITOR_ALERT_WEBHOOK: 'https://alerts.invalid/path?token=canary' };
 const healthy = path => ({ status: 200, validTo, type: path.startsWith('/api/') ? 'application/json' : 'text/html',
-    text: path === '/api/health' ? '{"status":"ok"}' : path.startsWith('/api/') ? '{"state":{"status":"create_account"}}' : '<html></html>' });
+    text: path === '/signup' ? legacyDocument : path === '/api/health' ? '{"status":"ok"}' : path.startsWith('/api/') ? '{"state":{"status":"create_account"}}' : '<html></html>' });
 const report = (override = {}) => checkHealth({ now: NOW, requestImpl: async url => ({ ...healthy(url.pathname), ...override[url.pathname] }) });
 
 test('healthy pages, API, signup and certificate pass', async () => {
@@ -21,9 +30,26 @@ test.each([['/signup', { status: 302 }], ['/dashboard', { type: 'application/jso
     expect((await report({ [path]: changed })).ok).toBe(false);
 });
 test('selected external provider cannot be masked by a healthy inactive legacy provider', async () => {
-    const external = { '/signup': { text: "customerTransport: 'external'" }, '/api/customer-signup/state': { status: 410 } };
+    const external = { '/signup': { text: externalDocument }, '/api/customer-signup/state': { status: 410 } };
     expect((await report(external)).ok).toBe(true);
     expect((await report({ ...external, '/api/customer-signup/state': {}, '/api/external-customer-signup/state': { status: 503 } })).ok).toBe(false);
+});
+test('hosted /signup chooses its legacy default even with an inactive external endpoint', async () => {
+    expect(hostedDocument).toContain("customerTransport: 'external'");
+    expect(Buffer.byteLength(hostedDocument)).toBeLessThan(1024 * 1024);
+    const r = await report({ '/signup': { text: hostedDocument }, '/api/external-customer-signup/state': { status: 410 } });
+    expect(r.ok).toBe(true);
+    expect(r.results[7]).toMatchObject({ check: '/api/customer-signup/state', ok: true, status: 200 });
+});
+test('healthy external endpoint cannot mask broken legacy state in the hosted default branch', async () => {
+    const r = await report({ '/signup': { text: hostedDocument }, '/api/customer-signup/state': { status: 503 } });
+    expect(r.ok).toBe(false);
+    expect(r.results[7]).toMatchObject({ check: '/api/customer-signup/state', ok: false, status: 503 });
+});
+test.each([buildSignupUnavailableDocument(), legacyDocument + externalDocument,
+    hostedDocument.replace("if (providers[0] === 'external')", "if (providers[0] === 'legacy')")])('unknown or changed bootstrap fails closed without guessing a provider', async html => {
+    const r = await report({ '/signup': { text: html } });
+    expect(r.ok).toBe(false); expect(r.results[7]).toMatchObject({ check: 'signup provider selection', ok: false });
 });
 test.each([[-1, false], [29, false], [30, true]])('certificate threshold %i days is %s', async (days, expected) => {
     const result = await report({ '/': { validTo: new Date(NOW + days * 86400000).toUTCString() } });
