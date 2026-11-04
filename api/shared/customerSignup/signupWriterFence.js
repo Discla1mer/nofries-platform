@@ -24,8 +24,10 @@ function createSignupWriterFence({ container, scopeId }) {
             for await (const b of response.readableStreamBody) { size += b.length; if (size > 2048) fail(); chunks.push(b); }
             if (size !== response.contentLength) fail();
             const value = fields(copy(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))), 2048),
-                ['schemaVersion', 'writerContract', 'scopeId', 'reset']);
-            if (value.schemaVersion !== 1 || value.writerContract !== CONTRACT || value.scopeId !== scopeId) fail();
+                ['schemaVersion', 'writerContract', 'scopeId', 'writer', 'reset']);
+            if (value.schemaVersion !== 2 || value.writerContract !== CONTRACT || value.scopeId !== scopeId) fail();
+            if (value.writer !== null) { fields(value.writer, ['operationId']); uuid(value.writer.operationId); }
+            if (value.writer !== null && value.reset !== null) fail();
             if (value.reset !== null) { fields(value.reset, ['operationId', 'planSha256']); uuid(value.reset.operationId); digest(value.reset.planSha256); }
             return value;
         } finally { response.readableStreamBody?.destroy(); }
@@ -39,7 +41,7 @@ function createSignupWriterFence({ container, scopeId }) {
             try { await current.check(); current.assertOpen(); return await work(); }
             finally { current.pending--; }
         }
-        const ready = { schemaVersion: 1, writerContract: CONTRACT, scopeId, reset: null };
+        const ready = { schemaVersion: 2, writerContract: CONTRACT, scopeId, writer: null, reset: null };
         const leaseId = randomUUID(), client = blob(), lease = client.getBlobLeaseClient(leaseId);
         // First use is an immutable protocol record, not a grant or adoption
         // attestation. Production reset separately requires controller approval.
@@ -47,38 +49,59 @@ function createSignupWriterFence({ container, scopeId }) {
             abortSignal: AbortSignal.timeout(4000), blobHTTPHeaders: { blobContentType: 'application/json', blobCacheControl: 'no-store' } }); }
         catch (e) { if (![409, 412].includes(e?.statusCode)) fail(); }
         try { await lease.acquireLease(-1, { abortSignal: AbortSignal.timeout(4000) }); } catch (_) { fail(); }
-        let release = reset === null, failed = false;
-        const context = { scopeId, reset, open: true, uncertain: false, pending: 0,
+        let release = false, failed = false;
+        const context = { scopeId, reset, open: true, uncertain: false, pending: 0, ownerExited: false, completion: false,
             assertOpen() { if (!context.open || context.uncertain) fail(); }, async check() {
             context.assertOpen();
             try { await lease.renewLease({ abortSignal: AbortSignal.timeout(4000) }); }
             catch (_) { context.uncertain = true; fail(); }
             context.assertOpen();
         } };
+        // Closing synchronously rejects detached continuations before any await.
+        // A completion request is not a marker clear: only the successfully
+        // settled owner may publish idle, after every observed write has joined.
+        async function ownership() {
+            if (context.uncertain) fail();
+            try { await lease.renewLease({ abortSignal: AbortSignal.timeout(4000) }); }
+            catch (_) { context.uncertain = true; fail(); }
+            if (context.uncertain) fail();
+        }
         try {
-            const value = await read();
-            if (value.reset !== null) { release = false; fail(); }
+            const value = await read().catch(fail);
+            // Schema 1 and retained operations are never auto-adopted, even if
+            // someone has broken their lease. Offline drain/recovery is separate.
+            if (value.writer !== null || value.reset !== null) fail();
             if (reset !== null) {
                 fields(reset, ['operationId', 'planSha256']); uuid(reset.operationId); digest(reset.planSha256);
-                await client.uploadData(Buffer.from(JSON.stringify({ ...ready, reset })), { conditions: { leaseId },
-                    abortSignal: AbortSignal.timeout(4000), blobHTTPHeaders: { blobContentType: 'application/json', blobCacheControl: 'no-store' } });
             }
+            // A durable intent precedes ALL application dispatch. Unknown intent
+            // acknowledgement keeps the lease; a successor also sees the intent.
+            await client.uploadData(Buffer.from(JSON.stringify({ ...ready,
+                writer: reset === null ? { operationId: leaseId } : null, reset })), { conditions: { leaseId },
+                abortSignal: AbortSignal.timeout(4000), blobHTTPHeaders: { blobContentType: 'application/json', blobCacheControl: 'no-store' } });
             const result = await held.run(context, () => work(Object.freeze({ check: context.check, async complete() {
-                if (reset === null) fail();
-                context.assertOpen(); context.pending++;
+                if (reset === null || context.pending !== 0) fail();
+                context.assertOpen(); context.open = false; context.pending++;
                 try {
-                    await observe(context, () => client.uploadData(Buffer.from(JSON.stringify(ready)), {
-                        conditions: { leaseId }, abortSignal: AbortSignal.timeout(4000) }));
-                    context.assertOpen(); release = true;
-                } finally { context.pending--; }
+                    await ownership();
+                    if (context.ownerExited) fail();
+                    context.completion = true;
+                } catch (error) { context.uncertain = true; throw error; }
+                finally { context.pending--; }
             } })));
-            context.open = false;
-            if (context.pending) { context.uncertain = true; fail(); }
+            context.ownerExited = true; context.open = false;
+            if (context.pending || context.uncertain) { context.uncertain = true; fail(); }
+            if (reset === null || context.completion) {
+                await ownership();
+                await client.uploadData(Buffer.from(JSON.stringify(ready)), { conditions: { leaseId },
+                    abortSignal: AbortSignal.timeout(4000), blobHTTPHeaders: { blobContentType: 'application/json', blobCacheControl: 'no-store' } });
+                await ownership(); release = true;
+            }
             return result;
         } catch (error) {
-            failed = true; throw error;
+            failed = true; context.uncertain = true; throw error;
         } finally {
-            context.open = false;
+            context.ownerExited = true; context.open = false;
             // Latch retention at owner exit. Late success cannot prove that the
             // callback joined its work, nor may it reopen or release this lease.
             if (context.pending) context.uncertain = true;

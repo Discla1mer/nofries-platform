@@ -19,13 +19,13 @@ function versionedBlobs() {
             },
             async uploadData(bytes, options = {}) {
                 calls.push(['write', key]); const before = current.get(key), c = options.conditions || {};
-                if (c.ifNoneMatch === '*' && before || c.ifMatch && c.ifMatch !== before?.etag || leases.has(key) && leases.get(key) !== c.leaseId) throw conflict();
+                if (c.ifNoneMatch === '*' && before || c.ifMatch && c.ifMatch !== before?.etag || (leases.has(key) || c.leaseId) && leases.get(key) !== c.leaseId) throw conflict();
                 return put(key, bytes);
             },
             async delete(options = {}) {
                 calls.push(['delete', key]); const before = current.get(key), c = options.conditions || {};
                 if (!before) throw missing();
-                if (c.ifMatch && c.ifMatch !== before.etag || leases.has(key) && leases.get(key) !== c.leaseId) throw conflict();
+                if (c.ifMatch && c.ifMatch !== before.etag || (leases.has(key) || c.leaseId) && leases.get(key) !== c.leaseId) throw conflict();
                 current.delete(key); leases.delete(key);
             },
             withVersion: id => client(key, id),

@@ -31,53 +31,50 @@ source participates. Scope is the hash of the authority storage account name,
 starter authority container name and contract. App and reset must use identical
 values. No settings are changed by this PR.
 
-The control blob is `customer-starter/reset-writer-fence/control.json` in the
-starter authority container. Both sides acquire its non-expiring lease before
-work. A reset persists its operation/plan marker before deletion and only clears
-it on explicit completion. Failure or uncertainty retains exclusion; there is
-no time-based takeover or app lease-break API. A retained reset marker blocks
-new writers even after someone deliberately breaks the lease.
+The control blob remains `customer-starter/reset-writer-fence/control.json` in the
+same starter authority container and scope. Schema 2 adds a durable `writer`
+operation ID alongside the mutually exclusive `reset` operation/plan marker.
+The infinite lease is acquired before reading control; application dispatch is
+forbidden until the intent upload acknowledges under that lease. Failed or
+unknown acknowledgement never starts application work. Every observed Blob write
+and SQL mutation/COMMIT checks ownership before dispatch and after acknowledgement.
 
-Every observed Blob write and SQL mutation/COMMIT checks lease ownership before
-dispatch and after acknowledgement. A lost lease stops subsequent work and
-cannot release a successor's lease. Conditional create/ETag conflicts remain
-reconcilable; uncertain remote errors retain the lease.
+Pending work is counted synchronously before its first await. The owner closes
+before deciding whether to publish idle. Only successful, joined work with no
+uncertainty can clear intent under the original lease and release it. Callback
+failure, pending work, uncertain swallowed errors or lease loss retains intent.
+Settled conditional-create/ETag conflicts remain reconcilable if the callback
+successfully reconciles them. This intentionally sacrifices availability on an
+unhandled callback failure, even if it appears to have had no effect.
 
-Pending work is counted synchronously before the first awaited ownership check,
-through dispatch, acknowledgement and the final check. Nested writer entry also
-counts its pending callback. The owner closes its context before deciding whether
-to release. Pending work latches retention, even if it later succeeds or its
-failure is swallowed. A callback returning successfully with pending work is
-rejected; an existing callback error is preserved, including on release failure.
-Already-settled, swallowed write errors keep their existing callback result but
-retain exclusion unless they are the known conditional conflicts above. Every
-awaited pre-check is followed by a synchronous open/not-uncertain assertion
-immediately before dispatch; a closed continuation cannot start another write.
+Reset `complete()` first refuses pending work and closes the context synchronously.
+It requests completion; it never clears control itself. The owner publishes idle
+only after the outer callback settles successfully and ownership is rechecked.
+Detached completion, a throw after completion, and a stale lease cannot clear a
+retained marker or a successor's marker. A lost clear acknowledgement after all
+work joined is safe for exclusion: no application write remains pending, but the
+caller still cannot infer successful completion from an uncertain response.
 
-Reset `complete()` participates in the same pending accounting and ownership
-checks. If it is detached, its already-dispatched marker clear can still land
-after the callback exits: retention guarantees the lease stays held, **not** that
-the marker bytes remain populated. Late completion never releases the lease.
-Completion must be joined; this patch adds no owner finalization or recovery API.
+The infinite lease has no natural expiry. Elapsed time does not permit takeover.
+After loss or an external break, a new process reads the retained writer/reset
+intent and refuses **even the same operation**. This code never breaks, repairs,
+or automatically adopts a retained fence. `readReset() === null` is not an idle
+probe: a writer intent may still exist. Use admission, never that read, for safety.
 
-An operator break cannot cancel an already-dispatched remote write. That case
-is tested as uncertain, not claimed atomic. Recovery must stop/drain **all**
-writers, settle in-flight effects and reconcile retained evidence before any
-explicit break/marker repair under an approved operator policy. A crashed app
-writer may retain the common lease even without a reset marker. This source-wide
-lease serializes writers and rejects contention; it adds no retry queue.
+Schema 1 (including apparently idle control) and malformed control are quarantined.
+Older strict readers also reject schema 2. There is no rolling mixed-schema
+migration: Fry needs separately qualified stopped admission, old-writer drainage,
+issued-call reconciliation and offline control migration before any activation.
+The contract/key/scope do not change, so a new namespace cannot bypass old intent.
 
-Fry must reconcile the overlapping fence module, composition files and versioned
-blob test helper with
-#47, preserve that PR's reset `withReset` integration and adoption checks, and
-regenerate `writerImplementationSha256()` from the final combined source. Do not
-reuse the old adoption digest. Old/unfenced app instances must be drained before
-reset is enabled. #20 alone is insufficient. Versioning, staff acceptance,
-listing/auth policy and the non-production reset/rollback rehearsal remain
-separate release gates. No release workflow or pinned release file is changed.
-#56 remains dormant pending a qualified common/target retained-fence recovery
-host; this patch does not supply one. Keep #16 open through integration and
-operational qualification.
+A fence cannot make separate Blob/SQL effects atomic. An already-dispatched write
+can land after a crash or lease loss and leave physical partial state. The proven
+property is exclusion and quarantine: no successor reset/signup may adopt it,
+continue deletion, overwrite it or report that uncertain work completed. A trusted
+recovery host must reconcile it before admission resumes. This PR provides no such
+host and makes no claim that production can never contain an orphan or partial row.
+
+See [the reconciled stack and #47 handoff](signup-fence-reconciliation.md).
 
 ## Verification
 
@@ -97,8 +94,8 @@ budget remains 60 seconds; an upload starting near its deadline has the same
 race. Further tests pause nested entry, pre-dispatch renewal, upload, post-ack
 renewal, SQL COMMIT and reset completion across early race/all failure and
 detached success. They preserve ROLLBACK cleanup, known conflicts, normal nesting
-and callback errors. This demonstrates source-wide exclusion, not a full #47
-deletion/reset or production resurrection.
+and callback errors. The guarded reset tests additionally exercise the actual reset coordinator
+under the common fence with synthetic target storage; #47 is not wired here.
 
 Required application, dependency and PostgreSQL CI must pass on the final head.
 These tests are not live Azure lease/version recovery or staff acceptance.
