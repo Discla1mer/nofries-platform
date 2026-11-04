@@ -438,7 +438,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             expect(second.assessments.map(row => row.assessmentId)).toEqual(['assessment-b']);
             expect(second.nextAfterAssessmentId).toBeNull();
             first.assessments.forEach(row => expect(Object.keys(row).sort()).toEqual([
-                'assessmentId', 'moduleId', 'profileRef', 'status', 'revision', 'revisionSha256', 'createdAt', 'updatedAt', 'progress'
+                'assessmentId', 'moduleId', 'profileRef', 'status', 'revision', 'revisionSha256', 'createdAt', 'updatedAt', 'progress', 'scopePopulation'
             ].sort()));
         });
 
