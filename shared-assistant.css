@@ -119,3 +119,5 @@
         padding-right: calc(56px + 12px + env(safe-area-inset-right, 0px) + 8px);
     }
 }
+
+.nf-assistant[data-shared-assistant] .assistant-prompts button { max-width: 100%; }

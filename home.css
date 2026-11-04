@@ -1273,3 +1273,10 @@ body[data-dashboard-gateway="true"]:has(#dashboardStatusPanel:not([hidden])) .ho
     .preview-topics > div { gap: 8px; font-size: .75rem; }
 }
 @media (prefers-reduced-motion: reduce) { html:has(.homepage-hero) { scroll-behavior: auto; } }
+
+.public-roadmap { overflow-wrap: anywhere; }
+
+.homepage-benefit-grid h3 { overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+    .access-page .site-header { grid-template-columns: minmax(0, 1fr); }
+}

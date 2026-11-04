@@ -448,3 +448,5 @@ body[data-page="managed-it-information"] .home-footer nav a {
         transform: none;
     }
 }
+
+.managed-it-main { overflow-wrap: anywhere; }
