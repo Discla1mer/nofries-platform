@@ -28,6 +28,8 @@ test('one labelled closed launcher and non-modal-ready dialog contain no automat
     expect(html).toContain('id="assistant-input"');
     expect(html).toContain('required disabled');
     expect(html).toContain('Keep private information out.');
+    expect(html).not.toContain('<p>No Fries</p>');
+    expect(html).not.toContain('placeholder=');
 });
 
 test('closed public page hints select existing fixed starters without customer identity or permissions', () => {
@@ -51,7 +53,8 @@ test('closed public page hints select existing fixed starters without customer i
 test('dashboard public guidance is forced into the deterministic help-only mode', () => {
     const html = renderSharedAssistant({ ...fixture, page: 'dashboard' });
     expect(html).toContain('data-assistant-help-only="true"');
-    expect(html).toContain('Public help only. No access to your organisation, forms or assessments.');
+    expect(html).toContain('Public help only. No access to your organisation, forms or assessments, and no account or assessment changes.');
+    expect(html).toContain('id="assistant-progress" role="status" aria-live="polite"></p>');
     expect(() => renderSharedAssistant({ ...fixture, page: 'dashboard', helpOnly: false })).toThrow('shared_assistant_help_mode_invalid');
     expect(() => renderSharedAssistant({ ...fixture, helpOnly: 'true' })).toThrow('shared_assistant_help_mode_invalid');
     expect(renderSharedAssistant({ ...fixture, helpOnly: true })).toContain('data-assistant-help-only="true"');
@@ -89,7 +92,8 @@ test('public chat exposes a multiline labelled composer, recovery controls and t
     expect(html).toContain('aria-describedby="nofries-assistant-boundary assistant-compose-hint"');
     expect(html).toContain('Shift+Enter for a new line');
     for (const id of ['assistant-stop', 'assistant-retry', 'assistant-reset']) expect(html).toContain(`id="${id}"`);
-    expect(html).toContain('Chat view lasts until you clear it or reload this page.');
+    expect(html).toContain('aria-describedby="nofries-assistant-history"');
+    expect(html).toContain('id="nofries-assistant-history">Chat view lasts until you clear it or reload this page.');
     expect(renderSharedAssistant({ ...fixture, page: 'managed-it' })).toContain('not any server records');
     expect(html).not.toMatch(/<input[^>]+id="assistant-input"|localStorage|sessionStorage/);
 });

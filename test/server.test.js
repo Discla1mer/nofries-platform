@@ -354,7 +354,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         }
         expect(response.text).toContain('<p class="eyebrow">Optional support</p>');
         expect(response.text).toContain('id="other-services-title">Need a hand with the day-to-day?</h2>');
-        expect(response.text).toContain('Public help only. No access to your organisation, forms or assessments. Keep private information out.');
+        expect(response.text).toContain('Public help only. No access to your organisation, forms or assessments, and no account or assessment changes. Keep private information out.');
         expect(response.text).not.toContain('Tell us about your people, devices and current set-up.');
         expect(response.text).not.toContain('one useful question at a time');
         expect(response.text).not.toContain('Plan your Lean Managed IT service.');

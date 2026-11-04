@@ -56,19 +56,17 @@
     box-shadow: 0 12px 40px rgba(72, 54, 22, .28);
 }
 .nf-assistant-panel[open] { display: flex; flex-direction: column; }
-.nf-assistant-header { position: sticky; top: 0; z-index: 1; display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px 6px; background: #f6f2ea; }
-.nf-assistant-header p, .nf-assistant-header h2 { margin: 0; }
-.nf-assistant-header p { color: var(--nf-assistant-muted); font-size: 11px; }
-.nf-assistant-header h2 { font-size: 20px; line-height: 1.3; }
+.nf-assistant-header { position: sticky; top: 0; z-index: 1; display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px 8px; background: #f6f2ea; }
+.nf-assistant-header h2 { margin: 0; font-family: var(--font-serif), "Iowan Old Style", Charter, Cambria, Georgia, serif; font-size: 20px; font-weight: 600; line-height: 1.3; }
 .nf-assistant-close { flex: 0 0 40px; width: 40px; height: 40px; border: 1px solid #8a7f6d; border-radius: 10px; color: var(--nf-assistant-ink); background: transparent; font-size: 24px; }
-.nf-assistant-boundary { margin: 6px 16px 12px; color: var(--nf-assistant-muted); font-size: 12px; }
+.nf-assistant-boundary { margin: 0 16px 8px; color: var(--nf-assistant-muted); font-size: 12px; }
 .nf-assistant[data-shared-assistant] .prospect-assistant { display: flex; flex: 1 0 auto; flex-direction: column; min-width: 0; min-height: 0; max-height: none; padding: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .nf-assistant[data-shared-assistant] .assistant-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 16px 8px; border: 0; }
 .nf-assistant[data-shared-assistant] .assistant-runtime { display: inline-block; padding: 2px 7px; border: 1px solid #8a7f6d; border-radius: 20px; color: #7a5711; font-size: 11px; }
 .nf-assistant[data-shared-assistant] .assistant-runtime.is-unavailable { color: #a3352a; }
 .nf-assistant[data-shared-assistant] .assistant-messages { display: grid; align-content: start; gap: 14px; min-height: 80px; max-height: 36dvh; margin: 0; padding: 10px 16px; overflow: auto; overscroll-behavior: contain; }
-.nf-assistant[data-shared-assistant] .assistant-message { display: grid; gap: 3px; max-width: 95%; }
-.nf-assistant[data-shared-assistant] .assistant-message > span { color: var(--nf-assistant-muted); font-size: 11px; }
+.nf-assistant[data-shared-assistant] .assistant-message { position: relative; display: grid; gap: 3px; max-width: 95%; }
+.nf-assistant[data-shared-assistant] .assistant-message > span { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 .nf-assistant[data-shared-assistant] .assistant-message p { margin: 0; padding: 9px 11px; border: 1px solid #d3c9b7; border-radius: 10px; color: #17140f; background: #ece6da; font-size: 16px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .nf-assistant[data-shared-assistant] .assistant-message.is-user { justify-self: end; }
 .nf-assistant[data-shared-assistant] .assistant-message.is-user p { background: #f2e4bc; }
@@ -83,10 +81,11 @@
 .nf-assistant[data-shared-assistant] .assistant-form button { flex: 0 0 auto; min-width: 56px; min-height: 44px; padding: 8px; border: 0; border-radius: 8px; color: #17140f; background: #e5b53b; font-size: 14px; font-weight: 750; }
 .nf-assistant[data-shared-assistant] button:disabled { cursor: default; opacity: .6; }
 .nf-assistant[data-shared-assistant] .assistant-progress { margin: 8px 16px 0; color: var(--nf-assistant-muted); font-size: 11px; }
+.nf-assistant[data-shared-assistant] .assistant-progress:empty { display: none; margin: 0; }
 .nf-assistant[data-shared-assistant] #assistant-reset, .nf-assistant[data-shared-assistant] .nf-assistant-actions button { min-height: 36px; padding: 6px 9px; border: 1px solid #8a7f6d; border-radius: 8px; color: #3a342b; background: #ece6da; font-weight: 500; }
 .nf-assistant-actions { display: flex; gap: 8px; margin-top: 6px; }
 .nf-assistant-compose-hint, .nf-assistant-history { margin: 5px 0 0; color: var(--nf-assistant-muted); font-size: 11px; }
-.nf-assistant-history { margin: 8px 16px 0; }
+.nf-assistant-history { margin: 0 16px 8px; }
 .nf-assistant-footer { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 16px; padding: 12px 16px; font-size: 12px; }
 .nf-assistant-handoff { margin: 0 16px; }
 @media (max-width: 480px) {
