@@ -89,6 +89,14 @@ function createAzureEmptySignupResetBinding({ accountContainer, authorityContain
         }
         let settled = false, retaining = false;
         const assertOpen = () => { if (settled) fail('fence_settled'); };
+        const releaseOwned = async () => {
+            // Conditional deletion is the ownership decision, not a prior read:
+            // a superseded holder must never release inherited target leases.
+            // Failed/unknown deletion leaves them held for operator recovery.
+            await fenceBlob.delete({ conditions: { ifMatch: etag } });
+            settled = true;
+            for (const name of ['account', 'authority']) await release(keys[name], record.leaseIds[name]);
+        };
         const fence = Object.freeze({
             async assertCurrent() {
                 assertOpen();
@@ -103,9 +111,8 @@ function createAzureEmptySignupResetBinding({ accountContainer, authorityContain
             },
             async complete() {
                 assertOpen();
-                for (const name of ['account', 'authority']) await release(keys[name], record.leaseIds[name]);
-                await fenceBlob.delete({ conditions: { ifMatch: etag } });
-                settled = true;
+                retaining = true; // Do not retry uncertain completion in finally.
+                await releaseOwned();
             }
         });
         try {
@@ -117,9 +124,8 @@ function createAzureEmptySignupResetBinding({ accountContainer, authorityContain
             // retain leaves the fence and leases in place for operator review.
             if (!settled && !retaining && !existing) {
                 try {
-                    for (const name of ['account', 'authority']) await release(keys[name], record.leaseIds[name]);
-                    await fenceBlob.delete({ conditions: { ifMatch: etag } });
-                } catch (_) { /* The durable fence remains; the next attempt must resume or be reviewed. */ }
+                    await releaseOwned();
+                } catch (_) { /* Unreleased leases require review, even if deletion acknowledgement was lost. */ }
             }
             held.delete(keys.account); held.delete(keys.authority);
         }

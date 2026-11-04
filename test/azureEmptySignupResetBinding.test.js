@@ -246,6 +246,67 @@ test('failed fence deletion followed by retain preserves both target leases', as
     expect(f.fenceKeys()).toEqual([]);
 });
 
+test.each([false, true])('uncertain deletion (applied=%s) never releases leases or retries cleanup', async applied => {
+    const f = fixture(), client = f.starter.getBlockBlobClient;
+    const remove = jest.fn(async (blob, options) => {
+        if (applied) await blob.delete(options);
+        throw storageError(500, 'AcknowledgementLost');
+    });
+    f.starter.getBlockBlobClient = key => {
+        const blob = client(key);
+        return key.startsWith(FENCE_PREFIX) ? { ...blob, delete: options => remove(blob, options) } : blob;
+    };
+    await expect(f.bindingFor().withExclusiveTarget(targetBinding(f), fence => fence.complete())).rejects.toThrow('AcknowledgementLost');
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(f.fenceKeys()).toHaveLength(applied ? 0 : 1);
+    for (const name of ['account', 'authority']) await expect(f.appWrite(name)).rejects.toMatchObject({ statusCode: 412 });
+});
+
+test('a takeover during conditional deletion cannot race the old holder into releasing leases', async () => {
+    const f = fixture(), client = f.starter.getBlockBlobClient;
+    const deleting = deferred(), allowDelete = deferred(), ready = deferred(), finish = deferred();
+    let pause = true, successor;
+    f.starter.getBlockBlobClient = key => {
+        const blob = client(key);
+        return key.startsWith(FENCE_PREFIX) ? { ...blob, delete: async options => {
+            if (pause) { pause = false; deleting.resolve(); await allowDelete.promise; }
+            return blob.delete(options);
+        } } : blob;
+    };
+    const first = f.bindingFor().withExclusiveTarget(targetBinding(f), fence => fence.complete());
+    const rejected = expect(first).rejects.toMatchObject({ statusCode: 412 });
+    try {
+        await deleting.promise;
+        successor = f.bindingFor().withExclusiveTarget(targetBinding(f), async fence => {
+            ready.resolve(); await finish.promise; await fence.complete();
+        });
+        successor.catch(ready.reject);
+        await ready.promise;
+        allowDelete.resolve(); await rejected;
+        for (const name of ['account', 'authority']) await expect(f.appWrite(name)).rejects.toMatchObject({ statusCode: 412 });
+    } finally {
+        allowDelete.resolve(); finish.resolve();
+        await Promise.allSettled([first, successor]);
+    }
+    await successor;
+    expect(f.fenceKeys()).toEqual([]);
+});
+
+test('lease release failure after acknowledged deletion is terminal and does not recreate the marker', async () => {
+    const f = fixture(), client = f.starter.getBlockBlobClient, release = jest.fn(async () => { throw storageError(500, 'ServerBusy'); });
+    f.starter.getBlockBlobClient = key => {
+        const blob = client(key);
+        return key === KEYS.account ? { ...blob, getBlobLeaseClient: id => ({ ...blob.getBlobLeaseClient(id), releaseLease: release }) } : blob;
+    };
+    await f.bindingFor().withExclusiveTarget(targetBinding(f), async fence => {
+        await expect(fence.complete()).rejects.toThrow('ServerBusy');
+        await expect(fence.retain()).rejects.toThrow('fence_settled');
+    });
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(f.fenceKeys()).toEqual([]);
+    for (const name of ['account', 'authority']) await expect(f.appWrite(name)).rejects.toMatchObject({ statusCode: 412 });
+});
+
 test('the blobs port refuses keys outside the target and writes outside a held fence', async () => {
     const f = fixture(), { blobs } = f.bindingFor();
     for (const key of ['dashboard-proofs/x.json', FENCE_PREFIX + 'x.json', 'customer-starter/../x.json']) {
