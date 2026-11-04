@@ -95,7 +95,10 @@ describe('real HTTPS transport with a local synthetic certificate', () => {
         const offset = seen.length;
         expect((await request(new URL('/redirect', base), { requestImpl: trusted })).status).toBe(302);
         expect(seen.slice(offset).map(x => x.path)).toEqual(['/redirect']);
-        for (const req of seen) { expect(req.method).toBe('GET'); expect(req.headers.cookie).toBeUndefined(); expect(req.headers.authorization).toBeUndefined(); }
+        for (const req of seen) {
+            expect(req.method).toBe('GET'); expect(req.headers.cookie).toBeUndefined(); expect(req.headers.authorization).toBeUndefined();
+            expect(req.headers['accept-encoding']).toBe('identity'); expect(req.headers['cache-control']).toBe('no-cache');
+        }
     });
     test('bounded body and stalled response terminate', async () => {
         expect(await request(new URL('/big', base), { requestImpl: trusted })).toEqual({ status: 0 });
