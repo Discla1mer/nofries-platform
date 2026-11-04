@@ -118,8 +118,9 @@ function createNoFriesApp(configuration = {}) {
         if (!configuration || typeof configuration !== 'object' || isProxy(configuration)) throw new Error();
         const keys = Reflect.ownKeys(configuration);
         fields(configuration, keys);
-        if (keys.some(key => !['dashboard', 'dashboardAdmin', 'dashboardAdminSignupList', 'customerSignup', 'externalCustomerSignup', 'signupBootstrap', 'organisationSetup', 'externalOrganisationSetup', 'starterClients', 'externalStarterClients', 'customerEntry', 'retainedTrialRead'].includes(key))) throw new Error();
+        if (keys.some(key => !['dashboard', 'dashboardAdmin', 'dashboardAdminSignupList', 'customerSignup', 'externalCustomerSignup', 'signupBootstrap', 'organisationSetup', 'externalOrganisationSetup', 'starterClients', 'externalStarterClients', 'customerEntry', 'retainedTrialRead', 'tryDemo'].includes(key))) throw new Error();
         if (keys.includes('customerEntry') && configuration.customerEntry !== 'external') throw new Error();
+        if (keys.includes('tryDemo') && configuration.tryDemo !== true) throw new Error();
         if (keys.includes('starterClients') && typeof configuration.starterClients !== 'function') throw new Error();
         if (keys.includes('externalStarterClients') && typeof configuration.externalStarterClients !== 'function') throw new Error();
         if (keys.includes('dashboard') && configuration.dashboard !== null) {
@@ -916,6 +917,16 @@ app.get('/', (req, res) => {
     res.setHeader('Content-Security-Policy', document.contentSecurityPolicy);
     res.status(200).type('html').send(withSharedAssistantDocument(document.html, 'home'));
 });
+// Default-off fictional demo (#29). Only the local demo/try/serve.js sets tryDemo.
+if (configuration.tryDemo === true) {
+    const tryDemo = require('./demo/try/document').buildTryDemoDocument();
+    app.get(['/try', '/try/'], (req, res) => {
+        res.setHeader('Content-Security-Policy', tryDemo.contentSecurityPolicy);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+        res.status(200).type('html').send(tryDemo.html);
+    });
+}
 mountPublicAssets(app);
 
 app.use((req, res) => {
