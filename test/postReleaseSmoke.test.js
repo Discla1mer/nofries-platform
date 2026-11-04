@@ -7,6 +7,7 @@ jest.mock('../api/shared/releaseManifest.json', () => ({ schemaVersion: 2, relea
 
 const { runSmoke, parseArgs, formatReport, READ_ONLY_PATHS, SIGN_IN_CHECK } = require('../scripts/post-release-smoke');
 const { customerProductionHarness } = require('./helpers/customerProductionHarness');
+const { buildSignupDocument } = require('../lib/signupDocument');
 
 let servers = [];
 beforeAll(() => { jest.spyOn(console, 'warn').mockImplementation(() => {}); });
@@ -173,12 +174,16 @@ test.each(['https://user:synthetic-secret@example.invalid', 'https://example.inv
 test('CLI returns 0 for pass, 1 for failed checks and 2 for invalid arguments', async () => {
     const { spawn } = require('node:child_process');
     const http = require('node:http');
+    const read = path => require('node:fs').readFileSync(require.resolve(path), 'utf8');
+    const signupHtml = buildSignupDocument({ customerLogin: true,
+        clientSource: read('../api/shared/customerSignup/signupClient.js'),
+        journeySource: read('../api/shared/customerSignup/signupJourney.js') }).html;
     let missingAssessment = false;
     const server = http.createServer((req, res) => {
         const path = req.url;
         res.setHeader('content-type', 'application/json');
         if (path === '/api/health' || path === '/release.json') return res.end(JSON.stringify({ status: 'ok', releaseSha: SHA }));
-        if (['/signup', '/login', '/dashboard'].includes(path)) { res.setHeader('content-type', 'text/html'); return res.end('<html></html>'); }
+        if (['/signup', '/login', '/dashboard'].includes(path)) { res.setHeader('content-type', 'text/html'); return res.end(signupHtml); }
         if (path === '/api/customer-signup/state') return res.end(JSON.stringify({ state: { status: 'create_account' } }));
         if (path.includes('organisation-setup')) return res.end(JSON.stringify({ state: 'start' }));
         if (path === '/api/dashboard/login') { res.writeHead(302, { location: '/login' }); return res.end(); }

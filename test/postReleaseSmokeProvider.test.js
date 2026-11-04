@@ -30,7 +30,7 @@ test.each([
     ['legacy', legacy, 503, 200, '/api/customer-signup/state: expected create_account, got HTTP 503'],
     ['external', external, 410, 200, null],
     ['external', external, 200, 503, '/api/external-customer-signup/state: expected create_account, got HTTP 503']
-])('generated server-selected %s follows only its selected endpoint (%i / %i)', (_, html, a, b, expected) => {
+])('generated server-selected %s follows only its selected endpoint', (_, html, a, b, expected) => {
     expect(check(html, a, b)).toBe(expected);
 });
 
@@ -44,15 +44,17 @@ test.each([
     expect(check(html, 200, 200)).toBe('signup provider selection unavailable');
 });
 
-// Public visual #32 f8b7b114 / counterpart #723: presentation contracts only.
+// Public visual #32 61b76e4 / counterpart #723: presentation contracts only.
 // Smoke must not depend on these classes, heading line breaks, CTA text or arrows.
-const visualGateway = '<html><body data-page="dashboard-home"><h1 id="home-title">Your risk <br><em>posture on <br>a page.</em></h1>' +
+const visualGateway = '<html><body data-page="dashboard-home"><h1 id="home-title">Clearer IT.<br><em>Confident<br>next steps.</em></h1>' +
     '<a class="button homepage-primary" href="/login?intent=create">Create account <span aria-hidden="true">→</span></a>' +
     '<a class="homepage-login" href="/login?intent=login">Log in</a></body></html>';
-test.each([false, true])('full read-only smoke accepts visual design (simplified copy: %s)', async simplified => {
+test.each(['current public', 'earlier counterpart', 'simplified'])('full read-only smoke accepts %s visual copy', async copy => {
+    const simplified = copy === 'simplified';
     const sha = 'a'.repeat(40), calls = [];
     const html = simplified ? hosted.replace(/Opening your account/g, 'Welcome').replace(/Checking your sign-in and workspace access…/g, '') : hosted;
-    const gateway = simplified ? visualGateway.replace('Create account', 'Sign up').replace('→', '') : visualGateway;
+    const gateway = simplified ? visualGateway.replace('Create account', 'Sign up').replace('→', '')
+        : copy === 'earlier counterpart' ? visualGateway.replace('Clearer IT.<br><em>Confident<br>next steps.</em>', 'Your risk <br><em>posture on <br>a page.</em>') : visualGateway;
     const report = await runSmoke({ baseUrl: 'https://example.invalid', expectSha: sha, fetchImpl: async (url, init) => {
         calls.push({ path: url.pathname, init });
         const path = url.pathname;

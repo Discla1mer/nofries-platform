@@ -27,6 +27,20 @@ function json(response) {
     try { return JSON.parse(response.text); } catch (_) { return null; }
 }
 
+// Provider recognition matches #71 a7cd840; keep generated-document regressions aligned.
+// Inspect only the known source-owned bootstrap shape; never execute remote JS.
+// /signup has no query/cookies. Hosted output embeds external first, legacy in
+// the default else branch; an external literal alone does not select it.
+function signupProvider(html = '') {
+    const configs = [...html.matchAll(/const transportClient = transport\.createSignupClient\(\{ fetch: window\.fetch\.bind\(window\),\s*(customerTransport: 'external',\s*)?createAccount:/g)];
+    const dispatcher = html.indexOf("const providers = new URLSearchParams(window.location.search || '').getAll('provider');");
+    const branch = html.indexOf("if (providers[0] === 'external') {\n");
+    if (dispatcher < 0 && branch < 0 && configs.length === 1) return configs[0][1] ? 'external' : 'legacy';
+    if (configs.length === 2 && configs[0][1] && !configs[1][1] && dispatcher >= 0 && branch > dispatcher &&
+        branch < configs[0].index && html.slice(configs[0].index, configs[1].index).includes("\n} else {\n'use strict';\n(() => {\n")) return 'legacy';
+    return null; // Unknown/changed bootstrap must not guess a healthy provider.
+}
+
 // Each check receives the probe results and returns null on success or a
 // short reason. Reasons contain only fixed labels, numeric status codes and validated SHAs.
 const READ_ONLY_CHECKS = [
@@ -47,7 +61,9 @@ const READ_ONLY_CHECKS = [
     } })),
     { name: 'signup starts at create_account', paths: ['/signup', '/api/customer-signup/state', '/api/external-customer-signup/state'], check([page, legacy, external]) {
         // Inspect the served client configuration; never execute page JavaScript.
-        const usesExternal = /customerTransport:\s*'external'/.test(page.text);
+        const provider = signupProvider(page.text);
+        if (provider === null) return 'signup provider selection unavailable';
+        const usesExternal = provider === 'external';
         const r = usesExternal ? external : legacy;
         return r.status === 200 && json(r)?.state?.status === 'create_account' ? null
             : `${usesExternal ? '/api/external-customer-signup/state' : '/api/customer-signup/state'}: expected create_account, got HTTP ${r.status}`;

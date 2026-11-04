@@ -45,7 +45,18 @@ checks:
 - Signup state starts at `create_account` for the provider selected by the served
   `/signup` page (legacy or external); organisation setup is available. Both state
   endpoints are read, but a healthy inactive provider cannot hide a broken selected one.
+  Static-hosted signup embeds both providers: the query-free `/signup` probe selects
+  its default legacy branch. Server-selected external signup checks external state.
+  Recognition follows the known client bootstrap, never executes remote JavaScript,
+  and fails closed if that bootstrap is unknown or changes.
 - Session, dashboard and NCSC assessment APIs exist and return `401` when signed out.
+
+The smoke uses route/status and client-bootstrap contracts, not visual CSS selectors,
+heading text or button labels. The #32/#723 presentation (including line-broken
+headings and signup arrows) does not choose a provider. Generated hosted and
+server-selected documents plus visual-copy variants are covered by
+`test/postReleaseSmokeProvider.test.js`. This is wiring evidence, not a visual or
+accessibility audit; Fry's visual owner still qualifies the final rendered design.
 
 Exit code `0` means pass, `1` means a check failed and `2` means bad arguments.
 Every check has a numbered PASS/FAIL line and each exact requested URL with its
