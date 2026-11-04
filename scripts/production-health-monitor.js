@@ -77,20 +77,38 @@ async function checkHealth({ requestImpl = request, now = Date.now() } = {}) {
     return { ok: results.every(r => r.ok), results, certificateDaysRemaining: Number.isFinite(days) ? days : null };
 }
 
+// Adapt to #17's runSmoke result shape and reuse its numbered PASS/FAIL + GET
+// output convention (29b80bfa). This smaller monitor is not the full smoke suite.
+function smokeReport(report) {
+    return { ok: report.ok, readOnly: true, results: report.results.map((r, i) => ({
+        step: i + 1, name: r.check, ok: r.ok, reason: r.ok ? null : 'required health check failed',
+        probes: r.status === undefined ? [] : [{ url: new URL(r.check, ORIGIN).href, status: r.status }]
+    })) };
+}
 function formatReport(report) {
-    return ['No Fries read-only health monitor', ...report.results.map(r =>
-        `${r.ok ? 'PASS' : 'FAIL'} ${r.check}${r.status === undefined ? '' : ` (HTTP ${r.status}; 0 = transport/timeout failure)`}`),
-    `Certificate days remaining: ${report.certificateDaysRemaining ?? 'unavailable'}`].join('\n');
+    const { ok, results } = smokeReport(report);
+    const lines = ['Mode: READ-ONLY (unauthenticated GET; no redirects).'];
+    for (const r of results) {
+        lines.push(`${r.ok ? 'PASS' : 'FAIL'} step ${r.step}: ${r.name}${r.ok ? '' : ` (${r.reason})`}`);
+        for (const p of r.probes) lines.push(`  GET ${p.url} -> ${p.status === 0 ? 'NETWORK/TIMEOUT failure' : `HTTP ${p.status}`}`);
+    }
+    lines.push(`${ok ? 'PASS' : 'FAIL'} production health: ${results.filter(r => r.ok).length}/${results.length} checks passed.`);
+    lines.push(`Certificate days remaining: ${report.certificateDaysRemaining ?? 'unavailable'}`);
+    return lines.join('\n');
 }
 
 function destination(value) {
     try {
         const url = new URL(value);
-        return url.protocol === 'https:' && !url.username && !url.password && !url.hash ? url : null;
+        const hostname = url.hostname.replace(/\.$/, '');
+        const appHost = hostname === 'nofries.nz' || hostname.endsWith('.nofries.nz');
+        return url.protocol === 'https:' && !appHost && !url.username && !url.password && !url.hash ? url : null;
     } catch (_) { return null; }
 }
 
 async function run({ env = process.env, probe = checkHealth, deliver = request, log = console.log } = {}) {
+    // Alert delivery belongs only to an owner-managed private host, never an Actions job.
+    if (env.GITHUB_ACTIONS === 'true') { log('DISABLED: alert delivery is unavailable in GitHub Actions.'); return 2; }
     if (env.NOFRIES_MONITOR_ENABLED !== 'true') { log('DISABLED: production monitoring is not enabled.'); return 0; }
     const webhook = destination(env.NOFRIES_MONITOR_ALERT_WEBHOOK);
     if (!webhook) { log('DISABLED: configure a valid HTTPS alert destination before monitoring.'); return 2; }
@@ -109,7 +127,16 @@ async function run({ env = process.env, probe = checkHealth, deliver = request, 
     return 1;
 }
 
-if (require.main === module) run().then(code => { process.exitCode = code; }).catch(() => {
+async function main(args = process.argv.slice(2), options = {}) {
+    if (args.length === 0 || args.length === 1 && args[0] === '--monitor') return run(options);
+    if (args.length === 1 && args[0] === '--check') {
+        // Explicit one-off probe: no environment/destination lookup or alert POST.
+        const report = await (options.probe || checkHealth)();
+        (options.log || console.log)(formatReport(report)); return report.ok ? 0 : 1;
+    }
+    (options.log || console.log)('FAIL: use --check for credential-free probes or --monitor on a private host.'); return 2;
+}
+if (require.main === module) main().then(code => { process.exitCode = code; }).catch(() => {
     console.error('FAIL: monitor execution failed.'); process.exitCode = 2;
 });
-module.exports = { PATHS, checkHealth, request, run, formatReport };
+module.exports = { PATHS, checkHealth, request, run, main, formatReport, smokeReport };

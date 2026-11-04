@@ -2,7 +2,7 @@
 const https = require('node:https');
 const fs = require('node:fs');
 const { EventEmitter } = require('node:events');
-const { PATHS, checkHealth, request, run, formatReport } = require('../scripts/production-health-monitor');
+const { PATHS, checkHealth, request, run, main, formatReport, smokeReport } = require('../scripts/production-health-monitor');
 const NOW = Date.parse('2026-11-05T00:00:00Z');
 const validTo = new Date(NOW + 60 * 86400000).toUTCString();
 const env = { NOFRIES_MONITOR_ENABLED: 'true', NOFRIES_MONITOR_ALERT_WEBHOOK: 'https://alerts.invalid/path?token=canary' };
@@ -37,7 +37,10 @@ test('missing certificate and secret-bearing errors fail without leaking bodies 
 });
 test.each([{}, { NOFRIES_MONITOR_ENABLED: 'false' }, { NOFRIES_MONITOR_ENABLED: 'TRUE' },
     { NOFRIES_MONITOR_ENABLED: 'true' }, { ...env, NOFRIES_MONITOR_ALERT_WEBHOOK: 'http://alerts.invalid/canary' },
-    { ...env, NOFRIES_MONITOR_ALERT_WEBHOOK: 'https://user:canary@alerts.invalid' }])('configuration is fail-closed before ALL network activity: %j', async config => {
+    { ...env, NOFRIES_MONITOR_ALERT_WEBHOOK: 'https://user:canary@alerts.invalid' },
+    { ...env, NOFRIES_MONITOR_ALERT_WEBHOOK: 'https://nofries.nz/api/customer-signup' },
+    { ...env, NOFRIES_MONITOR_ALERT_WEBHOOK: 'https://www.nofries.nz/canary' },
+    { ...env, NOFRIES_MONITOR_ALERT_WEBHOOK: 'https://nofries.nz./canary' }])('configuration is fail-closed before ALL network activity: %j', async config => {
     const probe = jest.fn(), deliver = jest.fn(), log = jest.fn();
     await run({ env: config, probe, deliver, log });
     expect(probe).not.toHaveBeenCalled(); expect(deliver).not.toHaveBeenCalled();
@@ -49,7 +52,7 @@ test('healthy enabled runs do not notify; unhealthy runs send one sanitized text
     expect(deliver).not.toHaveBeenCalled();
     expect(await run({ env, probe: () => report({ '/': { status: 503, text: 'canary' } }), deliver, log })).toBe(1);
     expect(deliver).toHaveBeenCalledTimes(1);
-    expect(deliver.mock.calls[0][1].payload.text).toContain('FAIL /');
+    expect(deliver.mock.calls[0][1].payload.text).toContain('FAIL step 1: /');
     expect(JSON.stringify(deliver.mock.calls[0][1]) + JSON.stringify(log.mock.calls)).not.toContain('canary');
 });
 test.each([0, 302, 429, 500])('alert delivery HTTP %i fails the job without retrying or exposing destination', async status => {
@@ -147,15 +150,38 @@ test.each([{ starter: true }, { starter: true, external: true, customerSignup: f
     expect(mutations).toEqual([]);
     expect(JSON.stringify({ mail: h.state.delivered, auth: h.state.authRequests })).toBe(before);
 });
-test('workflow is schedule-only, gated, read-only and isolated from PR secrets', () => {
-    const yaml = require('js-yaml');
-    const workflow = yaml.load(fs.readFileSync(require.resolve('../.github/workflows/production-health.yml'), 'utf8'));
-    expect(Object.keys(workflow.on)).toEqual(['schedule']);
-    expect(workflow.on.schedule).toEqual([{ cron: '7,22,37,52 * * * *' }]);
-    expect(workflow.permissions).toEqual({ contents: 'read' });
-    expect(workflow.jobs.monitor.if).toContain("vars.NOFRIES_MONITOR_ENABLED == 'true'");
-    expect(workflow.jobs.monitor.if).toContain("github.repository == 'Discla1mer/nofries-platform'");
-    expect(workflow.jobs.monitor.timeoutMinutes || workflow.jobs.monitor['timeout-minutes']).toBe(5);
-    for (const step of workflow.jobs.monitor.steps.filter(x => x.uses)) expect(step.uses).toMatch(/@[0-9a-f]{40}$/);
-    expect(workflow.jobs.monitor.steps[0].with['persist-credentials']).toBe(false);
+test('public probe runs without credentials; private delivery is refused in Actions', async () => {
+    const probe = jest.fn(() => report()), deliver = jest.fn(), log = jest.fn();
+    expect(await main(['--check'], { env: {}, probe, deliver, log })).toBe(0);
+    expect(probe).toHaveBeenCalledTimes(1); expect(deliver).not.toHaveBeenCalled(); probe.mockClear();
+    expect(await main(['--monitor'], { env: { ...env, GITHUB_ACTIONS: 'true' }, probe, deliver, log })).toBe(2);
+    expect(probe).not.toHaveBeenCalled(); expect(deliver).not.toHaveBeenCalled();
+    expect(JSON.stringify(log.mock.calls)).not.toContain('canary');
+});
+test('default CLI is disabled and unknown arguments never probe or deliver', async () => {
+    const probe = jest.fn(), deliver = jest.fn(), log = jest.fn();
+    expect(await main([], { env: {}, probe, deliver, log })).toBe(0);
+    expect(await main(['--check', '--monitor'], { env, probe, deliver, log })).toBe(2);
+    expect(probe).not.toHaveBeenCalled(); expect(deliver).not.toHaveBeenCalled();
+});
+test('monitor reuses #17 result shape and numbered GET output without claiming its whole suite', async () => {
+    const r = await report({ '/': { status: 0, text: 'canary' } });
+    expect(smokeReport(r)).toMatchObject({ ok: false, readOnly: true, results: [
+        { step: 1, name: '/', ok: false, reason: 'required health check failed', probes: [{ url: 'https://nofries.nz/', status: 0 }] },
+        ...r.results.slice(1).map((x, i) => expect.objectContaining({ step: i + 2, ok: true }))
+    ] });
+    expect(formatReport(r)).toContain('FAIL step 1: / (required health check failed)');
+    expect(formatReport(r)).toContain('GET https://nofries.nz/ -> NETWORK/TIMEOUT failure');
+    expect(formatReport(r)).toContain('GET https://nofries.nz/signup -> HTTP 200');
+    expect(formatReport(r)).toContain('FAIL production health: 8/9 checks passed.');
+    expect(formatReport(r)).not.toMatch(/canary|post-release smoke:/);
+});
+test('scheduler is a disabled private-host template with overlap lock; no public secret workflow', () => {
+    const path = require('node:path'), root = path.join(__dirname, '..');
+    expect(fs.existsSync(path.join(root, '.github/workflows/production-health.yml'))).toBe(false);
+    const template = fs.readFileSync(path.join(root, 'ops/production-health.cron.example'), 'utf8');
+    expect(template).toContain('NOFRIES_MONITOR_ENABLED=false');
+    expect(template).toContain('# 7,22,37,52 * * * * /usr/bin/flock -n');
+    expect(template).toContain('production-health-monitor.js --monitor');
+    expect(template.split('\n').filter(line => line.trim() && !line.startsWith('#'))).toEqual(['NOFRIES_MONITOR_ENABLED=false']);
 });
