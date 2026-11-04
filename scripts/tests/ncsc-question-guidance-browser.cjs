@@ -145,7 +145,8 @@ function fits(metric) {
             assert.match(await page.locator('.ncsc-status').textContent(), /unsaved changes/);
             // This seeded draft has unanswered questions. Submission must stop at
             // client validation, retain the hint and error, and issue no command.
-            await page.getByRole('button', { name: 'Submit assessment', exact: true }).click();
+            await page.getByRole('button', { name: 'Review and submit', exact: true }).click();
+            await page.getByRole('button', { name: 'Save and submit assessment', exact: true }).click();
             await page.locator('.ncsc-errors a').first().click();
             const described = (await page.locator('.ncsc-answer').getAttribute('aria-describedby')).split(' ');
             assert.equal(described.length, 2);
