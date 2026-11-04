@@ -96,6 +96,7 @@ async function runLocalJourney(config, { failAfter = null } = {}) {
             const instanceId = randomUUID(), restoreEpoch = randomUUID(), actorSubjectKey = randomUUID() + ':' + randomUUID();
             const maintenance = createPostgresDashboardMaintenanceRepository({ pool: owner, instanceId,
                 clock: () => new Date().toISOString(), newId: randomUUID,
+                historyBudget: { maxRecords: 4096, maxBytes: 67108864, maxDurationMs: 60000 },
                 readExternalRuntimeEpoch: async () => ({ instanceId, restoreEpoch }),
                 authoriseMaintenanceOperation: facts => ['initializeRuntimeInstance', 'enableRuntimeIngress'].includes(facts.operationType)
                     && facts.command.actorSubjectKey === actorSubjectKey });
