@@ -1,0 +1,40 @@
+name: Local authenticated customer journey
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  customer-journey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.11-bookworm@sha256:84560e3b9c6874893fc4e2854f5dc3e7c1a37bc9d1dfd7a8c641310ae22ba5ad
+        env:
+          POSTGRES_DB: nofries_journey
+          POSTGRES_USER: journey_ci_owner
+          POSTGRES_PASSWORD: synthetic-journey-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready --username=journey_ci_owner --dbname=nofries_journey"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238
+        with:
+          node-version: 22.22.0
+      - run: npm ci --ignore-scripts --omit=optional --audit=false
+      - name: Verify opt-in, target guard and cleanup contracts
+        run: node --test scripts/tests/authenticated-customer-journey.cjs
+      - name: Run local authenticated journey and prove cleanup after failures
+        env:
+          NOFRIES_JOURNEY_DATABASE_URL: postgresql://journey_ci_owner:synthetic-journey-ci-only@127.0.0.1:5432/nofries_journey
+          NOFRIES_JOURNEY_DISPOSABLE_CLUSTER: 'true'
+        run: node --test scripts/tests/authenticated-customer-journey-native.cjs
