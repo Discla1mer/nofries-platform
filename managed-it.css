@@ -25,8 +25,8 @@ body[data-page="managed-it-information"] .site-header nav a {
 
 body[data-page="managed-it-information"] .site-header nav a[aria-current="page"] {
     border-radius: 8px;
-    color: var(--green);
-    background: var(--green-soft);
+    color: var(--ink);
+    background: var(--yellow-soft);
 }
 
 .managed-it-main {
@@ -42,8 +42,8 @@ body[data-page="managed-it-information"] .site-header nav a[aria-current="page"]
 
 .managed-it-main h2 {
     font-size: clamp(1.75rem, 3.1vw, 2.6rem);
-    line-height: 1.15;
-    letter-spacing: -.04em;
+    font-family: var(--font-display);
+    line-height: 1.1;
 }
 
 .managed-it-main h3 {
@@ -57,7 +57,7 @@ body[data-page="managed-it-information"] .site-header nav a[aria-current="page"]
 }
 
 .managed-it-main .eyebrow {
-    color: var(--green);
+    color: var(--ink-soft);
     line-height: 1.5;
 }
 
@@ -75,15 +75,17 @@ body[data-page="managed-it-information"] .site-header nav a[aria-current="page"]
 }
 
 .managed-it-intro h1 {
+    font-family: var(--font-display);
     font-size: clamp(2.8rem, 4.5vw, 4.8rem);
-    font-weight: 790;
-    line-height: 1.05;
-    letter-spacing: -.055em;
+    font-weight: 700;
+    line-height: 1.02;
+    letter-spacing: -.02em;
 }
 
 .managed-it-intro h1 em {
-    color: var(--green);
-    font-style: normal;
+    color: var(--ink-soft);
+    font-family: var(--font-serif);
+    font-weight: 400;
 }
 
 .managed-it-intro .managed-it-lead {
@@ -109,9 +111,9 @@ body[data-page="managed-it-information"] .site-header nav a[aria-current="page"]
 .managed-it-scope-note {
     display: grid;
     gap: 20px;
-    border: 1px solid var(--line-strong);
-    border-top: 3px solid var(--green);
-    border-radius: 16px;
+    border: 1px solid var(--line);
+    border-top: 6px solid var(--yellow);
+    border-radius: 6px;
     padding: clamp(22px, 3vw, 32px);
     background: var(--paper);
 }
@@ -194,9 +196,10 @@ body[data-page="managed-it-information"] .site-header nav a[aria-current="page"]
 
 .managed-it-included li > span,
 .managed-it-process li > span {
-    color: var(--green);
+    color: var(--ink-soft);
     font-size: .72rem;
-    font-weight: 850;
+    font-weight: 500;
+    letter-spacing: .12em;
     line-height: 1.8;
 }
 
@@ -220,10 +223,14 @@ body[data-page="managed-it-information"] .site-header nav a[aria-current="page"]
     display: grid;
     align-content: start;
     gap: 10px;
-    border: 1px solid var(--line-strong);
-    border-radius: 12px;
+    border: 0;
+    border-radius: 6px;
     padding: 26px;
-    background: var(--green-dark);
+    background: var(--yellow);
+}
+
+.managed-it-main .managed-it-option-list p {
+    color: var(--ink-soft);
 }
 
 .managed-it-process {
@@ -441,3 +448,5 @@ body[data-page="managed-it-information"] .home-footer nav a {
         transform: none;
     }
 }
+
+.managed-it-main { overflow-wrap: anywhere; }
