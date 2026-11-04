@@ -201,7 +201,10 @@ async function runLocalJourney(config, { failAfter = null } = {}) {
             submitted = await mutate(submitCommand(assessmentId, saved.revision, 'submit-' + key));
             assert.equal(submitted.status, 'submitted'); assert.ok(submitted.submission?.evaluation);
             assert.equal(submitted.submission.evaluation.provenance.assessmentId, assessmentId);
-            assert.equal(submitted.submission.evaluation.countsCompletion.completionStatus, 'complete');
+            // An unapproved N/A claim remains provisional; it is not proof of compliance.
+            assert.equal(submitted.submission.evaluation.countsCompletion.completionStatus, 'provisional');
+            assert.ok(submitted.submission.evaluation.countsCompletion.claimedNotApplicableAtoms > 0);
+            assert.equal(submitted.progress.answered, allResponses().length);
             assert.deepEqual(submitted.responses, saved.responses);
             assert.deepEqual((await call('GET', assessments + '/' + assessmentId)).body.assessment, submitted);
         });
