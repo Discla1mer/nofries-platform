@@ -22,7 +22,8 @@ function request(url, { payload, timeoutMs = TIMEOUT_MS, requestImpl = https.req
         try {
             const data = payload === undefined ? undefined : JSON.stringify(payload);
             req = requestImpl(url, { method: data === undefined ? 'GET' : 'POST', rejectUnauthorized: true,
-                agent: false, headers: data === undefined ? { Accept: 'application/json, text/html' } :
+                agent: false, headers: data === undefined ? { Accept: 'application/json, text/html',
+                    'Accept-Encoding': 'identity', 'Cache-Control': 'no-cache' } :
                     { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, res => {
                 response = res;
                 const validTo = res.socket?.getPeerCertificate()?.valid_to;
