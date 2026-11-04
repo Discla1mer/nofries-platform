@@ -40,7 +40,8 @@
                     <option value="website">Website</option>
                 </select>
                 <label for="report-description">What happened, or what would you change?</label>
-                <textarea id="report-description" rows="5" maxlength="500" required aria-describedby="report-privacy" placeholder="Describe the problem and what you expected."></textarea>
+                <p id="report-description-help" class="report-help">Describe the problem and what you expected.</p>
+                <textarea id="report-description" rows="5" maxlength="500" required aria-describedby="report-description-help report-privacy"></textarea>
                 <p id="report-privacy" class="report-help">Keep it brief. Do not include passwords, verification codes, account details, private customer information, screenshots or copied requests. Recognisable credentials, email addresses and links are masked; please still check every word.</p>
                 <button class="button" id="report-preview-button" type="button" disabled>Review report</button>
             </form>
