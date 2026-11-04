@@ -4,6 +4,8 @@
 // the existing Resend integration and is not stored. Only plain text is sent, so
 // submitted content is never interpreted as HTML by the receiving mail client.
 
+const { createEnquiryRateLimiter, isEnquiryRateLimitConfigured } = require('./enquiryRateLimit');
+
 const LIMITS = Object.freeze({ name: 120, email: 254, organisation: 160, message: 4000 });
 const MIN_MESSAGE = 10;
 const EMAIL_PATTERN = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[^\s@<>()[\]\\,;:"]{2,}$/;
@@ -53,7 +55,7 @@ function deliveryConfig(env) {
     return apiKey && from && to ? { apiKey, from, to } : null;
 }
 
-function createEnquiryService({ env = process.env, fetchImpl = (...args) => fetch(...args), now = () => new Date() } = {}) {
+function createEnquiryService({ env = process.env, fetchImpl = (...args) => fetch(...args), now = () => new Date(), rateLimiter = createEnquiryRateLimiter({ env }) } = {}) {
     async function submitEnquiry(input = {}) {
         // Honeypot: people never see the website field, so a filled value is a bot.
         // Report success without sending so the bot gets no signal.
@@ -62,6 +64,18 @@ function createEnquiryService({ env = process.env, fetchImpl = (...args) => fetc
         const config = deliveryConfig(env);
         if (!config) {
             throw new EnquiryError('enquiry_unavailable', 503, 'The enquiry form is not available right now. Please email hello@nofries.nz.');
+        }
+        let reservation;
+        try {
+            reservation = await rateLimiter.reserve();
+            if (!reservation || typeof reservation.allowed !== 'boolean') throw new Error();
+        } catch (_) {
+            throw new EnquiryError('enquiry_rate_limit_unavailable', 503, 'Your enquiry was not sent because the form is temporarily unavailable. Please email hello@nofries.nz.');
+        }
+        if (!reservation.allowed) {
+            const error = new EnquiryError('enquiry_rate_limited', 429, 'Your enquiry was not sent because the form has reached its sending limit. Please wait an hour or email hello@nofries.nz.');
+            error.retryAfter = reservation.retryAfter;
+            throw error;
         }
         const text = [
             'New enquiry from the No Fries website',
@@ -73,25 +87,30 @@ function createEnquiryService({ env = process.env, fetchImpl = (...args) => fetc
             '',
             enquiry.message
         ].join('\n');
-        const response = await fetchImpl('https://api.resend.com/emails', {
-            method: 'POST',
-            signal: AbortSignal.timeout(10000),
-            headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                from: config.from,
-                to: [config.to],
-                reply_to: enquiry.email,
-                subject: `Website enquiry from ${enquiry.name.slice(0, 80)}`,
-                text
-            })
-        });
+        let response;
+        try {
+            response = await fetchImpl('https://api.resend.com/emails', {
+                method: 'POST',
+                signal: AbortSignal.timeout(10000),
+                headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    from: config.from,
+                    to: [config.to],
+                    reply_to: enquiry.email,
+                    subject: `Website enquiry from ${enquiry.name.slice(0, 80)}`,
+                    text
+                })
+            });
+        } catch (_) {
+            throw new EnquiryError('enquiry_send_failed', 502, 'Your enquiry could not be sent. Please email hello@nofries.nz.');
+        }
         if (!response || !response.ok) {
             throw new EnquiryError('enquiry_send_failed', 502, 'Your enquiry could not be sent. Please email hello@nofries.nz.');
         }
         return { received: true };
     }
     function availability() {
-        const available = Boolean(deliveryConfig(env));
+        const available = Boolean(deliveryConfig(env)) && isEnquiryRateLimitConfigured(env);
         return { available, promote: available && env.NOFRIES_ENQUIRY_DELIVERY_VERIFIED === 'true' };
     }
     return { submitEnquiry, availability };

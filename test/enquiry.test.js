@@ -51,7 +51,7 @@ describe('enquiry validation', () => {
 describe('enquiry delivery', () => {
     test('emails the owner as plain text with the sender as reply-to', async () => {
         const { calls, fetchImpl } = stubFetch();
-        const service = createEnquiryService({ env: ENV, fetchImpl, now: () => new Date('2026-11-02T00:00:00Z') });
+        const service = createEnquiryService({ env: ENV, rateLimiter: { reserve: async () => ({ allowed: true }) }, fetchImpl, now: () => new Date('2026-11-02T00:00:00Z') });
         await expect(service.submitEnquiry(VALID)).resolves.toEqual({ received: true });
         expect(calls).toHaveLength(1);
         expect(calls[0].url).toBe('https://api.resend.com/emails');
@@ -69,13 +69,13 @@ describe('enquiry delivery', () => {
 
     test('honours a configured recipient', async () => {
         const { calls, fetchImpl } = stubFetch();
-        await createEnquiryService({ env: { ...ENV, NOFRIES_ENQUIRY_TO: 'sales@example.invalid' }, fetchImpl }).submitEnquiry(VALID);
+        await createEnquiryService({ env: { ...ENV, NOFRIES_ENQUIRY_TO: 'sales@example.invalid' }, rateLimiter: { reserve: async () => ({ allowed: true }) }, fetchImpl }).submitEnquiry(VALID);
         expect(calls[0].body.to).toEqual(['sales@example.invalid']);
     });
 
     test('a filled honeypot reports success without sending', async () => {
         const { fetchImpl } = stubFetch();
-        const service = createEnquiryService({ env: ENV, fetchImpl });
+        const service = createEnquiryService({ env: ENV, rateLimiter: { reserve: async () => ({ allowed: true }) }, fetchImpl });
         await expect(service.submitEnquiry({ ...VALID, website: 'https://spam.example' })).resolves.toEqual({ received: true });
         expect(fetchImpl).not.toHaveBeenCalled();
     });
@@ -89,7 +89,7 @@ describe('enquiry delivery', () => {
 
     test('a provider failure is reported without detail', async () => {
         const { fetchImpl } = stubFetch(false);
-        const service = createEnquiryService({ env: ENV, fetchImpl });
+        const service = createEnquiryService({ env: ENV, rateLimiter: { reserve: async () => ({ allowed: true }) }, fetchImpl });
         await expect(service.submitEnquiry(VALID)).rejects.toMatchObject({ code: 'enquiry_send_failed', status: 502 });
     });
 });
@@ -273,9 +273,9 @@ describe('contact form progressive enhancement', () => {
         expect(page.send.disabled).toBe(false);
     });
 
-    test('retains the enquiry and shows a server error even when the response claims receipt', async () => {
+    test.each([429, 503])('retains the enquiry and shows HTTP %s errors even when the response claims receipt', async (status) => {
         const error = 'The enquiry form is not available right now. Please email hello@nofries.nz.';
-        const page = browser(false, Response.json({ received: true, error }, { status: 503 }));
+        const page = browser(false, Response.json({ received: true, error }, { status }));
         await page.run();
         page.form.reportValidity.mockReturnValue(true);
         await page.submit()({ preventDefault: jest.fn() });

@@ -52,12 +52,13 @@ function errorResult(error, context) {
         if (error.status >= 500 && context && context.log && typeof context.log.warn === 'function') {
             context.log.warn(`enquiry ${error.code}`);
         }
-        return json(error.status, { error: error.publicMessage, code: error.code });
+        return json(error.status, { error: error.publicMessage, code: error.code },
+            Number.isSafeInteger(error.retryAfter) && error.retryAfter > 0 ? { 'Retry-After': String(error.retryAfter) } : {});
     }
     if (error && error.statusCode >= 400 && error.statusCode < 500) {
         return json(error.statusCode, Object.assign({ error: error.message }, error.details || {}));
     }
-    if (context && context.log && typeof context.log.error === 'function') context.log.error(error);
+    if (context && context.log && typeof context.log.error === 'function') context.log.error('enquiry unexpected_error');
     return json(500, { error: 'Your enquiry could not be sent. Please email hello@nofries.nz.' });
 }
 
