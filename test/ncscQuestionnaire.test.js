@@ -289,6 +289,11 @@ function mountUi(h, settings = {}) {
         createId: () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`, ...settings });
     return { ...dom, controller };
 }
+// Final submission is reached only through the review step's explicit confirmation.
+function submitUi(ui) {
+    control(ui, 'Review and submit').click();
+    control(ui, 'Save and submit assessment').click();
+}
 async function createInUi(h, options = {}) {
     const ui = mountUi(h, options); await until(() => control(ui, 'Start an assessment'));
     control(ui, 'Start an assessment').click(); enter(byId(ui, 'ncsc-scope'), '  Synthetic declared cloud scope.\n  ');
@@ -402,7 +407,7 @@ describe('saved assessment list pagination and resume', () => {
             choose(ui, 0, 'yes'); choose(ui, 1, 'partial');
             control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 1.'));
             const saved = clone(h.records), assessmentId = h.records[0].assessmentId;
-            control(ui, 'Submit assessment').click();
+            submitUi(ui);
             expect(ui.root.querySelector('.ncsc-errors').querySelectorAll('a')).toHaveLength(12);
             const requests = h.calls.length;
             control(ui, 'Back to assessments').click();
@@ -1122,7 +1127,7 @@ describe('question assistance source integration', () => {
         const h = await backend(), ui = await createInUi(h, { assistance: { suggest: jest.fn() } });
         const question = metadata().questions[0];
         if (na) choose(ui, 0, 'not_applicable', ' ');
-        control(ui, 'Submit assessment').click(); await pause();
+        submitUi(ui); await pause();
         const targetId = na ? `ncsc-rationale-${question.id}` : `ncsc-answer-${question.id}-${question.responseOptionIds[0]}`;
         const link = ui.root.querySelectorAll('a').find(item => item.href === '#' + targetId);
         expect(link).toBeDefined(); link.click();
@@ -1239,7 +1244,7 @@ describe('submitted assessment results', () => {
     test('new submission and reopening show separate measures and native drill-downs', async () => {
         const h = await backend(), ui = await createInUi(h);
         metadata().questions.forEach((_, index) => choose(ui, index, 'yes'));
-        control(ui, 'Submit assessment').click(); await until(() => ui.root.textContent.includes('Calculation inputs and versions'));
+        submitUi(ui); await until(() => ui.root.textContent.includes('Calculation inputs and versions'));
         const panel = ui.root.querySelector('.ncsc-results');
         expect(panel.getAttribute('aria-label')).toBe('Assessment results');
         const metrics = panel.querySelectorAll('.ncsc-result-metric');
@@ -1254,7 +1259,7 @@ describe('submitted assessment results', () => {
         const before = panel.textContent; ui.controller.destroy(); expect(ui.root.textContent).toBe('');
         const restored = await resumeUi(h, { presentationMode: 'read-only' });
         expect(restored.root.querySelector('.ncsc-results').textContent).toBe(before);
-        expect(control(restored, 'Submit assessment')).toBeUndefined(); restored.controller.destroy();
+        expect(control(restored, 'Review and submit')).toBeUndefined(); restored.controller.destroy();
     });
     test('mixed answers display the independently specified golden range and pending rationale as plain text', async () => {
         const h = await backend(), source = require('./fixtures/ncscAcceptedEvaluation.json');
@@ -1327,7 +1332,7 @@ describe('submitted assessment results', () => {
         const ui = await resumeUi(h, { organisationId });
         expect(ui.root.textContent).toContain('Results are unavailable for this submission');
         expect(ui.root.querySelectorAll('.ncsc-result-metric')).toHaveLength(0);
-        expect(control(ui, 'Submit assessment')).toBeUndefined(); ui.controller.destroy();
+        expect(control(ui, 'Review and submit')).toBeUndefined(); ui.controller.destroy();
     });
     test('bad result projection retains submitted answers, never a partial score', async () => {
         const { h } = await submitted();
@@ -1338,7 +1343,7 @@ describe('submitted assessment results', () => {
         expect(ui.root.textContent).toContain('Results are unavailable for this submission');
         expect(ui.root.querySelectorAll('.ncsc-result-metric')).toHaveLength(0);
         expect(ui.root.querySelectorAll('input').every(input => input.disabled)).toBe(true);
-        expect(control(ui, 'Submit assessment')).toBeUndefined(); ui.controller.destroy();
+        expect(control(ui, 'Review and submit')).toBeUndefined(); ui.controller.destroy();
     });
     test('an old submitted response cannot populate a replacement tenant mount', async () => {
         const { h } = await submitted(), wait = deferred();
@@ -1449,7 +1454,7 @@ describe('questionnaire form accessibility', () => {
 
     test('missing answers describe every radio and identify each question in the focused summary', async () => {
         const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
-        control(ui, 'Submit assessment').click(); await pause();
+        submitUi(ui); await pause();
         const summary = ui.root.querySelector('.ncsc-errors'), links = summary.querySelectorAll('a');
         expect(ui.document.activeElement).toBe(summary);
         expect(links).toHaveLength(questions.length);
@@ -1620,7 +1625,7 @@ describe('questionnaire public controls and retained mutation intent', () => {
     test.each([undefined, 'read-only', 'unknown', true])('missing or unknown presentation mode remains read-only: %s', async presentationMode => {
         const h = await backend(); await h.execute(createCommand());
         const ui = await resumeUi(h, { presentationMode });
-        expect(control(ui, 'Save progress')).toBeUndefined(); expect(control(ui, 'Submit assessment')).toBeUndefined();
+        expect(control(ui, 'Save progress')).toBeUndefined(); expect(control(ui, 'Review and submit')).toBeUndefined();
         expect(ui.root.querySelectorAll('input').every(input => input.disabled)).toBe(true);
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
@@ -1629,7 +1634,7 @@ describe('questionnaire public controls and retained mutation intent', () => {
         const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand());
         const ui = await resumeUi(h); ui.window.location.hash = '#cyber-security';
         choose(ui, 0, 'not_applicable', ' '); choose(ui, 1, 'unknown');
-        control(ui, 'Submit assessment').click(); await pause();
+        submitUi(ui); await pause();
         expect(h.records).toHaveLength(2); expect(ui.root.querySelector('[role="alert"]')).toBeDefined();
         const link = ui.root.querySelectorAll('a').find(item => item.href === `#ncsc-rationale-${metadata().questions[0].id}`);
         expect(link).toBeDefined(); link.click();
@@ -1686,10 +1691,11 @@ describe('questionnaire public controls and retained mutation intent', () => {
                 { code: 'ncsc_submission_unavailable', statusCode: 409, ambiguous: false });
         });
         const ui = await resumeUi(h, { client: { ...h.client, submit } });
-        control(ui, 'Submit assessment').click();
+        submitUi(ui);
         await until(() => ui.root.textContent.includes('Submission is not available yet.'));
         expect(submit).toHaveBeenCalledTimes(1);
         expect(control(ui, 'Retry same operation')).toBeUndefined();
+        expect(control(ui, 'Save and submit assessment').disabled).toBe(false); control(ui, 'Back to questions').click();
         expect(control(ui, 'Save progress').disabled).toBe(false);
         choose(ui, 0, 'no'); control(ui, 'Save progress').click();
         await until(() => h.records.filter(row => row.action === 'save').length === 2);
@@ -1702,11 +1708,11 @@ describe('questionnaire public controls and retained mutation intent', () => {
     test('Unknown and pending N/A complete answers submit without scores, approval or editable sealed controls', async () => {
         const h = await backend(), ui = await createInUi(h);
         metadata().questions.forEach((_question, index) => choose(ui, index, index === 0 ? 'not_applicable' : 'unknown', index === 0 ? 'Synthetic pending claim' : undefined));
-        control(ui, 'Submit assessment').click(); await until(() => h.records.some(row => row.action === 'submit'));
+        submitUi(ui); await until(() => h.records.some(row => row.action === 'submit'));
         await until(() => control(ui, 'Save progress') === undefined);
         const version = [...h.versions.values()][0]; expect(version.envelope.state.status).toBe('submitted');
         expect(version.envelope.submission.evaluation.countsCompletion.claimedNotApplicableAtoms).toBe(1);
-        expect(control(ui, 'Submit assessment')).toBeUndefined(); expect(ui.root.textContent).toMatch(/Submitted|submitted/);
+        expect(control(ui, 'Review and submit')).toBeUndefined(); expect(ui.root.textContent).toMatch(/Submitted|submitted/);
         expect(ui.root.textContent).not.toMatch(/overall score|Issue report|Approve N\/A/);
         expect(ui.root.textContent).toContain('Output SHA-256');
         expect(ui.root.querySelectorAll('input').every(input => input.disabled)).toBe(true); ui.controller.destroy();
@@ -1857,7 +1863,8 @@ describe('questionnaire boundary and navigation regressions', () => {
         expect((await client.read('assessment-a')).assessment.profileRef).toEqual(metadata().profileRef);
         const ui = await resumeUi(h, { client });
         expect(byId(ui, `ncsc-answer-${metadata().questions[0].id}-yes`).checked).toBe(true);
-        expect(control(ui, 'Submit assessment').disabled).toBe(false); ui.controller.destroy();
+        control(ui, 'Review and submit').click();
+        expect(control(ui, 'Save and submit assessment').disabled).toBe(false); ui.controller.destroy();
     });
 
     test.each(['changed', 'missing', 'extra', 'nonenumerable'])('profile semantic comparison still rejects %s pinned fields from a client adapter', async kind => {
@@ -1873,7 +1880,7 @@ describe('questionnaire boundary and navigation regressions', () => {
         await until(() => ui.root.textContent.includes('The saved assessment could not be loaded.'));
         expect(control(ui, 'Retry loading this assessment')).toBeDefined();
         expect(byId(ui, 'ncsc-question-index')).toBeUndefined();
-        expect(control(ui, 'Save progress')).toBeUndefined(); expect(control(ui, 'Submit assessment')).toBeUndefined();
+        expect(control(ui, 'Save progress')).toBeUndefined(); expect(control(ui, 'Review and submit')).toBeUndefined();
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
 
@@ -1885,10 +1892,10 @@ describe('questionnaire boundary and navigation regressions', () => {
         const ui = await resumeUi(h, { client: { ...h.client, create, save, submit,
             list: async () => ({ schemaVersion: 1, assessments: [summary], nextAfterAssessmentId: null }),
             read: async () => ({ schemaVersion: 1, assessment: detail }) } });
-        control(ui, 'Submit assessment').click(); await until(() => ui.root.textContent.includes('This assessment has reached its save limit.'));
+        submitUi(ui); await until(() => ui.root.textContent.includes('This assessment has reached its save limit.'));
         expect(ui.root.textContent).toContain('Start a new assessment with shorter rationales.');
         expect(ui.root.textContent).not.toContain('Shorten one or more rationales, save the corrected draft');
-        expect(control(ui, 'Retry same operation')).toBeUndefined();
+        expect(control(ui, 'Retry same operation')).toBeUndefined(); control(ui, 'Back to questions').click();
         expect(byId(ui, `ncsc-answer-${metadata().questions[0].id}-yes`).checked).toBe(true);
         expect(submit).toHaveBeenCalledTimes(1); expect(submit.mock.calls[0][0].expectedRevision).toBe(127);
         expect(create).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled(); ui.controller.destroy();
@@ -1925,13 +1932,13 @@ describe('questionnaire boundary and navigation regressions', () => {
         const rows = allResponses('not_applicable').map(row => ({ ...row, rationale: { text: '\u0001'.repeat(2800) } }));
         for (let index = 0; index < rows.length; index += 2) await h.execute(saveCommand('assessment-a', index / 2, `seed-submit-size-${index}`, rows.slice(index, index + 2)));
         const submit = jest.fn((...args) => h.client.submit(...args)), ui = await resumeUi(h, { client: { ...h.client, submit } });
-        control(ui, 'Submit assessment').click(); await until(() => ui.root.textContent.includes('This assessment is too large for this operation.'));
+        submitUi(ui); await until(() => ui.root.textContent.includes('This assessment is too large for this operation.'));
         expect(control(ui, 'Retry same operation')).toBeUndefined(); expect(submit).toHaveBeenCalledTimes(1);
-        expect(h.records).toHaveLength(8); const rejected = submit.mock.calls[0][0];
+        expect(h.records).toHaveLength(8); const rejected = submit.mock.calls[0][0]; control(ui, 'Back to questions').click();
         expect(byId(ui, `ncsc-rationale-${metadata().questions[0].id}`).value).toBe(rows[0].rationale.text);
         choose(ui, 0, 'not_applicable', 'Shortened first claim.'); choose(ui, 1, 'not_applicable', 'Shortened second claim.');
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 8.'));
-        control(ui, 'Submit assessment').click(); await until(() => ui.root.textContent.includes('Answers below are the saved, read-only submission.'));
+        submitUi(ui); await until(() => ui.root.textContent.includes('Answers below are the saved, read-only submission.'));
         expect(submit).toHaveBeenCalledTimes(2); expect(submit.mock.calls[1][0].idempotencyKey).not.toBe(rejected.idempotencyKey);
         expect(submit.mock.calls[1][0].expectedRevision).toBe(8);
         const sealed = (await h.client.read('assessment-a')).assessment;
@@ -1955,7 +1962,9 @@ describe('questionnaire boundary and navigation regressions', () => {
         const first = save.mock.calls[0][0], pending = clone(save.mock.calls[1][0]);
         expect(first.idempotencyKey).not.toBe(pending.idempotencyKey);
         expect(ui.root.textContent).toContain(`Saved responses: ${first.payload.responses.length} of 14 selected`);
-        expect(control(ui, 'Submit assessment').disabled).toBe(true);
+        control(ui, 'Review and submit').click();
+        expect(control(ui, 'Save and submit assessment').disabled).toBe(true); expect(control(ui, 'Retry same operation')).toBeDefined();
+        control(ui, 'Back to questions').click();
         const leave = jest.fn(); expect(await ui.controller.requestLeave(leave)).toBe(false); expect(leave).not.toHaveBeenCalled();
         control(ui, 'Retry same operation').click();
         await until(() => ui.root.textContent.includes('The operation is confirmed and the current saved version has been checked.'));
@@ -2059,9 +2068,9 @@ describe('questionnaire boundary and navigation regressions', () => {
         const submit = jest.fn(async (...args) => { const result = await h.client.submit(...args); entered = true; await gate.promise; return result; });
         const ui = await resumeUi(h, { client: { ...h.client, submit } });
         const old = byId(ui, `ncsc-answer-${metadata().questions[0].id}-not_applicable`);
-        control(ui, 'Submit assessment').click(); await until(() => entered);
+        submitUi(ui); await until(() => entered);
         expect(ui.root.querySelectorAll('input').every(input => input.disabled)).toBe(true);
-        old.checked = true; event(old, 'change'); gate.resolve(); await until(() => !control(ui, 'Submit assessment'));
+        old.checked = true; event(old, 'change'); gate.resolve(); await until(() => ui.root.querySelector('.ncsc-sealed'));
         expect(byId(ui, `ncsc-answer-${metadata().questions[0].id}-yes`).checked).toBe(true);
         expect(ui.root.querySelectorAll('textarea')).toHaveLength(0); expect(submit).toHaveBeenCalledTimes(1); ui.controller.destroy();
     });
@@ -2075,7 +2084,7 @@ describe('questionnaire boundary and navigation regressions', () => {
         expect(byId(ui, `ncsc-answer-${metadata().questions[0].id}-not_applicable`).checked).toBe(false);
         expect(ui.root.querySelectorAll('textarea')).toHaveLength(0);
         expect(ui.root.textContent).toContain('Unsubmitted local claim');
-        expect(control(ui, 'Submit assessment')).toBeUndefined(); expect(h.records).toHaveLength(3);
+        expect(control(ui, 'Review and submit')).toBeUndefined(); expect(h.records).toHaveLength(3);
         expect(ui.window.listenerCount('beforeunload')).toBe(1);
         control(ui, 'Use saved answers').click();
         expect(ui.window.listenerCount('beforeunload')).toBe(0);
@@ -2108,8 +2117,8 @@ describe('questionnaire boundary and navigation regressions', () => {
         const client = { ...h.client, save, submit, list: async () => ({ schemaVersion: 1, assessments: [summary], nextAfterAssessmentId: null }),
             read: async () => ({ schemaVersion: 1, assessment: detail }) };
         const ui = await resumeUi(h, { client }); choose(ui, 0, 'unknown'); control(ui, 'Save progress').click(); await pause();
-        expect(save).not.toHaveBeenCalled(); choose(ui, 0, 'yes'); control(ui, 'Submit assessment').click();
-        await until(() => !control(ui, 'Submit assessment')); expect(submit).toHaveBeenCalledTimes(1);
+        expect(save).not.toHaveBeenCalled(); choose(ui, 0, 'yes'); submitUi(ui);
+        await until(() => ui.root.querySelector('.ncsc-sealed')); expect(submit).toHaveBeenCalledTimes(1);
         expect(submit.mock.calls[0][0]).toMatchObject({ action: 'submit', expectedRevision: 127 }); ui.controller.destroy();
     });
 
@@ -2444,9 +2453,9 @@ describe('questionnaire native unload lifecycle and task hierarchy', () => {
         const ui = await resumeUi(h, { dom, window: unload.window, client: { ...h.client, submit } });
         try {
             expect(unload.handlers.size).toBe(0);
-            control(ui, 'Submit assessment').click(); await until(() => submit.mock.calls.length === 1);
+            submitUi(ui); await until(() => submit.mock.calls.length === 1);
             expect(unload.handlers.size).toBe(1); expect(unload.fire().defaultPrevented).toBe(true);
-            gate.resolve(); await until(() => !control(ui, 'Submit assessment'));
+            gate.resolve(); await until(() => ui.root.querySelector('.ncsc-sealed'));
             expect(unload.handlers.size).toBe(0);
             expect(h.records.filter(row => row.action === 'submit')).toHaveLength(1);
         } finally { gate.resolve(); ui.controller.destroy(); }
@@ -2533,7 +2542,7 @@ describe('questionnaire native unload lifecycle and task hierarchy', () => {
     test('Save stays primary while final Submit carries its adjacent read-only consequence', async () => {
         const h = await backend(), ui = await createInUi(h);
         try {
-            const save = control(ui, 'Save progress'), submit = control(ui, 'Submit assessment');
+            const save = control(ui, 'Save progress'), submit = control(ui, 'Review and submit');
             expect(save.classList.contains('dashboard-button')).toBe(true);
             expect(submit.classList.contains('dashboard-text-button')).toBe(true);
             const warning = byId(ui, submit.getAttribute('aria-describedby'));
@@ -2542,6 +2551,210 @@ describe('questionnaire native unload lifecycle and task hierarchy', () => {
             expect(warning.parentElement).toBe(submit.parentElement);
             expect(warning.parentElement.children.indexOf(warning)).toBeLessThan(warning.parentElement.children.indexOf(submit));
             expect(h.records).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+});
+
+describe('final submission review step', () => {
+    const posts = h => h.calls.filter(row => row.init.method === 'POST');
+    const reviewItem = (ui, index) => byId(ui, `ncsc-review-item-${metadata().questions[index].id}`);
+    async function sparseDraft() {
+        const h = await backend(); await h.execute(createCommand());
+        const rows = allResponses('yes').slice(0, 3); rows[2] = { itemId: rows[2].itemId, optionId: 'not_applicable', rationale: { text: 'Saved synthetic N/A reason.' } };
+        await h.execute(saveCommand('assessment-a', 0, 'save-a', rows));
+        return h;
+    }
+
+    test('shows scope, every question, current answers, unanswered items, N/A explanations and unsaved markers without writing', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h), questions = metadata().questions;
+        try {
+            choose(ui, 1, 'partial'); choose(ui, 3, 'not_applicable', ' ');
+            const before = h.calls.length;
+            control(ui, 'Review and submit').click();
+            const title = byId(ui, 'ncsc-review-title');
+            expect(ui.document.activeElement).toBe(title);
+            expect(ui.root.querySelector('.ncsc-review').textContent).toContain('Synthetic office and cloud services.');
+            expect(ui.root.querySelectorAll('.ncsc-review-item')).toHaveLength(questions.length);
+            questions.forEach((question, index) => expect(reviewItem(ui, index).textContent).toContain(question.prompt));
+            expect(reviewItem(ui, 0).textContent).toContain('Answer: Yes'); expect(reviewItem(ui, 0).textContent).not.toContain('Not saved yet');
+            expect(reviewItem(ui, 1).textContent).toContain('Answer: Partial'); expect(reviewItem(ui, 1).textContent).toContain('Not saved yet');
+            expect(reviewItem(ui, 2).textContent).toContain('N/A explanation: Saved synthetic N/A reason.');
+            expect(reviewItem(ui, 3).textContent).toContain('N/A explanation missing');
+            expect(reviewItem(ui, 4).textContent).toContain('Answer: Unanswered');
+            const counts = byId(ui, 'ncsc-review-counts').textContent;
+            expect(counts).toContain(`4 of ${questions.length} answered`); expect(counts).toContain(`${questions.length - 4} unanswered`);
+            expect(counts).toContain('1 N/A answer needs an explanation'); expect(counts).toContain('2 answers are not saved yet');
+            expect(byId(ui, 'ncsc-review-readiness').textContent).toMatch(/Before you can submit, answer \d+ questions .* and explain 1 N\/A answer\./);
+            expect(byId(ui, control(ui, 'Save and submit assessment').getAttribute('aria-describedby')).textContent).toMatch(/2 unsaved answers are saved first.*read-only/);
+            expect(control(ui, 'Save progress')).toBeUndefined();
+            control(ui, 'Back to questions').click();
+            expect(ui.document.activeElement.tagName).toBe('LEGEND');
+            expect(byId(ui, `ncsc-answer-${questions[1].id}-partial`)).toBeUndefined();
+            expect(h.calls.length).toBe(before); expect(posts(h)).toHaveLength(0);
+            expect(ui.root.textContent).toMatch(/2 answers have unsaved changes/);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a cleared saved answer is shown as unanswered and not saved yet', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h);
+        try {
+            const selector = byId(ui, 'ncsc-question-index'); selector.value = '0'; event(selector, 'change');
+            control(ui, 'Clear answer').click(); control(ui, 'Review and submit').click();
+            expect(reviewItem(ui, 0).textContent).toContain('Unanswered (answer cleared)');
+            expect(reviewItem(ui, 0).textContent).toContain('Not saved yet'); expect(posts(h)).toHaveLength(0);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('edit jumps to the question, keeps the draft, and returns to the same review row without writing', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h), question = metadata().questions[5];
+        try {
+            control(ui, 'Review and submit').click();
+            control(ui, 'Edit question 6').click();
+            expect(byId(ui, 'ncsc-question-index').value).toBe('5');
+            expect(ui.document.activeElement.textContent).toBe(question.prompt);
+            const input = byId(ui, `ncsc-answer-${question.id}-unknown`); input.checked = true; event(input, 'change');
+            control(ui, 'Return to review').click();
+            expect(ui.document.activeElement).toBe(byId(ui, `ncsc-review-edit-${question.id}`));
+            expect(reviewItem(ui, 5).textContent).toContain('Answer: Unknown'); expect(reviewItem(ui, 5).textContent).toContain('Not saved yet');
+            control(ui, 'Back to questions').click(); expect(control(ui, 'Return to review')).toBeUndefined();
+            expect(byId(ui, `ncsc-answer-${question.id}-unknown`).checked).toBe(true);
+            expect(posts(h)).toHaveLength(0);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('missing answers and N/A explanations block confirmation with links that leave review for the question', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h), questions = metadata().questions;
+        try {
+            choose(ui, 3, 'not_applicable', ' '); control(ui, 'Review and submit').click();
+            control(ui, 'Save and submit assessment').click(); await pause();
+            const summary = ui.root.querySelector('.ncsc-errors');
+            expect(ui.document.activeElement).toBe(summary); expect(summary.hidden).toBe(false);
+            expect(posts(h)).toHaveLength(0);
+            const link = summary.querySelectorAll('a').find(item => item.href === `#ncsc-rationale-${questions[3].id}`);
+            link.click();
+            expect(ui.root.querySelector('.ncsc-review')).toBeNull();
+            expect(ui.document.activeElement).toBe(byId(ui, `ncsc-rationale-${questions[3].id}`));
+            expect(control(ui, 'Return to review')).toBeDefined(); expect(posts(h)).toHaveLength(0);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('confirmation saves unsaved answers first, then submits exactly once', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h);
+        try {
+            metadata().questions.forEach((_question, index) => { if (index > 2) choose(ui, index, 'unknown'); });
+            control(ui, 'Review and submit').click();
+            const confirm = control(ui, 'Save and submit assessment'); confirm.click(); confirm.click();
+            await until(() => ui.root.querySelector('.ncsc-sealed'));
+            expect(h.records.slice(2).map(row => row.action)).toEqual(['save', 'submit']);
+            expect(h.records[3].expectedRevision).toBe(h.records[2].expectedRevision + 1);
+            expect(ui.root.querySelector('.ncsc-review')).toBeNull(); expect(control(ui, 'Review and submit')).toBeUndefined();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('repeated confirmation of a clean complete draft sends one submit command', async () => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand());
+        const submit = jest.fn((...args) => h.client.submit(...args));
+        const ui = await resumeUi(h, { client: { ...h.client, submit } });
+        try {
+            control(ui, 'Review and submit').click();
+            expect(byId(ui, 'ncsc-review-readiness').textContent).toMatch(/^Every question has an answer/);
+            const confirm = control(ui, 'Save and submit assessment'); confirm.click(); confirm.click(); confirm.click();
+            await until(() => ui.root.querySelector('.ncsc-sealed'));
+            expect(submit).toHaveBeenCalledTimes(1); expect(h.records.filter(row => row.action === 'submit')).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test.each(['ambiguous', 'rejected'])('a %s save failure stays on review, keeps unsaved answers and never submits', async kind => {
+        const h = await sparseDraft(); let failed = false;
+        const save = jest.fn(async (...args) => {
+            if (!failed) {
+                failed = true;
+                if (kind === 'ambiguous') throw Object.assign(new Error('ncsc_unavailable'), { code: 'ncsc_unavailable', statusCode: 503, ambiguous: true });
+                throw Object.assign(new Error('ncsc_input_invalid'), { code: 'ncsc_input_invalid', statusCode: 400, ambiguous: false });
+            }
+            return h.client.save(...args);
+        });
+        const submit = jest.fn((...args) => h.client.submit(...args));
+        const ui = await resumeUi(h, { client: { ...h.client, save, submit } });
+        try {
+            metadata().questions.forEach((_question, index) => { if (index > 2) choose(ui, index, 'no'); });
+            control(ui, 'Review and submit').click(); control(ui, 'Save and submit assessment').click();
+            await until(() => save.mock.calls.length === 1 && !ui.root.textContent.includes('Operation in progress'));
+            expect(submit).not.toHaveBeenCalled(); expect(ui.root.querySelector('.ncsc-review')).not.toBeNull();
+            expect(byId(ui, 'ncsc-review-counts').textContent).toContain('11 answers are not saved yet');
+            if (kind === 'ambiguous') {
+                expect(control(ui, 'Save and submit assessment').disabled).toBe(true);
+                expect(await ui.controller.requestLeave()).toBe(false);
+                control(ui, 'Retry same operation').click();
+                await until(() => ui.root.textContent.includes('The operation is confirmed'));
+                expect(save.mock.calls[1][0]).toEqual(save.mock.calls[0][0]);
+            } else {
+                expect(control(ui, 'Retry same operation')).toBeUndefined();
+                expect(control(ui, 'Save and submit assessment').disabled).toBe(false);
+            }
+            expect(submit).not.toHaveBeenCalled();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a conflicting save from another session surfaces conflict review and never submits', async () => {
+        const h = await sparseDraft(), submit = jest.fn((...args) => h.client.submit(...args));
+        const ui = await resumeUi(h, { client: { ...h.client, submit } });
+        try {
+            metadata().questions.forEach((_question, index) => choose(ui, index, 'unknown'));
+            await h.execute(saveCommand('assessment-a', 1, 'other-session', [{ itemId: metadata().questions[0].id, optionId: 'no', rationale: null }]));
+            control(ui, 'Review and submit').click(); control(ui, 'Save and submit assessment').click();
+            await until(() => control(ui, 'Use saved answers'));
+            expect(submit).not.toHaveBeenCalled(); expect(h.records.filter(row => row.action === 'submit')).toHaveLength(0);
+            expect(control(ui, 'Save and submit assessment').disabled).toBe(true);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('access revoked during confirmation shows the denied view without submitting or retaining review content', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h);
+        try {
+            metadata().questions.forEach((_question, index) => choose(ui, index, 'unknown'));
+            control(ui, 'Review and submit').click(); h.deny();
+            control(ui, 'Save and submit assessment').click();
+            await until(() => ui.root.textContent.includes('This assessment is not available.'));
+            expect(ui.root.querySelector('.ncsc-review')).toBeNull();
+            expect(ui.root.textContent).not.toContain('Synthetic office and cloud services.');
+            expect(h.records.filter(row => ['save', 'submit'].includes(row.action)).length).toBe(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('switching organisation replaces the review and leaves old controls inert', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h);
+        choose(ui, 4, 'yes'); control(ui, 'Review and submit').click();
+        const oldConfirm = control(ui, 'Save and submit assessment'), oldEdit = control(ui, 'Edit question 1');
+        const other = await backend({ organisationId: 'other-organisation', tenantId: 'synthetic-review-other' });
+        const replacement = mountUi(other, { dom: ui });
+        try {
+            await until(() => replacement.root.textContent.includes('No saved assessments yet.'));
+            oldConfirm.click(); oldEdit.click(); await pause();
+            expect(replacement.root.querySelector('.ncsc-review')).toBeNull();
+            expect(replacement.root.textContent).not.toContain('Synthetic office and cloud services.');
+            expect(posts(h)).toHaveLength(0); expect(posts(other)).toHaveLength(0);
+        } finally { replacement.controller.destroy(); }
+    });
+
+    test('leaving review with unsaved answers uses the managed leave decision; staying keeps the review', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h);
+        try {
+            choose(ui, 4, 'yes'); control(ui, 'Review and submit').click();
+            control(ui, 'Back to assessments').click(); expect(ui.document.modal).toBeDefined();
+            control(ui, 'Stay here').click();
+            expect(ui.root.querySelector('.ncsc-review')).not.toBeNull(); expect(posts(h)).toHaveLength(0);
+            control(ui, 'Back to assessments').click(); control(ui, 'Discard unsent changes').click();
+            await until(() => savedActions(ui).length === 1); expect(posts(h)).toHaveLength(0);
+            savedActions(ui)[0].click(); await until(() => byId(ui, 'ncsc-question-index'));
+            expect(ui.root.querySelector('.ncsc-review')).toBeNull(); expect(control(ui, 'Return to review')).toBeUndefined();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('read-only presentation offers no review or submission control', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h, { presentationMode: 'read-only' });
+        try {
+            expect(control(ui, 'Review and submit')).toBeUndefined(); expect(control(ui, 'Save and submit assessment')).toBeUndefined();
         } finally { ui.controller.destroy(); }
     });
 });
