@@ -312,6 +312,7 @@
         let conflict = false;
         let currentChecked = true;
         let statusText = '';
+        let saveStatus;
         let errors = [];
         let leave = null;
         let view = 'list';
@@ -364,7 +365,7 @@
         }
         function button(label, action, cls) {
             const result = node('button', cls || 'dashboard-button', label); const createdEpoch = epoch;
-            result.type = 'button'; result.addEventListener('click', function () { if (live(createdEpoch) && !result.disabled) action(); });
+            result.type = 'button'; result.addEventListener('click', function () { if (live(createdEpoch) && root.contains(result) && !result.disabled) action(); });
             return result;
         }
         function newId() {
@@ -524,10 +525,10 @@
         function restoreFocus(region, saved, fallback) {
             if (!saved || !live()) return;
             const replacement = saved.id && region.querySelector('[id="' + saved.id + '"]');
-            const target = replacement && !replacement.disabled ? replacement : fallback;
+            const target = replacement && !replacement.disabled ? replacement : saved.id === 'ncsc-save' && saveStatus && root.contains(saveStatus) ? saveStatus : fallback;
             if (!target) return;
-            if (target === fallback) target.tabIndex = -1;
-            target.focus();
+            if (target === fallback || target === saveStatus) target.tabIndex = -1;
+            target.focus({ preventScroll: true });
             if (target === replacement && typeof target.setSelectionRange === 'function' && Number.isInteger(saved.start)) {
                 target.setSelectionRange(saved.start, saved.end);
             }
@@ -535,6 +536,12 @@
         function render() {
             if (!live()) return;
             const focused = captureFocus(root);
+            const scrollX = win && win.scrollX, scrollY = win && win.scrollY;
+            // Retain the progress block's height while acknowledging Save. Otherwise
+            // removing an unsaved-count line moves the button under a double click.
+            const savingFocus = focused && ['ncsc-save', 'ncsc-save-status'].includes(focused.id);
+            const progressHeight = savingFocus && questionProgress && typeof questionProgress.getBoundingClientRect === 'function'
+                ? questionProgress.getBoundingClientRect().height : null;
             questionIndex = null; questionProgress = null; navigationSummary = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
             if (!acknowledged || acknowledged.status === 'submitted' || !editable) { reviewing = false; returnToReview = null; }
             // Keep the live region attached so asynchronous updates change an
@@ -552,17 +559,22 @@
             // renders. Stable IDs also restore keyboard focus inside it.
             if (view !== 'denied') { if (!workshopPanel) workshopPanel = workshopDownloads(); root.append(workshopPanel); }
             root.append(provenance()); updateStatus(); renderErrors();
+            if (questionProgress && Number.isFinite(progressHeight)) questionProgress.style.setProperty('min-height', progressHeight + 'px');
             if (leave) renderLeave();
             else restoreFocus(root, focused, heading);
+            if (focused && win && typeof win.scrollTo === 'function' && Number.isFinite(scrollY)) win.scrollTo(scrollX, scrollY);
         }
         function updateStatus() {
             syncUnloadWarning();
             if (!live() || !status) return;
             const saved = acknowledged ? 'Saved revision ' + acknowledged.revision + '. ' + acknowledged.progress.answered + ' of ' + acknowledged.progress.total + ' answered. ' : '';
             const dirty = dirtyEntries().length;
-            status.textContent = statusText || (busy ? 'Saving. ' + saved : loading ?
+            // Keep draft feedback beside Save so changing status text cannot move its pointer target.
+            status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
+            status.textContent = statusText || (busy ? 'Operation in progress. Saving. ' + saved : loading ?
                 view === 'assessment' && !acknowledged ? 'Loading the selected assessment.' : 'Loading assessments.'
                 : saved + (dirty ? dirty + (dirty === 1 ? ' answer has' : ' answers have') + ' unsaved changes.' : ''));
+            if (saveStatus && root.contains(saveStatus)) saveStatus.textContent = status.textContent;
             if (controls) controls.querySelectorAll('button').forEach(function (control) {
                 if (control.dataset.mutation === 'true') control.disabled = busy || !!pending || conflict || !currentChecked;
             });
@@ -630,7 +642,7 @@
                         query && ![item.assessmentId, item.createdAt, item.updatedAt].some(function (value) { return value.toLowerCase().includes(query); })) return;
                     const row = node('li', 'ncsc-assessment-card');
                     const heading = node('div', 'ncsc-assessment-card-heading');
-                    heading.append(node('h3', '', 'Assessment started ' + item.createdAt.slice(0, 10)),
+                    heading.append(node('h3', '', 'Assessment started ' + localDate(item.createdAt)),
                         node('span', 'dashboard-badge', submitted ? 'Submitted' : item.status === 'created' ? 'Not started' : 'In progress'));
                     const saved = node('p', 'ncsc-assessment-saved', item.progress.answered + ' of ' + item.progress.total + ' responses saved');
                     const progress = node('progress', 'ncsc-saved-progress'); progress.max = item.progress.total; progress.value = item.progress.answered;
@@ -643,8 +655,9 @@
                     reference.id = 'ncsc-assessment-reference-' + index; open.setAttribute('aria-describedby', reference.id);
                     const details = node('details', 'ncsc-assessment-reference'), summary = node('summary', '', 'Saved record details');
                     summary.id = 'ncsc-assessment-details-' + index; details.append(summary, reference);
+                    if (item.scopePopulation) row.append(node('p', 'ncsc-assessment-scope', item.scopePopulation.description));
                     row.append(heading, saved, progress,
-                        node('p', 'dashboard-muted ncsc-assessment-date', 'Last saved ' + item.updatedAt.slice(0, 10)), open, details); list.append(row);
+                        node('p', 'dashboard-muted ncsc-assessment-date', 'Last saved ' + localDate(item.updatedAt)), open, details); list.append(row);
                 });
                 const matches = list.children.length;
                 count.textContent = matches + ' of ' + summaries.length + ' loaded assessments shown';
@@ -714,7 +727,7 @@
         }
         function renderCreate() {
             const renderedEpoch = epoch;
-            content.append(node('p', '', 'Describe the organisation, systems and people covered. This is your declaration, not verified inventory. It cannot be changed after creation.'));
+            content.append(node('p', '', 'Describe the organisation, systems and people covered, for example Whole organisation. This is your declaration, not verified inventory. It cannot be changed after creation. To assess a different scope later, start a new assessment.'));
             const label = node('label', '', 'Assessment scope'); label.setAttribute('for', 'ncsc-scope');
             const input = node('textarea', 'ncsc-textarea'); input.id = 'ncsc-scope'; input.value = declaration; input.rows = 5; input.readOnly = busy || !!pending;
             input.setAttribute('aria-describedby', 'ncsc-scope-help'); input.required = true;
@@ -775,12 +788,17 @@
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
             if (editable && !sealed) {
-                const save = button('Save progress', function () { saveAll(false); }); save.dataset.mutation = 'true';
+                const save = button('Save progress', function () { saveAll(false); }); save.id = 'ncsc-save'; save.dataset.mutation = 'true';
+                if (!saveStatus) saveStatus = node('p', 'ncsc-save-status'); else saveStatus.remove();
+                saveStatus.id = 'ncsc-save-status'; saveStatus.setAttribute('role', 'status'); saveStatus.setAttribute('aria-live', 'polite'); saveStatus.setAttribute('aria-atomic', 'true');
                 const final = node('section', 'ncsc-final-submission'); final.setAttribute('aria-labelledby', 'ncsc-submit-title');
                 const title = node('h3', '', 'Finish this baseline'); title.id = 'ncsc-submit-title';
                 const consequence = node('p', 'dashboard-muted', 'Check every answer before submitting. Submitting makes this baseline read-only, and your latest answers are saved first. Opening the review does not save or submit anything.'); consequence.id = 'ncsc-submit-consequence';
                 const review = button('Review and submit', openReview, 'dashboard-text-button'); review.setAttribute('aria-describedby', consequence.id);
-                final.append(title, consequence, review); controls.append(save);
+                final.append(title, consequence, review); controls.append(save, saveStatus);
+                controls.addEventListener('pointerdown', function (event) {
+                    if (save.disabled && (event.target === save || save.contains(event.target))) event.preventDefault();
+                });
                 if (returnToReview) {
                     const back = button('Return to review', resumeReview, 'dashboard-button dashboard-button-secondary'); back.id = 'ncsc-return-to-review';
                     controls.append(back);
@@ -877,8 +895,12 @@
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
             content.append(panel);
+            renderNextSteps(panel);
             if (!results) {
-                panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'));
+                panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'),
+                    button('Retry loading results', async function () {
+                        if (loading) return; const expected = epoch; await refreshCurrent(false, expected); if (live(expected)) render();
+                    }, 'dashboard-button dashboard-button-secondary'));
                 return;
             }
             panel.append(node('p', 'dashboard-muted', 'These results describe the saved submission and its declared scope. They are gap indicators, not an audit or certification.'));
@@ -910,6 +932,28 @@
             provenance.append(node('p', '', 'Percentages are supplied by the deterministic server evaluator. This view does not recalculate them. Input fingerprints identify the saved calculation; they are not downloadable evidence.'));
             const list = node('dl'); results.inputs.forEach(function (row) { list.append(node('dt', '', row[0]), node('dd', '', row[1])); }); provenance.append(list); panel.append(provenance);
         }
+        function localDate(value) {
+            return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
+        }
+        function renderNextSteps(panel) {
+            const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Fix these first'));
+            section.append(node('p', '', 'Start with the gaps you reported, then check what you are unsure about with your IT provider. This list groups your answers; it is not a calculated risk ranking.'));
+            const list = node('ol'), summary = ['Cyber security assessment', 'Scope: ' + acknowledged.scopePopulation.description, 'Submitted: ' + localDate(acknowledged.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
+            ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
+                questions.filter(function (question) { return savedAnswer(question.id).optionId === optionId; }).forEach(function (question) {
+                    const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
+                    const label = optionById.get(optionId).label;
+                    const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
+                    const title = (control ? control.title : question.prompt) + ' — ' + label;
+                    const item = node('li'); item.append(node('strong', '', title), node('p', '', action)); list.append(item); summary.push(title + ': ' + action);
+                });
+            });
+            section.append(list);
+            if (!list.children.length) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
+            const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with your IT provider'));
+            const label = node('label', '', 'Copy this summary into an email or document'); label.htmlFor = 'ncsc-provider-summary';
+            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.join('\n'); handoff.append(label, input); section.append(handoff); panel.append(section);
+        }
         function renderQuestion() {
             if (!live() || !questionRegion || !acknowledged) return;
             abortAssistance();
@@ -923,8 +967,14 @@
             questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
             const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', question.prompt));
             const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
-            const hint = node('p', 'ncsc-input-guidance', inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
+            const hint = node('p', 'ncsc-input-guidance', question.smallBusiness ? 'For a small business, this means… ' + question.smallBusiness.meaning : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
             hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
+            if (question.smallBusiness) {
+                fieldset.append(node('p', 'ncsc-input-example', 'Example: ' + question.smallBusiness.example));
+                const parts = node('details'); parts.append(node('summary', '', 'What to check')); const checks = node('ul');
+                question.smallBusiness.checks.forEach(function (text) { checks.append(node('li', '', text)); }); parts.append(checks); fieldset.append(parts);
+            }
+            fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
             const writable = canEdit();
             question.responseOptionIds.forEach(function (id) {
                 const option = optionById.get(id); const label = node('label', 'ncsc-option');
@@ -1216,7 +1266,14 @@
             if (!live() || busy || pending && !retry) return false;
             const expected = epoch;
             if (!retry) pending = { command: command, captures: captures, uncertain: false };
-            const operation = pending; busy = true; statusText = ''; render();
+            const operation = pending; busy = true; statusText = '';
+            const focusBeforeMutation = doc.activeElement;
+            operation.restoreSave = focusBeforeMutation && (focusBeforeMutation.id === 'ncsc-save' || focusBeforeMutation.id === 'ncsc-save-status');
+            // Keep Save mounted while a request runs; a second press cannot hit a replacement control.
+            if (command.action === 'save' && !reviewing) {
+                updateStatus();
+                if (operation.restoreSave && saveStatus && root.contains(saveStatus)) { saveStatus.tabIndex = -1; saveStatus.focus({ preventScroll: true }); }
+            } else render();
             let failed = false;
             try {
                 const result = await call(command.action, command, expected);
@@ -1255,9 +1312,11 @@
                 return false;
             } finally {
                 if (live(expected)) {
-                    const focusFailure = failed && (doc.activeElement === heading || doc.activeElement === status) && !leave && view !== 'denied';
+                    const focusFailure = failed && (doc.activeElement === heading || doc.activeElement === status || doc.activeElement === saveStatus) && !leave && view !== 'denied';
+                    const restoreSave = operation.restoreSave && doc.activeElement === saveStatus;
                     busy = false; render();
-                    if (focusFailure) { status.tabIndex = -1; status.focus(); }
+                    if (restoreSave && !pending && !conflict) { const save = root.querySelector('[id="ncsc-save"]'); if (save && !save.disabled) save.focus({ preventScroll: true }); }
+                    if (focusFailure) { const feedback = status.hidden && saveStatus && root.contains(saveStatus) ? saveStatus : status; feedback.tabIndex = -1; feedback.focus({ preventScroll: true }); }
                 }
             }
         }

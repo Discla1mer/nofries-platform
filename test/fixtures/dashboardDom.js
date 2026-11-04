@@ -16,6 +16,7 @@ function createDom() {
         get textContent() { return this._text + this.children.map(child => child.textContent).join(' '); }
         append(...children) { children.forEach(child => { child.parentElement = this; this.children.push(child); }); }
         prepend(...children) { children.forEach(child => { child.parentElement = this; }); this.children.unshift(...children); }
+        contains(element) { return this === element || this.children.some(child => child.contains(element)); }
         remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this); this.parentElement = null; }
         replaceChildren(...children) { this.children.forEach(child => { child.parentElement = null; }); this.children = []; this._text = ''; this.append(...children); }
         setAttribute(key, value) { this.attributes[key] = String(value); }
