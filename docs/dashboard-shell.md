@@ -12,6 +12,12 @@ Open `test/fixtures/dashboard-preview.html` as a local file. The self-contained 
 
 The preview output and fixture data live under `test/fixtures`, outside both production packaging plans. Do not add them to static assets or a public endpoint. The script is a local development utility, not an npm/release build step. Regenerating replaces only its named local preview output.
 
+For a separately hosted, invite-only development artifact, see
+[the dev-site build and publication plan](dashboard-dev-site.md). That builder
+reuses this renderer, CSS and eight scenarios, adds a commit identifier and reset,
+and writes only to a new directory outside the repository. It does not change
+either production package or publish anything.
+
 ## Architecture
 
 | Component | Responsibility | Does not do |

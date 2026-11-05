@@ -43,7 +43,7 @@ for (const builder of ['build-static.js', 'build-app-service.js']) {
         vm.runInNewContext(fs.readFileSync(path.join(root, 'scripts', builder), 'utf8'), {
             require: requireStub, __dirname: path.join(root, 'scripts'), console, Buffer
         });
-        for (const file of ['test/fixtures/dashboardFixture.js', 'test/fixtures/dashboard-preview.html', 'scripts/build-dashboard-preview.js']) {
+        for (const file of ['test/fixtures/dashboardFixture.js', 'test/fixtures/dashboard-preview.html', 'scripts/build-dashboard-preview.js', 'scripts/build-dashboard-dev-site.js']) {
             const candidate = path.join(root, file);
             assert.ok(!copied.some(source => source === candidate || candidate.startsWith(source + path.sep)), `${file} was included`);
         }
