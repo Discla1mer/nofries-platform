@@ -14,9 +14,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  application:
+  unit:
+    # The Jest suite is split into parallel shards; each shard still runs its
+    # files serially (--runInBand), exactly as the previous single job did.
+    name: unit (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 22.22.0
+      - run: npm ci --ignore-scripts --omit=optional --audit=false
+      - name: Run Jest shard
+        run: npx jest --runInBand --shard=${{ matrix.shard }}/4
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       PROMPTFOO_DISABLE_TELEMETRY: '1'
       PROMPTFOO_DISABLE_UPDATE: '1'
@@ -35,7 +56,10 @@ jobs:
           node scripts/verify-adm-zip-memory-only.js
           node vendor/node-forge-rsa-validated/build-package.js --check
       - run: npm ci --ignore-scripts --omit=optional --audit=false
-      - run: npm run verify
+      # Everything `npm run verify` runs after the Jest suite.
+      - run: npm run eval:prospect
+      - run: npm run build
+      - run: npm run check:syntax
       - run: npm run eval:prospect:promptfoo
         env:
           PROMPTFOO_CONFIG_DIR: ${{ runner.temp }}/promptfoo
@@ -44,6 +68,22 @@ jobs:
           npm run build:app-service
           cd app-service-dist
           npm ci --ignore-scripts --omit=dev --omit=optional --dry-run --offline --audit=false
+
+  application:
+    # Required check. Passes only if every unit shard and the build job succeeded;
+    # a skipped, cancelled or failed dependency fails this gate.
+    if: always()
+    needs: [unit, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all application jobs to succeed
+        env:
+          UNIT: ${{ needs.unit.result }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          echo "unit=$UNIT build=$BUILD"
+          test "$UNIT" = success && test "$BUILD" = success
 
   postgres:
     runs-on: ubuntu-latest
