@@ -72,6 +72,10 @@ describe('durable provider operation fence semantics', () => {
             await firstFence.complete(Object.assign({}, operation, {
                 result: { ticketReceipt: { ticketId: String(700 + index) } }
             }));
+            if ((index + 1) % 250 === 0) {
+                // Let Jest's timeout fire between batches of in-memory operations.
+                await new Promise((resolve) => setImmediate(resolve));
+            }
         }
 
         const restarted = createProviderOperationFence({ store, maxActiveOperations: 2 });
@@ -83,7 +87,7 @@ describe('durable provider operation fence semantics', () => {
             disposition: 'replay',
             result: { ticketReceipt: { ticketId: '700' } }
         });
-    }, 30000);
+    }, 180000); // Headroom over observed hosted runs of up to 106 seconds.
 
     test('publishes hashed actor/requester attribution without legacy field names', async () => {
         const fence = createProviderOperationFence({ store: createMemoryFenceStore() });
@@ -300,8 +304,12 @@ describe('durable provider operation fence semantics', () => {
         for (let index = 0; index < 500; index += 1) {
             await expect(fence.reserve(scope({ operationId: `repeat-${String(index).padStart(8, '0')}` })))
                 .resolves.toMatchObject({ status: 'confirmation_required' });
+            if ((index + 1) % 250 === 0) {
+                // Let Jest's timeout fire between batches of in-memory operations.
+                await new Promise((resolve) => setImmediate(resolve));
+            }
         }
         await expect(fence.reserve(scope({ operationId: 'repeat-over-capacity' })))
             .rejects.toMatchObject({ statusCode: 503, details: { code: 'provider_repeat_confirmation_capacity' } });
-    }, 30000);
+    }, 180000);
 });
