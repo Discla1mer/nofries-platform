@@ -226,4 +226,4 @@ function createDashboardAdminRuntime(input) {
     return Object.freeze({ authoriseOperator, readAuthoritySnapshot, audit, clock: config.clock, requestBudgetMs: config.requestBudgetMs });
 }
 
-module.exports = { createDashboardAdminRuntime };
+module.exports = { createDashboardAdminRuntime, readOnlyCaptureOptions };

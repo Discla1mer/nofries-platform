@@ -540,3 +540,19 @@ test('a duplicated callback or substituted result after completion is pending an
         expectClosed(outcome); expect(h.blobs.remove).toHaveBeenCalledTimes(2);
     }
 });
+
+test('a half-created signup with no authority resets only its account pointer and preserves absence on rollback', async () => {
+    const h = fixture(); h.target.authority = null; h.current.delete(h.keys.authority);
+    const inventory = await h.reset.inventory(h.request); expect(inventory.status).toBe('ready');
+    expect(inventory.plan.records.authority).toBeNull();
+    expect((await h.reset.reset(h.request, inventory.plan)).status).toBe('reset');
+    expect(h.blobs.remove).toHaveBeenCalledTimes(1);
+    expect((await h.reset.rollback(h.request, inventory.plan)).status).toBe('recovered');
+    expect(h.current.has(h.keys.authority)).toBe(false); expect(h.current.has(h.keys.account)).toBe(true);
+});
+test('authority appearing after an absent-authority inventory blocks reset before deleting the account', async () => {
+    const h = fixture(); h.target.authority = null; const original = h.current.get(h.keys.authority); h.current.delete(h.keys.authority);
+    const inventory = await h.reset.inventory(h.request); h.current.set(h.keys.authority, original);
+    expect((await h.reset.reset(h.request, inventory.plan)).status).toBe('blocked');
+    expect(h.blobs.remove).not.toHaveBeenCalled();
+});

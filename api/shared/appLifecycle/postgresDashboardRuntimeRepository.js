@@ -26,6 +26,8 @@ const administrationAudit = require('../dashboardAdmin/postgresAuditWriter');
 const { normaliseSignupAuthority } = require('../dashboardAdmin/signupAuthority');
 const { normaliseSignupAuditEnvelope, createSignupAuditEnvelope } = require('../dashboardAdmin/signupAuditEnvelope');
 const administrationSignupAudit = require('../dashboardAdmin/postgresSignupAuditWriter');
+const { createPostgresAccountActionDataAdapter } = require('../dashboardAdmin/postgresAccountActionAdapter');
+const { actionCommand: administrationActionCommand } = require('../dashboardAdmin/accountActionRecords');
 
 const MAX_OPERATION = 524288, MAX_EFFECT = 262144, MAX_SMALL = 16384;
 
@@ -2200,11 +2202,13 @@ function administrationConfiguration(input) {
         'newId', 'captureRequest', 'authoriseAdministration'];
     if (own(input, 'beforeQuery')) keys.push('beforeQuery');
     if (own(input, 'authoriseSignupList')) keys.push('authoriseSignupList');
+    if (own(input, 'authoriseAccountAction')) keys.push('authoriseAccountAction', 'accountActionState');
     fields(input, keys);
     if (!input.pool || isProxy(input.pool) || typeof input.pool.connect !== 'function' || typeof input.pool.end !== 'function') invalid();
     for (const key of ['clock', 'readExternalRuntimeEpoch', 'newId', 'captureRequest', 'authoriseAdministration',
         ...(own(input, 'beforeQuery') ? ['beforeQuery'] : []),
-        ...(own(input, 'authoriseSignupList') ? ['authoriseSignupList'] : [])]) {
+        ...(own(input, 'authoriseSignupList') ? ['authoriseSignupList'] : []),
+        ...(own(input, 'authoriseAccountAction') ? ['authoriseAccountAction'] : [])]) {
         if (typeof input[key] !== 'function' || isProxy(input[key])) invalid();
     }
     uuid(input.instanceId);
@@ -2217,6 +2221,69 @@ function administrationConfiguration(input) {
 
 function createPostgresDashboardAdministrationRepository(input) {
     const options = administrationConfiguration(input);
+
+    async function approveAccountAction(inv, selector) {
+        let approval;
+        try {
+            approval = fields(copy(await inv.provider('authoriseAccountAction', Object.freeze({ request: inv.request,
+                capture: inv.capture, selector, action: inv.accountAction, operationType: inv.operationType, at: inv.now() })), 1024),
+            ['authoritySha256', 'listMembers']);
+            digest(approval.authoritySha256);
+            if (typeof approval.listMembers !== 'boolean') denied();
+        } catch (_) { denied(); }
+        if (inv.actionAuthoritySha256 !== null && approval.authoritySha256 !== inv.actionAuthoritySha256) denied();
+        inv.actionAuthoritySha256 = approval.authoritySha256;
+        inv.listMembers = approval.listMembers;
+        inv.now();
+    }
+    async function prepareAccountAction(request, selectorInput, operationType, command = null, action = null) {
+        if (!request || typeof request !== 'object' || isProxy(request) || !own(options, 'authoriseAccountAction') ||
+            action !== null && !['edit', 'delete', 'restore', 'reset', 'archive', 'unarchive'].includes(action)) denied();
+        const selector = selectorInput === null ? null : administrationSelector(selectorInput);
+        const inv = newInvocation(options, request, operationType, freeze({}));
+        inv.accountAction = command ? command.action : action;
+        inv.actionAuthoritySha256 = command ? command.witness.authoritySha256 : null;
+        if (command) digest(inv.actionAuthoritySha256);
+        await capture(inv);
+        if (inv.capture.kind !== 'operator_dashboard' || inv.capture.operatorIssuanceProof === null ||
+            command && (command.actorSubjectKey !== subjectOf(inv.capture.identityPayload) ||
+                command.witness.restoreEpoch !== inv.capture.restoreEpoch)) denied();
+        // Expiry binds the actual SQL dispatch and COMMIT, not merely the HTTP
+        // confirmation check. Outcome reads may reconcile an expired command.
+        if (command && operationType === 'administration.account.commit') inv.intersect(command.expiresAt);
+        await externalEpoch(inv);
+        await approveAccountAction(inv, selector);
+        return { inv, selector };
+    }
+    async function accountAction(request, selectorInput, inputCommand, method) {
+        try {
+            const command = inputCommand === null ? null : administrationActionCommand(inputCommand);
+            const { inv, selector } = await prepareAccountAction(request, selectorInput,
+                'administration.account.' + method, command);
+            return await run(inv, selector, async tx => {
+                let active = true;
+                const bound = Object.freeze({ query(sql, params) {
+                    if (!active) denied();
+                    return inv.query(tx, sql, params);
+                } });
+                try {
+                    const adapter = createPostgresAccountActionDataAdapter({ tx: bound, clock: () => inv.now(),
+                        restoreEpoch: inv.capture.restoreEpoch, authoritySha256: inv.actionAuthoritySha256,
+                        actorSubjectKey: subjectOf(inv.capture.identityPayload), newId: options.newId, stateStore: options.accountActionState, listMembers: inv.listMembers });
+                    const result = await adapter[method](command || selector);
+                    return result === null ? null : inv.charge(result, 1);
+                } finally { active = false; }
+            // Outcome uses a tenant SHARE row lock to serialize against an
+            // in-flight commit; it is SELECT-only, not BEGIN READ ONLY (which
+            // PostgreSQL forbids for row-locking reads).
+            }, false, approveAccountAction);
+        } catch (error) {
+            if (method === 'commit' && error instanceof PostgresDatabaseError &&
+                ['postgres_commit_failed', 'postgres_rollback_failed'].includes(error.code)) ambiguous();
+            if (error?.code?.startsWith('dashboard_admin_') && [400, 403, 409, 503].includes(error.statusCode)) throw error;
+            throw errorResult(error);
+        }
+    }
 
     async function approve(inv, selector) {
         const allowed = await inv.provider('authoriseAdministration', Object.freeze({ request: inv.request,
@@ -2340,6 +2407,18 @@ function createPostgresDashboardAdministrationRepository(input) {
         }
     }
     return Object.freeze({
+        ...(own(options, 'authoriseAccountAction') ? {
+        async validateAccountActionSession(request, selectorInput = null, action = null) {
+            try {
+                const { inv, selector } = await prepareAccountAction(request, selectorInput, 'administration.account.session', null, action);
+                return await run(inv, selector, async () => freeze({ schemaVersion: 1, state: 'ready',
+                    purpose: 'operator_dashboard', capture: inv.capture }), true, approveAccountAction);
+            } catch (error) { throw errorResult(error); }
+        },
+        inspectAccountAction(request, selector) { return accountAction(request, selector, null, 'inspect'); },
+        commitAccountAction(request, command) { return accountAction(request, command?.selector, command, 'commit'); },
+        accountActionOutcome(request, command) { return accountAction(request, command?.selector, command, 'outcome'); },
+        } : {}),
         async validateSignupSession(request, authorityInput) {
             try {
                 const inv = await prepareSignup(request, authorityInput, 'administration.signup.session');

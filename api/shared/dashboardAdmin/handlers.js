@@ -21,8 +21,8 @@ function response(status, body, headers = {}, isRaw = false) {
 function failure(error) {
     const allowed = new Set(['dashboard_admin_authentication_required', 'dashboard_admin_access_denied',
         'dashboard_admin_input_invalid', 'dashboard_admin_request_too_large', 'dashboard_admin_unsupported_media_type',
-        'dashboard_admin_method_not_allowed', 'dashboard_admin_not_found', 'dashboard_admin_unavailable']);
-    if (allowed.has(error?.code) && [400, 401, 403, 404, 405, 413, 415, 503].includes(error.statusCode)) {
+        'dashboard_admin_method_not_allowed', 'dashboard_admin_not_found', 'dashboard_admin_conflict', 'dashboard_admin_unavailable']);
+    if (allowed.has(error?.code) && [400, 401, 403, 404, 405, 409, 413, 415, 503].includes(error.statusCode)) {
         return response(error.statusCode, { code: error.code });
     }
     // Service errors are deliberately bounded. Never emit provider messages,
@@ -85,14 +85,15 @@ async function readJson(request, signal) {
 
 // Trusted source-only composition: the host binds its genuine staff session
 // reader. No request header/body identity, environment grant or default reader.
-function createDashboardAdminHandlers({ service = null, signupListService = null, readOperatorSession = null, env = {}, requestBudgetMs = 10000 } = {}) {
+function createDashboardAdminHandlers({ service = null, signupListService = null, accountActionService = null, readOperatorSession = null, env = {}, requestBudgetMs = 10000 } = {}) {
     if (service !== null && (!service || ['authorise', 'capabilities', 'lookup'].some(key => typeof service[key] !== 'function')) ||
         signupListService !== null && (!signupListService || ['authorise', 'capabilities', 'list', 'authoriseDisclosure'].some(key => typeof signupListService[key] !== 'function')) ||
+        accountActionService !== null && (!accountActionService || ['authorise', 'capabilities', 'inspect', 'prepare', 'execute', 'outcome'].some(key => typeof accountActionService[key] !== 'function')) ||
         readOperatorSession !== null && typeof readOperatorSession !== 'function' ||
         !Number.isSafeInteger(requestBudgetMs) || requestBudgetMs <= 0 || requestBudgetMs > 60000) throw new Error('dashboard_admin_configuration_invalid');
 
     async function principal(request, expected = null) {
-        if ((!service && !signupListService) || !readOperatorSession) fail(503, 'dashboard_admin_unavailable');
+        if ((!service && !signupListService && !accountActionService) || !readOperatorSession) fail(503, 'dashboard_admin_unavailable');
         let details;
         try { details = await readOperatorSession(String(request.headers?.cookie || '')); }
         catch (error) {
@@ -112,41 +113,53 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
     }
 
     async function permission(actor, route, selector, checked) {
+        if (route.startsWith('actions/')) {
+            if (!accountActionService) fail(503, 'dashboard_admin_unavailable');
+            return accountActionService.authorise(actor, selector);
+        }
         if (route === 'signups') {
             if (!signupListService) fail(503, 'dashboard_admin_unavailable');
             return signupListService.authorise(actor);
         }
-        if (route === 'lookup' || !signupListService) {
+        if (route === 'lookup') {
             if (!service) fail(503, 'dashboard_admin_unavailable');
             return service.authorise(actor, selector);
         }
         // Shell/assets may be used by either independently authorised capability.
         // A lookup grant never reaches or substitutes for signupList authority.
         let error;
-        for (const candidate of [service, signupListService]) {
+        for (const candidate of [service, signupListService, accountActionService]) {
             if (!candidate) continue;
             try { return await checked(() => candidate.authorise(actor)); } catch (caught) { error = caught; }
         }
         throw error;
     }
     async function capabilities(actor, checked) {
-        if (!signupListService) return service.capabilities(actor);
+        if (!signupListService && !accountActionService) return service.capabilities(actor);
         let lookup = false, signupList = false;
         if (service) {
             try { lookup = (await checked(() => service.capabilities(actor))).lookup === true; } catch (_) { /* independent capability absent */ }
         }
-        try { signupList = (await checked(() => signupListService.capabilities(actor))).signupList === true; } catch (_) { /* independent capability absent */ }
-        return { lookup, recovery: [], signupList };
+        if (signupListService) {
+            try { signupList = (await checked(() => signupListService.capabilities(actor))).signupList === true; } catch (_) { /* independent capability absent */ }
+        }
+        let accountActions = false;
+        if (accountActionService) {
+            try { accountActions = (await checked(() => accountActionService.capabilities(actor))).accountActions === true; } catch (_) { /* independent capability absent */ }
+        }
+        return { lookup, recovery: [], ...(signupListService ? { signupList } : {}), ...(accountActionService ? { accountActions } : {}) };
     }
 
     async function execute(request, route, checked, signal) {
         try {
             const methods = { document: 'GET', 'app.js': 'GET', 'app.css': 'GET', capabilities: 'GET', lookup: 'POST', signups: 'POST',
+                'actions/inspect': 'POST', 'actions/prepare': 'POST', 'actions/execute': 'POST', 'actions/outcome': 'POST',
                 entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET' };
             if (!Object.hasOwn(methods, route)) fail(404, 'dashboard_admin_not_found');
             if (request.method !== methods[route]) return response(405, { code: 'dashboard_admin_method_not_allowed' }, { Allow: methods[route] });
             if (String(request.originalUrl || request.url || '').includes('?') || Object.keys(request.query || {}).length) fail(400, 'dashboard_admin_input_invalid');
-            if (!['lookup', 'signups'].includes(route) && (request.headers?.['transfer-encoding'] || Number(request.headers?.['content-length'] || 0) > 0)) fail(400, 'dashboard_admin_input_invalid');
+            const isAction = route.startsWith('actions/');
+            if (!['lookup', 'signups'].includes(route) && !isAction && (request.headers?.['transfer-encoding'] || Number(request.headers?.['content-length'] || 0) > 0)) fail(400, 'dashboard_admin_input_invalid');
             const actor = await checked(() => principal(request));
             // These routes contain no account data or native authority. A
             // genuine staff administrator can explicitly initialise the existing
@@ -154,20 +167,21 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             const isEntry = ['entry', 'entry.js', 'entry-capabilities'].includes(route);
             if (!isEntry) await checked(() => permission(actor, route, null, checked));
             let body, selector = null, contentType = null;
-            if (route === 'lookup' || route === 'signups') {
+            if (route === 'lookup' || route === 'signups' || isAction) {
                 try { assertExactSameOriginRequest(request, env); }
                 catch (_) { fail(403, 'dashboard_admin_access_denied'); }
                 const input = await checked(() => readJson(request, signal));
-                selector = route === 'lookup' ? normaliseSelector(input) : signupListInput(input);
+                selector = isAction ? null : route === 'lookup' ? normaliseSelector(input) : signupListInput(input);
                 const currentActor = await checked(() => principal(request, actor));
-                body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
+                body = await checked(() => isAction ? accountActionService[route.slice('actions/'.length)](currentActor, input) :
+                    route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
             } else if (route === 'entry-capabilities') body = { entry: true };
             else if (route === 'entry') { body = buildDashboardAdminEntryDocument(); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'entry.js') { body = fs.readFileSync(path.join(__dirname, '../protectedAssets/dashboardAdminEntry.js'), 'utf8'); contentType = 'application/javascript; charset=utf-8'; }
             else if (route === 'capabilities') body = await checked(() => capabilities(actor, checked));
             else if (route === 'document') { body = buildDashboardAdminDocument(); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'app.css') { body = dashboardAdminCss; contentType = 'text/css; charset=utf-8'; }
-            else { body = ['dashboardAdmin.js', 'signupQueue.js'].map(file => fs.readFileSync(path.join(__dirname, '../protectedAssets', file), 'utf8')).join('\n'); contentType = 'application/javascript; charset=utf-8'; }
+            else { body = ['dashboardAdmin.js', 'signupQueue.js', 'dashboardAdminAccountActions.js'].map(file => fs.readFileSync(path.join(__dirname, '../protectedAssets', file), 'utf8')).join('\n'); contentType = 'application/javascript; charset=utf-8'; }
             // A parent session or role may have been revoked during source I/O.
             // Re-read it before releasing even already-buffered results/assets.
             const current = await checked(() => principal(request, actor));

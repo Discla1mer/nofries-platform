@@ -40,14 +40,14 @@ function createSignupIndexWriteJournal({ target, read, upload, container, newId,
             value.writerEpoch !== writerEpoch || value.accountKey !== key || !KEY.test(key)) fail();
         revision(value.revision);
         if (value.latest !== null) {
-            fields(value.latest, ['generation', 'reference']); revision(value.latest.generation);
-            reference(value.latest.reference);
-            if (value.latest.reference.accountKey !== key) fail();
+            fields(value.latest, ['generation', 'reference', ...(value.latest.reference === null ? ['accountKey'] : [])]); revision(value.latest.generation);
+            if (value.latest.reference === null) { if (value.latest.accountKey !== key) fail(); }
+            else { reference(value.latest.reference); if (value.latest.reference.accountKey !== key) fail(); }
         }
         if (value.family !== null) {
             const f = fields(value.family, ['familyId', 'kind', 'expectedVersion', 'initialCandidateSha256', 'phase', 'generation']);
             uuid(f.familyId); digest(f.initialCandidateSha256);
-            if (!['create', 'replace'].includes(f.kind) || !['prepared', 'issued'].includes(f.phase) ||
+            if (!['create', 'replace', 'reset'].includes(f.kind) || !['prepared', 'issued'].includes(f.phase) ||
                 (f.kind === 'create' ? f.expectedVersion !== null : !ETAG.test(f.expectedVersion))) fail();
             if (f.phase === 'prepared') { if (f.generation !== null) fail(); }
             else revision(f.generation);
@@ -91,6 +91,11 @@ function createSignupIndexWriteJournal({ target, read, upload, container, newId,
         const f = before.value.family;
         if (!f || f.phase !== 'issued') return before;
         const loaded = await loadAccount(context, before.value.accountKey);
+        if (f.kind === 'reset') {
+            if (loaded !== null) return null;
+            return changeTicket(context, before, { ...before.value, family: null,
+                latest: { generation: f.generation, reference: null, accountKey: before.value.accountKey } });
+        }
         if (!loaded || f.kind === 'replace' && loaded.version === f.expectedVersion) return null;
         // Closure covers EVERY call in this exact conditional family, including
         // calls whose candidates differ. Only actual source facts are retained.

@@ -10,12 +10,13 @@ const browserRoutes = [
     ['/dashboard-admin/entry', '/api/dashboard-admin/entry'],
     ['/dashboard-admin', '/api/dashboard-admin']
 ];
+const actionRoutes = ['inspect', 'prepare', 'execute', 'outcome'].map(action => ['POST', '/api/dashboard-admin/actions/' + action]);
 const apiRoutes = [
     ['GET', '/api/dashboard-admin'], ['GET', '/api/dashboard-admin/entry'],
     ['GET', '/api/dashboard-admin/entry.js'], ['GET', '/api/dashboard-admin/entry-capabilities'],
     ['GET', '/api/dashboard-admin/app.js'], ['GET', '/api/dashboard-admin/app.css'],
     ['GET', '/api/dashboard-admin/capabilities'], ['POST', '/api/dashboard-admin/lookup'],
-    ['POST', '/api/dashboard-admin/signups']
+    ['POST', '/api/dashboard-admin/signups'], ...actionRoutes
 ];
 
 // Resolve the checked-in ordered route table; this is not an Azure edge emulator.
@@ -34,17 +35,27 @@ function composed({ authority = true, consultant = false } = {}) {
     const audit = jest.fn(async () => true);
     const authoriseSignupList = jest.fn(async () => null);
     const readSignupPage = jest.fn(async () => { throw new Error('NO_SOURCE_READ_EXPECTED'); });
+    // Exercise the actual account-action service through Express and the BFF.
+    // Its independent policy denies; no native/confirmation I/O is expected.
+    const authoriseAccountAction = jest.fn(async () => false);
+    const noActionIo = () => jest.fn(async () => { throw new Error('NO_ACTION_IO_EXPECTED'); });
+    const actionAdapter = { inspect: noActionIo(), commit: noActionIo(), outcome: noActionIo() };
+    const confirmationStore = { create: noActionIo(), load: noActionIo() };
     h.rebuild({ dashboardAdmin: { authoriseOperator, readAuthoritySnapshot, audit,
         clock: h.dashboard.clock, requestBudgetMs: 1000 },
     dashboardAdminSignupList: { authoriseSignupList, readSignupPage, audit,
-        clock: h.dashboard.clock, requestBudgetMs: 1000 } });
-    return { h, authoriseOperator, readAuthoritySnapshot, audit, authoriseSignupList, readSignupPage };
+        clock: h.dashboard.clock, requestBudgetMs: 1000 },
+    dashboardAdminAccountActions: { authoriseOperator: authoriseAccountAction, adapter: actionAdapter,
+        confirmationStore, clock: h.dashboard.clock, requestBudgetMs: 1000 } });
+    return { h, authoriseOperator, readAuthoritySnapshot, audit, authoriseSignupList, readSignupPage,
+        authoriseAccountAction, actionAdapter, confirmationStore };
 }
 
 test('canonical browser links have exact temporary private redirects to linked API aliases', () => {
     for (const [url, target] of browserRoutes) {
         const rule = edgeRule(url, 'GET');
-        expect(rule).toMatchObject({ route: url, methods: ['GET'], redirect: target, statusCode: 302 });
+        expect(rule).toMatchObject({ route: url, methods: ['GET'], redirect: target });
+        expect(rule.statusCode ?? 302).toBe(302); // SWA's unchanged default temporary redirect.
         expect(rule.rewrite).toBeUndefined();
         expect(rule.headers['Cache-Control']).toBe('private, no-store, max-age=0');
         expect(rule.headers['X-Robots-Tag']).toBe('noindex, nofollow');
@@ -52,29 +63,32 @@ test('canonical browser links have exact temporary private redirects to linked A
     }
 });
 
-test('only the nine exact method/path pairs bypass SWA broker roles for the existing BFF boundary', () => {
+test('only the thirteen exact method/path pairs bypass SWA broker roles for the existing BFF boundary', () => {
     const additions = config.routes.filter(rule => rule.route.startsWith('/api/dashboard-admin'));
     expect(additions.map(rule => [rule.methods[0], rule.route])).toEqual(apiRoutes);
     const catchall = config.routes.findIndex(rule => rule.route === '/api/*');
     for (const [method, url] of apiRoutes) {
         const rule = edgeRule(url, method);
-        expect(rule).toEqual({ route: url, methods: [method], allowedRoles: ['anonymous'] });
+        expect(rule).toEqual({ route: url, methods: [method], allowedRoles: url.includes('/actions/') ? ['admin'] : ['anonymous'] });
         expect(config.routes.indexOf(rule)).toBeLessThan(catchall);
-        for (const other of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].filter(value => value !== method)) {
+        for (const other of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT'].filter(value => value !== method)) {
             expect(edgeRule(url, other)).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
         }
         for (const tail of ['/', '/other', '-other']) expect(edgeRule(url + tail, method))
             .toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
     }
     expect(edgeRule('/api/dashboard-admin/unknown', 'GET')).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
+    for (const url of ['/api/dashboard-admin/actions', '/api/dashboard-admin/actions/unknown', '/api/dashboard-admin/actions/reset']) {
+        expect(edgeRule(url, 'POST')).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
+    }
 });
 
-test.each(apiRoutes)('disabled composition stays private503 for forwarded %s %s', async (method, url) => {
-    expect(edgeRule(url, method).allowedRoles).toEqual(['anonymous']);
+test.each(apiRoutes)('disabled composition stays private and unavailable for forwarded %s %s', async (method, url) => {
+    expect(edgeRule(url, method).allowedRoles).toEqual(url.includes('/actions/') ? ['admin'] : ['anonymous']);
     const response = await request(createNoFriesApp())[method.toLowerCase()](url)
         .set('X-MS-Client-Principal', 'forged').set('Cookie', '__Host-nofries-auth=forged');
-    // The optional signups route remains unknown without its trusted service.
-    expect(response.status).toBe(url.endsWith('/signups') ? 404 : 503);
+    // Optional listing/action routes remain unknown without trusted composition.
+    expect(response.status).toBe(url.endsWith('/signups') || url.includes('/actions/') ? 404 : 503);
     expect(response.headers.location).toBeUndefined();
     expect(response.headers['cache-control']).toBe('private, no-store, max-age=0');
     expect(response.type).toBe('application/json');
@@ -125,8 +139,9 @@ test.each([['consultant', { consultant: true }], ['no native authority', { autho
 });
 
 test.each(['no cookie', 'forged platform identity', 'customer cookie', 'consultant', 'wrong tenant'])
-('all nine forwarded routes reject %s without reading data or native grants', async kind => {
-    const { h, authoriseOperator, readAuthoritySnapshot, audit, authoriseSignupList, readSignupPage } =
+('all thirteen forwarded routes reject %s without reading data or native grants', async kind => {
+    const { h, authoriseOperator, readAuthoritySnapshot, audit, authoriseSignupList, readSignupPage,
+        authoriseAccountAction, actionAdapter, confirmationStore } =
         composed({ consultant: kind === 'consultant' });
     let cookie;
     if (['consultant', 'wrong tenant'].includes(kind)) ({ cookie } = await h.login());
@@ -140,7 +155,7 @@ test.each(['no cookie', 'forged platform identity', 'customer cookie', 'consulta
     }
     h.resetObservations();
     for (const [method, url] of apiRoutes) {
-        expect(edgeRule(url, method).allowedRoles).toEqual(['anonymous']);
+        expect(edgeRule(url, method).allowedRoles).toEqual(url.includes('/actions/') ? ['admin'] : ['anonymous']);
         let pending = h.send(method.toLowerCase(), url).set('Origin', h.env.NOFRIES_PUBLIC_URL)
             .set('Sec-Fetch-Site', 'same-origin');
         if (cookie) pending = pending.set('Cookie', cookie);
@@ -156,7 +171,29 @@ test.each(['no cookie', 'forged platform identity', 'customer cookie', 'consulta
         expect(response.text).not.toContain('Dashboard administration');
         expect(response.headers['cache-control']).toContain('no-store');
     }
-    for (const call of [authoriseOperator, readAuthoritySnapshot, audit, authoriseSignupList, readSignupPage, h.pool.connect]) {
+    for (const call of [authoriseOperator, readAuthoritySnapshot, audit, authoriseSignupList, readSignupPage,
+        authoriseAccountAction, ...Object.values(actionAdapter), ...Object.values(confirmationStore), h.pool.connect]) {
+        expect(call).not.toHaveBeenCalled();
+    }
+});
+
+test('forwarding never turns a genuine staff session and lookup grant into account-action permission', async () => {
+    const { h, authoriseOperator, authoriseAccountAction, actionAdapter, confirmationStore } = composed();
+    const { cookie } = await h.login(); h.resetObservations();
+    const caps = await h.send('get', '/api/dashboard-admin/capabilities').set('Cookie', cookie);
+    expect(caps.status).toBe(200); expect(caps.body).toMatchObject({ lookup: true, accountActions: false });
+    expect(authoriseOperator).toHaveBeenCalled(); authoriseAccountAction.mockClear();
+    for (const [method, url] of actionRoutes) {
+        expect(edgeRule(url, method)).toEqual({ route: url, methods: ['POST'], allowedRoles: ['admin'] });
+        const response = await h.send('post', url).set('Cookie', cookie).set('Origin', h.env.NOFRIES_PUBLIC_URL)
+            .set('Sec-Fetch-Site', 'same-origin').send({});
+        expect(response.status).toBe(403);
+        expect(response.body).toEqual({ code: 'dashboard_admin_access_denied' });
+        expect(response.headers.location).toBeUndefined();
+        expect(response.headers['cache-control']).toBe('private, no-store, max-age=0');
+    }
+    expect(authoriseAccountAction).toHaveBeenCalledTimes(4);
+    for (const call of [...Object.values(actionAdapter), ...Object.values(confirmationStore), h.pool.connect]) {
         expect(call).not.toHaveBeenCalled();
     }
 });

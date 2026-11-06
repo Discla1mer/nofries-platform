@@ -1,7 +1,7 @@
 'use strict';
 
-// Operator-only coordinator. Nothing in the HTTP launcher imports this module.
-// The deployed writers do not yet supply its required exclusive-target port.
+// Dependency-free signup reset coordinator. Production requires current admin
+// authority, protected writer adoption and an exclusive participating-writer port.
 const { createHash } = require('node:crypto');
 const { types: { isProxy } } = require('node:util');
 const { starterAccountKey, starterAccountRecord } = require('./starterAccountAllocation');
@@ -66,7 +66,7 @@ function plan(input, r) {
         typeof input.containerSha256 !== 'string' || !SHA.test(input.containerSha256) ||
         typeof input.dependencyDigest !== 'string' || !SHA.test(input.dependencyDigest) ||
         typeof input.bindingSha256 !== 'string' || !SHA.test(input.bindingSha256)) fail('invalid_plan');
-    const records = Object.freeze(Object.fromEntries(NAMES.map(name => [name, pointer(input.records[name], keys[name])])));
+    const records = Object.freeze(Object.fromEntries(NAMES.map(name => [name, name === 'authority' && input.records[name] === null ? null : pointer(input.records[name], keys[name])])));
     const unsigned = { schemaVersion: 1, operationId: r.operationId, requestSha256: input.requestSha256,
         containerSha256: input.containerSha256, dependencyDigest: input.dependencyDigest, records };
     if (sha(canonical(unsigned)) !== input.bindingSha256) fail('invalid_plan');
@@ -76,9 +76,9 @@ function makePlan(r, target) {
     exact(target, ['keys', 'account', 'authority', 'containerSha256', 'dependencyDigest']);
     const keys = expectedKeys(r);
     exact(target.keys, NAMES);
-    for (const name of NAMES) exact(target[name], ['record', 'etag', 'versionId', 'sha256']);
+    for (const name of NAMES) if (name !== 'authority' || target[name] !== null) exact(target[name], ['record', 'etag', 'versionId', 'sha256']);
     if (target.keys.account !== keys.account || target.keys.authority !== keys.authority) fail('invalid_inventory');
-    const records = Object.fromEntries(NAMES.map(name => [name, {
+    const records = Object.fromEntries(NAMES.map(name => [name, name === 'authority' && target[name] === null ? null : {
         key: keys[name], etag: target[name].etag, versionId: target[name].versionId, sha256: target[name].sha256
     }]));
     const unsigned = { schemaVersion: 1, operationId: r.operationId, requestSha256: sha(canonical(r)),
@@ -94,15 +94,15 @@ function validateOriginals(originals, r, now) {
     try {
         const decoder = new TextDecoder('utf-8', { fatal: true });
         account = starterAccountRecord(JSON.parse(decoder.decode(originals.account)));
-        const raw = JSON.parse(decoder.decode(originals.authority));
+        const raw = originals.authority === null ? null : JSON.parse(decoder.decode(originals.authority));
         // Recovery copies exact old bytes; it does not revive expired authority.
-        current = authority(raw, r.customerSubjectKey, Math.min(now, raw.expiresAt - 1));
+        current = raw === null ? null : authority(raw, r.customerSubjectKey, Math.min(now, raw.expiresAt - 1));
     } catch (_) { fail('recovery_unavailable'); }
     const slot = account.organisations[0];
     if (account.email !== r.email || account.identitySubjectKey !== r.customerSubjectKey || account.activation !== null ||
-        account.organisations.length !== 1 || slot.kind !== 'own' || current.email !== r.email ||
+        account.organisations.length !== 1 || slot.kind !== 'own' || current !== null && (current.email !== r.email ||
         current.accountType !== account.accountType || current.tenantId !== slot.tenantId ||
-        current.organisationId !== slot.organisationId || current.bindingId !== slot.bindingId) fail('recovery_unavailable');
+        current.organisationId !== slot.organisationId || current.bindingId !== slot.bindingId)) fail('recovery_unavailable');
 }
 
 function createEmptySignupReset({ inspect, inspectRecovery, blobs, withExclusiveTarget, now = Date.now }) {
@@ -124,7 +124,7 @@ function createEmptySignupReset({ inspect, inspectRecovery, blobs, withExclusive
         // This is deliberately not a boolean approval or timeout witness. The
         // trusted binding must serialize participating application writers and
         // retain an incomplete durable fence across process loss. No deployed
-        // binding exists today, so ordinary construction is read-only.
+        // binding is optional; construction without it remains read-only.
         if (typeof withExclusiveTarget !== 'function') return result('blocked', 'writer_fence_unavailable', phase);
         if (recovery && typeof inspectRecovery !== 'function') return result('blocked', 'recovery_binding_unavailable', phase);
         if (!blobs || !['readCurrent', 'readVersion', 'remove', 'restore'].every(k => typeof blobs[k] === 'function')) {
@@ -153,6 +153,7 @@ function createEmptySignupReset({ inspect, inspectRecovery, blobs, withExclusive
                     const originals = {};
                     for (const name of NAMES) {
                         await check();
+                        if (p.records[name] === null) { originals[name] = null; continue; }
                         originals[name] = bytes(await blobs.readVersion(p.records[name].key, p.records[name].versionId), name);
                         if (sha(originals[name]) !== p.records[name].sha256) fail('recovery_unavailable');
                     }
@@ -164,7 +165,8 @@ function createEmptySignupReset({ inspect, inspectRecovery, blobs, withExclusive
                     // restorative effect, rather than discover it halfway.
                     for (const name of NAMES) {
                         await check();
-                        const current = await blobs.readCurrent(p.records[name].key);
+                        const current = await blobs.readCurrent(expectedKeys(r)[name]);
+                        if (p.records[name] === null) { if (current !== null) fail('record_changed'); continue; }
                         if (current !== null && (sha(bytes(current.bytes, name)) !== p.records[name].sha256 ||
                             !recovery && current.etag !== p.records[name].etag)) fail('record_changed');
                     }
@@ -172,6 +174,7 @@ function createEmptySignupReset({ inspect, inspectRecovery, blobs, withExclusive
                     // the account first and authority last. No SQL/directory or
                     // archive mutation exists on this port.
                     for (const name of NAMES) {
+                        if (p.records[name] === null) continue;
                         phase = recovery ? 'restore_' + name : 'delete_' + name;
                         await check();
                         let before = await blobs.readCurrent(p.records[name].key);
@@ -196,7 +199,8 @@ function createEmptySignupReset({ inspect, inspectRecovery, blobs, withExclusive
                     }
                     phase = 'final_read'; await check();
                     for (const name of NAMES) {
-                        const found = await blobs.readCurrent(p.records[name].key);
+                        const found = await blobs.readCurrent(expectedKeys(r)[name]);
+                        if (p.records[name] === null) { if (found !== null) fail('record_changed'); continue; }
                         if (recovery ? found === null || sha(bytes(found.bytes, name)) !== p.records[name].sha256 : found !== null) fail('record_changed');
                     }
                     await check(); phase = 'fence_completion'; await fence.complete();
