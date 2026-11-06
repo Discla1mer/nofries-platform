@@ -540,3 +540,160 @@ test('a duplicated callback or substituted result after completion is pending an
         expectClosed(outcome); expect(h.blobs.remove).toHaveBeenCalledTimes(2);
     }
 });
+
+// Guarded operator preparation: no live SDK, database, directory or host binding.
+const { createGuardedEmptySignupReset, ABSENT } = require('../api/shared/customerSignup/guardedEmptySignupReset');
+function guardedFixture() {
+    const h = fixture(), journal = new Map(), slot = h.records.account.organisations[0];
+    h.evidence = { provider: 'external', accountId: h.records.account.accountId, tenantId: slot.tenantId,
+        organisationId: slot.organisationId, subjectKey: CUSTOMER, visibility: 'complete',
+        incident: { releaseSha: 'e'.repeat(40), supportReference: 'NF-0123456789ABCDEF',
+            stage: 'organisation_preparation', code: 'signup_state_unavailable' },
+        dependencies: Object.fromEntries(ABSENT.map(key => [key, 'absent'])) };
+    const read = async () => ({ status: 'ready', target: clone(h.target), evidence: clone(h.evidence) });
+    const ports = { inspect: jest.fn(read), inspectRecovery: jest.fn(read), blobs: h.blobs,
+        withExclusiveTarget: h.withExclusiveTarget, now: () => h.at, auditStoreSha256: '2'.repeat(64),
+        checkAuthority: jest.fn(async () => {}), checkWriterAdoption: jest.fn(async () => {}),
+        audit: { read: jest.fn(async key => clone(journal.get(key) ?? null)), write: jest.fn(async (key, value, conditions) => {
+            expect(conditions).toEqual({ ifNoneMatch: '*' });
+            h.events.push('audit_' + key.split('/').pop());
+            if (journal.has(key)) throw new Error(SECRET);
+            journal.set(key, clone(value));
+        }) } };
+    h.ports = ports; h.journal = journal;
+    h.command = () => createGuardedEmptySignupReset(ports);
+    h.preview = async () => {
+        const value = await h.command().run([], { request: h.request });
+        expect(value.status).toBe('ready'); return value.manifest;
+    };
+    h.execute = (manifest, rollback = false) => h.command().run(rollback ? ['--execute', '--rollback'] : ['--execute'],
+        { request: h.request, manifest, confirmSha256: manifest.manifestSha256 });
+    return h;
+}
+
+test('guarded dry run lists exact pointer versions and coordination records with zero writes', async () => {
+    const h = guardedFixture(), m = await h.preview();
+    expect(m.changes.map(x => [x.record, x.key, x.etag, x.versionId])).toEqual(namesForTest(h));
+    expect(m.coordination).toHaveLength(5); expect(m.auditStoreSha256).toBe('2'.repeat(64));
+    expect(JSON.stringify(m)).not.toContain(EMAIL); expect(JSON.stringify(m)).not.toContain('Synthetic reset company');
+    expect(h.ports.audit.write).not.toHaveBeenCalled(); expect(h.withExclusiveTarget).not.toHaveBeenCalled();
+    expect(h.ports.checkWriterAdoption).not.toHaveBeenCalled(); h.assertUntouched();
+    expect(await h.preview()).toEqual(m);
+});
+function namesForTest(h) { return ['account', 'authority'].map(name => [name, h.keys[name], h.target[name].etag, h.target[name].versionId]); }
+
+test.each(ABSENT)('guarded reset refuses non-empty or unproven dependency %s', async key => {
+    for (const value of ['present', 'unknown', null]) {
+        const h = guardedFixture(); h.evidence.dependencies[key] = value;
+        expect((await h.command().run([], { request: h.request })).status).toBe('blocked'); h.assertUntouched();
+        expect(h.ports.audit.write).not.toHaveBeenCalled();
+    }
+});
+test.each(['activation', 'extra-slot', 'authority-missing', 'wrong-subject', 'visibility', 'incident', 'version'])(
+    'guarded eligibility rejects %s before exposing a manifest', async defect => {
+        const h = guardedFixture();
+        if (defect === 'activation') h.target.account.record.activation = {};
+        if (defect === 'extra-slot') h.target.account.record.organisations.push(clone(h.target.account.record.organisations[0]));
+        if (defect === 'authority-missing') h.target.authority = null;
+        if (defect === 'wrong-subject') h.evidence.subjectKey = STAFF;
+        if (defect === 'visibility') h.evidence.visibility = 'unknown';
+        if (defect === 'incident') h.evidence.incident.code = 'postgres_query_failed';
+        if (defect === 'version') h.blobs.readVersion.mockResolvedValue(Buffer.from(SECRET));
+        expect((await h.command().run([], { request: h.request })).status).toBe('blocked'); h.assertUntouched();
+    });
+
+test('execute requires the exact manifest, explicit flag and separately confirmed digest', async () => {
+    const h = guardedFixture(), m = await h.preview();
+    const input = { request: h.request, manifest: m, confirmSha256: m.manifestSha256 };
+    for (const [flags, value] of [[[], input], [['--execute'], { request: h.request }],
+        [['--execute'], { ...input, confirmSha256: '0'.repeat(64) }], [['--rollback'], input],
+        [['--execute'], { ...input, manifest: { ...m, changes: [] } }]]) {
+        expect((await h.command().run(flags, value)).status).toBe('blocked');
+    }
+    expect(h.withExclusiveTarget).not.toHaveBeenCalled(); expect(h.ports.audit.write).not.toHaveBeenCalled(); h.assertUntouched();
+});
+
+test('adoption/authority refusal and malformed request cannot be overridden by execute', async () => {
+    const h = guardedFixture(), m = await h.preview();
+    h.ports.checkWriterAdoption.mockRejectedValue(new Error(SECRET));
+    expect((await h.execute(m)).status).toBe('blocked');
+    h.ports.checkWriterAdoption.mockResolvedValue(undefined); h.ports.checkAuthority.mockRejectedValue(new Error(SECRET));
+    expect((await h.execute(m)).status).toBe('blocked');
+    h.request.staffSubjectKey = EMAIL;
+    expect((await h.execute(m)).status).toBe('blocked'); h.assertUntouched();
+    expect(h.ports.audit.write).not.toHaveBeenCalled();
+});
+
+test('reset audits intent before deletion and receipt before release; retry and rollback are idempotent', async () => {
+    const h = guardedFixture(), m = await h.preview();
+    const receipt = await h.execute(m); expect(receipt.status).toBe('succeeded');
+    expect(h.events.indexOf('audit_requested.json')).toBeLessThan(h.events.indexOf('remove_account'));
+    expect(h.events.indexOf('audit_reset.json')).toBeLessThan(h.events.indexOf('complete'));
+    expect(await h.execute(m)).toEqual(receipt); expect(h.blobs.remove).toHaveBeenCalledTimes(2);
+    const restored = await h.execute(m, true); expect(restored.action).toBe('rollback');
+    expect(await h.execute(m, true)).toEqual(restored); expect(h.blobs.restore).toHaveBeenCalledTimes(2);
+    expect((await h.execute(m)).status).not.toBe('succeeded');
+    for (const name of ['account', 'authority']) expect(h.current.get(h.keys[name]).bytes).toEqual(h.originalBytes[name]);
+    expect(JSON.stringify([...h.journal])).not.toContain(EMAIL); expect(JSON.stringify([...h.journal])).not.toContain(SECRET);
+});
+
+test('uncertain partial reset resumes the same operation using original versions and recovery inspection', async () => {
+    const h = guardedFixture(), m = await h.preview(); h.removes.authority = 'before';
+    expect((await h.execute(m)).status).toBe('pending'); expect(h.retained).toBe(true);
+    expect(h.current.has(h.keys.account)).toBe(false); expect(h.current.has(h.keys.authority)).toBe(true);
+    delete h.removes.authority;
+    expect((await h.execute(m)).status).toBe('succeeded'); expect(h.ports.inspectRecovery).toHaveBeenCalled();
+    expect(h.blobs.remove.mock.calls.filter(([key]) => key === h.keys.account)).toHaveLength(1);
+});
+
+test('expired partial operation cannot resume destructive work but explicit rollback restores exact bytes', async () => {
+    const h = guardedFixture(), m = await h.preview(); h.removes.authority = 'before';
+    expect((await h.execute(m)).status).toBe('pending'); h.at = h.request.expiresAt + 1;
+    const deletes = h.blobs.remove.mock.calls.length;
+    expect((await h.execute(m)).status).toBe('pending'); expect(h.blobs.remove).toHaveBeenCalledTimes(deletes);
+    expect((await h.execute(m, true)).status).toBe('succeeded');
+    for (const name of ['account', 'authority']) expect(h.current.get(h.keys[name]).bytes).toEqual(h.originalBytes[name]);
+});
+
+test.each(['intent-write', 'receipt-write', 'intent-read', 'intent-conflict', 'lost-receipt-ack', 'complete'])(
+    'audit/fence failure %s never falsely completes or loses recovery exclusion', async fault => {
+        const h = guardedFixture(), m = await h.preview(), write = h.ports.audit.write.getMockImplementation();
+        if (fault === 'intent-read') h.ports.audit.read.mockRejectedValue(new Error(SECRET));
+        if (fault === 'intent-conflict') h.journal.set('operator-empty-signup-reset/' + h.request.operationId + '/requested.json', { wrong: true });
+        if (fault === 'complete') h.fence.complete.mockRejectedValue(new Error(SECRET));
+        h.ports.audit.write.mockImplementation(async (key, value, conditions) => {
+            if (fault === 'intent-write' && key.endsWith('/requested.json') || fault === 'receipt-write' && key.endsWith('/reset.json')) throw new Error(SECRET);
+            await write(key, value, conditions);
+            if (fault === 'lost-receipt-ack' && key.endsWith('/reset.json')) throw new Error(SECRET);
+        });
+        const result = await h.execute(m);
+        expect(result.status).toBe(fault === 'lost-receipt-ack' ? 'succeeded' : 'pending');
+        if (fault !== 'lost-receipt-ack') expect(h.retained).toBe(true);
+        if (fault.startsWith('intent')) h.assertUntouched();
+        expect(JSON.stringify(result)).not.toContain(SECRET);
+    });
+
+test('receipt publication failure after both deletes resumes without repeating deletion', async () => {
+    const h = guardedFixture(), m = await h.preview(), write = h.ports.audit.write.getMockImplementation();
+    h.ports.audit.write.mockImplementation(async (key, value, conditions) => { if (key.endsWith('/reset.json')) throw new Error(SECRET); return write(key, value, conditions); });
+    expect((await h.execute(m)).status).toBe('pending'); expect(h.current.size).toBe(0);
+    h.ports.audit.write.mockImplementation(write);
+    expect((await h.execute(m)).status).toBe('succeeded'); expect(h.blobs.remove).toHaveBeenCalledTimes(2);
+});
+
+test('host rejection while a fence check awaits forbids all late writes', async () => {
+    const h = guardedFixture(), m = await h.preview(); let entered, release, late;
+    const waiting = new Promise(resolve => { entered = resolve; }), gate = new Promise(resolve => { release = resolve; });
+    h.onAssert = async () => { entered(); await gate; };
+    h.ports.withExclusiveTarget = async (binding, work) => {
+        late = h.withExclusiveTarget(binding, work); await waiting; throw new Error(SECRET);
+    };
+    expect((await h.execute(m)).status).toBe('pending'); release(); await late;
+    h.assertUntouched(); expect(h.ports.audit.write).not.toHaveBeenCalled(); expect(h.retained).toBe(true);
+});
+
+test('changed dependency evidence after dry run refuses execution under the fence', async () => {
+    const h = guardedFixture(), m = await h.preview(); h.evidence.dependencies.acceptance = 'present';
+    expect((await h.execute(m)).status).toBe('pending'); h.assertUntouched();
+    expect(h.ports.audit.write).not.toHaveBeenCalled();
+});
