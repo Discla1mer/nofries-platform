@@ -27,10 +27,8 @@ const server = http.createServer((request, response) => {
 const button = (page, name) => page.getByRole('button', { name, exact: true });
 async function keyboardClick(page, control) { await control.focus(); await page.keyboard.press('Enter'); }
 async function openAssessment(page) {
-    const desktop = page.locator('.dashboard-module-link[data-module="cyber_security"]').first();
-    if (await desktop.isVisible()) await keyboardClick(page, desktop);
-    else await keyboardClick(page, page.getByRole('navigation', { name: 'Dashboard tasks', exact: true })
-        .getByRole('button', { name: 'Assess', exact: true }));
+    // The desktop rail and the mobile task bar both render this link; use the one shown at this width.
+    await keyboardClick(page, page.locator('.dashboard-module-link[data-module="cyber_security"]').filter({ visible: true }));
     await page.locator('.ncsc-assessment-list button').first().click();
     await page.locator('#ncsc-question-index').selectOption('1');
 }
@@ -65,15 +63,12 @@ async function geometry(page, label) {
     assert.equal(stay.focused, true);
     assert.equal(stay.outlineStyle, 'solid'); assert.equal(stay.outlineWidth, '3px');
     if (!baseline) {
+        // The dialog actions are one column at every width, so each control has its own full-width row.
         assert.ok(save.bottom < discard.y, label + ': primary action has its own row');
+        assert.ok(discard.bottom < stay.y, label + ': secondary controls stack');
+        assert.ok(Math.abs(save.width - discard.width) < 1 && Math.abs(save.width - stay.width) < 1, label + ': controls share one column');
         assert.notEqual(discard.borderColor, 'rgba(0, 0, 0, 0)');
         assert.notEqual(stay.borderColor, 'rgba(0, 0, 0, 0)');
-        if (layout.viewport.width <= 480) {
-            assert.ok(discard.bottom < stay.y, label + ': secondary controls stack');
-            assert.ok(Math.abs(save.width - stay.width) < 1);
-        } else {
-            assert.equal(discard.y, stay.y); assert.ok(discard.right < stay.x);
-        }
     }
     if (artifacts) {
         fs.mkdirSync(artifacts, { recursive: true });
