@@ -4,6 +4,16 @@ const { MAIN_HELP_URL, PUBLIC_PAGES, renderSharedAssistant } = require('../lib/s
 
 const fixture = { fryAssetPath: '/images/synthetic-fry-fixture.png' };
 
+test('an empty progress status stays available to assistive technology without idle spacing', () => {
+    const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../shared-assistant.css'), 'utf8');
+    const rule = css.match(/\.assistant-progress:empty\s*\{([^}]+)\}/);
+    expect(rule).not.toBeNull();
+    expect(rule[1]).toMatch(/\bmargin:\s*0\s*;/);
+    expect(rule[1]).not.toMatch(/\bdisplay:\s*none\b|\bvisibility:\s*(?:hidden|collapse)\b|\bcontent-visibility:\s*hidden\b/);
+    const html = renderSharedAssistant({ ...fixture, page: 'dashboard' });
+    expect(html).toContain('id="assistant-progress" role="status" aria-live="polite"></p>');
+});
+
 test('the real Fry asset is required and is never replaced by an invented default', () => {
     expect(() => renderSharedAssistant()).toThrow('shared_assistant_fry_asset_required');
     for (const path of ['https://example.test/fry.png', '//example.test/fry.png', '/images/../private.png',
