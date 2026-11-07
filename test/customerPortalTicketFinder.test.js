@@ -14,6 +14,7 @@ function ticket(ticketNumber, summary, status = 'open') {
 
 function harness(tickets = [], openTicketCount = 41) {
     const elements = new Map();
+    const document = { activeElement: null };
     function makeElement() {
         return {
             value: '', textContent: '', hidden: false, disabled: false,
@@ -23,7 +24,7 @@ function harness(tickets = [], openTicketCount = 41) {
             replaceChildren(...children) { this.childNodes = children; },
             setAttribute(name, value) { this[name] = String(value); },
             set innerHTML(value) { throw new Error('Ticket content must use text nodes'); },
-            focus: jest.fn(), reset: jest.fn(),
+            focus: jest.fn(function () { document.activeElement = this; }), reset: jest.fn(),
             classList: { add: jest.fn(), remove: jest.fn(), toggle: jest.fn() }
         };
     }
@@ -47,11 +48,11 @@ function harness(tickets = [], openTicketCount = 41) {
         setTimeout: jest.fn(), print: jest.fn()
     };
     vm.runInNewContext(source, {
-        document: {
+        document: Object.assign(document, {
             getElementById: element,
             createElement: makeElement,
             body: { dataset: {}, classList: { remove: jest.fn() } }
-        },
+        }),
         window, fetch
     });
     window.NoFriesPortal.start({
@@ -61,7 +62,7 @@ function harness(tickets = [], openTicketCount = 41) {
         proof: { current: { state: 'not_issued' }, history: [] }
     });
     return {
-        element, fetch, storage,
+        element, fetch, storage, document,
         search(value) { element('ticketSearch').value = value; element('ticketSearch').listeners.input(); },
         status(value) { element('ticketStatusFilter').value = value; element('ticketStatusFilter').listeners.change(); },
         clear() { element('clearTicketFilters').listeners.click(); },
@@ -160,6 +161,36 @@ describe('customer portal ticket finder', () => {
         expect(empty.element('ticketList').childNodes[0].textContent).toBe('No support requests yet.');
     });
 
+    test('moves focus to opened request only if its triggering row still has focus', async () => {
+        const page = harness([ticket('NF-1', 'Printer')]);
+        const row = page.element('ticketList').childNodes[0];
+        row.focus();
+        await page.open('NF-1');
+        expect(page.document.activeElement).toBe(page.element('ticketSummary'));
+        expect(page.element('ticketSummary').textContent).toBe('Printer');
+
+        const refreshedRow = page.element('ticketList').childNodes[0];
+        refreshedRow.focus();
+        refreshedRow.listeners.click();
+        page.element('ticketSearch').focus();
+        await new Promise(setImmediate);
+        expect(page.document.activeElement).toBe(page.element('ticketSearch'));
+        expect(page.element('ticketSummary').focus).toHaveBeenCalledTimes(1);
+    });
+
+    test('closing a new request returns focus and retains its unsent draft', () => {
+        const page = harness();
+        page.element('newTicketButton').listeners.click();
+        expect(page.document.activeElement).toBe(page.element('newTicketSummary'));
+        page.element('newTicketSummary').value = 'Unsent subject';
+        page.element('cancelNewTicket').focus();
+        page.element('cancelNewTicket').listeners.click();
+        expect(page.element('newTicketForm').hidden).toBe(true);
+        expect(page.document.activeElement).toBe(page.element('newTicketButton'));
+        page.element('newTicketButton').listeners.click();
+        expect(page.element('newTicketSummary').value).toBe('Unsent subject');
+    });
+
     test('filtering preserves selected detail and unsent reply even when the selected row is hidden', async () => {
         const page = harness([ticket('NF-1', 'Printer'), ticket('NF-2', 'Email', 'closed')]);
         await page.open('NF-1');
@@ -217,6 +248,7 @@ describe('customer portal ticket finder', () => {
     });
 
     test('provides explicit labels, keyboard controls and a concise live result count', () => {
+        expect(template).toMatch(/<h3 id="ticketSummary" tabindex="-1">/);
         expect(template).toMatch(/<label for="ticketSearch">Search requests<\/label>/);
         expect(template).toMatch(/<input id="ticketSearch" type="search"[^>]*aria-controls="ticketList"/);
         expect(template).toMatch(/<label for="ticketStatusFilter">Status<\/label>/);
