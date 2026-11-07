@@ -255,6 +255,30 @@ test('uncertain writes retain their exact immutable command for explicit retry a
     expect(await h.controller.requestLeave(leave)).toBe(true); expect(leave).toHaveBeenCalledTimes(1);
 });
 
+test.each([408, 429])('an unexpected %i response after plan creation retains the operation identity for retry', async status => {
+    let attempts = 0, captured;
+    const h = harness({ options: { sourceAssessment: source() }, respond(path, body, state) {
+        if (path.includes('/plans?')) return { status: 200, value: page([]) };
+        if (path.endsWith('/execute')) {
+            captured ||= body; expect(body).toBe(captured);
+            if (++attempts === 1) {
+                state.plans.set(body.planId, seed(body.planId));
+                return { status, value: { code: 'intermediary_error' } };
+            }
+            return { status: 200, value: { schemaVersion: 1, plan: getImprovementPlanView(state.plans.get(body.planId)) } };
+        }
+        return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
+    } });
+    await h.controller.ready;
+    expect(await h.controller.generate()).toBe(false);
+    expect(h.root.textContent).toContain('outcome is unconfirmed');
+    expect(await h.controller.requestLeave(jest.fn())).toBe(false);
+    expect(await h.controller.generate()).toBe(false);
+    expect(await h.controller.retry()).toBe(true);
+    expect(attempts).toBe(2); expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(h.state.plans.size).toBe(2); // The fixture's existing plan plus the single created plan.
+});
+
 test.each([401, 403])('denial %i clears presentation and prevents further reads/writes in the old mount', async status => {
     const h = harness(); await h.controller.ready; expect(h.root.querySelectorAll('article').length).toBeGreaterThan(0);
     h.request.mockResolvedValueOnce({ status, value: { code: 'access_denied' } });
