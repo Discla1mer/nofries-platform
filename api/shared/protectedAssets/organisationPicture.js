@@ -134,10 +134,13 @@
             if (!live()) return;
             clearExplanation();
             root.replaceChildren(); root.classList.add('organisation-picture');
-            const header = node('header', 'picture-heading');
-            header.append(node('h2', '', 'Cyber baseline'),
-                node('p', 'dashboard-muted', 'A saved assessment of the selected scope, not a live check of connected systems.'));
-            root.append(header);
+            const isEmpty = !loading && !rows.length && loaded && !message && !selected && after === null;
+            if (!isEmpty) {
+                const header = node('header', 'picture-heading');
+                header.append(node('h2', '', 'Cyber baseline'),
+                    node('p', 'dashboard-muted', 'A saved assessment of the selected scope, not a live check of connected systems.'));
+                root.append(header);
+            }
             const status = node('p', 'picture-status', message || (loading ? 'Loading saved assessment…' : ''));
             status.setAttribute('role', 'status'); status.hidden = !message && !loading; root.append(status);
             if (denied) return;
@@ -172,10 +175,33 @@
                 if (after !== null) root.append(node('p', 'dashboard-muted', 'More saved assessments are available. Load more to see them.'));
                 if (!detail) root.append(node('p', 'dashboard-muted', 'Refresh reloads saved assessments. It does not check whether answers still reflect the organisation today.'));
             }
-            if (!loading && !rows.length && loaded && !message) {
-                const empty = node('section', 'picture-empty');
-                empty.append(node('h3', '', 'Start with an honest baseline'), node('p', '', 'No saved assessments yet. Complete and submit an assessment to see implementation and evidence measures here.'));
-                if (typeof options.openCyber === 'function') empty.append(button('Open Cyber Security', options.openCyber));
+            if (isEmpty) {
+                const empty = node('section', 'picture-first-use');
+                empty.append(node('p', 'picture-first-use-eyebrow', 'Welcome to No Fries'),
+                    node('h2', '', 'Build your first baseline'),
+                    node('p', 'picture-first-use-intro', 'No saved assessments yet. A cyber assessment helps you understand where you stand.'));
+                const steps = node('ol', 'picture-first-use-steps'); steps.setAttribute('role', 'list');
+                [
+                    ['Assessment', 'Answer questions about your chosen scope.'],
+                    ['Results', 'Submit to see your saved baseline and its limitations.'],
+                    ['Next steps', 'Review follow-up points from your results.']
+                ].forEach((step, index) => {
+                    const item = node('li', 'picture-first-use-step');
+                    const number = node('span', 'picture-first-use-number', String(index + 1));
+                    number.setAttribute('aria-hidden', 'true');
+                    const content = node('div');
+                    content.append(node('h3', '', step[0]), node('p', '', step[1]));
+                    item.append(number, content); steps.append(item);
+                });
+                empty.append(steps);
+                if (typeof options.openCyber === 'function') {
+                    const token = epoch;
+                    const action = button('Open assessment', () => {
+                        if (live(token) && !loading && !message && !rows.length && !selected && after === null &&
+                            action.parentElement === empty && empty.parentElement === root) options.openCyber();
+                    });
+                    action.classList.add('picture-first-use-action'); empty.append(action);
+                }
                 root.append(empty);
             }
             if (message && !loading) root.append(button('Retry', () => { if (retry) retry(); }));
