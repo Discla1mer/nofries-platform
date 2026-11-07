@@ -93,7 +93,8 @@ test('mount uses actual retained IDs and unchanged renderer through canonical re
     expect(h.request.mock.calls.map(args => args[0])).toEqual(['/api/dashboard/improvement/plans?limit=20', '/api/dashboard/improvement/view?planId=plan-a',
         '/api/dashboard/improvement/editor?planId=plan-a']);
     expect(h.root.textContent).toContain('Improvement action plan');
-    expect(h.root.textContent).toContain('Read-only plan.');
+    expect(h.root.textContent).toContain('Where available, use Update an improvement action above to make changes.');
+    expect(h.root.textContent).not.toContain('Changes cannot be made in this view.');
     expect(h.root.textContent).toContain('Risk priority has not been calculated.');
     expect(h.root.querySelector('select').getAttribute('aria-label')).toBe('Saved improvement plans');
     expect(button(h, 'Create improvement plan for this assessment')).toBeUndefined();
@@ -474,6 +475,8 @@ test.each(OPERATIONS)('actual $type form sends the retained command and refreshe
 test('read-only editor context retains the read-only view without forms or action commands', async () => {
     const h = harness({ canWrite: false }); expect(await h.controller.ready).toBe(true);
     expect(h.root.textContent).toContain('Improvement action plan');
+    expect(h.root.textContent).toContain('Where available, use Update an improvement action above to make changes.');
+    expect(h.root.textContent).toContain('This plan is read-only for the current access.');
     for (const operation of OPERATIONS) expect(button(h, operation.label)).toBeUndefined();
     expect(form(h)).toBeUndefined(); expect(h.options.newId).not.toHaveBeenCalled();
     const before = h.request.mock.calls.length;
