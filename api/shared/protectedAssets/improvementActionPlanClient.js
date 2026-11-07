@@ -464,7 +464,9 @@
                 const result = response(await request('/api/dashboard/improvement/execute', captured));
                 if (!active() || token !== serial || pending !== captured) return false;
                 if (result.status !== 200) {
-                    if (result.status >= 400 && result.status < 500) pending = null;
+                    // Unexpected intermediary responses do not establish that the
+                    // write failed. Retain its identity, as for a lost response.
+                    if ([400, 401, 403, 404, 405, 409, 413].includes(result.status)) pending = null;
                     if (result.status === 409) {
                         staleDraft = draft !== null; editor = null;
                         message = draft ? 'Plan changed; cancel these changes and refresh.' : 'Plan changed. Refresh the saved plan before making another update.';
