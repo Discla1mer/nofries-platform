@@ -217,6 +217,15 @@
         if (field.dataset.answerField) {
             captureAnswerInput(field);
             setDirty(true);
+            if (field.dataset.answerField === 'value' && app.view === 'discovery' && app.blueprint.questions.some(function (question) {
+                return question.showWhen && question.showWhen.questionId === field.dataset.questionId;
+            })) {
+                renderDiscovery();
+                const replacement = Array.from(elements.viewRoot.querySelectorAll('[data-answer-field="value"]')).find(function (candidate) {
+                    return candidate.dataset.questionId === field.dataset.questionId && candidate.value === field.value;
+                }) || elements.viewRoot.querySelector('.section-tab.is-active');
+                if (replacement) replacement.focus({ preventScroll: true });
+            }
         }
         if (field.dataset.proposalField) {
             markProposalReviewEdited(field.dataset.proposalField);
@@ -327,7 +336,7 @@
             '<div class="quick-start">',
             quickLink('Create a customer', 'Capture the account context before discovery.', 'new-customer'),
             quickLink('Open fictional demo', 'Create or reopen a clearly marked, non-customer example.', 'prepare-demo-customer'),
-            quickLink('Continue a discovery', 'Resume a saved 30-minute conversation.', '', 'data-view="discovery"'),
+            quickLink('Continue a discovery', 'Resume a saved customer service review.', '', 'data-view="discovery"'),
             quickLink('Review matches', 'Accept, reject, or validate each service recommendation.', '', 'data-view="recommendations"'),
             quickLink('Prepare a proposal', 'Edit the customer-facing output before approval.', '', 'data-view="proposals"'),
             '</div>',
@@ -426,7 +435,7 @@
             return answerHasValue(assessment.answers[question.id]);
         }).length;
         const known = allVisibleQuestions.filter(function (question) {
-            return answerHasKnownValue(assessment.answers[question.id]);
+            return answerHasKnownValue(assessment.answers[question.id], question);
         }).length;
         const progress = allVisibleQuestions.length ? Math.round((answered / allVisibleQuestions.length) * 100) : 0;
         const section = app.blueprint.sections[app.discoverySection] || app.blueprint.sections[0];
@@ -453,7 +462,7 @@
             app.blueprint.sections.map(function (item, index) {
                 const questions = allVisibleQuestions.filter(function (question) { return question.section === item.id; });
                 const gapCount = questions.filter(function (question) {
-                    return !answerHasKnownValue(assessment.answers[question.id]);
+                    return !answerHasKnownValue(assessment.answers[question.id], question);
                 }).length;
                 const complete = questions.length && questions.every(function (question) { return answerHasValue(assessment.answers[question.id]); });
                 const suffix = prefill && app.discoveryGapsOnly ? `${gapCount} gaps` : `${item.minutes} min`;
@@ -484,7 +493,7 @@
         const assessments = app.bootstrap.assessments.slice().sort(sortUpdated);
         elements.viewRoot.innerHTML = [
             '<section class="page">',
-            pageHeading('Discovery', 'Run a branching customer conversation designed to fit a 30-minute meeting.', [
+            pageHeading('Discovery', 'Start with the business overview, then review the services the customer uses. Complex environments may need a follow-up meeting.', [
                 button('Start discovery', 'new-assessment', 'button-primary')
             ]),
             !app.bootstrap.catalogue.publishedVersionId ? notice('Publish the service catalogue first', 'You can capture answers now, but matching needs an approved catalogue version.', 'notice-warning', '<button class="button" type="button" data-view="catalogue">Open catalogue</button>') : '',
@@ -1041,6 +1050,7 @@
             '<article class="question-card">',
             `<div><span class="question-number">Question ${number}</span><h2>${h(question.prompt)}</h2></div>`,
             control,
+            question.requiresConfirmation ? `<label><span>Fact status: confirm only after checking with the responsible owner and evidence</span><select data-answer-field="verification" data-question-id="${h(question.id)}">${selectOptions([['pending', 'Needs confirmation'], ['confirmed', 'Confirmed with owner and evidence']], answer.verification || 'pending')}</select></label>` : '',
             '<details>',
             '<summary>Notes, evidence, importance, and confidence</summary>',
             '<div class="answer-detail">',
@@ -1106,13 +1116,13 @@
             showCustomerDialog();
             return;
         }
-        openDialog('Guided discovery', 'Start a 30-minute assessment', [
+        openDialog('Guided discovery', 'Start a customer service review', [
             '<form data-form="assessment">',
             '<div class="form-grid">',
             `<label class="wide"><span>Customer</span><select name="customerId" required>${app.bootstrap.customers.map(function (customer) {
                 return `<option value="${h(customer.id)}" ${customer.id === customerId ? 'selected' : ''}>${h(customer.name)}</option>`;
             }).join('')}</select></label>`,
-            '<label class="wide"><span>Assessment title</span><input name="title" value="30-minute customer discovery" maxlength="180"></label>',
+            '<label class="wide"><span>Assessment title</span><input name="title" value="Managed IT customer review" maxlength="180"></label>',
             '<div class="wide notice notice-warning"><strong>Use approved information only.</strong><p>For an internal pilot, use fictional or specifically approved customer data.</p></div>',
             '<div class="wide button-row"><button class="button button-primary" type="submit">Start discovery</button><button class="button" type="button" data-action="close-dialog">Cancel</button></div>',
             '</div>',
@@ -1710,6 +1720,14 @@
         const questionId = field.dataset.questionId;
         const answerField = field.dataset.answerField;
         const answer = app.activeAssessment.answers[questionId] || emptyAnswer();
+        const previousValue = answer.value;
+        const question = app.blueprint.questions.find(function (item) { return item.id === questionId; });
+        if (question && question.requiresConfirmation && answerField !== 'verification') {
+            answer.verification = 'pending';
+            elements.viewRoot.querySelectorAll('[data-answer-field="verification"]').forEach(function (control) {
+                if (control.dataset.questionId === questionId) control.value = 'pending';
+            });
+        }
         if (answerField === 'value' && field.type === 'checkbox') {
             answer.value = Array.from(document.querySelectorAll(`[data-question-id="${cssEscape(questionId)}"][data-answer-field="value"]:checked`)).map(function (item) {
                 return item.value;
@@ -1722,6 +1740,14 @@
             answer[answerField] = field.value;
         }
         app.activeAssessment.answers[questionId] = answer;
+        if (answerField === 'value' && previousValue !== answer.value) {
+            app.blueprint.questions.forEach(function (item) {
+                const dependent = app.activeAssessment.answers[item.id];
+                if (dependent && item.requiresConfirmation && item.showWhen && item.showWhen.questionId === questionId) {
+                    dependent.verification = 'pending';
+                }
+            });
+        }
     }
 
     function getVisibleQuestions(includeKnown) {
@@ -1742,7 +1768,7 @@
             return applicable;
         }
         return applicable.filter(function (question) {
-            return !answerHasKnownValue(answers[question.id]);
+            return !answerHasKnownValue(answers[question.id], question);
         });
     }
 
@@ -2069,10 +2095,11 @@
         return Boolean(answer && (Array.isArray(answer.value) ? answer.value.length : String(answer.value || '').trim()));
     }
 
-    function answerHasKnownValue(answer) {
+    function answerHasKnownValue(answer, question) {
         if (!answerHasValue(answer)) {
             return false;
         }
+        if (question && question.requiresConfirmation && answer.verification !== 'confirmed') return false;
         const values = Array.isArray(answer.value) ? answer.value : [answer.value];
         const unknown = ['unknown', 'undecided', 'unsure'];
         return !values.every(function (value) {

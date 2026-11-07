@@ -1137,11 +1137,11 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         }
     });
 
-    test('blueprint contains the compact six-section MSP onboarding scope', () => {
+    test('blueprint contains six sections with conditional complex-service discovery', () => {
         const blueprint = getAssessmentBlueprint();
-        expect(blueprint.estimatedMinutes).toBe(25);
+        expect(blueprint.estimatedMinutes).toBe(40);
         expect(blueprint.sections).toHaveLength(6);
-        expect(blueprint.questions).toHaveLength(22);
+        expect(blueprint.questions).toHaveLength(37);
         expect(blueprint.questions.find((item) => item.id === 'productivity.platform').options.map((item) => item.value)).toContain('microsoft_365');
         expect(blueprint.questions.find((item) => item.id === 'support.frustrations').type).toBe('multi');
         expect(blueprint.questions.find((item) => item.id === 'operations.incumbent_handover')).toBeDefined();
@@ -1393,11 +1393,28 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             .send({
                 expectedRevision: assessmentResponse.body.revision,
                 status: 'completed',
-                answers: answerSet()
+                answers: Object.assign(answerSet(), {
+                    'voice.present': answer('yes'),
+                    'voice.inventory': Object.assign(answer('Fictional calling supplier; 20 users'), { evidence: 'Supplier schedule, reviewed by customer', confidence: 'high', verification: 'confirmed' }),
+                    'servers.present': answer('unknown'),
+                    'servers.recovery': answer('Customer to confirm restore owner and test evidence'),
+                    'web.present': answer('yes'),
+                    'web.ownership': answer('Customer owns domain; fictional web supplier manages DNS'),
+                    'operations.costs': answer('Supplier charges and renewal dates unconfirmed')
+                })
             });
         expect(saved.status).toBe(200);
         expect(saved.body.assessment.status).toBe('completed');
         expect(saved.body.assessment.answers['security.cloud_posture']).toBeUndefined();
+        const resumed = await request(app).get(`/api/sales/assessments/${assessmentId}`);
+        expect(resumed.status).toBe(200);
+        expect(resumed.body.assessment.answers['voice.inventory']).toMatchObject({
+            value: 'Fictional calling supplier; 20 users', evidence: 'Supplier schedule, reviewed by customer', confidence: 'high', verification: 'confirmed'
+        });
+        expect(resumed.body.assessment.answers['servers.recovery'].verification).toBe('pending');
+        expect(resumed.body.assessment.answers['servers.present'].value).toBe('unknown');
+        expect(resumed.body.assessment.answers['web.ownership'].value).toContain('Customer owns domain');
+        expect(resumed.body.assessment.answers['operations.costs'].value).toContain('unconfirmed');
 
         const matched = await request(app)
             .post(`/api/sales/assessments/${assessmentId}/match`)

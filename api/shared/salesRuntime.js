@@ -1134,14 +1134,14 @@ async function handleAssessments(method, segments, body, access) {
             action: 'assessment.created',
             targetType: 'assessment',
             targetId: assessmentId,
-            summary: '30-minute discovery started'
+            summary: 'Managed IT customer review started'
         }, (state) => {
             findCustomer(state, customerId);
             const now = new Date().toISOString();
             const assessment = {
                 id: assessmentId,
                 customerId,
-                title: cleanText(body.title || '30-minute customer discovery', 180),
+                title: cleanText(body.title || 'Managed IT customer review', 180),
                 blueprintVersion: blueprint.version,
                 status: 'draft',
                 answers: {},
@@ -1847,6 +1847,9 @@ function validateAnswers(value) {
             confidence: normaliseChoice(answer.confidence, ['low', 'medium', 'high'], 'medium'),
             internalNotes: cleanText(answer.internalNotes, 4000)
         };
+        if (question.requiresConfirmation) {
+            answers[questionId].verification = normaliseChoice(answer.verification, ['pending', 'confirmed'], 'pending');
+        }
     });
     return answers;
 }
@@ -2931,6 +2934,7 @@ function proposalReviewEvidence(assessment) {
     const questionMap = getQuestionMap();
     return Object.entries(assessment.answers || {}).map(([questionId, answer]) => {
         const question = questionMap.get(questionId);
+        if (question && (!isQuestionVisible(question, assessment.answers) || question.requiresConfirmation && answer.verification !== 'confirmed')) return null;
         return {
             questionId,
             question: question && question.prompt || questionId,
@@ -2940,7 +2944,7 @@ function proposalReviewEvidence(assessment) {
             notes: cleanText(answer && answer.notes, 2000),
             confidence: cleanText(answer && answer.confidence, 40)
         };
-    }).filter((item) => item.answer || item.notes);
+    }).filter((item) => item && (item.answer || item.notes));
 }
 
 function proposalReviewHash(value) {
@@ -3726,6 +3730,7 @@ module.exports = {
     errorResponse,
     handleSalesRequest,
     matchServices,
+    proposalReviewEvidence,
     resetSalesRuntimeForTests,
     runSalesFunction,
     validateCatalogueCsv
