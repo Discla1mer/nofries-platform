@@ -208,7 +208,7 @@ test('dashboard help opts into a fixed public-only server route and does not res
     expect(h.elements.get('assistant-runtime').textContent).toBe('Public help preview');
     expect(JSON.parse(h.calls.find(call => call.url.endsWith('/chat')).options.body)).toEqual({ publicHelpMessage: 'How do saved results work?', publicHelpOnly: true });
     expect(h.elements.get('assistant-messages').children.some(node => node.children[1].textContent.includes('Previous discovery'))).toBe(false);
-    expect(h.elements.get('assistant-progress').textContent).toBe('Public help · no account or assessment changes');
+    expect(h.elements.get('assistant-progress').textContent).toBe('');
     // A later DOM change cannot promote this mounted client into service discovery.
     h.root.dataset.assistantHelpOnly = 'false'; h.send('Another public question'); await settle();
     expect(JSON.parse(h.calls.filter(call => call.url.endsWith('/chat')).at(-1).options.body).publicHelpOnly).toBe(true);
