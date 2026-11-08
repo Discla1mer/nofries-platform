@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@libsql/linux-x64-gnu": "0.5.29",
-    "@unrs/resolver-binding-linux-x64-gnu": "1.12.2",
+    "@unrs/resolver-binding-linux-x64-gnu": "1.13.0",
     "adm-zip": "file:vendor/adm-zip-memory-only/adm-zip-memory-only-0.6.0-memory-only.1.tgz",
     "jest": "30.5.2",
     "js-yaml": "4.3.2",
