@@ -137,7 +137,8 @@ test('bounded account-action recovery proof (synthetic storage, real receipts)',
     }
     await t.test('corrupt native receipt fails closed through the actual receipt codec', async () => {
         const h = harness(); await h.act('delete'); const otherDelete = await h.act('delete', h.other);
-        h.rows.find(row => row.operation_id === 'admin-membership:' + otherDelete.command.operationId).intent_sha256 = 'b'.repeat(64);
+        const native = h.rows.find(row => row.operation_id === 'admin-membership:' + otherDelete.command.operationId);
+        native.intent_sha256 = 'b'.repeat(64); native.payload.intentSha256 = native.intent_sha256;
         await assert.rejects(() => h.inspect(), error => typeof error.statusCode === 'number');
     });
     await t.test('duplicate chain evidence blocks recovery', async () => {

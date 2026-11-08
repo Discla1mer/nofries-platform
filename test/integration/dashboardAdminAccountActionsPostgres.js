@@ -396,7 +396,7 @@ module.exports = function registerDashboardAdminAccountActionsPostgresTests() {
             await h.repository.commitAccountAction(h.request, await h.command('delete'));
             const otherDelete = await h.command('delete', null, other);
             await h.repository.commitAccountAction(h.request, otherDelete);
-            await owner.query('UPDATE nofries.dashboard_operation_receipts SET result_sha256=$4 WHERE tenant_id=$1 AND organisation_id=$2 AND operation_id=$3',
+            await owner.query("UPDATE nofries.dashboard_operation_receipts SET intent_sha256=$4,payload=jsonb_set(payload, '{intentSha256}', to_jsonb($4::text)) WHERE tenant_id=$1 AND organisation_id=$2 AND operation_id=$3",
                 [h.selector.tenantId, h.selector.organisationId, 'admin-membership:' + otherDelete.operationId, 'f'.repeat(64)]);
             await expect(h.inspect()).rejects.toHaveProperty('statusCode');
         });
