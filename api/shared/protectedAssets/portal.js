@@ -156,12 +156,12 @@
             const head = createElement('div', 'ticket-button-head');
             head.append(createElement('strong', '', ticket.ticketNumber), createElement('span', 'status-pill', ticket.status));
             button.append(head, createElement('p', '', ticket.summary));
-            button.addEventListener('click', function () { openTicket(ticket.ticketNumber); });
+            button.addEventListener('click', function () { openTicket(ticket.ticketNumber, button); });
             elements.ticketList.append(button);
         });
     }
 
-    async function openTicket(ticketNumber) {
+    async function openTicket(ticketNumber, trigger) {
         if (state.busy) return;
         rememberReplyDraft();
         setSupportBusy(true);
@@ -172,7 +172,9 @@
             state.selectedTicketNumber = result.ticket.ticketNumber;
             upsertTicket(result.ticket);
             renderTicketDetail(result.ticket);
+            const returnFocusToDetail = document.activeElement === trigger;
             renderTicketList();
+            if (returnFocusToDetail) elements.ticketSummary.focus();
         } catch (error) {
             showToast(error.message || 'The support request could not be loaded.', true);
         } finally {
@@ -234,6 +236,7 @@
         if (state.busy) return;
         rememberReplyDraft();
         renderEmptyTicket();
+        elements.newTicketButton.focus();
     }
 
     function renderEmptyTicket() {
