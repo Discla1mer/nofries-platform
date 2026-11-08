@@ -184,12 +184,52 @@ test.each(['during_read', 'during_audit'])('current authorization recheck denies
 });
 
 test('hard budget ends a hung reader without later audit or data release', async () => {
-    let complete;
-    const h = setup({ requestBudgetMs: 25, readAuthoritySnapshot: jest.fn(() => new Promise(resolve => { complete = resolve; })) });
-    await expect(h.service.lookup(principal, h.selector)).rejects.toMatchObject({ statusCode: 503 });
-    complete({ snapshot: h.snapshot, revisions: dataCodec.revisionVector(h.snapshot), evaluatedAt: NOW });
-    await new Promise(resolve => setImmediate(resolve));
-    expect(h.config.audit).toHaveBeenCalledTimes(1);
+    // Start the reader before advancing time; real scheduling delays can expire
+    // the request budget earlier, leaving no reader completion to exercise.
+    jest.useFakeTimers({ now: Date.parse(NOW) });
+    try {
+        let complete, entered;
+        const readerStarted = new Promise(resolve => { entered = resolve; });
+        const h = setup({ requestBudgetMs: 25, readAuthoritySnapshot: jest.fn(() => new Promise(resolve => {
+            complete = resolve; entered();
+        })) });
+        const outcome = h.service.lookup(principal, h.selector).then(value => ({ value }), error => ({ error }));
+        await readerStarted;
+        expect(h.config.readAuthoritySnapshot).toHaveBeenCalledTimes(1);
+        expect(h.config.audit).toHaveBeenCalledTimes(1);
+        await jest.advanceTimersByTimeAsync(25);
+        const result = await outcome;
+        expect(result.error).toMatchObject({ statusCode: 503, code: 'dashboard_admin_unavailable' });
+        expect(result).not.toHaveProperty('value');
+        complete({ snapshot: h.snapshot, revisions: dataCodec.revisionVector(h.snapshot), evaluatedAt: NOW });
+        await jest.advanceTimersByTimeAsync(0);
+        expect(h.config.audit).toHaveBeenCalledTimes(1);
+        expect(jest.getTimerCount()).toBe(0);
+    } finally { jest.useRealTimers(); }
+});
+
+test('hard budget before reader entry prevents later audit and reads', async () => {
+    jest.useFakeTimers({ now: Date.parse(NOW) });
+    try {
+        let approve, entered;
+        const policyStarted = new Promise(resolve => { entered = resolve; });
+        const h = setup({ requestBudgetMs: 25, authoriseOperator: jest.fn(() => new Promise(resolve => {
+            approve = resolve; entered();
+        })) });
+        const outcome = h.service.lookup(principal, h.selector).then(value => ({ value }), error => ({ error }));
+        await policyStarted;
+        await jest.advanceTimersByTimeAsync(25);
+        const result = await outcome;
+        expect(result.error).toMatchObject({ statusCode: 503, code: 'dashboard_admin_unavailable' });
+        expect(result).not.toHaveProperty('value');
+        expect(h.config.readAuthoritySnapshot).not.toHaveBeenCalled();
+        expect(h.config.audit).not.toHaveBeenCalled();
+        approve(true);
+        await jest.advanceTimersByTimeAsync(0);
+        expect(h.config.readAuthoritySnapshot).not.toHaveBeenCalled();
+        expect(h.config.audit).not.toHaveBeenCalled();
+        expect(jest.getTimerCount()).toBe(0);
+    } finally { jest.useRealTimers(); }
 });
 
 test('repeated lookup rereads source; request selectors are detached before awaiting reader', async () => {
