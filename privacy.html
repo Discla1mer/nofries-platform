@@ -12,9 +12,9 @@
 <body>
     <main class="public-shell">
         <header class="public-header">
-            <a class="login-brand" href="/" aria-label="No Fries home">
+            <a class="login-brand" href="/" aria-label="No Fries Managed IT home">
                 <img src="/images/nofrieslogo.png" width="44" height="44" alt="No Fries logo">
-                <div><strong>No Fries</strong><span>Managed IT</span></div>
+                <div><strong>No Fries</strong> <span>Managed IT</span></div>
             </a>
             <nav aria-label="Legal navigation">
                 <a href="/">Managed IT</a>
@@ -27,11 +27,14 @@
         <article class="public-panel">
             <p class="eyebrow">Privacy and security</p>
             <h1>How the private workspace handles information</h1>
-            <p>Last updated: 30 September 2026. No Fries is operated from Auckland, New Zealand. This page covers the public managed IT website and assistant, verified service-scope access, customer dashboard signup and assessment use, and the private scoping, operator and service-desk workspaces.</p>
+            <p>Last updated: 2 November 2026. No Fries is operated from Auckland, New Zealand. This page covers the public managed IT website and assistant, verified service-scope access, customer dashboard signup and assessment use, and the private scoping, operator and service-desk workspaces.</p>
 
             <h2>Website assistant and prospect discovery</h2>
             <p>When you choose to message the No Fries website assistant, No Fries processes the conversation, a signed browser-session identifier, limited request and security metadata, and the business or contact details you provide. The signed browser cookie lasts for up to 30 days so the conversation can continue on the same browser. The assistant progressively stores structured facts, their source and known or unknown status, a rolling summary, suggested next action, and technical run metadata such as latency, model, token count and approximate cost. Simply loading the website does not create a prospect record; a record is created when a message is submitted.</p>
             <p>The default structured preview uses deterministic application logic and is labelled as a preview. If the live model runtime is enabled, selected conversation context and the current message are sent from the No Fries backend to the OpenAI API to produce structured tool calls and a response. Model requests are configured not to store response objects in OpenAI. The OpenAI credential remains on the backend. Do not enter passwords, access tokens, recovery codes, payment data or raw security configuration; the application rejects common secret patterns before creating the conversation. High-confidence attempts to override, expose or bypass the assistant’s instructions are rejected before model processing and are not retained as prospect-conversation text by this security control.</p>
+
+            <h2>Website enquiries</h2>
+            <p>When you send the contact form, No Fries processes your name, email address, optional organisation and message, plus limited request and security metadata used for rate limiting. Resend delivers the enquiry as a plain-text email to hello@nofries.nz with your address as the reply-to. The website does not store the enquiry; it is kept in the No Fries mailbox only as long as needed to reply and follow up.</p>
 
             <h2>Account setup and email verification</h2>
             <p>When you request a signup code, No Fries processes your chosen account type (Company or Consultant), the name you give your organisation or consultant workspace, your email address (personal or work), a private browser continuation, hashed verification data and limited security counters. The eight-digit code expires after 10 minutes and allows at most five attempts. The setup request is usable for 24 hours, including after verification. It does not itself create membership, accept terms, activate services or subscribe you to marketing. A business-looking email domain is not proof of organisation ownership.</p>

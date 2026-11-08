@@ -65,6 +65,9 @@
     "minimatch": "11.0.3"
   },
   "jest": {
+    "setupFiles": [
+      "<rootDir>/test/helpers/releaseAsyncLocalStorage.js"
+    ],
     "modulePathIgnorePatterns": [
       "<rootDir>/app-service-dist/"
     ],

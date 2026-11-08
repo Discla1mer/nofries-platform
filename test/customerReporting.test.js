@@ -204,6 +204,9 @@ test('report document and script are publicly packaged with inherited strict CSP
     expect(response.headers['content-security-policy']).toContain("script-src 'self'; script-src-attr 'none'");
     expect(response.text).toContain('This page does not send email.');
     expect(response.text).toContain('role="status" aria-live="polite"');
+    expect(response.text).toContain('id="report-description-help" class="report-help">Describe the problem and what you expected.</p>');
+    expect(response.text).toContain('aria-describedby="report-description-help report-privacy"');
+    expect(response.text).not.toContain('placeholder="Describe the problem and what you expected."');
     expect(response.text).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/);
     for (const id of ['kind', 'screen', 'description', 'body', 'reviewed']) expect(response.text).toContain('for="report-' + id + '"');
     expect(response.text).not.toMatch(/<(?:form|input|select|textarea)[^>]*\s(?:name|action)=|\sstyle=|\son\w+=/);
@@ -221,7 +224,9 @@ test('generic error and missing-page help use the same report composer and prese
     expect(error.status).toBe(200);
     expect(error.text).toContain('Error code: website_request_unavailable');
     expect(error.text).toContain('code=website_request_unavailable');
-    expect(error.text).not.toContain('mailto:hello@nofries.nz');
+    // The error's primary recovery remains the report composer; generic help
+    // may independently expose a bare human-support address.
+    expect(error.text.match(/<main\b[\s\S]*?<\/main>/)[0]).not.toContain('mailto:hello@nofries.nz');
     for (const html of [missing.text, error.text]) {
         expect(html.match(/class="button"/g)).toHaveLength(1);
         expect(html).toContain('Return to No Fries');

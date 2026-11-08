@@ -146,7 +146,7 @@ async function run() {
             }
             check(closed.footerScrollWidth <= closed.footerClientWidth + 1, 'footer reflows inside own box');
             check(closed.launcher.width === (scenario.width <= 480 ? 56 : 64), 'launcher width retained');
-            check(closed.launcherStyle.color === 'rgb(245, 247, 246)' && closed.launcherStyle.background === 'rgb(16, 35, 28)', 'launcher palette retained');
+            check(closed.launcherStyle.color === 'rgb(23, 20, 15)' && closed.launcherStyle.background === 'rgb(229, 181, 59)', 'launcher palette retained');
             if (scenario.safe) check(parseFloat(closed.launcherStyle.right) === 36, 'actual24px right safe-area env');
             // Native Tab sequence from immediately before the first footer action.
             await footerLinks.first().focus(); await page.keyboard.press('Shift+Tab');
