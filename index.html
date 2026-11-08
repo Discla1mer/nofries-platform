@@ -20,6 +20,8 @@
     <meta id="dashboardStyleIntegrity" content="DASHBOARD_STYLE_INTEGRITY">
     <script src="/js/organisation-setup.js" defer></script>
     <script src="/js/home.js" defer></script>
+    <script src="/js/enquiry-availability.js" defer></script>
+    <script src="/js/enquiry-home.js" defer></script>
     <script src="/js/prospect-assistant.js" defer></script>
 </head>
 <body data-page="dashboard-home" data-product="dashboard" data-dashboard-gateway="true">
@@ -79,7 +81,7 @@
                     <h1 id="home-title">Clearer IT.<br><em>Confident<br>next steps.</em></h1>
                     <p class="homepage-lead">Understand where your IT and cyber security stand. See the gaps, make informed decisions and start improving.</p>
                     <div class="homepage-actions" id="create-organisation" aria-label="Your account">
-                        <a class="button homepage-primary" href="/login?intent=create">Create account <span aria-hidden="true">→</span></a>
+                        <a id="homepagePrimary" class="button homepage-primary" href="/login?intent=create">Create account <span aria-hidden="true">→</span></a>
                         <a class="homepage-secondary" href="#dashboard-benefits">Explore the dashboard <span aria-hidden="true">↓</span></a>
                     </div>
                     <p class="homepage-reassurance">Works alongside your existing IT team or provider.</p>
@@ -120,6 +122,7 @@
             <a href="https://news.nofries.nz/" data-dashboard-leave>News</a>
 
             <a href="/roadmap.html" data-dashboard-leave>Roadmap</a>
+            <a href="/contact.html" data-dashboard-leave>Contact</a>
             <a href="/privacy.html" data-dashboard-leave>Privacy</a>
             <a href="/terms.html" data-dashboard-leave>Terms</a>
         </nav>
