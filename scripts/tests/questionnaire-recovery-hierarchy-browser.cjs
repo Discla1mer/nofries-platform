@@ -283,8 +283,8 @@ async function doubleText(page) {
             assert.equal(await workshop.evaluate(element => element.tagName === 'DETAILS' && !element.open), true, 'Optional workshop starts collapsed');
             assert.equal(await page.locator('.ncsc-content').evaluate(element => Boolean(element.compareDocumentPosition(document.getElementById('ncsc-workshop')) & Node.DOCUMENT_POSITION_FOLLOWING)), true, 'Current task precedes optional workshop');
             assert.equal(await button(page, 'Save progress').getAttribute('class'), 'dashboard-button');
-            assert.equal(await button(page, 'Submit assessment').getAttribute('class'), 'dashboard-text-button');
-            assert.equal(await button(page, 'Submit assessment').getAttribute('aria-describedby'), 'ncsc-submit-consequence');
+            assert.equal(await button(page, 'Review and submit').getAttribute('class'), 'dashboard-text-button');
+            assert.equal(await button(page, 'Review and submit').getAttribute('aria-describedby'), 'ncsc-submit-consequence');
             assert.match(await page.locator('#ncsc-submit-consequence').textContent(), /read-only/);
             const screenshotPrefix = (shell === '/' ? 'gateway' : 'dashboard') + '-' + width + (enlarged ? '-200text' : '');
             const hierarchy = await page.locator('.ncsc-questionnaire').evaluate(element => {
@@ -397,16 +397,17 @@ async function doubleText(page) {
             await button(page, 'Back to assessments').click();
             await page.locator('.ncsc-assessment-list button').nth(1).click(); await page.locator('#ncsc-question-index').waitFor();
             await dirty(page, 'yes'); const finalStart = operations.length; holdWrites = true;
-            await button(page, 'Submit assessment').click(); await awaitingHeldWrite();
+            await button(page, 'Review and submit').click();
+            await button(page, 'Save and submit assessment').click(); await awaitingHeldWrite();
             assert.ok(operations.at(-1).path.endsWith('/save'));
-            await button(page, 'Submit assessment').evaluate(element => { element.click(); element.click(); });
+            await button(page, 'Save and submit assessment').evaluate(element => { element.click(); element.click(); });
             assert.equal(operations.length, finalStart + 1);
             const submitRequest = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/submit'));
             held.shift()(); await submitRequest; await awaitingHeldWrite();
             assert.ok(operations.at(-1).path.endsWith('/submit'));
             assert.equal(await listenerCount(page), 1, 'Pending final command warns even when its answer draft is clean');
             await cancelReload(page);
-            await button(page, 'Submit assessment').evaluate(element => { element.click(); element.click(); });
+            await button(page, 'Save and submit assessment').evaluate(element => { element.click(); element.click(); });
             assert.equal(operations.length, finalStart + 2);
             holdWrites = false; held.splice(0).forEach(resolve => resolve());
             await page.locator('.ncsc-sealed').waitFor(); assert.equal(await listenerCount(page), 0);

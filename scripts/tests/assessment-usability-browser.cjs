@@ -109,7 +109,8 @@ async function screenshot(page, name, selector = '.ncsc-questionnaire') {
             await page.keyboard.press('Enter');
             await page.waitForFunction(() => !document.querySelector('.ncsc-questionnaire'));
             await openCyber(page); await rows.nth(1).locator('button').click();
-            await page.getByRole('button', { name: 'Submit assessment', exact: true }).click();
+            await page.getByRole('button', { name: 'Review and submit', exact: true }).click();
+            await page.getByRole('button', { name: 'Save and submit assessment', exact: true }).click();
             await page.locator('.ncsc-sealed').waitFor();
             await jump(page, 1); // Submitted Unknown answers remain available read-only.
             assert.equal(await page.getByRole('button', { name: 'Save progress', exact: true }).count(), 0);

@@ -8,6 +8,9 @@
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
     let sequence = 0;
     const copy = value => JSON.parse(JSON.stringify(value));
+    const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
+        dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
+    }).format(new Date(value)) + ' NZ time';
     function sameProfile(actual, expected) {
         return actual && expected && Object.keys(expected).every(key => actual[key] === expected[key]);
     }
@@ -149,7 +152,8 @@
                 const toolbar = node('div', 'picture-toolbar');
                 const label = node('label', '', 'Saved assessment'); label.htmlFor = id;
                 const picker = node('select'); picker.id = id; picker.disabled = loading;
-                const labelFor = row => row.updatedAt.slice(0, 10) + ' · ' + row.status + ' · revision ' + row.revision;
+                const labelFor = row => (row.scopePopulation ? row.scopePopulation.description + ' · ' : '') +
+                    (row.status === 'submitted' ? 'Submitted' : 'In progress') + ' · ' + displayDate(row.updatedAt);
                 const labelCounts = new Map(), referenceCounts = new Map();
                 rows.forEach(row => {
                     const label = labelFor(row), key = JSON.stringify([label, row.assessmentId.slice(0, 8)]);
@@ -206,8 +210,8 @@
             }
             if (message && !loading) root.append(button('Retry', () => { if (retry) retry(); }));
             if (!detail) return;
-            const facts = node('p', 'picture-source', 'Saved ' + detail.updatedAt.slice(0, 10) +
-                ' · ' + detail.status + ' · revision ' + detail.revision);
+            const facts = node('p', 'picture-source', (detail.status === 'submitted' ? 'Submitted ' : 'Saved ') +
+                displayDate(detail.updatedAt));
             root.append(facts);
             if (detail.status !== 'submitted') {
                 root.append(sourceDetails()); return;
@@ -424,7 +428,8 @@
                 // first page. Fetch it again, never reuse cached scores or assume
                 // a saved identifier grants access to the record.
                 if (!rows.some(row => row.assessmentId === assessmentId)) rows.push({ assessmentId: value.assessmentId,
-                    moduleId: value.moduleId, profileRef: copy(value.profileRef), status: value.status, updatedAt: value.updatedAt });
+                    moduleId: value.moduleId, profileRef: copy(value.profileRef), status: value.status, updatedAt: value.updatedAt,
+                    scopePopulation: copy(value.scopePopulation) });
                 if (typeof options.onSelection === 'function') options.onSelection(value.assessmentId);
             } catch (error) { if (live(token)) failure(error, () => read(assessmentId)); }
             finally { if (live(token)) { loading = false; render(); restoreFocus(savedFocus); } }

@@ -60,10 +60,11 @@ test('the customer entry builds within the SWA limit with API routes and securit
     expect(loginHtml).toMatch(/<label for="representative-registration">NZBN <span class="field-help">\(optional\)<\/span><\/label>/);
     const registration = loginHtml.match(/<input id="representative-registration"[^>]*>/)[0];
     expect(registration).toContain('name="registrationId"');
-    expect(registration).toContain('maxlength="160"');
+    expect(registration).toContain('inputmode="numeric"');
+    expect(registration).toContain('pattern="[0-9]{13}"');
     expect(registration).toContain('aria-describedby="representative-nzbn-help"');
-    expect(registration).not.toMatch(/\brequired\b|\bpattern=|type="number"/);
-    expect(loginHtml).toContain('<p id="representative-nzbn-help" class="field-help">Your New Zealand Business Number, if you have one.</p>');
+    expect(registration).not.toMatch(/\brequired\b|type="number"/);
+    expect(loginHtml).toContain('<p id="representative-nzbn-help" class="field-help">Your New Zealand Business Number helps identify your business. Enter its 13 digits, or leave this empty.</p>');
     for (const [file, route] of [['app/dashboard.html', '/dashboard'], ['index.html', '/']]) {
         const html = fs.readFileSync(path.join(ROOT, 'dist', file), 'utf8');
         expect(html.match(/<body\b[^>]*>/)[0]).toContain('data-customer-provider="auto"');

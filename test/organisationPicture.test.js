@@ -70,7 +70,7 @@ test('saved Overview identifies source, scope, framework, revision and output di
     const record = mixed(), dom = setup({ records: [record] }); await flush();
     for (const value of ['Cyber baseline', 'Synthetic organisation A', record.scopePopulation.description,
         dom.fixtures.metadata.title, dom.fixtures.metadata.profileRef.profileVersion,
-        'revision 2', record.assessmentId, record.submission.evaluation.outputSha256, 'What to do next',
+        'Saved revision', record.assessmentId, record.submission.evaluation.outputSha256, 'What to do next',
         'CC BY 4.0']) assert.ok(dom.root.textContent.includes(value), value);
     assert.equal(dom.root.querySelectorAll('input').length, 0);
     assert.doesNotMatch(dom.root.textContent, /board snapshot|draft presentation|PDF export|management review/i);
@@ -84,7 +84,8 @@ test('freshness copy distinguishes the saved baseline from a live organisation c
     assert.match(dom.root.textContent, /does not check whether answers still reflect the organisation today/);
     assert.match(dom.root.textContent, /Coverage recorded in this saved assessment/);
     assert.doesNotMatch(dom.root.textContent, /Current substantiated coverage/);
-    assert.match(dom.root.querySelector('.picture-source').textContent, /Saved .*revision 2/);
+    assert.match(dom.root.querySelector('.picture-source').textContent, /Submitted .*NZ time/);
+    assert.doesNotMatch(dom.root.querySelector('.picture-source').textContent, /revision|T\d\d:/);
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
     dom.controller.destroy();
 });
@@ -96,7 +97,8 @@ test('the primary saved summary is concise and exact source details remain acces
     assert.equal(header.querySelector('.dashboard-eyebrow'), null);
     assert.equal(header.textContent.includes('Synthetic organisation A'), false);
     assert.equal(dom.root.querySelector('.picture-source').textContent,
-        'Saved ' + record.updatedAt.slice(0, 10) + ' · submitted · revision 2');
+        'Submitted ' + new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short',
+            timeZone: 'Pacific/Auckland' }).format(new Date(record.updatedAt)) + ' NZ time');
     const provenance = dom.root.querySelector('.ncsc-result-provenance');
     assert.equal(provenance.querySelector('summary').textContent, 'Source and calculation details');
     assert.equal(provenance.getAttribute('open'), null);
@@ -143,7 +145,9 @@ test('a single saved choice omits its technical ID while the draft source disclo
     const dom = setup({ records: [record] }); await flush();
     const option = dom.root.querySelector('.picture-toolbar').querySelector('option');
     assert.equal(option.value, record.assessmentId);
-    assert.equal(option.textContent, record.updatedAt.slice(0, 10) + ' · ' + record.status + ' · revision ' + record.revision);
+    assert.ok(option.textContent.startsWith(record.scopePopulation.description + ' · In progress · '));
+    assert.ok(option.textContent.endsWith(' NZ time'));
+    assert.doesNotMatch(option.textContent, /revision|T\d\d:/);
     assert.equal(dom.root.querySelector('.picture-source').textContent.includes(record.assessmentId), false);
     const provenance = dom.root.querySelector('.ncsc-result-provenance');
     for (const value of [record.assessmentId, record.updatedAt, dom.fixtures.metadata.title,
@@ -153,6 +157,20 @@ test('a single saved choice omits its technical ID while the draft source disclo
     assert.match(dom.root.textContent, /Baseline in progress/);
     assert.match(dom.root.textContent, /Saved progress is not a score/);
     assert.equal(dom.root.querySelector('.picture-metrics'), null);
+    dom.controller.destroy();
+});
+
+test('same-time assessments with different scopes have recognisable picker labels', async () => {
+    const first = clone(buildFixtures().tenants[0].assessments[0]);
+    first.scopePopulation.description = 'Café premises';
+    const second = { ...clone(first), assessmentId: 'assessment-online',
+        scopePopulation: { description: 'Online shop' } };
+    const dom = setup({ records: [first, second] }); await flush();
+    const choices = dom.root.querySelector('.picture-toolbar').querySelectorAll('option');
+    assert.equal(choices.length, 2);
+    assert.ok(choices.some(choice => choice.textContent.startsWith('Café premises · ')));
+    assert.ok(choices.some(choice => choice.textContent.startsWith('Online shop · ')));
+    for (const choice of choices) assert.equal(choice.textContent.includes(choice.value), false);
     dom.controller.destroy();
 });
 

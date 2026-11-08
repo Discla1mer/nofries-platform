@@ -270,6 +270,18 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-inline-error { font-weight: var(--dashboard-weight-regular); color: #a3352a; margin: .6rem 0; }
 .ncsc-sealed { border-color: #8a7f6d; background: #e4dccd; }
 .ncsc-leave-dialog { position: fixed; z-index: 90; inset: 0; margin: auto; width: min(34rem, calc(100% - 2rem)); max-height: calc(100vh - 2rem); overflow: auto; padding: 1.5rem; border: 1px solid var(--dashboard-control-border); border-radius: .7rem; background: var(--dashboard-surface, #f6f2ea); color: var(--dashboard-ink, #17140f); }
+.ncsc-review-counts { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; padding: .85rem 1rem; margin: 1rem 0; list-style: none; border: 1px solid var(--dashboard-line, #2a3b38); border-left: 3px solid var(--dashboard-blue, #6cd8c9); border-radius: .5rem; background: var(--dashboard-surface, #111b1a); }
+.ncsc-review-blocked { padding: .85rem 1rem; border: 1px solid #a3352a; border-left: 4px solid #a3352a; border-radius: .5rem; background: #f6ddd6; color: var(--dashboard-ink); }
+.ncsc-review-ready { padding: .85rem 1rem; border: 1px solid #4a7a52; border-left: 4px solid #4a7a52; border-radius: .5rem; background: #e2ecdc; color: var(--dashboard-ink); }
+.ncsc-review-scope { margin: 1rem 0; padding: 1rem; border: 1px solid var(--dashboard-line, #2a3b38); border-radius: .5rem; }
+.ncsc-review-list { display: grid; gap: .75rem; margin: 1rem 0; padding: 0; list-style: none; }
+.ncsc-review-item { min-width: 0; padding: 1rem; border: 1px solid var(--dashboard-line, #2a3b38); border-radius: .5rem; background: var(--dashboard-surface, #111b1a); overflow-wrap: anywhere; }
+.ncsc-review-item h4 { margin: .35rem 0 .5rem; line-height: 1.4; }
+.ncsc-review-item p { margin: .35rem 0; }
+.ncsc-review-incomplete { border-left: 4px solid #a3352a; }
+.ncsc-review-unsaved { box-shadow: inset 4px 0 0 #c29221; }
+.ncsc-review-problem { color: #8f2a20; font-weight: 600; }
+.ncsc-review-badge { display: table; margin: .5rem 0; padding: .15rem .6rem; border: 1px solid #c29221; border-radius: 999px; background: #f2e4bc; color: var(--dashboard-ink); font-size: var(--dashboard-font-small); }
 /* Full-width actions keep each enlarged control and its ring inside a short dialog. */
 .ncsc-leave-dialog[open] { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
 .ncsc-leave-dialog h3, .ncsc-leave-dialog p, .ncsc-leave-dialog .dashboard-button { grid-column: 1 / -1; }
@@ -286,19 +298,22 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .ncsc-navigation-actions { width: 100%; }
     .ncsc-navigation-actions button { width: 100%; }
     .ncsc-actions > button { width: 100%; text-align: center; }
+    .ncsc-review-item .dashboard-text-button { width: 100%; text-align: center; }
+    .ncsc-review-counts { flex-direction: column; }
     .ncsc-option { padding: .75rem; }
     .ncsc-leave-dialog { padding: 1rem; }
     .ncsc-leave-dialog[open] { grid-template-columns: minmax(0, 1fr); }
 }
-@media print { .ncsc-actions, .ncsc-question-navigation, .ncsc-leave-dialog, .ncsc-leave-dialog[open] { display: none; } }
+@media print { .ncsc-actions, .ncsc-review-item button, .ncsc-question-navigation, .ncsc-leave-dialog, .ncsc-leave-dialog[open] { display: none; } }
 @media (forced-colors: active) {
     .ncsc-option:has(input:checked) { border: 2px solid Highlight; box-shadow: none; }
+    .ncsc-review-unsaved { border: 2px dashed CanvasText; box-shadow: none; }
 }
 
 /* Print keeps readable reports without the dark application surfaces. */
 @media print {
     .nofries-dashboard { color-scheme: light; --dashboard-ink: #17201f; --dashboard-muted: #405550; --dashboard-line: #c5cfcc; --dashboard-control-border: #708a84; --dashboard-paper: white; --dashboard-surface: white; --dashboard-navy: white; --dashboard-blue: #17665e; background: white; color: #17201f; }
-    .dashboard-subscription-panel, .dashboard-badge, .dashboard-attention-item .dashboard-badge, .dashboard-route-status, .ncsc-warning, .ncsc-errors, .ncsc-sealed { color: #17201f; background: white; }
+    .dashboard-subscription-panel, .dashboard-badge, .dashboard-attention-item .dashboard-badge, .dashboard-route-status, .ncsc-warning, .ncsc-errors, .ncsc-sealed, .ncsc-review-blocked, .ncsc-review-ready, .ncsc-review-badge, .ncsc-review-item { color: #17201f; background: white; }
     .ncsc-inline-error { color: #9b241c; }
     .dashboard-panel { box-shadow: none; }
 }
