@@ -102,3 +102,22 @@ test('queue-only capability scopes lookup status to lookup data', async () => {
     expect(h.nodes.get('adminAccessStatus').textContent).toContain('No lookup data has been loaded');
     expect(h.nodes.get('signupQueueLoad').disabled).toBe(false);
 });
+
+
+test('search follows authorised pages and keeps names and email out of requests', async () => {
+    const first = f.clone(await page()), second = f.clone(await page());
+    first.nextCursor = 'x'.repeat(43); first.continuation = 'more';
+    second.rows[0].organisation = 'Unique Search Organisation';
+    const fetch = jest.fn().mockResolvedValueOnce(reply({ signupList: true }))
+        .mockResolvedValueOnce(reply(first)).mockResolvedValueOnce(reply(second));
+    const h = harness(fetch); await h.ready();
+    h.nodes.get('signupQueueSearch').value = 'unique search';
+    h.emit('signupQueueSearchForm', 'submit'); await h.ready(); await h.ready();
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(JSON.stringify(fetch.mock.calls)).not.toContain('unique search');
+    expect(h.nodes.get('signupQueueResult').textContent).toContain('Unique Search Organisation');
+    expect(h.nodes.get('signupQueueStatus').textContent).toContain('1 matching');
+    h.dispatch('dashboard-admin-revoked', { detail: 403 });
+    expect(h.nodes.get('signupQueueSearch').value).toBe('');
+    expect(h.nodes.get('signupQueueResult').textContent).toBe('');
+});

@@ -62,7 +62,7 @@
             if (!value || typeof value.lookup !== 'boolean' || !Array.isArray(value.recovery)) throw new Error('unavailable');
             allowed = value.lookup === true;
             fields.disabled = !allowed; submit.disabled = !allowed;
-            accessStatus.textContent = allowed ? 'Operator access confirmed. Exact scoped lookup is available. Account changes are unavailable.' :
+            accessStatus.textContent = allowed ? 'Operator access confirmed. Exact scoped lookup is available. Account actions have a separate access check.' :
                 'Lookup capability is unavailable for this operator. No lookup data has been loaded.';
         } catch (_error) {
             if (request.sequence === sequence) accessStatus.textContent = 'Operator capabilities could not be checked. Lookup is unavailable. You can check access again.';

@@ -71,6 +71,7 @@ const { startStandaloneHost } = require('./lib/hostStartup');
 const { createDashboardRuntimeHandlers } = require('./api/shared/dashboardRuntimeHandlers');
 const { createDashboardAdminService } = require('./api/shared/dashboardAdmin/service');
 const { createSignupListService } = require('./api/shared/dashboardAdmin/signupService');
+const { createDashboardAdminAccountActionService } = require('./api/shared/dashboardAdmin/accountActionService');
 const { createDashboardAdminHandlers } = require('./api/shared/dashboardAdmin/handlers');
 const { createCustomerSignupRuntime, customerSignupErrorResponse } = require('./api/shared/customerSignup/customerSignupRuntime');
 const { withSignupSupportContext } = require('./api/shared/customerSignup/signupSupportContext');
@@ -112,13 +113,13 @@ function createNoFriesApp(configuration = {}) {
         const invocation = nativeAdminInvocation();
         return Object.freeze({ request: invocation.request, signal: AbortSignal.any([signal, invocation.signal]) });
     };
-    let dashboardAdminSignupListService = null;
+    let dashboardAdminSignupListService = null, dashboardAdminAccountActionService = null;
     let dashboard = null, customerSignup = null, externalCustomerSignup = null, authEnvironment = null, retainedTrialRead = null, dashboardAdminService = null, dashboardAdminRequestBudgetMs = 10000;
     try {
         if (!configuration || typeof configuration !== 'object' || isProxy(configuration)) throw new Error();
         const keys = Reflect.ownKeys(configuration);
         fields(configuration, keys);
-        if (keys.some(key => !['dashboard', 'dashboardAdmin', 'dashboardAdminSignupList', 'customerSignup', 'externalCustomerSignup', 'signupBootstrap', 'organisationSetup', 'externalOrganisationSetup', 'starterClients', 'externalStarterClients', 'customerEntry', 'retainedTrialRead'].includes(key))) throw new Error();
+        if (keys.some(key => !['dashboard', 'dashboardAdmin', 'dashboardAdminSignupList', 'dashboardAdminAccountActions', 'customerSignup', 'externalCustomerSignup', 'signupBootstrap', 'organisationSetup', 'externalOrganisationSetup', 'starterClients', 'externalStarterClients', 'customerEntry', 'retainedTrialRead'].includes(key))) throw new Error();
         if (keys.includes('customerEntry') && configuration.customerEntry !== 'external') throw new Error();
         if (keys.includes('starterClients') && typeof configuration.starterClients !== 'function') throw new Error();
         if (keys.includes('externalStarterClients') && typeof configuration.externalStarterClients !== 'function') throw new Error();
@@ -202,6 +203,24 @@ function createNoFriesApp(configuration = {}) {
             dashboardAdminRequestBudgetMs = dashboardAdminService
                 ? Math.max(dashboardAdminRequestBudgetMs, port.requestBudgetMs) : port.requestBudgetMs;
         }
+        if (keys.includes('dashboardAdminAccountActions') && configuration.dashboardAdminAccountActions !== null) {
+            if (!dashboard) throw new Error();
+            const port = fields(configuration.dashboardAdminAccountActions,
+                ['authoriseOperator', 'adapter', 'confirmationStore', 'clock', 'requestBudgetMs']);
+            fields(port.adapter, ['inspect', 'commit', 'outcome']);
+            if ([port.authoriseOperator, ...Object.values(port.adapter)].some(value => typeof value !== 'function' || isProxy(value))) throw new Error();
+            const adapter = Object.freeze(Object.fromEntries(['inspect', 'commit', 'outcome'].map(method => [method, (input, context) => {
+                const invocation = nativeAdminInvocation();
+                return port.adapter[method](input, Object.freeze({ ...context, request: invocation.request,
+                    signal: AbortSignal.any([context.signal, invocation.signal]) }));
+            }])));
+            dashboardAdminAccountActionService = createDashboardAdminAccountActionService(Object.freeze({ ...port, adapter,
+                authoriseOperator(input) {
+                    return port.authoriseOperator(Object.freeze({ ...input, request: nativeAdminRequest() }));
+                }
+            }));
+            dashboardAdminRequestBudgetMs = Math.max(dashboardAdminRequestBudgetMs, port.requestBudgetMs);
+        }
         if (keys.includes('customerSignup') && configuration.customerSignup !== null) {
             customerSignup = createCustomerSignupRuntime(configuration.customerSignup);
         }
@@ -220,6 +239,7 @@ function createNoFriesApp(configuration = {}) {
     const apiEnvironment = authEnvironment || process.env;
     const dashboardAdmin = createDashboardAdminHandlers({ service: dashboardAdminService,
         signupListService: dashboardAdminSignupListService,
+        accountActionService: dashboardAdminAccountActionService,
         readOperatorSession: dashboard ? cookie => dashboard.authServices.session.readSessionDetails(cookie) : null,
         env: apiEnvironment, requestBudgetMs: dashboardAdminRequestBudgetMs });
 
@@ -457,7 +477,8 @@ async function sendDashboardAdmin(req, res, route) {
     }));
     app.use('/api/dashboard-admin', asyncRoute(async (req, res) => {
     const route = /^\/(?:app\.js|app\.css|capabilities|lookup|entry\.js|entry-capabilities)$/.test(req.path) ||
-        dashboardAdminSignupListService && req.path === '/signups' ? req.path.slice(1) : null;
+        dashboardAdminSignupListService && req.path === '/signups' ||
+        dashboardAdminAccountActionService && /^\/actions\/(?:inspect|prepare|execute|outcome)$/.test(req.path) ? req.path.slice(1) : null;
     await sendDashboardAdmin(req, res, route);
 }));
 app.all(['/dashboard-admin', '/dashboard-admin/'], asyncRoute(async (req, res) => {
