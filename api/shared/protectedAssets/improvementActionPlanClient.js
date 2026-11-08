@@ -414,7 +414,7 @@
                     clearView(); selected = null; selectedRevision = null; selectedAction = null;
                     message = 'This action is no longer available in this plan. Return to the work queue or refresh to check again.'; render(); return false;
                 }
-                selected = planId; selectedRevision = value.planRevision; clearView(); rendered = view.mount(content, value);
+                selected = planId; selectedRevision = value.planRevision; clearView(); rendered = view.mount(content, value, { actionEditorAbove: true });
                 // The reused renderer withholds invalid presentations. An editor
                 // is offered only beside its successfully rendered plan panel.
                 if (!Array.from(content.querySelectorAll('section')).some(section => section.getAttribute('aria-label') === 'Improvement action plan')) invalid();
