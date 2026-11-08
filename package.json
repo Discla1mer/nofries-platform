@@ -21,7 +21,7 @@
     "@unrs/resolver-binding-linux-x64-gnu": "1.12.2",
     "adm-zip": "file:vendor/adm-zip-memory-only/adm-zip-memory-only-0.6.0-memory-only.1.tgz",
     "jest": "30.5.2",
-    "js-yaml": "4.3.2",
+    "js-yaml": "5.5.0",
     "node-forge": "file:vendor/node-forge-rsa-validated/nofries-node-forge-rsa-validated-1.4.0-nofries.1.tgz",
     "promptfoo": "0.124.0",
     "supertest": "^7.1.1"
