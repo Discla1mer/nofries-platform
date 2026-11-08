@@ -21,3 +21,10 @@ The goal is small changes that reach main quickly. The security rules above stil
 - Keep PR descriptions under 200 words using the template in `.github/pull_request_template.md`. Put test counts and run links on one line each. Do not restate governance, holds or activation prerequisites in every PR; link the issue instead.
 - If CI fails, fix the cause or report it in five lines or fewer on the PR. Do not write diagnostic essays, rerun repeatedly, or work around a failing check.
 - Work comes from GitHub issues. Reference the issue (`Fixes #n`) and stay within its scope. Note follow-up ideas as new issues rather than expanding the PR.
+
+## Cursor Cloud specific instructions
+
+- Node.js 22.23.4 is already on `PATH`. PostgreSQL 17.11 starts on boot. Login shells set `PROMPTFOO_DISABLE_TELEMETRY=1`.
+- Install dependencies with `npm ci --ignore-scripts --omit=optional --audit=false` from the repository root.
+- Leave `NOFRIES_TEST_DATABASE_URL` unset for `npm run verify`. That command skips native database cases, matching CI. For native checks, `set -a; source /etc/nofries-dev.env; set +a`, then run `npm run db:migrate` twice and `npm run test:postgres`. The database name must stay `nofries_ci` on `127.0.0.1`. `nofries_dev` is a local synthetic superuser trusted only from localhost.
+- For a local UI, run `NOFRIES_REQUIRE_AUTH=false npm start` and open `http://127.0.0.1:3000`. Use that flag only on this local host. `/api/health` stays unavailable until a release identity exists, and `/api/organisation-setup/state` returns `setup_unavailable`, so the signup form stays hidden.

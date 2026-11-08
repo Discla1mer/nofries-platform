@@ -18,7 +18,7 @@ The implementation is in `api/shared/protectedAssets/assessmentExplanation.js` a
 
 The protected port was originally qualified against public composition `0f71a415` / tree `eb8fb6bb800f60a1f3b082831974002c4a756698` and merged through PR557. Earlier PR550 qualification on held PR536/18001fd remains historical. The protected port uses current read/draft interfaces and imports no submitted-answer writer or history module. The original submitted-update compatibility regression remains unchanged on frozen PR550/f1d31de.
 
-Questionnaire, loader, backend and production options are outside this display-only change. Current admission and deployment status belongs in [the production dashboard entry point, #17](https://github.com/Discla1mer/NoFries/issues/17). A merged source change or local check does not establish deployment or customer acceptance; existing reader/writer/recovery and activation holds remain with their owners.
+Questionnaire, loader, backend and production options are outside this display-only change. Current admission and deployment status belongs in [the first production release tracker, #686](https://github.com/Discla1mer/NoFries/issues/686). A merged source change or local check does not establish deployment or customer acceptance; existing reader/writer/recovery and activation holds remain with their owners.
 
 Local synthetic customer acceptance cases cover:
 

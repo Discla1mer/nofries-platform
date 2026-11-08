@@ -1,3 +1,8 @@
+jest.mock('../api/shared/enquiryRateLimit', () => {
+    const reserve = jest.fn(async () => ({ allowed: true }));
+    return { createEnquiryRateLimiter: () => ({ reserve }), reserveForTests: reserve };
+});
+
 const request = require('supertest');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -354,13 +359,13 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         }
         expect(response.text).toContain('<p class="eyebrow">Optional support</p>');
         expect(response.text).toContain('id="other-services-title">Need a hand with the day-to-day?</h2>');
-        expect(response.text).toContain('Public help only. No access to your organisation, forms or assessments. Keep private information out.');
+        expect(response.text).toContain('Public help only. No access to your organisation, forms or assessments, and no account or assessment changes. Keep private information out.');
         expect(response.text).not.toContain('Tell us about your people, devices and current set-up.');
         expect(response.text).not.toContain('one useful question at a time');
         expect(response.text).not.toContain('Plan your Lean Managed IT service.');
         expect(response.text).toContain('Protection and backup are selected separately.');
         expect(response.text).not.toContain('id="managed-it-per-user-price"');
-        expect(response.text).toContain('<title>No Fries Dashboard | Your risk posture on a page.</title>');
+        expect(response.text).toContain('<title>No Fries Dashboard | Clearer IT. Confident next steps.</title>');
         expect(response.text).not.toContain('Automatic updates and connected data feeds are planned');
         expect(response.text).toContain('data-assistant-help-only="true"');
         expect(response.text).not.toContain('NZ$119 + GST');
@@ -466,6 +471,72 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(operatorShell.text).toContain('>Service desk</a>');
         expect(operatorShell.text).toContain('/js/operator-loader.js');
         expect(operatorShell.text).not.toContain('/api/lifecycle/app.js');
+    });
+
+    test('enquiry availability is a non-cacheable public read with no configuration disclosure', async () => {
+        const key = process.env.RESEND_API_KEY;
+        try {
+            delete process.env.RESEND_API_KEY;
+            const response = await request(app).get('/api/enquiry');
+            expect(response.status).toBe(200);
+            expect(response.headers['cache-control']).toContain('no-store');
+            expect(response.body).toEqual({ available: false, promote: false });
+        } finally {
+            if (key === undefined) delete process.env.RESEND_API_KEY;
+            else process.env.RESEND_API_KEY = key;
+        }
+    });
+
+    test('public contact page posts enquiries to the owner by email', async () => {
+        const page = await request(app).get('/contact.html');
+        expect(page.status).toBe(200);
+        expect(page.text).toContain('/js/contact.js');
+        expect(page.text).toContain('name="website"');
+        expect((await request(app).get('/js/contact.js')).status).toBe(200);
+
+        const previousFetch = global.fetch;
+        const sent = [];
+        global.fetch = jest.fn(async (url, options) => {
+            sent.push({ url, body: JSON.parse(options.body) });
+            return { ok: true, status: 200 };
+        });
+        try {
+            const response = await request(app)
+                .post('/api/enquiry')
+                .set('x-forwarded-for', '192.0.2.81')
+                .send({ name: 'Aroha Smith', email: 'aroha@example.co.nz', message: 'Please call about an assessment.', website: '' });
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual({ received: true });
+            expect(response.headers['cache-control']).toContain('no-store');
+            expect(sent).toHaveLength(1);
+            expect(sent[0].body).toMatchObject({ to: ['hello@nofries.nz'], reply_to: 'aroha@example.co.nz' });
+
+            const crossSite = await request(app)
+                .post('/api/enquiry')
+                .set('sec-fetch-site', 'cross-site')
+                .send({ name: 'X', email: 'x@example.com', message: 'Cross-site attempt here.' });
+            expect(crossSite.status).toBe(403);
+            expect(sent).toHaveLength(1);
+        } finally {
+            global.fetch = previousFetch;
+        }
+    });
+
+    test.each([429, 503])('App Service refuses email with shared-limit HTTP %s', async status => {
+        const reserve = require('../api/shared/enquiryRateLimit').reserveForTests;
+        if (status === 429) reserve.mockResolvedValueOnce({ allowed: false, retryAfter: 3606 });
+        else reserve.mockRejectedValueOnce(new Error('private@example.invalid'));
+        const fetchSpy = jest.spyOn(global, 'fetch');
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const response = await request(app).post('/api/enquiry').set('x-forwarded-for', '192.0.2.82')
+                .send({ name: 'Private', email: 'private@example.invalid', message: 'Synthetic message text' });
+            expect(response.status).toBe(status);
+            expect(response.body.error).toContain('was not sent');
+            expect(fetchSpy).not.toHaveBeenCalled();
+            expect(JSON.stringify(warn.mock.calls)).not.toContain('private@example.invalid');
+            if (status === 429) expect(response.headers['retry-after']).toBe('3606');
+        } finally { fetchSpy.mockRestore(); warn.mockRestore(); }
     });
 
     test('email verification unlocks the server-side standard scope once', async () => {

@@ -64,6 +64,7 @@ test('the built static package mounts one shared assistant on every shipped docu
         }
         expect(html).toContain('href="/shared-assistant.css"');
         expect(html).toContain('src="/images/fry-chat.png"');
+        expect(html).toContain('<a href="mailto:hello@nofries.nz">Email support</a>');
     }
     expect(fs.readFileSync(path.join(root, 'dist/images/fry-chat.png'))).toEqual(fs.readFileSync(path.join(root, 'images/fry-chat.png')));
 });
@@ -77,6 +78,7 @@ test('HTTP public and protected entry documents mount generic help without chang
         expect(result.text).toContain(`data-assistant-help-only="${route !== '/managed-it.html'}"`);
         expect(result.headers['content-security-policy']).toContain("script-src 'self'");
         expect(result.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+        expect(result.text).toContain('<a href="mailto:hello@nofries.nz">Email support</a>');
         if (['/dashboard', '/portal', '/support', '/operator', '/scoping'].includes(route)) {
             expect(result.headers['cache-control']).toContain('no-store');
             expect(result.headers['x-robots-tag']).toBe('noindex, nofollow');

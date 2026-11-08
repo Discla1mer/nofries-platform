@@ -1,0 +1,44 @@
+name: Public accessibility
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-accessibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-accessibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 22.22.0
+      - name: Install isolated audit tools
+        run: |
+          npm --prefix scripts/accessibility ci --ignore-scripts --audit=false
+          npm --prefix scripts/accessibility audit --audit-level=low
+          node scripts/accessibility/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Build actual public documents
+        run: node scripts/build-static.js
+      - name: Axe, 320px reflow, measured 200% text and contrast controls
+        env:
+          NOFRIES_A11Y_RESULTS: ${{ runner.temp }}/public-accessibility.json
+        run: node scripts/accessibility/public-pages.cjs
+      - name: Retain synthetic audit results on success or failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: public-accessibility-${{ github.sha }}
+          path: ${{ runner.temp }}/public-accessibility.json
+          if-no-files-found: error
+          retention-days: 7

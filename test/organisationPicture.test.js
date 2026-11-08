@@ -284,7 +284,38 @@ test('an old saved-record action cannot open after a refresh or destruction', as
 test('empty organisation has an actionable baseline state and no invented zero score', async () => {
     let opened = 0; const dom = setup({ records: [], options: { openCyber: () => opened++ } }); await flush();
     assert.match(dom.root.textContent, /No saved assessments yet/); assert.doesNotMatch(dom.root.textContent, /0\.0%/);
-    click(dom, 'Open Cyber Security'); assert.equal(opened, 1);
+    assert.match(dom.root.textContent, /Build your first baseline/);
+    assert.equal(dom.root.querySelectorAll('.picture-first-use-step').length, 3);
+    const action = dom.root.querySelector('.picture-first-use-action');
+    click(dom, 'Open assessment'); assert.equal(opened, 1);
+    dom.root.replaceChildren(); action.click(); assert.equal(opened, 1);
+    dom.controller.destroy(); action.click(); assert.equal(opened, 1);
+});
+
+test('first-use journey waits for a successful empty list and never masks a carried selection', async () => {
+    let releaseList, releaseRead;
+    const list = new Promise(resolve => { releaseList = resolve; });
+    const read = new Promise(resolve => { releaseRead = resolve; });
+    const record = mixed();
+    const dom = setup({ client: { list: () => list, read: () => read },
+        options: { initialAssessmentId: record.assessmentId, openCyber: () => {} } });
+    assert.equal(dom.root.querySelector('.picture-first-use'), null);
+    releaseList({ assessments: [], nextAfterAssessmentId: null }); await flush();
+    assert.equal(dom.root.querySelector('.picture-first-use'), null);
+    releaseRead({ assessment: record }); await flush();
+    assert.equal(dom.root.querySelector('.picture-first-use'), null);
+    assert.ok(dom.root.querySelector('.picture-metrics'));
+});
+
+test('first-use journey is not shown when the assessment read fails or action is unavailable', async () => {
+    const failed = setup({ client: { list: async () => { throw new Error('offline'); }, read: async () => {} },
+        options: { openCyber: () => {} } });
+    await flush();
+    assert.equal(failed.root.querySelector('.picture-first-use'), null);
+    assert.match(failed.root.textContent, /could not be confirmed/);
+    const noAction = setup({ records: [] }); await flush();
+    assert.ok(noAction.root.querySelector('.picture-first-use'));
+    assert.equal(noAction.root.querySelectorAll('button').length, 0);
 });
 
 for (const mutation of [record => { record.submission.evaluation.provenance.organisationId = 'foreign'; },

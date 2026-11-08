@@ -11,6 +11,7 @@ const defaultRateLimits = {
     apiTelemetry: { windowMs: 10 * 60 * 1000, max: 90 },
     apiLead: { windowMs: 10 * 60 * 1000, max: 30 },
     apiScopeRequest: { windowMs: 10 * 60 * 1000, max: 5 },
+    apiEnquiry: { windowMs: 10 * 60 * 1000, max: 5 },
     apiScopeVerify: { windowMs: 10 * 60 * 1000, max: 20 },
     apiScopeContent: { windowMs: 15 * 60 * 1000, max: 120 },
     apiProspectSession: { windowMs: 10 * 60 * 1000, max: 30 },

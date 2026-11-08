@@ -205,6 +205,7 @@ describe('dynamic host route and disclosure boundary', () => {
         ['/service-desk', '/support', 302],
         ['/mssp', '/scoping', 302],
         ['/CloudPC.html', '/scoping', 301],
+        ['/NoFries.html', '/scoping', 301],
         ['/share/not-a-token', '/', 302]
     ])('preserves redirect %s', async (route, location, status) => {
         const response = await request(app).get(route);

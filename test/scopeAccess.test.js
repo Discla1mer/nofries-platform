@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const vm = require('node:vm');
 const { execFileSync } = require('child_process');
 const {
     MemoryChallengeStore,
@@ -10,6 +11,34 @@ const { getServiceScope } = require('../api/shared/serviceScope');
 
 describe('verified managed IT service scope', () => {
     const secret = 'test-scope-secret-that-is-longer-than-thirty-two-characters';
+
+    test.each([401, 410, 'network'])('shows the email recovery action when guide access fails (%s)', async (failure) => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'scope.html'), 'utf8');
+        const panel = html.match(/<div id="scope-error"[^>]*>([\s\S]*?)<\/div>/)[1];
+        const link = panel.match(/<a\b[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/);
+        const destination = new URL(link[1]);
+        expect(destination.protocol).toBe('mailto:');
+        expect(destination.pathname).toBe('hello@nofries.nz');
+        expect(link[2]).toBe('Ask for service guide access');
+        expect(panel).toContain('Email hello@nofries.nz');
+        expect(panel).not.toContain('/#scope-access');
+
+        const elements = Object.fromEntries(['scope-loading', 'scope-error', 'scope-document', 'verified-email', 'print-scope']
+            .map(id => [id, { classList: { add: jest.fn(), remove: jest.fn() }, addEventListener: jest.fn() }]));
+        let showError;
+        const shown = new Promise(resolve => { showError = resolve; });
+        elements['scope-error'].classList.remove.mockImplementation(showError);
+        const fetch = jest.fn(() => failure === 'network'
+            ? Promise.reject(new Error('offline')) : Promise.resolve({ ok: false, status: failure }));
+        vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '..', 'js/scope-access.js'), 'utf8'), {
+            document: { body: { dataset: { page: 'scope' } }, getElementById: id => elements[id] }, fetch
+        });
+        await shown;
+        expect(fetch).toHaveBeenCalledWith('/api/scope/content', expect.objectContaining({ credentials: 'same-origin' }));
+        expect(elements['scope-error'].classList.remove).toHaveBeenCalledWith('is-hidden');
+        expect(elements['scope-loading'].classList.add).toHaveBeenCalledWith('is-hidden');
+        expect(elements['scope-document'].classList.remove).not.toHaveBeenCalled();
+    });
 
     test('emails a code without returning either verification credential to the browser', async () => {
         const sent = [];
@@ -153,6 +182,7 @@ describe('verified managed IT service scope', () => {
         execFileSync(process.execPath, ['scripts/build-static.js'], { cwd: path.resolve(__dirname, '..') });
         const dist = path.resolve(__dirname, '..', 'dist');
         expect(fs.existsSync(path.join(dist, 'scope.html'))).toBe(true);
+        expect(fs.readFileSync(path.join(dist, 'scope.html'), 'utf8')).toContain('href="mailto:hello@nofries.nz">Ask for service guide access</a>');
         expect(fs.existsSync(path.join(dist, 'js', 'scope-access.js'))).toBe(true);
         const publicBundle = fs.readdirSync(dist, { recursive: true })
             .filter((entry) => fs.statSync(path.join(dist, entry)).isFile())
