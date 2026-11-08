@@ -25,6 +25,14 @@ production traffic, credentials, integrations or browser storage are included.
 The existing hosting authentication, `/api/*` block and connection-denying CSP
 remain intact; only content-dependent CSP hashes change.
 
+## Preview appearance
+
+A scoped ivory-and-gold stylesheet adds serif heading hierarchy, quieter card
+shadows, a heading rule and a clearer active workspace indicator. It is included
+only in this synthetic renderer; production styles and application behavior are
+unchanged. Native CSS paint needs no image requests, external fonts or new CSP
+permissions. Decorative effects are removed for print and forced colors.
+
 ## Build and review locally
 
 From a checkout of the desired source commit, with dependencies installed:
@@ -45,6 +53,9 @@ or production packaging changes are required.
 The browser check saves desktop/mobile screenshots, navigation/reset results,
 request records and CSP probe outcomes outside source. Its loopback server is
 only for local inspection; it cannot qualify Azure authentication or routing.
+Graphics checks cover forced-colors focus, print resets, 200% text enlargement
+and an equivalent half-width zoom reflow. Actual browser zoom remains a manual
+check; these emulations do not change the browser zoom setting.
 
 ## Proposed Azure resource and access approval
 

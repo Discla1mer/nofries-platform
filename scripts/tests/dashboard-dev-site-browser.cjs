@@ -12,7 +12,7 @@ const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), 'nf-dev-browser-'));
 const build = buildDevSite(path.join(artifacts, 'site'));
 const config = JSON.parse(fs.readFileSync(path.join(build.output, 'staticwebapp.config.json')));
 const requests = [], unexpected = [], errors = [], observations = [], probes = [];
-const journeys = [];
+const journeys = [], graphics = [];
 const server = http.createServer((req, res) => {
     requests.push(req.method + ' ' + req.url);
     if (req.method !== 'GET' || req.url !== '/') { res.writeHead(404); return res.end(); }
@@ -109,6 +109,47 @@ async function createEmptyRecord(page, scope) {
     await page.getByRole('radio', { name: 'Yes', exact: true }).waitFor();
 }
 
+
+async function graphicsChecks(page, width) {
+    const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
+    const active = page.locator((width > 800 ? '.dashboard-rail' : '.dashboard-mobile-nav') + ' a[aria-current="page"]');
+    assert.equal(await page.locator('body').getAttribute('class'), 'nofries-dev-graphics');
+    assert.match(await page.locator('.nofries-dashboard').evaluate(node => getComputedStyle(node).backgroundImage), /linear-gradient/);
+    await page.emulateMedia({ forcedColors: 'active' });
+    assert.equal(await page.locator('.nofries-dashboard').evaluate(node => getComputedStyle(node).backgroundImage), 'none');
+    await active.focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
+    const focus = await active.evaluate(node => ({
+        focused: document.activeElement === node,
+        width: parseFloat(getComputedStyle(node).outlineWidth),
+        offset: parseFloat(getComputedStyle(node).outlineOffset)
+    }));
+    assert.ok(focus.focused && focus.width >= 3 && focus.offset >= 3, 'Forced-colors current navigation retains a distinct focus ring');
+    await page.screenshot({ path: path.join(artifacts, 'graphics-forced-colors-' + width + '.png'), fullPage: true });
+    await page.emulateMedia({ forcedColors: 'none', media: 'print' });
+    for (const selector of ['.nofries-dashboard', '.dashboard-topbar', '.dashboard-panel', '.dashboard-module-link[aria-current="page"]']) {
+        const nodes = page.locator(selector);
+        assert.ok((await nodes.evaluateAll(rows => rows.map(node => getComputedStyle(node).boxShadow))).every(shadow => shadow === 'none'), selector + ' has no printed decorative shadow');
+    }
+    assert.equal(await page.locator('.nofries-dashboard').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(255, 255, 255)');
+    assert.equal(await page.locator('.dashboard-page-heading').evaluate(node => getComputedStyle(node, '::after').display), 'none');
+    await page.screenshot({ path: path.join(artifacts, 'graphics-print-' + width + '.png'), fullPage: true });
+    await page.emulateMedia({ media: 'screen' });
+    // Emulate user text enlargement separately from equivalent 200% zoom reflow.
+    // These are layout checks, not a claim to change the browser's zoom setting.
+    await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+    assert.ok(await fits(), '200% text fits at ' + width + 'px');
+    await page.screenshot({ path: path.join(artifacts, 'graphics-large-text-' + width + '.png'), fullPage: true });
+    await page.evaluate(() => { document.documentElement.style.removeProperty('font-size'); });
+    if (width === 1440) {
+        await page.setViewportSize({ width: 720, height: 500 });
+        assert.ok(await fits(), 'Equivalent 200% zoom viewport reflows');
+        await page.screenshot({ path: path.join(artifacts, 'graphics-zoom-reflow.png'), fullPage: true });
+        await page.setViewportSize({ width, height: 1000 });
+    }
+    assert.ok(await fits());
+    graphics.push({ width, forcedColorsFocus: true, printReset: true, largeText: true });
+}
+
 async function main() {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const origin = 'http://127.0.0.1:' + server.address().port;
@@ -160,6 +201,7 @@ async function main() {
             await page.keyboard.press('Enter');
             assert.equal(await page.locator('#scenario').evaluate(node => node.selectedIndex), 0);
             assert.equal(new URL(page.url()).hash, '#overview');
+            await graphicsChecks(page, width);
             await practiceJourney(page, width);
             await page.screenshot({ path: path.join(artifacts, 'dashboard-' + width + '.png'), fullPage: true });
             assert.deepEqual(await page.evaluate(() => window.previewViolations), []);
@@ -183,7 +225,7 @@ async function main() {
         completed = true;
         console.log(JSON.stringify({ completed, browser: browser.version(), scenarios: observations.length, requests: requests.length, artifacts }));
     } finally {
-        fs.writeFileSync(path.join(artifacts, 'results.json'), JSON.stringify({ completed, build, browser: browser?.version(), observations, journeys, requests, unexpected, errors, probes }, null, 2));
+        fs.writeFileSync(path.join(artifacts, 'results.json'), JSON.stringify({ completed, build, browser: browser?.version(), observations, journeys, graphics, requests, unexpected, errors, probes }, null, 2));
         if (browser) await browser.close();
         await new Promise(resolve => server.close(resolve));
     }

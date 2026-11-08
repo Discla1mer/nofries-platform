@@ -22,7 +22,7 @@ test('packages only the existing synthetic UI and binds every served byte to a c
     expect(built.commit).toMatch(/^[a-f0-9]{40}$/);
     const html = read('index.html');
     for (const file of ['dashboardShell', 'dashboardRegistry', 'ncscAssessmentClient', 'ncscQuestionnaire',
-        'assessmentExplanation', 'organisationPicture', 'improvementActionPlanView'].map(name => 'api/shared/protectedAssets/' + name + '.js').concat('app/dashboard.css')) {
+        'assessmentExplanation', 'organisationPicture', 'improvementActionPlanView'].map(name => 'api/shared/protectedAssets/' + name + '.js').concat('app/dashboard.css', 'scripts/dashboard-preview-visual.css')) {
         expect(html).toContain(fs.readFileSync(path.join(root, file), 'utf8'));
     }
     expect(html).toContain('DEV / synthetic data');
@@ -105,4 +105,16 @@ test('refuses to overwrite files, use production directories or traverse a symli
     expect(() => buildDevSite(path.join(directory, 'occupied'))).toThrow();
     expect(fs.readFileSync(path.join(directory, 'occupied'), 'utf8')).toBe('keep');
     expect(() => renderPreview('<script>')).toThrow();
+});
+
+
+test('confines preview graphics to scoped CSS without broadening content permissions', () => {
+    const css = fs.readFileSync(path.join(root, 'scripts/dashboard-preview-visual.css'), 'utf8');
+    const { html, contentSecurityPolicy } = renderPreview();
+    expect(html).toContain('<body class="nofries-dev-graphics">');
+    expect(css).not.toMatch(/url\s*\(|@import|@font-face|data:|https?:|expression\s*\(/i);
+    expect(css).toContain('@media (forced-colors: active)');
+    expect(css).toContain('@media print');
+    expect(contentSecurityPolicy).toMatch(/^default-src 'none'; script-src 'sha256-[A-Za-z0-9+/=]+'; style-src 'sha256-[A-Za-z0-9+/=]+'; base-uri 'none'; form-action 'none'; connect-src 'none'$/);
+    expect(html).not.toMatch(/<img|<svg|<canvas|<link|style=/i);
 });

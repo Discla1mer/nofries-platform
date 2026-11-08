@@ -1,0 +1,83 @@
+/* Synthetic-preview styling only. Loaded into the builder's hash-bound style;
+   no asset requests or additional content-security permissions. */
+.nofries-dev-graphics .nofries-dashboard {
+  --dashboard-paper: #eee8dc;
+  --dashboard-surface: #f8f4ec;
+  --dashboard-line: #d1c5b3;
+  --dashboard-navy: #f1e2bc;
+  --dashboard-yellow: #e5b53b;
+  background-color: var(--dashboard-paper);
+  background-image: linear-gradient(120deg, #f6f2e9 0%, #eee8dc 65%, #e8dfce 100%);
+}
+.nofries-dev-graphics .dashboard-rail {
+  background-color: #f4eee2;
+  background-image: linear-gradient(160deg, #f8f3e9, #eee5d6);
+}
+.nofries-dev-graphics .dashboard-brand {
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 1.5rem;
+  letter-spacing: -.035em;
+}
+.nofries-dev-graphics .dashboard-brand-mark {
+  box-shadow: inset 0 0 0 1px rgb(94 67 14 / 18%);
+}
+.nofries-dev-graphics .dashboard-topbar {
+  background: #f8f4ec;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 45%);
+}
+.nofries-dev-graphics .dashboard-page-heading {
+  padding-block: .5rem 1rem;
+}
+.nofries-dev-graphics .dashboard-page-heading .dashboard-eyebrow {
+  letter-spacing: .08em;
+}
+.nofries-dev-graphics .dashboard-page-heading h1 {
+  max-width: 27ch;
+  font-size: clamp(1.8rem, 3.3vw, 2.85rem);
+  line-height: 1.14;
+  letter-spacing: -.025em;
+  text-wrap: balance;
+}
+.nofries-dev-graphics .dashboard-page-heading::after {
+  content: '';
+  display: block;
+  width: 2.5rem;
+  height: 3px;
+  margin-top: .9rem;
+  background: #c69b31;
+}
+.nofries-dev-graphics .dashboard-panel {
+  border-color: #c8bdab;
+  box-shadow: 0 3px 10px rgb(54 41 21 / 5%);
+}
+.nofries-dev-graphics .dashboard-module-link[aria-current="page"] {
+  background: #f1e2bc;
+  box-shadow: inset 3px 0 0 #9b741e;
+}
+.nofries-dev-graphics .dashboard-button:not(.dashboard-button-secondary) {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 28%), 0 2px 4px rgb(80 57 13 / 8%);
+}
+@media (max-width: 48rem) {
+  .nofries-dev-graphics .dashboard-page-heading h1 { font-size: 1.8rem; }
+  .nofries-dev-graphics .dashboard-page-heading { padding-top: 0; }
+}
+@media (forced-colors: active) {
+  .nofries-dev-graphics .nofries-dashboard,
+  .nofries-dev-graphics .dashboard-rail { background-image: none; }
+  .nofries-dev-graphics .dashboard-page-heading::after { background: CanvasText; }
+  .nofries-dev-graphics .dashboard-module-link[aria-current="page"]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -1px; }
+}
+@media print {
+  .nofries-dev-graphics .nofries-dashboard {
+    --dashboard-paper: white;
+    --dashboard-surface: white;
+    --dashboard-navy: white;
+    --dashboard-line: #c5cfcc;
+    background: white;
+  }
+  .nofries-dev-graphics .dashboard-rail,
+  .nofries-dev-graphics .dashboard-topbar,
+  .nofries-dev-graphics .dashboard-module-link[aria-current="page"] { background: white; }
+  .nofries-dev-graphics :is(.dashboard-brand-mark, .dashboard-topbar, .dashboard-panel, .dashboard-module-link[aria-current="page"], .dashboard-button:not(.dashboard-button-secondary)) { box-shadow: none; }
+  .nofries-dev-graphics .dashboard-page-heading::after { display: none; }
+}
