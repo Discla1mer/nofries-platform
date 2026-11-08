@@ -6,6 +6,10 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { buildDevSite } = require('../scripts/build-dashboard-dev-site');
 const { renderPreview } = require('../scripts/build-dashboard-preview');
+const { buildJourney, createSyntheticTransport } = require('../scripts/dashboard-preview-journey');
+const { createClient } = require('../api/shared/protectedAssets/ncscAssessmentClient');
+const { resultModel } = require('../api/shared/protectedAssets/ncscQuestionnaire');
+const { createCommand, saveCommand, submitCommand, allResponses } = require('./fixtures/ncscAssessmentFixture');
 const root = path.resolve(__dirname, '..');
 let directory;
 beforeEach(() => { directory = fs.mkdtempSync(path.join(os.tmpdir(), 'nf-dev-test-')); });
@@ -17,16 +21,54 @@ test('packages only the existing synthetic UI and binds every served byte to a c
     expect(fs.readdirSync(built.output).sort()).toEqual(['index.html', 'preview-manifest.json', 'staticwebapp.config.json']);
     expect(built.commit).toMatch(/^[a-f0-9]{40}$/);
     const html = read('index.html');
-    for (const file of ['api/shared/protectedAssets/dashboardShell.js', 'api/shared/protectedAssets/dashboardRegistry.js', 'app/dashboard.css']) {
+    for (const file of ['dashboardShell', 'dashboardRegistry', 'ncscAssessmentClient', 'ncscQuestionnaire',
+        'assessmentExplanation', 'organisationPicture', 'improvementActionPlanView'].map(name => 'api/shared/protectedAssets/' + name + '.js').concat('app/dashboard.css')) {
         expect(html).toContain(fs.readFileSync(path.join(root, file), 'utf8'));
     }
     expect(html).toContain('DEV / synthetic data');
     expect(html).toContain(built.commit + (built.dirty ? '-dirty' : ''));
-    expect(html).not.toMatch(/https?:\/\/|\/api\/|\.auth\/|localStorage|sessionStorage|document\.cookie/);
+    // API-shaped selectors are handled only by the injected memory transport.
+    // Official reference URLs are text/disabled links, never production origins.
+    expect(html).not.toMatch(/nofries\.nz|azurestaticapps\.net|\.auth\/|localStorage|sessionStorage|indexedDB|document\.cookie|window\.fetch|globalThis\.fetch/);
+    expect(html).toContain('unrelated to entered answers');
+    expect(html).toContain('Reload, Reset or changing scenario discards all practice work');
     for (const [file, digest] of Object.entries(built.files)) {
         expect(createHash('sha256').update(read(file)).digest('hex')).toBe(digest);
     }
     expect(buildDevSite(path.join(directory, 'repeat')).files).toEqual(built.files);
+});
+
+test('seeded results and read-only plan share a genuine build-time evaluation, without changing production module readiness', () => {
+    const seed = buildJourney();
+    expect(resultModel(seed.example, seed.metadata, seed.model.context.organisationId)).not.toBeNull();
+    expect(seed.plan.source.evaluationOutputSha256).toBe(seed.example.submission.evaluation.outputSha256);
+    expect(seed.plan.source.assessmentId).toBe(seed.example.assessmentId);
+    expect(seed.plan.actions.length).toBeGreaterThan(0);
+    const models = require('./fixtures/dashboardFixture').scenarios();
+    expect(Object.values(models).flatMap(model => model.modules)
+        .filter(module => ['cyber_security', 'improvement_plan'].includes(module.key))
+        .every(module => module.state !== 'ready')).toBe(true);
+});
+
+test('practice transport saves and reopens only in memory; interactive submission never borrows the seeded score', async () => {
+    const seed = buildJourney(), frozen = JSON.stringify(seed.example);
+    const memory = () => createSyntheticTransport({ assessments: [] }, seed.metadata, seed);
+    const transport = memory(), client = createClient({ metadata: seed.metadata, fetch: transport.fetch });
+    const nativeFetch = jest.spyOn(globalThis, 'fetch').mockImplementation(() => { throw new Error('Network forbidden'); });
+    try {
+        await client.create(createCommand());
+        await client.save(saveCommand('assessment-a', 0, 'save-a', allResponses('no')));
+        const reopened = await createClient({ metadata: seed.metadata, fetch: transport.fetch }).read('assessment-a');
+        expect(reopened.assessment.responses.every(row => row.optionId === 'no')).toBe(true);
+        const submitted = await client.submit(submitCommand());
+        expect(resultModel(submitted.assessment, seed.metadata, seed.model.context.organisationId)).toBeNull();
+        expect(JSON.stringify(seed.example)).toBe(frozen);
+        await expect(createClient({ metadata: seed.metadata, fetch: memory().fetch }).read('assessment-a')).rejects.toThrow();
+        for (const url of ['https://nofries.nz/api/dashboard/ncsc/assessments', '//nofries.nz/api/dashboard', '/api/dashboard/session', '/api/customer-signup/bootstrap']) {
+            expect((await transport.fetch(url)).status).toBe(404);
+        }
+        expect(nativeFetch).not.toHaveBeenCalled();
+    } finally { nativeFetch.mockRestore(); }
 });
 
 test('restricts all content and metadata to an invited role, with no API or fallback bypass', () => {

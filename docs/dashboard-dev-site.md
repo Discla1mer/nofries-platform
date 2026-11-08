@@ -1,21 +1,29 @@
 # Synthetic dashboard dev site
 
-This is the smallest persistent review site: the existing eight-scenario dashboard
-preview, real `dashboardRegistry.js`, `dashboardShell.js` and `app/dashboard.css`.
-It adds a DEV / synthetic-data banner, source commit and Reset preview button.
-Navigation and scenario switching stay in memory. Reset restores the first
-scenario and Overview; reload also discards state. No customer login, backend,
-production URLs, credentials, analytics, operational integrations or storage are
-included. The CSP denies connections, form submissions and external assets.
+This static review site retains eight layout scenarios and adds a default Cyber
+practice scenario using the real dashboard, questionnaire and CSS. Its DEV banner
+identifies the source commit and the limits of every simulated save/submit.
 
-The existing `build-ncsc-questionnaire-preview.js` was inspected. It already
-provides in-memory assessment edits, saving and failure scenarios using the real
-questionnaire. Those are a separate local fixture, with simulated submission
-outcomes. This first persistent artifact does not duplicate or incorporate that
-harness. Planned/unavailable modules remain so; it is not an end-to-end sandbox.
-The existing local eight-scenario preview already satisfies layout/navigation
-review. Hosting, private-access qualification and a repeatable publication path
-are the missing parts.
+Practice uses the existing `build-ncsc-questionnaire-preview.js` in-memory
+transport. Create, edit, Save, leave and reopen work within the current scenario
+mount. Submit seals the practice answers; **it does not calculate a score**.
+Overview shows answer counts for the selected practice assessment. Improvement
+Plan shows question-order follow-up guidance from those same answers, not saved
+actions, assignments, verified evidence, risk rankings or control outcomes.
+
+“Review seeded example results” opens a separate, explicitly labelled fixed case,
+unrelated to entered answers. The actual Node evaluator and plan domain compute
+it at build time. The real results and read-only Improvement Plan renderers display
+those bound fixtures; no browser scoring shim or evaluator parity is claimed.
+
+Reload, Reset or changing scenario clears all practice work, including simulated
+saves and submissions. Reopening the site starts empty. The site persists; user
+work does not. Reset's announcement makes no claim about the subsequently viewed
+page. Other planned workspaces remain placeholders. Source and download links are
+reference-only in this offline preview. No customer signup/login, backend, mail,
+production traffic, credentials, integrations or browser storage are included.
+The existing hosting authentication, `/api/*` block and connection-denying CSP
+remain intact; only content-dependent CSP hashes change.
 
 ## Build and review locally
 
