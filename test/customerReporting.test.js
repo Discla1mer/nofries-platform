@@ -224,7 +224,9 @@ test('generic error and missing-page help use the same report composer and prese
     expect(error.status).toBe(200);
     expect(error.text).toContain('Error code: website_request_unavailable');
     expect(error.text).toContain('code=website_request_unavailable');
-    expect(error.text).not.toContain('mailto:hello@nofries.nz');
+    // The error's primary recovery remains the report composer; generic help
+    // may independently expose a bare human-support address.
+    expect(error.text.match(/<main\b[\s\S]*?<\/main>/)[0]).not.toContain('mailto:hello@nofries.nz');
     for (const html of [missing.text, error.text]) {
         expect(html.match(/class="button"/g)).toHaveLength(1);
         expect(html).toContain('Return to No Fries');
