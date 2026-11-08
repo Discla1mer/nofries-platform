@@ -18,7 +18,7 @@ jobs:
     # The Jest suite is split into parallel shards; each shard still runs its
     # files serially (--runInBand), exactly as the previous single job did.
     name: unit (${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -36,7 +36,7 @@ jobs:
         run: npx jest --runInBand --shard=${{ matrix.shard }}/4
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       PROMPTFOO_DISABLE_TELEMETRY: '1'
@@ -74,7 +74,7 @@ jobs:
     # a skipped, cancelled or failed dependency fails this gate.
     if: always()
     needs: [unit, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require all application jobs to succeed
@@ -86,7 +86,7 @@ jobs:
           test "$UNIT" = success && test "$BUILD" = success
 
   postgres:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
       postgres:
@@ -117,7 +117,7 @@ jobs:
           npm run test:postgres
 
   dependencies:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
