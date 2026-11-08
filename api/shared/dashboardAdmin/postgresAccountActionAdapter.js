@@ -11,6 +11,7 @@ const { DashboardAdminError, normaliseSelector } = require('./service');
 const { auditResult, hydrate } = require('./accountActionState');
 const TYPE = 'dashboard.admin.account_action';
 const PREFIX = 'admin-account-action:';
+const MAX_RECOVERY_CHAIN = 128;
 const fail = (status = 503, code = 'unavailable') => { throw new DashboardAdminError(status, 'dashboard_admin_' + code); };
 const scopeOf = selector => ({ tenantId: selector.tenantId, organisationId: selector.organisationId });
 const reference = value => ({ operationId: value.result.command.operationId,
@@ -118,19 +119,55 @@ function createPostgresAccountActionDataAdapter({ tx, clock, restoreEpoch, autho
         if (!equal(value.result.command, command)) fail(409, 'conflict');
         return value;
     }
-    async function history(selector, kind, membershipRevision = null) {
+    async function history(selector, kind) {
         const rows = await tx.query(`SELECT * FROM nofries.dashboard_operation_receipts WHERE tenant_id=$1 AND organisation_id=$2
             AND payload->>'operationType'=$3 AND payload#>>'{result,selector,subjectKey}'=$4
             AND payload#>>'{result,selector,provider}'=$5 AND payload#>>'{result,action}'=$6
-            ${kind === 'delete' ? "AND payload#>>'{resultRevisions,membership}'=$7" : "ORDER BY (payload#>>'{result,labelRevision}')::bigint DESC"} LIMIT 2`,
-        [selector.tenantId, selector.organisationId, TYPE, selector.subjectKey, selector.provider, kind,
-            ...(kind === 'delete' ? [String(membershipRevision)] : [])]);
+            ORDER BY ${kind === 'delete' ? "(payload#>>'{resultRevisions,membership}')::bigint" : "(payload#>>'{result,labelRevision}')::bigint"} DESC LIMIT 2`,
+        [selector.tenantId, selector.organisationId, TYPE, selector.subjectKey, selector.provider, kind]);
         const values = [];
         for (const row of rows.rows) values.push(stored(await hydrate(row, stateStore)));
         if (values.some(value => !equal(value.result.command.selector, selector)) ||
-            kind === 'delete' && values.length > 1 || kind === 'edit' && values.length > 1 &&
-            values[0].result.labelRevision <= values[1].result.labelRevision) fail();
+            values.length > 1 && (kind === 'delete'
+                ? values[0].resultRevisions.membership <= values[1].resultRevisions.membership
+                : values[0].result.labelRevision <= values[1].result.labelRevision)) fail();
         return values[0] || null;
+    }
+    // Prove that a retained admin mutation really has its matching native
+    // membership receipt. A later member's administrative action must not
+    // manufacture evidence for the selected member.
+    async function nativeReceipt(value, snapshot) {
+        const command = value.result.command, proof = command.witness;
+        const native = dataCodec.normaliseCommand({ ...scopeOf(command.selector),
+            operationId: 'admin-membership:' + command.operationId, actorSubjectKey: command.actorSubjectKey,
+            type: 'membership.command', expectedRevisions: proof.expectedRevisions,
+            payload: { action: command.action === 'delete' ? 'suspend' : 'resume',
+                payload: { membershipId: proof.membership.membershipId } } });
+        const result = await dataStorage.readOperationReceipt(tx, native, hash({ command: native, initialState: null }), snapshot);
+        return result !== null && equal(result.resultRevisions, value.resultRevisions);
+    }
+    async function recoveryIncluded(recovery, selector, current, snapshot) {
+        const start = recovery.resultRevisions.membership, end = dataCodec.revisionVector(snapshot).membership;
+        if (end < start || end - start > MAX_RECOVERY_CHAIN || !await nativeReceipt(recovery, snapshot)) return false;
+        if (end === start) return true;
+        // Every intervening membership revision must be accounted for by a
+        // validated admin+native receipt for a different member. Unknown,
+        // same-member or missing changes remain ineligible for restoration.
+        const rows = await tx.query(`SELECT * FROM nofries.dashboard_operation_receipts WHERE tenant_id=$1 AND organisation_id=$2
+            AND payload->>'operationType'=$3 AND payload#>>'{result,action}' IN ('delete','restore')
+            AND (payload#>>'{resultRevisions,membership}')::bigint > $4
+            AND (payload#>>'{resultRevisions,membership}')::bigint <= $5
+            ORDER BY (payload#>>'{resultRevisions,membership}')::bigint ASC LIMIT ${MAX_RECOVERY_CHAIN + 1}`,
+        [selector.tenantId, selector.organisationId, TYPE, start, end]);
+        if (rows.rows.length !== end - start) return false;
+        let expected = start;
+        for (const row of rows.rows) {
+            const next = stored(await hydrate(row, stateStore)); expected++;
+            if (next.resultRevisions.membership !== expected || next.result.restoreEpoch !== restoreEpoch || next.occurredAt > now() ||
+                next.result.command.selector.subjectKey === selector.subjectKey ||
+                next.result.membership.membershipId === current.membershipId || !await nativeReceipt(next, snapshot)) return false;
+        }
+        return expected === end;
     }
     async function inspectLoaded(selector, snapshot) {
         const members = snapshot.membershipState.memberships.filter(row => row.subjectKey === selector.subjectKey && row.status !== 'removed');
@@ -145,12 +182,13 @@ function createPostgresAccountActionDataAdapter({ tx, clock, restoreEpoch, autho
         const label = lastLabel ? { revision: lastLabel.result.labelRevision,
             displayLabel: lastLabel.result.command.patch.displayLabel, receipt: reference(lastLabel) } :
             { revision: 0, displayLabel: null, receipt: null };
-        let recovery = current.status === 'suspended' ? await history(selector, 'delete', revisions.membership) : null;
+        let recovery = current.status === 'suspended' ? await history(selector, 'delete') : null;
         if (recovery) {
             dataCodec.assertReceiptIncluded(snapshot, { resultRevisions: recovery.resultRevisions, reserved: false });
             if (recovery.occurredAt > at) fail();
         }
-        if (recovery && (!equal(recovery.result.membership, current) || recovery.result.restoreEpoch !== restoreEpoch)) recovery = null;
+        if (recovery && (!equal(recovery.result.membership, current) || recovery.result.restoreEpoch !== restoreEpoch ||
+            !await recoveryIncluded(recovery, selector, current, snapshot))) recovery = null;
         const privateProof = { schemaVersion: 1, restoreEpoch, authoritySha256, expectedRevisions: revisions,
             membership: current, label, restoreReceipt: recovery ? reference(recovery) : null };
         const displayName = snapshot.tenantAggregate.organisations[0].displayName;

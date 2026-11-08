@@ -84,7 +84,7 @@ module.exports = function registerDashboardAdminAccountActionsPostgresTests() {
             capture.operatorIssuanceProof = { schemaVersion: 1, kind: 'operator_dashboard_issuance',
                 sessionSha256: capture.sessionSha256, identitySha256: hash(identity), instanceId, restoreEpoch, issuedAt: START, expiresAt: END };
             const state = { now: NOW, allowed: true, authoritySha256: 'a'.repeat(64), externalEpoch: restoreEpoch,
-                trace: [], before: null, after: null, loseCommit: false };
+                trace: [], before: null, after: null, loseCommit: false, allowOther: false };
             const pool = { end: () => runtimePool.end(), async connect() {
                 const client = await runtimePool.connect();
                 return { release: value => client.release(value), async query(sql, params = []) {
@@ -142,7 +142,9 @@ module.exports = function registerDashboardAdminAccountActionsPostgresTests() {
                 async readState(key) { return clone(customerState.get(key)); } };
             const options = { ...common, pool, captureRequest, accountActionState, authoriseAdministration: context => context.request === request,
                 authoriseAccountAction: context => state.allowed && context.request === request && context.capture.kind === 'operator_dashboard' &&
-                    (context.selector === null || hash(context.selector) === hash(selector)) ? { authoritySha256: state.authoritySha256, listMembers: true } : null };
+                    (context.selector === null || hash(context.selector) === hash(selector) ||
+                        state.allowOther && hash(context.selector) === hash({ ...selector, subjectKey: OTHER_SUBJECT }))
+                    ? { authoritySha256: state.authoritySha256, listMembers: true } : null };
             const repository = createPostgresDashboardAdministrationRepository(options);
             const canonicalPool = { end: () => runtimePool.end(), async connect() {
                 const client = await runtimePool.connect();
@@ -155,10 +157,10 @@ module.exports = function registerDashboardAdminAccountActionsPostgresTests() {
             const canonical = createPostgresDashboardRepository({ database: createPostgresDatabase({ pool: canonicalPool }),
                 clock: () => state.now, authoriseAdministration: () => true });
             const read = async () => (await repository.readAuthoritySnapshot(request, selector)).snapshot;
-            const inspect = () => repository.inspectAccountAction(request, selector);
-            const command = async (action, patch = null) => {
-                const observed = await inspect();
-                const value = { schemaVersion: 1, operationId: nextId(), actorSubjectKey: actor, selector: clone(selector),
+            const inspect = (selected = selector) => repository.inspectAccountAction(request, selected);
+            const command = async (action, patch = null, selected = selector) => {
+                const observed = await inspect(selected);
+                const value = { schemaVersion: 1, operationId: nextId(), actorSubjectKey: actor, selector: clone(selected),
                     expectedVersion: observed.version, action, patch, preparedAt: state.now,
                     expiresAt: new Date(Date.parse(state.now) + 300000).toISOString(), witness: clone(observed.witness) };
                 return { ...value, commandSha256: commandDigest(value) };
@@ -358,6 +360,61 @@ module.exports = function registerDashboardAdminAccountActionsPostgresTests() {
             expect(restored.entitlementState).toEqual(original.entitlementState);
             expect(restored.usage).toEqual(original.usage);
             await expect(h.admission(SUBJECT)).resolves.toHaveProperty('membershipState');
+        });
+
+        test('unrelated member removals do not erase recovery while stale confirmations still fail', async () => {
+            const h = await harness(), other = { ...h.selector, subjectKey: OTHER_SUBJECT };
+            h.state.allowOther = true;
+            await h.repository.commitAccountAction(h.request, await h.command('delete'));
+            const staleRestore = await h.command('restore');
+            await h.repository.commitAccountAction(h.request, await h.command('delete', null, other));
+            await expect(h.repository.commitAccountAction(h.request, staleRestore)).rejects.toHaveProperty('statusCode');
+            expect((await h.inspect()).actions).toContain('restore');
+            await h.repository.commitAccountAction(h.request, await h.command('restore'));
+            expect((await h.read()).membershipState.memberships.find(row => row.subjectKey === OTHER_SUBJECT).status).toBe('suspended');
+            expect((await h.inspect(other)).actions).toContain('restore');
+            await h.repository.commitAccountAction(h.request, await h.command('restore', null, other));
+            expect((await h.read()).membershipState.memberships.filter(row => [SUBJECT, OTHER_SUBJECT].includes(row.subjectKey))
+                .every(row => row.status === 'active')).toBe(true);
+        });
+
+        test.each(['admin', 'native'])('missing intervening %s receipt prevents recovery', async missing => {
+            const h = await harness(), other = { ...h.selector, subjectKey: OTHER_SUBJECT };
+            h.state.allowOther = true;
+            await h.repository.commitAccountAction(h.request, await h.command('delete'));
+            const otherDelete = await h.command('delete', null, other);
+            await h.repository.commitAccountAction(h.request, otherDelete);
+            const prefix = missing === 'admin' ? 'admin-account-action:' : 'admin-membership:';
+            await owner.query('DELETE FROM nofries.dashboard_operation_receipts WHERE tenant_id=$1 AND organisation_id=$2 AND operation_id=$3',
+                [h.selector.tenantId, h.selector.organisationId, prefix + otherDelete.operationId]);
+            expect((await h.inspect()).actions).not.toContain('restore');
+        });
+
+        test('corrupt intervening native receipt fails closed', async () => {
+            const h = await harness(), other = { ...h.selector, subjectKey: OTHER_SUBJECT };
+            h.state.allowOther = true;
+            await h.repository.commitAccountAction(h.request, await h.command('delete'));
+            const otherDelete = await h.command('delete', null, other);
+            await h.repository.commitAccountAction(h.request, otherDelete);
+            await owner.query('UPDATE nofries.dashboard_operation_receipts SET result_sha256=$4 WHERE tenant_id=$1 AND organisation_id=$2 AND operation_id=$3',
+                [h.selector.tenantId, h.selector.organisationId, 'admin-membership:' + otherDelete.operationId, 'f'.repeat(64)]);
+            await expect(h.inspect()).rejects.toHaveProperty('statusCode');
+        });
+
+        test('same-member out-of-band changes never reuse an old delete receipt even when bytes match', async () => {
+            const h = await harness(), other = { ...h.selector, subjectKey: OTHER_SUBJECT };
+            h.state.allowOther = true;
+            await h.repository.commitAccountAction(h.request, await h.command('delete'));
+            const original = await h.read(), priorMember = original.membershipState.memberships.find(row => row.subjectKey === SUBJECT);
+            let changed = original.membershipState;
+            for (const action of ['resume', 'suspend']) changed = applyMembershipCommand(changed, original.tenantAggregate, {
+                tenantId: h.selector.tenantId, organisationId: h.selector.organisationId, expectedRevision: changed.revision,
+                actorSubjectKey: h.actor, now: NOW, action, payload: { membershipId: priorMember.membershipId } });
+            expect(changed.memberships.find(row => row.subjectKey === SUBJECT)).toEqual(priorMember);
+            await owner.query('UPDATE nofries.dashboard_membership_states SET revision=$3,payload=$4::jsonb WHERE tenant_id=$1 AND organisation_id=$2',
+                [h.selector.tenantId, h.selector.organisationId, changed.revision, JSON.stringify(changed)]);
+            await h.repository.commitAccountAction(h.request, await h.command('delete', null, other));
+            expect((await h.inspect()).actions).not.toContain('restore');
         });
 
         test('exact repeat returns its retained receipt without repeating the canonical mutation', async () => {
