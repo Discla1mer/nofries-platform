@@ -1,7 +1,7 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
-const { createSignupDiagnostics } = require('../api/shared/customerSignup/signupDiagnostics');
+const { createSignupDiagnostics, createSignupReadDiagnostic, readSignupReadDiagnostic } = require('../api/shared/customerSignup/signupDiagnostics');
 const { createJournaledSignupHandlers } = require('../api/shared/customerSignup/journaledTermsAcceptance');
 const { createSessionBoundSignupContinuation } = require('../api/shared/customerSignup/sessionBoundSignupContinuation');
 const { RETENTION_POLICY_ID } = require('../api/shared/customerSignup/postgresSignupAcceptanceJournal');
@@ -20,6 +20,64 @@ const unavailable = { status: 'unavailable' };
 const req = () => ({ headers: { cookie: PRIVATE }, body: { customer: PRIVATE } });
 const error = code => Object.assign(new Error(PRIVATE), { code, record: PRIVATE });
 const settled = () => new Promise(resolve => setImmediate(resolve));
+
+describe('workspace read diagnostic ownership', () => {
+    test('preserves the first read failure across cleanup and outer catches, without raw data', () => {
+        const read = createSignupReadDiagnostic('passive_starter'), first = error('23505'), cleanup = error('postgres_rollback_failed');
+        read.mark('preparation_decode'); read.capture(first); read.mark('completion_recheck');
+        expect(read.attach(cleanup)).toBe(cleanup);
+        const outer = createSignupReadDiagnostic('passive_state'); outer.mark('account_match'); outer.attach(cleanup);
+        const sink = jest.fn(); createSignupDiagnostics({ now: () => AT, sink })('organisation_preparation', cleanup);
+        expect(sink).toHaveBeenCalledTimes(1);
+        const event = sink.mock.calls[0][0];
+        expect(event).toEqual({ timestamp: new Date(AT).toISOString(), code: 'postgres_rollback_failed', stage: 'organisation_preparation',
+            workspaceRead: { phase: 'passive_starter', checkpoint: 'preparation_decode', sqlStateFamily: 'integrity_constraint' } });
+        expect(Object.isFrozen(event.workspaceRead)).toBe(true);
+        expect(JSON.stringify(event)).not.toContain(PRIVATE);
+    });
+
+    test('ignores forged metadata, getters, proxies, invalid phases and primitive errors', () => {
+        const getter = jest.fn(() => { throw new Error(PRIVATE); });
+        const supplied = Object.defineProperty({ workspaceRead: { phase: PRIVATE } }, 'code', { get: getter });
+        const read = createSignupReadDiagnostic('passive_state'); read.mark('passive_journal'); read.mark(PRIVATE); read.attach(supplied);
+        expect(getter).not.toHaveBeenCalled();
+        expect(readSignupReadDiagnostic(supplied)).toEqual({ phase: 'passive_state', checkpoint: 'passive_journal' });
+        const trap = jest.fn(() => { throw new Error(PRIVATE); }), proxy = new Proxy({}, { getOwnPropertyDescriptor: trap });
+        for (const value of [proxy, null, undefined, PRIVATE]) { expect(read.attach(value)).toBe(value); expect(readSignupReadDiagnostic(value)).toBeNull(); }
+        expect(trap).not.toHaveBeenCalled();
+        const forged = { workspaceRead: { phase: 'passive_state', checkpoint: 'scope_query' } };
+        createSignupReadDiagnostic(PRIVATE).attach(forged);
+        expect(readSignupReadDiagnostic(forged)).toBeNull();
+    });
+
+    test('suspends across the writer and keeps concurrent readback checkpoints separate', async () => {
+        const failures = await Promise.all(['scope_query', 'preparation_decode'].map(async checkpoint => {
+            const read = createSignupReadDiagnostic('preparation_before'), writer = error('postgres_query_failed');
+            read.suspend(); read.attach(writer); expect(readSignupReadDiagnostic(writer)).toBeNull();
+            read.resume('preparation_after'); read.mark(checkpoint); await settled();
+            const failed = error('postgres_query_failed'); read.attach(failed); return failed;
+        }));
+        expect(failures.map(readSignupReadDiagnostic)).toEqual(['scope_query', 'preparation_decode'].map(checkpoint => ({ phase: 'preparation_after', checkpoint })));
+    });
+
+    test('adds only the server field while preserving the exact public failure response and event count', async () => {
+        const { withSignupSupportContext } = require('../api/shared/customerSignup/signupSupportContext');
+        async function observe(enrich) {
+            const failure = error('signup_state_unavailable'), sink = jest.fn();
+            if (enrich) { const read = createSignupReadDiagnostic('passive_starter'); read.mark('scope_query'); read.attach(failure); }
+            const response = await withSignupSupportContext(async () => {
+                createSignupDiagnostics({ now: () => AT, sink })('organisation_preparation', failure);
+                return { status: 503, body: { error: 'Signup is unavailable', code: 'signup_unavailable' }, headers: {} };
+            }, { newReference: () => 'NF-0123456789ABCDEF', readReleaseIdentity: () => null });
+            expect(sink).toHaveBeenCalledTimes(1); return { response, event: sink.mock.calls[0][0] };
+        }
+        const original = await observe(false), enriched = await observe(true);
+        expect(enriched.response).toEqual(original.response);
+        const { workspaceRead, ...unchanged } = enriched.event;
+        expect(unchanged).toEqual(original.event);
+        expect(workspaceRead).toEqual({ phase: 'passive_starter', checkpoint: 'scope_query' });
+    });
+});
 
 function receipt(overrides = {}) {
     return {
@@ -466,3 +524,4 @@ describe('source-owned preparation failure codes', () => {
         assertPrivateOutput(events);
     });
 });
+

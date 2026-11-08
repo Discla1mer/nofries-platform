@@ -8,11 +8,12 @@ let warning;
 beforeEach(() => { warning = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
 afterEach(() => { warning.mockRestore(); });
 const events = () => warning.mock.calls.map(([line]) => JSON.parse(line));
-function expectPrivate(eventsSeen, user, cookie, response) {
+function expectPrivate(eventsSeen, user, cookie, response, workspaceRead) {
     const reference = response.headers['x-nofries-support-reference'];
     expect(reference).toHaveLength(19); expect(reference).toMatch(/^NF-[A-F0-9]{16}$/);
     for (const event of eventsSeen) {
-        expect(Object.keys(event)).toEqual(['timestamp', 'code', 'stage', 'supportReference']);
+        expect(Object.keys(event)).toEqual(['timestamp', 'code', 'stage', 'supportReference', ...(workspaceRead ? ['workspaceRead'] : [])]);
+        if (workspaceRead) expect(event.workspaceRead).toEqual(workspaceRead);
         expect(event.supportReference).toBe(reference);
         expect(new Date(event.timestamp).toISOString()).toBe(event.timestamp);
     }
@@ -66,35 +67,47 @@ test('Consultant own-workspace state retains the safe account-store failure code
     expect(reads).toBe(1);
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ error: 'Signup is unavailable', code: 'signup_unavailable' });
-    expect(events()).toEqual([{ timestamp: expect.any(String), code: 'starter_store_unavailable', stage: 'organisation_preparation', supportReference: response.headers['x-nofries-support-reference'] }]);
-    expectPrivate(events(), user, login.cookie, response);
+    const workspaceRead = { phase: 'passive_starter', checkpoint: 'account_match' };
+    expect(events()).toEqual([{ timestamp: expect.any(String), code: 'starter_store_unavailable', stage: 'organisation_preparation', supportReference: response.headers['x-nofries-support-reference'], workspaceRead }]);
+    expectPrivate(events(), user, login.cookie, response, workspaceRead);
     expect([...container.records].map(([key, bytes]) => [key, bytes.toString('base64')])).toEqual(before);
     expect(h.state.delivered).toHaveLength(2);
     expect(h.pool.receipts.size).toBe(0); expect(h.pool.registrations.size).toBe(0);
 });
 
-test.each(['postgres_connection_failed', 'postgres_query_failed'])
-('Consultant own-workspace preparation retains %s from the real database adapter', async code => {
+test.each([
+    ['connection', 'postgres_connection_failed', 'scope_transaction'],
+    ['begin', 'postgres_begin_failed', 'scope_transaction'],
+    ['query', 'postgres_query_failed', 'scope_query'],
+    ['rollback', 'postgres_rollback_failed', 'scope_query'],
+    ['commit', 'postgres_commit_failed', 'scope_transaction_completion'],
+    ['decode', 'onboarding_input_invalid', 'preparation_decode']
+])('Consultant workspace %s failure preserves the original error and safe read checkpoint', async (boundary, code, checkpoint) => {
     const { h, user, login } = await savedConsultantOwnWorkspace();
     const connect = h.pool.connect;
     const before = [...h.getContainer('starter-authority').records].map(([key, bytes]) => [key, bytes.toString('base64')]);
     let failures = 0;
     h.pool.connect = async () => {
-        if (code === 'postgres_connection_failed') { failures++; throw new Error('synthetic-provider-secret'); }
+        if (boundary === 'connection') { failures++; throw new Error('synthetic-provider-secret'); }
         const client = await connect();
         return { ...client, async query(sql, params) {
+            if (boundary === 'begin' && sql === 'BEGIN' || boundary === 'commit' && sql === 'COMMIT' ||
+                boundary === 'rollback' && sql === 'ROLLBACK') { failures++; throw new Error('synthetic-provider-secret'); }
             if (sql.startsWith('SELECT preparation,activation FROM nofries.dashboard_starter_scopes')) {
-                failures++; throw new Error('synthetic-provider-secret');
+                if (['query', 'rollback'].includes(boundary)) { failures++; throw new Error('synthetic-provider-secret'); }
+                if (boundary === 'decode') { failures++; return { rows: [{ preparation: {}, activation: null }] }; }
+                return { rows: [] };
             }
             return client.query(sql, params);
         } };
     };
     const response = await request(h.app).get('/api/customer-signup/state').set('Cookie', login.cookie);
-    expect(failures).toBe(1);
+    expect(failures).toBe(boundary === 'rollback' ? 2 : 1);
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ error: 'Signup is unavailable', code: 'signup_unavailable' });
-    expect(events()).toEqual([{ timestamp: expect.any(String), code, stage: 'organisation_preparation', supportReference: response.headers['x-nofries-support-reference'] }]);
-    expectPrivate(events(), user, login.cookie, response);
+    const workspaceRead = { phase: 'passive_starter', checkpoint };
+    expect(events()).toEqual([{ timestamp: expect.any(String), code, stage: 'organisation_preparation', supportReference: response.headers['x-nofries-support-reference'], workspaceRead }]);
+    expectPrivate(events(), user, login.cookie, response, workspaceRead);
     expect([...h.getContainer('starter-authority').records].map(([key, bytes]) => [key, bytes.toString('base64')])).toEqual(before);
     expect(h.state.delivered).toHaveLength(2);
     expect(h.pool.receipts.size).toBe(0); expect(h.pool.registrations.size).toBe(0);
@@ -137,8 +150,9 @@ test('production state logs an outer organisation preparation failure but keeps 
     const response = await request(h.app).get('/api/customer-signup/state').set('Cookie', login.cookie);
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ error: 'Signup is unavailable', code: 'signup_unavailable' });
-    expect(events()).toEqual([{ timestamp: expect.any(String), code: 'signup_acceptance_journal_unavailable', stage: 'organisation_preparation', supportReference: response.headers['x-nofries-support-reference'] }]);
-    expectPrivate(events(), user, login.cookie, response);
+    const workspaceRead = { phase: 'passive_state', checkpoint: 'passive_journal' };
+    expect(events()).toEqual([{ timestamp: expect.any(String), code: 'signup_acceptance_journal_unavailable', stage: 'organisation_preparation', supportReference: response.headers['x-nofries-support-reference'], workspaceRead }]);
+    expectPrivate(events(), user, login.cookie, response, workspaceRead);
     expect(h.pool.receipts.size).toBe(0); expect(h.pool.registrations.size).toBe(0);
 });
 
@@ -170,3 +184,4 @@ test('a failing production diagnostic sink cannot change the failed customer sta
     expect(warning).not.toHaveBeenCalled();
     expect(h.pool.receipts.size).toBe(0); expect(h.pool.registrations.size).toBe(0);
 });
+

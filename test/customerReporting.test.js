@@ -204,6 +204,9 @@ test('report document and script are publicly packaged with inherited strict CSP
     expect(response.headers['content-security-policy']).toContain("script-src 'self'; script-src-attr 'none'");
     expect(response.text).toContain('This page does not send email.');
     expect(response.text).toContain('role="status" aria-live="polite"');
+    expect(response.text).toContain('id="report-description-help" class="report-help">Describe the problem and what you expected.</p>');
+    expect(response.text).toContain('aria-describedby="report-description-help report-privacy"');
+    expect(response.text).not.toContain('placeholder="Describe the problem and what you expected."');
     expect(response.text).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/);
     for (const id of ['kind', 'screen', 'description', 'body', 'reviewed']) expect(response.text).toContain('for="report-' + id + '"');
     expect(response.text).not.toMatch(/<(?:form|input|select|textarea)[^>]*\s(?:name|action)=|\sstyle=|\son\w+=/);
