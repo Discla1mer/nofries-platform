@@ -32,9 +32,30 @@ const { customerProductionHarness } = require('./helpers/customerProductionHarne
 require('../server');
 
 test('replacement invitation updates the reviewed subject revision and lost finalization can resume without resending', async () => {
+    // Temporary opt-in synthetic checkpoints. Only fixed labels and monotonic
+    // elapsed milliseconds are emitted; never print arguments or exceptions.
+    const started = process.env.NOFRIES_TEST_TIMING_DIAGNOSTICS === '1' ? process.hrtime.bigint() : null;
+    const allowed = new Set(['harness_start', 'original_login_start', 'original_login_done',
+        'original_consent_start', 'original_consent_done', 'first_provision_start', 'first_provision_done',
+        'retry_provision_start', 'retry_provision_done', 'replay_provision_start', 'replay_provision_done',
+        'replacement_login_start', 'replacement_login_done', 'waiting_state_start', 'waiting_state_done',
+        'replacement_consent_start', 'replacement_consent_done', 'resumed_state_start', 'resumed_state_done']);
+    let emitted = 0;
+    const mark = label => {
+        if (started === null || emitted >= 256) return;
+        if (!allowed.has(label)) throw new Error('unexpected synthetic timing label');
+        const safeLabel = emitted === 255 ? 'trace_limit' : label;
+        emitted++;
+        process.stderr.write(`SYNTHETIC_INVITATION_TIMING ${safeLabel} ${Number((process.hrtime.bigint() - started) / 1000000n)}ms\n`);
+    };
+    mark('harness_start');
     const h = customerProductionHarness(), existing = h.addUser();
+    mark('original_login_start');
     const originalLogin = await h.login(existing);
+    mark('original_login_done');
+    mark('original_consent_start');
     expect((await h.consent(originalLogin.cookie)).response.status).toBe(200);
+    mark('original_consent_done');
     const authorityContainer = h.getContainer('customer-authority');
     const base = authorityContainer.getBlockBlobClient.bind(authorityContainer);
     let loseFinalization = true;
@@ -67,8 +88,12 @@ test('replacement invitation updates the reviewed subject revision and lost fina
         identityTenantId: uid(1), identityPolicyId: 'customer-policy', publicOrigin: h.env.NOFRIES_PUBLIC_URL,
         graph, invitations: new AzureBlobSignupInvitationStore({ containerClient: h.getContainer('nofries-browser-auth') }),
         authorityContainer, now: () => h.state.now };
+    mark('first_provision_start');
     await expect(provisionCustomerInvitation(input)).rejects.toThrow();
+    mark('first_provision_done');
+    mark('retry_provision_start');
     const result = await provisionCustomerInvitation(input);
+    mark('retry_provision_done');
     expect(result.subjectKey).toBe(existing.authority.subjectKey);
     expect(graph.createInvitation).toHaveBeenCalledTimes(1);
     const stored = JSON.parse(authorityContainer.records.get(`customer-subjects/${subjectHash(result.subjectKey)}.json`));
@@ -76,28 +101,38 @@ test('replacement invitation updates the reviewed subject revision and lost fina
     expect(stored).not.toHaveProperty('invitationToken');
     for (const bytes of authorityContainer.records.values()) expect(bytes.toString()).not.toContain(deliveredToken);
     expect(stored.revision).toBe(1); expect(stored.organisationId).toBe('second-org');
+    mark('replay_provision_start');
     expect(await provisionCustomerInvitation(input)).toEqual(result);
+    mark('replay_provision_done');
     expect(graph.createInvitation).toHaveBeenCalledTimes(1);
     const replacement = { invitationToken: deliveredToken, authority: stored };
+    mark('replacement_login_start');
     const login = await h.login(replacement); expect(login.response.status).toBe(303);
+    mark('replacement_login_done');
+    mark('waiting_state_start');
     const waiting = await require('supertest')(h.app).get('/api/customer-signup/state').set('Cookie', login.cookie);
+    mark('waiting_state_done');
     expect(waiting.body.state).toEqual({ status: 'pending_preparation' });
     expect(waiting.body.csrfToken).toBeUndefined();
     expect(h.pool.receipts.size).toBe(1);
     // Invitation replacement does not prepare its new canonical organisation.
     // Represent that separately approved preparation in this SQL-only fixture.
     h.prepareUser(replacement);
+    mark('replacement_consent_start');
     const replacementConsent = await h.consent(login.cookie);
+    mark('replacement_consent_done');
     expect(replacementConsent.before.body.state).toEqual(expect.objectContaining({ status: 'terms',
         scheduleId, scheduleDigest }));
     expect(replacementConsent.response.body).toEqual({ state: { status: 'pending_admission' } });
     const { tokenDigest } = require('../api/shared/customerSignup/invitationAcceptance');
     h.getContainer('nofries-browser-auth').records.delete(`browser-auth/customer-signup/invitations/${tokenDigest(deliveredToken)}.json`);
+    mark('resumed_state_start');
     const resumed = await require('supertest')(h.app).get('/api/customer-signup/state').set('Cookie', login.cookie);
+    mark('resumed_state_done');
     expect(resumed.body.state.status).toBe('pending_admission');
     expect(h.pool.receipts.size).toBe(2);
 
-});
+}, 20000); // Full synthetic multi-request journey; production deadlines are unchanged.
 
 test('an already redeemed exact guest can receive a capability without resetting redemption', async () => {
     const existing = { id: uid(3), mail: 'customer@example.test', userType: 'Guest' };

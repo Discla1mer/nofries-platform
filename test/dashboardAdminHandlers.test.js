@@ -193,13 +193,30 @@ describe('dashboard administration HTTP boundary with genuine BFF record validat
 
     test('timeout withholds output and prevents a late policy from starting lookup', async () => {
         const h = await harness();
-        let finish;
-        h.service.authorise.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+        let finish, enteredPolicy;
+        const policyEntered = new Promise(resolve => { enteredPolicy = resolve; });
+        h.service.authorise.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; enteredPolicy(); }));
         const handler = createDashboardAdminHandlers({ service: h.service, readOperatorSession: h.readOperatorSession, env: h.env, requestBudgetMs: 10 });
-        expectPrivate(await handler.handle(wire({ method: 'POST', route: 'lookup', body: SELECTOR }), 'lookup'), 503, 'dashboard_admin_unavailable');
-        finish();
-        await new Promise(resolve => setImmediate(resolve));
-        expect(h.service.lookup).not.toHaveBeenCalled();
+        // Start the budget only after the request is ready, then advance the
+        // clock after the policy is actually waiting; host load cannot make the
+        // test time out before it exercises the late-policy boundary.
+        jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+        try {
+            const pending = handler.handle(wire({ method: 'POST', route: 'lookup', body: SELECTOR }), 'lookup');
+            const entered = await Promise.race([
+                policyEntered.then(() => true), pending.then(() => false)
+            ]);
+            expect(entered).toBe(true);
+            expect(h.service.authorise).toHaveBeenCalledTimes(1);
+            expect(h.service.lookup).not.toHaveBeenCalled();
+            await jest.advanceTimersByTimeAsync(10);
+            expectPrivate(await pending, 503, 'dashboard_admin_unavailable');
+            finish();
+            await new Promise(resolve => setImmediate(resolve));
+            expect(h.service.lookup).not.toHaveBeenCalled();
+        } finally {
+            jest.useRealTimers();
+        }
     });
 
     test('incomplete body expires with handler budget and releases parser listeners without source work', async () => {

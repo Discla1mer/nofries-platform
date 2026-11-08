@@ -1,7 +1,7 @@
 # Dashboard frontend and backend map
 
 This is an integration map, not a status tracker or a claim that every capability
-is deployed. Start at [#17](https://github.com/Discla1mer/NoFries/issues/17), then the
+is deployed. Start at [#686](https://github.com/Discla1mer/NoFries/issues/686), then the
 selected issue, existing ExecPlan and exact source/test/live evidence. The
 [four-platform operating model](four-platform-operating-model.md) owns cross-system
 responsibilities; [engineering continuation](engineering-workflow.md) covers handoffs.
@@ -17,7 +17,7 @@ a full marketing redesign need not block a working first customer journey.
 Keep managed-IT discovery/prospect chat separate from account membership. Do not
 expose protected bundles or development fixtures as an anonymous dashboard demo.
 
-**Signed-in dashboard — [#17](https://github.com/Discla1mer/NoFries/issues/17).**
+**Signed-in dashboard — [#686](https://github.com/Discla1mer/NoFries/issues/686).**
 The source route is `/dashboard`, using `lib/dashboardDocument.js` and
 `app/dashboard.html`. `server.js` separately composes protected `/api/dashboard`
 handlers when configured. An HTML shell does not establish a session, enable a
@@ -106,7 +106,7 @@ linkage, consuming the evidence metadata contract) → #276 Stage C (IMP-004
 integrated plan interface).** Preserve original acceptance; do not add reciprocal
 whole-issue blockers. Independent source/layout work may proceed before downstream
 completion; joined acceptance still requires backend contracts and tests.
-#289 may progress alongside #17, but public account-entry claims must match the
+#289 may progress alongside #686, but public account-entry claims must match the
 verified #273/#274/#275 journey.
 
 ## Evidence and maintenance

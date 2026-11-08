@@ -247,10 +247,15 @@ test('hard timeout rejects a provider that ignores abort and its late result can
     const h = fixture(); let resume, entered;
     const waiting = new Promise(resolve => { entered = resolve; });
     h.state.hook = async () => { entered(); await new Promise(resolve => { resume = resolve; }); };
-    const reader = createDashboardAdminApprovalReader({ ...h.config, requestBudgetMs: 25 });
-    const pending = reader.readApprovedBinding(query), result = expect(pending).rejects.toMatchObject(unavailable);
-    await waiting; await result; h.state.hook = null; resume();
+    const reader = createDashboardAdminApprovalReader({ ...h.config, requestBudgetMs: 1000 });
+    jest.useFakeTimers();
+    try {
+        const pending = reader.readApprovedBinding(query), result = expect(pending).rejects.toMatchObject(unavailable);
+        await waiting; await jest.advanceTimersByTimeAsync(1000); await result;
+    } finally { jest.useRealTimers(); }
+    h.state.hook = null; resume();
     await new Promise(resolve => setImmediate(resolve));
+    expect(h.streams).toHaveLength(1);
     expect(h.streams.every(stream => stream.destroyed)).toBe(true);
     h.blobs.delete(headKey(target)); await expect(reader.readApprovedBinding(query)).resolves.toBeNull();
 });
