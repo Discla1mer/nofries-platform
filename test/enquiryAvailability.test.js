@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const { createEnquiryService } = require('../api/shared/enquiry');
 const { createEnquiryFunction } = require('../api/enquiry');
-const ENV = { RESEND_API_KEY: 'not-a-real-key', NOFRIES_ENQUIRY_EMAIL_FROM: 'web@example.invalid' };
+const ENV = { NOFRIES_ENQUIRY_RATE_LIMIT_BLOB_URL: 'https://example.blob.core.windows.net/enquiry-rate-limit/public-enquiry-v1.json', RESEND_API_KEY: 'not-a-real-key', NOFRIES_ENQUIRY_EMAIL_FROM: 'web@example.invalid' };
 
 describe('public enquiry configuration status', () => {
     test.each([
@@ -11,19 +11,23 @@ describe('public enquiry configuration status', () => {
         [{ ...ENV, RESEND_API_KEY: ' ' }, false, false],
         [{ ...ENV, NOFRIES_ENQUIRY_EMAIL_FROM: '' }, false, false],
         [ENV, true, false],
+        [{ ...ENV, NOFRIES_ENQUIRY_RATE_LIMIT_BLOB_URL: '' }, false, false],
+        [{ ...ENV, NOFRIES_ENQUIRY_RATE_LIMIT_BLOB_URL: ENV.NOFRIES_ENQUIRY_RATE_LIMIT_BLOB_URL + '?sig=not-a-real-secret', NOFRIES_ENQUIRY_DELIVERY_VERIFIED: 'true' }, false, false],
         [{ ...ENV, NOFRIES_ENQUIRY_DELIVERY_VERIFIED: 'false' }, true, false],
         [{ ...ENV, NOFRIES_ENQUIRY_DELIVERY_VERIFIED: 'TRUE' }, true, false],
         [{ ...ENV, NOFRIES_ENQUIRY_DELIVERY_VERIFIED: 'true' }, true, true],
         [{ NOFRIES_ENQUIRY_DELIVERY_VERIFIED: 'true' }, false, false]
     ])('returns only safe booleans without sending mail (%#)', async (env, available, promote) => {
         const fetchImpl = jest.fn();
-        const service = createEnquiryService({ env, fetchImpl });
+        const rateLimiter = { reserve: jest.fn(() => { throw Error('GET must not reserve'); }) };
+        const service = createEnquiryService({ env, fetchImpl, rateLimiter });
         const context = {};
         await createEnquiryFunction(service)(context, { method: 'GET' });
         expect(context.res.status).toBe(200);
         expect(context.res.body).toEqual({ available, promote });
         expect(context.res.headers['Cache-Control']).toContain('no-store');
         expect(fetchImpl).not.toHaveBeenCalled();
+        expect(rateLimiter.reserve).not.toHaveBeenCalled();
         expect(JSON.stringify(context.res)).not.toContain(ENV.RESEND_API_KEY);
     });
     test('status is a GET route with anonymous read-only access', () => {
