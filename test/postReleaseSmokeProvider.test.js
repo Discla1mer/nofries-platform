@@ -52,20 +52,37 @@ test.each(['current public', 'earlier counterpart', 'simplified'])('full read-on
     const report = await runSmoke({ baseUrl: 'https://example.invalid', expectSha: sha, fetchImpl: async (url, init) => {
         calls.push({ path: url.pathname, init });
         const path = url.pathname;
-        if (path === '/signup' || path === '/login' || path === '/dashboard') return new Response(path === '/dashboard' ? gateway : html,
+        if (path === '/signup' || path === '/login' || path === '/dashboard') return new Response(path === '/dashboard' ? gateway : path === '/login' ? login : html,
             { headers: { 'content-type': 'text/html' } });
         if (path === '/api/health' || path === '/release.json') return new Response(JSON.stringify({ status: 'ok', releaseSha: sha }));
         if (path === '/api/customer-signup/state') return new Response(state(200).text);
         if (path === '/api/external-customer-signup/state') return new Response('{}', { status: 410 });
-        if (path.includes('organisation-setup/state')) return new Response(JSON.stringify({ state: 'start' }));
+        if (path.includes('organisation-setup/state')) return new Response(JSON.stringify({ state: 'start' }), { headers: { 'content-type': 'application/json', 'x-nofries-customer-entry': 'legacy' } });
         if (path === '/api/dashboard/login') return new Response(null, { status: 302, headers: { location: '/login' } });
         return new Response('{}', { status: 401 });
     } });
     expect(report).toMatchObject({ ok: true, readOnly: true });
     expect(formatReport(report)).toContain('PASS post-release smoke: 11/11 checks passed.');
     expect(calls.map(call => call.path).sort()).toEqual([...READ_ONLY_PATHS].sort());
-    for (const { init } of calls) {
+    for (const { path, init } of calls) {
         expect(init).toMatchObject({ method: 'GET', credentials: 'omit', redirect: 'manual' });
-        expect(init.body).toBeUndefined(); expect(Object.keys(init.headers)).toEqual(['Accept']);
+        expect(init.body).toBeUndefined(); expect(init.headers).toEqual({ Accept: 'application/json, text/html', ...(path === '/api/organisation-setup/state' ? { 'X-NoFries-Customer-Entry': 'auto' } : {}) });
     }
+});
+const login = read('../login.html'), externalLogin = login.replace('<body ', '<body data-customer-provider="external" ');
+const setup = READ_ONLY_CHECKS.find(c => c.name === 'organisation setup is available');
+test.each([
+    ['automatic legacy', login, 200, 'legacy', 503, 200, 503, true],
+    ['broken selected legacy', login, 503, 'legacy', 200, 200, 200, false],
+    ['missing automatic selection', login, 200, '', 200, 200, 200, false],
+    ['automatic external handoff', login, 200, 'external', 503, 503, 200, true],
+    ['broken external handoff', login, 200, 'external', 200, 200, 503, false],
+    ['explicit external', externalLogin, 503, '', 200, 503, 200, true],
+    ['broken selected external', externalLogin, 200, 'legacy', 503, 200, 200, false],
+    ['legacy signup fallback', legacy, 503, '', 503, 200, 503, true],
+    ['external signup fallback', external, 503, '', 503, 503, 200, true],
+    ['unknown login', '<html></html>', 200, 'legacy', 200, 200, 200, false]
+])('login follows %s without an inactive provider masking failure', (_, html, a, entry, b, c, d, ok) => {
+    const setupState = status => ({ status, entry, type: 'application/json', text: '{"state":"start"}' });
+    expect(setup.check([{ status: 200, text: html }, setupState(a), setupState(b), state(c), state(d)]) === null).toBe(ok);
 });

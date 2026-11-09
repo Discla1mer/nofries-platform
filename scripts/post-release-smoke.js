@@ -1,6 +1,6 @@
 'use strict';
 // Explicit, credential-free GET smoke; no scheduler, redirects or auth-start routes.
-// See docs/post-release-journey-check.md for usage and limits.
+// Usage: node scripts/post-release-smoke.js --base-url https://example.invalid --expect-sha <40-hex>
 const SHA = /^[0-9a-f]{40}$/;
 const TIMEOUT_MS = 15000;
 function json(response) {
@@ -41,10 +41,19 @@ const READ_ONLY_CHECKS = [
         return r.status === 200 && json(r)?.state?.status === 'create_account' ? null
             : `${usesExternal ? '/api/external-customer-signup/state' : '/api/customer-signup/state'}: expected create_account, got HTTP ${r.status}`;
     } },
-    { name: 'organisation setup is available', paths: ['/api/organisation-setup/state', '/api/external-organisation-setup/state'], check(results) {
-        // A fresh visitor sees 'start' (setup enabled) or 'sign_in' (sign-in entry only).
-        return results.some(r => r.status === 200 && ['start', 'sign_in'].includes(json(r)?.state)) ? null
-            : 'status ' + results.map(r => r.status).join('/');
+    { name: 'organisation setup is available', paths: ['/login', '/api/organisation-setup/state', '/api/external-organisation-setup/state', '/api/customer-signup/state', '/api/external-customer-signup/state'], check([page, legacy, external, signup, externalSignup]) {
+        const ready = r => r.status === 200 && json(r)?.state?.status === 'create_account';
+        const provider = signupProvider(page.text);
+        if (provider) return ready(provider === 'external' ? externalSignup : signup) ? null : 'selected login signup unavailable';
+        const bodies = [...page.text.matchAll(/<body\b[^>]*>/gi)];
+        const markers = [...(bodies[0]?.[0] || '').matchAll(/\bdata-customer-provider="([^"]*)"/g)];
+        if (bodies.length !== 1 || !page.text.includes('<script src="/js/organisation-setup.js" defer></script>') ||
+            (bodies[0][0].match(/data-customer-provider/gi) || []).length !== markers.length || markers.length > 1 ||
+            markers.length && !['external', 'legacy', 'auto'].includes(markers[0][1])) return 'login provider selection unavailable';
+        const explicitExternal = markers[0]?.[1] === 'external', r = explicitExternal ? external : legacy;
+        const ok = r.status === 200 && /^application\/json\b/i.test(r.type) && ['start', 'sign_in'].includes(json(r)?.state) &&
+            (explicitExternal || r.entry === 'legacy' || r.entry === 'external' && ready(externalSignup));
+        return ok ? null : 'selected login entry unavailable';
     } },
     { name: 'dashboard login sends visitors to /login', paths: ['/api/dashboard/login'], check([r]) {
         return [302, 303].includes(r.status) && r.location === '/login' ? null : `status ${r.status}`;
@@ -83,9 +92,9 @@ async function runSmoke({ baseUrl, expectSha = null, allowHttp = false, fetchImp
         if (!cache.has(path)) cache.set(path, (async () => {
             try {
                 const response = await fetchImpl(new URL(path, base), { method: 'GET', redirect: 'manual',
-                    credentials: 'omit', headers: { Accept: 'application/json, text/html' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+                    credentials: 'omit', headers: { Accept: 'application/json, text/html', ...(path === '/api/organisation-setup/state' ? { 'X-NoFries-Customer-Entry': 'auto' } : {}) }, signal: AbortSignal.timeout(TIMEOUT_MS) });
                 return { status: response.status, location: response.headers.get('location') || '',
-                    type: response.headers.get('content-type') || '', text: await response.text() };
+                    type: response.headers.get('content-type') || '', entry: response.headers.get('x-nofries-customer-entry') || '', text: await response.text() };
             } catch (_) { return { status: 0, location: '', type: '', text: '' }; }
         })());
         return cache.get(path);

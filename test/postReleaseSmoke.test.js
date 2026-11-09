@@ -5,7 +5,6 @@ const SHA = 'a'.repeat(40);
 jest.mock('../api/shared/releaseManifest.json', () => ({ schemaVersion: 2, releaseSha: 'a'.repeat(40), runId: '1' }));
 const { runSmoke, parseArgs, formatReport, READ_ONLY_PATHS } = require('../scripts/post-release-smoke');
 const { customerProductionHarness } = require('./helpers/customerProductionHarness');
-const { buildSignupDocument } = require('../lib/signupDocument');
 let servers = [];
 beforeAll(() => { jest.spyOn(console, 'warn').mockImplementation(() => {}); });
 afterEach(async () => { await Promise.all(servers.map(s => new Promise(r => s.close(r)))); servers = []; });
@@ -55,7 +54,7 @@ test.each(Object.entries(CONFIGS))('every default probe is write-free with %s', 
     const { h, snapshot } = tracked(options), base = await serve(h);
     for (const path of READ_ONLY_PATHS) {
         const before = snapshot();
-        await fetch(base + path, { redirect: 'manual' });
+        await fetch(base + path, { redirect: 'manual', headers: path === '/api/organisation-setup/state' ? { 'X-NoFries-Customer-Entry': 'auto' } : {} });
         expect([path, snapshot()]).toEqual([path, before]);
     }
 });
@@ -90,11 +89,11 @@ test('treats an unreachable site as a failure on every check', async () => {
 test('only issues credential-free GET requests without following redirects', async () => {
     const calls = [];
     await runSmoke({ baseUrl: 'https://example.invalid',
-        fetchImpl: (url, init) => { calls.push(init); return Promise.reject(new Error('offline')); } });
+        fetchImpl: (url, init) => { calls.push({ path: url.pathname, init }); return Promise.reject(new Error('offline')); } });
     expect(calls.length).toBe(READ_ONLY_PATHS.length);
-    for (const init of calls) {
+    for (const { path, init } of calls) {
         expect(init).toMatchObject({ method: 'GET', redirect: 'manual', credentials: 'omit' });
-        expect(Object.keys(init.headers)).toEqual(['Accept']); expect(init.body).toBeUndefined();
+        expect(init.headers).toEqual({ Accept: 'application/json, text/html', ...(path === '/api/organisation-setup/state' ? { 'X-NoFries-Customer-Entry': 'auto' } : {}) }); expect(init.body).toBeUndefined();
     }
 });
 test('rejects unsafe targets and unknown arguments', async () => {
@@ -140,20 +139,12 @@ test.each(['https://user:synthetic-secret@example.invalid', 'https://example.inv
 test('CLI returns 0 for pass, 1 for failed checks and 2 for invalid arguments', async () => {
     const { spawn } = require('node:child_process');
     const http = require('node:http');
-    const read = path => require('node:fs').readFileSync(require.resolve(path), 'utf8');
-    const signupHtml = buildSignupDocument({ customerLogin: true,
-        clientSource: read('../api/shared/customerSignup/signupClient.js'),
-        journeySource: read('../api/shared/customerSignup/signupJourney.js') }).html;
     let missingAssessment = false;
+    const { h } = tracked({ starter: true });
     const server = http.createServer((req, res) => {
-        const path = req.url;
-        res.setHeader('content-type', 'application/json');
-        if (path === '/api/health' || path === '/release.json') return res.end(JSON.stringify({ status: 'ok', releaseSha: SHA }));
-        if (['/signup', '/login', '/dashboard'].includes(path)) { res.setHeader('content-type', 'text/html'); return res.end(signupHtml); }
-        if (path === '/api/customer-signup/state') return res.end(JSON.stringify({ state: { status: 'create_account' } }));
-        if (path.includes('organisation-setup')) return res.end(JSON.stringify({ state: 'start' }));
-        if (path === '/api/dashboard/login') { res.writeHead(302, { location: '/login' }); return res.end(); }
-        res.statusCode = missingAssessment && path.endsWith('/assessments') ? 404 : 401; res.end('{}');
+        if (req.url === '/release.json') return res.end(JSON.stringify({ releaseSha: SHA }));
+        if (missingAssessment && req.url.endsWith('/assessments')) { res.statusCode = 404; return res.end('{}'); }
+        h.app(req, res);
     });
     server.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r)); servers.push(server);
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -181,6 +172,6 @@ test('external-only signup passes and cannot hide a broken selected provider beh
         if (url.pathname === '/api/external-customer-signup/state') return Promise.resolve(new Response('{}', { status: 503 }));
         return releasedFetch()(url, init);
     } });
-    expect(failed(broken)).toEqual(['signup starts at create_account']);
+    expect(failed(broken)).toEqual(['signup starts at create_account', 'organisation setup is available']);
     expect(formatReport(broken)).toContain('/api/external-customer-signup/state: expected create_account, got HTTP 503');
 });
