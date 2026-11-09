@@ -298,33 +298,39 @@ async function boundHost({ provider = 'legacy', role = 'admin', approval = true,
 const boundList = (h, cursor = null, cookie = h.cookie) => request(h.app).post('/api/dashboard-admin/signups')
     .set('Cookie', cookie).set('Origin', h.env.NOFRIES_PUBLIC_URL).set('Sec-Fetch-Site', 'same-origin').send({ cursor });
 
-test('environment lookup composition needs current approval and native session without adopting signup writers', async () => {
+test('the staff console flag composes read-only lookup from settings alone, without a locator, approval record or signup writer adoption', async () => {
     const h = await boundHost();
     delete h.env[SETTING];
-    h.env.NOFRIES_DASHBOARD_ADMIN_LOOKUP_AUTHORITY_CONTAINER = h.selected.authorityContainer;
-    h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP = 'true';
+    h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP = 'true'; h.env.NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER = 'admin-audit';
     h.app = createProductionApplication(h.env, h.dependencies);
+    // The legacy switch alone composes nothing; a listing-only host advertised lookup:false above.
+    expect((await request(h.app).get('/api/dashboard-admin/entry-capabilities').set('Cookie', h.cookie)).status).toBe(503);
+    h.env.NOFRIES_STAFF_CONSOLE = 'true'; h.app = createProductionApplication(h.env, h.dependencies);
     expect((await request(h.app).get('/api/dashboard-admin/entry-capabilities').set('Cookie', h.cookie)).status).toBe(200);
-    expect((await request(h.app).get('/api/dashboard-admin/capabilities').set('Cookie', h.cookie)).status).toBe(403);
-    const { headKey, revisionKey } = require('../api/shared/dashboardAdmin/approvalRecords');
-    const target = { instanceId: h.dashboard.instanceId, operatorSubjectKey: SUBJECT, purpose: 'signup_support' };
-    const approved = { schemaVersion: 1, bindingId: uid(777), revision: 0, status: 'active', action: 'dashboard.authority.read', ...target,
-        selector: { provider: 'legacy', subjectKey: uid(778) + ':' + uid(779), tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
-        approvedAt: h.state.now, validFrom: h.state.now, validUntil: new Date(Date.parse(h.state.now) + 3600000).toISOString(),
-        approvalReference: 'synthetic-reviewed-decision', identityPolicy: { policyId: h.dashboard.identityPolicy.policyId,
-            policyRevision: h.dashboard.identityPolicy.policyRevision }, auditPolicy: h.policy.auditPolicy };
-    const record = { schemaVersion: 1, recordType: 'dashboard_admin_approval_revision', ...target,
-        restoreEpoch: h.state.epoch, revision: 0, status: 'active', changedAt: h.state.now,
-        decisionReference: approved.approvalReference, binding: approved };
-    const head = { schemaVersion: 1, recordType: 'dashboard_admin_approval_head', ...target,
-        restoreEpoch: h.state.epoch, revision: 0, status: 'active', recordSha256: hash(record) };
-    h.put(h.env.AZURE_STORAGE_ACCOUNT_NAME, h.selected.authorityContainer, revisionKey(target, hash(record)), record);
-    h.put(h.env.AZURE_STORAGE_ACCOUNT_NAME, h.selected.authorityContainer, headKey(target), head);
     const capabilities = await request(h.app).get('/api/dashboard-admin/capabilities').set('Cookie', h.cookie);
     expect(capabilities.status).toBe(200); expect(capabilities.body).toEqual({ lookup: true, recovery: [] });
     expect((await request(h.app).get('/api/dashboard-admin/accounts/app.js').set('Cookie', h.cookie)).status).toBe(200);
+    expect((await request(h.app).post('/api/dashboard-admin/signups').set('Cookie', h.cookie)
+        .set('Origin', h.env.NOFRIES_PUBLIC_URL).set('Sec-Fetch-Site', 'same-origin').send({ cursor: null })).status).toBe(404);
+    // Selector lookup is approval-free but still behind the native gate: a wrong
+    // scope or missing membership reads nothing from customer stores here.
+    const selector = { provider: 'legacy', subjectKey: uid(778) + ':' + uid(779), tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' };
+    const lookup = await request(h.app).post('/api/dashboard-admin/lookup').set('Cookie', h.cookie)
+        .set('Origin', h.env.NOFRIES_PUBLIC_URL).set('Sec-Fetch-Site', 'same-origin').send(selector);
+    expect([200, 503]).toContain(lookup.status); privateResult(lookup);
+    expect(h.trace.reads.filter(x => x.account === h.env.AZURE_STORAGE_ACCOUNT_NAME)).toEqual([]);
     expect(h.trace.writes).toEqual([]); expect(h.trace.lists).toEqual([]);
-    h.env[ENABLED_SETTING] = 'false'; h.app = createProductionApplication(h.env, h.dependencies);
+    // The lookup flag turns off email and selector lookup together.
+    for (const value of ['false', null]) {
+        if (value === null) delete h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP; else h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP = value;
+        h.app = createProductionApplication(h.env, h.dependencies);
+        expect((await request(h.app).get('/api/dashboard-admin/accounts/app.js').set('Cookie', h.cookie)).status).toBe(404);
+        expect((await request(h.app).get('/api/dashboard-admin/capabilities').set('Cookie', h.cookie)).status).toBe(503);
+        expect((await request(h.app).post('/api/dashboard-admin/lookup').set('Cookie', h.cookie)
+            .set('Origin', h.env.NOFRIES_PUBLIC_URL).set('Sec-Fetch-Site', 'same-origin').send(selector)).status).toBe(503);
+    }
+    h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP = 'true';
+    h.env.NOFRIES_STAFF_CONSOLE = 'false'; h.app = createProductionApplication(h.env, h.dependencies);
     expect((await request(h.app).get('/api/dashboard-admin/entry-capabilities').set('Cookie', h.cookie)).status).toBe(503);
 }, HOST_TEST_TIMEOUT_MS);
 function privateResult(response) {

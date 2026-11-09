@@ -95,8 +95,10 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
         readOperatorSession !== null && typeof readOperatorSession !== 'function' ||
         !Number.isSafeInteger(requestBudgetMs) || requestBudgetMs <= 0 || requestBudgetMs > 60000) throw new Error('dashboard_admin_configuration_invalid');
 
+    // The route flag stays required; the reader and its durable audit writer
+    // come only from the host's environment composition, never from a header.
     const accountLookup = env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP === 'true' && accountLookupReader
-        ? createAccountLookup({ read: accountLookupReader, readJson, env }) : null;
+        ? createAccountLookup({ read: accountLookupReader.read, audit: accountLookupReader.audit, targetDigest: accountLookupReader.targetDigest, readJson, env }) : null;
 
     async function principal(request, expected = null) {
         if ((!service && !signupListService) || !readOperatorSession) fail(503, 'dashboard_admin_unavailable');
@@ -150,9 +152,13 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
         try {
             if (['accounts/lookup', 'accounts/app.js'].includes(route)) {
                 if (!accountLookup) fail(404, 'dashboard_admin_not_found');
-                return await accountLookup(request, route, async (selector = null) => {
+                return await accountLookup(request, route, async () => {
                     const actor = await checked(() => principal(request));
-                    await checked(() => permission(actor, 'lookup', selector, checked));
+                    // The client script carries no customer data and is what
+                    // opens the native operator session; it needs the staff
+                    // identity and admin role only. Every lookup still passes
+                    // the native gate, issuance proof and epoch checks.
+                    if (route !== 'accounts/app.js') await checked(() => permission(actor, 'lookup', null, checked));
                     return actor;
                 }, signal);
             }

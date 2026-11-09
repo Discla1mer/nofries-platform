@@ -74,7 +74,6 @@ const { startStandaloneHost } = require('./lib/hostStartup');
 const { createDashboardRuntimeHandlers } = require('./api/shared/dashboardRuntimeHandlers');
 const { createDashboardAdminService } = require('./api/shared/dashboardAdmin/service');
 const { createSignupListService } = require('./api/shared/dashboardAdmin/signupService');
-const { createProductionAccountLookup } = require('./api/shared/dashboardAdmin/accountLookupStore');
 const { createDashboardAdminHandlers } = require('./api/shared/dashboardAdmin/handlers');
 const { createCustomerSignupRuntime, customerSignupErrorResponse } = require('./api/shared/customerSignup/customerSignupRuntime');
 const { withSignupSupportContext } = require('./api/shared/customerSignup/signupSupportContext');
@@ -116,13 +115,13 @@ function createNoFriesApp(configuration = {}) {
         const invocation = nativeAdminInvocation();
         return Object.freeze({ request: invocation.request, signal: AbortSignal.any([signal, invocation.signal]) });
     };
-    let dashboardAdminSignupListService = null, dashboardAdminAccountActions = null;
+    let dashboardAdminSignupListService = null, dashboardAdminAccountActions = null, dashboardAdminAccountLookup = null;
     let dashboard = null, customerSignup = null, externalCustomerSignup = null, authEnvironment = null, retainedTrialRead = null, dashboardAdminService = null, dashboardAdminRequestBudgetMs = 10000;
     try {
         if (!configuration || typeof configuration !== 'object' || isProxy(configuration)) throw new Error();
         const keys = Reflect.ownKeys(configuration);
         fields(configuration, keys);
-        if (keys.some(key => !['dashboard', 'dashboardAdmin', 'dashboardAdminSignupList', 'dashboardAdminAccountActions', 'customerSignup', 'externalCustomerSignup', 'signupBootstrap', 'organisationSetup', 'externalOrganisationSetup', 'starterClients', 'externalStarterClients', 'customerEntry', 'retainedTrialRead', 'tryDemo'].includes(key))) throw new Error();
+        if (keys.some(key => !['dashboard', 'dashboardAdmin', 'dashboardAdminSignupList', 'dashboardAdminAccountActions', 'dashboardAdminAccountLookup', 'customerSignup', 'externalCustomerSignup', 'signupBootstrap', 'organisationSetup', 'externalOrganisationSetup', 'starterClients', 'externalStarterClients', 'customerEntry', 'retainedTrialRead', 'tryDemo'].includes(key))) throw new Error();
         if (keys.includes('customerEntry') && configuration.customerEntry !== 'external') throw new Error();
         if (keys.includes('tryDemo') && configuration.tryDemo !== true) throw new Error();
         if (keys.includes('starterClients') && typeof configuration.starterClients !== 'function') throw new Error();
@@ -207,6 +206,13 @@ function createNoFriesApp(configuration = {}) {
             dashboardAdminRequestBudgetMs = dashboardAdminService
                 ? Math.max(dashboardAdminRequestBudgetMs, port.requestBudgetMs) : port.requestBudgetMs;
         }
+        if (keys.includes('dashboardAdminAccountLookup') && configuration.dashboardAdminAccountLookup !== null) {
+            // Email lookup needs the same staff administration service that
+            // validates the native operator session; a reader alone is inert.
+            const port = fields(configuration.dashboardAdminAccountLookup, ['read', 'audit', 'targetDigest']);
+            if (!dashboardAdminService || Object.values(port).some(value => typeof value !== 'function' || isProxy(value))) throw new Error();
+            dashboardAdminAccountLookup = Object.freeze({ ...port });
+        }
         if (keys.includes('dashboardAdminAccountActions') && authEnvironment?.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true') {
             if (!dashboardAdminService) throw new Error();
             dashboardAdminAccountActions = require('./api/shared/dashboardAdmin/accountActionsRuntime').createAccountActionsRuntime(
@@ -231,7 +237,7 @@ function createNoFriesApp(configuration = {}) {
     const dashboardAdmin = createDashboardAdminHandlers({ service: dashboardAdminService,
         accountActions: dashboardAdminAccountActions,
         signupListService: dashboardAdminSignupListService,
-        accountLookupReader: createProductionAccountLookup(apiEnvironment),
+        accountLookupReader: dashboardAdminAccountLookup,
         readOperatorSession: dashboard ? cookie => dashboard.authServices.session.readSessionDetails(cookie) : null,
         env: apiEnvironment, requestBudgetMs: dashboardAdminRequestBudgetMs });
 
