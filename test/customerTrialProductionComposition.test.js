@@ -5,7 +5,7 @@ const { customerProductionHarness, uid } = require('./helpers/customerProduction
 const { retainedTrialFixture, clone } = require('./fixtures/retainedTrialReadFixture');
 const { subjectHash } = require('../api/shared/customerSignup/customerAuthority');
 const { starterAccountKey } = require('../api/shared/customerSignup/starterAccountAllocation');
-const { THREE_MONTH_PLAN_ID, LEGACY_PLAN_ID, approvedStarterPlan } = require('../api/shared/customerSignup/customerStarterPlan');
+const { THREE_MONTH_PLAN_ID, THREE_MONTH_PLAN_R3_ID, LEGACY_PLAN_ID, approvedStarterPlan } = require('../api/shared/customerSignup/customerStarterPlan');
 const { normaliseSessionRow } = require('../api/shared/appLifecycle/dashboardRuntimeRecords');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -90,19 +90,20 @@ test('ordinary production composition leaves the new route off and accepts no br
 
 test('trusted pilot selection is closed and refuses a new offer without its retained-read source mount', () => {
     for (const trial of [{ planId: THREE_MONTH_PLAN_ID, retainedRead: false }, { planId: 'unknown', retainedRead: true },
-        { planId: LEGACY_PLAN_ID, retainedRead: 'true' }, { planId: THREE_MONTH_PLAN_ID, retainedRead: true, qa: true }]) {
+        { planId: LEGACY_PLAN_ID, retainedRead: 'true' }, { planId: THREE_MONTH_PLAN_R3_ID, retainedRead: false }, { planId: THREE_MONTH_PLAN_ID, retainedRead: true, qa: true }]) {
         assert.throws(() => customerProductionHarness({ starter: true, external: true,
             configureExternal({ dependencies }) { dependencies.externalCustomer.trial = trial; } }));
     }
 });
 
-for (const selectNew of [false, true]) test(`actual setup uses only the trusted selected offer (three months=${selectNew})`, async () => {
+for (const selected of [LEGACY_PLAN_ID, THREE_MONTH_PLAN_ID, THREE_MONTH_PLAN_R3_ID]) test(`actual setup uses only the trusted selected offer (${selected})`, async () => {
+    const selectNew = selected !== LEGACY_PLAN_ID;
     const h = customerProductionHarness({ starter: true, external: true, configureExternal({ dependencies }) {
-        if (selectNew) dependencies.externalCustomer.trial = { planId: THREE_MONTH_PLAN_ID, retainedRead: true };
+        if (selectNew) dependencies.externalCustomer.trial = { planId: selected, retainedRead: true };
     } });
-    const plan = approvedStarterPlan(selectNew ? THREE_MONTH_PLAN_ID : LEGACY_PLAN_ID);
+    const plan = approvedStarterPlan(selected);
     if (selectNew) {
-        const termsText = fs.readFileSync(path.join(__dirname, '../docs/legal/drafts/nf-dashboard-2026-10-r3.txt'), 'utf8');
+        const termsText = fs.readFileSync(path.join(__dirname, `../docs/legal/drafts/${plan.termsVersion}.txt`), 'utf8');
         h.getContainer('customer-authority').records.set(`customer-terms/${plan.termsDigest}.json`,
             Buffer.from(JSON.stringify({ termsText, termsVersion: plan.termsVersion, termsDigest: plan.termsDigest })));
     }

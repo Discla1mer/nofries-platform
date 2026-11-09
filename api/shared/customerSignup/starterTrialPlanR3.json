@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "planId": "nf-starter-2026-11-r3",
+  "approvalRef": "claude-session:session_01UZM29rJ7BmzeXbJH72MBhn:owner-approval-2026-11-09",
+  "approvedAt": "2026-11-09T00:00:00.000Z",
+  "durationMonths": 3,
+  "assessmentSubmissionsPerOrganisation": null,
+  "usersPerOrganisation": 1,
+  "companyOrganisations": 1,
+  "consultantWorkspaces": 1,
+  "consultantClientOrganisations": 3,
+  "priceNzd": 0,
+  "automaticPaidConversion": false,
+  "aiRequests": 0,
+  "evidenceBytes": 0,
+  "reportExports": 0,
+  "deleteDataAtExpiry": false,
+  "readSavedResultsAfterExpiry": true,
+  "termsVersion": "nf-dashboard-2026-11-r4",
+  "termsDigest": "737a94879458d795e4a8b3296773e4b995e213d54e9f7d11d93a3c2b290a2703"
+}

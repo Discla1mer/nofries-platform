@@ -1,9 +1,11 @@
 # nf-dashboard-2026-11-r4: changes from r3
 
-**Draft for owner and legal review. Not operative and not legal advice.**
-r2 and r3 stay exactly as approved, so their pinned digests and every
-accepted agreement are unchanged. r4 takes effect only through a newly
-approved plan that names its terms version and digest.
+**Approved by the owner on 9 November 2026. Not legal advice.** r2 and r3
+stay exactly as approved, so their pinned digests and every accepted
+agreement are unchanged. r4 applies only to schedules issued under the plan
+`nf-starter-2026-11-r3`, which pins its text by SHA-256
+(`737a94879458d795e4a8b3296773e4b995e213d54e9f7d11d93a3c2b290a2703`). That plan
+is in source but is not selected by default. See "Turning it on" below.
 
 ## Why
 
@@ -28,7 +30,10 @@ read it.
    general limit for the same event.
 3. **cl 12.7:** states that nothing in the agreement limits the unfair contract
    terms provisions, or individuals' rights under the Privacy Act 2020.
-4. **Header:** marked as a draft and linked to this note.
+4. **Trial clause:** names the plan `nf-starter-2026-11-r3` in place of
+   `nf-starter-2026-10-r2`. The trial itself is the same.
+5. **Same-year sentence in cl 12.3:** the single complimentary amount reads
+   NZ$1,000 to match (b).
 
 Unchanged, and already consistent with NZ law:
 - The CGA s 43 and FTA s 5D business-to-business exclusions, with their
@@ -39,20 +44,33 @@ Unchanged, and already consistent with NZ law:
   Part 6).
 - The retained copy (cl 14).
 
-## Also needed with the next plan version
+## The plan nf-starter-2026-11-r3
 
-The starter schedule says "Included: Overview, manual Cyber Security
-assessment and Improvement Plan." The Improvement Plan is still "Coming
-next". Describing a service as included when it isn't available risks
-Fair Trading Act ss 9 and 13. The schedule template is rehashed against
-stored offers (`starterSetupDetails.js`), so changing it in place would break
-setups already in progress. Change it in the next approved plan version, for
-example "Included: Overview and manual Cyber Security assessment. The
-Improvement Plan is included when it is released." Until then, the sign-up
-summary explains that modules marked "Coming next" are not available yet.
+It is the three-month complimentary trial with the same price (NZ$0),
+period, limits and data rules as `nf-starter-2026-10-r2`. Its schedule
+differs in three lines:
 
-## Decisions for the owner
+- `Included: Overview and manual Cyber Security assessment. The Improvement
+  Plan is included when it is released.` The old line listed the Improvement
+  Plan as included while it is still "Coming next", which risks Fair Trading
+  Act ss 9 and 13.
+- `Privacy notice: privacy.html, 9 November 2026.`
+- `Agreement: nf-dashboard-2026-11-r4` with its digest.
 
-- The figures NZ$1,000 and NZ$10,000 are recommendations. Confirm them
-  against insurance cover and risk appetite.
-- Have a New Zealand lawyer review r4 before it is approved.
+Schedules already issued under the two earlier plans compile to the same
+bytes as before, so setups in progress and accepted agreements still verify.
+
+## Turning it on
+
+Source alone does not change what customers are offered. A release needs
+all of these, in this order:
+
+1. A New Zealand lawyer reviews r4. The figures NZ$1,000 and NZ$10,000 are
+   recommendations; check them against insurance cover. If the text changes,
+   it needs a new version and digest, not an edit to r4.
+2. Apply `database/proposals/customer_starter_plan_r3.sql` as a numbered
+   migration. It has not been run against PostgreSQL in this branch; run
+   it on a disposable database first.
+3. Archive the exact r4 text in the customer terms store under its digest.
+4. Set the trusted launcher's trial plan to `nf-starter-2026-11-r3`.
+5. Update `/terms.html` to the r4 wording at the same release.
