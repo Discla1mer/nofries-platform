@@ -70,8 +70,13 @@
                     if (navigation) resize.observe(navigation);
                 }
                 const bounds = navigation && navigation.getBoundingClientRect();
-                const height = bounds && bounds.width > 0 && bounds.height > 0
-                    ? Math.max(0, Math.ceil(global.innerHeight - bounds.top)) : 0;
+                // Reserve space only for a bar docked at the bottom of the
+                // viewport. An in-flow bar scrolled away must not push the
+                // assistant off-screen, and the reserve never exceeds the bar.
+                const docked = bounds && bounds.width > 0 && bounds.height > 0 &&
+                    bounds.top + bounds.height >= global.innerHeight - 1 && bounds.top < global.innerHeight;
+                const height = docked
+                    ? Math.max(0, Math.ceil(Math.min(bounds.height, global.innerHeight - Math.max(0, bounds.top)))) : 0;
                 root.style.setProperty('--nf-assistant-dashboard-bottom', height + 'px');
             };
             const resize = new global.ResizeObserver(reserveNavigation);
