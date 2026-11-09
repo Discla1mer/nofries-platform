@@ -2,21 +2,24 @@
 
 // Settings-only staff console composition. The native runtime and account
 // lookup reader are the real modules; only SDK constructors are substituted.
-const { readStaffAdminSettings, createStaffDashboardAdministration, ENABLED_SETTING } = require('../lib/dashboardAdminStaffProduction');
+const { readStaffAdminSettings, createStaffDashboardAdministration, STAFF_CONSOLE_SETTING: ENABLED_SETTING } = require('../lib/dashboardAdminStaffProduction');
+const { Readable } = require('node:stream');
 const { createProductionDashboardAdministration } = require('../lib/dashboardAdminProduction');
 const uid = n => '91000000-0000-4000-8000-' + String(n).padStart(12, '0');
 const base = () => ({ [ENABLED_SETTING]: 'true', AZURE_STORAGE_ACCOUNT_NAME: 'syntheticdata', NOFRIES_BROWSER_AUTH_STORAGE_ACCOUNT: 'syntheticauth',
     NOFRIES_DASHBOARD_PROOF_CONTAINER: 'dashboard-proofs', NOFRIES_DASHBOARD_EPOCH_CONTAINER: 'dashboard-epochs',
-    NOFRIES_ENTRA_TENANT_ID: uid(1), NOFRIES_EXTERNAL_CUSTOMER_TENANT_ID: uid(2),
+    NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER: 'admin-audit', NOFRIES_ENTRA_TENANT_ID: uid(1), NOFRIES_EXTERNAL_CUSTOMER_TENANT_ID: uid(2),
     NOFRIES_CUSTOMER_AUTHORITY_CONTAINER: 'customer-authority', NOFRIES_STARTER_AUTHORITY_CONTAINER: 'legacy-signups',
     NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER: 'external-signups' });
 function sdk() {
-    const clients = [], containers = [];
-    return { clients, containers,
+    const clients = [], containers = [], writes = [];
+    return { clients, containers, writes,
         ManagedIdentityCredential: jest.fn(function (options) { this.options = options; }),
         BlobServiceClient: class { constructor(url, credential, options) { clients.push({ url, credential, options }); }
-            getContainerClient(name) { containers.push(name); return { getBlockBlobClient() { throw new Error('PRIVATE_UNEXPECTED_READ'); },
-                listBlobsFlat() { throw new Error('PRIVATE_UNEXPECTED_SCAN'); } }; } } };
+            getContainerClient(name) { containers.push(name); return { getBlockBlobClient(key) { return {
+                download() { throw new Error('PRIVATE_UNEXPECTED_READ'); },
+                async uploadData(bytes, options) { writes.push({ name, key, record: JSON.parse(bytes.toString()), conditions: options.conditions }); return { etag: '"w"' }; } }; },
+            listBlobsFlat() { throw new Error('PRIVATE_UNEXPECTED_SCAN'); } }; } } };
 }
 const { MemoryBrowserSessionStore } = require('../api/shared/browserSessionStore');
 const authEnv = { NOFRIES_REQUIRE_AUTH: 'true', NOFRIES_PUBLIC_URL: 'https://staff-console.invalid', NOFRIES_ENTRA_TENANT_ID: uid(1), NOFRIES_ENTRA_CLIENT_ID: uid(6),
@@ -41,14 +44,15 @@ test('settings select every configured authority source and the managed identity
     const settings = readStaffAdminSettings({ ...base(), NOFRIES_MANAGED_IDENTITY_CLIENT_ID: uid(9) });
     expect(settings.sources.map(source => [source.kind, source.container, source.providerTenantId])).toEqual([
         ['legacy_admin', 'customer-authority', uid(1)], ['legacy_starter', 'legacy-signups', uid(1)], ['external_starter', 'external-signups', uid(2)]]);
-    expect(settings).toMatchObject({ account: 'syntheticdata', identityClientId: uid(9) });
+    expect(settings).toMatchObject({ account: 'syntheticdata', identityClientId: uid(9), auditContainer: 'admin-audit' });
     const partial = readStaffAdminSettings({ ...base(), NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER: '' });
     expect(partial.sources.map(source => source.kind)).toEqual(['legacy_admin', 'legacy_starter']); expect(partial.identityClientId).toBeNull();
 });
 test.each([['TRUE', ENABLED_SETTING], ['1', ENABLED_SETTING], ['Synthetic', 'AZURE_STORAGE_ACCOUNT_NAME'], ['syntheticauth', 'AZURE_STORAGE_ACCOUNT_NAME'],
     ['bad-tenant', 'NOFRIES_ENTRA_TENANT_ID'], ['../x', 'NOFRIES_STARTER_AUTHORITY_CONTAINER'], ['legacy-signups', 'NOFRIES_CUSTOMER_AUTHORITY_CONTAINER'],
     ['dashboard-proofs', 'NOFRIES_STARTER_AUTHORITY_CONTAINER'], ['nofries-browser-auth', 'NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER'],
-    ['not-a-guid', 'NOFRIES_MANAGED_IDENTITY_CLIENT_ID']])('invalid value %p for %s fails closed and logs one safe line', (value, key) => {
+    ['admin-audit', 'NOFRIES_STARTER_AUTHORITY_CONTAINER'], ['', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'], ['legacy-signups', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'],
+    ['{', 'NOFRIES_DASHBOARD_ADMIN_BINDING'], ['not-a-guid', 'NOFRIES_MANAGED_IDENTITY_CLIENT_ID']])('invalid value %p for %s fails closed and logs one safe line', (value, key) => {
     const env = { ...base(), [key]: value }, dependencies = sdk();
     expect(() => readStaffAdminSettings(env)).toThrow();
     expect(createStaffDashboardAdministration(env, dashboard(), dependencies)).toEqual({});
@@ -60,6 +64,10 @@ test('no configured source, an accessor setting or a missing native dashboard le
     expect(() => readStaffAdminSettings(none)).toThrow();
     const getter = base(); Object.defineProperty(getter, 'NOFRIES_STARTER_AUTHORITY_CONTAINER', { get() { return 'legacy-signups'; } });
     expect(() => readStaffAdminSettings(getter)).toThrow();
+    // A legacy listing locator's approval container can never be a customer source.
+    const locator = JSON.stringify({ schemaVersion: 1, provider: 'legacy', authorityContainer: 'legacy-signups', populationId: 'p', indexId: 'i', writerContract: 'all_application_account_writes_v2' });
+    expect(() => readStaffAdminSettings({ ...base(), NOFRIES_DASHBOARD_ADMIN_BINDING: locator })).toThrow();
+    expect(readStaffAdminSettings({ ...base(), NOFRIES_DASHBOARD_ADMIN_BINDING: locator.replace('legacy-signups', 'private-approvals') })).toBeTruthy();
     expect(createStaffDashboardAdministration(base(), null, sdk())).toEqual({});
     expect(createStaffDashboardAdministration(base(), { ...dashboard(), requestBudgetMs: 0 }, sdk())).toEqual({});
     expect(warning).toHaveBeenCalledTimes(2);
@@ -69,10 +77,10 @@ test('composition builds the staff runtime and bounded lookup reader with one-at
     const ports = createStaffDashboardAdministration(env, dashboard(), dependencies);
     expect(Object.keys(ports).sort()).toEqual(['dashboardAdmin', 'dashboardAdminAccountLookup']);
     expect(ports.dashboardAdmin.authoriseOperator).toEqual(expect.any(Function)); expect(ports.dashboardAdmin.requestBudgetMs).toBe(10000);
-    expect(ports.dashboardAdminAccountLookup).toEqual(expect.any(Function));
+    expect(ports.dashboardAdminAccountLookup.read).toEqual(expect.any(Function));
     expect(dependencies.ManagedIdentityCredential).toHaveBeenCalledWith({ clientId: uid(9) });
     expect(dependencies.clients).toEqual([{ url: 'https://syntheticdata.blob.core.windows.net', credential: expect.any(Object), options: { retryOptions: { maxTries: 1, tryTimeoutInMs: 4000 } } }]);
-    expect(dependencies.containers).toEqual(['customer-authority', 'legacy-signups', 'external-signups']);
+    expect(dependencies.containers).toEqual(['customer-authority', 'legacy-signups', 'external-signups', 'admin-audit']);
     expect(warning).not.toHaveBeenCalled();
     const system = sdk(); createStaffDashboardAdministration(base(), dashboard(), system);
     expect(system.ManagedIdentityCredential).toHaveBeenCalledWith();
@@ -88,4 +96,18 @@ test('the launcher composition prefers the staff console over a legacy listing l
     expect(Object.keys(ports).sort()).toEqual(['dashboardAdmin', 'dashboardAdminAccountLookup']);
     const trusted = createProductionDashboardAdministration(base(), dashboard(), { ...dependencies, dashboardAdministration: null }, null);
     expect(trusted).toEqual({});
+});
+
+test('the lookup audit writer stores one create-only digest-only record per request and fails closed', async () => {
+    const dependencies = sdk(), { audit } = createStaffDashboardAdministration(base(), dashboard(), dependencies).dashboardAdminAccountLookup;
+    const event = { category: 'dashboard_admin_account_lookup', requestId: '12345678-1234-4123-8123-123456789abc', actorSha256: 'a'.repeat(64), targetSha256: 'b'.repeat(64),
+        status: 200, count: 2, truncated: false, occurredAt: '2026-11-10T00:00:00.000Z', email: 'leak@example.invalid', rows: [{ email: 'leak@example.invalid' }] };
+    await audit(event);
+    expect(dependencies.writes).toEqual([{ name: 'admin-audit', key: 'dashboard-admin-account-lookups/12345678-1234-4123-8123-123456789abc.json', conditions: { ifNoneMatch: '*' },
+        record: { schemaVersion: 1, category: 'dashboard_admin_account_lookup', requestId: event.requestId, actorSha256: event.actorSha256, targetSha256: event.targetSha256,
+            status: 200, count: 2, truncated: false, occurredAt: event.occurredAt } }]);
+    await expect(audit({ ...event, requestId: 'not-a-request-id' })).rejects.toThrow();
+    const failing = sdk(); failing.BlobServiceClient = class extends failing.BlobServiceClient {
+        getContainerClient(name) { return { getBlockBlobClient() { return { async uploadData() { throw Object.assign(new Error('PRIVATE_CONFLICT'), { statusCode: 412 }); } }; } }; } };
+    await expect(createStaffDashboardAdministration(base(), dashboard(), failing).dashboardAdminAccountLookup.audit(event)).rejects.toThrow();
 });

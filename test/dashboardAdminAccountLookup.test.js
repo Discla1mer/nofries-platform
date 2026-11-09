@@ -14,7 +14,7 @@ const record = { schemaVersion: 1, subjectKey: subject, email, revision: 7, stat
     termsVersion: 'private-terms', termsDigest: '3'.repeat(64), bindingId: null, accountType: 'company' };
 const origin = 'https://operator.example.test';
 const env = { NOFRIES_PUBLIC_URL: origin };
-const base = { email, kind: 'legacy_admin', container: 'synthetic-authority', schemaVersion: null, plan: null, accountType: null,
+const base = { email, kind: 'legacy_admin', schemaVersion: null, plan: null, accountType: null,
     organisation: null, status: 'missing', effectiveAt: null, expiresAt: null, revision: null };
 const wire = (input = { email }, method = 'POST') => Object.assign(Readable.from([Buffer.from(JSON.stringify(input))]), {
     method, url: '/api/dashboard-admin/accounts/lookup', headers: { 'content-type': 'application/json', origin, 'sec-fetch-site': 'same-origin' }
@@ -31,9 +31,10 @@ function reader(records, overrides = {}, kind = 'legacy_admin') {
     return createAccountLookupReader([{ source: { ...source, kind }, container }], () => now);
 }
 function handler(overrides = {}, readOperatorSession = async () => ({ identity }), read = jest.fn(async () => ({ rows: [], truncated: false })), service = allowedService(), signupListService = null) {
-    return { read, handler: createDashboardAdminHandlers({ service, signupListService, accountLookupReader: read, readOperatorSession,
+    const audit = jest.fn(async () => {});
+    return { read, audit, handler: createDashboardAdminHandlers({ service, signupListService, accountLookupReader: { read, audit }, readOperatorSession,
         env: { ...env, NOFRIES_REQUIRE_AUTH: 'true', NOFRIES_ENTRA_TENANT_ID: uid(1), NOFRIES_ALLOWED_SUBJECTS: subject,
-            NOFRIES_ADMIN_SUBJECTS: subject, NOFRIES_DASHBOARD_ADMIN_ENABLED: 'true', ...overrides } }) };
+            NOFRIES_ADMIN_SUBJECTS: subject, NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: 'true', ...overrides } }) };
 }
 afterEach(() => jest.restoreAllMocks());
 
@@ -84,8 +85,8 @@ test('queries, malformed JSON, oversized and non-JSON bodies fail without storag
     }
     expect(h.read).not.toHaveBeenCalled();
 });
-test.each([undefined, 'false', 'TRUE', '1'])('staff console flag %s keeps email lookup off before authentication or storage', async flag => {
-    const h = handler({ NOFRIES_DASHBOARD_ADMIN_ENABLED: flag }, () => { throw new Error('must not read session'); });
+test.each([undefined, 'false', 'TRUE', '1'])('lookup route flag %s keeps email lookup off before authentication or storage', async flag => {
+    const h = handler({ NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: flag }, () => { throw new Error('must not read session'); });
     expect((await h.handler.handle(wire(), 'accounts/lookup')).status).toBe(404);
     expect((await h.handler.handle(wire({}, 'GET'), 'accounts/app.js')).status).toBe(404);
     expect(h.read).not.toHaveBeenCalled();
@@ -123,7 +124,10 @@ test('authorised same-origin POST authorises before and after storage and return
     const service = allowedService(), h = handler({}, undefined, reader([record]), service);
     const response = await h.handler.handle(wire(), 'accounts/lookup');
     expect(response.status).toBe(200); expect(response.body.truncated).toBe(false);
-    expect(response.body.rows[0]).toMatchObject({ email, status: 'active', revision: 7, kind: 'legacy_admin', container: 'synthetic-authority' });
+    expect(response.body.rows[0]).toMatchObject({ email, status: 'active', revision: 7, kind: 'legacy_admin' });
+    expect(JSON.stringify(response.body)).not.toMatch(/synthetic-authority|container/);
+    expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ status: 200, count: 1, truncated: false, targetSha256: expect.stringMatching(/^[0-9a-f]{64}$/) }));
+    expect(h.audit.mock.calls[0][0].targetSha256).not.toBe(require('node:crypto').createHash('sha256').update(email).digest('hex'));
     // Staff authority is not scoped per customer: no selector reaches the policy.
     expect(service.authorise.mock.calls.every(([, selector]) => selector === null)).toBe(true);
     expect(service.authorise.mock.calls.length).toBeGreaterThanOrEqual(2);
@@ -133,15 +137,25 @@ test('absent, malformed and mismatched subjects produce no rows or unusable rows
     expect(await reader([{ ...record, secret: 'private-token' }])(email, signal())).toEqual({ rows: [base], truncated: false });
     expect(await reader([{ ...record, subjectKey: uid(9) + ':' + uid(2) }])(email, signal())).toEqual({ rows: [base], truncated: false });
 });
-test('bounded scans report the cap instead of a partial answer; storage failures never pretend to be missing', async () => {
+test('bounded scans report the cap per source instead of a partial answer; storage failures never pretend to be missing', async () => {
     const many = Array.from({ length: 101 }, (_, i) => ({ ...record, subjectKey: uid(1) + ':' + uid(i + 10), email: `other${i}@example.test` }));
     expect(await reader(many)(email, signal())).toEqual({ rows: [], truncated: true });
     expect(await reader([record, ...many])(email, signal())).toMatchObject({ truncated: true, rows: [{ status: 'active' }] });
     await expect(reader([], { async *listBlobsFlat() { throw new Error('private-provider'); } })(email, signal())).rejects.toThrow();
+    // A cap in one store does not hide a fully scanned starter account elsewhere.
+    const { AzureStarterAccountStore } = require('../api/shared/customerSignup/azureStarterAccountStore');
+    jest.spyOn(AzureStarterAccountStore.prototype, 'load').mockResolvedValue({ record: { planId: 'p', accountType: 'company', activation: null,
+        organisations: [{ tenantId: uid(3), organisationId: uid(4), organisationName: 'Synthetic organisation' }] } });
+    const container = records => ({ async *listBlobsFlat() { yield* records.map(r => ({ name: `customer-subjects/${subjectHash(r.subjectKey)}.json` })); },
+        getBlockBlobClient(name) { return { async download() { const bytes = Buffer.from(JSON.stringify(records.find(r => name.includes(subjectHash(r.subjectKey)))));
+            return { etag: '"e"', contentLength: bytes.length, readableStreamBody: Readable.from([bytes]) }; } }; } });
+    const two = createAccountLookupReader([{ source, container: container(many) }, { source: { ...source, kind: 'legacy_starter', container: 'starter' }, container: container([]) }], () => now);
+    expect(await two(email, signal())).toMatchObject({ truncated: true, rows: [{ kind: 'legacy_starter', status: 'missing', plan: 'p' }] });
 });
 test('lookup is POST-only, validates JSON, rate limits and audits without email or raw details', async () => {
     const audit = jest.fn(), read = jest.fn(reader([record]));
     const handle = createAccountLookup({ read, readJson, env, audit, now: () => now });
+    expect(() => createAccountLookup({ read, readJson, env })).toThrow();
     const run = request => handle(request, 'accounts/lookup', async () => identity, signal());
     expect((await run(wire({}, 'GET'))).status).toBe(405);
     for (const input of [{ email: 'x' }, { email: [] }, { email, extra: 1 }]) expect((await run(wire(input))).status).toBe(400);
@@ -150,14 +164,16 @@ test('lookup is POST-only, validates JSON, rate limits and audits without email 
     for (let i = 0; i < 6; i++) expect((await run(wire())).status).toBe(200);
     expect((await run(wire())).status).toBe(429);
     expect(audit).toHaveBeenCalledTimes(12);
-    expect(JSON.parse(audit.mock.calls[4][0])).toMatchObject({ category: 'dashboard_admin_account_lookup', status: 200, count: 1, truncated: false });
+    expect(audit.mock.calls[4][0]).toMatchObject({ category: 'dashboard_admin_account_lookup', status: 200, count: 1, truncated: false,
+        actorSha256: expect.stringMatching(/^[0-9a-f]{64}$/), targetSha256: expect.stringMatching(/^[0-9a-f]{64}$/), requestId: expect.any(String) });
+    expect(audit.mock.calls[0][0]).toMatchObject({ status: 405, targetSha256: null });
     expect(JSON.stringify(audit.mock.calls)).not.toMatch(/customer@|private|subjectKey|invitation/);
 });
 test('safe errors, malformed reader results and audit failure prevent disclosure', async () => {
     for (const options of [{ read: async () => { throw new Error('private-provider-token'); }, audit: jest.fn() },
         { read: async () => [record], audit: jest.fn() },
         { read: async () => ({ rows: [base], truncated: false }), audit: () => { throw new Error('audit-down'); } }]) {
-        const result = await createAccountLookup({ ...options, readJson, env })(wire(), 'accounts/lookup', async () => identity, signal());
+        const result = await createAccountLookup({ audit: jest.fn(), ...options, readJson, env })(wire(), 'accounts/lookup', async () => identity, signal());
         expect(result.status).toBe(503); expect(result.body).toEqual({ code: 'dashboard_admin_account_lookup_503' });
     }
 });
@@ -186,7 +202,7 @@ test('host routes stay default-off including method and trailing-path variants',
         const result = await request(createNoFriesApp()).post('/api/dashboard-admin/accounts/' + path).send({ email });
         expect(result.status).toBe(404); expect(result.headers['cache-control']).toContain('no-store');
     }
-    expect(() => createNoFriesApp({ dashboardAdminAccountLookup: async () => ({ rows: [], truncated: false }) })).toThrow();
+    expect(() => createNoFriesApp({ dashboardAdminAccountLookup: { read: async () => ({ rows: [], truncated: false }), audit: async () => {} } })).toThrow();
 });
 test.each([undefined, 'false', 'true'])('selected-account selectors require the actions flag %s', async flag => {
     jest.spyOn(console, 'info').mockImplementation(() => {});

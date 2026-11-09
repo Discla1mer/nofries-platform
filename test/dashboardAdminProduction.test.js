@@ -128,20 +128,24 @@ test.each(['legacy', 'external'])('actual production factory reads bounded %s te
     expect(h.state.trace.some(({ sql }) => sql === 'COMMIT')).toBe(true);
 }, PAGED_HOST_JOURNEY_TIMEOUT_MS);
 
-test('environment strings alone never compose signup listing; the staff flag composes only the staff console', async () => {
+test('missing trusted composition stays unavailable despite environment strings and a genuine admin session', async () => {
     const h = await harness({ configured: false });
+    h.env.NOFRIES_DASHBOARD_ADMIN_ENABLED = 'true';
     h.env.NOFRIES_DASHBOARD_ADMIN_SIGNUP_LIST_ENABLED = 'true';
+    h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP = 'true';
     h.app = createProductionApplication(h.env, h.dependencies);
     const document = await request(h.app).get('/dashboard-admin').set('Cookie', h.cookie);
     expect(document.status).toBe(503); safeError(document, 'dashboard_admin_unavailable');
     let result = await list(h); expect(result.status).toBe(404); safeError(result, 'dashboard_admin_not_found');
     expect(h.dataReads()).toEqual([]); expect(h.pool.connect).not.toHaveBeenCalled();
-    h.env.NOFRIES_DASHBOARD_ADMIN_ENABLED = 'true';
+    expect(h.transport.containers.some(item => item.name === h.namespace)).toBe(false);
+    // Only the dedicated staff console flag composes the read-only console, never listing.
+    h.env.NOFRIES_STAFF_CONSOLE = 'true'; h.env.NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER = 'admin-audit';
     h.app = createProductionApplication(h.env, h.dependencies);
     result = await list(h); expect(result.status).toBe(404); safeError(result, 'dashboard_admin_not_found');
     const capabilities = await request(h.app).get('/api/dashboard-admin/capabilities').set('Cookie', h.cookie);
     expect(capabilities.status).toBe(200); expect(capabilities.body).toEqual({ lookup: true, recovery: [] });
-    expect(h.dataReads()).toEqual([]); expect(h.transport.reads.some(item => item.name === h.namespace)).toBe(false);
+    expect(h.dataReads()).toEqual([]); expect(h.transport.reads.some(item => item.account === h.env.AZURE_STORAGE_ACCOUNT_NAME)).toBe(false);
 });
 
 test.each([null, { lookup: null, signupList: null }])('explicit inactive composition %p needs no dashboard or SDK dependency', config => {

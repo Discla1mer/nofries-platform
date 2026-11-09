@@ -95,10 +95,10 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
         readOperatorSession !== null && typeof readOperatorSession !== 'function' ||
         !Number.isSafeInteger(requestBudgetMs) || requestBudgetMs <= 0 || requestBudgetMs > 60000) throw new Error('dashboard_admin_configuration_invalid');
 
-    // The staff console flag selects the email lookup route; the reader itself
-    // comes only from the host's environment composition, never from a header.
-    const accountLookup = env.NOFRIES_DASHBOARD_ADMIN_ENABLED === 'true' && accountLookupReader
-        ? createAccountLookup({ read: accountLookupReader, readJson, env }) : null;
+    // The route flag stays required; the reader and its durable audit writer
+    // come only from the host's environment composition, never from a header.
+    const accountLookup = env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP === 'true' && accountLookupReader
+        ? createAccountLookup({ read: accountLookupReader.read, audit: accountLookupReader.audit, readJson, env }) : null;
 
     async function principal(request, expected = null) {
         if ((!service && !signupListService) || !readOperatorSession) fail(503, 'dashboard_admin_unavailable');

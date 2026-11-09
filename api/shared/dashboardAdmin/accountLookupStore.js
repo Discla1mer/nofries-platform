@@ -13,7 +13,7 @@ const provider = source => source.kind === 'external_starter' ? 'external' : 'le
 // allowlisted, non-secret fields leave this reader; digests, invitation and
 // terms details stay in storage. No email ever reaches a URL or log.
 function row(email, source, extra) {
-    return { email, kind: source.kind, container: source.container, schemaVersion: null, plan: null, accountType: null,
+    return { email, kind: source.kind, schemaVersion: null, plan: null, accountType: null,
         organisation: null, status: 'missing', effectiveAt: null, expiresAt: null, revision: null, ...extra };
 }
 const starterFields = account => ({ plan: account.planId, accountType: account.accountType,
@@ -29,12 +29,12 @@ function createAccountLookupReader(sources, now = Date.now) {
                 (await new AzureStarterAccountStore(container).load(starterAccountKey(email)))?.record;
             const expectedSubject = account?.identitySubjectKey ?? account?.activation?.subjectKey;
             const slot = account?.organisations[0] ?? null;
-            let foundExpected = false, count = 0;
+            let foundExpected = false, count = 0, capped = false;
             // No email index exists for subject records. Bound enumeration and
             // report a hit cap instead of presenting a partial scan as complete.
             for await (const blob of container.listBlobsFlat({ prefix: 'customer-subjects/', abortSignal: signal })) {
                 signal.throwIfAborted();
-                if (++count > MAX_SCANNED_SUBJECTS) { truncated = true; break; }
+                if (++count > MAX_SCANNED_SUBJECTS) { capped = truncated = true; break; }
                 if (!/^customer-subjects\/[a-f0-9]{64}\.json$/.test(blob.name)) unavailable();
                 let record, etag;
                 try {
@@ -68,7 +68,7 @@ function createAccountLookupReader(sources, now = Date.now) {
                 if (expectedSubject && blob.name === `customer-subjects/${subjectHash(expectedSubject)}.json`) foundExpected = true;
                 rows.push(value);
             }
-            if (account && !foundExpected && !truncated) rows.push(row(email, source, starterFields(account)));
+            if (account && !foundExpected && !capped) rows.push(row(email, source, starterFields(account)));
         }
         signal.throwIfAborted();
         return { rows, truncated };

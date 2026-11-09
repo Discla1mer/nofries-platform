@@ -209,9 +209,9 @@ function createNoFriesApp(configuration = {}) {
         if (keys.includes('dashboardAdminAccountLookup') && configuration.dashboardAdminAccountLookup !== null) {
             // Email lookup needs the same staff administration service that
             // validates the native operator session; a reader alone is inert.
-            if (!dashboardAdminService || typeof configuration.dashboardAdminAccountLookup !== 'function' ||
-                isProxy(configuration.dashboardAdminAccountLookup)) throw new Error();
-            dashboardAdminAccountLookup = configuration.dashboardAdminAccountLookup;
+            const port = fields(configuration.dashboardAdminAccountLookup, ['read', 'audit']);
+            if (!dashboardAdminService || [port.read, port.audit].some(value => typeof value !== 'function' || isProxy(value))) throw new Error();
+            dashboardAdminAccountLookup = Object.freeze({ read: port.read, audit: port.audit });
         }
         if (keys.includes('dashboardAdminAccountActions') && authEnvironment?.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true') {
             if (!dashboardAdminService) throw new Error();

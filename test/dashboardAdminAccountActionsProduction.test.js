@@ -52,18 +52,19 @@ test.each(['missing audit', 'bad audit', 'customer-authority', 'legacy-signups',
     expect(() => h.build()).not.toThrow();
     const ports = createBoundDashboardAdministration(h.env, h.dashboard, h.sdk, null);
     expect(ports).not.toHaveProperty('dashboardAdminAccountActions'); expect(h.reads).toEqual([]); expect(h.writes).toEqual([]);
-    expect(warning.mock.calls.every(([line]) => ['[dashboard-admin-account-actions] dashboard_admin_unavailable',
-        '[dashboard-admin] dashboard_admin_configuration_invalid'].includes(line))).toBe(true);
+    expect(warning.mock.calls.every(([line]) => line === '[dashboard-admin-account-actions] dashboard_admin_unavailable')).toBe(true);
 });
-test.each(['wrong scope', 'duplicate authority'])('%s refuses before a customer write', async mode => {
+test.each(['missing grant', 'wrong scope', 'duplicate authority'])('%s refuses before a customer write', async mode => {
     const h = fixture(), app = h.build(), { cookie } = await h.login(app);
     expect((await h.send('post', '/api/dashboard/session', app).set('Cookie', cookie).set('Origin', h.env.NOFRIES_PUBLIC_URL)
         .set('Sec-Fetch-Site', 'same-origin').send({ operationId: h.nextId() })).status).toBe(200);
+    if (mode === 'missing grant') h.bucket('syntheticdata', 'private-approvals').clear();
     if (mode === 'wrong scope') h.input.selector = { ...h.selector, organisationId: 'different-org' };
     if (mode === 'duplicate authority') h.put('legacy-signups', h.subjectPath, h.record);
     h.reads.length = 0;
     expect((await post(h, app, cookie, 'approve-extension', h.input)).status).toBe(403);
-    expect(h.writes.filter(row => row.account === 'syntheticdata')).toEqual([]);
+    if (mode !== 'duplicate authority') expect(h.reads.some(row => row.key.startsWith('customer-subjects/'))).toBe(false);
+    expect(h.writes.some(row => row.key.startsWith('customer-subjects/'))).toBe(false);
 });
 
 test.each(['NOFRIES_CUSTOMER_AUTHORITY_CONTAINER', 'NOFRIES_STARTER_AUTHORITY_CONTAINER', 'NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER'])('missing %s fails closed without stopping the host', setting => {
@@ -110,4 +111,19 @@ test.each(['missing client', 'constructor failure', 'getter', 'missing binding']
     if (mode === 'missing binding') delete h.env.NOFRIES_DASHBOARD_ADMIN_BINDING;
     expect(createBoundDashboardAdministration(h.env, h.dashboard, h.sdk, null)).not.toHaveProperty('dashboardAdminAccountActions');
     expect(h.reads).toEqual([]); expect(h.writes).toEqual([]);
+});
+
+test('the staff console flag never replaces approval-bound action authorisation: writes stay gated and the console is not composed', async () => {
+    const h = fixture(); h.env.NOFRIES_STAFF_CONSOLE = 'true'; h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP = 'true';
+    const app = h.build(), { cookie } = await h.login(app);
+    expect(warning).toHaveBeenCalledWith('[dashboard-admin] staff_console_not_composed_with_bound_account_actions');
+    expect((await h.send('post', '/api/dashboard/session', app).set('Cookie', cookie).set('Origin', h.env.NOFRIES_PUBLIC_URL)
+        .set('Sec-Fetch-Site', 'same-origin').send({ operationId: h.nextId() })).status).toBe(200);
+    h.bucket('syntheticdata', 'private-approvals').clear(); h.reads.length = 0;
+    expect((await post(h, app, cookie, 'approve-extension', h.input)).status).toBe(403);
+    expect((await post(h, app, cookie, 'extend-expired-access', { ...h.input, operationId: h.nextId() })).status).toBe(403);
+    expect(h.reads.some(row => row.key.startsWith('customer-subjects/'))).toBe(false);
+    expect(h.writes.filter(row => row.account === 'syntheticdata')).toEqual([]);
+    // No staff lookup reader exists on this host: the email route stays off.
+    expect((await h.send('get', '/api/dashboard-admin/accounts/app.js', app).set('Cookie', cookie)).status).toBe(404);
 });
