@@ -51,7 +51,8 @@ const primaryKeys = ['overview', 'cyber_security', 'services'];
 const requests = [], blocked = [], errors = [], results = [], guards = [], screenshots = [], focusWitnesses = [], labelLegibility = [];
 let scenario = 'all', text200 = false, browser, activePage, failure = null;
 const assets = Object.fromEntries(['style.css', 'home.css', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png',
-    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js'].map(file => ['/' + file, file]));
+    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js', 'js/enquiry-availability.js', 'js/enquiry-home.js', 'images/paper-texture.webp', 'images/nofries-mark-large.webp',
+    'assets/fonts/fraunces-latin-opsz-normal.woff2', 'assets/fonts/fraunces-latin-opsz-italic.woff2'].map(file => ['/' + file, file]));
 const server = http.createServer((request, response) => {
     const pathname = new URL(request.url, 'http://127.0.0.1').pathname;
     requests.push({ method: request.method, path: pathname });
@@ -72,6 +73,7 @@ const server = http.createServer((request, response) => {
         { bindingId: '10000000-0000-4000-8000-000000000002', organisationLabel: 'Another synthetic organisation' }
     ], nextAfterBindingId: null };
     else if (pathname === '/api/dashboard/bootstrap') body = model;
+    else if (pathname === '/api/enquiry') body = { available: false };
     else if (pathname === '/api/dashboard/modules/cyber_security') body = { schemaVersion: 1,
         context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'),
         summary: model.summary, services: model.services, admissionGranted: false, providerAccessGranted: false,
