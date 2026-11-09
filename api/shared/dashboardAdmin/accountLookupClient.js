@@ -11,6 +11,7 @@
     panel.hidden = false;
     window.addEventListener('pagehide', () => {
         active?.abort(); active = null; result.replaceChildren(); email.value = ''; status.textContent = '';
+        button.disabled = false; result.setAttribute('aria-busy', 'false');
     });
     form.addEventListener('submit', async event => {
         event.preventDefault();
