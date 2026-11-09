@@ -11,6 +11,8 @@ const { signupListInput } = require('./signupService');
 const { buildDashboardAdminDocument, dashboardAdminCss, contentSecurityPolicy } = require('../../../lib/dashboardAdminDocument');
 const { buildDashboardAdminEntryDocument } = require('../../../lib/dashboardAdminEntryDocument');
 
+const { createAccountLookup } = require('./accountLookup');
+
 const MAX_BODY_BYTES = 2048;
 const SUBJECT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const fail = (statusCode, code) => { throw Object.assign(new Error(code), { statusCode, code }); };
@@ -86,11 +88,14 @@ async function readJson(request, signal) {
 
 // Trusted source-only composition: the host binds its genuine staff session
 // reader. No request header/body identity, environment grant or default reader.
-function createDashboardAdminHandlers({ service = null, signupListService = null, accountActions = null, readOperatorSession = null, env = {}, requestBudgetMs = 10000 } = {}) {
+function createDashboardAdminHandlers({ service = null, signupListService = null, accountActions = null, accountLookupReader = null, readOperatorSession = null, env = {}, requestBudgetMs = 10000 } = {}) {
     if (service !== null && (!service || ['authorise', 'capabilities', 'lookup'].some(key => typeof service[key] !== 'function')) ||
         signupListService !== null && (!signupListService || ['authorise', 'capabilities', 'list', 'authoriseDisclosure'].some(key => typeof signupListService[key] !== 'function')) ||
         readOperatorSession !== null && typeof readOperatorSession !== 'function' ||
         !Number.isSafeInteger(requestBudgetMs) || requestBudgetMs <= 0 || requestBudgetMs > 60000) throw new Error('dashboard_admin_configuration_invalid');
+
+    const accountLookup = env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP === 'true' && accountLookupReader
+        ? createAccountLookup({ read: accountLookupReader, readJson, env }) : null;
 
     async function principal(request, expected = null) {
         if ((!service && !signupListService) || !readOperatorSession) fail(503, 'dashboard_admin_unavailable');
@@ -142,6 +147,14 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
 
     async function execute(request, route, checked, signal) {
         try {
+            if (['accounts/lookup', 'accounts/app.js'].includes(route)) {
+                if (!accountLookup) fail(404, 'dashboard_admin_not_found');
+                return await accountLookup(request, route, async (selector = null) => {
+                    const actor = await checked(() => principal(request));
+                    await checked(() => permission(actor, 'lookup', selector, checked));
+                    return actor;
+                }, signal);
+            }
             const methods = { document: 'GET', 'app.js': 'GET', 'app.css': 'GET', capabilities: 'GET', lookup: 'POST', signups: 'POST',
                 'extend-expired-access': 'POST',
                 entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET' };

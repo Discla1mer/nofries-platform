@@ -330,9 +330,10 @@ function finalizeStaticWebAppConfig() {
             route.allowedRoles[0] === 'anonymous') delete route.allowedRoles;
         const headers = route.headers;
         if (typeof headers?.[policyHeader] === 'string') headers[policyHeader] = headers[policyHeader].replace(/; +/g, ';');
-        // This closed comma-list permits optional whitespace. Preserve both
-        // directives on every existing route; save only its separator space.
-        if (headers?.['X-Robots-Tag'] === 'noindex, nofollow') headers['X-Robots-Tag'] = 'noindex,nofollow';
+        // "none" is the documented noindex,nofollow shorthand. Compact only
+        // this closed pair; preserve crawler scopes and additional directives.
+        // https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag#directives
+        if (['noindex, nofollow', 'noindex,nofollow'].includes(headers?.['X-Robots-Tag'])) headers['X-Robots-Tag'] = 'none';
         // The identical closed document policy has the same optional comma
         // whitespace. Preserve every directive and leave custom values intact.
         if ((route.route.startsWith('/api/') || headers?.['Cache-Control'] === 'private, no-store, max-age=0') &&

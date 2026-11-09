@@ -1090,6 +1090,16 @@
       ]
     },
     {
+      "route": "/api/dashboard-admin/accounts/lookup",
+      "methods": ["POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/dashboard-admin/accounts/app.js",
+      "methods": ["GET"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": [
         "authenticated"

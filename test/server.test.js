@@ -1926,7 +1926,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(scopingRoute).toBeDefined();
         expect(scopingRoute.allowedRoles).toEqual(['anonymous']);
         expect(scopingRoute.headers['Cache-Control']).toBe('no-store');
-        expect(scopingRoute.headers['X-Robots-Tag'].split(',').map(value => value.trim())).toEqual(['noindex', 'nofollow']);
+        expect(scopingRoute.headers['X-Robots-Tag']).toBe('none'); // noindex,nofollow shorthand
         expect(scriptSourceDirective(scopingRoute.headers['Content-Security-Policy'])).toBe(`script-src 'self' ${expectedHash}`);
         expect(scopingRoute.headers['Content-Security-Policy']).not.toContain("'unsafe-inline'");
         expect(scopingRoute.headers['Content-Security-Policy']).not.toContain('blob:');
@@ -1942,7 +1942,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             const assetRule = staticConfig.routes.find((route) => route.route === assetRoute);
             expect(assetRule).toMatchObject({
                 headers: {
-                    'X-Robots-Tag': 'noindex,nofollow'
+                    'X-Robots-Tag': 'none'
                 }
             });
             expect(assetRule.headers['Cache-Control']).toBe('no-store');
