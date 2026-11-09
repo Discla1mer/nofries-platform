@@ -160,7 +160,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             label.className = 'organisation-authority-check';
             authority.type = 'checkbox'; authority.required = true; authority.name = 'authorityConfirmed';
             authority.checked = false;
-            label.append(authority, element('span', ' I am authorised to set up this organisation.')); form.append(label);
+            label.append(authority, element('span', ' I am authorised to set up this organisation and to accept its terms on its behalf.')); form.append(label);
             const submit = element('button', 'Continue'); submit.type = 'submit'; submit.className = 'button'; form.append(submit);
             const revision = viewRevision;
             form.addEventListener('submit', event => {
@@ -225,6 +225,19 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             terms.append(element('h2', 'Dashboard agreement'), termsText);
             terms.className = 'signup-legal signup-agreement';
             root.append(terms);
+            // Let the representative keep a copy of exactly what they are asked to accept.
+            const saveCopy = element('button', 'Save a copy of these terms');
+            saveCopy.type = 'button'; saveCopy.className = 'text-link signup-secondary-action';
+            saveCopy.addEventListener('click', () => {
+                const view = doc.defaultView;
+                const parts = [Object.hasOwn(state, 'scheduleId') ? 'Organisation schedule\n\n' + state.scheduleText + '\n\n' : '',
+                    'Dashboard agreement (' + state.termsVersion + ')\n\n' + state.termsText + '\n'];
+                if (!view || typeof view.Blob !== 'function' || !view.URL || typeof view.URL.createObjectURL !== 'function') return;
+                const url = view.URL.createObjectURL(new view.Blob(parts, { type: 'text/plain;charset=utf-8' }));
+                const link = element('a'); link.href = url; link.download = 'no-fries-terms-' + state.termsVersion + '.txt';
+                root.append(link); link.click(); link.remove();
+                view.setTimeout(() => view.URL.revokeObjectURL(url), 1000);
+            });
             const label = element('label'), consent = element('input');
             label.className = 'organisation-authority-check signup-consent';
             consent.type = 'checkbox';
@@ -239,7 +252,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             });
             submit.disabled = true;
             consent.addEventListener('change', () => { submit.disabled = !consent.checked || busy; });
-            root.append(label, submit);
+            root.append(label, submit, saveCopy);
         } else if (state.status === 'resume_acceptance') {
             heading.textContent = 'Complete account setup';
             root.append(element('p', 'Your acceptance was recorded, but account setup did not finish. Resume the protected setup without accepting again.'),

@@ -207,6 +207,20 @@ test('summarises the schedule offer lines at a glance before the full schedule',
     f.view.dispose();
 });
 
+test('the representative can save a copy of the exact schedule and agreement before accepting', async () => {
+    const scheduled = { ...TERMS, scheduleId: 'schedule-v1', scheduleText: 'Synthetic organisation schedule.', scheduleDigest: 'b'.repeat(64) };
+    const f = setup(scheduled); await f.view.ready;
+    const parts = [], createObjectURL = jest.fn(() => 'blob:copy'), revokeObjectURL = jest.fn();
+    Object.assign(f.document.defaultView, { Blob: function (chunks, options) { parts.push(...chunks); this.type = options.type; },
+        URL: { createObjectURL, revokeObjectURL }, setTimeout: fn => fn() });
+    const save = f.root.querySelectorAll('button').find(node => node.textContent === 'Save a copy of these terms');
+    save.click();
+    expect(createObjectURL).toHaveBeenCalledTimes(1); expect(revokeObjectURL).toHaveBeenCalledWith('blob:copy');
+    expect(parts.join('')).toContain(scheduled.scheduleText); expect(parts.join('')).toContain(scheduled.termsText);
+    expect(f.client.acceptTerms).not.toHaveBeenCalled();
+    f.view.dispose();
+});
+
 test('offers a distinct protected resume action without asking for consent again', async () => {
     const f = setup({ status: 'resume_acceptance' }); await f.view.ready;
     expect(f.root.textContent).toContain('without accepting again');
