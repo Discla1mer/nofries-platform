@@ -409,7 +409,7 @@ async function questionnaireJourney(page, route, scenario) {
     }
     for (let index = 0; index < 70; index++) {
         await page.keyboard.press('Tab'); const focus = await settledFocus(page, 'Tab-to-footer'); steps.push(focus);
-        if (focus.label === 'Help me answer this question' && !helpOpened) {
+        if (['Help me answer this question', 'How to answer this question'].includes(focus.label) && !helpOpened) {
             await page.keyboard.press('Enter');
             helpOpened = await page.locator('summary:focus').evaluate(node => node.parentElement.open);
             steps.push(await settledFocus(page, 'Help-Enter'));

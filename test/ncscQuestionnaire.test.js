@@ -1144,7 +1144,9 @@ describe('question assistance source integration', () => {
         const h = await backend(), ui = await createInUi(h);
         for (let i = 0; i < metadata().questions.length; i++) {
             const selector = byId(ui, 'ncsc-question-index'); selector.value = String(i); event(selector, 'change');
-            expect(ui.root.textContent).toContain('Help me answer this question');
+            expect(ui.root.textContent).toContain('How to answer this question');
+            expect(ui.root.textContent).not.toContain('Help me answer this question');
+            expect(ui.root.textContent).not.toContain('AI suggestions need your review');
             expect(ui.root.textContent).toContain('not enabled in this assessment');
         }
         ui.controller.destroy();
@@ -1941,7 +1943,9 @@ describe('questionnaire boundary and navigation regressions', () => {
         expect(byId(ui, `ncsc-rationale-${metadata().questions[0].id}`).value).toBe(rows[0].rationale.text);
         choose(ui, 0, 'not_applicable', 'Shortened first claim.'); choose(ui, 1, 'not_applicable', 'Shortened second claim.');
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 8.'));
-        submitUi(ui); await until(() => ui.root.textContent.includes('Answers below are the saved, read-only submission.'));
+        submitUi(ui); await until(() => ui.root.textContent.includes('Your results are below, followed by your read-only answers.'));
+        await until(() => ui.document.activeElement === byId(ui, 'ncsc-sealed'));
+        expect(byId(ui, 'ncsc-sealed').textContent).toMatch(/^Submitted .+ NZ time\./);
         expect(submit).toHaveBeenCalledTimes(2); expect(submit.mock.calls[1][0].idempotencyKey).not.toBe(rejected.idempotencyKey);
         expect(submit.mock.calls[1][0].expectedRevision).toBe(8);
         const sealed = (await h.client.read('assessment-a')).assessment;
@@ -2795,6 +2799,19 @@ describe('reconciled persona journey', () => {
             const before = h.records.length; control(ui, 'Retry loading results').click(); await until(() => read.mock.calls.length === 2);
             expect(h.records).toHaveLength(before);
             expect(byId(ui, 'ncsc-provider-summary').readOnly).toBe(true);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('the provider summary copies with one press and falls back to selecting the text', async () => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand('assessment-a', 0, 'all-partial', allResponses('partial'))); await h.execute(submitCommand());
+        const writeText = jest.fn(async () => undefined), dom = interactiveDom(); dom.window.navigator = { clipboard: { writeText } };
+        const ui = await resumeUi(h, { dom });
+        try {
+            control(ui, 'Copy summary').click(); await until(() => ui.root.textContent.includes('Summary copied.'));
+            expect(writeText).toHaveBeenCalledWith(byId(ui, 'ncsc-provider-summary').value);
+            writeText.mockRejectedValueOnce(new Error('denied'));
+            control(ui, 'Copy summary').click(); await until(() => ui.root.textContent.includes('Summary selected.'));
+            expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-provider-summary'));
         } finally { ui.controller.destroy(); }
     });
 });

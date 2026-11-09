@@ -758,7 +758,8 @@
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
             const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description)); content.append(declarationPanel);
             if (sealed) {
-                content.append(node('p', 'ncsc-sealed', 'Submitted ' + acknowledged.submission.submittedAt + ' at revision ' + acknowledged.submission.revision + '. Answers below are the saved, read-only submission.'));
+                const sealedNote = node('p', 'ncsc-sealed', 'Submitted ' + localDate(acknowledged.submission.submittedAt) + '. Your results are below, followed by your read-only answers.');
+                sealedNote.id = 'ncsc-sealed'; content.append(sealedNote);
                 renderResults(acknowledged.submission.results);
                 if (dirtyEntries().length) {
                     const unsent = node('details', 'ncsc-warning'); unsent.append(node('summary', '', 'Unsubmitted local changes (' + dirtyEntries().length + ')'));
@@ -952,7 +953,15 @@
             if (!list.children.length) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
             const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with your IT provider'));
             const label = node('label', '', 'Copy this summary into an email or document'); label.htmlFor = 'ncsc-provider-summary';
-            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.join('\n'); handoff.append(label, input); section.append(handoff); panel.append(section);
+            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.join('\n');
+            const copyStatus = node('p', 'dashboard-muted'); copyStatus.setAttribute('role', 'status');
+            const copy = button('Copy summary', function () {
+                const done = function () { copyStatus.textContent = 'Summary copied. Paste it into an email or document.'; };
+                const fallback = function () { input.focus(); if (typeof input.select === 'function') input.select(); copyStatus.textContent = 'Summary selected. Press Ctrl+C or Cmd+C to copy it.'; };
+                const clipboard = win && win.navigator && win.navigator.clipboard;
+                if (clipboard && typeof clipboard.writeText === 'function') clipboard.writeText(input.value).then(done, fallback); else fallback();
+            }, 'dashboard-text-button');
+            handoff.append(label, input, copy, copyStatus); section.append(handoff); panel.append(section);
         }
         function renderQuestion() {
             if (!live() || !questionRegion || !acknowledged) return;
@@ -1072,13 +1081,15 @@
         }
         function renderAssistance(question, writable) {
             if (acknowledged.status === 'submitted') assistanceNotes.clear();
-            const panel = node('details', 'ncsc-guidance');
-            panel.append(node('summary', '', 'Help me answer this question'));
-            panel.append(node('p', '', question.guidance && question.guidance.summary || question.prompt));
-            panel.append(node('p', 'dashboard-muted', 'Describe what actually happens, who manages it, and what information supports it. Unknown is a valid answer. AI suggestions need your review and do not verify evidence.'));
-            questionRegion.append(panel);
             const assistant = options.assistance;
-            if (!writable || !assistant || typeof assistant.suggest !== 'function') {
+            const assisted = writable && assistant && typeof assistant.suggest === 'function';
+            const panel = node('details', 'ncsc-guidance');
+            // Without AI the panel is plain guidance; do not promise help that is switched off.
+            panel.append(node('summary', '', assisted ? 'Help me answer this question' : 'How to answer this question'));
+            panel.append(node('p', '', question.guidance && question.guidance.summary || question.prompt));
+            panel.append(node('p', 'dashboard-muted', 'Describe what actually happens, who manages it, and what information supports it. Unknown is a valid answer.' + (assisted ? ' AI suggestions need your review and do not verify evidence.' : '')));
+            questionRegion.append(panel);
+            if (!assisted) {
                 panel.append(node('p', 'dashboard-muted', 'AI assistance and document interpretation are not enabled in this assessment. You can still use the guidance and answer manually.'));
                 return;
             }
@@ -1159,6 +1170,8 @@
             if (!live()) return;
             const index = content.querySelector('select'); if (index) index.value = String(activeQuestion);
             renderQuestion(); const legend = questionRegion.querySelector('legend'); legend.tabIndex = -1; legend.focus();
+            // Navigation is often pressed from below the question; bring the new question into view.
+            if (typeof questionRegion.scrollIntoView === 'function') questionRegion.scrollIntoView({ block: 'start' });
         }
         function validateDraft(requireComplete) {
             errors = [];
@@ -1316,6 +1329,11 @@
                     const restoreSave = operation.restoreSave && doc.activeElement === saveStatus;
                     busy = false; render();
                     if (restoreSave && !pending && !conflict) { const save = root.querySelector('[id="ncsc-save"]'); if (save && !save.disabled) save.focus({ preventScroll: true }); }
+                    if (!failed && command.action === 'submit' && !pending && !conflict && acknowledged && acknowledged.status === 'submitted') {
+                        // Confirm the submission where the person is looking, not only in an off-screen heading.
+                        const sealedNote = root.querySelector('[id="ncsc-sealed"]');
+                        if (sealedNote) { sealedNote.tabIndex = -1; sealedNote.focus({ preventScroll: true }); if (typeof sealedNote.scrollIntoView === 'function') sealedNote.scrollIntoView({ block: 'start' }); }
+                    }
                     if (focusFailure) { const feedback = status.hidden && saveStatus && root.contains(saveStatus) ? saveStatus : status; feedback.tabIndex = -1; feedback.focus({ preventScroll: true }); }
                 }
             }
