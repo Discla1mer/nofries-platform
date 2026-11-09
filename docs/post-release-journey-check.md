@@ -1,5 +1,5 @@
 # Read-only post-release smoke
-For [#15](https://github.com/Discla1mer/nofries-platform/issues/15), run explicitly after an authorised release:
+**Unavailable until [#17](https://github.com/Discla1mer/nofries-platform/pull/17) is merged:** this documentation PR does not contain the smoke script. After that implementation lands, run it explicitly following an authorised release for [#15](https://github.com/Discla1mer/nofries-platform/issues/15):
 ```sh
 node scripts/post-release-smoke.js --base-url https://example.invalid --expect-sha <40-character-released-SHA>
 ```
