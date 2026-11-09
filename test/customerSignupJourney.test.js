@@ -203,6 +203,7 @@ test('summarises the schedule offer lines at a glance before the full schedule',
         'Price: NZ$0. No payment authority, automatic renewal or conversion to paid access.',
         'Excluded: managed IT, monitoring, incident response, remediation, audit and certification.']);
     expect(f.root.textContent.indexOf('At a glance')).toBeLessThan(f.root.textContent.indexOf('Organisation schedule'));
+    expect(glance.textContent).toContain('A module marked “Coming next” in your dashboard is not available yet.');
     expect(f.root.textContent).toContain(scheduleText.trim());
     f.view.dispose();
 });

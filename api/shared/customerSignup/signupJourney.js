@@ -34,7 +34,11 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         section.setAttribute('aria-label', 'Summary of your schedule');
         const list = element('ul');
         for (const line of lines) list.append(element('li', line));
-        section.append(element('h2', 'At a glance'), list,
+        section.append(element('h2', 'At a glance'), list);
+        if (lines.some(line => line.startsWith('Included:'))) {
+            section.append(element('p', 'A module marked “Coming next” in your dashboard is not available yet. It becomes available when it is released.'));
+        }
+        section.append(
             element('p', 'These points are quoted from your organisation schedule below. The full schedule and agreement are what you accept.'));
         return section;
     }

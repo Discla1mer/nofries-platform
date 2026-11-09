@@ -42,35 +42,50 @@ These were seen on the hosted `nofriescustomers.ciamlogin.com` pages.
    Next sends two different codes; check whether the flow version in use
    supports trimming and button debouncing, otherwise raise it with Microsoft.
 
-## Needs an owner decision or a reviewed auth change
+## Product and legal follow-ups (second pass)
 
-- **Sign out keeps the Microsoft session (security).** After "Sign out",
-  "Sign in again" re-entered the dashboard without a password. Options:
-  front-channel logout to the tenant's end-session endpoint with a
-  registered post-logout redirect URI, or sending `prompt=login` on the
-  next sign-in after a sign-out. Both touch the authorisation URL checks in
-  `api/shared/browserAuth.js` and need a separately reviewed change.
-- **Browser Back after the callback** shows AADSTS900561 (the provider's
-  form_post page re-requested by GET). Consider redirecting from the
-  callback with a history-replacing page.
-- **Public legal pages.** `/terms.html` still holds the pilot "sales
-  discovery and proposal tool" terms, not the dashboard agreement shown at
-  sign-up; the Roadmap says "Fresh signup… still being tested". The schedule
-  lists the Improvement Plan as included while the dashboard shows it as
-  "Coming next".
-- **Results.** Testers wanted one plain verdict ("6 to fix, 7 to check")
-  above the percentage ranges, and no "Supporting evidence 0.0%" while
-  uploads are disabled.
-- **NZBN.** Letters are accepted. Existing tests require the field to accept
-  any registration text; switching to a 13-digit NZBN check is a product
-  decision.
-- **Waits.** Workspace Continue to terms took 7–10 s and terms to dashboard
-  9.5–19 s, including a silent extra sign-in round trip. Profile the access
-  checks after setup and after acceptance.
-- **Smaller items.** Autosave answers, raw UTC footer "Display snapshot"
-  stamps, a single progress line instead of three counters, "Open assessment"
-  going straight to the scope step, and Escape closing the Account and More
-  tools menus.
+Fixed on this branch:
+
+- `/terms.html` is now the dashboard terms, built from the reviewed draft
+  with No Fries Limited named as the provider. It includes a plain
+  explanation of the CGA s 43 and FTA s 5D business-only exclusions and the
+  rights that cannot be excluded. The staff pilot workspace terms moved
+  unchanged to `/pilot-terms.html`.
+- `/privacy.html` opens with a dashboard summary covering the agency,
+  information collected, purposes, storage, recipients, retention, Privacy
+  Act 2020 access and correction rights (with 20 working days to respond),
+  complaints to the Privacy Commissioner, and breach notification.
+- The setup checkbox now says "authorised to set up this organisation and to
+  accept its terms on its behalf", matching the agreement. A "Save a copy of
+  these terms" button downloads the exact schedule and agreement.
+- The Roadmap no longer says sign-up is "still being tested" or describes
+  repository moves. Ask Fry states the complimentary starter facts.
+- Results lead with a plain verdict. "Supporting evidence" reads "None
+  recorded" when nothing is recorded. The footer time is in NZ time. "Open
+  assessment" from the Overview starts a new assessment directly when none is
+  saved. Escape closes the More tools and Account menus.
+- `docs/legal/drafts/nf-dashboard-2026-11-r4.txt` is a draft agreement
+  (not operative) that raises the complimentary cap and adds a separate
+  privacy and confidentiality limit for the unfair contract terms rules. See
+  its change note.
+
+Still open:
+
+- **Sign out keeps the Microsoft session (security).** Needs front-channel
+  logout or `prompt=login` after sign-out. It touches the authorisation URL
+  checks in `api/shared/browserAuth.js` and needs a reviewed change.
+- **Browser Back after the callback** shows AADSTS900561.
+- **Schedule "Improvement Plan" wording:** change it with the next approved
+  plan version (see the r4 change note). It can't be changed in place.
+- **Approve r4:** confirm the cap figures, get legal review, then create the
+  plan version and digest.
+- **NZBN:** kept as free text while testing, as decided.
+- **Autosave:** not added. Each save uses one of an assessment's 127
+  revisions, so per-answer autosave could exhaust them. Consider saving on
+  page hide or a timer that batches answers.
+- **Waits:** workspace Continue to terms took 7–10 s, and terms to dashboard
+  9.5–19 s. Profile the access checks.
+- **Progress counters:** merge the three status lines into one.
 
 ## Test data written to production
 
