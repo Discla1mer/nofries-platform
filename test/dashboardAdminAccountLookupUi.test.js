@@ -23,7 +23,8 @@ function harness(fetch) {
     }
     document.getElementById = id => nodes.get(id);
     const button = document.createElement('button'), form = nodes.get('accountLookupForm'); form.append(button);
-    vm.runInNewContext(source, { document, window, fetch, AbortController, setTimeout: jest.fn(), clearTimeout: jest.fn() });
+    window.dispatchEvent = event => window.dispatch(event.type);
+    vm.runInNewContext(source, { document, window, Event: class { constructor(type) { this.type = type; } }, fetch, AbortController, setTimeout: jest.fn(), clearTimeout: jest.fn() });
     return { nodes, window, button, submit: () => [...form.events.submit][0]({ preventDefault() {} }) };
 }
 
@@ -54,4 +55,15 @@ test('pagehide aborts an in-flight lookup and restored page can submit without r
     expect(h.button.disabled).toBe(false); expect(result.getAttribute('aria-busy')).toBe('false');
     expect(result.textContent).toContain('after@example.test');
     expect(h.nodes.get('accountLookupStatus').textContent).toContain('Lookup complete');
+});
+
+test('lookup selection is explicit and cleared by input, new lookup and pagehide', async () => {
+    const value = await reply('selected@example.test').json(); value.rows[0].selector = { subjectKey: 'synthetic' };
+    const h = harness(async () => ({ ok: true, json: async () => value })); await h.submit();
+    expect(h.window.nofriesAccountSelection).toBeNull();
+    const choose = () => h.nodes.get('accountLookupResults').querySelector('button').click();
+    choose(); expect(h.window.nofriesAccountSelection).toEqual(value.rows[0]);
+    for (const fn of h.nodes.get('accountLookupForm').events.input) fn(); expect(h.window.nofriesAccountSelection).toBeNull();
+    await h.submit(); choose(); const next = h.submit(); expect(h.window.nofriesAccountSelection).toBeNull(); await next;
+    choose(); h.window.dispatch('pagehide'); expect(h.window.nofriesAccountSelection).toBeNull();
 });

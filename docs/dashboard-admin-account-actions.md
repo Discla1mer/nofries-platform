@@ -42,3 +42,33 @@ expiry, timestamps and outcome. A missing terminal record or `uncertain`
 outcome requires reconciliation against the current authority and approved
 command; do not retry with a new operation ID blindly. Success is returned only
 after durable terminal audit. No endpoint deletes data or enables itself.
+
+## Approving an extension in /operator
+
+With the same flag and scoped staff-admin binding, omit `readApprovedExtension`
+from the trusted action configuration to use the built-in protected approval
+store in `auditContainer`. No additional dependency or externally issued
+approval is needed. The container must already exist with restricted access;
+the application does not create it or change permissions.
+
+Joel selects a scoped account from lookup, types its email, chooses an expiry,
+and clicks **Approve extension**. This opens his native operator session if
+needed. `POST /api/dashboard-admin/approve-extension` accepts
+`{ selector, confirmationEmail, newExpiresAt }`. It checks scoped authorization
+before reading the exact subject record, then uses the existing planner to issue
+a session/epoch/ETag-bound 15-minute approval. Missing, forbidden and ineligible
+targets return the same refusal. Audit target digests hash the selector, not email.
+Lookup includes selectors only with the actions flag; selection is cleared on
+new lookup, input or page navigation.
+
+Only an approval with matching durable `approval-terminal.json` success audit
+can be read by the executor. **Extend access** submits its returned selector
+and operation ID. The create-only action `attempt.json` consumes that operation
+once, including on failure; approvals never bypass current authority or CAS.
+Changing the form clears its approval. No customer authority changes on approval.
+
+The final native recheck and the Azure conditional write use separate stores.
+Session/approval revocation can race that small interval; ETag fencing protects
+subject-record changes, not native revocation. This remains a documented limit
+of the default-off expiry action; strict cross-store revocation fencing needs a
+separate design. The PostgreSQL membership action uses transaction fences.

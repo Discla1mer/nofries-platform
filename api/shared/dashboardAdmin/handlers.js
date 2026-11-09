@@ -16,6 +16,7 @@ const { createAccountLookup } = require('./accountLookup');
 const MAX_BODY_BYTES = 2048;
 const SUBJECT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const fail = (statusCode, code) => { throw Object.assign(new Error(code), { statusCode, code }); };
+const isAccountAction = route => ['extend-expired-access', 'approve-extension'].includes(route);
 
 function response(status, body, headers = {}, isRaw = false) {
     return { status, body, headers: apiSecurityHeaders({ 'Content-Type': 'application/json; charset=utf-8', ...headers }), isRaw };
@@ -122,7 +123,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             if (!signupListService) fail(503, 'dashboard_admin_unavailable');
             return signupListService.authorise(actor);
         }
-        if (route === 'lookup' || route === 'extend-expired-access' || !signupListService) {
+        if (route === 'lookup' || isAccountAction(route) || !signupListService) {
             if (!service) fail(503, 'dashboard_admin_unavailable');
             return service.authorise(actor, selector);
         }
@@ -156,9 +157,9 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 }, signal);
             }
             const methods = { document: 'GET', 'app.js': 'GET', 'app.css': 'GET', capabilities: 'GET', lookup: 'POST', signups: 'POST',
-                'extend-expired-access': 'POST',
+                'extend-expired-access': 'POST', 'approve-extension': 'POST',
                 entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET' };
-            const action = route === 'extend-expired-access';
+            const action = isAccountAction(route);
             if (action && env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS !== 'true') fail(404, 'dashboard_admin_not_found');
             if (!Object.hasOwn(methods, route)) fail(404, 'dashboard_admin_not_found');
             if (request.method !== methods[route]) return response(405, { code: 'dashboard_admin_method_not_allowed' }, { Allow: methods[route] });
@@ -183,12 +184,20 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                     // The action has already checked authority before its write.
                     // Once success is durable, later revocation/deadline checks
                     // must not misreport that committed outcome as a failure.
-                    body = await accountActions.execute(currentActor, input, { request, signal });
+                    const perform = route === 'approve-extension' ? accountActions.approve : accountActions.execute;
+                    if (!perform) fail(503, 'dashboard_admin_unavailable');
+                    body = await perform(currentActor, input, { request, signal }, route);
                     return response(200, body);
                 } else body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
-            } else if (route === 'entry-capabilities') body = { entry: true };
+            } else if (route === 'entry-capabilities') body = { entry: true,
+                ...(env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.approve ? { accountActions: true } : {}) };
             else if (route === 'entry') { body = buildDashboardAdminEntryDocument(); contentType = 'text/html; charset=utf-8'; }
-            else if (route === 'entry.js') { body = fs.readFileSync(path.join(__dirname, '../protectedAssets/dashboardAdminEntry.js'), 'utf8'); contentType = 'application/javascript; charset=utf-8'; }
+            else if (route === 'entry.js') {
+                body = fs.readFileSync(path.join(__dirname, '../protectedAssets/dashboardAdminEntry.js'), 'utf8');
+                if (env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.approve)
+                    body += '\n' + fs.readFileSync(path.join(__dirname, '../protectedAssets/accountActions.js'), 'utf8');
+                contentType = 'application/javascript; charset=utf-8';
+            }
             else if (route === 'capabilities') body = await checked(() => capabilities(actor, checked));
             else if (route === 'document') { body = buildDashboardAdminDocument(); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'app.css') { body = dashboardAdminCss; contentType = 'text/css; charset=utf-8'; }
@@ -201,7 +210,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 ...(['document', 'entry'].includes(route) ? { 'Content-Security-Policy': contentSecurityPolicy } : {}) } : {}, contentType !== null);
         } catch (error) {
             const result = failure(error);
-            if (route === 'extend-expired-access') {
+            if (isAccountAction(route)) {
                 try { console.warn('[dashboard-admin-account-actions] ' + result.body.code); } catch (_) { /* No logging authority. */ }
             }
             return result;
@@ -218,7 +227,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
         const checked = async work => { check(); const result = await work(); check(); return result; };
         try {
             // Mutations finish their bounded durable outcome audit before reply.
-            if (route === 'extend-expired-access') {
+            if (isAccountAction(route)) {
                 timer = setTimeout(abort, requestBudgetMs);
                 return await execute(request, route, checked, controller.signal);
             }
