@@ -435,3 +435,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden]) > .dashboard-menu-primary):not(:has(#dashboardApp .ncsc-questionnaire)) .home-footer a { scroll-margin-block-end: 8px; }
     .nofries-dashboard:has(.dashboard-mobile-nav > .dashboard-menu-primary) .picture-toolbar select { scroll-margin-block: 8px; }
 }
+/* Phones: stack the decorative module code above the label so whole words fit; long words still wrap. */
+@media (max-width: 30rem) {
+    .nofries-dashboard .dashboard-mobile-nav .dashboard-task { flex-direction: column; justify-content: center; gap: .15rem; text-align: center; }
+}
