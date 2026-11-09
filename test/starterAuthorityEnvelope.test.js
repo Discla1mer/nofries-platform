@@ -48,6 +48,7 @@ test('legacy authority arithmetic is exact and the new envelope still rejects pr
 
 async function externalClaimFixture() {
     const at = Date.parse('2027-01-24T00:00:00.000Z'), subjectKey = crypto.randomUUID() + ':' + crypto.randomUUID();
+    const clock = { value: at };
     const providerKey = 'c'.repeat(64), identityPolicyId = 'synthetic-calendar-envelope', blobs = new Map(), invitationRows = new Map();
     let accountRow;
     const accounts = createStarterAccountAllocator({ planId: THREE_MONTH_PLAN_ID, now: () => at,
@@ -74,11 +75,26 @@ async function externalClaimFixture() {
             blobs.set(key, Buffer.from(bytes));
         }
     }; } };
-    const claim = createExternalStarterClaim({ container, providerKey, identityPolicyId, now: () => at,
+    const claim = createExternalStarterClaim({ container, providerKey, identityPolicyId, now: () => clock.value,
         readOtherAuthority: async () => null, invitations: { read: async key => invitationRows.get(key) || null,
             create: async record => { invitationRows.set(record.tokenDigest, clone(record)); return true; } } });
-    return { claim, account, saved, subjectKey, providerKey, identityPolicyId, blobs, at };
+    return { claim, account, saved, subjectKey, providerKey, identityPolicyId, blobs, invitationRows, clock, at };
 }
+
+test('a completed claim never recreates a missing invitation before or after expiry', async () => {
+    const f = await externalClaimFixture(), input = { account: f.account, details: f.saved,
+        subjectKey: f.subjectKey, beforeMutation: async () => {} };
+    const entry = await f.claim(input);
+    assert.ok(f.invitationRows.delete(entry.invitationDigest));
+    const before = [...f.blobs.entries()].map(([key, bytes]) => [key, bytes.toString()]);
+    f.clock.value = f.at + 2 * DAY;
+    assert.deepEqual(await f.claim(input), entry);
+    assert.equal(f.invitationRows.has(entry.invitationDigest), false);
+    f.clock.value = f.at + 8 * DAY + 1;
+    await assert.rejects(f.claim(input), error => error.code === 'external_starter_claim_reconciliation_required');
+    assert.equal(f.invitationRows.has(entry.invitationDigest), false);
+    assert.deepEqual([...f.blobs.entries()].map(([key, bytes]) => [key, bytes.toString()]), before);
+});
 
 test('actual external claim persists and replays an envelope covering the original account and its later client', async () => {
     const f = await externalClaimFixture(), input = { account: f.account, details: f.saved,
