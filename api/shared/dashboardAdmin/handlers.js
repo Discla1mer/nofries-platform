@@ -154,7 +154,11 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 if (!accountLookup) fail(404, 'dashboard_admin_not_found');
                 return await accountLookup(request, route, async () => {
                     const actor = await checked(() => principal(request));
-                    await checked(() => permission(actor, 'lookup', null, checked));
+                    // The client script carries no customer data and is what
+                    // opens the native operator session; it needs the staff
+                    // identity and admin role only. Every lookup still passes
+                    // the native gate, issuance proof and epoch checks.
+                    if (route !== 'accounts/app.js') await checked(() => permission(actor, 'lookup', null, checked));
                     return actor;
                 }, signal);
             }
