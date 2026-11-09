@@ -168,6 +168,9 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET' };
             const action = isAccountAction(route);
             if (action && env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS !== 'true') fail(404, 'dashboard_admin_not_found');
+            // Expiry extension is withdrawn from the staff console: both routes
+            // are absent before authentication, body parsing or any storage.
+            if (['approve-extension', 'extend-expired-access'].includes(route) && accountActions?.expiry === false) fail(404, 'dashboard_admin_not_found');
             if (!Object.hasOwn(methods, route)) fail(404, 'dashboard_admin_not_found');
             if (request.method !== methods[route]) return response(405, { code: 'dashboard_admin_method_not_allowed' }, { Allow: methods[route] });
             if (String(request.originalUrl || request.url || '').includes('?') || Object.keys(request.query || {}).length) fail(400, 'dashboard_admin_input_invalid');
