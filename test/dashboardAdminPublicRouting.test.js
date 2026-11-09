@@ -15,7 +15,8 @@ const apiRoutes = [
     ['GET', '/api/dashboard-admin/entry.js'], ['GET', '/api/dashboard-admin/entry-capabilities'],
     ['GET', '/api/dashboard-admin/app.js'], ['GET', '/api/dashboard-admin/app.css'],
     ['GET', '/api/dashboard-admin/capabilities'], ['POST', '/api/dashboard-admin/lookup'],
-    ['POST', '/api/dashboard-admin/signups']
+    ['POST', '/api/dashboard-admin/signups'], ['POST', '/api/dashboard-admin/approve-extension'],
+    ['POST', '/api/dashboard-admin/extend-expired-access']
 ];
 
 // Resolve the checked-in ordered route table; this is not an Azure edge emulator.
@@ -28,6 +29,7 @@ function edgeRule(url, method) {
 
 function composed({ authority = true, consultant = false } = {}) {
     const h = entrySessionFixture();
+    h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS = 'true';
     if (consultant) h.env.NOFRIES_ADMIN_SUBJECTS = '';
     const authoriseOperator = jest.fn(async () => authority);
     const readAuthoritySnapshot = jest.fn(async () => null);
@@ -52,7 +54,7 @@ test('canonical browser links have exact temporary private redirects to linked A
     }
 });
 
-test('only the eleven exact method/path pairs bypass SWA broker roles for the existing BFF boundary', () => {
+test('only the exact method/path pairs bypass SWA broker roles for the existing BFF boundary', () => {
     const additions = config.routes.filter(rule => rule.route.startsWith('/api/dashboard-admin'));
     const lookupRoutes = [['POST', '/api/dashboard-admin/accounts/lookup'], ['GET', '/api/dashboard-admin/accounts/app.js']];
     const allRoutes = [...apiRoutes, ...lookupRoutes];
@@ -76,7 +78,7 @@ test.each(apiRoutes)('disabled composition stays private503 for forwarded %s %s'
     const response = await request(createNoFriesApp())[method.toLowerCase()](url)
         .set('X-MS-Client-Principal', 'forged').set('Cookie', '__Host-nofries-auth=forged');
     // The optional signups route remains unknown without its trusted service.
-    expect(response.status).toBe(url.endsWith('/signups') ? 404 : 503);
+    expect(response.status).toBe(['/signups', '/approve-extension', '/extend-expired-access'].some(tail => url.endsWith(tail)) ? 404 : 503);
     expect(response.headers.location).toBeUndefined();
     expect(response.headers['cache-control']).toBe('private, no-store, max-age=0');
     expect(response.type).toBe('application/json');
@@ -127,7 +129,7 @@ test.each([['consultant', { consultant: true }], ['no native authority', { autho
 });
 
 test.each(['no cookie', 'forged platform identity', 'customer cookie', 'consultant', 'wrong tenant'])
-('all nine forwarded routes reject %s without reading data or native grants', async kind => {
+('all forwarded routes reject %s without reading data or native grants', async kind => {
     const { h, authoriseOperator, readAuthoritySnapshot, audit, authoriseSignupList, readSignupPage } =
         composed({ consultant: kind === 'consultant' });
     let cookie;

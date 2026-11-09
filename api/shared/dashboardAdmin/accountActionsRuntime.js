@@ -5,9 +5,12 @@ const { createDashboardOperatorSession } = require('../dashboardOperatorSession'
 const { createPostgresDashboardAdministrationRepository } = require('../appLifecycle/postgresDashboardRuntimeRepository');
 const { createExpiryAction } = require('./accountActionsExpiry');
 const { accountActionsPool } = require('./accountActionsPool');
+const { createExpiryApproval } = require('./accountActionsApproval');
 
 function createAccountActionsRuntime(configuration, dashboard, authorise) {
-    fields(configuration, ['source', 'authorityContainer', 'auditContainer', 'readApprovedExtension']);
+    fields(configuration, ['source', 'authorityContainer', 'auditContainer',
+        ...(Object.hasOwn(configuration, 'readApprovedExtension') ? ['readApprovedExtension'] : [])]);
+    if (Object.hasOwn(configuration, 'readApprovedExtension') && typeof configuration.readApprovedExtension !== 'function') throw new Error('dashboard_admin_configuration_invalid');
     const select = names => Object.fromEntries(names.map(key => [key, dashboard[key]]));
     const pool = accountActionsPool(dashboard.pool);
     const session = createDashboardOperatorSession(select(['browserAuthOptions', 'identityPolicy', 'proofStore',
@@ -19,7 +22,7 @@ function createAccountActionsRuntime(configuration, dashboard, authorise) {
                 subjectKey: capture.identityPayload.identityTenantId + ':' + capture.identityPayload.oid }, selector);
             return true;
         } });
-    return createExpiryAction({ ...configuration, clock: dashboard.clock,
+    const options = { ...configuration, clock: dashboard.clock,
         async readContext(actor, selector, { request, signal }) {
             if (signal.aborted) throw new Error();
             const { capture } = await pool.run(() => repository.validateSession(request, selector));
@@ -27,6 +30,10 @@ function createAccountActionsRuntime(configuration, dashboard, authorise) {
             return { operatorSubjectKey: capture.identityPayload.identityTenantId + ':' + capture.identityPayload.oid,
                 sessionSha256: capture.sessionSha256, instanceId: capture.instanceId, restoreEpoch: capture.restoreEpoch,
                 identityPolicySha256: hash(dashboard.identityPolicy) };
-        } });
+        } };
+    const issuer = configuration.readApprovedExtension ? null : createExpiryApproval(options);
+    return Object.freeze({ ...createExpiryAction({ ...options,
+        readApprovedExtension: configuration.readApprovedExtension || issuer.readApprovedExtension }),
+        ...(issuer ? { approve: issuer.approve } : {}) });
 }
 module.exports = { createAccountActionsRuntime };

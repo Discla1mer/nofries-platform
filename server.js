@@ -475,7 +475,7 @@ async function sendDashboardAdmin(req, res, route) {
         await sendDashboardAdmin(req, res, 'entry');
     }));
     app.use('/api/dashboard-admin', asyncRoute(async (req, res) => {
-    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|extend-expired-access|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
+    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|extend-expired-access|approve-extension|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
         dashboardAdminSignupListService && req.path === '/signups' ? req.path.slice(1) : null;
     await sendDashboardAdmin(req, res, route);
 }));

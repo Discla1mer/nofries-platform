@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/assets/operator.css">
     <script src="/js/operator-loader.js" defer></script>
     <script src="/api/dashboard-admin/accounts/app.js" defer></script>
+    <script src="/api/dashboard-admin/entry.js" defer></script>
 </head>
 <body data-page="operator" class="operator-loading">
     <a class="skip-link" href="#operatorMain">Skip to work requiring attention</a>
@@ -48,6 +49,18 @@
             <div id="accountLookupResults" role="region" aria-label="Account lookup results" tabindex="0" aria-busy="false"></div>
         </section>
         <div id="operatorRoot" hidden></div>
+        <section id="accountActionsPanel" class="operator-loading-panel" hidden aria-labelledby="accountActionsHeading">
+            <h2 id="accountActionsHeading">Extend expired access</h2>
+            <p>Approve an expiry first, then extend access. Approval lasts 15 minutes in this staff session.</p>
+            <form id="accountActionsForm" autocomplete="off">
+                <label>Account email <input id="accountActionsEmail" type="email" required maxlength="254"></label>
+                <label>Type the account email to confirm <input id="accountActionsConfirmation" type="email" required maxlength="254" autocomplete="off"></label>
+                <label>New expiry (your local time, within 90 days) <input id="accountActionsExpiry" type="datetime-local" required></label>
+                <button id="accountActionsApprove" type="submit">Approve extension</button>
+                <button id="accountActionsExtend" type="button" disabled>Extend access</button>
+            </form>
+            <p id="accountActionsStatus" role="status" aria-live="polite"></p>
+        </section>
     </main>
     <div class="operator-toast" id="operatorToast" role="status" aria-live="polite" hidden></div>
 </body>

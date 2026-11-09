@@ -42,3 +42,25 @@ expiry, timestamps and outcome. A missing terminal record or `uncertain`
 outcome requires reconciliation against the current authority and approved
 command; do not retry with a new operation ID blindly. Success is returned only
 after durable terminal audit. No endpoint deletes data or enables itself.
+
+## Approving an extension in /operator
+
+With the same flag and scoped staff-admin binding, omit `readApprovedExtension`
+from the trusted action configuration to use the built-in protected approval
+store in `auditContainer`. No additional dependency or externally issued
+approval is needed. The container must already exist with restricted access;
+the application does not create it or change permissions.
+
+Joel enters the account email, types it again, selects an expiry, and chooses
+**Approve extension**. This explicitly opens his native operator session if
+needed. `POST /api/dashboard-admin/approve-extension` accepts
+`{ email, confirmationEmail, newExpiresAt }`. It resolves exactly one record in
+the configured source (at most 100 subjects), checks scoped authorization and
+the existing planner, then issues a session/epoch/ETag-bound 15-minute approval.
+Multiple matches, incomplete scans and malformed records fail closed.
+
+Only an approval with matching durable `approval-terminal.json` success audit
+can be read by the executor. **Extend access** submits its returned selector
+and operation ID. The create-only action `attempt.json` consumes that operation
+once, including on failure; approvals never bypass current authority or CAS.
+Changing the form clears its approval. No customer authority changes on approval.
