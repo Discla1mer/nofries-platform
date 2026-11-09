@@ -349,6 +349,24 @@ function finalizeStaticWebAppConfig() {
         // freshness directives; retain all custom/partial/extended policies.
         if (headers?.['Cache-Control'] === 'private,no-store,max-age=0') headers['Cache-Control'] = 'no-store';
     }
+    // CSP fetch directives use the first present fallback below. Remove only
+    // an identical single-keyword source list on static responses; navigation
+    // directives, script hashes, custom lists and every API policy stay intact.
+    const fallbacks = { 'object-src': ['default-src'], 'connect-src': ['default-src'], 'img-src': ['default-src'],
+        'script-src': ['default-src'], 'style-src': ['default-src'], 'frame-src': ['child-src', 'default-src'] };
+    const staticHeaders = [config.globalHeaders, ...config.routes.filter(route =>
+        !route.route.startsWith('/api/') && !route.route.startsWith('/.well-known/')).map(route => route.headers)];
+    for (const headers of staticHeaders) {
+        if (typeof headers?.[policyHeader] !== 'string') continue;
+        const parts = headers[policyHeader].split(';').map(part => part.trim()).filter(Boolean);
+        const entries = parts.map(part => { const at = part.indexOf(' '); return at < 0 ? [part, ''] : [part.slice(0, at), part.slice(at + 1)]; });
+        if (new Set(entries.map(([key]) => key)).size !== entries.length) continue;
+        const values = Object.fromEntries(entries);
+        headers[policyHeader] = parts.filter((_, index) => {
+            const [key, value] = entries[index], fallback = fallbacks[key]?.find(name => Object.hasOwn(values, name));
+            return !fallback || !["'none'", "'self'"].includes(value) || values[fallback] !== value;
+        }).join(';');
+    }
     const serialized = JSON.stringify(config) + '\n';
     const bytes = Buffer.byteLength(serialized, 'utf8');
     if (bytes > MAX_STATIC_CONFIG_BYTES) {
