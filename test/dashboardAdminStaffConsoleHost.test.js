@@ -51,11 +51,15 @@ test('a fresh staff login loads the lookup client, opens its native session and 
     expect(found.text).not.toMatch(/subjectKey|invitation|Digest|selector/);
     expect(h.lists.map(row => row.name)).toEqual(['customer-authority', 'legacy-signups', 'external-signups']);
     const audits = h.writes.filter(row => row.name === 'account-action-audit');
-    expect(audits).toHaveLength(2); expect(audits.every(row => /^dashboard-admin-account-lookups\/[0-9a-f-]{36}\.json$/.test(row.key))).toBe(true);
+    expect(audits).toHaveLength(1); expect(audits.every(row => /^dashboard-admin-account-lookups\/[0-9a-f-]{36}\.json$/.test(row.key))).toBe(true);
     const records = audits.map(row => JSON.parse(h.bucket('syntheticdata', 'account-action-audit').get(row.key).bytes));
-    expect(records.map(row => row.status)).toEqual([403, 200]); expect(records[1]).toMatchObject({ count: 1, truncated: false, actorSha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    // The refused pre-gate request and anonymous requests leave no durable record.
+    expect(records.map(row => row.status)).toEqual([200]); expect(records[0]).toMatchObject({ count: 1, truncated: false, actorSha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(JSON.stringify(records)).not.toMatch(/@|subjectKey|synthetic-org/);
     expect(h.writes.filter(row => row.account === 'syntheticdata' && row.name !== 'account-action-audit')).toEqual([]);
+    for (let i = 0; i < 3; i++) expect((await lookup(h, app, '', h.record.email)).status).toBe(401);
+    expect((await h.send('get', '/api/dashboard-admin/accounts/lookup', app)).status).toBe(405);
+    expect(h.writes.filter(row => row.name === 'account-action-audit')).toHaveLength(1);
     const missing = await lookup(h, app, cookie, 'nobody@example.invalid');
     expect(missing.status).toBe(200); expect(missing.body).toEqual({ rows: [], truncated: false });
 });

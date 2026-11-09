@@ -320,12 +320,16 @@ test('the staff console flag composes read-only lookup from settings alone, with
     expect([200, 503]).toContain(lookup.status); privateResult(lookup);
     expect(h.trace.reads.filter(x => x.account === h.env.AZURE_STORAGE_ACCOUNT_NAME)).toEqual([]);
     expect(h.trace.writes).toEqual([]); expect(h.trace.lists).toEqual([]);
+    // The lookup flag turns off email and selector lookup together.
     for (const value of ['false', null]) {
         if (value === null) delete h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP; else h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP = value;
         h.app = createProductionApplication(h.env, h.dependencies);
         expect((await request(h.app).get('/api/dashboard-admin/accounts/app.js').set('Cookie', h.cookie)).status).toBe(404);
-        expect((await request(h.app).get('/api/dashboard-admin/capabilities').set('Cookie', h.cookie)).status).toBe(200);
+        expect((await request(h.app).get('/api/dashboard-admin/capabilities').set('Cookie', h.cookie)).status).toBe(503);
+        expect((await request(h.app).post('/api/dashboard-admin/lookup').set('Cookie', h.cookie)
+            .set('Origin', h.env.NOFRIES_PUBLIC_URL).set('Sec-Fetch-Site', 'same-origin').send(selector)).status).toBe(503);
     }
+    h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP = 'true';
     h.env.NOFRIES_STAFF_CONSOLE = 'false'; h.app = createProductionApplication(h.env, h.dependencies);
     expect((await request(h.app).get('/api/dashboard-admin/entry-capabilities').set('Cookie', h.cookie)).status).toBe(503);
 }, HOST_TEST_TIMEOUT_MS);

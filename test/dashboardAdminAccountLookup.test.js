@@ -22,6 +22,7 @@ const wire = (input = { email }, method = 'POST') => Object.assign(Readable.from
 const readJson = async request => { const chunks = []; for await (const chunk of request) chunks.push(chunk); return JSON.parse(Buffer.concat(chunks)); };
 const allowedService = () => ({ authorise: jest.fn(async actor => actor), capabilities: async () => ({}), lookup: async () => ({}) });
 const signal = () => new AbortController().signal;
+const targetDigest = value => require('node:crypto').createHmac('sha256', 'synthetic-key').update(value).digest('hex');
 function reader(records, overrides = {}, kind = 'legacy_admin') {
     const entries = records.map(r => ({ name: `customer-subjects/${subjectHash(r.subjectKey)}.json`, record: r }));
     const container = { async *listBlobsFlat() { yield* entries; }, getBlockBlobClient(name) {
@@ -32,7 +33,7 @@ function reader(records, overrides = {}, kind = 'legacy_admin') {
 }
 function handler(overrides = {}, readOperatorSession = async () => ({ identity }), read = jest.fn(async () => ({ rows: [], truncated: false })), service = allowedService(), signupListService = null) {
     const audit = jest.fn(async () => {});
-    return { read, audit, handler: createDashboardAdminHandlers({ service, signupListService, accountLookupReader: { read, audit }, readOperatorSession,
+    return { read, audit, handler: createDashboardAdminHandlers({ service, signupListService, accountLookupReader: { read, audit, targetDigest }, readOperatorSession,
         env: { ...env, NOFRIES_REQUIRE_AUTH: 'true', NOFRIES_ENTRA_TENANT_ID: uid(1), NOFRIES_ALLOWED_SUBJECTS: subject,
             NOFRIES_ADMIN_SUBJECTS: subject, NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: 'true', ...overrides } }) };
 }
@@ -96,7 +97,7 @@ test.each([null, { ...identity, provider: 'external-id' }, { ...identity, subjec
         jest.spyOn(console, 'info').mockImplementation(() => {});
         const h = handler({}, async () => ({ identity: actor }));
         expect([401, 403]).toContain((await h.handler.handle(wire(), 'accounts/lookup')).status);
-        expect(h.read).not.toHaveBeenCalled();
+        expect(h.read).not.toHaveBeenCalled(); expect(h.audit).not.toHaveBeenCalled();
     });
 test('non-admin staff and forged SWA principal cannot bypass BFF role checks', async () => {
     jest.spyOn(console, 'info').mockImplementation(() => {});
@@ -175,8 +176,8 @@ test('bounded scans report the cap per source instead of a partial answer; stora
 });
 test('lookup is POST-only, validates JSON, rate limits and audits without email or raw details', async () => {
     const audit = jest.fn(), read = jest.fn(reader([record]));
-    const handle = createAccountLookup({ read, readJson, env, audit, now: () => now });
-    expect(() => createAccountLookup({ read, readJson, env })).toThrow();
+    const handle = createAccountLookup({ read, readJson, env, audit, targetDigest, now: () => now });
+    expect(() => createAccountLookup({ read, readJson, env, targetDigest })).toThrow(); expect(() => createAccountLookup({ read, readJson, env, audit })).toThrow();
     const run = request => handle(request, 'accounts/lookup', async () => identity, signal());
     expect((await run(wire({}, 'GET'))).status).toBe(405);
     for (const input of [{ email: 'x' }, { email: [] }, { email, extra: 1 }]) expect((await run(wire(input))).status).toBe(400);
@@ -184,17 +185,22 @@ test('lookup is POST-only, validates JSON, rate limits and audits without email 
     expect(good.status).toBe(200); expect(good.headers['Cache-Control']).toContain('no-store');
     for (let i = 0; i < 6; i++) expect((await run(wire())).status).toBe(200);
     expect((await run(wire())).status).toBe(429);
-    expect(audit).toHaveBeenCalledTimes(12);
-    expect(audit.mock.calls[4][0]).toMatchObject({ category: 'dashboard_admin_account_lookup', status: 200, count: 1, truncated: false,
+    expect(audit).toHaveBeenCalledTimes(11);
+    expect(audit.mock.calls[3][0]).toMatchObject({ category: 'dashboard_admin_account_lookup', status: 200, count: 1, truncated: false,
         actorSha256: expect.stringMatching(/^[0-9a-f]{64}$/), targetSha256: expect.stringMatching(/^[0-9a-f]{64}$/), requestId: expect.any(String) });
-    expect(audit.mock.calls[0][0]).toMatchObject({ status: 405, targetSha256: null });
+    expect(audit.mock.calls[3][0].targetSha256).toBe(targetDigest(email));
+    expect(audit.mock.calls[0][0]).toMatchObject({ status: 400, targetSha256: null });
+    // Unauthorised and wrong-method requests never create a durable record.
+    const before = audit.mock.calls.length;
+    for (const statusCode of [401, 403]) expect((await handle(wire(), 'accounts/lookup', async () => { throw Object.assign(new Error(), { statusCode }); }, signal())).status).toBe(statusCode);
+    expect((await run(wire({}, 'GET'))).status).toBe(405); expect(audit).toHaveBeenCalledTimes(before);
     expect(JSON.stringify(audit.mock.calls)).not.toMatch(/customer@|private|subjectKey|invitation/);
 });
 test('safe errors, malformed reader results and audit failure prevent disclosure', async () => {
     for (const options of [{ read: async () => { throw new Error('private-provider-token'); }, audit: jest.fn() },
         { read: async () => [record], audit: jest.fn() },
         { read: async () => ({ rows: [base], truncated: false }), audit: () => { throw new Error('audit-down'); } }]) {
-        const result = await createAccountLookup({ audit: jest.fn(), ...options, readJson, env })(wire(), 'accounts/lookup', async () => identity, signal());
+        const result = await createAccountLookup({ audit: jest.fn(), targetDigest, ...options, readJson, env })(wire(), 'accounts/lookup', async () => identity, signal());
         expect(result.status).toBe(503); expect(result.body).toEqual({ code: 'dashboard_admin_account_lookup_503' });
     }
 });
@@ -223,7 +229,7 @@ test('host routes stay default-off including method and trailing-path variants',
         const result = await request(createNoFriesApp()).post('/api/dashboard-admin/accounts/' + path).send({ email });
         expect(result.status).toBe(404); expect(result.headers['cache-control']).toContain('no-store');
     }
-    expect(() => createNoFriesApp({ dashboardAdminAccountLookup: { read: async () => ({ rows: [], truncated: false }), audit: async () => {} } })).toThrow();
+    expect(() => createNoFriesApp({ dashboardAdminAccountLookup: { read: async () => ({ rows: [], truncated: false }), audit: async () => {}, targetDigest } })).toThrow();
 });
 test.each([undefined, 'false', 'true'])('selected-account selectors require the actions flag %s', async flag => {
     jest.spyOn(console, 'info').mockImplementation(() => {});

@@ -6,7 +6,7 @@ const { readStaffAdminSettings, createStaffDashboardAdministration, STAFF_CONSOL
 const { Readable } = require('node:stream');
 const { createProductionDashboardAdministration } = require('../lib/dashboardAdminProduction');
 const uid = n => '91000000-0000-4000-8000-' + String(n).padStart(12, '0');
-const base = () => ({ [ENABLED_SETTING]: 'true', AZURE_STORAGE_ACCOUNT_NAME: 'syntheticdata', NOFRIES_BROWSER_AUTH_STORAGE_ACCOUNT: 'syntheticauth',
+const base = () => ({ [ENABLED_SETTING]: 'true', NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: 'true', NOFRIES_SCOPE_SIGNING_SECRET: 'k'.repeat(32), AZURE_STORAGE_ACCOUNT_NAME: 'syntheticdata', NOFRIES_BROWSER_AUTH_STORAGE_ACCOUNT: 'syntheticauth',
     NOFRIES_DASHBOARD_PROOF_CONTAINER: 'dashboard-proofs', NOFRIES_DASHBOARD_EPOCH_CONTAINER: 'dashboard-epochs',
     NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER: 'admin-audit', NOFRIES_ENTRA_TENANT_ID: uid(1), NOFRIES_EXTERNAL_CUSTOMER_TENANT_ID: uid(2),
     NOFRIES_CUSTOMER_AUTHORITY_CONTAINER: 'customer-authority', NOFRIES_STARTER_AUTHORITY_CONTAINER: 'legacy-signups',
@@ -40,6 +40,21 @@ test.each([undefined, '', 'false'])('flag %p leaves the console off without read
     expect(readStaffAdminSettings(env)).toBeNull();
     expect(createStaffDashboardAdministration(env, null, {})).toEqual({}); expect(warning).not.toHaveBeenCalled();
 });
+test.each([undefined, '', 'false'])('lookup flag %p keeps the whole console off even with the console flag on', value => {
+    const env = { ...base(), NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: value };
+    expect(readStaffAdminSettings(env)).toBeNull();
+    expect(createStaffDashboardAdministration(env, dashboard(), sdk())).toEqual({}); expect(warning).not.toHaveBeenCalled();
+});
+test('the audit target digest is an HMAC under a derived key, not a plain or prefixed hash of the email', () => {
+    const crypto = require('node:crypto'), email = 'someone@example.invalid';
+    const digest = readStaffAdminSettings(base()).targetDigest(email);
+    expect(digest).toMatch(/^[0-9a-f]{64}$/); expect(digest).toBe(readStaffAdminSettings(base()).targetDigest(email));
+    expect(digest).not.toBe(crypto.createHash('sha256').update(email).digest('hex'));
+    expect(digest).not.toBe(crypto.createHash('sha256').update('nofries:dashboard-admin-account-lookup:v1\0' + email).digest('hex'));
+    expect(digest).not.toBe(crypto.createHmac('sha256', 'k'.repeat(32)).update(email).digest('hex'));
+    expect(readStaffAdminSettings({ ...base(), NOFRIES_SCOPE_SIGNING_SECRET: 'z'.repeat(32) }).targetDigest(email)).not.toBe(digest);
+    expect(JSON.stringify(readStaffAdminSettings(base()))).not.toContain('kkkk');
+});
 test('settings select every configured authority source and the managed identity without opening storage', () => {
     const settings = readStaffAdminSettings({ ...base(), NOFRIES_MANAGED_IDENTITY_CLIENT_ID: uid(9) });
     expect(settings.sources.map(source => [source.kind, source.container, source.providerTenantId])).toEqual([
@@ -53,7 +68,7 @@ test.each([['TRUE', ENABLED_SETTING], ['1', ENABLED_SETTING], ['Synthetic', 'AZU
     ['dashboard-proofs', 'NOFRIES_STARTER_AUTHORITY_CONTAINER'], ['nofries-browser-auth', 'NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER'],
     ['admin-audit', 'NOFRIES_STARTER_AUTHORITY_CONTAINER'], ['', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'], ['legacy-signups', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'],
     ['dashboard-proofs', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'], ['nofries-browser-auth', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'],
-    ['{', 'NOFRIES_DASHBOARD_ADMIN_BINDING'], ['not-a-guid', 'NOFRIES_MANAGED_IDENTITY_CLIENT_ID']])('invalid value %p for %s fails closed and logs one safe line', (value, key) => {
+    ['{', 'NOFRIES_DASHBOARD_ADMIN_BINDING'], ['TRUE', 'NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP'], ['short', 'NOFRIES_SCOPE_SIGNING_SECRET'], ['not-a-guid', 'NOFRIES_MANAGED_IDENTITY_CLIENT_ID']])('invalid value %p for %s fails closed and logs one safe line', (value, key) => {
     const env = { ...base(), [key]: value }, dependencies = sdk();
     expect(() => readStaffAdminSettings(env)).toThrow();
     expect(createStaffDashboardAdministration(env, dashboard(), dependencies)).toEqual({});
