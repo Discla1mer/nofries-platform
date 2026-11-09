@@ -16,7 +16,7 @@ const { createAccountLookup } = require('./accountLookup');
 const MAX_BODY_BYTES = 2048;
 const SUBJECT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const fail = (statusCode, code) => { throw Object.assign(new Error(code), { statusCode, code }); };
-const isAccountAction = route => ['extend-expired-access', 'approve-extension'].includes(route);
+const isAccountAction = route => ['extend-expired-access', 'approve-extension', 'suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(route);
 
 function response(status, body, headers = {}, isRaw = false) {
     return { status, body, headers: apiSecurityHeaders({ 'Content-Type': 'application/json; charset=utf-8', ...headers }), isRaw };
@@ -158,6 +158,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             }
             const methods = { document: 'GET', 'app.js': 'GET', 'app.css': 'GET', capabilities: 'GET', lookup: 'POST', signups: 'POST',
                 'extend-expired-access': 'POST', 'approve-extension': 'POST',
+                suspend: 'POST', restore: 'POST', 'approve-suspend': 'POST', 'approve-restore': 'POST',
                 entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET' };
             const action = isAccountAction(route);
             if (action && env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS !== 'true') fail(404, 'dashboard_admin_not_found');

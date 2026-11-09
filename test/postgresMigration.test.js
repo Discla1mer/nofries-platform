@@ -894,3 +894,5 @@ function migrationLedgerClient() {
         })
     };
 }
+
+require('./integration/dashboardAdminMembershipActions')();
