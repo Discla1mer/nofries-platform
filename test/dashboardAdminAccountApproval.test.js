@@ -10,7 +10,7 @@ afterEach(() => { expect(JSON.stringify(warning.mock.calls)).not.toMatch(/PRIVAT
 async function fixture(enabled = true, admin = true) {
     const h = entrySessionFixture({ customer: false, externalCustomer: false }), rows = new Map(), trace = [], state = {};
     function container(name) {
-        return { url: `https://syntheticstore.blob.core.windows.net/${name}`,
+        return { url: `https://syntheticstore.blob.core.windows.net/${name}`, pipeline: { options: { retryOptions: { maxTries: 1 } } },
             async *listBlobsFlat() { for (const key of rows.keys()) if (key.startsWith(name + '/')) yield { name: key.slice(name.length + 1) }; },
             getBlockBlobClient(key) { const path = name + '/' + key; return {
                 async download() {
