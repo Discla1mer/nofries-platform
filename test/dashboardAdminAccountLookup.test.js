@@ -175,6 +175,10 @@ test('known signup with absent or mismatched authority remains missing', async (
     expect(await read(email, signal(), async () => identity)).toEqual([{ email, accountType: 'company', organisation: 'Synthetic organisation', status: 'missing', expiresAt: null, revision: null }]);
     expect(load).toHaveBeenCalledTimes(1);
     await expect(read(email, signal(), async () => { throw Object.assign(new Error(), { statusCode: 403 }); })).rejects.toMatchObject({ statusCode: 403 });
+    load.mockResolvedValue({ record: { accountType: 'company', activation: null, organisations: [{ organisationName: 'Private pending signup' }] } });
+    const authorise = jest.fn();
+    expect(await read(email, signal(), authorise)).toEqual([{ email, accountType: null, organisation: null, status: 'missing', expiresAt: null, revision: null }]);
+    expect(authorise).not.toHaveBeenCalled();
 });
 test('host routes stay default-off including method and trailing-path variants', async () => {
     const request = require('supertest'), { createNoFriesApp } = require('../server');

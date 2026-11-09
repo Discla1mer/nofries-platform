@@ -62,7 +62,7 @@ function createAccountLookupReader(sources, now = Date.now) {
                 if (expectedSubject && blob.name === `customer-subjects/${subjectHash(expectedSubject)}.json`) foundExpected = true;
                 rows.push(row);
             }
-            if (account && !foundExpected) {
+            if (account && expectedSubject && !foundExpected) {
                 await authorise({ provider: source.kind === 'external_starter' ? 'external' : 'legacy', subjectKey: expectedSubject,
                     tenantId: account.organisations[0].tenantId, organisationId: account.organisations[0].organisationId });
                 rows.push({ ...missing(email), accountType: account.accountType, organisation: account.organisations[0].organisationName });
