@@ -175,7 +175,8 @@
                     });
                     next.append(list);
                 }
-                const actions = el('div', 'ncsc-actions'); actions.append(button('Change answers', function () { show('questions'); }, true));
+                const talk = el('a', 'dashboard-button', 'Talk to No Fries about your real IT'); talk.href = '/contact.html';
+                const actions = el('div', 'ncsc-actions'); actions.append(talk, button('Change answers', function () { show('questions'); }, true));
                 section.append(metrics, next, actions);
                 return title;
             }

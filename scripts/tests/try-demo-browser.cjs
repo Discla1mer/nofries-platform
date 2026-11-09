@@ -68,6 +68,7 @@ async function run(browser, origin, name, viewport) {
         : ['admins:High priority', 'restore:High priority', 'mfa:Medium priority', 'protection:Medium priority']);
     assert.equal(await page.locator('.ncsc-result-metric').count(), 3);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), name + ': results fit');
+    assert.equal(await page.getByRole('link', { name: 'Talk to No Fries about your real IT' }).getAttribute('href'), '/contact.html');
     await shot(page, name + '-3-results.png');
 
     await page.reload();

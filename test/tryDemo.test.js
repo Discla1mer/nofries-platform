@@ -42,7 +42,7 @@ test('enabled local route is self-contained, cookieless and blocks network, form
     assert.equal(response.headers['set-cookie'], undefined);
     assert.equal(response.text, buildTryDemoDocument().html);
     assert.doesNotMatch(response.text, /<script\s+src|<link\b|<iframe|https?:\/\/|shared-assistant|prospect/i);
-    assert.deepEqual(response.text.match(/href="[^"]*"/g), ['href="/"']);
+    assert.deepEqual(response.text.match(/href="[^"]*"/g), ['href="/contact.html"', 'href="/"']);
     assert.match(response.text, /Interactive demo · fictional business/);
 });
 
@@ -54,8 +54,7 @@ test('demo data is synthetic and independent of fixtures, the development previe
     for (const fixtureName of ['Harbour Workshop', 'Kauri Studio', 'Harbour City Services', 'synthetic-tenant', 'No Fries Demo Customer']) assert.ok(!html.includes(fixtureName), fixtureName);
     const model = demo.projection();
     assert.match(model.context.displayName, /\(fictional\)$/);
-    assert.equal(model.admissionGranted, false); assert.equal(model.providerAccessGranted, false);
-    assert.ok(model.services.every(item => item.operational === false));
+    assert.ok(model.admissionGranted === false && model.providerAccessGranted === false && model.services.every(item => item.operational === false));
     const dom = createDom(); shell.mount(dom.root, model, { initialRoute: '' });
     assert.match(dom.root.textContent, /Brightwater Joinery \(fictional\)[\s\S]*Review who has administrator access/);
 });
@@ -76,6 +75,7 @@ test('navigation reaches the sample assessment through the real shell, validates
     submit(dom);
     assert.equal(dom.document.activeElement.textContent, 'Sample results');
     assert.deepEqual(actions(dom), ['updates:High priority', 'restore:High priority', 'admins:Medium priority']);
+    assert.equal(dom.root.querySelectorAll('a').find(link => link.textContent.startsWith('Talk to No Fries')).href, '/contact.html');
     assert.match(dom.root.textContent, /People and access 75%[\s\S]*Devices and protection 50%[\s\S]*Backup and recovery 50%/);
     await controller.navigate('overview');
     assert.match(dom.root.textContent, /Needs attention/);

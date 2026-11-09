@@ -22,7 +22,7 @@ function buildTryDemoDocument() {
         '<meta name="robots" content="noindex,nofollow"><title>Try No Fries · Interactive demo (fictional data)</title><style>' + style + '</style></head><body>' +
         '<section class="try-demo-banner" aria-label="About this demo"><div class="try-demo-copy"><strong>Interactive demo · fictional business</strong>' +
         '<p>Brightwater Joinery is made up. Everything stays in this browser: no account, no emails and nothing sent to No Fries.</p></div>' +
-        '<div class="try-demo-controls"><button type="button" id="try-demo-reset">Reset demo</button><a href="/">No Fries home</a></div>' +
+        '<div class="try-demo-controls"><button type="button" id="try-demo-reset">Reset demo</button><a class="try-demo-cta" href="/contact.html">Talk to No Fries</a><a href="/">No Fries home</a></div>' +
         '<p id="try-demo-status" class="try-demo-status" role="status"></p></section><div id="try-demo-dashboard"></div><script>' + script + '</script></body></html>';
     return Object.freeze({ html, contentSecurityPolicy });
 }
