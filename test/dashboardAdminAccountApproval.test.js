@@ -55,7 +55,9 @@ test('same staff session issues a durable 15-minute approval, then consumes it o
     const path = 'audit/dashboard-admin-account-actions/' + result.body.operationId + '/';
     const approved = f.rows.get(path + 'approval.json').record;
     expect(approved.approval.expiresAt).toBe(iso(NOW + 15 * 60000));
-    expect(f.rows.get(path + 'approval-terminal.json').record).toMatchObject({ outcome: 'succeeded', approvalSha256: hash(approved) });
+    expect(f.rows.get(path + 'approval-terminal.json').record).toMatchObject({ outcome: 'succeeded', approvalSha256: hash(approved),
+        before: { status: 'expired', expiresAt: iso(NOW - 1000) },
+        after: { status: 'approved', approvedExpiresAt: f.input.newExpiresAt, expiresAt: iso(NOW + 15 * 60000) } });
     expect(JSON.stringify(f.rows.get(f.key))).toBe(before);
     expect(f.trace.map(value => value.split('/').pop())).toEqual(['approval-attempt.json', 'approval.json', 'approval-terminal.json']);
     expect((await f.extend(result.body)).status).toBe(200);

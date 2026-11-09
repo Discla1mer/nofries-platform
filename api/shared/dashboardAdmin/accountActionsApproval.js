@@ -75,7 +75,8 @@ function createExpiryApproval({ source, authorityContainer, auditContainer, read
             if (!equal(current, await context(selector))) fail(403, 'access_denied');
             check(); const approved = { command, approval };
             await writeActionRecord(auditContainer, prefix(operationId) + 'approval.json', approved, { ifNoneMatch: '*' }, signal);
-            await audit('terminal', 'succeeded', { approvalSha256: hash(approved), after: { status: 'approved', expiresAt } });
+            await audit('terminal', 'succeeded', { approvalSha256: hash(approved),
+                after: { status: 'approved', approvedExpiresAt: input.newExpiresAt, expiresAt } });
             attempted = false;
             return { selector, operationId, newExpiresAt: input.newExpiresAt, approvalExpiresAt: expiresAt };
         } catch (error) {
