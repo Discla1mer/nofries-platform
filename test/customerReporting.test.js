@@ -242,7 +242,7 @@ test('real static and App Service builders include identical reporting sources w
             fs.mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
             fs.copyFileSync(path.join(root, file), path.join(directory, file));
         }
-        for (const name of ['api', 'app', 'assets', 'images', 'js', 'lib']) fs.cpSync(path.join(root, name), path.join(directory, name),
+        for (const name of ['api', 'app', 'assets', 'demo', 'images', 'js', 'lib']) fs.cpSync(path.join(root, name), path.join(directory, name),
             { recursive: true, filter: source => !path.relative(root, source).split(path.sep).includes('node_modules') });
         execFileSync(process.execPath, ['scripts/build-static.js'], { cwd: directory, stdio: 'pipe' });
         execFileSync(process.execPath, ['scripts/build-app-service.js'], { cwd: directory, stdio: 'pipe' });

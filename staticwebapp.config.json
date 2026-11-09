@@ -245,6 +245,14 @@
       }
     },
     {
+      "route": "/try",
+      "rewrite": "/app/try.html",
+      "headers": {
+        "X-Robots-Tag": "noindex, nofollow",
+        "Content-Security-Policy": "default-src 'none'"
+      }
+    },
+    {
       "route": "/dashboard",
       "rewrite": "/app/dashboard.html",
       "allowedRoles": [

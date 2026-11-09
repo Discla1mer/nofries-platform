@@ -31,14 +31,14 @@ for (const builder of ['build-static.js', 'build-app-service.js']) {
             copyFileSync: source => copied.push(source), cpSync: source => copied.push(source),
             readFileSync: file => {
                 if (file.endsWith('package.json')) return JSON.stringify({ name: 'test', dependencies: {}, overrides: {} });
-                if (file.endsWith('staticwebapp.config.json')) return JSON.stringify({ routes: ['/', '/scoping', '/support', '/portal', '/dashboard', '/signup'].map(route => ({ route, headers: { 'Content-Security-Policy': "default-src 'none'" } })) });
+                if (file.endsWith('staticwebapp.config.json')) return JSON.stringify({ routes: ['/', '/scoping', '/support', '/portal', '/dashboard', '/signup', '/try'].map(route => ({ route, headers: { 'Content-Security-Policy': "default-src 'none'" } })) });
                 return '<html>synthetic build-contract placeholder</html>';
             } };
         function requireStub(name) {
             if (name === 'fs') return fakeFs;
             if (name === 'path' || name === 'crypto') return require(name);
             if (name === '../lib/publicAssets') return require('../lib/publicAssets');
-            if (name.endsWith('Document')) return new Proxy({}, { get: () => () => ({ html: '<html></html>', contentSecurityPolicy: "default-src 'none'" }) });
+            if (name.endsWith('Document') || name === '../demo/try/document') return new Proxy({}, { get: () => () => ({ html: '<html></html>', contentSecurityPolicy: "default-src 'none'" }) });
             throw new Error('Unexpected build dependency: ' + name);
         }
         vm.runInNewContext(fs.readFileSync(path.join(root, 'scripts', builder), 'utf8'), {
@@ -86,7 +86,7 @@ function withBuildFixture(run) {
             fs.mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
             fs.copyFileSync(path.join(root, file), path.join(directory, file));
         }
-        for (const name of ['api', 'app', 'assets', 'images', 'js', 'lib', 'azure']) {
+        for (const name of ['api', 'app', 'assets', 'demo', 'images', 'js', 'lib', 'azure']) {
             fs.cpSync(path.join(root, name), path.join(directory, name), {
                 recursive: true,
                 filter: source => !path.relative(root, source).split(path.sep).includes('node_modules')
@@ -133,6 +133,13 @@ test('real static and App Service builds bind their distinct customer entry mode
             assert.deepEqual(routes[0].headers['Cache-Control'].split(',').map(value => value.trim()), ['no-store']);
             assertEquivalentHeaders({ 'X-Robots-Tag': routes[0].headers['X-Robots-Tag'] }, { 'X-Robots-Tag': 'noindex, nofollow' });
         }
+        // Fictional sales demo (#29): the exact tested page under a hash-bound, noindex route; never in the App Service.
+        const tryRoutes = config.routes.filter(route => route.route === '/try'), tryDemo = require('../demo/try/document').buildTryDemoDocument();
+        assert.equal(tryRoutes.length, 1); assert.equal(tryRoutes[0].rewrite, '/app/try.html');
+        assert.equal(read(staticRoot, 'app/try.html'), tryDemo.html);
+        assertEquivalentHeaders({ 'Content-Security-Policy': tryRoutes[0].headers['Content-Security-Policy'], 'X-Robots-Tag': tryRoutes[0].headers['X-Robots-Tag'] },
+            { 'Content-Security-Policy': tryDemo.contentSecurityPolicy, 'X-Robots-Tag': 'noindex, nofollow' });
+        assert.ok(config.routes.some(route => route.route === '/app/*' && route.redirect) && !fs.existsSync(path.join(serviceRoot, 'demo')));
         for (const file of ['app/dashboard.html', 'app/dashboard.css', 'js/dashboard-loader.js', 'lib/dashboardDocument.js',
             'api/shared/protectedAssets/dashboardRegistry.js', 'api/shared/protectedAssets/dashboardShell.js',
             'api/shared/protectedAssets/ncscAssessmentClient.js', 'api/shared/protectedAssets/ncscQuestionnaire.js', 'api/shared/protectedAssets/assessmentExplanation.js', 'api/shared/protectedAssets/organisationPicture.js', 'api/shared/protectedAssets/improvementActionPlanView.js', 'api/shared/protectedAssets/improvementActionPlanClient.js',
@@ -281,7 +288,7 @@ for (const useExample of [false, true]) {
             }
             // Preserve every routing and authorization value and every effective
             // response header, including the two inherited static-document CSPs.
-            for (const alias of ['/', '/scoping', '/support', '/portal', '/dashboard', '/signup']) {
+            for (const alias of ['/', '/scoping', '/support', '/portal', '/dashboard', '/signup', '/try']) {
                 sourceConfig.routes.find(route => route.route === alias).headers['Content-Security-Policy'] =
                     config.routes.find(route => route.route === alias).headers['Content-Security-Policy'];
             }
