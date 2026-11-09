@@ -22,10 +22,11 @@ const press = (dom, text) => dom.root.querySelectorAll('button').find(item => it
 const submit = dom => { for (const fn of dom.root.querySelector('form').events.submit) fn({ preventDefault() {} }); };
 const actions = dom => dom.root.querySelectorAll('li').filter(item => item.dataset.action).map(item => item.dataset.action + ':' + item.children[0].textContent);
 
-test('production composition never serves or packages the demo', async () => {
+test('the App Service never serves or packages the demo; only the static build publishes it', async () => {
     for (const route of ['/try', '/try/', '/demo/try/try-demo.js', '/demo/try/document.js']) assert.equal((await request(app).get(route)).status, 404, route);
     assert.ok([...PUBLIC_ROOT_FILES, ...PUBLIC_SCRIPT_FILES].every(file => !/try|demo/i.test(file)));
-    for (const file of ['scripts/build-static.js', 'scripts/build-app-service.js', 'lib/productionApplication.js', 'app-service.js']) {
+    assert.match(read('scripts/build-static.js'), /require\('\.\.\/demo\/try\/document'\)/);
+    for (const file of ['scripts/build-app-service.js', 'lib/productionApplication.js', 'app-service.js']) {
         assert.doesNotMatch(read(file), /demo\/|tryDemo/, file);
     }
     for (const value of [false, 'true', 1, {}]) assert.throws(() => app.createNoFriesApp({ tryDemo: value }), undefined, String(value));
