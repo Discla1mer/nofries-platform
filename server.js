@@ -407,6 +407,13 @@ for (const [key, route, clearTransactionCookie] of [
             } } });
         await sendFunctionResponse(callback, req, res);
     }));
+    // The provider answers with form_post. A plain browser visit (for example
+    // after Cancel on a hosted sign-in page) carries no usable result, so
+    // send it to the same friendly sign-in recovery page without reading it.
+    app.get(route + '/callback', (req, res) => {
+        res.set('Cache-Control', 'no-store');
+        res.redirect(303, key === 'externalCustomer' ? '/login?signin=retry&provider=external' : '/login?signin=retry&provider=legacy');
+    });
     if (key === 'externalCustomer') {
         const setupLogout = createAuthLogoutFunction({ env: authEnvironment, service: customerAuth.setupLogout, setupAccountChange: true });
         app.post(route + '/logout', express.urlencoded({ extended: false, limit: '16kb' }), asyncRoute(async (req, res) => {
