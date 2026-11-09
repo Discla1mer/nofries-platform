@@ -100,6 +100,11 @@ test('a successful write followed by an SDK retry conflict is audited as uncerta
     expect(f.terminal()).toMatchObject({ outcome: 'uncertain', after: null,
         proposedAfter: { status: 'active', expiresAt: f.input.newExpiresAt } });
 });
+test('another session cannot consume the approved operation audit slot', async () => {
+    const f = fixture(); f.approved.approval.context.sessionSha256 = 'f'.repeat(64);
+    await expect(f.execute()).rejects.toMatchObject({ statusCode: 403 });
+    expect(f.trace).toEqual([]);
+});
 test('a delayed audit must finish before success resolves', async () => {
     const f = fixture(), get = f.config.auditContainer.getBlockBlobClient;
     let release, reached;

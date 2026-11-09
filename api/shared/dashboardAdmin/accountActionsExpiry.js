@@ -2,7 +2,7 @@
 
 const { fields, copy, freeze, hash, equal, uuid, instant } = require('../appLifecycle/dashboardRuntimeRecords');
 const { normaliseSelector, DashboardAdminError } = require('./service');
-const { normaliseCustomerAuthoritySource, inspectCustomerAuthority, planCustomerAuthorityExpiry } = require('./customerAuthorityExpiry');
+const { normaliseCustomerAuthoritySource, inspectCustomerAuthority, planCustomerAuthorityExpiry, customerAuthorityExpiryCommandHash } = require('./customerAuthorityExpiry');
 const { subjectHash } = require('../customerSignup/customerAuthority');
 const { readActionRecord, writeActionRecord } = require('./accountActionsStorage');
 const fail = (status, suffix) => { throw new DashboardAdminError(status, 'dashboard_admin_' + suffix); };
@@ -46,6 +46,8 @@ function createExpiryAction({ source: rawSource, authorityContainer, auditContai
             if (selector.provider !== (source.kind === 'external_starter' ? 'external' : 'legacy') ||
                 !equal(approved.command.target, target) || approved.command.operationId !== operationId ||
                 approved.command.newExpiresAt !== input.newExpiresAt) fail(403, 'access_denied');
+            if (!equal(approved.approval.context, context) ||
+                approved.approval.commandSha256 !== customerAuthorityExpiryCommandHash(approved.command, context)) fail(403, 'access_denied');
             event = { schemaVersion: 1, operationId, action: 'extend-expired-access', actorSubjectKey: actor.subjectKey,
                 targetSha256: hash(selector), commandSha256: hash(approved.command), before: null,
                 proposedAfter: { status: 'active', expiresAt: input.newExpiresAt } };
