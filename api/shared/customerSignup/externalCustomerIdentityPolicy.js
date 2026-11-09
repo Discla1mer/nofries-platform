@@ -51,7 +51,7 @@ function createExternalCustomerIdentityPolicy({ profile, records,
         if (!record || value.subjectKey !== identity.subjectKey || value.email !== record.email || proof.email !== record.email ||
             value.invitationDigest !== record.invitationDigest || value.revision !== record.revision ||
             value.providerKey !== providerKey || value.authoritySha256 !== canonicalDigest(record) ||
-            value.verifiedAt !== proof.verifiedAt || value.expiresAt !== Math.min(proof.expiresAt, record.expiresAt) || value.expiresAt <= now()) fail();
+            value.verifiedAt !== proof.verifiedAt || value.expiresAt !== proof.expiresAt || value.expiresAt <= now()) fail();
         return proof;
     }
     const policy = Object.freeze({
@@ -74,7 +74,9 @@ function createExternalCustomerIdentityPolicy({ profile, records,
             if (!record || record.email !== proof.email) fail();
             const result = freeze({ subjectKey: identity.subjectKey, email: record.email,
                 invitationDigest: record.invitationDigest, revision: record.revision, verifiedAt: proof.verifiedAt,
-                expiresAt: Math.min(proof.expiresAt, record.expiresAt), providerKey,
+                // The session ends with its provider proof, never with the
+                // account's stored (non-binding) end date.
+                expiresAt: proof.expiresAt, providerKey,
                 authoritySha256: canonicalDigest(record), authentication: proof });
             await policy.recheck({ identity, assurance: result });
             return result;

@@ -1,5 +1,13 @@
 # Account action endpoints
 
+> **Extending expired access is no longer needed (10 November 2026).** Customer
+> accounts do not expire: sign-in treats the stored customer-authority
+> `expiresAt` as a retained, non-binding value, so there is nothing to extend.
+> Suspend and restore are the only account-level blocks. The
+> `extend-expired-access` endpoint below is retained, default-off, for reference
+> only and should not be enabled or used to restore access; its removal belongs
+> to the staff admin redesign.
+
 `POST /api/dashboard-admin/extend-expired-access` accepts JSON:
 
 ```json

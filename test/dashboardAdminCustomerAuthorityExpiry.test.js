@@ -156,9 +156,9 @@ describe('dormant customer authority inspection', () => {
     ])('rejects malformed authority #%#', alter => {
         const f = fixture({ schemaVersion: 2 }); alter(f.observation.record); expect(() => inspect(f)).toThrow();
     });
-    test('does not authenticate expired or revoked data through the live validator', () => {
+    test('does not authenticate revoked data through the live validator; a passed end date alone is not a refusal', () => {
         const f = fixture(); expect(inspect(f).status).toBe('expired');
-        expect(() => authority(f.observation.record, f.command.target.subjectKey, Date.parse(NOW))).toThrow();
+        expect(() => authority(f.observation.record, f.command.target.subjectKey, Date.parse(NOW))).not.toThrow();
         Object.assign(f.observation.record, { status: 'revoked', expiresAt: Date.parse(NEW) });
         expect(inspect(f).status).toBe('revoked');
         expect(() => authority(f.observation.record, f.command.target.subjectKey, Date.parse(NOW))).toThrow();

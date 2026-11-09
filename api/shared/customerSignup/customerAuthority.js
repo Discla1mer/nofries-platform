@@ -58,6 +58,11 @@ function scheduleArchive(raw, reference) {
     return record;
 }
 
+// Customer accounts do not expire (owner decision, 10 November 2026). The
+// stored `expiresAt` stays in the record so retained schemas, digests and
+// compare-and-set writes remain valid, but a passed date never refuses an
+// account. `status` is the only account-level block. `now` is kept for callers;
+// sessions, tokens, proofs, offers, invitations and approvals still expire.
 function authority(raw, subject, now) {
     const source = copy(raw, 16384);
     const scheduled = Reflect.ownKeys(source).some(key => ['scheduleId', 'scheduleDigest'].includes(key));
@@ -68,7 +73,7 @@ function authority(raw, subject, now) {
     if (Object.hasOwn(record, 'accountType') && !['company', 'consultant'].includes(record.accountType)) fail();
     const parts = subject.split(':'); if (parts.length !== 2) fail(); parts.forEach(uuid);
     if (record.schemaVersion !== (scheduled ? 2 : 1) || record.subjectKey !== subject || record.status !== 'active' ||
-        !Number.isSafeInteger(record.expiresAt) || record.expiresAt <= now ||
+        !Number.isSafeInteger(record.expiresAt) ||
         typeof record.email !== 'string' || record.email !== record.email.trim().toLowerCase() ||
         record.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(record.email)) fail();
     revision(record.revision); digest(record.invitationDigest); digest(record.termsDigest);
@@ -175,7 +180,7 @@ function createCustomerIdentityPolicy({ records, verifyMfaPolicy, authentication
                     !['entra-invitation-mailbox-capability', 'nofries-email-code-and-entra-mfa'].includes(proof.method)) fail();
             }
             const result = freeze({ subjectKey: identity.subjectKey, email: record.email, invitationDigest,
-                revision: record.revision, verifiedAt: now(), expiresAt: Math.min(claims.exp * 1000, record.expiresAt), authenticationContext, authoritySha256: canonicalDigest(record) });
+                revision: record.revision, verifiedAt: now(), expiresAt: claims.exp * 1000, authenticationContext, authoritySha256: canonicalDigest(record) });
             await policy.recheck({ identity, assurance: result });
             return result;
         },

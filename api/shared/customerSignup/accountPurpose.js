@@ -65,8 +65,9 @@ function purposeSnapshot(raw, accountId) {
  * database must be the existing configured nofries_runtime transaction wrapper,
  * not a new owner connection; this module grants or changes no database role.
  * Unknown purpose does not deny ordinary signup; this module is not its gate.
- * The existing current-customer reader can reject expired Blob authority even
- * with fresh SSO, and may retain its existing invalid-session cleanup behavior.
+ * The existing current-customer reader rejects suspended or missing Blob
+ * authority even with fresh SSO (a passed account end date is not a refusal),
+ * and may retain its existing invalid-session cleanup behavior.
  */
 function createAccountPurposeReader(options) {
     let readCustomer, loadAccount, readPurposeAssignments, transaction = null, now;
@@ -89,7 +90,7 @@ function createAccountPurposeReader(options) {
     }
     function fresh(customer, sample) {
         const at = sample();
-        if (Date.parse(customer.expiresAt) <= at || customer.current.expiresAt <= at) fail();
+        if (Date.parse(customer.expiresAt) <= at) fail();
     }
     async function capture(cookieHeader, sample) {
         sample();
