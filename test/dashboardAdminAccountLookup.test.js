@@ -164,6 +164,14 @@ test('bounded scans report the cap per source instead of a partial answer; stora
             return { etag: '"e"', contentLength: bytes.length, readableStreamBody: Readable.from([bytes]) }; } }; } });
     const two = createAccountLookupReader([{ source, container: container(many) }, { source: { ...source, kind: 'legacy_starter', container: 'starter' }, container: container([]) }], () => now);
     expect(await two(email, signal())).toMatchObject({ truncated: true, rows: [{ kind: 'legacy_starter', status: 'missing', plan: 'p' }] });
+    // A starter account keyed by email is kept when its own store's scan was capped; its sign-in record is then unknown.
+    const capped = createAccountLookupReader([{ source: { ...source, kind: 'legacy_starter', container: 'starter' }, container: container(many) }], () => now);
+    expect(await capped(email, signal())).toEqual({ truncated: true, rows: [{ ...base, kind: 'legacy_starter', plan: 'p', accountType: 'company',
+        organisation: 'Synthetic organisation', status: 'unknown' }] });
+    const reached = createAccountLookupReader([{ source: { ...source, kind: 'legacy_starter', container: 'starter' }, container: container([...many.slice(0, 50), record]) }], () => now);
+    AzureStarterAccountStore.prototype.load.mockResolvedValue({ record: { identitySubjectKey: subject, planId: 'p', accountType: 'company', activation: null,
+        organisations: [{ tenantId: uid(3), organisationId: uid(4), organisationName: 'Synthetic organisation' }] } });
+    expect(await reached(email, signal())).toMatchObject({ truncated: false, rows: [{ status: 'active', plan: 'p', organisation: 'Synthetic organisation' }] });
 });
 test('lookup is POST-only, validates JSON, rate limits and audits without email or raw details', async () => {
     const audit = jest.fn(), read = jest.fn(reader([record]));

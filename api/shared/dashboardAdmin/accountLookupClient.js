@@ -9,7 +9,7 @@
     const button = form.querySelector('button');
     const COLUMNS = [['email', 'Email'], ['kind', 'Store'], ['schemaVersion', 'Schema'], ['plan', 'Plan'], ['accountType', 'Type'],
         ['organisation', 'Organisation'], ['status', 'Sign-in record'], ['effectiveAt', 'Activated (UTC)'], ['expiresAt', 'Expires (UTC)'], ['revision', 'Revision']];
-    const STATUS = { active: 'Active', expired: 'Active record, access expired', revoked: 'Revoked', missing: 'No sign-in record' };
+    const STATUS = { active: 'Active', expired: 'Active record, access expired', revoked: 'Revoked', missing: 'No sign-in record', unknown: 'Not scanned (cap reached)' };
     let active = null;
     const text = value => value === null || value === undefined || value === '' ? '—' : String(value);
     function select(row) { window.nofriesAccountSelection = row; window.dispatchEvent(new Event('nofries-account-selection')); }

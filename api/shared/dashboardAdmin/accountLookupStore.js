@@ -68,7 +68,10 @@ function createAccountLookupReader(sources, now = Date.now) {
                 if (expectedSubject && blob.name === `customer-subjects/${subjectHash(expectedSubject)}.json`) foundExpected = true;
                 rows.push(value);
             }
-            if (account && !foundExpected && !capped) rows.push(row(email, source, starterFields(account)));
+            // A starter account found by its exact email key is always shown. When
+            // the subject scan hit the cap before reaching it, its sign-in record
+            // is unknown rather than missing.
+            if (account && !foundExpected) rows.push(row(email, source, { ...starterFields(account), ...(capped ? { status: 'unknown' } : {}) }));
         }
         signal.throwIfAborted();
         return { rows, truncated };
