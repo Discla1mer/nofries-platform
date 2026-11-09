@@ -115,6 +115,15 @@ jobs:
           npm run db:migrate
           npm run db:migrate
           npm run test:postgres
+      - name: Verify opt-in authenticated journey and failure cleanup
+        env:
+          NOFRIES_DATABASE_URL: postgresql://nofries_ci_owner:nofries-ci-only-password@127.0.0.1:5432/nofries_ci
+          NOFRIES_JOURNEY_DATABASE_URL: postgresql://nofries_ci_owner:nofries-ci-only-password@127.0.0.1:5432/nofries_journey
+          NOFRIES_JOURNEY_DISPOSABLE_CLUSTER: 'true'
+        run: |
+          node --test scripts/tests/authenticated-customer-journey.cjs
+          node -e 'const {Client}=require("pg"); (async()=>{const c=new Client({connectionString:process.env.NOFRIES_DATABASE_URL}); await c.connect(); try {await c.query("CREATE DATABASE nofries_journey");} finally {await c.end();}})().catch(()=>{console.error("Journey control database setup failed");process.exitCode=1;});'
+          node --test scripts/tests/authenticated-customer-journey-native.cjs
 
   dependencies:
     runs-on: ubuntu-24.04
