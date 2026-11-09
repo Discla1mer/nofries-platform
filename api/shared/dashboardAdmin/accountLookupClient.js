@@ -21,9 +21,10 @@
         result.replaceChildren(); button.disabled = true; result.setAttribute('aria-busy', 'true');
         status.textContent = 'Looking up account…';
         try {
-            const response = await fetch('/api/dashboard-admin/accounts/lookup?email=' + encodeURIComponent(email.value.trim()), {
+            const response = await fetch('/api/dashboard-admin/accounts/lookup', {
                 credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: controller.signal,
-                headers: { Accept: 'application/json' }
+                method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email.value.trim() })
             });
             if (!response.ok) throw new Error(response.status === 429 ? 'Too many lookups. Try again in a minute.' :
                 [401, 403].includes(response.status) ? 'Staff admin access is required. Sign in again.' : 'Account lookup is unavailable.');

@@ -9,7 +9,7 @@ const unavailable = () => { throw new Error('account_lookup_unavailable'); };
 const missing = email => ({ email, accountType: null, organisation: null, status: 'missing', expiresAt: null, revision: null });
 
 function createAccountLookupReader(sources, now = Date.now) {
-    return async function lookup(email, signal) {
+    return async function lookup(email, signal, authorise) {
         const rows = [];
         let count = 0;
         for (const { source, container } of sources) {
@@ -42,12 +42,14 @@ function createAccountLookupReader(sources, now = Date.now) {
                     throw error;
                 }
                 if (record?.email !== email) continue;
-                const row = missing(email);
+                const row = missing(email); let selector = null;
                 try {
                     const at = new Date(now()).toISOString();
                     const slot = record.subjectKey === expectedSubject ? account.organisations[0] : null;
                     const result = inspectCustomerAuthority({ source, blobName: blob.name, etag, observedAt: at, record },
                         { sourceSha256: hash(source), subjectKey: record.subjectKey, tenantId: slot?.tenantId ?? record.tenantId, organisationId: slot?.organisationId ?? record.organisationId }, at);
+                    selector = { provider: source.kind === 'external_starter' ? 'external' : 'legacy',
+                        subjectKey: record.subjectKey, tenantId: record.tenantId, organisationId: record.organisationId };
                     Object.assign(row, { accountType: record.accountType ?? null, organisation: record.organisationId,
                         status: result.status, expiresAt: result.expiresAt, revision: result.revision });
                     if (record.subjectKey === expectedSubject && record.tenantId === slot.tenantId && record.organisationId === slot.organisationId) {
@@ -55,11 +57,16 @@ function createAccountLookupReader(sources, now = Date.now) {
                         row.accountType = account.accountType;
                     }
                 } catch (_) { /* A malformed/misbound record is not usable authority. */ }
+                // Authorization errors must not be reinterpreted as missing authority.
+                if (selector) await authorise(selector);
                 if (expectedSubject && blob.name === `customer-subjects/${subjectHash(expectedSubject)}.json`) foundExpected = true;
                 rows.push(row);
             }
-            if (account && !foundExpected) rows.push({ ...missing(email), accountType: account.accountType,
-                organisation: account.organisations[0].organisationName });
+            if (account && !foundExpected) {
+                await authorise({ provider: source.kind === 'external_starter' ? 'external' : 'legacy', subjectKey: expectedSubject,
+                    tenantId: account.organisations[0].tenantId, organisationId: account.organisations[0].organisationId });
+                rows.push({ ...missing(email), accountType: account.accountType, organisation: account.organisations[0].organisationName });
+            }
         }
         signal.throwIfAborted();
         return rows.length ? rows : [missing(email)];
@@ -69,7 +76,7 @@ function createAccountLookupReader(sources, now = Date.now) {
 function createProductionAccountLookup(env) {
     if (env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP !== 'true') return null;
     // Construct SDK clients lazily; the disabled feature performs no storage I/O.
-    return async (email, signal) => {
+    return async (email, signal, authorise) => {
         const account = env.AZURE_STORAGE_ACCOUNT_NAME;
         if (!/^[a-z0-9]{3,24}$/.test(account || '') || account === env.NOFRIES_BROWSER_AUTH_STORAGE_ACCOUNT) unavailable();
         const { ManagedIdentityCredential } = require('@azure/identity');
@@ -89,7 +96,7 @@ function createProductionAccountLookup(env) {
             return { source, container: service.getContainerClient(container) };
         });
         if (!sources.length || new Set(sources.map(s => s.source.container)).size !== sources.length) unavailable();
-        return createAccountLookupReader(sources)(email, signal);
+        return createAccountLookupReader(sources)(email, signal, authorise);
     };
 }
 module.exports = { createAccountLookupReader, createProductionAccountLookup };

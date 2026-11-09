@@ -40,7 +40,13 @@ test('pagehide aborts an in-flight lookup and restored page can submit without r
     expect(h.nodes.get('accountLookupStatus').textContent).toBe('');
     // A bfcache restore keeps this document and its listeners; it does not rerun the script.
     h.window.dispatch('pageshow'); email.value = 'after@example.test'; const second = h.submit();
-    expect(fetch).toHaveBeenCalledTimes(2); expect(fetch.mock.calls[1][0]).toContain('email=after%40example.test');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    for (const [url, options] of fetch.mock.calls) {
+        expect(url).toBe('/api/dashboard-admin/accounts/lookup');
+        expect(url).not.toMatch(/email|@|%40|\?/);
+        expect(options.method).toBe('POST'); expect(options.headers['Content-Type']).toBe('application/json');
+    }
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ email: 'after@example.test' });
     old.resolve(reply('before@example.test')); await first;
     expect(h.button.disabled).toBe(true); expect(result.getAttribute('aria-busy')).toBe('true');
     expect(result.textContent).not.toContain('before@example.test');

@@ -1091,7 +1091,7 @@
     },
     {
       "route": "/api/dashboard-admin/accounts/lookup",
-      "methods": ["GET"],
+      "methods": ["POST"],
       "allowedRoles": ["anonymous"]
     },
     {

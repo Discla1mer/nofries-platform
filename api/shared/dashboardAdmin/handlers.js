@@ -95,10 +95,10 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
         !Number.isSafeInteger(requestBudgetMs) || requestBudgetMs <= 0 || requestBudgetMs > 60000) throw new Error('dashboard_admin_configuration_invalid');
 
     const accountLookup = env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP === 'true' && accountLookupReader
-        ? createAccountLookup({ read: accountLookupReader }) : null;
+        ? createAccountLookup({ read: accountLookupReader, readJson, env }) : null;
 
     async function principal(request, expected = null) {
-        if ((!service && !signupListService && !accountLookup) || !readOperatorSession) fail(503, 'dashboard_admin_unavailable');
+        if ((!service && !signupListService) || !readOperatorSession) fail(503, 'dashboard_admin_unavailable');
         let details;
         try { details = await readOperatorSession(String(request.headers?.cookie || '')); }
         catch (error) {
@@ -149,7 +149,11 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
         try {
             if (['accounts/lookup', 'accounts/app.js'].includes(route)) {
                 if (!accountLookup) fail(404, 'dashboard_admin_not_found');
-                return await accountLookup(request, route, () => checked(() => principal(request)), signal);
+                return await accountLookup(request, route, async (selector = null) => {
+                    const actor = await checked(() => principal(request));
+                    await checked(() => permission(actor, 'lookup', selector, checked));
+                    return actor;
+                }, signal);
             }
             const methods = { document: 'GET', 'app.js': 'GET', 'app.css': 'GET', capabilities: 'GET', lookup: 'POST', signups: 'POST',
                 'extend-expired-access': 'POST',
