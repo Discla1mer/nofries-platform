@@ -6,6 +6,7 @@ body[data-page="customer-report"] .report-footer {
     gap: 20px;
     padding-block: 22px;
 }
+body[data-page="customer-report"] .report-footer { flex-wrap: wrap; }
 body[data-page="customer-report"] .report-header img { object-fit: contain; }
 body[data-page="customer-report"] .report-header > a:last-child,
 body[data-page="customer-report"] .report-footer { color: var(--muted); font-size: .9rem; }

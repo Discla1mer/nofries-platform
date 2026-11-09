@@ -330,6 +330,7 @@ button { cursor: pointer; }
 
 /* Verified scope page */
 .scope-page { background: var(--page); }
+.scope-page .site-footer > div:last-child { flex-wrap: wrap; }
 .scope-page-header { border-bottom: 1px solid var(--line); background: var(--page); }
 .scope-page-header .shell { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-block: 18px; }
 .scope-page-header nav { display: flex; gap: 18px; align-items: center; color: var(--muted); font-size: .72rem; font-weight: 800; }
