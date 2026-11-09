@@ -32,11 +32,10 @@ function createAccountLookup({ read, readJson, env, audit = line => console.info
                 const email = input.email.trim().toLowerCase();
                 if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || /[\x00-\x1f\x7f]/.test(email)) fail(400);
                 if ((await authorise()).subjectKey !== actor.subjectKey) fail(403);
-                const selectors = [], checkScope = async selector => {
-                    if ((await authorise(selector)).subjectKey !== actor.subjectKey) fail(403);
-                };
-                body = { rows: await read(email, signal, async selector => { await checkScope(selector); selectors.push(selector); }, env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true') };
-                for (const selector of selectors) await checkScope(selector);
+                // Staff authority covers every customer store; selectors are
+                // returned only when the write actions are composed.
+                body = await read(email, signal, env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true');
+                if (!body || !Array.isArray(body.rows) || typeof body.truncated !== 'boolean') fail(503);
             }
             const current = await authorise();
             if (current.subjectKey !== actor.subjectKey) fail(403);
@@ -48,7 +47,8 @@ function createAccountLookup({ read, readJson, env, audit = line => console.info
         }
         if (route === 'accounts/lookup') {
             try { await audit(JSON.stringify({ category: 'dashboard_admin_account_lookup', requestId: randomUUID(),
-                actorHash, status, count: status === 200 ? body.rows.length : 0, occurredAt: new Date(now()).toISOString() })); }
+                actorHash, status, count: status === 200 ? body.rows.length : 0, truncated: status === 200 && body.truncated,
+                occurredAt: new Date(now()).toISOString() })); }
             catch (_) { status = 503; body = { code: 'dashboard_admin_account_lookup_503' }; }
         }
         return { status, body, headers, isRaw: status === 200 && route === 'accounts/app.js' };

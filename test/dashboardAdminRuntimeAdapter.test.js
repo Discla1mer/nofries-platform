@@ -159,7 +159,9 @@ async function harness(options = {}) {
     nativeFactory.mockImplementationOnce(config => { nativeConfiguration = config; return repository; });
     const runtimeInput = { ...sessionOptions, pool: { connect: jest.fn(() => { throw new Error('No SQL in adapter protocol tests'); }) },
         instanceId: INSTANCE, historyBudget: { maxRecords: 4096, maxBytes: 67108864, maxDurationMs: 60000 },
-        newId: () => '30000000-0000-4000-8000-' + (++state.ids).toString().padStart(12, '0'), readApprovedBinding };
+        newId: () => '30000000-0000-4000-8000-' + (++state.ids).toString().padStart(12, '0'),
+        ...(options.staff ? {} : { readApprovedBinding }) };
+    if (options.staff && options.runtimeIdentityPolicy) runtimeInput.identityPolicy = options.runtimeIdentityPolicy;
     const runtime = createDashboardAdminRuntime(runtimeInput);
     function serviceFor(req) {
         if (!options.mark) return createDashboardAdminService({ ...runtime,
@@ -560,4 +562,41 @@ test.each(['expired', 'invalid'])('initial shell denial for a genuine %s parent 
     expect(h.store.sessions.has(parentId)).toBe(true);
     expect(h.repository.persistAudit).not.toHaveBeenCalled(); expect(h.repository.reconcileAudit).not.toHaveBeenCalled();
     expect(h.repository.readAuthoritySnapshot).not.toHaveBeenCalled(); expect(h.runtimeInput.pool.connect).not.toHaveBeenCalled();
+});
+
+// Staff policy: no per-customer approval record. The allowlisted staff admin's
+// own native operator session, pinned to the configured identity policy, is
+// the authority. Host subject/role checks happen before this adapter.
+test('staff policy completes a lookup through the native gate and audit protocol without any approval read', async () => {
+    const h = await harness({ staff: true, requestBudgetMs: 10000 }), req = h.request();
+    const result = await h.serviceFor(req).lookup(principal, h.selector);
+    expect(result.result.status).toBe('found');
+    expect(h.repository.readAuthoritySnapshot).toHaveBeenCalledTimes(1);
+    expect(h.ledger.size).toBe(2); expect(h.readApprovedBinding).not.toHaveBeenCalled();
+    expect(h.captures.every(capture => capture.kind === 'operator_dashboard' && capture.operatorIssuanceProof)).toBe(true);
+    for (const spy of Object.values(h.storeWrites)) expect(spy).not.toHaveBeenCalled();
+    // One HTTP request stays pinned to one target; a second target on the same
+    // request is refused, while a fresh request may read another organisation.
+    await expect(h.serviceFor(req).lookup(principal, { ...h.selector, organisationId: 'synthetic-other-org' })).rejects.toMatchObject({ statusCode: 403 });
+    expect(h.repository.readAuthoritySnapshot).toHaveBeenCalledTimes(1);
+}, 20000);
+test.each(['other staff actor', 'policy revision', 'policy id', 'closed gate', 'no proof'])('staff policy denies %s before snapshot or audit', async mode => {
+    const policy = { policyId: 'synthetic-operator-policy', policyRevision: 0,
+        issuer: 'https://login.microsoftonline.com/' + TENANT + '/v2.0', identityTenantId: TENANT, audience: CLIENT };
+    const h = await harness({ staff: true, withProof: mode !== 'no proof',
+        runtimeIdentityPolicy: mode === 'policy revision' ? { ...policy, policyRevision: 1 } : mode === 'policy id' ? { ...policy, policyId: 'synthetic-other-policy' } : undefined });
+    if (mode === 'closed gate') h.state.gateReady = false;
+    const actor = mode === 'other staff actor' ? { ...principal, subjectKey: TENANT + ':' + OTHER } : principal;
+    await expect(h.serviceFor(h.request()).lookup(actor, h.selector)).rejects.toMatchObject({ statusCode: 403 });
+    expect(h.repository.readAuthoritySnapshot).not.toHaveBeenCalled(); expect(h.ledger.size).toBe(0);
+    expect(h.readApprovedBinding).not.toHaveBeenCalled();
+});
+test('staff policy requires a usable identity policy and still rejects a non-function approval reader', async () => {
+    const h = await harness({ staff: true });
+    for (const identityPolicy of [{ ...h.runtimeInput.identityPolicy, policyId: '' }, { ...h.runtimeInput.identityPolicy, policyRevision: -1 }, null]) {
+        nativeFactory.mockImplementationOnce(() => h.repository);
+        expect(() => createDashboardAdminRuntime({ ...h.runtimeInput, identityPolicy })).toThrow();
+    }
+    nativeFactory.mockImplementationOnce(() => h.repository);
+    expect(() => createDashboardAdminRuntime({ ...h.runtimeInput, readApprovedBinding: null })).toThrow();
 });
