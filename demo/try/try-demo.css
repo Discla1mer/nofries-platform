@@ -1,0 +1,16 @@
+/* Fictional demo banner (#29). The dashboard itself uses app/dashboard.css unchanged. */
+body { margin: 0; background: #ece6da; }
+.try-demo-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1.5rem;
+    padding: .85rem max(1rem, env(safe-area-inset-left)); background: #ffd400; color: #111816; font: 1rem/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.try-demo-banner p { margin: 0; }
+.try-demo-copy { min-width: 0; flex: 1 1 22rem; }
+.try-demo-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; flex: 0 1 auto; }
+.try-demo-banner button { font: inherit; min-height: 2.875rem; padding: .55rem 1rem; border: 2px solid #111816; border-radius: .6rem; background: #fffbe6; color: #111816; cursor: pointer; } .try-demo-banner button:hover { background: #ffffff; }
+.try-demo-banner a { color: #111816; min-height: 2.875rem; display: inline-flex; align-items: center; }
+.try-demo-banner a.try-demo-cta { padding: 0 1rem; border-radius: .6rem; background: #111816; color: #fffbe6; text-decoration: none; font-weight: 600; }
+.try-demo-banner :focus-visible { outline: 3px solid #111816; outline-offset: 3px; }
+.try-demo-status { flex-basis: 100%; font-weight: 600; } .try-demo-status:empty { display: none; }
+.try-demo-actions-list { display: grid; gap: 1rem; padding-left: 1.25rem; }
+.try-demo-actions-list li p { margin: .4rem 0 0; }
+.try-demo-actions-list [data-priority="High"] { background: #f2e4bc; border-color: #c29221; color: var(--dashboard-ink); }
+.try-demo-assessment a.dashboard-button { text-decoration: none; }
