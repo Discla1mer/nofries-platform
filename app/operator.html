@@ -9,6 +9,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/assets/operator.css">
     <script src="/js/operator-loader.js" defer></script>
+    <script src="/api/dashboard-admin/accounts/app.js" defer></script>
 </head>
 <body data-page="operator" class="operator-loading">
     <a class="skip-link" href="#operatorMain">Skip to work requiring attention</a>
@@ -34,6 +35,17 @@
             <p class="eyebrow">Protected workspace</p>
             <h1>Loading work that needs attention</h1>
             <p id="loadingStatus">Checking your Microsoft identity, tenant and role.</p>
+        </section>
+        <section id="accountLookupPanel" aria-labelledby="accountLookupHeading" hidden>
+            <h2 id="accountLookupHeading">Account lookup</h2>
+            <p>Read-only customer sign-in information. Enter the customer's exact email address.</p>
+            <form id="accountLookupForm">
+                <label for="accountLookupEmail">Customer email</label>
+                <input id="accountLookupEmail" type="email" required maxlength="254" autocomplete="off" spellcheck="false">
+                <button type="submit">Look up account</button>
+            </form>
+            <p id="accountLookupStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="accountLookupResults" role="region" aria-label="Account lookup results" tabindex="0" aria-busy="false"></div>
         </section>
         <div id="operatorRoot" hidden></div>
     </main>

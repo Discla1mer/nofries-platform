@@ -53,7 +53,11 @@ test('canonical browser links have exact temporary private redirects to linked A
 });
 
 test('only the nine exact method/path pairs bypass SWA broker roles for the existing BFF boundary', () => {
-    const additions = config.routes.filter(rule => rule.route.startsWith('/api/dashboard-admin'));
+    const additions = config.routes.filter(rule => rule.route.startsWith('/api/dashboard-admin') && rule.allowedRoles.includes('anonymous'));
+    for (const path of ['lookup', 'app.js']) {
+        expect(edgeRule('/api/dashboard-admin/accounts/' + path, 'GET')).toEqual({
+            route: '/api/dashboard-admin/accounts/*', allowedRoles: ['admin'] });
+    }
     expect(additions.map(rule => [rule.methods[0], rule.route])).toEqual(apiRoutes);
     const catchall = config.routes.findIndex(rule => rule.route === '/api/*');
     for (const [method, url] of apiRoutes) {

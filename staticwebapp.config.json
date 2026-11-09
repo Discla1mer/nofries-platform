@@ -1090,6 +1090,10 @@
       ]
     },
     {
+      "route": "/api/dashboard-admin/accounts/*",
+      "allowedRoles": ["admin"]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": [
         "authenticated"

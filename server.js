@@ -74,6 +74,7 @@ const { startStandaloneHost } = require('./lib/hostStartup');
 const { createDashboardRuntimeHandlers } = require('./api/shared/dashboardRuntimeHandlers');
 const { createDashboardAdminService } = require('./api/shared/dashboardAdmin/service');
 const { createSignupListService } = require('./api/shared/dashboardAdmin/signupService');
+const { createProductionAccountLookup } = require('./api/shared/dashboardAdmin/accountLookupStore');
 const { createDashboardAdminHandlers } = require('./api/shared/dashboardAdmin/handlers');
 const { createCustomerSignupRuntime, customerSignupErrorResponse } = require('./api/shared/customerSignup/customerSignupRuntime');
 const { withSignupSupportContext } = require('./api/shared/customerSignup/signupSupportContext');
@@ -229,6 +230,7 @@ function createNoFriesApp(configuration = {}) {
     const dashboardAdmin = createDashboardAdminHandlers({ service: dashboardAdminService,
         accountActions: dashboardAdminAccountActions,
         signupListService: dashboardAdminSignupListService,
+        accountLookupReader: createProductionAccountLookup(apiEnvironment),
         readOperatorSession: dashboard ? cookie => dashboard.authServices.session.readSessionDetails(cookie) : null,
         env: apiEnvironment, requestBudgetMs: dashboardAdminRequestBudgetMs });
 
@@ -473,7 +475,7 @@ async function sendDashboardAdmin(req, res, route) {
         await sendDashboardAdmin(req, res, 'entry');
     }));
     app.use('/api/dashboard-admin', asyncRoute(async (req, res) => {
-    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|extend-expired-access|entry\.js|entry-capabilities)$/.test(req.path) ||
+    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|extend-expired-access|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
         dashboardAdminSignupListService && req.path === '/signups' ? req.path.slice(1) : null;
     await sendDashboardAdmin(req, res, route);
 }));
