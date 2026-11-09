@@ -9,6 +9,7 @@ const {
     clearAuthCookie,
     createBrowserAuthService
 } = require('../shared/browserAuth');
+const { logSafeFailure: logStaffFailure } = require('../shared/browserAuthDiagnostics');
 const { apiSecurityHeaders } = require('../shared/securityHeaders');
 
 function createAuthSessionFunction(options = {}) {
@@ -18,11 +19,13 @@ function createAuthSessionFunction(options = {}) {
     return async function authSession(context, req) {
         const method = String(req && req.method || 'GET').toUpperCase();
         if (method !== 'GET') {
+            logStaffFailure(context, new BrowserAuthError(405, 'method_not_allowed'));
             context.res = json(405, { error: 'Method not allowed', code: 'method_not_allowed' }, { Allow: 'GET' });
             return;
         }
         const headers = req && req.headers || {};
         if (isBlockedUserAgent(getHeader(headers, 'user-agent'), env)) {
+            logStaffFailure(context, new BrowserAuthError(403, 'request_blocked'));
             context.res = json(403, { error: 'Request blocked' });
             return;
         }
@@ -32,6 +35,7 @@ function createAuthSessionFunction(options = {}) {
             env
         );
         if (!rateLimit.allowed) {
+            logStaffFailure(context, new BrowserAuthError(429, 'rate_limited'));
             context.res = json(
                 429,
                 { error: 'Too many requests. Please wait and try again.' },
@@ -44,6 +48,7 @@ function createAuthSessionFunction(options = {}) {
             const service = configuredService || (configuredService = createBrowserAuthService({ env }));
             const details = await service.readSessionDetails(getHeader(headers, 'cookie'));
             if (!details) {
+                logStaffFailure(context, new BrowserAuthError(401, 'authentication_required'));
                 context.res = authenticationRequired(rateLimitHeaders(rateLimit));
                 return;
             }
@@ -59,7 +64,7 @@ function createAuthSessionFunction(options = {}) {
                 expiresAt: details.expiresAt
             }, rateLimitHeaders(rateLimit));
         } catch (error) {
-            logSafeFailure(context, error);
+            logStaffFailure(context, error);
             if (error instanceof BrowserAuthError && error.statusCode < 500) {
                 context.res = authenticationRequired(Object.assign({}, rateLimitHeaders(rateLimit), {
                     'Set-Cookie': clearAuthCookie()
@@ -90,13 +95,6 @@ function json(status, body, extraHeaders = {}) {
         }, extraHeaders)),
         body
     };
-}
-
-function logSafeFailure(context, error) {
-    const code = error instanceof BrowserAuthError ? error.code : 'browser_auth_unexpected';
-    if (context && context.log && typeof context.log.warn === 'function') {
-        context.log.warn(`Browser session verification failed: ${code}`);
-    }
 }
 
 function getHeader(headers, name) {

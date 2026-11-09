@@ -9,6 +9,7 @@ const {
     clearTransactionCookie,
     createBrowserAuthService
 } = require('../shared/browserAuth');
+const { logSafeFailure: logStaffFailure } = require('../shared/browserAuthDiagnostics');
 const { apiSecurityHeaders } = require('../shared/securityHeaders');
 
 function createAuthCallbackFunction(options = {}) {
@@ -22,11 +23,13 @@ function createAuthCallbackFunction(options = {}) {
     return async function authCallback(context, req) {
         const method = String(req && req.method || '').toUpperCase();
         if (method !== 'POST') {
+            if (!options.customerEntry) logStaffFailure(context, new BrowserAuthError(405, 'method_not_allowed'));
             context.res = json(405, { error: 'Method not allowed', code: 'method_not_allowed' }, { Allow: 'POST' });
             return;
         }
         const headers = req && req.headers || {};
         if (isBlockedUserAgent(getHeader(headers, 'user-agent'), env)) {
+            if (!options.customerEntry) logStaffFailure(context, new BrowserAuthError(403, 'request_blocked'));
             context.res = json(403, { error: 'Request blocked' });
             return;
         }
@@ -36,6 +39,7 @@ function createAuthCallbackFunction(options = {}) {
             env
         );
         if (!rateLimit.allowed) {
+            if (!options.customerEntry) logStaffFailure(context, new BrowserAuthError(429, 'rate_limited'));
             context.res = json(
                 429,
                 { error: 'Too many sign-in attempts. Please wait and try again.' },
@@ -57,10 +61,10 @@ function createAuthCallbackFunction(options = {}) {
                 ? '/signup?provider=external' : result.location;
             context.res = redirect(location, result.cookies || result.cookie, rateLimitHeaders(rateLimit));
         } catch (error) {
-            // A short random support reference ties the visitor's screen to this
-            // log line. It carries no account, provider or error detail.
-            const reference = supportReference();
-            logSafeFailure(context, error, reference);
+            // Customer support references retain their existing behavior.
+            const reference = options.customerEntry ? supportReference() : null;
+            if (options.customerEntry) logSafeFailure(context, error, reference);
+            else logStaffFailure(context, error);
             if (options.customerEntry && getHeader(headers, 'accept').includes('text/html')) {
                 const responseHeaders = rateLimitHeaders(rateLimit);
                 if (shouldClearTransactionCookie(error)) responseHeaders['Set-Cookie'] = clearCallbackTransaction();

@@ -10,6 +10,8 @@ const {
 } = require('../shared/browserAuth');
 const { apiSecurityHeaders } = require('../shared/securityHeaders');
 
+const { logSafeFailure: logStaffFailure } = require('../shared/browserAuthDiagnostics');
+
 function createAuthLoginFunction(options = {}) {
     if (options.customerTransport !== undefined && (options.customerTransport !== 'external' || options.customerEntry !== true)) {
         throw new TypeError('browser_auth_login_transport_invalid');
@@ -20,11 +22,13 @@ function createAuthLoginFunction(options = {}) {
     return async function authLogin(context, req) {
         const method = String(req && req.method || 'GET').toUpperCase();
         if (method !== 'GET') {
+            if (!options.customerEntry) logStaffFailure(context, new BrowserAuthError(405, 'method_not_allowed'));
             context.res = json(405, { error: 'Method not allowed', code: 'method_not_allowed' }, { Allow: 'GET' });
             return;
         }
         const headers = req && req.headers || {};
         if (isBlockedUserAgent(getHeader(headers, 'user-agent'), env)) {
+            if (!options.customerEntry) logStaffFailure(context, new BrowserAuthError(403, 'request_blocked'));
             context.res = json(403, { error: 'Request blocked' });
             return;
         }
@@ -34,6 +38,7 @@ function createAuthLoginFunction(options = {}) {
             env
         );
         if (!rateLimit.allowed) {
+            if (!options.customerEntry) logStaffFailure(context, new BrowserAuthError(429, 'rate_limited'));
             context.res = json(
                 429,
                 { error: 'Too many sign-in attempts. Please wait and try again.' },
@@ -61,7 +66,8 @@ function createAuthLoginFunction(options = {}) {
             });
             context.res = redirect(result.location, result.cookie, rateLimitHeaders(rateLimit), 302);
         } catch (error) {
-            logSafeFailure(context, error);
+            if (options.customerEntry) logSafeFailure(context, error);
+            else logStaffFailure(context, error);
             if (options.customerEntry && getHeader(headers, 'accept').includes('text/html')) {
                 context.res = { status: 303, headers: apiSecurityHeaders({ ...rateLimitHeaders(rateLimit),
                     Location: options.customerTransport === 'external'

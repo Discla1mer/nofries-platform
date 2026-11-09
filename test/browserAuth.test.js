@@ -720,7 +720,7 @@ describe('browser auth Azure Functions', () => {
         expect(JSON.stringify(failed.res)).not.toContain('secret-code');
         expect(failed.res.headers['Set-Cookie']).toBeUndefined();
         expect(failed.log.warn).toHaveBeenCalledWith(
-            expect.stringMatching(/^Browser sign-in callback failed: browser_auth_code_exchange_failed ref=NF-[A-Z2-9]{6}$/)
+            'Browser sign-in start failed: browser_auth_code_exchange_failed'
         );
     });
 
