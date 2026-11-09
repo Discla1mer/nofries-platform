@@ -106,7 +106,7 @@ function harness(options = {}) {
         });
     }
     const headerLinks = links(homeEntry.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)[1], header);
-    const homeLinks = headerLinks.filter(link => link.href === '/');
+    const homeLinks = headerLinks.filter(link => link.getAttribute('data-dashboard-home') !== null);
     const footer = document.createElement('footer');
     const footerLinks = links(homeEntry.match(/<footer\b[^>]*>([\s\S]*?)<\/footer>/)[1], footer);
     document.body.append(header, elements.dashboardEntry, footer);
@@ -1610,8 +1610,8 @@ describe('ready Cyber composition', () => {
     }
     const footerTargets = [
         [false, 0, '/roadmap.html'], [false, 1, 'https://news.nofries.nz/'],
-        [true, 0, 'https://news.nofries.nz/'], [true, 1, '/roadmap.html'],
-        [true, 2, '/contact.html'], [true, 3, '/privacy.html'], [true, 4, '/terms.html']
+        [true, 0, '/'], [true, 1, '/managed-it.html'], [true, 2, '/roadmap.html'], [true, 3, 'https://news.nofries.nz/'],
+        [true, 4, '/contact.html'], [true, 5, '/privacy.html'], [true, 6, '/terms.html']
     ];
     test.each(footerTargets)('footer gateway=%s link=%s preserves draft, focus and first destination %s', async (gateway, index, target) => {
         const h = harness({ gateway, cyber: true, hash: '#cyber-security' }); await ready(h);

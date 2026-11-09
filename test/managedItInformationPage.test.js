@@ -18,9 +18,9 @@ function policyItems(section, headings) {
     return items.map(item => text(headings ? item[1].match(/<h3>([\s\S]*?)<\/h3>/)[1] : item[1]));
 }
 
-testCase('the standalone Managed IT page is linked only from the compact homepage service section', () => {
+testCase('the standalone Managed IT page is linked from the shared navigation and the compact homepage service section', () => {
     const mainNav = home.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
-    assert.doesNotMatch(mainNav, /managed-it|Managed IT/);
+    assert.match(mainNav, /href="\/managed-it\.html" data-dashboard-leave>Managed IT</);
     assert.match(home, /id="other-services"[\s\S]*href="\/managed-it\.html"/);
     assert.match(html, /<title>No Fries Managed IT<\/title>/);
     assert.match(html, /<link rel="canonical" href="https:\/\/nofries\.nz\/managed-it\.html">/);
@@ -57,7 +57,7 @@ testCase('separate service-page links survive the dashboard-focused homepage and
     for (const href of ['https://news.nofries.nz/', '/roadmap.html', '/privacy.html', '/terms.html']) {
         assert.ok(home.includes(`href="${href}"`), `homepage footer lost ${href}`);
     }
-    for (const href of ['/', 'https://news.nofries.nz/', 'https://sales.nofries.nz/', '/roadmap.html', '/portal', '/privacy.html', '/terms.html']) {
+    for (const href of ['/', 'https://news.nofries.nz/', '/roadmap.html', '/contact.html', '/portal', '/privacy.html', '/terms.html']) {
         assert.ok(html.includes(`href="${href}"`), `information page lost ${href}`);
     }
     assert.match(html, /href="\/managed-it\.html" aria-current="page"/);
@@ -83,7 +83,7 @@ testCase('the enquiry action reuses the click-only shared assistant and verified
 });
 
 testCase('pricing navigation describes the enquiry destination without promising a price list', () => {
-    const navigation = html.match(/<nav aria-label="Product and services">([\s\S]*?)<\/nav>/)[1];
+    const navigation = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
     assert.match(navigation, /<a href="#enquire">Discuss pricing<\/a>/);
     assert.match(html, /<section class="managed-it-enquiry" id="enquire" aria-labelledby="enquiry-title">/);
     assert.doesNotMatch(html, /Service pricing|Plan your managed service|Open the existing scoping workspace/);

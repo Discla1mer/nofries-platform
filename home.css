@@ -889,6 +889,8 @@ body[data-dashboard-state="ready"] #dashboardMessage, body[data-dashboard-state=
 .signup-glance ul { margin: 0 0 12px; padding-left: 1.2em; display: grid; gap: 6px; }
 .signup-glance p { margin: 0; font-size: 0.95rem; }
 .signup-progress { margin-block: 16px; font-weight: 600; }
+/* Roadmap shares the public navigation; keep wrapped rows close on phones. */
+body[data-page="product-roadmap"] .site-header nav { gap: 0 20px; }
 .signup-legal p { max-width: 78ch; margin: 0; color: var(--ink-soft); font-size: .9375rem; line-height: 1.75; white-space: pre-wrap; }
 .signup-schedule { border-top: 3px solid var(--green); }
 .access-layout:has(.signup-legal) { max-width: 66rem; grid-template-columns: minmax(0, 1fr); gap: 0; padding-block: 24px 48px; }
