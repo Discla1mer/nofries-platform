@@ -282,6 +282,8 @@
         const client = options.client;
         const organisationId = options.organisationId;
         const initialAssessmentId = options.initialAssessmentId;
+        // Opened from the first-use action: go straight to the new-assessment step if nothing is saved yet.
+        let startNewWhenEmpty = options.startNew === true && initialAssessmentId === undefined && options.presentationMode === 'editable';
         if (!metadata || metadata.schemaVersion !== 1 || !Array.isArray(metadata.questions) || !metadata.questions.length ||
             initialAssessmentId !== undefined && (typeof initialAssessmentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(initialAssessmentId)) ||
             !client || !['list', 'read', 'create', 'save', 'submit', 'normaliseCommand', 'commandByteLength'].every(function (key) { return typeof client[key] === 'function'; })) {
@@ -678,7 +680,7 @@
             if (!live() || loading) return;
             const previousIds = new Set(summaries.map(function (item) { return item.assessmentId; }));
             let ownsFocus = append && doc.activeElement === root.querySelector('[id="ncsc-assessment-more"]');
-            let appended = false;
+            let appended = false, autoStarted = false;
             function releaseFocus() { ownsFocus = false; }
             // An old empty page cannot establish that a fresh list is empty.
             // Failed replacement reads must retain an explicit retry path.
@@ -695,12 +697,15 @@
                 result.assessments.forEach(function (item) { map.set(item.assessmentId, copy(item)); });
                 summaries = Array.from(map.values()); nextAfter = result.nextAfterAssessmentId; listLoaded = true;
                 appended = append;
+                if (startNewWhenEmpty && !append && view === 'list' && !summaries.length) { view = 'create'; declaration = ''; errors = []; autoStarted = true; }
+                startNewWhenEmpty = false;
             } catch (error) { if (live(expected)) fixedFailure(error); }
             finally {
                 heading.removeEventListener('blur', releaseFocus);
                 if (live(expected)) {
                     const restorePageFocus = ownsFocus && doc.activeElement === heading && view === 'list' && !leave;
                     loading = false; render();
+                    if (autoStarted) { const scope = content.querySelector('textarea'); if (scope) scope.focus(); }
                     if (restorePageFocus) {
                         const list = root.querySelector('.ncsc-assessment-list');
                         const firstNew = appended && list && Array.from(list.querySelectorAll('button')).find(function (control) {
@@ -911,7 +916,9 @@
             }
             metric('Reported implementation', results.attainment, 'Weighted implementation range. Unknown answers and pending N/A claims widen the range; they do not count as implemented.');
             metric('Resolved answers', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
-            metric('Supporting evidence', results.substantiated, 'Current substantiated evidence coverage. Tested coverage: ' + results.tested + '. Confidence is not assessed. Self-attested answers alone do not demonstrate effectiveness.');
+            if (results.substantiated === '0.0%' && results.tested === '0.0%') {
+                metric('Supporting evidence', 'None recorded', 'No supporting evidence has been recorded for this submission, so these results reflect your answers only. Confidence is not assessed.');
+            } else metric('Supporting evidence', results.substantiated, 'Current substantiated evidence coverage. Tested coverage: ' + results.tested + '. Confidence is not assessed. Self-attested answers alone do not demonstrate effectiveness.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: No comparison available; changes require comparable assessment versions and scope.'));
             panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Pending N/A claims: ' + results.pending + '.'));
             panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. N/A stays in the denominator unless formally approved; N/A approval is not available in this journey. This is a No Fries calculation, not an NCSC score.'));
@@ -938,7 +945,13 @@
         }
         function renderNextSteps(panel) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Fix these first'));
+            const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(savedAnswer(question.id).optionId); }).length; };
+            const toFix = countOf(['no', 'partial']), toCheck = countOf(['unknown', 'not_applicable']);
+            const plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
+            // One plain verdict before any percentages.
+            if (toFix || toCheck) section.append(node('p', 'ncsc-verdict', 'You have ' + plural(toFix, 'gap', 'gaps') + ' to fix and ' + plural(toCheck, 'answer', 'answers') + ' to check.' + (toFix + toCheck > 3 ? ' Start with the first three below.' : '')));
             section.append(node('p', '', 'Start with the gaps you reported, then check what you are unsure about with your IT provider. This list groups your answers; it is not a calculated risk ranking.'));
+            if (toCheck) section.append(node('p', 'dashboard-muted', 'No IT provider? Ask whoever looks after your computers and accounts, or a local IT support business, to check these with you.'));
             const list = node('ol'), summary = ['Cyber security assessment', 'Scope: ' + acknowledged.scopePopulation.description, 'Submitted: ' + localDate(acknowledged.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
             ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
                 questions.filter(function (question) { return savedAnswer(question.id).optionId === optionId; }).forEach(function (question) {

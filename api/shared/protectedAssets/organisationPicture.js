@@ -202,7 +202,7 @@
                     const token = epoch;
                     const action = button('Open assessment', () => {
                         if (live(token) && !loading && !message && !rows.length && !selected && after === null &&
-                            action.parentElement === empty && empty.parentElement === root) options.openCyber();
+                            action.parentElement === empty && empty.parentElement === root) options.openCyber(undefined, { startNew: true });
                     });
                     action.classList.add('picture-first-use-action'); empty.append(action);
                 }

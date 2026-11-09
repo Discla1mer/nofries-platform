@@ -691,3 +691,16 @@ test('disabled Board Reports keeps the disabled label even when Cyber picture is
     assert.doesNotMatch(board.root.textContent, /Draft assessment snapshot/);
     assert.match(board.root.textContent, /temporarily unavailable/);
 });
+
+test('Escape closes the More tools menu and returns focus to its summary', () => {
+    const dom = mount();
+    const menu = dom.root.querySelector('.dashboard-menu-other');
+    assert.ok(menu);
+    menu.open = true;
+    for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
+    assert.equal(menu.open, false);
+    assert.equal(dom.document.activeElement, menu.querySelector('summary'));
+    menu.open = false;
+    for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
+    assert.equal(menu.open, false);
+});

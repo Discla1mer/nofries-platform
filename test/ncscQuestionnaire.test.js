@@ -1253,7 +1253,8 @@ describe('submitted assessment results', () => {
         const metrics = panel.querySelectorAll('.ncsc-result-metric');
         expect(metrics.map(card => card.querySelector('h3').textContent)).toEqual(['Reported implementation', 'Resolved answers', 'Supporting evidence']);
         expect(metrics[0].querySelector('.ncsc-result-value').textContent).toBe('100.0%');
-        expect(metrics[2].querySelector('.ncsc-result-value').textContent).toBe('0.0%');
+        expect(metrics[2].querySelector('.ncsc-result-value').textContent).toBe('None recorded');
+        expect(metrics[2].textContent).toContain('reflect your answers only');
         expect(metrics[2].textContent).toContain('Confidence is not assessed.');
         expect(panel.textContent).toContain('Not calculated'); expect(panel.textContent).toContain('No comparison available');
         expect(panel.querySelectorAll('.ncsc-result-control')).toHaveLength(metadata().controls.length);
@@ -2795,10 +2796,31 @@ describe('reconciled persona journey', () => {
         const read = jest.fn(async () => result), ui = await resumeUi(h, { client: { ...h.client, read } });
         try {
             expect(ui.root.querySelector('.ncsc-next-steps').querySelectorAll('li')).toHaveLength(14);
+            expect(ui.root.querySelector('.ncsc-verdict').textContent).toBe('You have 14 gaps to fix and 0 answers to check. Start with the first three below.');
             expect(byId(ui, 'ncsc-provider-summary').value).toContain('Partial');
             const before = h.records.length; control(ui, 'Retry loading results').click(); await until(() => read.mock.calls.length === 2);
             expect(h.records).toHaveLength(before);
             expect(byId(ui, 'ncsc-provider-summary').readOnly).toBe(true);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('opened from the first-use action with nothing saved, the questionnaire starts at the scope step', async () => {
+        const h = await backend(), ui = mountUi(h, { startNew: true });
+        try {
+            await until(() => byId(ui, 'ncsc-scope'));
+            expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-scope'));
+            expect(control(ui, 'Create assessment')).toBeDefined();
+            control(ui, 'Back to assessments').click(); await until(() => control(ui, 'Start an assessment'));
+            expect(byId(ui, 'ncsc-scope')).toBeUndefined();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('with saved assessments, the first-use intent still shows the list', async () => {
+        const h = await backend(); await h.execute(createCommand());
+        const ui = mountUi(h, { startNew: true });
+        try {
+            await until(() => savedActions(ui).length > 0);
+            expect(byId(ui, 'ncsc-scope')).toBeUndefined();
         } finally { ui.controller.destroy(); }
     });
 

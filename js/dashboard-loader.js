@@ -25,6 +25,12 @@
     Object.keys(ids).forEach(function (key) { elements[key] = document.getElementById(ids[key]); });
     if (Object.keys(elements).some(function (key) { return !elements[key]; })) return;
     const accountMenu = document.getElementById('dashboardAccountMenu');
+    // Escape closes the account menu and returns focus to its summary.
+    if (accountMenu && typeof accountMenu.addEventListener === 'function') accountMenu.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || !accountMenu.open) return;
+        accountMenu.open = false;
+        const summary = accountMenu.querySelector && accountMenu.querySelector('summary'); if (summary) summary.focus();
+    });
     const accountActions = document.getElementById('dashboardAccountActions');
     const directorySearch = document.getElementById('dashboardOrganisationSearch');
     const directoryStatus = document.getElementById('dashboardOrganisationStatus');

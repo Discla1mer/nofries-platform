@@ -435,3 +435,5 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden]) > .dashboard-menu-primary):not(:has(#dashboardApp .ncsc-questionnaire)) .home-footer a { scroll-margin-block-end: 8px; }
     .nofries-dashboard:has(.dashboard-mobile-nav > .dashboard-menu-primary) .picture-toolbar select { scroll-margin-block: 8px; }
 }
+
+.ncsc-verdict { font-size: 1.1rem; font-weight: 600; }
