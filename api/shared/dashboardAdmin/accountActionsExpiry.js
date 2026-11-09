@@ -15,6 +15,10 @@ function createExpiryAction({ source: rawSource, authorityContainer, auditContai
     if (authorityContainer.url !== `https://${source.storageAccount}.blob.core.windows.net/${source.container}` ||
         !/^https:\/\/[a-z0-9]{3,24}\.blob\.core\.windows\.net\/[a-z0-9-]{3,63}$/.test(auditContainer.url) ||
         auditContainer.url === authorityContainer.url || [readContext, readApprovedExtension, clock].some(fn => typeof fn !== 'function')) fail(503, 'unavailable');
+    const singleAttempt = () => {
+        if (authorityContainer.pipeline?.options?.retryOptions?.maxTries !== 1) fail(503, 'unavailable');
+    };
+    singleAttempt();
     // An approval is bound to the actual audit destination, not a caller digest.
     const auditConfigurationSha256 = hash({ purpose: 'dashboard_admin_account_actions', containerUrl: auditContainer.url });
     return Object.freeze({ async execute(actor, raw, invocation) {
@@ -72,17 +76,10 @@ function createExpiryAction({ source: rawSource, authorityContainer, auditContai
                 catch (_) { fail(403, 'access_denied'); }
             };
             plan = await current();
+            singleAttempt();
             writeStarted = true;
-            try { await writeActionRecord(authorityContainer, blobName, plan.after.record, { ifMatch: plan.before.etag }, signal); }
-            catch (error) {
-                // An SDK retry can report 412 after a lost successful response.
-                // Identical current bytes cannot prove which writer succeeded.
-                if ([409, 412].includes(error?.statusCode)) {
-                    const currentRecord = await readActionRecord(authorityContainer, blobName, signal);
-                    if (hash(currentRecord.record) === plan.after.sha256) fail(503, 'unavailable');
-                }
-                throw error;
-            }
+            // No retry may turn a lost success response into a later 412.
+            await writeActionRecord(authorityContainer, blobName, plan.after.record, { ifMatch: plan.before.etag }, signal);
             await audit('terminal', 'succeeded', { status: 'active', expiresAt: input.newExpiresAt });
             attempted = false; // A terminal outcome must never be overwritten.
             return { operationId, outcome: 'succeeded' };

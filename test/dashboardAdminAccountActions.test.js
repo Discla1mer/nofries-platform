@@ -14,7 +14,7 @@ const route = 'extend-expired-access', url = '/api/dashboard-admin/' + route;
 function fixture() {
     const trace = [], rows = new Map(), state = { fail: '', blocked: false };
     function container(name) {
-        return { url: `https://syntheticstore.blob.core.windows.net/${name}`, getBlockBlobClient(key) {
+        return { url: `https://syntheticstore.blob.core.windows.net/${name}`, pipeline: { options: { retryOptions: { maxTries: 1 } } }, getBlockBlobClient(key) {
             const path = name + '/' + key;
             return { async download() {
                 const saved = rows.get(path), bytes = Buffer.from(JSON.stringify(saved.record));
@@ -26,7 +26,10 @@ function fixture() {
                 if (options.conditions.ifMatch && (state.blocked || options.conditions.ifMatch !== before?.etag) ||
                     options.conditions.ifNoneMatch && before) throw Object.assign(new Error('PRIVATE_CONFLICT_DETAIL'), { statusCode: 412 });
                 rows.set(path, { record: JSON.parse(bytes.toString()), etag: '"next"' });
-                if (state.lostResponse && name === 'authority') throw Object.assign(new Error('PRIVATE_RETRY_DETAIL'), { statusCode: 412 });
+                if (state.lostResponse && name === 'authority') {
+                    rows.get(path).record.status = 'revoked'; // Another writer after this committed CAS.
+                    throw new Error('PRIVATE_LOST_RESPONSE');
+                }
                 return { etag: '"next"' };
             } };
         } };
@@ -93,12 +96,19 @@ test('failed terminal audit withholds success after the CAS and retains the atte
     expect([...f.rows.keys()].some(key => key.endsWith('attempt.json'))).toBe(true);
     expect(f.terminal()).toBeUndefined();
 });
-test('a successful write followed by an SDK retry conflict is audited as uncertain', async () => {
+test('lost success response followed by concurrent revocation stays uncertain', async () => {
     const f = fixture(); f.state.lostResponse = true;
     await expect(f.execute()).rejects.toMatchObject({ statusCode: 503 });
     expect(f.rows.get(f.key).record.revision).toBe(1);
+    expect(f.rows.get(f.key).record.status).toBe('revoked');
     expect(f.terminal()).toMatchObject({ outcome: 'uncertain', after: null,
         proposedAfter: { status: 'active', expiresAt: f.input.newExpiresAt } });
+});
+test.each([undefined, 2])('rejects authority clients whose retries are not explicitly disabled (%s)', async maxTries => {
+    const f = fixture(); f.config.authorityContainer.pipeline.options.retryOptions.maxTries = maxTries;
+    expect(() => createExpiryAction(f.config)).toThrow('dashboard_admin_unavailable');
+    await expect(f.execute()).rejects.toMatchObject({ statusCode: 503 });
+    expect(f.trace).not.toContain(f.key);
 });
 test('another session cannot consume the approved operation audit slot', async () => {
     const f = fixture(); f.approved.approval.context.sessionSha256 = 'f'.repeat(64);

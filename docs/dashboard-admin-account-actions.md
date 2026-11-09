@@ -24,8 +24,10 @@ its bounded I/O budget, and never issue an approval from request data. The nativ
 adapter binds the approval to the current staff session, identity policy and
 restore epoch. Its audit configuration digest is the canonical hash of
 `{ purpose: 'dashboard_admin_account_actions', containerUrl: auditContainer.url }`.
-No configured binding means no executable action. Prefer SDK clients with
-write retries disabled; ambiguous results never produce a success response.
+No configured binding means no executable action. The authority SDK client must
+use `retryOptions: { maxTries: 1 }`; this is checked at construction and before
+the CAS. Ambiguous transport results remain uncertain even if another writer
+subsequently changes the record; current bytes cannot prove an earlier outcome.
 
 The planner from #118 limits expiry to 90 days from server time. Only active,
 expired authority records are eligible. The ETag write preserves all fields
