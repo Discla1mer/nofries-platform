@@ -10,6 +10,7 @@ const { createExpiryApproval } = require('../api/shared/dashboardAdmin/accountAc
 const configuration = { source: {}, authorityContainer: {}, auditContainer: {}, auditPolicy: {} };
 test('membership configuration retains the built-in extension issuer and requires an explicit executor action', () => {
     const runtime = createAccountActionsRuntime(configuration, { pool: {} }, jest.fn());
+    expect(runtime.membershipAvailable).toBe(true);
     const issuer = createExpiryApproval.mock.results.at(-1).value;
     expect(runtime.approve).toBe(issuer.approve);
     expect(createExpiryAction.mock.calls.at(-1)[0].readApprovedExtension).toBe(issuer.readApprovedExtension);
@@ -17,6 +18,10 @@ test('membership configuration retains the built-in extension issuer and require
     expect(runtime.execute({}, {}, {}, 'extend-expired-access')).toBe('expiry');
     for (const route of [undefined, 'approve-extension', 'delete']) expect(() => runtime.execute({}, {}, {}, route)).toThrow('dashboard_admin_unavailable');
     expect(createExpiryAction.mock.results.at(-1).value.execute).toHaveBeenCalledTimes(1);
+});
+test('an extension-only runtime does not advertise membership controls', () => {
+    const { auditPolicy, ...extension } = configuration;
+    expect(createAccountActionsRuntime(extension, { pool: {} }, jest.fn()).membershipAvailable).toBe(false);
 });
 test('explicit extension readers remain supported and malformed optional readers fail closed', () => {
     const readApprovedExtension = jest.fn(), runtime = createAccountActionsRuntime({ ...configuration, readApprovedExtension }, { pool: {} }, jest.fn());

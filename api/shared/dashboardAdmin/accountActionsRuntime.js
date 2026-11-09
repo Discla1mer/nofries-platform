@@ -40,13 +40,15 @@ function createAccountActionsRuntime(configuration, dashboard, authorise) {
         } };
     const issuer = configuration.readApprovedExtension ? null : createExpiryApproval(options);
     const expiry = createExpiryAction({ ...options, readApprovedExtension: configuration.readApprovedExtension || issuer.readApprovedExtension });
-    const membership = hasMembership ? createMembershipAction({ ...options, identityPolicy: dashboard.identityPolicy,
-        createRepository: (guard, allowed, context) => createAccountActionsRepository(pool, dashboard.clock, guard, allowed, context) }) : null;
-    return Object.freeze({ execute(actor, input, invocation, action) {
+    const membershipOptions = { ...options, identityPolicy: dashboard.identityPolicy,
+        createRepository: (guard, allowed, context) => createAccountActionsRepository(pool, dashboard.clock, guard, allowed, context) };
+    const membership = hasMembership ? createMembershipAction(membershipOptions) : null;
+    return Object.freeze({ membershipAvailable: Boolean(membership), execute(actor, input, invocation, action) {
         if (action === 'extend-expired-access') return expiry.execute(actor, input, invocation);
         if (!membership || !['suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(action)) throw new Error('dashboard_admin_unavailable');
         return membership.execute(actor, input, invocation, action);
     },
-        ...(issuer ? { approve: issuer.approve } : {}) });
+        ...(issuer ? { approve: issuer.approve } : {}),
+        ...(membership ? { readMembership: require('./accountActionsMembershipRead').createMembershipRead(membershipOptions) } : {}) });
 }
 module.exports = { createAccountActionsRuntime };

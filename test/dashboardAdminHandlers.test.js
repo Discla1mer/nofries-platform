@@ -344,3 +344,31 @@ describe('dashboard administration Node/Express integration', () => {
         expect(JSON.stringify(lookup.body)).not.toContain('x-admin-test-request');
     });
 });
+
+test.each(['disabled', 'extension', 'membership', 'both', 'nonstaff'])('protected membership UI asset is selected only with its %s capability', async mode => {
+    const h = await harness();
+    h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS = mode === 'disabled' ? 'false' : 'true';
+    if (mode === 'nonstaff') h.env.NOFRIES_ADMIN_SUBJECTS = '';
+    const accountActions = { execute: jest.fn(), membershipAvailable: mode !== 'extension',
+        ...(['extension', 'both', 'disabled'].includes(mode) ? { approve: jest.fn() } : {}) };
+    const handler = createDashboardAdminHandlers({ service: h.service, readOperatorSession: h.readOperatorSession, env: h.env, accountActions });
+    const script = await handler.handle(wire({ route: 'entry.js' }), 'entry.js');
+    expect(script.status).toBe(mode === 'nonstaff' ? 403 : 200);
+    const text = typeof script.body === 'string' ? script.body : '';
+    expect(text.includes('accountMembershipForm')).toBe(['membership', 'both'].includes(mode));
+    expect(text.includes('accountActionsForm')).toBe(['extension', 'both'].includes(mode));
+    const capability = await handler.handle(wire({ route: 'entry-capabilities' }), 'entry-capabilities');
+    if (mode !== 'nonstaff') expect(capability.body).toEqual({ entry: true, ...(mode === 'disabled' ? {} : { accountActions: true }) });
+    expect(accountActions.execute).not.toHaveBeenCalled();
+});
+
+test.each(['off', 'anonymous', 'nonstaff', 'origin', 'allowed'])('membership read enforces the %s HTTP guard', async mode => {
+    const h = await harness(), readMembership = jest.fn(async () => ({ selector: SELECTOR, membershipStatus: 'active', expectedMembershipRevision: 7 }));
+    h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS = mode === 'off' ? 'false' : 'true';
+    if (mode === 'nonstaff') h.env.NOFRIES_ADMIN_SUBJECTS = '';
+    const handler = createDashboardAdminHandlers({ service: h.service, readOperatorSession: h.readOperatorSession, env: h.env, accountActions: { readMembership } });
+    const result = await handler.handle(wire({ method: 'POST', route: 'membership', body: { selector: SELECTOR },
+        headers: { cookie: mode === 'anonymous' ? '' : cookie, origin: mode === 'origin' ? 'https://other.invalid' : h.env.NOFRIES_PUBLIC_URL } }), 'membership');
+    expect(result.status).toBe(({ off: 404, anonymous: 401, nonstaff: 403, origin: 403, allowed: 200 })[mode]);
+    expect(readMembership).toHaveBeenCalledTimes(mode === 'allowed' ? 1 : 0);
+});

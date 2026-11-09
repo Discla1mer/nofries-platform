@@ -29,7 +29,7 @@ function fixture() {
         return { contentLength: bytes.length, etag: '"authority"', readableStreamBody: Readable.from([bytes]) };
     } }) };
     const auditContainer = { url: 'https://syntheticstore.blob.core.windows.net/audit', getBlockBlobClient: key => ({ async download() {
-        if (!state.rows.has(key)) throw Object.assign(new Error(), { statusCode: 404 });
+        if (!state.rows.has(key)) throw Object.assign(new Error(), { statusCode: 404, code: 'BlobNotFound' });
         const bytes = Buffer.from(JSON.stringify(state.rows.get(key)));
         return { contentLength: bytes.length, etag: '"audit"', readableStreamBody: Readable.from([bytes]) };
     }, async uploadData(bytes, options) {

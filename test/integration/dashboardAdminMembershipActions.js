@@ -3,7 +3,8 @@
 const { randomUUID } = require('node:crypto');
 const { createAccountActionsRepository } = require('../../api/shared/dashboardAdmin/accountActionsRepository');
 const { accountActionsPool } = require('../../api/shared/dashboardAdmin/accountActionsPool');
-const { fixture, NOW, SUBJECT } = require('../fixtures/dashboardAdminMembershipActions');
+const { fixture, actor, NOW, SUBJECT } = require('../fixtures/dashboardAdminMembershipActions');
+const { createMembershipRead } = require('../../api/shared/dashboardAdmin/accountActionsMembershipRead');
 module.exports = function registerAccountActionPostgresTests() {
     const testUrl = process.env.NOFRIES_TEST_DATABASE_URL;
     (testUrl ? test : test.skip)('native PostgreSQL preserves receipts and organisation data through suspend/restore', async () => {
@@ -33,6 +34,11 @@ module.exports = function registerAccountActionPostgresTests() {
                 type: 'organisation.initialise', expectedRevisions: { tenant: null, organisation: null, membership: null, entitlement: null, flags: null, advisorAssignments: [], usage: [] }, payload: {} }, initial);
             const scope = { tenantId, organisationId: h.selector.organisationId }, principal = { authenticated: true, subjectKey: SUBJECT };
             const before = await repo.readAuthoritySnapshot(scope, principal);
+            const read = createMembershipRead(h.config);
+            expect(await read(actor, { selector: h.selector }, { request: {}, signal: new AbortController().signal }))
+                .toMatchObject({ membershipStatus: 'active', expectedMembershipRevision: before.revisions.membership });
+            expect((await repo.readAuthoritySnapshot(scope, principal)).snapshot).toEqual(before.snapshot);
+            expect((await owner.query('SELECT count(*) FROM nofries.dashboard_operation_receipts WHERE tenant_id=$1', [tenantId])).rows[0].count).toBe('1');
             await h.run('suspend'); h.state.snapshot.membershipState.revision++;
             await h.run('restore');
             const seen = await repo.readAuthoritySnapshot(scope, principal);

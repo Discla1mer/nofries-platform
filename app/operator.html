@@ -61,6 +61,20 @@
             </form>
             <p id="accountActionsStatus" role="status" aria-live="polite"></p>
         </section>
+        <section id="accountMembershipPanel" class="operator-loading-panel" hidden aria-labelledby="accountMembershipHeading">
+            <h2 id="accountMembershipHeading">Organisation membership</h2>
+            <p>Suspend or restore access to the selected organisation. Sign-in stays available; saved customer data is preserved.</p>
+            <form id="accountMembershipForm" autocomplete="off">
+                <label>Selected account <input id="accountMembershipEmail" type="email" readonly required></label>
+                <button id="accountMembershipRefresh" type="button">Check membership</button>
+                <p id="accountMembershipSummary" role="status" aria-live="polite"></p>
+                <label>Action <input id="accountMembershipAction" readonly></label>
+                <label>Type the account email to confirm <input id="accountMembershipConfirmation" type="email" required maxlength="254" autocomplete="off"></label>
+                <button id="accountMembershipApprove" type="submit" disabled>Approve membership change</button>
+                <button id="accountMembershipApply" type="button" disabled>Apply membership change</button>
+            </form>
+            <p id="accountMembershipStatus" role="status" aria-live="polite"></p>
+        </section>
     </main>
     <div class="operator-toast" id="operatorToast" role="status" aria-live="polite" hidden></div>
 </body>

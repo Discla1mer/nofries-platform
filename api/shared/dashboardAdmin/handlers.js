@@ -16,7 +16,7 @@ const { createAccountLookup } = require('./accountLookup');
 const MAX_BODY_BYTES = 2048;
 const SUBJECT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const fail = (statusCode, code) => { throw Object.assign(new Error(code), { statusCode, code }); };
-const isAccountAction = route => ['extend-expired-access', 'approve-extension', 'suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(route);
+const isAccountAction = route => ['extend-expired-access', 'approve-extension', 'suspend', 'restore', 'approve-suspend', 'approve-restore', 'membership'].includes(route);
 
 function response(status, body, headers = {}, isRaw = false) {
     return { status, body, headers: apiSecurityHeaders({ 'Content-Type': 'application/json; charset=utf-8', ...headers }), isRaw };
@@ -158,7 +158,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             }
             const methods = { document: 'GET', 'app.js': 'GET', 'app.css': 'GET', capabilities: 'GET', lookup: 'POST', signups: 'POST',
                 'extend-expired-access': 'POST', 'approve-extension': 'POST',
-                suspend: 'POST', restore: 'POST', 'approve-suspend': 'POST', 'approve-restore': 'POST',
+                membership: 'POST', suspend: 'POST', restore: 'POST', 'approve-suspend': 'POST', 'approve-restore': 'POST',
                 entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET' };
             const action = isAccountAction(route);
             if (action && env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS !== 'true') fail(404, 'dashboard_admin_not_found');
@@ -185,18 +185,20 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                     // The action has already checked authority before its write.
                     // Once success is durable, later revocation/deadline checks
                     // must not misreport that committed outcome as a failure.
-                    const perform = route === 'approve-extension' ? accountActions.approve : accountActions.execute;
+                    const perform = route === 'membership' ? accountActions.readMembership : route === 'approve-extension' ? accountActions.approve : accountActions.execute;
                     if (!perform) fail(503, 'dashboard_admin_unavailable');
                     body = await perform(currentActor, input, { request, signal }, route);
                     return response(200, body);
                 } else body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
             } else if (route === 'entry-capabilities') body = { entry: true,
-                ...(env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.approve ? { accountActions: true } : {}) };
+                ...(env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && (accountActions?.approve || accountActions?.membershipAvailable) ? { accountActions: true } : {}) };
             else if (route === 'entry') { body = buildDashboardAdminEntryDocument(); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'entry.js') {
                 body = fs.readFileSync(path.join(__dirname, '../protectedAssets/dashboardAdminEntry.js'), 'utf8');
                 if (env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.approve)
                     body += '\n' + fs.readFileSync(path.join(__dirname, '../protectedAssets/accountActions.js'), 'utf8');
+                if (env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.membershipAvailable)
+                    body += '\n' + fs.readFileSync(path.join(__dirname, '../protectedAssets/accountMembershipActions.js'), 'utf8');
                 contentType = 'application/javascript; charset=utf-8';
             }
             else if (route === 'capabilities') body = await checked(() => capabilities(actor, checked));

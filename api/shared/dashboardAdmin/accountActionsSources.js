@@ -39,6 +39,10 @@ function createAccountActionsSources(configuration, dashboard, authorise, create
         return matches[0];
     }
     return Object.freeze({
+        ...(sources.every(row => row.runtime.membershipAvailable === true) ? { membershipAvailable: true,
+            async readMembership(actor, input, invocation) {
+                return (await select(actor, input, invocation)).readMembership(actor, input, invocation);
+            } } : {}),
         async approve(actor, input, invocation) { return (await select(actor, input, invocation)).approve(actor, input, invocation); },
         async execute(actor, input, invocation, action) {
             if (!['extend-expired-access', 'suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(action)) denied();

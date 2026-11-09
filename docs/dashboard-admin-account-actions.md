@@ -97,3 +97,16 @@ and COMMIT. The existing canonical repository checks revisions and preserves
 operation receipts; no new SQL permissions or schema are installed. Nested native
 checks reuse the current connection through read-only savepoints, restoring its
 role, tenant and timeout settings. This also supports a pool maximum of one.
+
+The `/operator` membership panel reads the selected account's current native
+membership status and revision, then requires typed email, **Approve membership
+change**, and a separate **Suspend membership** or **Restore membership** click.
+It uses `POST /api/dashboard-admin/membership` with `{ selector }`, guarded by the
+same action flag, staff session, native scoped authorization and same-origin rule.
+This read audits to the protected blob container and uses existing PostgreSQL
+read permissions; it does not install the dormant lookup-audit SQL proposal.
+The customer-subject revision from account lookup never substitutes for the
+native membership revision. Selection/input changes invalidate approval;
+pagehide clears selection, pending work and confirmation, and persisted pageshow
+rechecks current access before showing the empty panel. Unconfirmed writes show
+the operation ID for outcome investigation and never retry automatically.

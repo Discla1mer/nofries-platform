@@ -112,3 +112,20 @@ test.each(['missing client', 'constructor failure', 'getter', 'missing binding']
     expect(createBoundDashboardAdministration(h.env, h.dashboard, h.sdk, null)).not.toHaveProperty('dashboardAdminAccountActions');
     expect(h.reads).toEqual([]); expect(h.writes).toEqual([]);
 });
+
+test('the bound runtime serves both protected operator action panels', async () => {
+    const h = fixture(), app = h.build(), { cookie } = await h.login(app);
+    const result = await h.send('get', '/api/dashboard-admin/entry.js', app).set('Cookie', cookie);
+    expect(result.status).toBe(200); expect(result.text).toContain('accountActionsForm'); expect(result.text).toContain('accountMembershipForm');
+    expect(h.reads.some(row => row.key.startsWith('customer-subjects/'))).toBe(false);
+});
+test('multiple authority sources preserve the membership read capability and target', async () => {
+    const h = fixture(), configuration = createBoundDashboardAdministration(h.env, h.dashboard, h.sdk, null).dashboardAdminAccountActions;
+    const read = jest.fn(async () => ({ membershipStatus: 'active', expectedMembershipRevision: 7 }));
+    const runtime = require('../api/shared/dashboardAdmin/accountActionsSources').createAccountActionsSources(configuration, h.dashboard,
+        async () => { expect(h.reads).toEqual([]); }, value => ({ membershipAvailable: true, readMembership: (...args) => read(value.source.kind, ...args) }));
+    const actor = { subjectKey: 'synthetic-actor' }, input = { selector: h.selector }, invocation = { signal: new AbortController().signal };
+    expect(runtime.membershipAvailable).toBe(true);
+    expect(await runtime.readMembership(actor, input, invocation)).toEqual({ membershipStatus: 'active', expectedMembershipRevision: 7 });
+    expect(read).toHaveBeenCalledTimes(1); expect(read).toHaveBeenCalledWith('legacy_admin', actor, input, invocation);
+});
