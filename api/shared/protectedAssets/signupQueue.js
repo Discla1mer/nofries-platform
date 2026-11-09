@@ -3,16 +3,18 @@
     const byId = id => document.getElementById(id);
     const load = byId('signupQueueLoad'), next = byId('signupQueueNext'), cancel = byId('signupQueueCancel');
     const check = byId('signupQueueCheck'), status = byId('signupQueueStatus'), result = byId('signupQueueResult');
+    const searchForm = byId('signupQueueSearchForm'), search = byId('signupQueueSearch'), searchButton = byId('signupQueueSearchButton');
     let allowed = false, cursor = null, sequence = 0, active = null;
     function clear() { result.replaceChildren(); result.hidden = true; cursor = null; next.disabled = true; }
     function stop() {
         sequence += 1;
         if (active) { active.controller.abort(); window.clearTimeout(active.timer); active = null; }
         cancel.hidden = true; result.setAttribute('aria-busy', 'false'); load.disabled = !allowed;
+        if (search) { search.disabled = !allowed; searchButton.disabled = !allowed; }
     }
     function revoke(code, broadcast = true) {
         if (broadcast) window.dispatchEvent?.(new window.CustomEvent('dashboard-admin-revoked', { detail: code }));
-        allowed = false; stop(); clear(); check.disabled = false;
+        allowed = false; stop(); clear(); check.disabled = false; if (search) { search.value = ''; search.disabled = true; searchButton.disabled = true; }
         status.textContent = code === 401 ? 'Your session has ended. Sign in to staff workspace again.' :
             'Signup access is unavailable. No signup records are displayed.';
     }
@@ -38,7 +40,7 @@
     function finish(request) {
         window.clearTimeout(request.timer);
         if (active === request) active = null;
-        if (request.sequence === sequence) { load.disabled = !allowed; check.disabled = false; cancel.hidden = true; result.setAttribute('aria-busy', 'false'); }
+        if (request.sequence === sequence) { load.disabled = !allowed; if (search) { search.disabled = !allowed; searchButton.disabled = !allowed; } check.disabled = false; cancel.hidden = true; result.setAttribute('aria-busy', 'false'); }
     }
     async function access() {
         allowed = false; const request = begin(); check.disabled = true;
@@ -78,12 +80,13 @@
             }
         }
     }
-    function render(body) {
-        validate(body);
+    function render(body, searched = false, observedFrom = body.observedAt) {
+        if (!searched) validate(body);
         if (body.status === 'unavailable') { status.textContent = 'Signup records are unavailable. This is not an empty population.'; return; }
-        const heading = node('h3', body.rows.length ? 'Recorded signup milestones' : 'No signup records in this approved page');
+        const heading = node('h3', body.rows.length ? 'Recorded signup milestones' : searched ? 'No matching signups in the authorised population' : 'No signup records in this approved page');
         heading.id = 'signupQueueResultHeading'; heading.setAttribute('tabindex', '-1'); result.append(heading);
-        result.append(node('p', 'Observed at ' + body.observedAt));
+        result.append(node('p', observedFrom === body.observedAt ? 'Observed at ' + body.observedAt :
+            'Pages observed from ' + observedFrom + ' to ' + body.observedAt));
         for (const row of body.rows) {
             const entry = node('article'), title = node('h3', row.email || 'Email unknown'), details = node('dl');
             entry.append(title);
@@ -102,22 +105,45 @@
             body.continuation === 'more' ? 'Page loaded. A next page is available.' : 'Page loaded. End of the approved population snapshot.';
         heading.focus();
     }
-    async function page(selectedCursor = null) {
+    async function page(selectedCursor = null, searching = false) {
         if (!allowed) return;
-        const request = begin(); load.disabled = true; check.disabled = true; cancel.hidden = false; result.setAttribute('aria-busy', 'true');
+        const query = searching && search ? search.value.trim().toLocaleLowerCase('en-NZ') : '';
+        const request = begin(); load.disabled = true; if (search) { search.disabled = true; searchButton.disabled = true; } check.disabled = true; cancel.hidden = false; result.setAttribute('aria-busy', 'true');
         status.textContent = 'Loading recorded signup milestones…';
         try {
-            const body = await read(request, { cursor: selectedCursor });
+            let body = await read(request, { cursor: selectedCursor });
             if (request.sequence !== sequence || request.controller.signal.aborted || body === null) return;
-            render(body);
+            if (searching) {
+                const rows = []; let pages = 0, count = 0, observedFrom = null, observedAt = null;
+                while (true) {
+                    validate(body);
+                    if (body.status !== 'available') throw new Error();
+                    count += body.rows.length;
+                    if (++pages > 10 || count > 100) throw new Error();
+                    // Pages are validated separately; their combined results are not one point-in-time snapshot.
+                    observedFrom = observedFrom === null || body.observedAt < observedFrom ? body.observedAt : observedFrom;
+                    observedAt = observedAt === null || body.observedAt > observedAt ? body.observedAt : observedAt;
+                    rows.push(...body.rows.filter(row => [row.email, row.organisation].some(value =>
+                        typeof value === 'string' && value.toLocaleLowerCase('en-NZ').includes(query))));
+                    if (body.nextCursor === null) break;
+                    if (pages === 10 || count === 100) throw new Error();
+                    body = await read(request, { cursor: body.nextCursor });
+                    if (request.sequence !== sequence || request.controller.signal.aborted || body === null) return;
+                }
+                body = { ...body, rows, observedAt };
+                render(body, true, observedFrom);
+                status.textContent = rows.length + ' matching signups in the authorised population.' +
+                    (body.continuation === 'limit_reached' ? ' The viewing limit was reached; other records may exist.' : '');
+            } else render(body);
         } catch (_) { if (request.sequence === sequence) { clear(); status.textContent = 'Signup records could not be loaded. No signup outcome has been inferred. Load again to start a fresh page.'; } }
         finally { finish(request); }
     }
+    searchForm?.addEventListener('submit', event => { event.preventDefault(); page(null, true); });
     load.addEventListener('click', () => page()); next.addEventListener('click', () => { if (cursor !== null) page(cursor); });
     cancel.addEventListener('click', () => { stop(); clear(); check.disabled = false; status.textContent = 'Signup loading cancelled. No records are displayed.'; load.focus(); });
     check.addEventListener('click', access);
     window.addEventListener('dashboard-admin-revoked', event => revoke(event?.detail, false));
-    window.addEventListener('pagehide', () => { allowed = false; stop(); clear(); status.textContent = 'Check signup access to continue.'; });
+    window.addEventListener('pagehide', () => { allowed = false; stop(); clear(); if (search) { search.value = ''; search.disabled = true; searchButton.disabled = true; } status.textContent = 'Check signup access to continue.'; });
     window.addEventListener('pageshow', event => { if (event?.persisted) access(); });
     access();
 }());
