@@ -21,8 +21,9 @@ function response(status, body, headers = {}, isRaw = false) {
 function failure(error) {
     const allowed = new Set(['dashboard_admin_authentication_required', 'dashboard_admin_access_denied',
         'dashboard_admin_input_invalid', 'dashboard_admin_request_too_large', 'dashboard_admin_unsupported_media_type',
-        'dashboard_admin_method_not_allowed', 'dashboard_admin_not_found', 'dashboard_admin_unavailable']);
-    if (allowed.has(error?.code) && [400, 401, 403, 404, 405, 413, 415, 503].includes(error.statusCode)) {
+        'dashboard_admin_method_not_allowed', 'dashboard_admin_not_found', 'dashboard_admin_unavailable',
+        'dashboard_admin_conflict', 'dashboard_admin_not_expired', 'dashboard_admin_revoked']);
+    if (allowed.has(error?.code) && [400, 401, 403, 404, 405, 409, 413, 415, 503].includes(error.statusCode)) {
         return response(error.statusCode, { code: error.code });
     }
     // Service errors are deliberately bounded. Never emit provider messages,
@@ -85,7 +86,7 @@ async function readJson(request, signal) {
 
 // Trusted source-only composition: the host binds its genuine staff session
 // reader. No request header/body identity, environment grant or default reader.
-function createDashboardAdminHandlers({ service = null, signupListService = null, readOperatorSession = null, env = {}, requestBudgetMs = 10000 } = {}) {
+function createDashboardAdminHandlers({ service = null, signupListService = null, accountActions = null, readOperatorSession = null, env = {}, requestBudgetMs = 10000 } = {}) {
     if (service !== null && (!service || ['authorise', 'capabilities', 'lookup'].some(key => typeof service[key] !== 'function')) ||
         signupListService !== null && (!signupListService || ['authorise', 'capabilities', 'list', 'authoriseDisclosure'].some(key => typeof signupListService[key] !== 'function')) ||
         readOperatorSession !== null && typeof readOperatorSession !== 'function' ||
@@ -116,7 +117,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             if (!signupListService) fail(503, 'dashboard_admin_unavailable');
             return signupListService.authorise(actor);
         }
-        if (route === 'lookup' || !signupListService) {
+        if (route === 'lookup' || route === 'extend-expired-access' || !signupListService) {
             if (!service) fail(503, 'dashboard_admin_unavailable');
             return service.authorise(actor, selector);
         }
@@ -142,11 +143,14 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
     async function execute(request, route, checked, signal) {
         try {
             const methods = { document: 'GET', 'app.js': 'GET', 'app.css': 'GET', capabilities: 'GET', lookup: 'POST', signups: 'POST',
+                'extend-expired-access': 'POST',
                 entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET' };
+            const action = route === 'extend-expired-access';
+            if (action && env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS !== 'true') fail(404, 'dashboard_admin_not_found');
             if (!Object.hasOwn(methods, route)) fail(404, 'dashboard_admin_not_found');
             if (request.method !== methods[route]) return response(405, { code: 'dashboard_admin_method_not_allowed' }, { Allow: methods[route] });
             if (String(request.originalUrl || request.url || '').includes('?') || Object.keys(request.query || {}).length) fail(400, 'dashboard_admin_input_invalid');
-            if (!['lookup', 'signups'].includes(route) && (request.headers?.['transfer-encoding'] || Number(request.headers?.['content-length'] || 0) > 0)) fail(400, 'dashboard_admin_input_invalid');
+            if (!action && !['lookup', 'signups'].includes(route) && (request.headers?.['transfer-encoding'] || Number(request.headers?.['content-length'] || 0) > 0)) fail(400, 'dashboard_admin_input_invalid');
             const actor = await checked(() => principal(request));
             // These routes contain no account data or native authority. A
             // genuine staff administrator can explicitly initialise the existing
@@ -154,13 +158,21 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             const isEntry = ['entry', 'entry.js', 'entry-capabilities'].includes(route);
             if (!isEntry) await checked(() => permission(actor, route, null, checked));
             let body, selector = null, contentType = null;
-            if (route === 'lookup' || route === 'signups') {
+            if (action || route === 'lookup' || route === 'signups') {
                 try { assertExactSameOriginRequest(request, env); }
                 catch (_) { fail(403, 'dashboard_admin_access_denied'); }
                 const input = await checked(() => readJson(request, signal));
-                selector = route === 'lookup' ? normaliseSelector(input) : signupListInput(input);
+                selector = action ? normaliseSelector(input?.selector) : route === 'lookup' ? normaliseSelector(input) : signupListInput(input);
                 const currentActor = await checked(() => principal(request, actor));
-                body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
+                if (action) {
+                    await checked(() => permission(currentActor, route, selector, checked));
+                    if (!accountActions) fail(503, 'dashboard_admin_unavailable');
+                    // The action has already checked authority before its write.
+                    // Once success is durable, later revocation/deadline checks
+                    // must not misreport that committed outcome as a failure.
+                    body = await accountActions.execute(currentActor, input, { request, signal });
+                    return response(200, body);
+                } else body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
             } else if (route === 'entry-capabilities') body = { entry: true };
             else if (route === 'entry') { body = buildDashboardAdminEntryDocument(); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'entry.js') { body = fs.readFileSync(path.join(__dirname, '../protectedAssets/dashboardAdminEntry.js'), 'utf8'); contentType = 'application/javascript; charset=utf-8'; }
@@ -174,19 +186,33 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             if (!isEntry) await checked(() => route === 'signups' ? signupListService.authoriseDisclosure(current, body) : permission(current, route, selector, checked));
             return response(200, body, contentType ? { 'Content-Type': contentType,
                 ...(['document', 'entry'].includes(route) ? { 'Content-Security-Policy': contentSecurityPolicy } : {}) } : {}, contentType !== null);
-        } catch (error) { return failure(error); }
+        } catch (error) {
+            const result = failure(error);
+            if (route === 'extend-expired-access') {
+                try { console.warn('[dashboard-admin-account-actions] ' + result.body.code); } catch (_) { /* No logging authority. */ }
+            }
+            return result;
+        }
     }
-    async function handle(request, route) {
+    async function handle(request, route, externalSignal) {
         let stopped = false, timer;
         const controller = new AbortController();
+        const abort = () => controller.abort();
+        externalSignal?.addEventListener('abort', abort, { once: true });
+        if (externalSignal?.aborted) abort();
         const deadline = Date.now() + requestBudgetMs;
-        const check = () => { if (stopped || Date.now() >= deadline) fail(503, 'dashboard_admin_unavailable'); };
+        const check = () => { if (stopped || controller.signal.aborted || Date.now() >= deadline) fail(503, 'dashboard_admin_unavailable'); };
         const checked = async work => { check(); const result = await work(); check(); return result; };
         try {
+            // Mutations finish their bounded durable outcome audit before reply.
+            if (route === 'extend-expired-access') {
+                timer = setTimeout(abort, requestBudgetMs);
+                return await execute(request, route, checked, controller.signal);
+            }
             return await Promise.race([execute(request, route, checked, controller.signal), new Promise(resolve => {
                 timer = setTimeout(() => { stopped = true; controller.abort(); resolve(response(503, { code: 'dashboard_admin_unavailable' })); }, requestBudgetMs);
             })]);
-        } finally { clearTimeout(timer); }
+        } finally { clearTimeout(timer); externalSignal?.removeEventListener('abort', abort); }
     }
     return Object.freeze({ handle });
 }

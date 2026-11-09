@@ -115,13 +115,13 @@ function createNoFriesApp(configuration = {}) {
         const invocation = nativeAdminInvocation();
         return Object.freeze({ request: invocation.request, signal: AbortSignal.any([signal, invocation.signal]) });
     };
-    let dashboardAdminSignupListService = null;
+    let dashboardAdminSignupListService = null, dashboardAdminAccountActions = null;
     let dashboard = null, customerSignup = null, externalCustomerSignup = null, authEnvironment = null, retainedTrialRead = null, dashboardAdminService = null, dashboardAdminRequestBudgetMs = 10000;
     try {
         if (!configuration || typeof configuration !== 'object' || isProxy(configuration)) throw new Error();
         const keys = Reflect.ownKeys(configuration);
         fields(configuration, keys);
-        if (keys.some(key => !['dashboard', 'dashboardAdmin', 'dashboardAdminSignupList', 'customerSignup', 'externalCustomerSignup', 'signupBootstrap', 'organisationSetup', 'externalOrganisationSetup', 'starterClients', 'externalStarterClients', 'customerEntry', 'retainedTrialRead'].includes(key))) throw new Error();
+        if (keys.some(key => !['dashboard', 'dashboardAdmin', 'dashboardAdminSignupList', 'dashboardAdminAccountActions', 'customerSignup', 'externalCustomerSignup', 'signupBootstrap', 'organisationSetup', 'externalOrganisationSetup', 'starterClients', 'externalStarterClients', 'customerEntry', 'retainedTrialRead'].includes(key))) throw new Error();
         if (keys.includes('customerEntry') && configuration.customerEntry !== 'external') throw new Error();
         if (keys.includes('starterClients') && typeof configuration.starterClients !== 'function') throw new Error();
         if (keys.includes('externalStarterClients') && typeof configuration.externalStarterClients !== 'function') throw new Error();
@@ -205,6 +205,11 @@ function createNoFriesApp(configuration = {}) {
             dashboardAdminRequestBudgetMs = dashboardAdminService
                 ? Math.max(dashboardAdminRequestBudgetMs, port.requestBudgetMs) : port.requestBudgetMs;
         }
+        if (keys.includes('dashboardAdminAccountActions') && authEnvironment?.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true') {
+            if (!dashboardAdminService) throw new Error();
+            dashboardAdminAccountActions = require('./api/shared/dashboardAdmin/accountActionsRuntime').createAccountActionsRuntime(
+                configuration.dashboardAdminAccountActions, configuration.dashboard, dashboardAdminService.authorise);
+        }
         if (keys.includes('customerSignup') && configuration.customerSignup !== null) {
             customerSignup = createCustomerSignupRuntime(configuration.customerSignup);
         }
@@ -222,6 +227,7 @@ function createNoFriesApp(configuration = {}) {
     } catch (_) { throw new BrowserAuthError(503, 'browser_auth_dashboard_unavailable'); }
     const apiEnvironment = authEnvironment || process.env;
     const dashboardAdmin = createDashboardAdminHandlers({ service: dashboardAdminService,
+        accountActions: dashboardAdminAccountActions,
         signupListService: dashboardAdminSignupListService,
         readOperatorSession: dashboard ? cookie => dashboard.authServices.session.readSessionDetails(cookie) : null,
         env: apiEnvironment, requestBudgetMs: dashboardAdminRequestBudgetMs });
@@ -441,7 +447,7 @@ async function sendDashboardAdmin(req, res, route) {
     if (req.aborted || res.destroyed) abort();
     try {
         const result = await dashboardAdminRequests.run(Object.freeze({ request: req, signal: controller.signal }),
-            () => dashboardAdmin.handle(req, route));
+            () => dashboardAdmin.handle(req, route, controller.signal));
         if (!controller.signal.aborted && !res.destroyed && !res.writableEnded) {
             const customerCookie = /(?:^|;)\s*__Host-nofries-(?:external-customer|customer|retained-read)=/.test(String(req.headers.cookie || ''));
             if (['document', 'entry'].includes(route) && result.status === 401 && !customerCookie) {
@@ -467,7 +473,7 @@ async function sendDashboardAdmin(req, res, route) {
         await sendDashboardAdmin(req, res, 'entry');
     }));
     app.use('/api/dashboard-admin', asyncRoute(async (req, res) => {
-    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|entry\.js|entry-capabilities)$/.test(req.path) ||
+    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|extend-expired-access|entry\.js|entry-capabilities)$/.test(req.path) ||
         dashboardAdminSignupListService && req.path === '/signups' ? req.path.slice(1) : null;
     await sendDashboardAdmin(req, res, route);
 }));
