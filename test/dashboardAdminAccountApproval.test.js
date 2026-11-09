@@ -3,17 +3,20 @@ const { Readable } = require('node:stream');
 const { entrySessionFixture, uid, NOW } = require('./fixtures/dashboardAdminEntrySession');
 const { subjectHash } = require('../api/shared/customerSignup/customerAuthority');
 const { hash } = require('../api/shared/appLifecycle/dashboardRuntimeRecords');
+const { createExpiryApproval } = require('../api/shared/dashboardAdmin/accountActionsApproval');
+const { DashboardAdminError } = require('../api/shared/dashboardAdmin/service');
 const iso = time => new Date(time).toISOString();
 let warning;
 beforeEach(() => { warning = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
 afterEach(() => { expect(JSON.stringify(warning.mock.calls)).not.toMatch(/PRIVATE|synthetic@/); warning.mockRestore(); });
 async function fixture(enabled = true, admin = true) {
-    const h = entrySessionFixture({ customer: false, externalCustomer: false }), rows = new Map(), trace = [], state = {};
+    const h = entrySessionFixture({ customer: false, externalCustomer: false }), rows = new Map(), trace = [], state = { reads: [] };
     function container(name) {
         return { url: `https://syntheticstore.blob.core.windows.net/${name}`, pipeline: { options: { retryOptions: { maxTries: 1 } } },
             async *listBlobsFlat() { for (const key of rows.keys()) if (key.startsWith(name + '/')) yield { name: key.slice(name.length + 1) }; },
             getBlockBlobClient(key) { const path = name + '/' + key; return {
                 async download() {
+                    state.reads.push(path);
                     const saved = rows.get(path); if (!saved) throw Object.assign(new Error('PRIVATE_MISSING'), { statusCode: 404 });
                     const bytes = Buffer.from(JSON.stringify(saved.record));
                     return { contentLength: bytes.length, etag: saved.etag, readableStreamBody: Readable.from([bytes]) };
@@ -36,18 +39,20 @@ async function fixture(enabled = true, admin = true) {
     const key = 'authority/customer-subjects/' + subjectHash(record.subjectKey) + '.json'; rows.set(key, { record, etag: '"before"' });
     h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS = enabled ? 'true' : 'false';
     if (!admin) h.env.NOFRIES_ADMIN_SUBJECTS = '';
-    h.rebuild({ dashboardAdmin: { authoriseOperator: async () => true, readAuthoritySnapshot: null,
+    const configuration = { source, authorityContainer: container('authority'), auditContainer: container('audit') };
+    h.rebuild({ dashboardAdmin: { authoriseOperator: async ({ selector }) => !(selector && state.denyScope), readAuthoritySnapshot: null,
         audit: async () => true, clock: h.dashboard.clock, requestBudgetMs: 10000 },
-    dashboardAdminAccountActions: { source, authorityContainer: container('authority'), auditContainer: container('audit') } });
+    dashboardAdminAccountActions: configuration });
     const { cookie } = await h.login();
     const post = (route, input, selectedCookie = cookie, origin = h.env.NOFRIES_PUBLIC_URL) => h.send('post', '/api/' + route)
         .set('Cookie', selectedCookie).set('Origin', origin).set('Sec-Fetch-Site', 'same-origin').send(input);
     if (admin) expect((await post('dashboard/session', { operationId: h.nextId() })).status).toBe(200);
-    const input = { email: record.email, confirmationEmail: record.email, newExpiresAt: iso(NOW + 86400000) };
+    const input = { selector: { provider: 'external', subjectKey: record.subjectKey, tenantId: record.tenantId, organisationId: record.organisationId },
+        confirmationEmail: record.email, newExpiresAt: iso(NOW + 86400000) };
     const approve = () => post('dashboard-admin/approve-extension', input);
     const extend = approved => post('dashboard-admin/extend-expired-access', { selector: approved.selector, operationId: approved.operationId,
         newExpiresAt: approved.newExpiresAt, confirmationEmail: record.email });
-    return { h, rows, trace, state, record, key, input, approve, extend, post, cookie };
+    return { h, rows, trace, state, record, key, input, approve, extend, post, cookie, configuration };
 }
 test('same staff session issues a durable 15-minute approval, then consumes it once without deleting data', async () => {
     const f = await fixture(), before = JSON.stringify(f.rows.get(f.key));
@@ -59,34 +64,56 @@ test('same staff session issues a durable 15-minute approval, then consumes it o
         before: { status: 'expired', expiresAt: iso(NOW - 1000) },
         after: { status: 'approved', approvedExpiresAt: f.input.newExpiresAt, expiresAt: iso(NOW + 15 * 60000) } });
     expect(JSON.stringify(f.rows.get(f.key))).toBe(before);
+    for (const row of f.rows.values()) if (row.record.phase) {
+        expect(row.record.targetSha256).toBe(hash(f.input.selector)); expect(row.record.targetSha256).not.toBe(hash(f.record.email));
+    }
     expect(f.trace.map(value => value.split('/').pop())).toEqual(['approval-attempt.json', 'approval.json', 'approval-terminal.json']);
     expect((await f.extend(result.body)).status).toBe(200);
     expect((await f.extend(result.body)).status).toBe(409);
     expect(f.rows.get(f.key).record).toEqual({ ...f.record, revision: 1, expiresAt: NOW + 86400000 });
     expect(f.rows.size).toBe(6);
 });
-test.each(['cap', 'not_expired', 'revoked', 'confirmation', 'ambiguous', 'limit', 'audit', 'session'])('approval refuses %s without changing authority', async mode => {
-    const f = await fixture(); let status = 409;
-    if (mode === 'cap') { f.input.newExpiresAt = iso(NOW + 90 * 86400000 + 1); status = 400; }
+test.each(['cap', 'not_expired', 'revoked', 'confirmation', 'missing', 'scope', 'deniedScope', 'provider', 'audit', 'session'])('approval refuses %s without changing authority', async mode => {
+    const f = await fixture(); let status = 403;
+    if (mode === 'cap') f.input.newExpiresAt = iso(NOW + 90 * 86400000 + 1);
     if (mode === 'not_expired') f.record.expiresAt = NOW + 1000;
     if (mode === 'revoked') f.record.status = 'revoked';
-    if (mode === 'confirmation') { f.input.confirmationEmail = 'wrong@example.invalid'; status = 400; }
-    if (mode === 'ambiguous') f.rows.set('authority/customer-subjects/' + 'f'.repeat(64) + '.json', { record: f.record, etag: '"duplicate"' });
-    if (mode === 'limit') {
-        for (let i = 0; i < 100; i++) f.rows.set('authority/customer-subjects/' + String(i).padStart(64, '0') + '.json',
-            { record: { email: 'unrelated@example.invalid' }, etag: '"other"' });
-        status = 503;
-    }
+    if (mode === 'confirmation') f.input.confirmationEmail = 'wrong@example.invalid';
+    if (mode === 'missing') f.rows.delete(f.key);
+    if (mode === 'scope') f.input.selector.organisationId = uid(99);
+    if (mode === 'deniedScope') f.state.denyScope = true;
+    if (mode === 'provider') f.input.selector.provider = 'legacy';
     if (mode === 'audit') { f.state.fail = 'approval-terminal.json'; status = 503; }
     if (mode === 'session') { f.h.state.epoch = uid(99); status = 503; }
     expect((await f.approve()).status).toBe(status);
     expect(f.trace).not.toContain(f.key);
+    if (mode === 'deniedScope' || mode === 'provider') expect(f.state.reads).toEqual([]);
     expect(warning).toHaveBeenCalledTimes(1);
     if (mode === 'audit') {
         const stored = [...f.rows.entries()].find(([key]) => key.endsWith('/approval.json'))[1].record.command;
         expect((await f.extend({ selector: { provider: 'external', ...Object.fromEntries(['subjectKey', 'tenantId', 'organisationId'].map(k => [k, stored.target[k]])) }, ...stored })).status).toBe(503);
         expect(f.trace).not.toContain(f.key);
     }
+});
+test('direct issuer authorizes the supplied scope before reads and uniformly refuses absent or forbidden targets', async () => {
+    for (const missing of [false, true]) {
+        const f = await fixture(); if (missing) f.rows.delete(f.key);
+        const readContext = jest.fn(async (_actor, selector) => {
+            if (selector !== null) throw new DashboardAdminError(403, 'dashboard_admin_access_denied');
+            return { operatorSubjectKey: uid(1) + ':' + uid(2) };
+        });
+        await expect(createExpiryApproval({ ...f.configuration, readContext, clock: f.h.dashboard.clock }).approve(
+            { subjectKey: uid(1) + ':' + uid(2) }, f.input, { request: {}, signal: new AbortController().signal }))
+            .rejects.toMatchObject({ statusCode: 403, code: 'dashboard_admin_access_denied' });
+        expect(readContext).toHaveBeenCalledWith(expect.anything(), f.input.selector, expect.anything());
+        expect(f.state.reads).toEqual([]); expect(f.trace).toEqual([]);
+    }
+});
+test('an exact authorized selector never scans unrelated or duplicate-email records', async () => {
+    const f = await fixture();
+    f.configuration.authorityContainer.listBlobsFlat = () => { throw new Error('unexpected enumeration'); };
+    f.rows.set('authority/customer-subjects/' + 'f'.repeat(64) + '.json', { record: f.record, etag: '"duplicate"' });
+    expect((await f.approve()).status).toBe(200); expect(f.state.reads).toEqual([f.key]);
 });
 test.each(['expired', 'changed', 'tampered'])('extension rejects %s approval', async mode => {
     const f = await fixture(), approved = (await f.approve()).body;

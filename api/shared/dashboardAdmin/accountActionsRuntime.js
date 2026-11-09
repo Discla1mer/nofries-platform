@@ -32,8 +32,11 @@ function createAccountActionsRuntime(configuration, dashboard, authorise) {
                 identityPolicySha256: hash(dashboard.identityPolicy) };
         } };
     const issuer = configuration.readApprovedExtension ? null : createExpiryApproval(options);
-    return Object.freeze({ ...createExpiryAction({ ...options,
-        readApprovedExtension: configuration.readApprovedExtension || issuer.readApprovedExtension }),
+    const expiry = createExpiryAction({ ...options, readApprovedExtension: configuration.readApprovedExtension || issuer.readApprovedExtension });
+    return Object.freeze({ execute(actor, input, invocation, action) {
+        if (action !== 'extend-expired-access') throw new Error('dashboard_admin_unavailable');
+        return expiry.execute(actor, input, invocation);
+    },
         ...(issuer ? { approve: issuer.approve } : {}) });
 }
 module.exports = { createAccountActionsRuntime };

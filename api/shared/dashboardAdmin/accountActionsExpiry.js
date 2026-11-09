@@ -78,6 +78,8 @@ function createExpiryAction({ source: rawSource, authorityContainer, auditContai
             plan = await current();
             singleAttempt();
             writeStarted = true;
+            // The ETag fences customer-record changes. Session/approval revocation
+            // can race this blob write after the last check; it is not atomic SQL.
             // No retry may turn a lost success response into a later 412.
             await writeActionRecord(authorityContainer, blobName, plan.after.record, { ifMatch: plan.before.etag }, signal);
             await audit('terminal', 'succeeded', { status: 'active', expiresAt: input.newExpiresAt });

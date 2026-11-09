@@ -176,7 +176,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 try { assertExactSameOriginRequest(request, env); }
                 catch (_) { fail(403, 'dashboard_admin_access_denied'); }
                 const input = await checked(() => readJson(request, signal));
-                selector = route === 'approve-extension' ? null : action ? normaliseSelector(input?.selector) : route === 'lookup' ? normaliseSelector(input) : signupListInput(input);
+                selector = action ? normaliseSelector(input?.selector) : route === 'lookup' ? normaliseSelector(input) : signupListInput(input);
                 const currentActor = await checked(() => principal(request, actor));
                 if (action) {
                     await checked(() => permission(currentActor, route, selector, checked));
@@ -186,7 +186,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                     // must not misreport that committed outcome as a failure.
                     const perform = route === 'approve-extension' ? accountActions.approve : accountActions.execute;
                     if (!perform) fail(503, 'dashboard_admin_unavailable');
-                    body = await perform(currentActor, input, { request, signal });
+                    body = await perform(currentActor, input, { request, signal }, route);
                     return response(200, body);
                 } else body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
             } else if (route === 'entry-capabilities') body = { entry: true,
