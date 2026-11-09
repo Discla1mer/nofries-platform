@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
 
-test('the finalizer compacts only the exact closed no-store cache policy and retains every header', () => {
+test('the finalizer compacts only closed cache/robots policies and retains every header', () => {
     const vm = require('node:vm');
     const script = fs.readFileSync(path.join(ROOT, 'scripts/build-static.js'), 'utf8');
     const finalizer = script.slice(script.indexOf('function finalizeStaticWebAppConfig()'), script.indexOf('function copyDirectory('));
@@ -14,8 +14,10 @@ test('the finalizer compacts only the exact closed no-store cache policy and ret
         'private, no-store', 'no-store, max-age=0', 'private, max-age=0',
         'private, no-store, max-age=0, no-transform', 'private, no-store, max-age=0, must-understand',
         'private="X-Secret", no-store, max-age=0', 'private, no-store, max-age=1', 'public, max-age=3600'];
+    const robots = ['noindex, nofollow', 'noindex,nofollow', 'noindex', 'nofollow', 'none',
+        'noindex, nofollow, noarchive', 'googlebot: noindex, nofollow', 'index, follow', 'NOINDEX, NOFOLLOW', 'noindex,  nofollow'];
     const source = { routes: policies.map((value, index) => ({ route: '/api/synthetic/' + index, methods: ['GET'],
-        allowedRoles: ['authenticated'], headers: { 'Cache-Control': value, 'X-Robots-Tag': 'noindex, nofollow',
+        allowedRoles: ['authenticated'], headers: { 'Cache-Control': value, 'X-Robots-Tag': robots[index],
             'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'", 'X-Synthetic': 'preserve' } })) };
     let output;
     vm.runInNewContext(finalizer + '\nfinalizeStaticWebAppConfig();', { path, distDir: '/synthetic', Buffer,
@@ -25,7 +27,7 @@ test('the finalizer compacts only the exact closed no-store cache policy and ret
     built.routes.forEach((route, index) => {
         expect(route.headers['Cache-Control']).toBe(index < 2 ? 'no-store' : policies[index].replace(/, +/g, ','));
         expect(Object.keys(route.headers)).toEqual(Object.keys(source.routes[index].headers));
-        expect(route.headers['X-Robots-Tag']).toBe('noindex,nofollow');
+        expect(route.headers['X-Robots-Tag']).toBe(index < 2 ? 'none' : robots[index]);
         expect(route.headers['Content-Security-Policy']).toBe("default-src 'none';frame-ancestors 'none'");
         expect(route.headers['X-Synthetic']).toBe('preserve');
         expect(route.allowedRoles).toEqual(['authenticated']); expect(route.methods).toEqual(['GET']);
@@ -36,6 +38,7 @@ test('the customer entry builds within the SWA limit with API routes and securit
     execFileSync(process.execPath, ['scripts/build-static.js'], { cwd: ROOT, stdio: 'pipe' });
     const bytes = fs.readFileSync(path.join(ROOT, 'dist/staticwebapp.config.json'));
     expect(bytes.length).toBeLessThanOrEqual(20000);
+    expect(20000 - bytes.length).toBeGreaterThanOrEqual(300);
     for (const file of ['dashboard-admin', 'api/dashboard-admin', 'js/dashboardAdmin.js',
         'js/dashboardAdminEntry.js', 'js/signupQueue.js']) expect(fs.existsSync(path.join(ROOT, 'dist', file))).toBe(false);
     const built = JSON.parse(bytes), source = JSON.parse(fs.readFileSync(path.join(ROOT, 'staticwebapp.config.json')));
@@ -48,6 +51,7 @@ test('the customer entry builds within the SWA limit with API routes and securit
         for (const [name, value] of Object.entries(original.headers || {})) {
             if (name === 'Content-Security-Policy') expect(directives(route.headers[name], ';')).toEqual(directives(value, ';'));
             else if (name === 'Cache-Control' && value === 'private, no-store, max-age=0') expect(route.headers[name]).toBe('no-store');
+            else if (name === 'X-Robots-Tag' && value === 'noindex, nofollow') expect(route.headers[name]).toBe('none');
             else if (name === 'Cache-Control' || name === 'X-Robots-Tag') expect(directives(route.headers[name], ',')).toEqual(directives(value, ','));
             else expect(route.headers[name]).toBe(value);
         }
