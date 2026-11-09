@@ -21,6 +21,23 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         if (text !== undefined) node.textContent = text;
         return node;
     };
+    // A plain summary quoting the schedule's own offer lines, so people can see
+    // the price, period and limits before the full schedule and agreement.
+    function scheduleSummary(text) {
+        if (typeof text !== 'string') return null;
+        const wanted = ['Price:', 'Access period:', 'Allowance:', 'Included:', 'AI, evidence uploads', 'Excluded:'];
+        const lines = text.split('\n').filter(line => wanted.some(prefix => line.startsWith(prefix)))
+            .map(line => line.replace(/, as recorded in the canonical activation receipt\./, '.')
+                .replace(/ at the same UTC time, clamped to the final day of the target month/, ''));
+        if (!lines.length) return null;
+        const section = element('section'); section.className = 'signup-glance';
+        section.setAttribute('aria-label', 'Summary of your schedule');
+        const list = element('ul');
+        for (const line of lines) list.append(element('li', line));
+        section.append(element('h2', 'At a glance'), list,
+            element('p', 'These points are quoted from your organisation schedule below. The full schedule and agreement are what you accept.'));
+        return section;
+    }
     function button(label, action, timeoutMs = 30000, restoreDraft = false) {
         const node = element('button', label);
         const revision = viewRevision;
@@ -198,6 +215,8 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 const scheduleText = element('p', state.scheduleText); scheduleText.className = 'signup-legal-text';
                 schedule.append(element('h2', 'Organisation schedule'), scheduleText);
                 schedule.className = 'signup-legal signup-schedule';
+                const glance = scheduleSummary(state.scheduleText);
+                if (glance) root.append(glance);
                 root.append(schedule);
             }
             const terms = element('section');
