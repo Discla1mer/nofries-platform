@@ -4,7 +4,8 @@ const { createDom } = require('./fixtures/dashboardDom');
 const source = fs.readFileSync(require.resolve('../api/shared/protectedAssets/accountActions.js'), 'utf8');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function fixture(failure = null) {
-    const { document, window } = createDom(), elements = {};
+    const { document, window } = createDom(), elements = {}, events = {}, state = { allowed: true };
+    const listen = window.addEventListener; window.addEventListener = (name, fn) => { events[name] = fn; listen(name, fn); };
     for (const name of ['Panel', 'Form', 'Email', 'Confirmation', 'Expiry', 'Approve', 'Extend', 'Status']) elements[name] = document.createElement('div');
     document.getElementById = id => elements[id.replace('accountActions', '')];
     document.body = { dataset: { page: 'operator' } };
@@ -16,6 +17,7 @@ function fixture(failure = null) {
     const fetch = jest.fn(async (url, options) => {
         const input = options.body && JSON.parse(options.body);
         let status = 200, value = { authenticated: true, purpose: 'operator_dashboard' };
+        if (url.endsWith('entry-capabilities')) value = { entry: true, accountActions: state.allowed };
         if (url.endsWith('approve-extension')) {
             if (failure === 'network') throw new Error('PRIVATE_PROVIDER_DETAIL');
             status = failure || 200;
@@ -27,7 +29,7 @@ function fixture(failure = null) {
     });
     vm.runInNewContext(source, { document, window, fetch, AbortController, Date });
     const submit = async () => { for (const fn of elements.Form.events.submit) fn({ preventDefault() {} }); await flush(); };
-    return { elements, fetch, window, submit };
+    return { elements, fetch, window, submit, events, state };
 }
 test('explicit approval and extension are separate; editing invalidates approval and pagehide clears it', async () => {
     const f = fixture(); expect(f.fetch).not.toHaveBeenCalled();
@@ -40,6 +42,17 @@ test('explicit approval and extension are separate; editing invalidates approval
     f.elements.Extend.click(); await flush();
     expect(f.fetch.mock.calls.filter(([url]) => url.endsWith('extend-expired-access'))).toHaveLength(1);
     f.window.dispatch('pagehide'); expect(f.elements.Form.reset).toHaveBeenCalled(); expect(f.elements.Panel.hidden).toBe(true);
+});
+test('back navigation resets an in-flight form and rechecks current access without resubmitting', async () => {
+    const f = fixture(); let release;
+    f.fetch.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    await f.submit(); expect(f.elements.Email.disabled).toBe(true); f.window.dispatch('pagehide');
+    await f.events.pageshow({ persisted: true });
+    expect(f.elements.Panel.hidden).toBe(false); expect(f.elements.Email.disabled).toBe(false); expect(f.elements.Extend.disabled).toBe(true);
+    release({ status: 200, headers: { get: () => 'application/json' }, json: async () => ({ authenticated: true, purpose: 'operator_dashboard' }) });
+    await flush(); expect(f.fetch.mock.calls.some(([url]) => url.endsWith('approve-extension'))).toBe(false);
+    f.window.dispatch('pagehide'); f.state.allowed = false; await f.events.pageshow({ persisted: true });
+    expect(f.elements.Panel.hidden).toBe(true);
 });
 test.each([403, 409, 503, 'network'])('failure %s never enables execution or retries automatically', async failure => {
     const f = fixture(failure); await f.submit(); expect(f.elements.Extend.disabled).toBe(true);

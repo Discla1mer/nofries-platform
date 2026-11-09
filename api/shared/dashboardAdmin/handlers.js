@@ -189,7 +189,8 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                     body = await perform(currentActor, input, { request, signal });
                     return response(200, body);
                 } else body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
-            } else if (route === 'entry-capabilities') body = { entry: true };
+            } else if (route === 'entry-capabilities') body = { entry: true,
+                ...(env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.approve ? { accountActions: true } : {}) };
             else if (route === 'entry') { body = buildDashboardAdminEntryDocument(); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'entry.js') {
                 body = fs.readFileSync(path.join(__dirname, '../protectedAssets/dashboardAdminEntry.js'), 'utf8');

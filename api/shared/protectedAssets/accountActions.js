@@ -7,9 +7,9 @@
     const status = document.getElementById('accountActionsStatus');
     let approved = null, busy = false, generation = 0, timer, controller;
     function clear() { approved = null; extend.disabled = true; window.clearTimeout(timer); }
-    async function request(url, body) {
+    async function request(url, body, signal) {
         const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin',
-            cache: 'no-store', redirect: 'error', signal: controller.signal,
+            cache: 'no-store', redirect: 'error', signal: signal,
             headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
                 ...(url === '/api/dashboard/session' ? { 'X-Nofries-Dashboard-Purpose': 'operator_dashboard' } : {}) },
             ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -17,12 +17,12 @@
         const value = await response.json();
         return { status: response.status, value: value };
     }
-    async function ready() {
-        let result = await request('/api/dashboard/session');
+    async function ready(signal) {
+        let result = await request('/api/dashboard/session', undefined, signal);
         if (result.status === 409 && result.value.code === 'dashboard_initialization_required') {
-            result = await request('/api/dashboard/session', { operationId: window.crypto.randomUUID() });
+            result = await request('/api/dashboard/session', { operationId: window.crypto.randomUUID() }, signal);
             if (result.status !== 200 || result.value.initialized !== true) throw new Error();
-            result = await request('/api/dashboard/session');
+            result = await request('/api/dashboard/session', undefined, signal);
         }
         if (result.status !== 200 || result.value.authenticated !== true || result.value.purpose !== 'operator_dashboard') throw new Error();
     }
@@ -31,15 +31,16 @@
         const prior = approved, cycle = ++generation;
         if (execute && (!prior || Date.parse(prior.approvalExpiresAt) <= Date.now())) { clear(); return; }
         clear(); busy = true; controller = new AbortController();
-        const deadline = window.setTimeout(function () { controller.abort(); }, 20000);
+        const active = controller, deadline = window.setTimeout(function () { active.abort(); }, 20000);
         Array.from(form.elements).forEach(function (field) { field.disabled = true; });
         status.textContent = execute ? 'Extending access…' : 'Approving extension…';
         try {
-            if (!execute) await ready();
+            if (!execute) await ready(active.signal);
+            if (cycle !== generation) return;
             const input = execute ? { selector: prior.selector, operationId: prior.operationId, newExpiresAt: prior.newExpiresAt,
                 confirmationEmail: confirmation.value } : { email: email.value.trim().toLowerCase(), confirmationEmail: confirmation.value,
                 newExpiresAt: new Date(expiry.value).toISOString() };
-            const result = await request('/api/dashboard-admin/' + (execute ? 'extend-expired-access' : 'approve-extension'), input);
+            const result = await request('/api/dashboard-admin/' + (execute ? 'extend-expired-access' : 'approve-extension'), input, active.signal);
             if (cycle !== generation) return;
             if (result.status !== 200) throw Object.assign(new Error(), { status: result.status });
             if (execute) {
@@ -65,5 +66,18 @@
     form.addEventListener('input', function () { clear(); status.textContent = ''; });
     extend.addEventListener('click', function () { run(true); });
     window.addEventListener('pagehide', function () { generation += 1; controller?.abort(); clear(); form.reset(); panel.hidden = true; status.textContent = ''; });
+    window.addEventListener('pageshow', async function (event) {
+        if (!event.persisted) return;
+        const cycle = ++generation, active = new AbortController(); controller = active; clear(); busy = true; panel.hidden = true;
+        const deadline = window.setTimeout(function () { active.abort(); }, 10000);
+        try {
+            const result = await request('/api/dashboard-admin/entry-capabilities', undefined, active.signal);
+            if (cycle === generation) panel.hidden = result.status !== 200 || result.value.accountActions !== true;
+        } catch (_) { if (cycle === generation) panel.hidden = true; }
+        finally {
+            window.clearTimeout(deadline);
+            if (cycle === generation) { busy = false; Array.from(form.elements).forEach(function (field) { field.disabled = false; }); extend.disabled = true; }
+        }
+    });
     panel.hidden = false;
 }());
