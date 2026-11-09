@@ -66,7 +66,7 @@ describe('proposal approval seals', () => {
                 locationCount: 1,
                 managedEndpointCount: 2,
                 userCount: 2,
-                monthlyTotalExGst: 238
+                monthlyTotalExGst: 240
             },
             pricing: Object.assign({}, proposalFixture().pricing)
         });
@@ -272,8 +272,8 @@ describe('proposal approval seals', () => {
         ));
         expect(exported.status).toBe(200);
         expect(exported.body).toContain('NZ$99 + GST per user each month');
-        expect(exported.body).not.toContain('NZ$119 + GST per user each month');
-        expect(exported.body).not.toContain('managed_it_2026_08_4');
+        expect(exported.body).not.toContain('NZ$120 + GST per user each month');
+        expect(exported.body).not.toContain('managed_it_2026_11_1');
     });
 
     test('bundled sealed exports render the service identity recorded in each approval snapshot', async () => {
@@ -351,7 +351,7 @@ describe('proposal approval seals', () => {
         expect(currentExport.status).toBe(200);
         expect(currentExport.body).toContain('<h2>Your No Fries Managed IT service</h2>');
         expect(currentExport.body).not.toContain('Legacy &lt;em&gt;Managed IT&lt;/em&gt;');
-        expect(currentExport.body).toContain('NZ$238 + GST per month');
+        expect(currentExport.body).toContain('NZ$240 + GST per month');
     });
 
     test('approved API records are immutable and exports remain stable after customer metadata changes', async () => {
@@ -475,13 +475,13 @@ function proposalFixture(overrides = {}) {
             roadmap: 'now'
         }],
         pricing: {
-            policyId: 'managed_it_2026_08_4',
-            policyVersion: '2026.08.4',
-            policyEffectiveFrom: '2026-08-23',
+            policyId: 'managed_it_2026_11_1',
+            policyVersion: '2026.11.1',
+            policyEffectiveFrom: '2026-11-09',
             serviceName: 'No Fries Managed IT',
             currency: 'NZD',
             gstExclusive: true,
-            perUserMonthly: 119,
+            perUserMonthly: 120,
             includedEndpointsPerUser: 1,
             includedLocations: 1,
             onboardingFrom: 750,
@@ -491,9 +491,9 @@ function proposalFixture(overrides = {}) {
             additionalLocationOnboarding: 250
         },
         commercialPolicy: {
-            policyId: 'managed_it_2026_08_4',
-            policyVersion: '2026.08.4',
-            effectiveFrom: '2026-08-23',
+            policyId: 'managed_it_2026_11_1',
+            policyVersion: '2026.11.1',
+            effectiveFrom: '2026-11-09',
             serviceName: 'No Fries Managed IT'
         },
         commercial: {
@@ -504,7 +504,7 @@ function proposalFixture(overrides = {}) {
             termMonths: 12,
             plannedStart: '2026-09-01',
             confirmed: true,
-            monthlyTotalExGst: 238
+            monthlyTotalExGst: 240
         },
         roadmap: { now: ['Managed support'], next: [], later: [] },
         assumptions: ['Scope changes require a new proposal version.'],
@@ -550,7 +550,7 @@ function bundledProposalFixture(serviceName, overrides = {}) {
             users: 2,
             endpoints: 2,
             locations: 1,
-            monthly: 238,
+            monthly: 240,
             onboarding: 750
         }),
         roadmap: { now: [serviceName], next: [], later: [] }

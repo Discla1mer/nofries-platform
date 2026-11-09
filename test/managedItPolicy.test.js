@@ -10,15 +10,17 @@ describe('effective managed IT policy', () => {
     test('owns the complete effective policy while retaining legacy pricing exports', () => {
         expect(MANAGED_IT_POLICY).toMatchObject({
             schemaVersion: 1,
-            policyId: 'managed_it_2026_08_4',
-            legacyPriceVersion: '2026.08.4',
-            effectiveFrom: '2026-08-23',
+            policyId: 'managed_it_2026_11_1',
+            legacyPriceVersion: '2026.11.1',
+            effectiveFrom: '2026-11-09',
             customerFacingServiceName: 'No Fries Managed IT',
             pricing: {
-                perUserMonthly: 119,
+                // Top-level per-user rate mirrors the recommended tier (Managed).
+                perUserMonthly: 120,
                 onboardingFrom: 750,
                 additionalEndpointMonthly: 20,
-                additionalLocationMonthly: 125
+                additionalLocationMonthly: 125,
+                recommendedTierId: 'managed'
             },
             manualReviewThresholds: { users: 150, endpoints: 200, locations: 5 }
         });
@@ -30,15 +32,35 @@ describe('effective managed IT policy', () => {
         expect(STANDARD_PRICE).toMatchObject({
             currency: 'NZD',
             gstExclusive: true,
-            perUserMonthly: 119,
+            perUserMonthly: 120,
             manualReviewUsers: 150,
             manualReviewLocations: 5
         });
     });
 
+    test('defines the three managed-IT tiers with correct rates, names and the recommended flag', () => {
+        const tiers = MANAGED_IT_POLICY.pricing.tiers;
+        expect(tiers.map((tier) => [tier.id, tier.name, tier.perUserMonthly])).toEqual([
+            ['essentials', 'Essentials', 75],
+            ['managed', 'Managed', 120],
+            ['secure', 'Secure', 165]
+        ]);
+        expect(MANAGED_IT_POLICY.pricing.recommendedTierId).toBe('managed');
+        expect(tiers.filter((tier) => tier.recommended).map((tier) => tier.id)).toEqual(['managed']);
+        expect(tiers.find((tier) => tier.id === 'essentials').inheritsFromTierId).toBeNull();
+        expect(tiers.find((tier) => tier.id === 'managed').inheritsFromTierId).toBe('essentials');
+        expect(tiers.find((tier) => tier.id === 'secure').inheritsFromTierId).toBe('managed');
+        expect(tiers.find((tier) => tier.id === 'managed').additionalFeatures)
+            .toContain('Dealing with your other IT vendors');
+    });
+
     test('generates customer and prompt summaries from the same policy', () => {
         expect(managedItPolicyCustomerSummary()).toContain('No Fries Managed IT');
-        expect(managedItPolicyCustomerSummary()).toContain('NZ$119');
+        expect(managedItPolicyCustomerSummary()).toContain('three tiers');
+        expect(managedItPolicyCustomerSummary()).toContain('Essentials at NZ$75');
+        expect(managedItPolicyCustomerSummary()).toContain('Managed at NZ$120 (recommended)');
+        expect(managedItPolicyCustomerSummary()).toContain('Secure at NZ$165');
+        expect(managedItPolicyCustomerSummary()).not.toContain('24/7');
         expect(managedItPolicyPromptSummary()).toContain(MANAGED_IT_POLICY.policyId);
         expect(managedItPolicyIdentity()).toEqual({
             policyId: MANAGED_IT_POLICY.policyId,

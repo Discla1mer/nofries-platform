@@ -27,6 +27,8 @@
         let startupOperation = null;
         let chatOperation = null;
         let retryMessage = null;
+        let selectedTier = null;
+        let pricingTiers = [];
         const stopButton = find('assistant-stop');
         const retryButton = find('assistant-retry');
         const resetButton = find('assistant-reset');
@@ -40,7 +42,11 @@
             ? 'Chat is unavailable. Use the public links below or reload this page later.'
             : 'The chat is not available yet. The service information remains available below.';
         const controller = Object.freeze({
-            open: () => ensureInitialised().then(() => ready),
+            open: (openOptions) => {
+                if (openOptions && openOptions.tier) selectTier(openOptions.tier);
+                return ensureInitialised().then(() => ready);
+            },
+            selectTier,
             isReady: () => ready && !busy,
             stop,
             reset
@@ -252,7 +258,9 @@
                         method: 'POST',
                         credentials: 'same-origin',
                         headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
-                        body: JSON.stringify(helpOnly ? { publicHelpMessage: message, publicHelpOnly: true } : { message }),
+                        body: JSON.stringify(helpOnly
+                            ? { publicHelpMessage: message, publicHelpOnly: true }
+                            : selectedTier ? { message, tier: selectedTier } : { message }),
                         signal: current.signal
                     });
                     guard();
@@ -427,8 +435,60 @@
             if (value.mode === 'disabled') runtimeBadge.classList.add('is-unavailable');
         }
 
+        // A managed-IT plan card may open the assistant with a chosen tier. Capture
+        // it (normalised against loaded tiers when available) so the chat request
+        // threads it into the server-side estimate.
+        function selectTier(value) {
+            const text = String(value == null ? '' : value).trim().toLowerCase();
+            if (!text) return;
+            const match = pricingTiers.find((tier) => String(tier.id).toLowerCase() === text
+                || String(tier.name).toLowerCase() === text);
+            selectedTier = match ? match.id : text;
+            renderTierSelection();
+        }
+
+        function renderTierSelection() {
+            const container = find('managed-it-tiers');
+            if (!container || typeof container.querySelectorAll !== 'function') return;
+            container.querySelectorAll('[data-tier]').forEach((node) => {
+                const isSelected = selectedTier && String(node.dataset.tier).toLowerCase() === String(selectedTier).toLowerCase();
+                if (typeof node.classList === 'object' && node.classList) node.classList.toggle('is-selected', !!isSelected);
+            });
+        }
+
+        function renderTiers(value) {
+            const taxLabel = value.gstExclusive ? ' + GST' : '';
+            pricingTiers = Array.isArray(value.tiers) ? value.tiers : [];
+            const container = find('managed-it-tiers');
+            if (!container || typeof container.replaceChildren !== 'function' || !pricingTiers.length) return false;
+            const nodes = pricingTiers.map((tier) => {
+                const card = document.createElement('li');
+                card.className = 'assistant-tier';
+                card.dataset.tier = tier.id;
+                if (tier.recommended) card.classList.add('is-recommended');
+                const rate = Number(tier.perUserMonthly);
+                const name = document.createElement('h4');
+                name.textContent = tier.name;
+                const price = document.createElement('p');
+                price.className = 'assistant-tier-price';
+                price.textContent = `NZ$${Number.isFinite(rate) ? rate.toLocaleString('en-NZ') : tier.perUserMonthly}${taxLabel} per user / month`;
+                card.append(name, price);
+                if (tier.tagline) {
+                    const tagline = document.createElement('p');
+                    tagline.className = 'assistant-tier-tagline';
+                    tagline.textContent = tier.tagline;
+                    card.append(tagline);
+                }
+                return card;
+            });
+            container.replaceChildren(...nodes);
+            renderTierSelection();
+            return true;
+        }
+
         function setPricing(pricing) {
             const value = pricing || {};
+            renderTiers(value);
             const perUser = Number(value.perUserMonthly);
             const onboarding = Number(value.onboardingFrom);
             const additionalEndpoint = Number(value.additionalEndpointMonthly);

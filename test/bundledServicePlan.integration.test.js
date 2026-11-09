@@ -101,7 +101,7 @@ describe('bundled service-plan API', () => {
         expect(reviewed.status).toBe(200);
         expect(reviewed.body.servicePlan).toMatchObject({
             status: 'reviewed',
-            pricing: { monthly: 238, onboarding: 750 }
+            pricing: { monthly: 240, onboarding: 750 }
         });
 
         const proposalResponse = await request(app)
@@ -110,14 +110,14 @@ describe('bundled service-plan API', () => {
         expect(proposalResponse.status).toBe(201);
         expect(proposalResponse.body.proposal).toMatchObject({
             commercialModel: 'bundled_managed_it',
-            pricing: { monthly: 238, onboarding: 750 }
+            pricing: { monthly: 240, onboarding: 750 }
         });
         expect(proposalResponse.body.proposal.recommendations).toHaveLength(1);
 
         const exported = await request(app)
             .get(`/api/sales/proposals/${proposalResponse.body.proposal.id}/export?format=html`);
         expect(exported.status).toBe(200);
-        expect(exported.text).toContain('NZ$238 + GST per month');
+        expect(exported.text).toContain('NZ$240 + GST per month');
         expect(exported.text).toContain('NZ$750 + GST initial set-up');
         expect(exported.text).toContain('Included components');
 
@@ -128,7 +128,7 @@ describe('bundled service-plan API', () => {
         expect(preview.body.payload.opportunities).toHaveLength(1);
         expect(preview.body.payload.opportunities[0]).toMatchObject({
             serviceKey: 'managed-it-core',
-            estimatedMonthlyRevenue: 238,
+            estimatedMonthlyRevenue: 240,
             estimatedOneOffRevenue: 750
         });
     });

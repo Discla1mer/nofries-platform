@@ -177,15 +177,15 @@
         },
         "lifecycleState": "discovery",
         "replyMustInclude": [
-          "current No Fries estimate is NZ$1,230 + GST per month",
+          "current No Fries estimate is NZ$1,240 + GST per month",
           "initial set-up from NZ$810 + GST"
         ],
         "pricing": {
-          "policyId": "managed_it_2026_08_4",
+          "policyId": "managed_it_2026_11_1",
           "status": "indicative",
           "currency": "NZD",
           "gstExclusive": true,
-          "monthly": 1230,
+          "monthly": 1240,
           "onboarding": 810
         },
         "conversationTextMaxOccurrences": {
@@ -281,7 +281,7 @@
       "expect": {
         "topic": "feature_availability",
         "replyMustInclude": ["not dashboard access", "terms shown during account setup", "cannot confirm a new trial or paid dashboard plan"],
-        "forbiddenReplyPatterns": ["NZ\\$", "119", "750", "current No Fries estimate"]
+        "forbiddenReplyPatterns": ["NZ\\$", "75", "120", "165", "750", "current No Fries estimate"]
       }
     },
     {

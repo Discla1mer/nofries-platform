@@ -67,14 +67,19 @@ testCase('separate service-page links survive the dashboard-focused homepage and
 
 testCase('the enquiry action reuses the click-only shared assistant and verified contact paths', () => {
     const buttons = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
-    assert.equal(buttons.length, 2);
+    // Two "Ask about Managed IT" launchers plus one CTA per pricing tier.
+    assert.equal(buttons.length, 5);
+    const tierButtons = [];
     for (const button of buttons) {
         assert.match(button[1], /type="button"/);
         assert.match(button[1], /\bdata-assistant-open\b/);
         assert.match(button[1], /data-assistant-topic="managed-it"/);
-        assert.equal(text(button[2]), 'Ask about Managed IT →');
         assert.doesNotMatch(button[1], /data-message|onclick|formaction/);
+        const tier = button[1].match(/data-managed-it-tier="([^"]+)"/);
+        if (tier) tierButtons.push(tier[1]);
+        else assert.equal(text(button[2]), 'Ask about Managed IT →');
     }
+    assert.deepEqual(tierButtons, ['essentials', 'managed', 'secure']);
     assert.match(existingScope, /href="mailto:hello@nofries\.nz"/);
     assert.match(html, /href="mailto:hello@nofries\.nz">Email hello@nofries\.nz/);
     assert.match(html, /href="\/scoping">Staff scoping workspace <span aria-hidden="true">→<\/span><\/a>/);
@@ -93,7 +98,36 @@ testCase('dashboard access and planned automation are stated without new service
     assert.match(text(html), /view results calculated from submitted answers\. Access depends on your organisation’s permissions\./);
     assert.match(text(html), /Managed IT is a separate, optional service\./);
     assert.match(text(html), /Automatic updates and connected data feeds are planned\./);
-    assert.doesNotMatch(text(html), /NZ\$|\$\d|24\/7|guaranteed|unlimited|certified|response time|service-level agreement/i);
+    // The page must now show the real tier prices customers sign against (Fair
+    // Trading), each carrying "+ GST", but still make no over-reaching claims.
+    assert.doesNotMatch(text(html), /24\/7|guaranteed|unlimited|certified|response time|service-level agreement/i);
+});
+
+testCase('the plans and pricing section renders the three tiers with GST-inclusive copy and a recommended badge', () => {
+    const plansText = text(html);
+    const policyTiers = MANAGED_IT_POLICY.pricing.tiers;
+    for (const tier of policyTiers) {
+        assert.match(plansText, new RegExp(`NZ\\$${tier.perUserMonthly} \\+ GST`),
+            `tier ${tier.id} price must render with + GST`);
+        assert.ok(plansText.includes(tier.tagline), `tier ${tier.id} tagline must render`);
+        for (const feature of tier.additionalFeatures) {
+            assert.ok(plansText.includes(feature), `missing tier feature: ${feature}`);
+        }
+    }
+    // Managed is the recommended tier and carries a visible badge.
+    assert.match(html, /<li class="managed-it-tier is-recommended" data-tier="managed">/);
+    assert.match(html, /class="managed-it-tier-badge">Recommended</);
+    assert.match(html, /data-managed-it-tier="managed"/);
+    // Managed and Secure inherit from the tier below them.
+    assert.match(plansText, /Everything in Essentials, plus:/);
+    assert.match(plansText, /Everything in Managed, plus:/);
+    // Add-on note keeps every price GST-qualified.
+    assert.match(plansText, /Set-up from NZ\$750 \+ GST\. Extra computers NZ\$20 \+ GST each per month, extra locations NZ\$125 \+ GST each per month\./);
+    // Every NZ$ figure on the page is immediately followed by "+ GST".
+    for (const match of html.matchAll(/NZ\$[\d,]+/g)) {
+        const after = text(html.slice(match.index, match.index + match[0].length + 60));
+        assert.match(after, /^NZ\$[\d,]+ \+ GST/, `price without + GST near: ${after.slice(0, 40)}`);
+    }
 });
 
 testCase('viewing the source page introduces no form, independent bot or background side effect', () => {

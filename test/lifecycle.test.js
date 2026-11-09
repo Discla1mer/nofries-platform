@@ -1002,7 +1002,7 @@ describe('shared customer lifecycle and prospect agent', () => {
         expect(result.identities).toMatchObject({
             promptVersion: 'prospect-v5',
             toolSchemaVersion: 'prospect-tools-v1',
-            policyId: 'managed_it_2026_08_4',
+            policyId: 'managed_it_2026_11_1',
             model: 'gpt-5.6-luna',
             releaseSha: 'a'.repeat(40)
         });
@@ -1013,7 +1013,7 @@ describe('shared customer lifecycle and prospect agent', () => {
                 providerModel: 'gpt-5.6-luna-2026-08-01',
                 promptVersion: 'prospect-v5',
                 toolSchemaVersion: 'prospect-tools-v1',
-                policyId: 'managed_it_2026_08_4',
+                policyId: 'managed_it_2026_11_1',
                 releaseSha: 'a'.repeat(40),
                 cachedInputTokens: 50,
                 cacheWriteTokens: 20,

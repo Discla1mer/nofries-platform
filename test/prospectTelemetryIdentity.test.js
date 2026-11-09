@@ -34,7 +34,7 @@ describe('prospect runtime telemetry identity', () => {
         const identities = {
             promptVersion: 'prospect-v4',
             toolSchemaVersion: 'prospect-tools-v1',
-            policyId: 'managed_it_2026_08_4',
+            policyId: 'managed_it_2026_11_1',
             model: 'gpt-5.6-luna',
             releaseSha: 'a'.repeat(40)
         };

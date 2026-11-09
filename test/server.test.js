@@ -408,10 +408,16 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             streaming: true,
             pricing: {
                 currency: 'NZD',
-                perUserMonthly: 119,
+                perUserMonthly: 120,
                 includedEndpointsPerUser: 1,
                 onboardingFrom: 750,
-                gstExclusive: true
+                gstExclusive: true,
+                recommendedTierId: 'managed',
+                tiers: [
+                    expect.objectContaining({ id: 'essentials', perUserMonthly: 75 }),
+                    expect.objectContaining({ id: 'managed', perUserMonthly: 120, recommended: true }),
+                    expect.objectContaining({ id: 'secure', perUserMonthly: 165 })
+                ]
             }
         });
         expect(session.body.organisation.context.productivity.platform).toBe('unknown');
@@ -1464,17 +1470,17 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         const proposal = proposalResponse.body.proposal;
         expect(proposal.recommendations).toHaveLength(1);
         expect(proposal.pricing).toMatchObject({
-            policyId: 'managed_it_2026_08_4',
-            policyVersion: '2026.08.4',
-            perUserMonthly: 119,
+            policyId: 'managed_it_2026_11_1',
+            policyVersion: '2026.11.1',
+            perUserMonthly: 120,
             includedEndpointsPerUser: 1,
             onboardingFrom: 750,
             additionalEndpointMonthly: 20,
             additionalLocationMonthly: 125
         });
         expect(proposal.commercialPolicy).toMatchObject({
-            policyId: 'managed_it_2026_08_4',
-            policyVersion: '2026.08.4',
+            policyId: 'managed_it_2026_11_1',
+            policyVersion: '2026.11.1',
             serviceName: 'No Fries Managed IT'
         });
         expect(JSON.stringify(proposal)).not.toContain('estimatedMrr');
@@ -1491,7 +1497,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             identities: {
                 promptVersion: 'proposal-review-v2',
                 outputSchemaVersion: 'proposal-review-schema-v1',
-                policyId: 'managed_it_2026_08_4'
+                policyId: 'managed_it_2026_11_1'
             }
         });
         const mismatchedAccept = await request(app)
@@ -1583,7 +1589,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             reviewId: aiReview.body.review.reviewId,
             promptVersion: 'proposal-review-v2',
             outputSchemaVersion: 'proposal-review-schema-v1',
-            policyId: 'managed_it_2026_08_4',
+            policyId: 'managed_it_2026_11_1',
             sourceSha256: aiReview.body.review.sourceSha256,
             suggestionSha256: aiReview.body.review.suggestionSha256,
             feedback: { outcome: 'edited' },
@@ -1661,7 +1667,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             userCount: 50,
             managedEndpointCount: 50,
             locationCount: 2,
-            monthlyTotalExGst: 6075,
+            monthlyTotalExGst: 6125,
             confirmed: true
         });
 
@@ -1670,7 +1676,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(word.headers['content-type']).toContain('application/msword');
         expect(word.text).toContain('Fictional Logistics Ltd');
         expect(word.text).toContain('Managed endpoint security');
-        expect(word.text).toContain('NZ$6,075 + GST per month');
+        expect(word.text).toContain('NZ$6,125 + GST per month');
         expect(word.text).toContain('Based on 50 supported people, 50 managed computers and 2 supported locations.');
         expect(word.text).toContain('Initial set-up: NZ$750 + GST.');
         expect(word.text).toContain('Proposed term: 12 months.');

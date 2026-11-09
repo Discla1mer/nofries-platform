@@ -75,7 +75,9 @@ async function handleProspectSessionRequest(req, options = {}) {
                 onboardingFrom: STANDARD_PRICE.onboardingFrom,
                 additionalEndpointMonthly: STANDARD_PRICE.additionalEndpointMonthly,
                 additionalLocationMonthly: STANDARD_PRICE.additionalLocationMonthly,
-                gstExclusive: STANDARD_PRICE.gstExclusive
+                gstExclusive: STANDARD_PRICE.gstExclusive,
+                recommendedTierId: MANAGED_IT_POLICY.pricing.recommendedTierId,
+                tiers: MANAGED_IT_POLICY.pricing.tiers
             }
         },
         conversation: session.conversation,
@@ -106,6 +108,9 @@ async function handleProspectChatRequest(req, options = {}) {
         throw prospectError(400, 'The public help mode is invalid', 'invalid_public_help_mode');
     }
     const visitorMessage = guardVisitorMessage(publicHelpOnly ? body.publicHelpMessage : body.message);
+    // Optional tier chosen from a managed-IT plan card. The estimator normalises
+    // and falls back to the recommended tier, so an unknown value is harmless.
+    const visitorTier = clean(body && body.tier, 40);
     const rateLimit = prospectRateLimit(req, 'apiProspectChat', env);
     const runtime = resolveProspectRuntime(env);
     const prepared = await prepareSession(req, env, Object.assign({}, options, { persistSession: false }));
@@ -271,7 +276,7 @@ async function handleProspectChatRequest(req, options = {}) {
         const pricingJourneyActive = explicitPricingIntent || (priorPricingIntent && !finalQuoteAlreadyProvided);
 
         if (pricingJourneyActive) {
-            pricing = estimateManagedItPrice(organisationContext);
+            pricing = estimateManagedItPrice(Object.assign({}, organisationContext, visitorTier ? { tier: visitorTier } : {}));
             const shouldAppendPricing = pricing.status !== 'needs_more_info' || explicitPricingIntent;
             const pricingText = shouldAppendPricing ? priceReply(pricing) : '';
             const alreadyContainsThisTurnPrice = /NZ\$[\d,]+/i.test(finalText);
