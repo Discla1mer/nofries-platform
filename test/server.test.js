@@ -465,8 +465,8 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         const operatorShell = await request(app).get('/operator');
         expect(operatorShell.status).toBe(200);
         expect(operatorShell.headers['cache-control']).toContain('no-store');
-        expect(operatorShell.text).toContain('Loading work that needs attention');
-        expect(operatorShell.text).toContain('>Work</a>');
+        expect(operatorShell.text).toContain('Opening account administration');
+        expect(operatorShell.text).toContain('>Accounts</a>');
         expect(operatorShell.text).toContain('>Sales</a>');
         expect(operatorShell.text).toContain('>Service desk</a>');
         expect(operatorShell.text).toContain('/js/operator-loader.js');
@@ -605,7 +605,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(response.text).toContain('Service plan');
         expect(response.text).toContain('Proposals');
         expect(response.text).toContain('Service catalogue');
-        expect(response.text).toContain('>Work</a>');
+        expect(response.text).toContain('>Accounts</a>');
         expect(response.text).toContain('>Sales</a>');
         expect(response.text).toContain('>Service desk</a>');
         const runtime = extractScopingRuntime(response.text);

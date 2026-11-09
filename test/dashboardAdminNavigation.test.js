@@ -50,90 +50,36 @@ function navigationHarness() {
     };
 }
 
-describe('optional staff administration navigation', () => {
-    test('uses a native hidden link in the wrapping private navigation', () => {
-        expect(operatorDocument).toMatch(/<a id="dashboardAdminNavigation" href="\/dashboard-admin\/entry" hidden>Dashboard administration<\/a>/);
-        expect(operatorDocument.indexOf('dashboardAdminNavigation')).toBeGreaterThan(operatorDocument.indexOf('aria-label="Private workspace navigation"'));
-        const css = fs.readFileSync(path.join(root, 'app/operator.css'), 'utf8');
-        expect(css).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important/);
-        expect(css).toMatch(/\.operator-header nav\s*\{[^}]*flex-wrap:\s*wrap/);
-        expect(css).toMatch(/@media\s*\(max-width:\s*700px\)[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+describe('staff entry hands off to account administration', () => {
+    test('the staff page has no hidden admin link or retired console mount', () => {
+        expect(operatorDocument).not.toContain('dashboardAdminNavigation');
+        expect(operatorDocument).not.toContain('operatorRoot');
+        expect(source).not.toContain('/api/lifecycle/app.js');
+        expect(source).not.toContain('entry-capabilities');
     });
 
-    test('never discovers admin capability before genuine session verification', async () => {
+    test('never opens administration before genuine session verification', async () => {
         const h = navigationHarness();
         h.event('focus'); h.event('pageshow', { persisted: true }); await flush();
         expect(h.requests.map(value => value.url)).toEqual(['/api/auth/session']);
         await h.reply(0, 401, { authenticated: false });
-        expect(h.link.hidden).toBe(true); expect(h.scripts).toHaveLength(0);
+        expect(h.scripts).toHaveLength(0);
         expect(h.window.location.replace).toHaveBeenCalledWith('/api/auth/login?returnTo=%2Foperator');
+        expect(h.window.location.replace).not.toHaveBeenCalledWith('/dashboard-admin/entry');
     });
 
-    test('shows the native link only after permission to open the empty staff entry', async () => {
+    test('a verified staff session goes to the explicit administration entry, which checks access itself', async () => {
         const h = navigationHarness(); await h.verify();
-        expect(h.scripts).toHaveLength(1);
-        expect(h.scripts[0].src).toBe('/api/lifecycle/app.js');
-        expect(h.link.hidden).toBe(true);
-        expect(h.requests[1]).toMatchObject({ url: '/api/dashboard-admin/entry-capabilities', options: {
-            credentials: 'same-origin', cache: 'no-store', redirect: 'error', headers: { Accept: 'application/json' }
-        } });
-        await h.reply(1, 200, { entry: true });
-        expect(h.link.hidden).toBe(false);
-        h.link.focus(); expect(h.document.activeElement).toBe(h.link);
-        expect(h.link.href).toBe('/dashboard-admin/entry');
+        expect(h.requests.map(value => value.url)).toEqual(['/api/auth/session']);
+        expect(h.scripts).toHaveLength(0);
+        expect(h.window.location.replace).toHaveBeenCalledWith('/dashboard-admin/entry');
     });
 
-    test.each([
-        [200, { entry: false }], [200, { entry: 'true' }],
-        [200, {}], [200, { lookup: true, recovery: [] }],
-        [200, { entry: true, error: 'untrusted' }],
-        [200, null], [401, { code: 'dashboard_admin_authentication_required' }],
-        [403, { code: 'dashboard_admin_access_denied' }], [404, {}], [503, {}]
-    ])('keeps optional navigation hidden for missing, malformed or denied capability %s %j', async (statusCode, body) => {
-        const h = navigationHarness(); await h.verify(); await h.reply(1, statusCode, body);
-        expect(h.link.hidden).toBe(true); expect(h.scripts).toHaveLength(1);
-        expect(h.window.location.replace).not.toHaveBeenCalled();
-    });
-
-    test('a failed optional request does not block the existing protected application', async () => {
-        const h = navigationHarness(); await h.verify(); h.requests[1].reject(new Error('synthetic network failure')); await flush();
-        expect(h.link.hidden).toBe(true); expect(h.scripts).toHaveLength(1);
-        expect(h.window.location.replace).not.toHaveBeenCalled();
-    });
-
-    test.each([
-        { redirected: true }, { type: 'opaqueredirect' },
-        { headers: { get: () => 'text/html' } }, { json: async () => { throw new Error('bad JSON'); } }
-    ])('rejects an untrusted capability transport', async extra => {
-        const h = navigationHarness(); await h.verify(); await h.reply(1, 200, { entry: true }, extra);
-        expect(h.link.hidden).toBe(true);
-    });
-
-    test('bounds discovery and ignores a successful response received after its timeout', async () => {
-        const h = navigationHarness(); await h.verify(); h.expire();
-        expect(h.requests[1].options.signal.aborted).toBe(true);
-        await h.reply(1, 200, { entry: true }); expect(h.link.hidden).toBe(true);
-    });
-
-    test('repeated focus cancels previous discovery and discards out-of-order responses', async () => {
-        const h = navigationHarness(); await h.verify(); h.event('focus'); await flush();
-        expect(h.requests[1].options.signal.aborted).toBe(true);
-        await h.reply(2, 200, { entry: false });
-        await h.reply(1, 200, { entry: true }); expect(h.link.hidden).toBe(true);
-        h.event('focus'); await flush(); await h.reply(3, 200, { entry: true });
-        expect(h.link.hidden).toBe(false);
-        h.event('focus'); expect(h.link.hidden).toBe(true); await flush();
-        await h.reply(4, 403, { code: 'dashboard_admin_access_denied' }); expect(h.link.hidden).toBe(true);
-    });
-
-    test('pagehide cancels discovery and persisted restoration checks current authority again', async () => {
-        const h = navigationHarness(); await h.verify(); h.event('pagehide');
-        expect(h.requests[1].options.signal.aborted).toBe(true);
-        await h.reply(1, 200, { entry: true }); expect(h.link.hidden).toBe(true);
-        h.event('focus'); await flush(); expect(h.requests).toHaveLength(2);
-        h.event('pageshow', { persisted: true }); await flush();
-        expect(h.requests).toHaveLength(3);
-        await h.reply(2, 401, { code: 'dashboard_admin_authentication_required' }); expect(h.link.hidden).toBe(true);
+    test.each([[200, { authenticated: false }], [200, {}], [200, null]])
+    ('an unverified session never opens administration: %s %j', async (statusCode, body) => {
+        const h = navigationHarness(); await h.reply(0, statusCode, body);
+        expect(h.window.location.replace).not.toHaveBeenCalledWith('/dashboard-admin/entry');
+        expect(h.scripts).toHaveLength(0);
     });
 });
 
@@ -162,7 +108,6 @@ function entryHarness({ crypto = { randomUUID: () => '85000000-0000-4000-8000-00
         }
     };
 }
-
 describe('explicit administration entry protocol', () => {
     test('entry has no inline execution or protected data assets and makes no automatic requests', async () => {
         const html = buildDashboardAdminEntryDocument();

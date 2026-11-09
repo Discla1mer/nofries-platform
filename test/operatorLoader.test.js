@@ -94,7 +94,7 @@ describe('operator session loader', () => {
         expect(harness.appendedScripts).toHaveLength(0);
     });
 
-    test('injects the protected lifecycle application after session verification', async () => {
+    test('hands a verified staff session to account administration without loading the retired console', async () => {
         const fetchImpl = jest.fn(async () => jsonResponse(200, {
             authenticated: true,
             expiresAt: '2026-08-23T05:00:00.000Z'
@@ -104,14 +104,10 @@ describe('operator session loader', () => {
         await flushAsyncWork();
         await flushAsyncWork();
 
-        expect(harness.window.location.replace).not.toHaveBeenCalled();
-        expect(harness.document.head.append).toHaveBeenCalledTimes(1);
-        expect(harness.appendedScripts).toHaveLength(1);
-        expect(harness.appendedScripts[0]).toMatchObject({
-            id: 'protectedOperatorApplication',
-            src: '/api/lifecycle/app.js',
-            async: true
-        });
+        expect(harness.window.location.replace).toHaveBeenCalledWith('/dashboard-admin/entry');
+        expect(harness.document.head.append).not.toHaveBeenCalled();
+        expect(harness.appendedScripts).toHaveLength(0);
+        expect(loaderSource).not.toContain('/api/lifecycle/app.js');
     });
 
     test('a failed sign-in start shows a retry screen instead of looping back into sign-in', async () => {

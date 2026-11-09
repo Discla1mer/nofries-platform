@@ -26,10 +26,9 @@ describe('protected workspace navigation', () => {
         const links = navigationLinks(html);
 
         expect(links.map(({ label, href, hidden }) => [label, href, hidden])).toEqual([
-            ['Work', '/operator', false],
+            ['Accounts', '/operator', false],
             ['Sales', '/scoping', false],
-            ['Service desk', '/support', false],
-            ...(page === 'operator' ? [['Dashboard administration', '/dashboard-admin/entry', true]] : [])
+            ['Service desk', '/support', false]
         ]);
         expect(links.filter((link) => link.current)).toEqual([
             expect.objectContaining({ href: currentHref })
