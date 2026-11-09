@@ -188,8 +188,6 @@ describe('dynamic host route and disclosure boundary', () => {
     });
 
     test.each([
-        ['/scoping', 200],
-        ['/support', 200],
         ['/operator', 200],
         ['/api/sales/bootstrap', 200],
         ['/api/lifecycle/bootstrap', 200],
@@ -202,10 +200,12 @@ describe('dynamic host route and disclosure boundary', () => {
     });
 
     test.each([
-        ['/service-desk', '/support', 302],
-        ['/mssp', '/scoping', 302],
-        ['/CloudPC.html', '/scoping', 301],
-        ['/NoFries.html', '/scoping', 301],
+        ['/scoping', '/dashboard', 302],
+        ['/support', '/dashboard', 302],
+        ['/service-desk', '/dashboard', 302],
+        ['/mssp', '/dashboard', 302],
+        ['/CloudPC.html', '/', 301],
+        ['/NoFries.html', '/', 301],
         ['/share/not-a-token', '/', 302]
     ])('preserves redirect %s', async (route, location, status) => {
         const response = await request(app).get(route);

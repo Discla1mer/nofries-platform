@@ -77,7 +77,7 @@ testCase('the enquiry action reuses the click-only shared assistant and verified
     }
     assert.match(existingScope, /href="mailto:hello@nofries\.nz"/);
     assert.match(html, /href="mailto:hello@nofries\.nz">Email hello@nofries\.nz/);
-    assert.match(html, /href="\/scoping">Staff scoping workspace <span aria-hidden="true">→<\/span><\/a>/);
+    assert.doesNotMatch(html, /href="\/scoping"/);
     assert.match(text(html), /Ask about Managed IT or discuss your service needs\./);
     assert.match(text(html), /Indicative prices are confirmed with the service scope before acceptance\./);
 });

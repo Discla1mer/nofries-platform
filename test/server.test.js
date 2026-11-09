@@ -465,10 +465,9 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         const operatorShell = await request(app).get('/operator');
         expect(operatorShell.status).toBe(200);
         expect(operatorShell.headers['cache-control']).toContain('no-store');
-        expect(operatorShell.text).toContain('Opening account administration');
-        expect(operatorShell.text).toContain('>Accounts</a>');
-        expect(operatorShell.text).toContain('>Sales</a>');
-        expect(operatorShell.text).toContain('>Service desk</a>');
+        expect(operatorShell.text).toContain('Opening your dashboard');
+        expect(operatorShell.text).not.toContain('>Sales</a>');
+        expect(operatorShell.text).not.toContain('>Service desk</a>');
         expect(operatorShell.text).toContain('/js/operator-loader.js');
         expect(operatorShell.text).not.toContain('/api/lifecycle/app.js');
     });
@@ -592,35 +591,12 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         }
     });
 
-    test('workspace shell embeds only a CSP-authorised loader before the protected sales runtime', async () => {
+    test('retired Sales page redirects to the dashboard while its protected APIs stay in place', async () => {
         const response = await request(app).get('/scoping');
-        expect(response.status).toBe(200);
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe('/dashboard');
         expect(response.headers['x-robots-tag']).toBe('noindex, nofollow');
-        const contentSecurityPolicy = response.headers['content-security-policy'];
-        expect(contentSecurityPolicy).not.toContain('assets.apollo.io');
-        expect(contentSecurityPolicy).not.toContain("'unsafe-inline'");
-        expect(contentSecurityPolicy).not.toContain('blob:');
-        expect(response.text).toContain('<small>Sales</small>');
-        expect(response.text).toContain('Service review');
-        expect(response.text).toContain('Service plan');
-        expect(response.text).toContain('Proposals');
-        expect(response.text).toContain('Service catalogue');
-        expect(response.text).toContain('>Accounts</a>');
-        expect(response.text).toContain('>Sales</a>');
-        expect(response.text).toContain('>Service desk</a>');
-        const runtime = extractScopingRuntime(response.text);
-        const expectedHash = scriptSourceHash(runtime);
-        expect(scriptSourceDirective(contentSecurityPolicy)).toBe(`script-src 'self' ${expectedHash}`);
-        expect(runtime).not.toContain('window.NoFriesSales = { start };');
-        expect(runtime).toContain('bootstrap_request');
-        expect(runtime).toContain('MutationObserver');
-        expect(runtime).toContain('/api/sales/app.js');
-        expect(response.text).not.toContain('/assets/scoping-app.js');
-        expect(response.text).not.toContain('/js/app-loader.js');
-        expect(response.text).not.toContain('/js/scoping-copy.js');
-        expect(response.text).not.toContain('/app/mssp.js');
-        expect(response.text).not.toContain('security.monitoring');
-        expect(response.text).not.toContain('Stripe');
+        expect(response.text).not.toContain('/api/sales/app.js');
 
         const staticApp = await request(app).get('/assets/scoping-app.js');
         expect(staticApp.status).toBe(404);
@@ -639,21 +615,16 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
 
         const legacy = await request(app).get('/mssp');
         expect(legacy.status).toBe(302);
-        expect(legacy.headers.location).toBe('/scoping');
+        expect(legacy.headers.location).toBe('/dashboard');
     });
 
-    test('support shell embeds only a CSP-authorised loader before the protected runtime', async () => {
+    test('retired Service desk page redirects to the dashboard', async () => {
         const response = await request(app).get('/support');
-        expect(response.status).toBe(200);
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe('/dashboard');
         expect(response.headers['cache-control']).toContain('no-store');
         expect(response.headers['x-robots-tag']).toBe('noindex, nofollow');
-        const runtime = extractSupportRuntime(response.text);
-        expect(scriptSourceDirective(response.headers['content-security-policy'])).toBe(
-            `script-src 'self' ${scriptSourceHash(runtime)}`
-        );
-        expect(runtime).not.toContain('window.NoFriesSupport = { start };');
-        expect(runtime).toContain('support_timeout');
-        expect(response.text).toContain('/api/service-desk/app.js');
+        expect((await request(app).get('/service-desk')).headers.location).toBe('/dashboard');
         expect((await request(app).get('/js/support-loader.js')).status).toBe(404);
     });
 
@@ -1858,10 +1829,11 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(fs.existsSync(path.join(dist, 'scope.html'))).toBe(true);
         expect(fs.existsSync(path.join(dist, 'robots.txt'))).toBe(true);
         expect(fs.existsSync(path.join(dist, '.well-known', 'security.txt'))).toBe(true);
-        expect(fs.existsSync(path.join(dist, 'app', 'mssp.html'))).toBe(true);
-        expect(fs.existsSync(path.join(dist, 'app', 'support.html'))).toBe(true);
-        expect(fs.existsSync(path.join(dist, 'assets', 'mssp.css'))).toBe(true);
-        expect(fs.existsSync(path.join(dist, 'assets', 'support.css'))).toBe(true);
+        // The staff Sales and Service desk pages are retired from the build.
+        expect(fs.existsSync(path.join(dist, 'app', 'mssp.html'))).toBe(false);
+        expect(fs.existsSync(path.join(dist, 'app', 'support.html'))).toBe(false);
+        expect(fs.existsSync(path.join(dist, 'assets', 'mssp.css'))).toBe(false);
+        expect(fs.existsSync(path.join(dist, 'assets', 'support.css'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'assets', 'operator.css'))).toBe(true);
         expect(fs.readFileSync(path.join(dist, 'assets', 'operator.css'), 'utf8')).toContain('[hidden] { display: none !important; }');
         expect(fs.existsSync(path.join(dist, 'assets', 'scoping-app.js'))).toBe(false);
@@ -1887,25 +1859,12 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(staticConfig.responseOverrides['403']).toBeUndefined();
         const scopingAppRoute = staticConfig.routes.find((route) => route.route === '/assets/scoping-app.js');
         expect(scopingAppRoute).toBeUndefined();
-        const scopingDocument = fs.readFileSync(path.join(dist, 'app', 'mssp.html'), 'utf8');
-        const protectedStaticApp = extractScopingRuntime(scopingDocument);
-        const expectedHash = scriptSourceHash(protectedStaticApp);
-        const scopingRoute = staticConfig.routes.find((route) => route.route === '/scoping');
-        expect(scopingRoute).toBeDefined();
-        expect(scopingRoute.allowedRoles).toEqual(['anonymous']);
-        expect(scopingRoute.headers['Cache-Control']).toBe('no-store');
-        expect(scopingRoute.headers['X-Robots-Tag'].split(',').map(value => value.trim())).toEqual(['noindex', 'nofollow']);
-        expect(scriptSourceDirective(scopingRoute.headers['Content-Security-Policy'])).toBe(`script-src 'self' ${expectedHash}`);
-        expect(scopingRoute.headers['Content-Security-Policy']).not.toContain("'unsafe-inline'");
-        expect(scopingRoute.headers['Content-Security-Policy']).not.toContain('blob:');
-        const supportDocument = fs.readFileSync(path.join(dist, 'app', 'support.html'), 'utf8');
-        const protectedSupportApp = extractSupportRuntime(supportDocument);
-        const supportRoute = staticConfig.routes.find((route) => route.route === '/support');
-        expect(supportRoute).toBeDefined();
-        expect(supportRoute.allowedRoles).toEqual(['anonymous']);
-        expect(scriptSourceDirective(supportRoute.headers['Content-Security-Policy'])).toBe(
-            `script-src 'self' ${scriptSourceHash(protectedSupportApp)}`
-        );
+        for (const retired of ['/scoping', '/support']) {
+            const route = staticConfig.routes.find((value) => value.route === retired);
+            expect(route).toMatchObject({ redirect: '/dashboard', statusCode: 302 });
+            expect(route.rewrite).toBeUndefined();
+            expect(route.headers['Content-Security-Policy']).toBeUndefined();
+        }
         for (const assetRoute of ['/assets/support.css', '/assets/portal.css', '/assets/operator.css']) {
             const assetRule = staticConfig.routes.find((route) => route.route === assetRoute);
             expect(assetRule).toMatchObject({
@@ -1915,9 +1874,6 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             });
             expect(assetRule.headers['Cache-Control']).toBe('no-store');
         }
-        expect(protectedSupportApp).not.toContain('window.NoFriesSupport = { start };');
-        expect(protectedSupportApp).toContain('support_timeout');
-        expect(supportDocument).toContain('/api/service-desk/app.js');
         expect(staticConfig.routes.find((route) => route.route === '/api/mcp').allowedRoles).toEqual(['anonymous']);
         expect(staticConfig.routes.find((route) => route.route === '/api/mcp-auth').allowedRoles).toEqual(['anonymous']);
         expect(staticConfig.routes.find((route) => route.route === '/api/mcp-oauth-metadata').allowedRoles).toEqual(['anonymous']);
@@ -1931,11 +1887,6 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             rewrite: '/api/mcp-auth',
             allowedRoles: ['anonymous']
         });
-        expect(protectedStaticApp).not.toContain('window.NoFriesSales = { start };');
-        expect(protectedStaticApp).toContain('bootstrap_request');
-        expect(protectedStaticApp).toContain('/api/sales/app.js');
-        expect(protectedStaticApp).not.toContain('Kordia');
-        expect(protectedStaticApp).not.toContain('security.monitoring=absent');
         const staticBundle = fs.readdirSync(dist, { recursive: true })
             .filter((entry) => fs.statSync(path.join(dist, entry)).isFile())
             .map((entry) => fs.readFileSync(path.join(dist, entry), 'utf8'))

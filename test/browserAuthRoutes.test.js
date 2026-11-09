@@ -51,10 +51,12 @@ describe.each([
         });
     });
 
-    test('opens only the three BFF shells and four exact API transport groups', () => {
-        ['/scoping', '/support', '/operator'].forEach((routePath) => {
-            expect(config.routes.find((route) => route.route === routePath).allowedRoles)
-                .toEqual(['anonymous']);
+    test('opens only the staff sign-in shell and four exact API transport groups', () => {
+        expect(config.routes.find((route) => route.route === '/operator').allowedRoles).toEqual(['anonymous']);
+        ['/scoping', '/support'].forEach((routePath) => {
+            const route = config.routes.find((value) => value.route === routePath);
+            expect(route).toMatchObject({ redirect: '/dashboard', statusCode: 302 });
+            expect(route.allowedRoles).toBeUndefined(); expect(route.rewrite).toBeUndefined();
         });
 
         const wildcardIndex = config.routes.findIndex((route) => route.route === '/api/*');

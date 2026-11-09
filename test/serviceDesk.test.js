@@ -893,17 +893,11 @@ describe('No Fries mocked three-agent service desk', () => {
     });
 
     test('authenticated support API blocks one human from making and approving a remediation', async () => {
+        // The staff Service desk page is retired; its API stays protected.
         const support = await request(app).get('/support');
-        expect(support.status).toBe(200);
-        expect(support.headers['cache-control']).toContain('no-store');
-        expect(support.headers['x-robots-tag']).toBe('noindex, nofollow');
-        expect(support.text).toContain('Customer support tickets in Autotask.');
-        expect(support.text).toContain('Live production service desk');
-        expect(support.text).not.toMatch(/Safe test environment|Simulation only|Service Desk Lab/i);
-        expect(support.text).toContain('id="supportRuntime"');
-        expect(support.text).toContain('support_timeout');
-        expect(support.text).toContain('/api/service-desk/app.js');
-        expect(support.text).not.toContain('window.NoFriesSupport = { start };');
+        expect(support.status).toBe(302);
+        expect(support.headers.location).toBe('/dashboard');
+        expect(support.text).not.toContain('/api/service-desk/app.js');
         expect((await request(app).get('/js/support-loader.js')).status).toBe(404);
 
         const lifecycleCustomer = await createActiveLifecycleCustomer(

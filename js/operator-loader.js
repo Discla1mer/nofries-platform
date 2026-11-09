@@ -3,11 +3,11 @@
         return;
     }
 
-    // /operator is the staff entry. It verifies the staff session, then hands
-    // off to dashboard account administration, which checks its own access.
+    // /operator is only the staff sign-in doorway. Staff use the same
+    // dashboard as customers; admin controls appear there for admin staff.
     // The managed IT lifecycle console is retired from this page.
     const LOGIN_URL = '/api/auth/login?returnTo=%2Foperator';
-    const ADMIN_ENTRY_URL = '/dashboard-admin/entry';
+    const DASHBOARD_URL = '/dashboard';
     const SESSION_TIMEOUT_MS = 12000;
     const loadingStatus = document.getElementById('loadingStatus');
     const RETRY_RETURN = /(?:^\?|&)signin=retry(?:&|$)/.test(String(window.location.search || ''));
@@ -35,8 +35,8 @@
             redirectToSignIn();
             return;
         }
-        setStatus('Signed in. Opening account administration.');
-        window.location.replace(ADMIN_ENTRY_URL);
+        setStatus('Signed in. Opening your dashboard.');
+        window.location.replace(DASHBOARD_URL);
     }
 
     function requestSession() {

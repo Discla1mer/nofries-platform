@@ -50,7 +50,7 @@ function navigationHarness() {
     };
 }
 
-describe('staff entry hands off to account administration', () => {
+describe('staff sign-in hands off to the dashboard', () => {
     test('the staff page has no hidden admin link or retired console mount', () => {
         expect(operatorDocument).not.toContain('dashboardAdminNavigation');
         expect(operatorDocument).not.toContain('operatorRoot');
@@ -58,27 +58,27 @@ describe('staff entry hands off to account administration', () => {
         expect(source).not.toContain('entry-capabilities');
     });
 
-    test('never opens administration before genuine session verification', async () => {
+    test('never opens the dashboard before genuine session verification', async () => {
         const h = navigationHarness();
         h.event('focus'); h.event('pageshow', { persisted: true }); await flush();
         expect(h.requests.map(value => value.url)).toEqual(['/api/auth/session']);
         await h.reply(0, 401, { authenticated: false });
         expect(h.scripts).toHaveLength(0);
         expect(h.window.location.replace).toHaveBeenCalledWith('/api/auth/login?returnTo=%2Foperator');
-        expect(h.window.location.replace).not.toHaveBeenCalledWith('/dashboard-admin/entry');
+        expect(h.window.location.replace).not.toHaveBeenCalledWith('/dashboard');
     });
 
-    test('a verified staff session goes to the explicit administration entry, which checks access itself', async () => {
+    test('a verified staff session goes to the dashboard, which checks its own access', async () => {
         const h = navigationHarness(); await h.verify();
         expect(h.requests.map(value => value.url)).toEqual(['/api/auth/session']);
         expect(h.scripts).toHaveLength(0);
-        expect(h.window.location.replace).toHaveBeenCalledWith('/dashboard-admin/entry');
+        expect(h.window.location.replace).toHaveBeenCalledWith('/dashboard');
     });
 
     test.each([[200, { authenticated: false }], [200, {}], [200, null]])
-    ('an unverified session never opens administration: %s %j', async (statusCode, body) => {
+    ('an unverified session never opens the dashboard: %s %j', async (statusCode, body) => {
         const h = navigationHarness(); await h.reply(0, statusCode, body);
-        expect(h.window.location.replace).not.toHaveBeenCalledWith('/dashboard-admin/entry');
+        expect(h.window.location.replace).not.toHaveBeenCalledWith('/dashboard');
         expect(h.scripts).toHaveLength(0);
     });
 });

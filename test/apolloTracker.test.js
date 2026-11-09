@@ -13,11 +13,9 @@ describe('public third-party script boundary', () => {
     test('ships no third-party visitor-tracking runtime', () => {
         const index = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
         const scope = fs.readFileSync(path.join(dist, 'scope.html'), 'utf8');
-        const workspace = fs.readFileSync(path.join(dist, 'app', 'mssp.html'), 'utf8');
 
         expect(index).not.toContain('/js/apollo-tracker.js');
         expect(scope).not.toContain('/js/apollo-tracker.js');
-        expect(workspace).not.toContain('/js/apollo-tracker.js');
         expect(fs.existsSync(path.join(dist, 'js', 'apollo-tracker.js'))).toBe(false);
     });
 
@@ -32,10 +30,8 @@ describe('public third-party script boundary', () => {
         expect(policy).not.toContain('aplo-evnt.com');
         expect(policy).not.toContain("'unsafe-inline'");
         const scopeRoute = config.routes.find((route) => route.route === '/scope.html');
-        const scopingRoute = config.routes.find((route) => route.route === '/scoping');
         expect(scopeRoute.headers['Content-Security-Policy']).toContain("script-src 'self'");
-        expect(scopingRoute.headers['Content-Security-Policy']).toContain("script-src 'none'");
-        [scopeRoute, scopingRoute].forEach((route) => {
+        [scopeRoute].forEach((route) => {
             expect(route.headers['Content-Security-Policy']).not.toContain('assets.apollo.io');
             expect(route.headers['Content-Security-Policy']).not.toContain('aplo-evnt.com');
             expect(route.headers['Content-Security-Policy']).not.toContain("'unsafe-inline'");

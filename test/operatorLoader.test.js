@@ -94,7 +94,7 @@ describe('operator session loader', () => {
         expect(harness.appendedScripts).toHaveLength(0);
     });
 
-    test('hands a verified staff session to account administration without loading the retired console', async () => {
+    test('hands a verified staff session to the dashboard without loading the retired console', async () => {
         const fetchImpl = jest.fn(async () => jsonResponse(200, {
             authenticated: true,
             expiresAt: '2026-08-23T05:00:00.000Z'
@@ -104,7 +104,7 @@ describe('operator session loader', () => {
         await flushAsyncWork();
         await flushAsyncWork();
 
-        expect(harness.window.location.replace).toHaveBeenCalledWith('/dashboard-admin/entry');
+        expect(harness.window.location.replace).toHaveBeenCalledWith('/dashboard');
         expect(harness.document.head.append).not.toHaveBeenCalled();
         expect(harness.appendedScripts).toHaveLength(0);
         expect(loaderSource).not.toContain('/api/lifecycle/app.js');

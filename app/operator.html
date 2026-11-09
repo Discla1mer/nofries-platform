@@ -4,23 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
-    <title>No Fries | Accounts</title>
-    <meta name="description" content="Private No Fries staff entry for dashboard account administration.">
+    <title>No Fries | Staff sign-in</title>
+    <meta name="description" content="Private No Fries staff sign-in to the dashboard.">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/assets/operator.css">
     <script src="/js/operator-loader.js" defer></script>
 </head>
 <body data-page="operator" class="operator-loading">
-    <a class="skip-link" href="#operatorMain">Skip to account administration</a>
+    <a class="skip-link" href="#operatorMain">Skip to sign-in status</a>
     <header class="operator-header">
         <a class="operator-brand" href="/operator" aria-label="No Fries staff workspace">
             <img src="/images/nofrieslogo.png" width="46" height="46" alt="No Fries logo">
-            <span><strong>No Fries</strong><small>Accounts</small></span>
+            <span><strong>No Fries</strong><small>Staff</small></span>
         </a>
-        <nav aria-label="Private workspace navigation">
-            <a href="/operator" aria-current="page">Accounts</a>
-            <a href="/scoping">Sales</a>
-            <a href="/support">Service desk</a>
+        <nav aria-label="Staff session">
             <form class="sign-out-form" action="/api/auth/logout" method="post">
                 <input type="hidden" name="returnTo" value="/">
                 <button class="sign-out-button" type="submit">Sign out</button>
@@ -31,7 +28,7 @@
     <main id="operatorMain">
         <section class="operator-loading-panel" id="loadingPanel" aria-live="polite">
             <p class="eyebrow">Protected workspace</p>
-            <h1>Opening account administration</h1>
+            <h1>Opening your dashboard</h1>
             <p id="loadingStatus">Checking your staff sign-in.</p>
         </section>
     </main>

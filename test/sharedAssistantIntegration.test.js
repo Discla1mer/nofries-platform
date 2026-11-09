@@ -52,7 +52,7 @@ test('only the standalone service page selects discovery mode', () => {
 test('the built static package mounts one shared assistant on every shipped document', () => {
     execFileSync(process.execPath, ['scripts/build-static.js'], { cwd: root, stdio: 'pipe' });
     const files = [...PUBLIC_ROOT_FILES.filter(file => file.endsWith('.html')),
-        'app/dashboard.html', 'app/signup.html', 'app/mssp.html', 'app/support.html', 'app/portal.html', 'app/operator.html'];
+        'app/dashboard.html', 'app/signup.html', 'app/portal.html', 'app/operator.html'];
     for (const file of files) {
         const html = read('dist/' + file);
         expect(html.match(/\bdata-shared-assistant(?:\s|>)/g)).toHaveLength(1);
@@ -71,7 +71,7 @@ test('the built static package mounts one shared assistant on every shipped docu
 
 test('HTTP public and protected entry documents mount generic help without changing access headers', async () => {
     const app = createNoFriesApp();
-    for (const route of ['/', '/managed-it.html', '/roadmap.html', '/privacy.html', '/terms.html', '/dashboard', '/portal', '/support', '/operator', '/scoping']) {
+    for (const route of ['/', '/managed-it.html', '/roadmap.html', '/privacy.html', '/terms.html', '/dashboard', '/portal', '/operator']) {
         const result = await request(app).get(route);
         expect(result.status).toBe(200);
         expect(result.text.match(/\bdata-shared-assistant(?:\s|>)/g)).toHaveLength(1);

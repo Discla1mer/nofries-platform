@@ -300,10 +300,10 @@ for (const useExample of [false, true]) {
             // aliases keep their destinations and effective status while their
             // redundant fields make room for the exact starter API routes.
             for (const [alias, target] of Object.entries({
-                '/service-desk': '/support', '/mssp': '/scoping', '/workspace': '/scoping',
-                '/app': '/scoping', '/app/*': '/scoping', '/legacy-cyber-check': '/scoping',
-                '/free-check': '/scoping', '/sample-report.html': '/', '/share/*': '/',
-                '/founder': '/scoping', '/founder.html': '/scoping', '/about.html': '/', '/About.html': '/'
+                '/service-desk': '/dashboard', '/mssp': '/dashboard', '/workspace': '/dashboard',
+                '/app': '/dashboard', '/app/*': '/dashboard', '/legacy-cyber-check': '/',
+                '/free-check': '/', '/sample-report.html': '/', '/share/*': '/',
+                '/founder': '/', '/founder.html': '/', '/about.html': '/', '/About.html': '/'
             })) {
                 const route = config.routes.find(rule => rule.route === alias);
                 assert.equal(route?.redirect, target, alias + ' must retain its redirect destination');

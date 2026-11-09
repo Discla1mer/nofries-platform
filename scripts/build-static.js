@@ -1,8 +1,6 @@
 const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
-const { buildScopingDocument } = require('../lib/scopingDocument');
-const { buildSupportDocument } = require('../lib/supportDocument');
 const { buildPortalDocument } = require('../lib/portalDocument');
 const { buildDashboardDocument } = require('../lib/dashboardDocument');
 const { buildGatewayDocument } = require('../lib/gatewayDocument');
@@ -47,18 +45,12 @@ for (const extension of ['pptx', 'pdf']) {
 PUBLIC_SCRIPT_FILES.forEach((fileName) => {
     copyIfExists(path.join(rootDir, 'js', fileName), path.join(distDir, 'js', fileName));
 });
-copyIfExists(path.join(rootDir, 'app', 'mssp.html'), path.join(distDir, 'app', 'mssp.html'));
-copyIfExists(path.join(rootDir, 'app', 'mssp.css'), path.join(distDir, 'assets', 'mssp.css'));
-copyIfExists(path.join(rootDir, 'app', 'support.html'), path.join(distDir, 'app', 'support.html'));
-copyIfExists(path.join(rootDir, 'app', 'support.css'), path.join(distDir, 'assets', 'support.css'));
+// The staff Sales (/scoping) and Service desk (/support) pages are retired.
 copyIfExists(path.join(rootDir, 'app', 'operator.html'), path.join(distDir, 'app', 'operator.html'));
 copyIfExists(path.join(rootDir, 'app', 'operator.css'), path.join(distDir, 'assets', 'operator.css'));
 copyIfExists(path.join(rootDir, 'app', 'portal.html'), path.join(distDir, 'app', 'portal.html'));
 copyIfExists(path.join(rootDir, 'app', 'portal.css'), path.join(distDir, 'assets', 'portal.css'));
 copyIfExists(path.join(rootDir, 'app', 'dashboard.html'), path.join(distDir, 'app', 'dashboard.html'));
-fingerprintScopingCss();
-const scopingDocument = writeScopingDocument();
-const supportDocument = writeSupportDocument();
 const portalDocument = writePortalDocument();
 const dashboardDocument = writeDashboardDocument();
 const signupDocument = writeSignupDocument();
@@ -71,74 +63,20 @@ const gatewayDocument = buildGatewayDocument({
 });
 fs.writeFileSync(path.join(distDir, 'index.html'), gatewayDocument.html);
 for (const fileName of [...PUBLIC_ROOT_FILES.filter(file => file.endsWith('.html')),
-    'app/mssp.html', 'app/support.html', 'app/portal.html', 'app/dashboard.html', 'app/operator.html']) {
+    'app/portal.html', 'app/dashboard.html', 'app/operator.html']) {
     const documentPath = path.join(distDir, fileName);
     fs.writeFileSync(documentPath, withSharedAssistantDocument(fs.readFileSync(documentPath, 'utf8'), publicAssistantPage(fileName)));
 }
 
 copyIfExists(staticWebAppConfig, path.join(distDir, 'staticwebapp.config.json'));
-writeScopingContentSecurityPolicy(scopingDocument.contentSecurityPolicy);
-writeSupportContentSecurityPolicy(supportDocument.contentSecurityPolicy);
 writePortalContentSecurityPolicy(portalDocument.contentSecurityPolicy);
 writePrivateDocumentContentSecurityPolicy(dashboardDocument.contentSecurityPolicy, ['/dashboard']);
 writePrivateDocumentContentSecurityPolicy(signupDocument.contentSecurityPolicy, ['/signup']);
 writePrivateDocumentContentSecurityPolicy(gatewayDocument.contentSecurityPolicy, ['/']);
 finalizeStaticWebAppConfig();
 
-function fingerprintScopingCss() {
-    const shellPath = path.join(distDir, 'app', 'mssp.html');
-    if (!fs.existsSync(shellPath)) {
-        return;
-    }
 
-    const assetPaths = ['/assets/mssp.css'];
-    let shell = fs.readFileSync(shellPath, 'utf8');
 
-    for (const assetPath of assetPaths) {
-        const filePath = path.join(distDir, assetPath.replace(/^\//, ''));
-        if (!fs.existsSync(filePath)) {
-            continue;
-        }
-        const digest = crypto.createHash('sha256')
-            .update(fs.readFileSync(filePath))
-            .digest('hex')
-            .slice(0, 12);
-        shell = shell.replace(assetPath, `${assetPath}?v=${digest}`);
-    }
-
-    fs.writeFileSync(shellPath, shell);
-}
-
-function writeScopingDocument() {
-    const shellPath = path.join(distDir, 'app', 'mssp.html');
-    if (!fs.existsSync(shellPath)) {
-        throw new Error('The scoping document template was not copied to dist.');
-    }
-
-    const result = buildScopingDocument({
-        template: fs.readFileSync(shellPath, 'utf8'),
-        loaderSource: fs.readFileSync(path.join(rootDir, 'js', 'app-loader.js'), 'utf8'),
-        copySource: fs.readFileSync(path.join(rootDir, 'js', 'scoping-copy.js'), 'utf8')
-    });
-
-    fs.writeFileSync(shellPath, result.html);
-    return result;
-}
-
-function writeSupportDocument() {
-    const shellPath = path.join(distDir, 'app', 'support.html');
-    if (!fs.existsSync(shellPath)) {
-        throw new Error('The support document template was not copied to dist.');
-    }
-
-    const result = buildSupportDocument({
-        template: fs.readFileSync(shellPath, 'utf8'),
-        loaderSource: fs.readFileSync(path.join(rootDir, 'js', 'support-loader.js'), 'utf8')
-    });
-
-    fs.writeFileSync(shellPath, result.html);
-    return result;
-}
 
 function writePortalDocument() {
     const shellPath = path.join(distDir, 'app', 'portal.html');
@@ -186,41 +124,7 @@ function writeSignupDocument() {
     return result;
 }
 
-function writeScopingContentSecurityPolicy(contentSecurityPolicy) {
-    const configPath = path.join(distDir, 'staticwebapp.config.json');
-    if (!fs.existsSync(configPath)) {
-        throw new Error('The Static Web Apps configuration was not copied to dist.');
-    }
 
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    const scopingRoute = Array.isArray(config.routes)
-        ? config.routes.find((route) => route.route === '/scoping')
-        : null;
-    if (!scopingRoute || !scopingRoute.headers) {
-        throw new Error('The Static Web Apps configuration did not contain a /scoping route with headers.');
-    }
-
-    scopingRoute.headers['Content-Security-Policy'] = contentSecurityPolicy;
-    fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-}
-
-function writeSupportContentSecurityPolicy(contentSecurityPolicy) {
-    const configPath = path.join(distDir, 'staticwebapp.config.json');
-    if (!fs.existsSync(configPath)) {
-        throw new Error('The Static Web Apps configuration did not contain a built file.');
-    }
-
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    const supportRoute = Array.isArray(config.routes)
-        ? config.routes.find((route) => route.route === '/support')
-        : null;
-    if (!supportRoute || !supportRoute.headers) {
-        throw new Error('The Static Web Apps configuration did not contain a /support route with headers.');
-    }
-
-    supportRoute.headers['Content-Security-Policy'] = contentSecurityPolicy;
-    fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-}
 
 function writePortalContentSecurityPolicy(contentSecurityPolicy) {
     const configPath = path.join(distDir, 'staticwebapp.config.json');

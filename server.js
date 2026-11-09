@@ -1,8 +1,6 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const { buildScopingDocument } = require('./lib/scopingDocument');
-const { buildSupportDocument } = require('./lib/supportDocument');
 const { buildPortalDocument } = require('./lib/portalDocument');
 const { buildDashboardDocument, withCustomerProvider } = require('./lib/dashboardDocument');
 const { buildGatewayDocument } = require('./lib/gatewayDocument');
@@ -254,15 +252,6 @@ const securityHeaders = {
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Origin-Agent-Cluster': '?1'
 };
-const scopingDocument = buildScopingDocument({
-    template: fs.readFileSync(path.join(__dirname, 'app', 'mssp.html'), 'utf8'),
-    loaderSource: fs.readFileSync(path.join(__dirname, 'js', 'app-loader.js'), 'utf8'),
-    copySource: fs.readFileSync(path.join(__dirname, 'js', 'scoping-copy.js'), 'utf8')
-});
-const supportDocument = buildSupportDocument({
-    template: fs.readFileSync(path.join(__dirname, 'app', 'support.html'), 'utf8'),
-    loaderSource: fs.readFileSync(path.join(__dirname, 'js', 'support-loader.js'), 'utf8')
-});
 const portalDocument = buildPortalDocument({
     template: fs.readFileSync(path.join(__dirname, 'app', 'portal.html'), 'utf8'),
     loaderSource: fs.readFileSync(path.join(__dirname, 'js', 'portal-loader.js'), 'utf8')
@@ -867,18 +856,12 @@ app.all('/api/*', (req, res) => {
     });
 });
 
-app.get(['/scoping', '/scoping/'], (req, res) => {
-    res.setHeader('Content-Security-Policy', scopingDocument.contentSecurityPolicy);
+// The staff Sales and Service desk pages are retired: staff and customers
+// share the dashboard. Their APIs stay in place; the pages redirect.
+app.get(['/scoping', '/scoping/', '/support', '/support/'], (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.status(200).type('html').send(withSharedAssistantDocument(scopingDocument.html));
-});
-
-app.get(['/support', '/support/'], (req, res) => {
-    res.setHeader('Content-Security-Policy', supportDocument.contentSecurityPolicy);
-    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
-    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.status(200).type('html').send(withSharedAssistantDocument(supportDocument.html));
+    res.redirect(302, '/dashboard');
 });
 
 app.get(['/portal', '/portal/'], (req, res) => {
@@ -909,12 +892,12 @@ app.get(['/operator', '/operator/'], (req, res) => {
     res.type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, 'app', 'operator.html'), 'utf8')));
 });
 
-app.get(['/service-desk', '/service-desk/'], (req, res) => {
-    res.redirect(302, '/support');
+app.get(['/service-desk', '/service-desk/', '/mssp', '/mssp/', '/workspace', '/workspace/', '/app', '/app/', '/app/mssp.html'], (req, res) => {
+    res.redirect(302, '/dashboard');
 });
 
-app.get(['/mssp', '/mssp/', '/workspace', '/workspace/', '/app', '/app/', '/app/mssp.html', '/legacy-cyber-check', '/legacy-cyber-check/', '/free-check'], (req, res) => {
-    res.redirect(302, '/scoping');
+app.get(['/legacy-cyber-check', '/legacy-cyber-check/', '/free-check'], (req, res) => {
+    res.redirect(302, '/');
 });
 
 app.get(['/sample-report.html', '/share', '/share/*', '/share.html', '/about.html', '/About.html'], (req, res) => {
@@ -922,11 +905,11 @@ app.get(['/sample-report.html', '/share', '/share/*', '/share.html', '/about.htm
 });
 
 app.get(['/founder', '/founder/', '/founder.html'], (req, res) => {
-    res.redirect(302, '/scoping');
+    res.redirect(302, '/');
 });
 
 app.get(['/CloudPC.html', '/NoFries.html'], (req, res) => {
-    res.redirect(301, '/scoping');
+    res.redirect(301, '/');
 });
 
 app.use('/app', (req, res) => {
