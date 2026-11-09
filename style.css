@@ -509,3 +509,6 @@ body[data-page="public-error"] .public-panel .button { max-width: 100%; color: v
 .contact-form textarea { min-height: 160px; resize: vertical; }
 .contact-form .button { justify-self: start; margin-top: 16px; }
 .contact-status { min-height: 1.5em; font-weight: 700; }
+.terms-glance { margin-block: 20px; padding: clamp(16px, 3vw, 24px); border: 2px solid var(--line); border-radius: var(--radius); }
+.terms-glance h2 { margin-top: 0; }
+.terms-glance ul { display: grid; gap: 6px; padding-left: 1.2em; }
