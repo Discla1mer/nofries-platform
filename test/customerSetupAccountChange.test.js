@@ -391,7 +391,7 @@ describe('the setup form traverses the Static Web Apps routing boundary', () => 
             fs.mkdirSync(path.dirname(path.join(temporary, file)), { recursive: true });
             fs.copyFileSync(path.join(root, file), path.join(temporary, file));
         }
-        for (const name of ['api', 'app', 'assets', 'images', 'js', 'lib', 'azure']) {
+        for (const name of ['api', 'app', 'assets', 'demo', 'images', 'js', 'lib', 'azure']) {
             fs.cpSync(path.join(root, name), path.join(temporary, name), { recursive: true,
                 filter: source => !path.relative(root, source).split(path.sep).includes('node_modules') });
         }

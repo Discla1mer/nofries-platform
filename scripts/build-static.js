@@ -70,6 +70,9 @@ const gatewayDocument = buildGatewayDocument({
     protectedStyleSource: fs.readFileSync(path.join(rootDir, 'app', 'dashboard.css'), 'utf8')
 });
 fs.writeFileSync(path.join(distDir, 'index.html'), gatewayDocument.html);
+// Fictional sales demo (#29): an unlisted, noindex link with no assistant or network access.
+const tryDemoDocument = require('../demo/try/document').buildTryDemoDocument();
+fs.writeFileSync(path.join(distDir, 'app', 'try.html'), tryDemoDocument.html);
 for (const fileName of [...PUBLIC_ROOT_FILES.filter(file => file.endsWith('.html')),
     'app/mssp.html', 'app/support.html', 'app/portal.html', 'app/dashboard.html', 'app/operator.html']) {
     const documentPath = path.join(distDir, fileName);
@@ -83,6 +86,7 @@ writePortalContentSecurityPolicy(portalDocument.contentSecurityPolicy);
 writePrivateDocumentContentSecurityPolicy(dashboardDocument.contentSecurityPolicy, ['/dashboard']);
 writePrivateDocumentContentSecurityPolicy(signupDocument.contentSecurityPolicy, ['/signup']);
 writePrivateDocumentContentSecurityPolicy(gatewayDocument.contentSecurityPolicy, ['/']);
+writePrivateDocumentContentSecurityPolicy(tryDemoDocument.contentSecurityPolicy, ['/try']);
 finalizeStaticWebAppConfig();
 
 function fingerprintScopingCss() {
