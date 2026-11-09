@@ -12,6 +12,8 @@ const { dataCodec } = require('../../api/shared/appLifecycle/postgresDashboardBo
 const { applyMigrations } = require('../../scripts/db-migrate');
 const { fixture, NOW, SUBJECT } = require('../fixtures/dashboardFixture');
 const { trackPoolClientEnds } = require('../helpers/postgresPoolLifecycle');
+const { accountActionsPool } = require('../../api/shared/dashboardAdmin/accountActionsPool');
+const { createAccountActionsRepository } = require('../../api/shared/dashboardAdmin/accountActionsRepository');
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const START = new Date(Date.parse(NOW) - 60000).toISOString();
@@ -51,7 +53,7 @@ module.exports = function registerDashboardAdminPostgresTests() {
             capture.operatorIssuanceProof = { schemaVersion: 1, kind: 'operator_dashboard_issuance', sessionSha256: capture.sessionSha256,
                 identitySha256: hash(identity), instanceId, restoreEpoch, issuedAt: START, expiresAt: END };
             const state = { trace: [], before: null, after: null, loseCommit: false, allowed: true };
-            const pool = { end: () => runtimePool.end(), async connect() {
+            const pool = accountActionsPool({ end: () => runtimePool.end(), async connect() {
                 const client = await runtimePool.connect();
                 return { release: value => client.release(value), async query(sql, params = []) {
                     state.trace.push({ sql, params: clone(params) });
@@ -61,7 +63,7 @@ module.exports = function registerDashboardAdminPostgresTests() {
                     if (sql === 'COMMIT' && state.loseCommit) { state.loseCommit = false; throw new Error('synthetic lost commit response'); }
                     return result;
                 } };
-            } };
+            } });
             const common = { clock: () => NOW, instanceId, historyBudget: BUDGET,
                 readExternalRuntimeEpoch: async () => ({ instanceId, restoreEpoch }), newId: nextId };
             const maintenance = createPostgresDashboardMaintenanceRepository({ ...common, pool: owner, authoriseMaintenanceOperation: () => true });
@@ -105,7 +107,7 @@ module.exports = function registerDashboardAdminPostgresTests() {
             serviceEvent: { schemaVersion: 1, category: 'dashboard_admin_read', requestId: lookupId,
                 actorSubjectKey: actor, targetSha256: crypto.createHash('sha256').update(JSON.stringify(selector)).digest('hex'), outcome, occurredAt: NOW }, eventId: nextId() });
             state.trace.length = 0;
-            return { repository, runtime, request, selector, state, capture, envelope, snapshot };
+            return { repository, runtime, request, selector, state, capture, envelope, snapshot, pool };
         }
 
         beforeAll(async () => {
@@ -160,6 +162,37 @@ module.exports = function registerDashboardAdminPostgresTests() {
             expect(read.snapshot.usage).toEqual(h.snapshot.usage);
             expect(read.revisions).toEqual(dataCodec.revisionVector(h.snapshot));
             expect(h.state.trace.some(({ sql }) => /^(INSERT|UPDATE|DELETE|TRUNCATE)/.test(sql))).toBe(false);
+        });
+
+        test('session revocation waits for membership COMMIT after the final native validation savepoint', async () => {
+            const h = await harness(), scope = { tenantId: h.selector.tenantId, organisationId: h.selector.organisationId };
+            const repo = createAccountActionsRepository(h.pool, () => NOW,
+                () => h.repository.validateSession(h.request, h.selector), () => true, h.capture);
+            let startRevoke, mutated = false, racing = false, revoked = false;
+            // Start outside the action's async context, on the other native connection.
+            const revocation = new Promise(resolve => { startRevoke = resolve; }).then(async () => {
+                await h.runtime.revokeSession(h.request, { operationId: nextId() }); revoked = true;
+            });
+            revocation.catch(() => {});
+            h.state.before = async sql => {
+                if (sql.startsWith('UPDATE nofries.dashboard_membership_states')) mutated = true;
+                if (sql !== 'COMMIT' || !mutated || racing) return;
+                racing = true; startRevoke(); let waiting = false;
+                for (const deadline = Date.now() + 5000; Date.now() < deadline && !waiting;) {
+                    const result = await owner.query("SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=71001 AND objid::bigint=(hashtext($1)::bigint & 4294967295) AND NOT granted", [h.capture.sessionSha256]);
+                    waiting = result.rowCount > 0;
+                    if (!waiting) await new Promise(resolve => setTimeout(resolve, 10));
+                }
+                expect(waiting).toBe(true); expect(revoked).toBe(false);
+            };
+            try {
+                await repo.executeAuthorityCommand({ ...scope, operationId: nextId(), actorSubjectKey: SUBJECT,
+                    type: 'membership.command', expectedRevisions: dataCodec.revisionVector(h.snapshot),
+                    payload: { action: 'suspend', payload: { membershipId: h.snapshot.membershipState.memberships[0].membershipId } } });
+                expect(racing).toBe(true); await revocation;
+                expect((await owner.query('SELECT payload FROM nofries.dashboard_membership_states WHERE tenant_id=$1 AND organisation_id=$2', Object.values(scope))).rows[0].payload.memberships[0].status).toBe('suspended');
+                await expect(h.repository.validateSession(h.request, h.selector)).rejects.toMatchObject({ statusCode: 403 });
+            } finally { startRevoke(); await revocation; }
         });
 
         test('immutable attempt/terminal phases deduplicate and readback issues no data write', async () => {

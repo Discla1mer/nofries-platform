@@ -167,12 +167,27 @@ test.each(['disabled', 'anonymous', 'customer', 'non_admin', 'origin', 'success'
         if (mode !== 'success') expect(f.trace).toEqual([]);
     } finally { warning.mockRestore(); }
 });
-test('real host uses the native operator gate and current session/epoch for extension', async () => {
+test('real host and scoped native authorization extend access using a single pool connection', async () => {
     const f = fixture(), h = entrySessionFixture({ customer: false, externalCustomer: false });
     h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS = 'true';
+    const connect = h.pool.connect.getMockImplementation(); let leased = false;
+    h.pool.connect.mockImplementation(async () => {
+        if (leased) throw new Error('SECOND_CONNECTION'); leased = true;
+        const client = await connect();
+        return { release: value => { leased = false; client.release(value); }, query: (sql, params) =>
+            /^(SAVEPOINT |ROLLBACK TO SAVEPOINT |RELEASE SAVEPOINT )/.test(sql) ? Promise.resolve({ rows: [] }) : client.query(sql, params) };
+    });
+    const binding = { schemaVersion: 1, bindingId: uid(70), revision: 1, status: 'active', action: 'dashboard.authority.read',
+        purpose: 'signup_support', operatorSubjectKey: SUBJECT, instanceId: INSTANCE, selector, approvedAt: iso(NOW),
+        validFrom: iso(NOW), validUntil: iso(NOW + 3600000), approvalReference: 'synthetic-approval',
+        identityPolicy: { policyId: h.dashboard.identityPolicy.policyId, policyRevision: h.dashboard.identityPolicy.policyRevision },
+        auditPolicy: { reference: 'synthetic-audit', revision: 1, agreementVersion: 'nf-dashboard-2026-09-r2', retention: { unit: 'calendar_months', count: 13 } } };
+    const dashboardAdmin = require('../api/shared/dashboardAdmin/runtimeAdapter').createDashboardAdminRuntime({
+        ...Object.fromEntries(['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
+            'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId'].map(key => [key, h.dashboard[key]])),
+        readApprovedBinding: async () => binding });
     const { readContext, clock, ...configuration } = f.config;
-    h.rebuild({ dashboardAdmin: { authoriseOperator: async () => true, readAuthoritySnapshot: null,
-        audit: async () => true, clock: h.dashboard.clock, requestBudgetMs: 10000 }, dashboardAdminAccountActions: configuration });
+    h.rebuild({ dashboardAdmin, dashboardAdminAccountActions: configuration });
     const { cookie } = await h.login();
     expect((await h.send('post', '/api/dashboard/session').set('Cookie', cookie)
         .set('Origin', h.env.NOFRIES_PUBLIC_URL).set('Sec-Fetch-Site', 'same-origin').send({ operationId: h.nextId() })).status).toBe(200);
