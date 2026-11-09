@@ -120,7 +120,7 @@
             const nav = element('nav'); nav.setAttribute('aria-label', 'Workspace');
             appendMenu(nav, false);
             const subscription = element('div', 'dashboard-subscription');
-            subscription.append(element('span', 'dashboard-eyebrow', 'Dashboard subscription'), element('strong', '', model.subscription),
+            subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', model.subscription),
                 element('p', '', 'Managed and advisory services are scoped separately.'));
             rail.append(brand, context, nav, subscription);
             const workspace = element('div', 'dashboard-workspace');
