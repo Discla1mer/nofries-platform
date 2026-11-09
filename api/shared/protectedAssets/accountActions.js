@@ -15,7 +15,7 @@
             ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
         if (response.redirected || !/^application\/json(?:;|$)/i.test(response.headers.get('content-type') || '')) throw new Error();
         const value = await response.json();
-        return { status: response.status, value: value, accountActions: response.headers.get('X-NoFries-Account-Actions') === 'true' };
+        return { status: response.status, value: value };
     }
     async function ready(signal) {
         let result = await request('/api/dashboard/session', undefined, signal);
@@ -72,7 +72,7 @@
         const deadline = window.setTimeout(function () { active.abort(); }, 10000);
         try {
             const result = await request('/api/dashboard-admin/entry-capabilities', undefined, active.signal);
-            if (cycle === generation) panel.hidden = result.status !== 200 || result.accountActions !== true;
+            if (cycle === generation) panel.hidden = result.status !== 200 || result.value.entry !== true || result.value.accountActions !== true;
         } catch (_) { if (cycle === generation) panel.hidden = true; }
         finally {
             window.clearTimeout(deadline);

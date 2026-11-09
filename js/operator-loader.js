@@ -88,7 +88,9 @@
             const value = await response.json();
             // This permission opens only the empty staff entry. The entry must
             // separately check the native gate and current data capabilities.
-            if (!current() || !value || Array.isArray(value) || Object.keys(value).length !== 1 || value.entry !== true) return;
+            if (!current() || !value || Array.isArray(value) || value.entry !== true ||
+                Object.keys(value).some(key => !['entry', 'accountActions'].includes(key)) ||
+                (Object.hasOwn(value, 'accountActions') && typeof value.accountActions !== 'boolean')) return;
             adminNavigation.hidden = false;
         }).catch(function () {
             // Discovery is optional. Missing or revoked access keeps navigation hidden.
