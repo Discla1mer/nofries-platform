@@ -692,8 +692,8 @@ body[data-page="managed-it"] .assistant-safety {
 
 /* WEB-001: additive public product presentation; existing service styles remain. */
 body[data-product="dashboard"] {
-    /* Inherit the shared account/workspace palette from style.css. */
-    background: var(--page);
+    /* Inherit the shared account/workspace palette and card-stock paper from style.css. */
+    background: var(--page) var(--paper-texture) repeat;
 }
 body[data-product="dashboard"] .home-stage {
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
@@ -1179,7 +1179,7 @@ body[data-dashboard-gateway="true"]:has(#dashboardStatusPanel:not([hidden])) .ho
     margin: 0 0 34px;
     font-family: var(--font-display);
     font-size: clamp(4.4rem, 8.6vw, 7.6rem);
-    font-weight: 500;
+    font-weight: 520;
     line-height: .86;
     letter-spacing: -.035em;
 }

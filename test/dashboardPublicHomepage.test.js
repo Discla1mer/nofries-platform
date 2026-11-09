@@ -17,7 +17,7 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
     assert.match(html, /data-product="dashboard"/);
     assert.match(html, /property="og:title" content="No Fries \| Dashboard\. Managed IT\."/);
     assert.equal((html.match(/<h1\b/g) || []).length, 1);
-    assert.match(html, /id="home-title" class="homepage-lockup"><span class="lockup-row"><span class="lockup-word">No<\/span><img class="lockup-mark" src="\/images\/nofrieslogo\.png" width="128" height="128" alt=""><\/span> <span class="lockup-row"><span class="lockup-word">Fries<\/span> <span class="lockup-tagline">Dashboard\.<br>Managed IT\.<\/span><\/span><\/h1>/);
+    assert.match(html, /id="home-title" class="homepage-lockup"><span class="lockup-row"><span class="lockup-word">No<\/span><img class="lockup-mark" src="\/images\/nofries-mark-large\.webp" width="640" height="640" alt=""><\/span> <span class="lockup-row"><span class="lockup-word">Fries<\/span> <span class="lockup-tagline">Dashboard\.<br>Managed IT\.<\/span><\/span><\/h1>/);
     assert.equal((html.match(/Understand your IT and cyber security, see where the gaps are and decide what needs attention\./g) || []).length, 2);
     assert.match(html, /Understand where your IT and cyber security stand\. See the gaps, make informed decisions and start improving\./);
     assert.doesNotMatch(html, /in real time|continuous monitoring|automatically updated/i);

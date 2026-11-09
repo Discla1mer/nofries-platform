@@ -37,6 +37,7 @@ copyIfExists(
 );
 
 copyDirectory(path.join(rootDir, 'images'), path.join(distDir, 'images'));
+copyDirectory(path.join(rootDir, 'assets', 'fonts'), path.join(distDir, 'assets', 'fonts'));
 for (const extension of ['pptx', 'pdf']) {
     const relativePath = 'assets/workshops/No_Fries_Questionnaire_Onsite_Companion_v2_NZISM.' + extension;
     const destination = path.join(distDir, relativePath);
