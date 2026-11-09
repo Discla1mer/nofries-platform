@@ -103,7 +103,7 @@ for (const role of ['end_user', 'customer_admin', 'operator']) test(`legacy/unma
 
 for (const mutate of [input => { input.scope.tenantId = 'other'; }, input => { input.scope.organisationId = 'other'; },
     input => { input.subjectKey = '10000000-0000-4000-8000-000000000000:10000000-0000-4000-8000-000000000002'; },
-    input => { input.entitlementState.grants = []; }, input => { input.now = '2028-01-01T00:00:00.000Z'; },
+    input => { input.entitlementState.grants = []; }, input => { input.entitlementState.grants[0].status = 'revoked'; },
     input => { input.membershipState.memberships[0].status = 'suspended'; }, input => { input.flags.enabled.dashboard = false; }]) {
     test('missing/currently unauthorised context fails closed with no record detail', () => {
         const input = clone(fixture()); mutate(input);

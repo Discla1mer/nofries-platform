@@ -233,6 +233,25 @@ async function runLocalJourney(config, { failAfter = null } = {}) {
             assert.deepEqual((await call('GET', assessments + '/' + draftId)).body.assessment, resumed);
             await call('POST', '/api/dashboard/logout', {});
         });
+        await step('return after the recorded 14-day period and keep working', async () => {
+            // Accounts do not expire. Move only this process's application
+            // clock; every stored end date (Blob authority, binding, admission,
+            // membership, product grant, activation) stays as written and passed.
+            const realNow = Date.now; Date.now = () => realNow() + 30 * 86400000;
+            cleanup.push(async () => { Date.now = realNow; });
+            await call('GET', '/api/dashboard/session', null, 401); // Old sessions still expire.
+            await login();
+            assert.equal((await call('GET', '/api/external-customer-signup/state')).body.state.status, 'continue_to_dashboard');
+            await session(); // The earlier session gate has itself expired; a fresh one is issued.
+            assert.deepEqual((await call('GET', assessments + '/' + assessmentId)).body.assessment, submitted);
+            const current = (await call('GET', assessments + '/' + draftId)).body.assessment;
+            const later = await mutate(saveCommand(draftId, current.revision, 'late-save-' + key, [allResponses('yes')[4]]));
+            assert.equal(later.revision, current.revision + 1);
+            const complete = await mutate(saveCommand(draftId, later.revision, 'late-complete-' + key, allResponses('yes')));
+            const second = await mutate(submitCommand(draftId, complete.revision, 'late-submit-' + key));
+            assert.equal(second.status, 'submitted'); // The second of the plan's five submissions.
+            await call('POST', '/api/dashboard/logout', {});
+        });
     } catch {
         // Never emit assertion bodies, SQL, cookies, codes, redirect URLs or SDK errors.
         if (!current) steps.push({ name: 'prepare isolated local stack', probes: [], ok: false });

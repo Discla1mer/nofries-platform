@@ -490,20 +490,23 @@ describe('canonical dashboard PostgreSQL repository contract', () => {
         expect(() => h.repo.reserveUsage(malicious)).toThrow(); expect(getter).not.toHaveBeenCalled();
     });
 
-    test('time is sampled after snapshot I/O and denies expired membership', async () => {
+    // Accounts do not expire: these times are past the fixture's recorded
+    // membership and product end, which previously refused with membership_not_found.
+    test('a reservation after the recorded membership end is accepted and still counted once', async () => {
         const h = setup(); await h.bootstrap();
         h.state.now = '2026-09-07T09:00:00.000Z';
-        await expect(h.repo.reserveUsage(h.reserve())).rejects.toMatchObject({ code: 'membership_not_found' });
-        expect(h.memory.rows('dashboard_operation_receipts')).toHaveLength(1);
+        expect((await h.repo.reserveUsage(h.reserve())).usage.counters.assessment_runs).toBe(1);
+        expect((await h.repo.reserveUsage(h.reserve())).usage.counters.assessment_runs).toBe(1); // Exact replay.
+        expect(h.memory.rows('dashboard_usage')[0].payload.counters.assessment_runs).toBe(1);
     });
 
-    test('expiry during receipt I/O denies both a first reservation and an exact replay', async () => {
+    test('the recorded end passing during receipt I/O neither denies a first reservation nor recharges a replay', async () => {
         for (const replay of [false, true]) {
             const h = setup(); await h.bootstrap();
             if (replay) await h.repo.reserveUsage(h.reserve());
             h.memory.afterQuery = sql => { if (sql.startsWith('SELECT * FROM nofries.dashboard_operation_receipts')) h.state.now = '2026-09-07T09:00:00.000Z'; };
-            await expect(h.repo.reserveUsage(h.reserve())).rejects.toMatchObject({ code: 'membership_not_found' });
-            expect(h.memory.rows('dashboard_usage')[0].payload.counters.assessment_runs).toBe(replay ? 1 : 0);
+            expect((await h.repo.reserveUsage(h.reserve())).usage.counters.assessment_runs).toBe(1);
+            expect(h.memory.rows('dashboard_usage')[0].payload.counters.assessment_runs).toBe(1);
         }
     });
 });
