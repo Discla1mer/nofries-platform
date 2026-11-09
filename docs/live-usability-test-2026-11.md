@@ -96,6 +96,29 @@ Not changed:
   archive, the launcher setting and `/terms.html` (see the r4 change note).
 - **Entra settings** in the section above.
 
+## Fourth pass: navigation and Roadmap/News
+
+Fixed on this branch:
+
+- **One set of links.** Home, Roadmap, Managed IT, Contact, Privacy, Terms,
+  the pilot terms and the error pages share the header links Dashboard,
+  Managed IT, Roadmap, News, Contact and Log in, and the same footer plus
+  Privacy and Terms. Before, the header on Contact, Privacy and Terms said
+  "Managed IT" but opened the Dashboard home, and Roadmap's header links
+  were hidden on phones.
+- **Staff links** (`/operator`, `/portal`, `/scoping`) are no longer in shared
+  navigation. Managed IT keeps the scoping and portal links in its staff
+  section.
+- **Sales Agency** is no longer linked from nofries.nz pages, matching the
+  homepage. News and the Sales site still link to each other.
+- **Roadmap and News.** The Roadmap is the one place for status; the empty
+  "Ready for release" section is gone. News becomes "What's new." and points
+  to the Roadmap instead of repeating status labels. The News change is in
+  `sites/news/` and must be published separately (see its README).
+
+Not changed: the sign-up and Report a bug pages keep their short "Back to
+home" headers, so the task in front of the visitor stays in focus.
+
 ## Test data written to production
 
 Accounts on the Mailosaur server `t0tolra0` (`smoke1`, `margaret.wilson`,
