@@ -1,0 +1,43 @@
+name: PR release pre-flight
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-release-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
+          package-manager-cache: false
+      - name: Test pre-flight failure propagation and release-policy parity
+        run: node --test scripts/tests/pr-release-preflight.cjs
+      - name: Verify governed local dependency provenance
+        run: |
+          node scripts/check-public-tree.js
+          node scripts/verify-adm-zip-memory-only.js
+          node vendor/node-forge-rsa-validated/build-package.js --check
+      - name: Install the candidate closure without lifecycle scripts
+        id: install
+        timeout-minutes: 5
+        run: npm ci --ignore-scripts --omit=optional --audit=false
+      - name: Run all three release audits and the existing release policy
+        id: audit
+        timeout-minutes: 16
+        run: node scripts/pr-release-preflight.js audit
+      - name: Dry-run package build validation
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        timeout-minutes: 4
+        run: node scripts/pr-release-preflight.js package
