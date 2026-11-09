@@ -75,6 +75,13 @@ function createAuthLoginFunction(options = {}) {
                         : '/login?signin=retry&provider=legacy' }), body: '' };
                 return;
             }
+            if (!options.customerEntry && getHeader(headers, 'accept').includes('text/html')) {
+                // A browser starting staff sign-in gets the staff workspace's
+                // retry screen, never a raw JSON 503. No cookie is set.
+                context.res = { status: 303, headers: apiSecurityHeaders({ ...rateLimitHeaders(rateLimit),
+                    Location: '/operator?signin=retry' }), body: '' };
+                return;
+            }
             context.res = authError(error, rateLimitHeaders(rateLimit));
         }
     };
