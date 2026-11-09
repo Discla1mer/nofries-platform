@@ -52,6 +52,7 @@ Fill only the non-secret identifiers below. Use the correct subscription and pro
 
 ```bash
 set +x
+umask 077
 SUBSCRIPTION_ID='<subscription UUID>'
 APP_RG='<App Service resource group>'
 APP='<App Service name>'
@@ -78,11 +79,11 @@ AUTH_ID=$(az storage account show --resource-group "$AUTH_RG" --name "$AUTH_ACCO
 
 If `NOFRIES_MANAGED_IDENTITY_CLIENT_ID` is set, replace `MI_PRINCIPAL_ID` with that identity's **principalId**, obtained using `az identity show --resource-group '<identity RG>' --name '<identity name>' --query principalId --output tsv`. Verify its `clientId` matches the setting and it is assigned to this App Service. Do not add a second identity or switch the runtime identity as part of this procedure.
 
-1. **Inspect effective permissions first.** The approver needs permission to create role assignments (e.g. Role Based Access Control Administrator at the relevant scopes); the app does not. Reader assignments do not cancel inherited Contributor/Owner permissions. Remove/re-scope any existing broad app grants covering approval or epoch containers through the owner's separate RBAC review.
+1. **Inspect effective permissions first.** The approver needs permission to create role assignments (e.g. Role Based Access Control Administrator at the relevant scopes), plus management-plane container creation permission (e.g. Storage Account Contributor on the data account); the app needs neither. Container creation below uses the management plane, so it does not require giving the publisher account-wide Blob data access first. Reader assignments do not cancel inherited Contributor/Owner permissions. Remove/re-scope any existing broad app grants covering approval or epoch containers through the owner's separate RBAC review.
 
 ```bash
 az role assignment list --assignee "$MI_PRINCIPAL_ID" --all --include-inherited --query '[].{role:roleDefinitionName,scope:scope}' --output table
-az storage container create --account-name "$DATA_ACCOUNT" --name "$APPROVAL_CONTAINER" --auth-mode login --public-access off --output none
+az storage container-rm create --resource-group "$DATA_RG" --storage-account "$DATA_ACCOUNT" --name "$APPROVAL_CONTAINER" --public-access off --output none
 APPROVAL_SCOPE="$DATA_ID/blobServices/default/containers/$APPROVAL_CONTAINER"
 az role assignment create --assignee-object-id "$MI_PRINCIPAL_ID" --assignee-principal-type ServicePrincipal --role 'Storage Blob Data Reader' --scope "$APPROVAL_SCOPE" --output none
 az role assignment create --assignee-object-id "$PUBLISHER_OID" --assignee-principal-type "$PUBLISHER_TYPE" --role 'Storage Blob Data Contributor' --scope "$APPROVAL_SCOPE" --output none
@@ -173,6 +174,13 @@ node scripts/dashboard-admin-approve.js --request /private/admin-approval.json -
 The CLI uses the current `az login` identity via `AzureCliCredential`, no account keys/SAS/passwords. Dry run performs bounded reads but zero writes. A wrong/changed plan hash writes nothing. Exact already-applied publication is a no-op. A changed head, epoch, expired approval or audit-write failure refuses publication. On an interrupted/ambiguous upload, inspect again; do not blindly reuse confirmation. There is no transaction across Azure blobs: an epoch may change immediately after the last check, but the runtime independently refuses the old-epoch approval. A success receipt is not a continuing grant.
 
 To renew/change scope: use the next revision in both record and binding, the current head's revision/hash as `expectedRevision`/`expectedRecordSha256`, and a fresh decision/times. To revoke: next record revision, `status:"revoked"`, `binding:null`, fresh changedAt/decisionReference, exact predecessor. The tool validates these contracts using [approvalRecords.js](../api/shared/dashboardAdmin/approvalRecords.js); it cannot mint a wildcard or a longer-lived grant.
+
+Read the current head into a private file before preparing that next request; `HEAD_BLOB` is the final write's blob path from the retained publication plan:
+
+```bash
+HEAD_BLOB='<dashboard-admin-approval-heads/targetHash.json from the plan>'
+az storage blob download --account-name "$DATA_ACCOUNT" --container-name "$APPROVAL_CONTAINER" --name "$HEAD_BLOB" --file /private/admin-head.json --auth-mode login --output none
+```
 
 ## Verify and disable
 
