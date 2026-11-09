@@ -483,7 +483,7 @@ body[data-page="managed-it-information"] .home-footer nav a {
     gap: 6px;
 }
 
-.managed-it-tier-badge {
+.managed-it-main .managed-it-tier-badge {
     align-self: flex-start;
     margin: 0;
     padding: 4px 12px;
