@@ -33,6 +33,78 @@ const inspect = f => inspectCustomerAuthority(f.observation, f.command.target, N
 const plan = f => planCustomerAuthorityExpiry(f, NOW);
 const reapprove = f => { f.approval.commandSha256 = customerAuthorityExpiryCommandHash(f.command, f.context); return f; };
 
+describe('90-day server-clock expiry cap', () => {
+    const capMs = 90 * 24 * 60 * 60 * 1000;
+    function cappedFixture(now, extensionMs, issuedOffsetMs = 0) {
+        const f = fixture(), clock = Date.parse(now);
+        f.observation.observedAt = now;
+        f.command.newExpiresAt = new Date(clock + extensionMs).toISOString();
+        Object.assign(f.approval, { approvedExpiresAt: f.command.newExpiresAt,
+            issuedAt: new Date(clock + issuedOffsetMs).toISOString(),
+            expiresAt: new Date(clock + issuedOffsetMs + 3600000).toISOString() });
+        return reapprove(f);
+    }
+    test.each([
+        '2026-11-09T12:00:00.000Z', '2027-01-31T23:59:59.999Z',
+        '2028-02-29T00:00:00.000Z', '2100-02-01T00:00:00.001Z'
+    ])('accepts exactly 90 elapsed days but rejects one millisecond more from %s', now => {
+        for (const issuedOffsetMs of [-3599999, -1800000, 0]) {
+            const f = cappedFixture(now, capMs, issuedOffsetMs), original = copy(f);
+            const result = planCustomerAuthorityExpiry(f, now);
+            expect(result.after.record).toEqual({ ...original.observation.record,
+                expiresAt: Date.parse(now) + capMs, revision: original.observation.record.revision + 1 });
+            expect(result).toMatchObject({ command: f.command, context: f.context, approval: f.approval,
+                source: f.observation.source, blobName: f.observation.blobName,
+                before: { sha256: hash(f.observation.record), etag: f.observation.etag,
+                    revision: f.observation.record.revision, expiresAt: OLD },
+                commandSha256: f.approval.commandSha256, approvalSha256: hash(f.approval), plannedAt: now });
+            expect(f).toEqual(original);
+            const over = cappedFixture(now, capMs + 1, issuedOffsetMs);
+            expect(() => planCustomerAuthorityExpiry(over, now)).toThrow('dashboard_admin_customer_authority_expiry_invalid');
+        }
+    });
+    test.each([1, 60000, capMs - 1])('preserves the exact approved %s millisecond extension without a default', duration => {
+        const f = cappedFixture(NOW, duration);
+        expect(plan(f).after.record.expiresAt).toBe(Date.parse(NOW) + duration);
+    });
+    test('rechecks the server clock rather than using an observation or approval clock', () => {
+        const f = cappedFixture(NOW, capMs, -1);
+        f.observation.observedAt = '2026-11-09T11:59:59.999Z';
+        expect(plan(f).after.record.expiresAt).toBe(Date.parse(NOW) + capMs);
+        expect(() => planCustomerAuthorityExpiry(f, f.observation.observedAt)).toThrow('dashboard_admin_customer_authority_expiry_invalid');
+    });
+    test.each([
+        undefined, null, '', Date.parse(NOW), new Date(NOW), 'not-a-date',
+        '2026-02-30T12:00:00.000Z', '2026-11-09T12:00:00+00:00',
+        '0000-01-01T00:00:00.000Z', '+010000-01-01T00:00:00.000Z', '+275761-01-01T00:00:00.000Z'
+    ])('rejects malformed or out-of-range server time and proposed expiry: %p', value => {
+        const f = cappedFixture(NOW, capMs);
+        expect(() => planCustomerAuthorityExpiry(f, value)).toThrow();
+        f.command.newExpiresAt = value; f.approval.approvedExpiresAt = value;
+        expect(() => customerAuthorityExpiryCommandHash(f.command, f.context)).toThrow();
+        expect(() => plan(f)).toThrow();
+    });
+    test('fails closed when a 90-day expiry falls outside the supported date range', () => {
+        const now = '9999-12-31T23:59:59.999Z', f = fixture();
+        f.observation.observedAt = now;
+        f.approval.issuedAt = '9999-12-31T23:59:59.998Z';
+        f.approval.expiresAt = '+010000-01-01T00:00:00.000Z';
+        f.command.newExpiresAt = new Date(Date.parse(now) + capMs).toISOString();
+        f.approval.approvedExpiresAt = f.command.newExpiresAt;
+        expect(() => customerAuthorityExpiryCommandHash(f.command, f.context)).toThrow();
+        expect(() => planCustomerAuthorityExpiry(f, now)).toThrow();
+    });
+    test.each([
+        f => { f.command.now = NOW; }, f => { f.command.maxExtensionDays = 91; },
+        f => { f.context.now = NOW; }, f => { f.approval.now = NOW; },
+        f => { f.command.entitlementUntil = f.command.newExpiresAt; },
+        f => { f.command.termsVersion = 'replacement-terms'; },
+        f => { f.command.scheduleDigest = 'a'.repeat(64); }
+    ])('rejects client clock overrides and broader renewal fields #%#', alter => {
+        const f = cappedFixture(NOW, capMs); alter(f); expect(() => plan(f)).toThrow();
+    });
+});
+
 describe('dormant customer authority inspection', () => {
     test.each(['legacy_admin', 'legacy_starter', 'external_starter'])('pins the exact %s source', kind => {
         const f = fixture({ kind }), result = inspect(f);
