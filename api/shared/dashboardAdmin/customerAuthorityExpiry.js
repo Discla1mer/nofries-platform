@@ -9,6 +9,7 @@ const { copy, fields, freeze, subject, id, uuid, digest, instant, revision, hash
     require('../appLifecycle/dashboardRuntimeRecords');
 const { subjectHash } = require('../customerSignup/customerAuthority');
 const PURPOSE = 'customer_authority_expiry_extension';
+const MAX_EXTENSION_MS = 90 * 24 * 60 * 60 * 1000;
 const fail = () => { throw new Error('dashboard_admin_customer_authority_expiry_invalid'); };
 const iso = value => {
     if (!Number.isSafeInteger(value) || value <= 0) fail();
@@ -114,8 +115,10 @@ function planCustomerAuthorityExpiry(input, now) {
     const proposed = command(raw.command), actor = context(raw.context);
     const seen = observation(raw.observation, proposed.target, now), before = seen.record;
     const approved = approval(raw.approval, proposed, actor, now);
+    // The server's current time bounds the extension, never approval timestamps.
     if (before === null || before.status !== 'active' || before.expiresAt > Date.parse(now) ||
-        proposed.newExpiresAt <= now || proposed.beforeSha256 !== hash(before) ||
+        proposed.newExpiresAt <= now || Date.parse(proposed.newExpiresAt) - Date.parse(now) > MAX_EXTENSION_MS ||
+        proposed.beforeSha256 !== hash(before) ||
         proposed.beforeEtag !== seen.etag || proposed.beforeRevision !== before.revision ||
         proposed.beforeExpiresAt !== iso(before.expiresAt)) fail();
     const after = { ...before, expiresAt: Date.parse(proposed.newExpiresAt), revision: before.revision + 1 };
