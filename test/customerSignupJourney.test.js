@@ -126,8 +126,10 @@ test('hung client times out, aborts and permits safe status reload; late result 
         await jest.advanceTimersByTimeAsync(60000);
         expect(signal.aborted).toBe(false);
         expect(f.root.getAttribute('aria-busy')).toBe('true');
+        expect(f.root.textContent).toContain('Working on it. This can take up to 20 seconds.');
         await jest.advanceTimersByTimeAsync(570000);
         expect(signal.aborted).toBe(true);
+        expect(f.root.textContent).not.toContain('Working on it.');
         expect(f.root.getAttribute('aria-busy')).toBe('false');
         expect(f.root.textContent).toContain('Signup is unavailable');
         f.root.querySelector('button').click(); await flush();

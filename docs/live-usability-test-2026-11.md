@@ -64,28 +64,37 @@ Fixed on this branch:
   recorded" when nothing is recorded. The footer time is in NZ time. "Open
   assessment" from the Overview starts a new assessment directly when none is
   saved. Escape closes the More tools and Account menus.
-- `docs/legal/drafts/nf-dashboard-2026-11-r4.txt` is a draft agreement
-  (not operative) that raises the complimentary cap and adds a separate
-  privacy and confidentiality limit for the unfair contract terms rules. See
-  its change note.
 
-Still open:
+## Third pass
 
-- **Sign out keeps the Microsoft session (security).** Needs front-channel
-  logout or `prompt=login` after sign-out. It touches the authorisation URL
-  checks in `api/shared/browserAuth.js` and needs a reviewed change.
-- **Browser Back after the callback** shows AADSTS900561.
-- **Schedule "Improvement Plan" wording:** change it with the next approved
-  plan version (see the r4 change note). It can't be changed in place.
-- **Approve r4:** confirm the cap figures, get legal review, then create the
-  plan version and digest.
+Fixed on this branch:
+
+- **Sign out.** After a customer signs out, the next sign-in asks Microsoft
+  for credentials again (`prompt=login`), so a shared computer does not
+  reopen the last account. The marker clears on the next completed sign-in.
+- **Automatic save.** Answers save about 45 seconds after the last change,
+  and when the page is hidden. Saving stops while 27 of the assessment's 127
+  revisions remain, so manual Save and Submit always work.
+- **Progress.** One line: answered, to go, to check later, and saved state.
+- **Waits.** Sign-up buttons now show "Working on it. This can take up to
+  20 seconds." as soon as they are pressed.
+- **Schedule wording and r4.** The plan `nf-starter-2026-11-r3` pins the r4
+  agreement and lists the Improvement Plan as "included when it is
+  released". It is in source but not selected. The steps to turn it on are
+  in `docs/legal/drafts/nf-dashboard-2026-11-r4-changes.md`.
+
+Not changed:
+
+- **The waits themselves** (7–10 s to terms, 9.5–19 s to the dashboard) were
+  not shortened. Finding the slow step needs production timings for the
+  setup and acceptance requests.
+- **Browser Back after the callback (AADSTS900561).** The callback already
+  redirects with 303. Back returns to Microsoft's own page, which re-posts
+  an expired request. This can't be fixed in the app's source.
 - **NZBN:** kept as free text while testing, as decided.
-- **Autosave:** not added. Each save uses one of an assessment's 127
-  revisions, so per-answer autosave could exhaust them. Consider saving on
-  page hide or a timer that batches answers.
-- **Waits:** workspace Continue to terms took 7–10 s, and terms to dashboard
-  9.5–19 s. Profile the access checks.
-- **Progress counters:** merge the three status lines into one.
+- **Turning on r3/r4:** legal review, the database proposal, the terms
+  archive, the launcher setting and `/terms.html` (see the r4 change note).
+- **Entra settings** in the section above.
 
 ## Test data written to production
 

@@ -400,6 +400,11 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         });
         root.setAttribute('aria-busy', 'true');
         for (const node of [...root.querySelectorAll('button'), ...root.querySelectorAll('input'), ...root.querySelectorAll('select')]) node.disabled = true;
+        // Setup and acceptance can take 10 to 20 seconds. Say so straight away,
+        // so a disabled button is not mistaken for a page that has stopped.
+        const progress = element('p', 'Working on it. This can take up to 20 seconds. Please keep this page open.');
+        progress.className = 'signup-progress'; progress.setAttribute('role', 'status');
+        root.append(progress);
         try {
             const state = await Promise.race([action(controller.signal), cancelled]);
             if (!disposed && current === generation) show(state, state, restoreDraft);
@@ -410,6 +415,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             if (!disposed && current === generation) {
                 cancelOperation = null;
                 busy = false;
+                progress.remove();
                 root.setAttribute('aria-busy', 'false');
             }
         }
