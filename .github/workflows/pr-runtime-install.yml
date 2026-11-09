@@ -1,0 +1,35 @@
+name: PR isolated runtime install
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-runtime-install-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.22.0
+          package-manager-cache: false
+      - name: Verify governed dependency provenance
+        run: |
+          node scripts/check-public-tree.js
+          node scripts/verify-adm-zip-memory-only.js
+          node vendor/node-forge-rsa-validated/build-package.js --check
+      - name: Test isolated dependency resolution failures
+        run: node --test scripts/tests/check-runtime-install.cjs
+      - name: Install and load isolated production packages
+        run: |
+          npm run build:app-service
+          node scripts/check-runtime-install.js
