@@ -1861,7 +1861,7 @@ describe('ready Cyber composition', () => {
         const h = harness({ cyber: true, hash: '#cyber-security' }); await openedRecord(h, stored);
         selectAnswer(h);
         expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
-        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('1 with unsaved changes');
+        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('1 not saved yet');
         expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/\*$/);
         h.homeClick(); control(h, 'Discard unsent changes').click(); await flush();
         expect(h.requests.filter(request => request.init.method === 'POST')).toHaveLength(0);

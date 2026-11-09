@@ -9,6 +9,11 @@
     const PLACEHOLDER = '00000000-0000-4000-8000-000000000000';
     const LIMIT = 65536;
     const SAVE_CEILING = 127;
+    // Each save uses one of an assessment's revisions, so answers are never
+    // saved one at a time. Automatic saves wait for a pause in editing and
+    // stop early enough to leave revisions for Save progress and Submit.
+    const AUTOSAVE_IDLE_MS = 45000;
+    const AUTOSAVE_RESERVE = 27;
     const ANSWER_GUIDANCE = {
         yes: 'All parts of this statement are in place across your declared scope.',
         partial: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
@@ -338,6 +343,9 @@
         // editing from or leaving it never sends a command.
         let reviewing = false;
         let returnToReview = null;
+        let autosaveTimer = null;
+        const autosaveIdleMs = options.autosaveIdleMs === undefined ? AUTOSAVE_IDLE_MS : options.autosaveIdleMs;
+        const autosaveEnabled = Number.isFinite(autosaveIdleMs) && autosaveIdleMs > 0;
         const controller = { requestLeave: requestLeave, destroy: destroy };
         mounted.set(root, controller);
         root.replaceChildren(); root.classList.add('ncsc-questionnaire');
@@ -429,18 +437,21 @@
         function updateQuestionNavigation() {
             if (!live() || !acknowledged || !questionIndex || !questionProgress) return;
             const sealed = acknowledged.status === 'submitted';
-            let answered = 0, resolved = 0;
+            let answered = 0, unresolved = 0;
             questions.forEach(function (question, index) {
                 const value = displayedAnswer(question), option = optionById.get(value.optionId);
                 if (value.optionId !== null) answered += 1;
-                if (['yes', 'partial', 'no'].includes(value.optionId)) resolved += 1;
+                if (['unknown', 'not_applicable'].includes(value.optionId)) unresolved += 1;
                 const label = value.optionId === 'not_applicable' ? 'Pending N/A' : option ? option.label : 'Unanswered';
                 const unsaved = !sealed && !equal(value, savedAnswer(question.id)) ? ' *' : '';
                 questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
             });
             const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length;
-            questionProgress.textContent = (sealed || !editable ? 'Saved answers: ' : 'Local draft: ') + answered + ' of ' + questions.length +
-                ' answers selected · ' + resolved + ' resolved · ' + missing + ' unanswered' + (dirty ? ' · ' + dirty + ' with unsaved changes' : '') + '. Counts are not a score.';
+            // One progress line. What is saved and what is still only in this
+            // browser are stated together so the counts cannot disagree.
+            questionProgress.textContent = answered + ' of ' + questions.length + ' answered' + (missing ? ' · ' + missing + ' to go' : '') +
+                (unresolved ? ' · ' + unresolved + ' to check later (Unknown or pending N/A)' : '') +
+                (sealed ? ' · submitted' : !editable ? ' · saved' : dirty ? ' · ' + dirty + ' not saved yet' : ' · all saved') + '.';
             if (navigationSummary) navigationSummary.textContent = 'Question ' + (activeQuestion + 1) + ' of ' + questions.length + ' · ' + missing + ' unanswered';
             if (nextUnanswered) nextUnanswered.disabled = unansweredIndex(activeQuestion) === -1;
             if (nextUnresolved) nextUnresolved.disabled = unresolvedIndex(activeQuestion) === -1;
@@ -569,7 +580,7 @@
         function updateStatus() {
             syncUnloadWarning();
             if (!live() || !status) return;
-            const saved = acknowledged ? 'Saved revision ' + acknowledged.revision + '. ' + acknowledged.progress.answered + ' of ' + acknowledged.progress.total + ' answered. ' : '';
+            const saved = acknowledged ? 'Saved revision ' + acknowledged.revision + '. ' : '';
             const dirty = dirtyEntries().length;
             // Keep draft feedback beside Save so changing status text cannot move its pointer target.
             status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
@@ -584,8 +595,33 @@
         }
         function edited() {
             if (!pending && !busy && !conflict) statusText = '';
-            updateStatus();
+            updateStatus(); scheduleAutosave();
         }
+        function cancelAutosave() { if (autosaveTimer !== null) { clearTimeout(autosaveTimer); autosaveTimer = null; } }
+        function scheduleAutosave() {
+            cancelAutosave();
+            if (!autosaveEnabled || !live()) return;
+            autosaveTimer = setTimeout(function () { autosaveTimer = null; autosave(); }, autosaveIdleMs);
+            if (autosaveTimer && typeof autosaveTimer.unref === 'function') autosaveTimer.unref();
+        }
+        // Silent: an automatic save never shows validation messages, opens a
+        // dialog or sends a draft the person could not save by hand.
+        function canAutosave() {
+            if (!autosaveEnabled || !live() || !editable || !acknowledged || acknowledged.status === 'submitted' || view !== 'assessment' ||
+                busy || pending || conflict || !currentChecked || reviewing || leave || !dirtyEntries().length ||
+                SAVE_CEILING - acknowledged.revision <= AUTOSAVE_RESERVE) return false;
+            return questions.every(function (question) {
+                const value = drafts.get(question.id).value, option = optionById.get(value.optionId);
+                return !option || option.applicable || !!value.rationale && validText(value.rationale.text);
+            });
+        }
+        function autosave() {
+            cancelAutosave();
+            if (!canAutosave()) return;
+            saveAll(false).then(function () { if (live() && dirtyEntries().length) scheduleAutosave(); }, function () {});
+        }
+        function autosaveWhenHidden() { if (doc.visibilityState === 'hidden') autosave(); }
+        if (autosaveEnabled && typeof doc.addEventListener === 'function') doc.addEventListener('visibilitychange', autosaveWhenHidden);
         function returnToList() {
             abortRequests(); epoch += 1; loading = false;
             acknowledged = null; selected = null; drafts.clear(); assistanceNotes.clear(); reviewing = false; returnToReview = null;
@@ -757,9 +793,6 @@
         function renderAssessment() {
             const renderedEpoch = epoch;
             const sealed = acknowledged.status === 'submitted';
-            const progress = acknowledged.progress;
-            content.append(node('p', 'ncsc-saved-progress', 'Saved responses: ' + progress.answered + ' of ' + progress.total + ' selected; ' + progress.missing + ' unanswered; ' + progress.unknown + ' Unknown; ' + progress.notApplicableClaims + ' pending N/A claims.'));
-            content.append(node('p', 'dashboard-muted', 'Saved resolved answers: ' + (progress.answered - progress.unknown - progress.notApplicableClaims) + ' of ' + progress.total + ' (Yes, Partial or No). Unknown and pending N/A are saved responses but remain unresolved.'));
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
             const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description)); content.append(declarationPanel);
             if (sealed) {
@@ -789,7 +822,7 @@
             index.value = String(activeQuestion);
             index.addEventListener('change', function () { const i = Number(index.value); if (live(renderedEpoch) && index.parentElement === content && Number.isInteger(i) && i >= 0 && i < questions.length) { activeQuestion = i; renderQuestion(); } });
             content.append(indexLabel, index);
-            const indexHelp = node('p', 'dashboard-muted', 'The full question is below. * marks unsaved changes.');
+            const indexHelp = node('p', 'dashboard-muted', 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable && !sealed ? ' Answers save automatically after a short pause.' : ''));
             indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
@@ -1460,7 +1493,8 @@
         }
         function destroy() {
             if (disposed) return;
-            disposed = true; epoch += 1; abortRequests();
+            disposed = true; epoch += 1; abortRequests(); cancelAutosave();
+            if (autosaveEnabled && typeof doc.removeEventListener === 'function') doc.removeEventListener('visibilitychange', autosaveWhenHidden);
             syncUnloadWarning();
             if (leave) { leave.resolve(false); leave = null; }
             removeDialog(); dialog = null;
