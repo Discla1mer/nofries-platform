@@ -104,7 +104,8 @@ test('flag, session, role and origin guards protect issuer and UI asset', async 
     expect((await f.post('dashboard-admin/approve-extension', f.input, '')).status).toBe(401);
     expect((await f.post('dashboard-admin/approve-extension', f.input, f.cookie, 'https://other.invalid')).status).toBe(403);
     expect((await f.h.send('get', '/api/dashboard-admin/entry.js').set('Cookie', f.cookie)).text).toContain('accountActionsForm');
-    expect((await f.h.send('get', '/api/dashboard-admin/entry-capabilities').set('Cookie', f.cookie)).body).toEqual({ entry: true, accountActions: true });
+    const capability = await f.h.send('get', '/api/dashboard-admin/entry-capabilities').set('Cookie', f.cookie);
+    expect(capability.body).toEqual({ entry: true }); expect(capability.headers['x-nofries-account-actions']).toBe('true');
     const h = await fixture(true, false);
     expect((await h.approve()).status).toBe(403);
     expect((await h.h.send('get', '/api/dashboard-admin/entry.js').set('Cookie', h.cookie)).status).toBe(403);

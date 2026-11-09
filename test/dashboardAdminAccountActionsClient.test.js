@@ -17,7 +17,7 @@ function fixture(failure = null) {
     const fetch = jest.fn(async (url, options) => {
         const input = options.body && JSON.parse(options.body);
         let status = 200, value = { authenticated: true, purpose: 'operator_dashboard' };
-        if (url.endsWith('entry-capabilities')) value = { entry: true, accountActions: state.allowed };
+        if (url.endsWith('entry-capabilities')) value = { entry: true };
         if (url.endsWith('approve-extension')) {
             if (failure === 'network') throw new Error('PRIVATE_PROVIDER_DETAIL');
             status = failure || 200;
@@ -25,7 +25,7 @@ function fixture(failure = null) {
                 newExpiresAt: input.newExpiresAt, approvalExpiresAt: new Date(Date.now() + 15 * 60000).toISOString() };
         }
         if (url.endsWith('extend-expired-access')) value = { outcome: 'succeeded', operationId: input.operationId };
-        return { status, headers: { get: () => 'application/json' }, json: async () => value };
+        return { status, headers: { get: name => name === 'X-NoFries-Account-Actions' ? String(state.allowed) : 'application/json' }, json: async () => value };
     });
     vm.runInNewContext(source, { document, window, fetch, AbortController, Date });
     const submit = async () => { for (const fn of elements.Form.events.submit) fn({ preventDefault() {} }); await flush(); };

@@ -189,8 +189,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                     body = await perform(currentActor, input, { request, signal });
                     return response(200, body);
                 } else body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
-            } else if (route === 'entry-capabilities') body = { entry: true,
-                ...(env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.approve ? { accountActions: true } : {}) };
+            } else if (route === 'entry-capabilities') body = { entry: true };
             else if (route === 'entry') { body = buildDashboardAdminEntryDocument(); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'entry.js') {
                 body = fs.readFileSync(path.join(__dirname, '../protectedAssets/dashboardAdminEntry.js'), 'utf8');
@@ -206,8 +205,11 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             // Re-read it before releasing even already-buffered results/assets.
             const current = await checked(() => principal(request, actor));
             if (!isEntry) await checked(() => route === 'signups' ? signupListService.authoriseDisclosure(current, body) : permission(current, route, selector, checked));
+            // Preserve the singleton capability body used by staff navigation.
+            const capability = route === 'entry-capabilities' && env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.approve
+                ? { 'X-NoFries-Account-Actions': 'true' } : {};
             return response(200, body, contentType ? { 'Content-Type': contentType,
-                ...(['document', 'entry'].includes(route) ? { 'Content-Security-Policy': contentSecurityPolicy } : {}) } : {}, contentType !== null);
+                ...(['document', 'entry'].includes(route) ? { 'Content-Security-Policy': contentSecurityPolicy } : {}) } : capability, contentType !== null);
         } catch (error) {
             const result = failure(error);
             if (isAccountAction(route)) {
