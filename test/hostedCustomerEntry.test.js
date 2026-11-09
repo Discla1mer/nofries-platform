@@ -10,6 +10,7 @@ const { createDom } = require('./fixtures/dashboardDom');
 const { buildHostedSignupDocument, buildSignupDocument } = require('../lib/signupDocument');
 const { customerProductionHarness, uid } = require('./helpers/customerProductionHarness');
 const { createProductionApplication } = require('../lib/productionApplication');
+const withRef = value => new RegExp('^' + value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '&ref=NF-[A-Z2-9]{6}$');
 const root = path.resolve(__dirname, '..');
 const sources = {
     clientSource: fs.readFileSync(path.join(root, 'api/shared/customerSignup/signupClient.js'), 'utf8'),
@@ -217,7 +218,8 @@ test.each(['legacy', 'external'].flatMap(provider => ['login start', 'callback']
         }
         expect(providerFailure).toHaveBeenCalledTimes(1);
         expect(failure.status).toBe(303);
-        expect(failure.headers.location).toBe('/login?signin=retry&provider=' + provider);
+        if (stage === 'callback') expect(failure.headers.location).toMatch(withRef('/login?signin=retry&provider=' + provider));
+        else expect(failure.headers.location).toBe('/login?signin=retry&provider=' + provider);
         expect(failure.headers['cache-control']).toContain('no-store');
         expect(failure.text).not.toContain('Synthetic provider failure');
         expect((failure.headers['set-cookie'] || []).some(cookie => /^__Host-nofries-(?:external-)?customer=[^;]/.test(cookie))).toBe(false);
@@ -235,7 +237,9 @@ test.each(['legacy', 'external'].flatMap(provider => ['login start', 'callback']
                 expect(page.nodes['organisation-form'].hidden).toBe(false);
             } else {
                 expect(page.fetch).not.toHaveBeenCalled();
-                expect(page.replace).toHaveBeenCalledWith('/signup?provider=external&signin=retry');
+                expect(page.replace).toHaveBeenCalledWith(stage === 'callback'
+                    ? expect.stringMatching(/^\/signup\?provider=external&signin=retry&ref=NF-[A-Z2-9]{6}$/)
+                    : '/signup?provider=external&signin=retry');
                 const fetch = jest.fn(async (url, options) => {
                     const result = await request(server.app).get(url).set(options.headers);
                     return new Response(result.text, { status: result.status, headers: result.headers });
