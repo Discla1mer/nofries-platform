@@ -10,6 +10,8 @@ const { accountActionsPool } = require('./accountActionsPool');
 const { createExpiryApproval } = require('./accountActionsApproval');
 
 function createAccountActionsRuntime(configuration, dashboard, authorise) {
+    if (Object.hasOwn(configuration, 'sources')) return require('./accountActionsSources')
+        .createAccountActionsSources(configuration, dashboard, authorise, createAccountActionsRuntime);
     const hasMembership = ['readApprovedAction', 'auditPolicy'].some(key => Object.hasOwn(configuration, key));
     fields(configuration, ['source', 'authorityContainer', 'auditContainer',
         ...(hasMembership ? ['auditPolicy'] : []), ...(Object.hasOwn(configuration, 'readApprovedAction') ? ['readApprovedAction'] : []),
