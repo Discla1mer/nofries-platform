@@ -1,5 +1,6 @@
 'use strict';
 
+// Every organisation label in this file is fictional; no customer records are used.
 const { createConsultantClientStatusService, ConsultantClientStatusError, normaliseConsultantClientStatusPage,
     CLIENT_STATUS_ROUTES } = require('../api/shared/improvementPlan/consultantClientStatusService');
 
