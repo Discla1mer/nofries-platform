@@ -59,6 +59,7 @@ const { createEnquiryService } = require('./api/shared/enquiry');
 const { errorResult: enquiryErrorResult } = require('./api/enquiry');
 const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
+const { logSafeFailure: logStaffAuthFailure } = require('./api/shared/browserAuthDiagnostics');
 const { createAuthLoginFunction } = require('./api/authLogin');
 const { createAuthCallbackFunction } = require('./api/authCallback');
 const { createAuthLogoutFunction } = require('./api/authLogout');
@@ -315,6 +316,14 @@ function sendSignupPage(res, selected) {
 
 app.set('trust proxy', 1);
 app.set('case sensitive routing', true);
+// Observe failures before auth handlers too (body parsing, abuse controls, host errors).
+app.use(['/api/auth/login', '/api/auth/callback', '/api/auth/session'], (req, res, next) => {
+    const context = res.locals.staffAuthDiagnostics = { log: console };
+    res.once('finish', () => {
+        if (res.statusCode >= 400) logStaffAuthFailure(context, new BrowserAuthError(res.statusCode, 'browser_auth_http_failure'));
+    });
+    next();
+});
 app.use(applySecurityHeaders);
 app.use(blockSuspiciousUserAgents);
 app.use(['/scope.html', '/support', '/support/', '/portal', '/portal/', '/operator', '/operator/', '/dashboard', '/dashboard/', '/dashboard-admin', '/dashboard-admin/'], applyPrivateDocumentHeaders);
@@ -1028,7 +1037,7 @@ function sendResult(res, result) {
 }
 
 async function sendFunctionResponse(handler, req, res) {
-    const context = { log: console };
+    const context = res.locals.staffAuthDiagnostics || { log: console };
     await handler(context, req);
     const result = context.res;
     if (!result || !Number.isInteger(result.status)) {
