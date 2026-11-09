@@ -143,7 +143,12 @@ function createBrowserAuthService(options = {}) {
             ...(customerProvider ? { customerProviderKey: config.customerProviderKey } : {}),
             ...(customerTransport ? { customerTransport } : {}),
             ...(customerPurpose ? { customerPurpose } : {})
-        }));
+        })).catch(error => {
+            // The dashboard adapter intentionally masks store errors. Retain
+            // only this fixed stage, never the provider exception or record.
+            if (!customerPolicy) error.diagnosticStage = 'transaction_store';
+            throw error;
+        });
         return {
             location,
             cookie: makeCookie(transactionCookie, correlationId, TRANSACTION_TTL_MS / 1000, 'None')
