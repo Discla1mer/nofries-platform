@@ -8,9 +8,8 @@
     const result = document.getElementById('accountLookupResults');
     const button = form.querySelector('button');
     const COLUMNS = [['email', 'Email'], ['kind', 'Store'], ['schemaVersion', 'Schema'], ['plan', 'Plan'], ['accountType', 'Type'],
-        ['organisation', 'Organisation'], ['status', 'Sign-in record'], ['effectiveAt', 'Activated (UTC)'], ['expiresAt', 'Stored expiry (UTC, not enforced)'], ['revision', 'Revision']];
-    // Stored expiry is informational only: account-level expiry is not a sign-in gate.
-    const STATUS = { active: 'Active', expired: 'Active (stored expiry passed, not enforced)', revoked: 'Revoked', missing: 'No sign-in record' };
+        ['organisation', 'Organisation'], ['status', 'Sign-in record'], ['effectiveAt', 'Activated (UTC)'], ['expiresAt', 'Expires (UTC)'], ['revision', 'Revision']];
+    const STATUS = { active: 'Active', expired: 'Active record, access expired', revoked: 'Revoked', missing: 'No sign-in record' };
     let active = null;
     const text = value => value === null || value === undefined || value === '' ? '—' : String(value);
     function select(row) { window.nofriesAccountSelection = row; window.dispatchEvent(new Event('nofries-account-selection')); }
@@ -113,7 +112,7 @@
             });
             result.append(table);
             status.textContent = (value.truncated ? 'The bounded scan hit its 100-record cap, so other matching records may exist. ' : 'Lookup complete. ')
-                + 'Stored expiry dates are informational and not enforced at sign-in.';
+                + 'An active record alone does not prove sign-in will succeed.';
         } catch (error) {
             if (active === controller) status.textContent = message(error);
         } finally {
