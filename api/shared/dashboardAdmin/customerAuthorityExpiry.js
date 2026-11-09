@@ -1,10 +1,9 @@
 'use strict';
 
-// Dormant DATA/proposal contracts, not authentication or approval issuance.
-// No reader, writer, route or production import. A future executor must verify
-// independent approval provenance, recheck live authority/session/epoch, CAS the
-// exact ETag, and durably audit intent/outcome. Retained-trial revision-zero
-// checks must remain intact until separately verified expiry-only provenance exists.
+// DATA/proposal contracts, not authentication or approval issuance. Executors
+// verify approval provenance, current authority and exact ETags, and audit writes.
+// Scheduled schema-2 records cannot be extended: retained-trial readers require
+// revision zero until separately verified expiry-only provenance exists.
 const { copy, fields, freeze, subject, id, uuid, digest, instant, revision, hash, equal } =
     require('../appLifecycle/dashboardRuntimeRecords');
 const { subjectHash } = require('../customerSignup/customerAuthority');
@@ -116,7 +115,7 @@ function planCustomerAuthorityExpiry(input, now) {
     const seen = observation(raw.observation, proposed.target, now), before = seen.record;
     const approved = approval(raw.approval, proposed, actor, now);
     // The server's current time bounds the extension, never approval timestamps.
-    if (before === null || before.status !== 'active' || before.expiresAt > Date.parse(now) ||
+    if (before === null || before.schemaVersion !== 1 || before.status !== 'active' || before.expiresAt > Date.parse(now) ||
         proposed.newExpiresAt <= now || Date.parse(proposed.newExpiresAt) - Date.parse(now) > MAX_EXTENSION_MS ||
         proposed.beforeSha256 !== hash(before) ||
         proposed.beforeEtag !== seen.etag || proposed.beforeRevision !== before.revision ||

@@ -30,7 +30,9 @@ the CAS. Ambiguous transport results remain uncertain even if another writer
 subsequently changes the record; current bytes cannot prove an earlier outcome.
 
 The planner from #118 limits expiry to 90 days from server time. Only active,
-expired authority records are eligible. The ETag write preserves all fields
+expired schema-1 authority records are eligible. Scheduled/schema-2 records,
+including retained trials, are refused before the write to preserve revision-zero
+saved-result reads. The ETag write preserves all fields
 except expiry and revision; it renews no memberships, entitlements or terms.
 Existing retained-trial revision-zero checks remain intact.
 

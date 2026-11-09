@@ -8,7 +8,7 @@ const { approvedBinding } = require('../api/shared/dashboardAdmin/approvalRecord
 const uuid = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const NOW = '2026-11-09T12:00:00.000Z', OLD = '2026-11-08T12:00:00.000Z', NEW = '2026-11-10T12:00:00.000Z';
 const copy = value => JSON.parse(JSON.stringify(value));
-function fixture({ schemaVersion = 2, accountType = 'consultant', kind = 'external_starter' } = {}) {
+function fixture({ schemaVersion = 1, accountType = 'consultant', kind = 'external_starter' } = {}) {
     const subjectKey = `${uuid(1)}:${uuid(2)}`;
     const source = { schemaVersion: 1, kind, storageAccount: 'syntheticstore', container: 'synthetic-authority',
         providerKind: kind === 'external_starter' ? 'external-id' : 'workforce-b2b', providerTenantId: uuid(1),
@@ -154,7 +154,7 @@ describe('dormant customer authority inspection', () => {
         r => { Object.defineProperty(r, 'email', { get() { throw new Error('must not evaluate getter'); } }); },
         r => { r[Symbol('hidden')] = true; }, r => { r.termsVersion = 'x'.repeat(20000); }
     ])('rejects malformed authority #%#', alter => {
-        const f = fixture(); alter(f.observation.record); expect(() => inspect(f)).toThrow();
+        const f = fixture({ schemaVersion: 2 }); alter(f.observation.record); expect(() => inspect(f)).toThrow();
     });
     test('does not authenticate expired or revoked data through the live validator', () => {
         const f = fixture(); expect(inspect(f).status).toBe('expired');
@@ -166,8 +166,8 @@ describe('dormant customer authority inspection', () => {
 });
 
 describe('exact independently approved expiry-only proposals', () => {
-    test.each([1, 2])('preserves every schema-%s authority field except expiry and revision', schemaVersion => {
-        const f = fixture({ schemaVersion }), original = copy(f), result = plan(f);
+    test.each(['legacy_admin', 'legacy_starter', 'external_starter'])('preserves schema-1 %s authority fields except expiry and revision', kind => {
+        const f = fixture({ kind }), original = copy(f), result = plan(f);
         expect(result.after.record).toEqual({ ...original.observation.record, expiresAt: Date.parse(NEW), revision: 8 });
         expect(f).toEqual(original);
         expect(result.before).toEqual({ sha256: hash(f.observation.record), etag: f.observation.etag, revision: 7, expiresAt: OLD });
@@ -177,6 +177,17 @@ describe('exact independently approved expiry-only proposals', () => {
         expect(Object.isFrozen(result.after.record)).toBe(true); expect(Object.isFrozen(result.approval.context)).toBe(true);
         expect(plan(f)).toEqual(result);
         expect(authority(result.after.record, f.command.target.subjectKey, Date.parse(NOW))).toEqual(result.after.record);
+    });
+    test.each(['legacy_admin', 'legacy_starter', 'external_starter'])('inspects schema-2 %s records but refuses extension without changing them', kind => {
+        for (const accountType of ['company', 'consultant']) for (const revision of [0, 7]) {
+            const f = fixture({ schemaVersion: 2, accountType, kind });
+            f.observation.record.revision = f.command.beforeRevision = revision;
+            f.command.beforeSha256 = hash(f.observation.record); reapprove(f);
+            const before = copy(f);
+            expect(inspect(f)).toMatchObject({ status: 'expired', revision });
+            expect(() => plan(f)).toThrow('dashboard_admin_customer_authority_expiry_invalid');
+            expect(f).toEqual(before);
+        }
     });
     test('preserves absent optional account type and null binding', () => {
         const f = fixture({ schemaVersion: 1 }); delete f.observation.record.accountType; f.observation.record.bindingId = null;
