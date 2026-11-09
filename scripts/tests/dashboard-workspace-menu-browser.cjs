@@ -296,6 +296,19 @@ async function guardChecks(page, shell, width) {
                 }));
                 assert.equal(primary.length, 3);
                 assert.ok(primary.every(item => item.top >= 0 && item.bottom <= item.height), label + ': all three primary destinations are visible on initial ready view without scrolling');
+                // Whole words stay on one line, including the longest real label (DOM-only, restored).
+                for (const replacement of [null, 'Improvement Plan']) {
+                    const split = await menu(page).locator('.dashboard-menu-primary').evaluate((node, text) => {
+                        const spans = [...node.querySelectorAll('[data-module] span:not(.dashboard-icon)')], original = spans[1].firstChild.nodeValue;
+                        if (text) spans[1].firstChild.nodeValue = text;
+                        const broken = spans.flatMap(span => [...span.firstChild.nodeValue.matchAll(/\S+/g)].filter(match => {
+                            const range = document.createRange(); range.setStart(span.firstChild, match.index); range.setEnd(span.firstChild, match.index + match[0].length);
+                            return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size > 1;
+                        }).map(match => match[0]));
+                        spans[1].firstChild.nodeValue = original; return broken;
+                    }, replacement);
+                    assert.deepEqual(split, [], label + ': mobile tab words are not split ' + (replacement || 'actual labels'));
+                }
             }
             const summary = disclosure(page).locator('summary');
             await summary.focus(); await page.keyboard.press('Enter'); assert.equal(await disclosure(page).evaluate(node => node.open), true);
