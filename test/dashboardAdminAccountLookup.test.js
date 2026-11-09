@@ -105,6 +105,19 @@ test('non-admin staff and forged SWA principal cannot bypass BFF role checks', a
     expect((await h.handler.handle(request, 'accounts/lookup')).status).toBe(403);
     expect(h.read).not.toHaveBeenCalled();
 });
+test('revocation during the durable audit write withholds buffered results', async () => {
+    jest.spyOn(console, 'info').mockImplementation(() => {});
+    let signedIn = true;
+    const h = handler({}, async () => ({ identity: signedIn ? identity : null }), reader([record]));
+    h.audit.mockImplementation(async event => { expect(event.status).toBe(200); signedIn = false; });
+    const response = await h.handler.handle(wire(), 'accounts/lookup');
+    expect(response.status).toBe(401); expect(response.body).toEqual({ code: 'dashboard_admin_account_lookup_401' });
+    expect(JSON.stringify(response)).not.toContain(email); expect(h.audit).toHaveBeenCalledTimes(1);
+    const service = allowedService(), g = handler({}, undefined, reader([record]), service);
+    g.audit.mockImplementation(async () => { service.authorise.mockRejectedValue(Object.assign(new Error(), { statusCode: 403 })); });
+    const refused = await g.handler.handle(wire(), 'accounts/lookup');
+    expect(refused.status).toBe(403); expect(JSON.stringify(refused)).not.toContain(email);
+});
 test('revocation during I/O withholds buffered results', async () => {
     jest.spyOn(console, 'info').mockImplementation(() => {});
     let signedIn = true;
