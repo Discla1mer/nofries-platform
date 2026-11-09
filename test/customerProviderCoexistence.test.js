@@ -395,7 +395,7 @@ test('both customer callback retries preserve their selected provider', async ()
     }
 });
 
-test('both customer login-start retries preserve their selected provider without changing staff or JSON failures', async () => {
+test('both customer login-start retries preserve their selected provider and staff browsers reach the staff retry screen', async () => {
     const http = require('supertest'), h = fixture();
     const fail = jest.fn(async () => { throw new BrowserAuthError(503, 'browser_auth_unavailable'); });
     h.baseAuth.clientApplication.getAuthCodeUrl = fail;
@@ -410,9 +410,12 @@ test('both customer login-start retries preserve their selected provider without
         expect(json.headers.location).toBeUndefined(); expect(json.headers['set-cookie']).toBeUndefined();
     }
     const staff = await http(app).get('/api/auth/login').set('Accept', 'text/html');
-    expect(staff.status).toBe(503); expect(staff.headers.location).toBeUndefined();
-    expect(staff.body.code).toBe('browser_auth_unavailable');
-    expect(fail).toHaveBeenCalledTimes(5);
+    expect(staff.status).toBe(303); expect(staff.headers.location).toBe('/operator?signin=retry');
+    expect(staff.headers['set-cookie']).toBeUndefined();
+    const staffJson = await http(app).get('/api/auth/login').set('Accept', 'application/json');
+    expect(staffJson.status).toBe(503); expect(staffJson.headers.location).toBeUndefined();
+    expect(staffJson.body.code).toBe('browser_auth_unavailable');
+    expect(fail).toHaveBeenCalledTimes(6);
 });
 
 test.each([{ customerTransport: 'external' }, { customerEntry: true, customerTransport: 'legacy' },

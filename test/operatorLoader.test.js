@@ -25,7 +25,7 @@ function jsonResponse(status, body) {
     };
 }
 
-function createHarness(fetchImpl) {
+function createHarness(fetchImpl, search = '') {
     const loadingStatus = {
         textContent: '',
         append: jest.fn()
@@ -51,7 +51,7 @@ function createHarness(fetchImpl) {
     };
     const window = {
         clearTimeout: jest.fn(),
-        location: { replace: jest.fn() },
+        location: { replace: jest.fn(), search },
         setTimeout: jest.fn(() => 1)
     };
 
@@ -112,6 +112,31 @@ describe('operator session loader', () => {
             src: '/api/lifecycle/app.js',
             async: true
         });
+    });
+
+    test('a failed sign-in start shows a retry screen instead of looping back into sign-in', async () => {
+        const fetchImpl = jest.fn();
+        const harness = createHarness(fetchImpl, '?signin=retry');
+
+        await flushAsyncWork();
+
+        expect(fetchImpl).not.toHaveBeenCalled();
+        expect(harness.window.location.replace).not.toHaveBeenCalled();
+        expect(harness.loadingStatus.textContent).toContain('Staff sign-in could not start');
+        expect(harness.classes.has('operator-loading')).toBe(false);
+        expect(harness.appendedScripts).toHaveLength(0);
+    });
+
+    test('a session check that times out or fails on the network explains itself', async () => {
+        const fetchImpl = jest.fn(async () => { throw new Error('The user aborted a request.'); });
+        const harness = createHarness(fetchImpl);
+
+        await flushAsyncWork();
+        await flushAsyncWork();
+
+        expect(harness.loadingStatus.textContent).toBe('Your session could not be checked in time. Nothing was changed.');
+        expect(harness.window.location.replace).not.toHaveBeenCalled();
+        expect(harness.appendedScripts).toHaveLength(0);
     });
 
     test('contains no legacy Static Web Apps authentication route', () => {

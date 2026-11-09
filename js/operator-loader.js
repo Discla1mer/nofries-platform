@@ -8,6 +8,7 @@
     const loadingStatus = document.getElementById('loadingStatus');
     const adminNavigation = document.getElementById('dashboardAdminNavigation');
     const CAPABILITY_TIMEOUT_MS = 5000;
+    const RETRY_RETURN = /(?:^\?|&)signin=retry(?:&|$)/.test(String(window.location.search || ''));
     let adminSequence = 0;
     let adminRequest = null;
     let staffSessionVerified = false;
@@ -26,9 +27,14 @@
         window.addEventListener('focus', discoverAdminNavigation);
     }
 
-    verifySessionAndLoad().catch(function (error) {
-        showUnavailable(error && error.message || 'The protected workspace could not be opened.');
-    });
+    if (RETRY_RETURN) {
+        // Sign-in could not start. Never bounce straight back into it.
+        showUnavailable('Staff sign-in could not start just now. Nothing was changed. Wait a minute, then try again.');
+    } else {
+        verifySessionAndLoad().catch(function (error) {
+            showUnavailable(error && error.message || 'The protected workspace could not be opened.');
+        });
+    }
 
     async function verifySessionAndLoad() {
         setStatus('Checking your secure No Fries session.');
@@ -103,6 +109,8 @@
             cache: 'no-store',
             headers: { Accept: 'application/json' },
             signal: controller && controller.signal
+        }).catch(function () {
+            throw new Error('Your session could not be checked in time. Nothing was changed.');
         }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (body) {
                 return { response, body };
@@ -141,7 +149,7 @@
         loadingStatus.append(' ');
         const signIn = document.createElement('a');
         signIn.href = LOGIN_URL;
-        signIn.textContent = 'Sign in again';
+        signIn.textContent = RETRY_RETURN ? 'Try staff sign-in again' : 'Sign in again';
         loadingStatus.append(signIn, '.');
     }
 }());
