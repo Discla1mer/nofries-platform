@@ -13,7 +13,7 @@ function fixture(failure = null) {
     elements.Expiry.value = new Date(Date.now() + 86400000).toISOString().slice(0, 16);
     elements.Form.elements = ['Email', 'Confirmation', 'Expiry', 'Approve', 'Extend'].map(k => elements[k]);
     elements.Form.reportValidity = () => true; elements.Form.reset = jest.fn();
-    Object.assign(window, { crypto: { randomUUID: () => 'synthetic-operation' }, setTimeout: jest.fn(() => 1), clearTimeout: jest.fn() });
+    Object.assign(window, { nofriesAccountSelection: { email: 'synthetic@example.invalid', organisation: 'Synthetic', selector: { subjectKey: 'synthetic-subject' } }, crypto: { randomUUID: () => 'synthetic-operation' }, setTimeout: jest.fn(() => 1), clearTimeout: jest.fn() });
     const fetch = jest.fn(async (url, options) => {
         const input = options.body && JSON.parse(options.body);
         let status = 200, value = { authenticated: true, purpose: 'operator_dashboard' };
@@ -34,6 +34,7 @@ function fixture(failure = null) {
 test('explicit approval and extension are separate; editing invalidates approval and pagehide clears it', async () => {
     const f = fixture(); expect(f.fetch).not.toHaveBeenCalled();
     await f.submit(); expect(f.elements.Extend.disabled).toBe(false);
+    expect(JSON.parse(f.fetch.mock.calls[1][1].body)).toMatchObject({ selector: { subjectKey: 'synthetic-subject' } });
     expect(f.fetch.mock.calls.map(([url]) => url)).toEqual(['/api/dashboard/session', '/api/dashboard-admin/approve-extension']);
     f.elements.Extend.click(); await flush();
     expect(f.elements.Status.textContent).toMatch(/Access expiry extended/);
@@ -58,4 +59,11 @@ test.each([403, 409, 503, 'network'])('failure %s never enables execution or ret
     const f = fixture(failure); await f.submit(); expect(f.elements.Extend.disabled).toBe(true);
     expect(f.fetch).toHaveBeenCalledTimes(2); expect(f.elements.Status.textContent).not.toMatch(/PRIVATE|Approved/);
     if (failure === 'network' || failure === 503) expect(f.elements.Status.textContent).toMatch(/could not be confirmed/);
+});
+
+test('changing the selected account aborts old approval and requires a new explicit approval', async () => {
+    const f = fixture(); await f.submit();
+    f.window.nofriesAccountSelection = null; f.window.dispatch('nofries-account-selection');
+    expect(f.elements.Extend.disabled).toBe(true); expect(f.elements.Email.value).toBe('');
+    const calls = f.fetch.mock.calls.length; await f.submit(); expect(f.fetch).toHaveBeenCalledTimes(calls);
 });

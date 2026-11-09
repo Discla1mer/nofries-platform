@@ -51,9 +51,9 @@
         <div id="operatorRoot" hidden></div>
         <section id="accountActionsPanel" class="operator-loading-panel" hidden aria-labelledby="accountActionsHeading">
             <h2 id="accountActionsHeading">Extend expired access</h2>
-            <p>Approve an expiry first, then extend access. Approval lasts 15 minutes in this staff session.</p>
+            <p>Select an account from lookup, approve an expiry, then extend access. Approval lasts 15 minutes in this staff session.</p>
             <form id="accountActionsForm" autocomplete="off">
-                <label>Account email <input id="accountActionsEmail" type="email" required maxlength="254"></label>
+                <label>Account email <input id="accountActionsEmail" type="email" readonly required maxlength="254"></label>
                 <label>Type the account email to confirm <input id="accountActionsConfirmation" type="email" required maxlength="254" autocomplete="off"></label>
                 <label>New expiry (your local time, within 90 days) <input id="accountActionsExpiry" type="datetime-local" required></label>
                 <button id="accountActionsApprove" type="submit">Approve extension</button>

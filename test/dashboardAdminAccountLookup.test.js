@@ -27,7 +27,7 @@ function reader(records, overrides = {}) {
             return { etag: '"test-etag"', contentLength: bytes.length, readableStreamBody: Readable.from([bytes]) }; } };
     }, ...overrides };
     const read = createAccountLookupReader([{ source, container }], () => now);
-    return (email, signal, authorise = async () => identity) => read(email, signal, authorise);
+    return (email, signal, authorise = async () => identity, includeSelector = false) => read(email, signal, authorise, includeSelector);
 }
 function handler(overrides = {}, readOperatorSession = async () => ({ identity }), read = jest.fn(async () => []), service = allowedService(), signupListService = null) {
     return { read, handler: createDashboardAdminHandlers({ service, signupListService, accountLookupReader: read, readOperatorSession,
@@ -186,4 +186,16 @@ test('host routes stay default-off including method and trailing-path variants',
         const result = await request(createNoFriesApp()).post('/api/dashboard-admin/accounts/' + path).send({ email });
         expect(result.status).toBe(404); expect(result.headers['cache-control']).toContain('no-store');
     }
+});
+
+test.each([undefined, 'false', 'true'])('selected-account selectors require the actions flag %s and current scoped access', async flag => {
+    jest.spyOn(console, 'info').mockImplementation(() => {});
+    const service = allowedService(), h = handler({ NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS: flag }, undefined, reader([record]), service);
+    const response = await h.handler.handle(wire(), 'accounts/lookup'); expect(response.status).toBe(200);
+    expect(response.body.rows[0].selector).toEqual(flag === 'true' ? { provider: 'legacy', subjectKey: subject, tenantId: uid(3), organisationId: uid(4) } : undefined);
+    let calls = 0; service.authorise.mockImplementation(async (actor, selector) => {
+        if (selector && ++calls > 1) throw Object.assign(new Error(), { statusCode: 403 }); return actor;
+    });
+    const refused = await h.handler.handle(wire(), 'accounts/lookup'); expect(refused.status).toBe(403);
+    expect(JSON.stringify(refused.body)).not.toMatch(/subjectKey|customer@/);
 });

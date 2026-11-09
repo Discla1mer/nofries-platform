@@ -9,7 +9,7 @@ const unavailable = () => { throw new Error('account_lookup_unavailable'); };
 const missing = email => ({ email, accountType: null, organisation: null, status: 'missing', expiresAt: null, revision: null });
 
 function createAccountLookupReader(sources, now = Date.now) {
-    return async function lookup(email, signal, authorise) {
+    return async function lookup(email, signal, authorise, includeSelector = false) {
         const rows = [];
         let count = 0;
         for (const { source, container } of sources) {
@@ -58,7 +58,7 @@ function createAccountLookupReader(sources, now = Date.now) {
                     }
                 } catch (_) { /* A malformed/misbound record is not usable authority. */ }
                 // Authorization errors must not be reinterpreted as missing authority.
-                if (selector) await authorise(selector);
+                if (selector) { await authorise(selector); if (includeSelector) row.selector = selector; }
                 if (expectedSubject && blob.name === `customer-subjects/${subjectHash(expectedSubject)}.json`) foundExpected = true;
                 rows.push(row);
             }
@@ -76,7 +76,7 @@ function createAccountLookupReader(sources, now = Date.now) {
 function createProductionAccountLookup(env) {
     if (env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP !== 'true') return null;
     // Construct SDK clients lazily; the disabled feature performs no storage I/O.
-    return async (email, signal, authorise) => {
+    return async (email, signal, authorise, includeSelector = false) => {
         const account = env.AZURE_STORAGE_ACCOUNT_NAME;
         if (!/^[a-z0-9]{3,24}$/.test(account || '') || account === env.NOFRIES_BROWSER_AUTH_STORAGE_ACCOUNT) unavailable();
         const { ManagedIdentityCredential } = require('@azure/identity');
@@ -96,7 +96,7 @@ function createProductionAccountLookup(env) {
             return { source, container: service.getContainerClient(container) };
         });
         if (!sources.length || new Set(sources.map(s => s.source.container)).size !== sources.length) unavailable();
-        return createAccountLookupReader(sources)(email, signal, authorise);
+        return createAccountLookupReader(sources)(email, signal, authorise, includeSelector);
     };
 }
 module.exports = { createAccountLookupReader, createProductionAccountLookup };

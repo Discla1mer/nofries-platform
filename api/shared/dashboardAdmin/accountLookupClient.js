@@ -8,14 +8,16 @@
     const result = document.getElementById('accountLookupResults');
     const button = form.querySelector('button');
     let active = null;
+    function select(row) { window.nofriesAccountSelection = row; window.dispatchEvent(new Event('nofries-account-selection')); }
+    form.addEventListener('input', () => { active?.abort(); active = null; result.replaceChildren(); select(null); button.disabled = false; });
     panel.hidden = false;
     window.addEventListener('pagehide', () => {
-        active?.abort(); active = null; result.replaceChildren(); email.value = ''; status.textContent = '';
+        active?.abort(); active = null; select(null); result.replaceChildren(); email.value = ''; status.textContent = '';
         button.disabled = false; result.setAttribute('aria-busy', 'false');
     });
     form.addEventListener('submit', async event => {
         event.preventDefault();
-        active?.abort();
+        active?.abort(); select(null);
         const controller = new AbortController(); active = controller;
         const timer = setTimeout(() => controller.abort(), 12000);
         result.replaceChildren(); button.disabled = true; result.setAttribute('aria-busy', 'true');
@@ -33,7 +35,7 @@
             const table = document.createElement('table');
             const caption = table.createCaption(); caption.textContent = 'Customer sign-in authority (read only)';
             const head = table.createTHead().insertRow();
-            ['Email', 'Account type', 'Organisation', 'Status', 'Expires at (UTC)', 'Revision'].forEach(label => {
+            ['Email', 'Account type', 'Organisation', 'Status', 'Expires at (UTC)', 'Revision', ...(value.rows.some(row => row.selector) ? ['Actions'] : [])].forEach(label => {
                 const cell = document.createElement('th'); cell.scope = 'col'; cell.textContent = label; head.append(cell);
             });
             const body = table.createTBody();
@@ -42,6 +44,10 @@
                 ['email', 'accountType', 'organisation', 'status', 'expiresAt', 'revision'].forEach(key => {
                     tr.insertCell().textContent = row[key] ?? 'Unknown';
                 });
+                if (row.selector) {
+                    const choose = document.createElement('button'); choose.type = 'button'; choose.textContent = 'Select account';
+                    choose.addEventListener('click', () => select(row)); tr.insertCell().append(choose);
+                }
             });
             result.append(table);
             status.textContent = 'Lookup complete. Missing means no usable matching subject record was found. Active authority alone does not prove sign-in will succeed.';

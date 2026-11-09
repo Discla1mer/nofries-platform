@@ -35,7 +35,7 @@ function createAccountLookup({ read, readJson, env, audit = line => console.info
                 const selectors = [], checkScope = async selector => {
                     if ((await authorise(selector)).subjectKey !== actor.subjectKey) fail(403);
                 };
-                body = { rows: await read(email, signal, async selector => { await checkScope(selector); selectors.push(selector); }) };
+                body = { rows: await read(email, signal, async selector => { await checkScope(selector); selectors.push(selector); }, env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true') };
                 for (const selector of selectors) await checkScope(selector);
             }
             const current = await authorise();
