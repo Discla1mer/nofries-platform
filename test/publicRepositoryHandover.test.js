@@ -7,7 +7,8 @@ const { inspectHandover, checkRun, checkRecovery, PUBLIC_REPOSITORY, CI_SOURCES,
     require('../scripts/release/public-repository-handover');
 
 // Every run, source SHA, private repository ID and package below is synthetic.
-// Read only the already-public CI command graph, so profile drift fails visibly.
+// Keep the accepted historical profile distinct from current, unadmitted CI.
+// The fixture retains the original approved bytes; production hashes stay unchanged.
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const root = path.resolve(__dirname, '..');
 const repo = { ...PUBLIC_REPOSITORY, fork: false };
@@ -48,10 +49,10 @@ function fixture(stage = 'first-public') {
         source: { repository: { ...repo, default_branch: 'main', archived: false, disabled: false },
             before: branch(), after: branch(), inventoryBytes: Buffer.from('synthetic exact source inventory') },
         ci: { collectedAt: '2026-01-01T11:59:00Z',
-            workflowBytes: fs.readFileSync(path.join(root, '.github/workflows/ci.yml')),
+            workflowBytes: fs.readFileSync(path.join(root, 'test/fixtures/public-ci-reviewed.yml')),
             sourceBytes: Object.fromEntries(Object.keys(CI_SOURCES).map(name => [name, fs.readFileSync(path.join(root, name))])),
             run: run('ci', expected.ci), attempt: run('ci', expected.ci), runAfter: run('ci', expected.ci),
-            listing: listing(), listingAfter: listing(), jobs: { total_count: 3,
+            listing: listing(), listingAfter: listing(), jobs: { total_count: Object.keys(CI_STEPS).length,
                 jobs: Object.entries(CI_STEPS).map(([name, steps], index) => ({
                     id: 601 + index, name, run_id: 101, run_attempt: 1, head_sha: SOURCE_SHA,
                     status: 'completed', conclusion: 'success', started_at: '2026-01-01T11:42:00Z', completed_at: '2026-01-01T11:49:00Z',
@@ -96,6 +97,12 @@ function fixture(stage = 'first-public') {
     }
     return { evidence, expected, recovery, run };
 }
+
+test('current runner-pinned CI remains unadmitted by the unchanged handover profile', () => {
+    const { evidence, expected } = fixture();
+    evidence.ci.workflowBytes = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'));
+    expect(() => inspectHandover(evidence, expected)).toThrow('public_handover_refused:unreviewed_ci_workflow');
+});
 
 test.each(['first-public', 'public'])('%s provenance remains an offline check with no deployment authority', stage => {
     const { evidence, expected, recovery } = fixture(stage);
@@ -155,8 +162,8 @@ const invalidHandover = {
     'partial CI job page': e => { e.ci.jobs.total_count += 1; },
     'mixed-attempt jobs': e => { e.ci.jobs.jobs[0].run_attempt += 1; },
     'duplicate job': e => { e.ci.jobs.jobs[1] = e.ci.jobs.jobs[0]; },
-    'missing native job': e => { e.ci.jobs.jobs.splice(1, 1); },
-    'skipped verification': e => { e.ci.jobs.jobs[0].steps[2].conclusion = 'skipped'; },
+    'missing native job': e => { e.ci.jobs.jobs = e.ci.jobs.jobs.filter(job => job.name !== 'postgres'); },
+    'skipped verification': e => { e.ci.jobs.jobs[0].steps[1].conclusion = 'skipped'; },
     'duplicate step': e => { e.ci.jobs.jobs[0].steps.push(e.ci.jobs.jobs[0].steps[0]); },
     'stale CI': e => { e.ci.jobs.jobs[0].started_at = '2025-12-30T10:00:00Z'; e.ci.jobs.jobs[0].completed_at = '2025-12-30T11:00:00Z'; },
     'future CI': e => { e.ci.jobs.jobs[0].completed_at = '2026-01-01T12:01:00Z'; },
@@ -188,6 +195,19 @@ const invalidHandover = {
 };
 test.each(Object.entries(invalidHandover))('handover rejects %s', (_name, mutate) => {
     const { evidence, expected } = fixture(); mutate(evidence, expected);
+    expect(() => inspectHandover(evidence, expected)).toThrow('public_handover_refused:');
+});
+
+test.each([1, 2, 3, 4].flatMap(shard => ['missing', 'failure', 'cancelled', 'skipped']
+    .map(result => [shard, result])))('handover rejects shard %s when %s despite a green aggregate', (shard, result) => {
+    const { evidence, expected } = fixture();
+    const name = `unit (${shard}/4)`;
+    if (result === 'missing') {
+        evidence.ci.jobs.jobs = evidence.ci.jobs.jobs.filter(job => job.name !== name);
+        evidence.ci.jobs.total_count = evidence.ci.jobs.jobs.length;
+    } else {
+        evidence.ci.jobs.jobs.find(job => job.name === name).conclusion = result;
+    }
     expect(() => inspectHandover(evidence, expected)).toThrow('public_handover_refused:');
 });
 

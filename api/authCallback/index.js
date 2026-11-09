@@ -9,6 +9,7 @@ const {
     clearTransactionCookie,
     createBrowserAuthService
 } = require('../shared/browserAuth');
+const { logSafeFailure: logStaffFailure } = require('../shared/browserAuthDiagnostics');
 const { apiSecurityHeaders } = require('../shared/securityHeaders');
 
 function createAuthCallbackFunction(options = {}) {
@@ -22,11 +23,13 @@ function createAuthCallbackFunction(options = {}) {
     return async function authCallback(context, req) {
         const method = String(req && req.method || '').toUpperCase();
         if (method !== 'POST') {
+            if (!options.customerEntry) logStaffFailure(context, new BrowserAuthError(405, 'method_not_allowed'));
             context.res = json(405, { error: 'Method not allowed', code: 'method_not_allowed' }, { Allow: 'POST' });
             return;
         }
         const headers = req && req.headers || {};
         if (isBlockedUserAgent(getHeader(headers, 'user-agent'), env)) {
+            if (!options.customerEntry) logStaffFailure(context, new BrowserAuthError(403, 'request_blocked'));
             context.res = json(403, { error: 'Request blocked' });
             return;
         }
@@ -36,6 +39,7 @@ function createAuthCallbackFunction(options = {}) {
             env
         );
         if (!rateLimit.allowed) {
+            if (!options.customerEntry) logStaffFailure(context, new BrowserAuthError(429, 'rate_limited'));
             context.res = json(
                 429,
                 { error: 'Too many sign-in attempts. Please wait and try again.' },
@@ -57,17 +61,20 @@ function createAuthCallbackFunction(options = {}) {
                 ? '/signup?provider=external' : result.location;
             context.res = redirect(location, result.cookies || result.cookie, rateLimitHeaders(rateLimit));
         } catch (error) {
-            logSafeFailure(context, error);
+            // Customer support references retain their existing behavior.
+            const reference = options.customerEntry ? supportReference() : null;
+            if (options.customerEntry) logSafeFailure(context, error, reference);
+            else logStaffFailure(context, error);
             if (options.customerEntry && getHeader(headers, 'accept').includes('text/html')) {
                 const responseHeaders = rateLimitHeaders(rateLimit);
                 if (shouldClearTransactionCookie(error)) responseHeaders['Set-Cookie'] = clearCallbackTransaction();
                 // Presentation only: never relay a provider error, callback
                 // value or return URL. Missing cookies remain a generic retry.
                 const recovery = error instanceof BrowserAuthError && error.code === 'browser_auth_transaction_expired'
-                    ? 'expired' : 'retry';
+                    ? 'expired' : error instanceof BrowserAuthError && ACCOUNT_RECOVERY_CODES.has(error.code) ? 'account' : 'retry';
                 context.res = { status: 303, headers: apiSecurityHeaders({ ...responseHeaders,
-                    Location: options.customerTransport === 'external'
-                        ? `/login?signin=${recovery}&provider=external` : `/login?signin=${recovery}&provider=legacy` }), body: '' };
+                    Location: (options.customerTransport === 'external'
+                        ? `/login?signin=${recovery}&provider=external` : `/login?signin=${recovery}&provider=legacy`) + `&ref=${reference}` }), body: '' };
                 return;
             }
             context.res = authError(error, rateLimitHeaders(rateLimit), clearCallbackTransaction);
@@ -120,12 +127,23 @@ function json(status, body, extraHeaders = {}) {
     };
 }
 
-function logSafeFailure(context, error) {
+// Authentication succeeded at the provider, but No Fries holds no active
+// account for it (missing, expired, revoked or unverified customer record).
+// Retrying cannot help; the visitor needs support, so say so.
+const ACCOUNT_RECOVERY_CODES = new Set(['browser_auth_customer_required', 'browser_auth_email_verification_required']);
+const REFERENCE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function supportReference() {
+    const bytes = require('node:crypto').randomBytes(6);
+    return 'NF-' + Array.from(bytes, byte => REFERENCE_ALPHABET[byte % REFERENCE_ALPHABET.length]).join('');
+}
+
+function logSafeFailure(context, error, reference) {
     const code = error instanceof BrowserAuthError ? error.code : 'browser_auth_unexpected';
     if (context && context.log && typeof context.log.warn === 'function') {
         const stage = ['customer_begin', 'customer_verify', 'customer_recheck', 'session_record', 'runtime_epoch',
             'session_save', 'epoch_after_save', 'issuance_proof', 'epoch_after_proof'].includes(error?.diagnosticStage) ? ` stage=${error.diagnosticStage}` : '';
-        context.log.warn(`Browser sign-in callback failed: ${code}${stage}`);
+        context.log.warn(`Browser sign-in callback failed: ${code}${stage}${reference ? ` ref=${reference}` : ''}`);
     }
 }
 

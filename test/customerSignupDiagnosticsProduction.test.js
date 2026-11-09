@@ -5,7 +5,7 @@ const { customerProductionHarness } = require('./helpers/customerProductionHarne
 const { createProductionApplication } = require('../lib/productionApplication');
 
 let warning;
-beforeEach(() => { warning = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
+beforeEach(() => { require('../api/shared/abuseProtection').resetAbuseProtectionForTests(); warning = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
 afterEach(() => { warning.mockRestore(); });
 const events = () => warning.mock.calls.map(([line]) => JSON.parse(line));
 function expectPrivate(eventsSeen, user, cookie, response, workspaceRead) {
@@ -185,3 +185,116 @@ test('a failing production diagnostic sink cannot change the failed customer sta
     expect(h.pool.receipts.size).toBe(0); expect(h.pool.registrations.size).toBe(0);
 });
 
+
+// These are fault reproductions, not evidence that a fault occurred in production.
+// Exercise the real HTTP composition and codecs with synthetic storage responses.
+function savedPreparation(h) {
+    const entries = [...h.getContainer('starter-authority').records];
+    const account = JSON.parse(entries.find(([key]) => key.startsWith('customer-starter/starter-accounts/'))[1]);
+    const context = JSON.parse(entries.find(([key]) => key.startsWith('customer-starter/contexts/'))[1]);
+    return require('../api/shared/customerSignup/starterProvisioning').compileStarterProvisioning({
+        account, requestId: account.organisations[0].requestId, source: context.source,
+        ...(Object.hasOwn(context, 'slot') ? { slot: context.slot } : {}) });
+}
+
+test.each([
+    ['missing account', 'account_match', 'signup_state_unavailable'],
+    ['context transport', 'retained_preparation', 'signup_state_unavailable'],
+    ['malformed context JSON', 'retained_preparation', 'signup_state_unavailable'],
+    ['missing context', 'retained_preparation', 'signup_state_unavailable'],
+    ['context account mismatch', 'retained_preparation', 'signup_state_unavailable'],
+    ['duplicate scope rows', 'scope_cardinality', 'signup_state_unavailable'],
+    ['inconsistent preparation', 'preparation_decode', 'signup_state_unavailable'],
+    ['scope binding mismatch', 'preparation_match', 'signup_state_unavailable'],
+    ['malformed activation', 'activation_decode', 'onboarding_input_invalid']
+])('root-cause reproduction: %s', async (fault, checkpoint, code) => {
+    const { h, user, login } = await savedConsultantOwnWorkspace();
+    const container = h.getContainer('starter-authority'), preparation = savedPreparation(h);
+    const accountKey = [...container.records.keys()].find(key => key.startsWith('customer-starter/starter-accounts/'));
+    const contextKey = [...container.records.keys()].find(key => key.startsWith('customer-starter/contexts/'));
+    if (fault === 'missing account') container.records.delete(accountKey);
+    if (fault === 'missing context') container.records.delete(contextKey);
+    if (fault === 'malformed context JSON') container.records.set(contextKey, Buffer.from('{'));
+    if (fault === 'context account mismatch') {
+        const context = JSON.parse(container.records.get(contextKey));
+        context.accountId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+        container.records.set(contextKey, Buffer.from(JSON.stringify(context)));
+    }
+    const original = container.getBlockBlobClient;
+    let injected = 0;
+    container.getBlockBlobClient = key => {
+        const blob = original(key);
+        if (fault !== 'context transport' || key !== contextKey) return blob;
+        return { ...blob, async download() { injected++; throw new Error('synthetic-provider-secret'); } };
+    };
+    const connect = h.pool.connect;
+    h.pool.connect = async () => {
+        const client = await connect();
+        return { ...client, async query(sql, params) {
+            if (!sql.startsWith('SELECT preparation,activation FROM nofries.dashboard_starter_scopes')) return client.query(sql, params);
+            injected++;
+            const p = JSON.parse(JSON.stringify(preparation));
+            if (fault === 'inconsistent preparation') p.email = 'other@example.invalid';
+            if (fault === 'scope binding mismatch') p.slot.bindingId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+            const row = { preparation: p, activation: fault === 'malformed activation' ? {} : null };
+            return { rows: fault === 'duplicate scope rows' ? [row, row] : [row] };
+        } };
+    };
+    const before = [...container.records].map(([key, bytes]) => [key, bytes.toString('base64')]);
+    const response = await request(h.app).get('/api/customer-signup/state').set('Cookie', login.cookie);
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({ error: 'Signup is unavailable', code: 'signup_unavailable' });
+    const workspaceRead = { phase: 'passive_starter', checkpoint };
+    expect(events()).toEqual([{ timestamp: expect.any(String), code, stage: 'organisation_preparation',
+        supportReference: response.headers['x-nofries-support-reference'], workspaceRead }]);
+    expectPrivate(events(), user, login.cookie, response, workspaceRead);
+    if (fault === 'context transport' || checkpoint.startsWith('scope_') || ['preparation_decode', 'preparation_match', 'activation_decode'].includes(checkpoint)) expect(injected).toBe(1);
+    expect([...container.records].map(([key, bytes]) => [key, bytes.toString('base64')])).toEqual(before);
+    expect(h.state.delivered).toHaveLength(2);
+    expect(h.pool.receipts.size).toBe(0); expect(h.pool.registrations.size).toBe(0);
+});
+
+test.each(['42501', '42P01', '42703', '08006', '57014', '53300'])(
+    'scope SQLSTATE %s is wrapped: checkpoint survives but raw family is unavailable', async sqlstate => {
+        const { h, user, login } = await savedConsultantOwnWorkspace();
+        const connect = h.pool.connect;
+        let failures = 0;
+        h.pool.connect = async () => {
+            const client = await connect();
+            return { ...client, async query(sql, params) {
+                if (sql.startsWith('SELECT preparation,activation FROM nofries.dashboard_starter_scopes')) {
+                    failures++; throw Object.assign(new Error('synthetic-provider-secret'), { code: sqlstate });
+                }
+                return client.query(sql, params);
+            } };
+        };
+        const response = await request(h.app).get('/api/customer-signup/state').set('Cookie', login.cookie);
+        expect(failures).toBe(1); expect(response.status).toBe(503);
+        expect(response.body).toEqual({ error: 'Signup is unavailable', code: 'signup_unavailable' });
+        const workspaceRead = { phase: 'passive_starter', checkpoint: 'scope_query' };
+        expect(events()).toEqual([{ timestamp: expect.any(String), code: 'postgres_query_failed', stage: 'organisation_preparation',
+            supportReference: response.headers['x-nofries-support-reference'], workspaceRead }]);
+        expectPrivate(events(), user, login.cookie, response, workspaceRead);
+        expect(JSON.stringify(events())).not.toContain(sqlstate);
+    });
+
+test('no visible scope with a scoped registration layout remains read-only, without a preparation writer', async () => {
+    const { h, login } = await savedConsultantOwnWorkspace();
+    const connect = h.pool.connect, queries = [];
+    h.pool.connect = async () => {
+        const client = await connect();
+        return { ...client, async query(sql, params) {
+            queries.push(sql);
+            if (sql.startsWith('SELECT preparation,activation FROM nofries.dashboard_starter_scopes')) return { rows: [] };
+            if (sql.includes('FROM pg_catalog.pg_attribute')) return { rows: [{ is_text: true, not_null: true, scoped_primary_key: true }] };
+            return client.query(sql, params);
+        } };
+    };
+    const before = [...h.getContainer('starter-authority').records].map(([key, bytes]) => [key, bytes.toString('base64')]);
+    const response = await request(h.app).get('/api/customer-signup/state').set('Cookie', login.cookie);
+    expect(response.status).toBe(200); expect(response.body.state.status).toBe('setup_read_only');
+    expect(events()).toEqual([]);
+    expect(queries.some(sql => /^(INSERT|UPDATE|DELETE)\b/.test(sql))).toBe(false);
+    expect([...h.getContainer('starter-authority').records].map(([key, bytes]) => [key, bytes.toString('base64')])).toEqual(before);
+    expect(h.pool.receipts.size).toBe(0); expect(h.pool.registrations.size).toBe(0);
+});

@@ -187,6 +187,20 @@ function request({ method = 'GET', url = '/api/dashboard/session', cookieHeader 
     if (!unfinished) { req.complete = true; req.push(null); }
     return req;
 }
+// Scope suppression to a deliberate rejection, never the suite or production.
+// Any unexpected warning is still printed and fails the exact-call assertion.
+async function withExpectedWarning(expected, work) {
+    const line = 'Dashboard request failed: ' + JSON.stringify(expected);
+    const original = console.warn;
+    const warn = jest.spyOn(console, 'warn').mockImplementation((...args) => {
+        if (args.length !== 1 || args[0] !== line) original.apply(console, args);
+    });
+    try {
+        await work();
+        expect(warn.mock.calls).toEqual([[line]]);
+    } finally { warn.mockRestore(); }
+}
+
 function expectError(result, status, code) {
     expect(result).toMatchObject({ status, body: { code }, isRaw: false });
     expect(Object.keys(result.body)).toEqual(['code']);
@@ -350,7 +364,7 @@ describe('trusted dashboard host construction', () => {
 
 describe('dashboard authentication and safe host projections', () => {
     test.each(['absent', 'unknown', 'expired', 'malformed retained identity'])
-    ('a genuine %s parent is 401 before a malformed generation can become authority', async kind => {
+    ('a genuine %s parent is 401 before a malformed generation can become authority', async kind => withExpectedWarning({ route: 'bootstrap', status: 401, code: 'dashboard_authentication_required' }, async () => {
         const h = harness(), handler = h.build();
         let issued = null;
         if (kind !== 'absent') issued = await h.login();
@@ -364,10 +378,10 @@ describe('dashboard authentication and safe host projections', () => {
         expect(h.options.pool.connect).not.toHaveBeenCalled();
         expect(h.proofStore.readOriginalProof).not.toHaveBeenCalled();
         expect(h.external).not.toHaveBeenCalled();
-    });
+    }));
 
     test.each(['undefined', 'ordinary error', 'spoofed 401', 'spoofed 400'])
-    ('a session provider returning %s is fixed unavailable, never a sign-in hint or leaked error', async kind => {
+    ('a session provider returning %s is fixed unavailable, never a sign-in hint or leaked error', async kind => withExpectedWarning({ route: 'session', status: 503, code: 'dashboard_unavailable' }, async () => {
         const h = harness(), handler = h.build(), issued = await h.login();
         h.state.afterLoad = () => {
             if (kind === 'undefined') return undefined;
@@ -377,9 +391,9 @@ describe('dashboard authentication and safe host projections', () => {
         };
         expectError(await handler.handleRequest(request({ cookieHeader: issued.cookie })), 503, 'dashboard_unavailable');
         expect(h.options.pool.connect).not.toHaveBeenCalled();
-    });
+    }));
 
-    test.each([false, true])('a provider-spoofed genuine ambiguity error is still fixed unavailable (host expired=%s)', async expired => {
+    test.each([false, true])('a provider-spoofed genuine ambiguity error is still fixed unavailable (host expired=%s)', async expired => withExpectedWarning({ route: 'session', status: 503, code: 'dashboard_unavailable' }, async () => {
         const h = harness(), handler = h.build(), issued = await h.login();
         h.state.afterLoad = () => {
             if (expired) h.state.now += 1001;
@@ -387,7 +401,7 @@ describe('dashboard authentication and safe host projections', () => {
         };
         expectError(await handler.handleRequest(request({ cookieHeader: issued.cookie })), 503, 'dashboard_unavailable');
         expect(h.options.pool.connect).not.toHaveBeenCalled();
-    });
+    }));
 
     test('a host denial emits one fixed redacted log without an invented actor, scope or provider message', async () => {
         const h = harness(), handler = h.build(), issued = await h.login();
@@ -421,23 +435,23 @@ describe('dashboard authentication and safe host projections', () => {
         } finally { warn.mockRestore(); }
     });
 
-    test('valid parent with invalid generation is scoped 403 without reaching H or SQL', async () => {
+    test('valid parent with invalid generation is scoped 403 without reaching H or SQL', async () => withExpectedWarning({ route: 'bootstrap', status: 403, code: 'dashboard_access_denied' }, async () => {
         const h = harness(), handler = h.build(), issued = await h.login();
         h.external.mockClear(); h.proofStore.readOriginalProof.mockClear();
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/bootstrap', cookieHeader: issued.cookie,
             headers: { 'x-nofries-dashboard-generation': 'bad' } })), 403, 'dashboard_access_denied');
         expect(h.external).not.toHaveBeenCalled(); expect(h.proofStore.readOriginalProof).not.toHaveBeenCalled();
         expect(h.options.pool.connect).not.toHaveBeenCalled();
-    });
+    }));
 
-    test.each(['missing proof', 'wrong proof', 'restored epoch'])('%s on a valid parent is denied, not initialization-required', async kind => {
+    test.each(['missing proof', 'wrong proof', 'restored epoch'])('%s on a valid parent is denied, not initialization-required', async kind => withExpectedWarning({ route: 'session', status: 403, code: 'dashboard_access_denied' }, async () => {
         const h = harness(), handler = h.build(), issued = await h.login();
         if (kind === 'missing proof') h.proofs.clear();
         if (kind === 'wrong proof') [...h.proofs.values()][0].identitySha256 = digest('another identity');
         if (kind === 'restored epoch') h.state.epoch = uid(99);
         expectError(await handler.handleRequest(request({ cookieHeader: issued.cookie })), 403, 'dashboard_access_denied');
         expect(h.state.tables.dashboard_session_gates).toEqual([]);
-    });
+    }));
 
     test('genuine absent gate is initialization-required; initialization projects no private state or proof', async () => {
         const h = harness(), handler = h.build(), issued = await h.login();
@@ -721,24 +735,24 @@ describe('fixed evidence metadata HTTP request boundary', () => {
     test.each(['', '?', '?artefactId=', '?artefactId=a&artefactId=b', '?artefactId=a&tenantId=other',
         '?tenantId=other', '?artefactId=%', '?artefactId=%FF', '?artefactId=shared:artefact',
         '?artefactId=shared%3aartefact', '?artefactId=%61', '?artefactId=a+b'])
-    ('rejects noncanonical selector %s before authentication or SQL', async query => {
+    ('rejects noncanonical selector %s before authentication or SQL', async query => withExpectedWarning({ route: 'evidence', status: 400, code: 'dashboard_input_invalid' }, async () => {
         const h = harness(), handler = h.build();
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/evidence' + query })), 400, 'dashboard_input_invalid');
         expectNoAuthorityIo(h);
-    });
-    test.each(['POST', 'PUT', 'DELETE', 'HEAD'])('rejects evidence %s before authority providers', async method => {
+    }));
+    test.each(['POST', 'PUT', 'DELETE', 'HEAD'])('rejects evidence %s before authority providers', async method => withExpectedWarning({ route: 'evidence', status: 405, code: 'dashboard_method_not_allowed' }, async () => {
         const h = harness(), handler = h.build();
         const result = await handler.handleRequest(request({ method, url: '/api/dashboard/evidence?artefactId=shared%3Aartefact' }));
         expectError(result, 405, 'dashboard_method_not_allowed'); expect(result.headers.Allow).toBe('GET');
         expectNoAuthorityIo(h);
-    });
-    test('canonical evidence selector still requires genuine browser authentication', async () => {
+    }));
+    test('canonical evidence selector still requires genuine browser authentication', async () => withExpectedWarning({ route: 'evidence', status: 401, code: 'dashboard_authentication_required' }, async () => {
         const h = harness(), handler = h.build();
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/evidence?artefactId=shared%3Aartefact' })),
             401, 'dashboard_authentication_required');
         expect(h.options.pool.connect).not.toHaveBeenCalled();
-    });
-    test.each(['missing', 'invalid', 'duplicate'])('authenticated evidence %s generation cannot reach SQL', async kind => {
+    }));
+    test.each(['missing', 'invalid', 'duplicate'])('authenticated evidence %s generation cannot reach SQL', async kind => withExpectedWarning({ route: 'evidence', status: 403, code: 'dashboard_access_denied' }, async () => {
         const h = harness(), handler = h.build(), issued = await h.login();
         const header = 'x-nofries-dashboard-generation';
         const headers = kind === 'missing' ? {} : { [header]: kind === 'invalid' ? 'bad' : digest('synthetic generation') };
@@ -747,12 +761,12 @@ describe('fixed evidence metadata HTTP request boundary', () => {
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/evidence?artefactId=shared%3Aartefact',
             cookieHeader: issued.cookie, headers, rawHeaders })), 403, 'dashboard_access_denied');
         expect(h.options.pool.connect).not.toHaveBeenCalled();
-    });
-    test('GET evidence body is rejected before authentication', async () => {
+    }));
+    test('GET evidence body is rejected before authentication', async () => withExpectedWarning({ route: 'evidence', status: 400, code: 'dashboard_input_invalid' }, async () => {
         const h = harness(), handler = h.build();
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/evidence?artefactId=shared%3Aartefact', body: 'payload' })),
             400, 'dashboard_input_invalid'); expectNoAuthorityIo(h);
-    });
+    }));
     test('original evidence query cannot be replaced while browser authentication awaits', async () => {
         const h = harness(), handler = h.build(), issued = await h.login(), entered = latch(), release = latch();
         h.state.beforeLoad = async () => { entered.resolve(); await release.promise; };
@@ -785,29 +799,29 @@ describe('opt-in NCSC HTTP request boundary', () => {
         Object.defineProperty(h.options, 'ncsc', { get: getter, enumerable: true });
         expect(() => h.build()).toThrow(BrowserAuthError); expect(getter).not.toHaveBeenCalled();
     });
-    test.each(['', '/example', '/example%3Aone', '/example%3Aone/save', '/example/save', '/example/submit'])('configured route %s reaches authentication instead of 404', async suffix => {
+    test.each(['', '/example', '/example%3Aone', '/example%3Aone/save', '/example/save', '/example/submit'])('configured route %s reaches authentication instead of 404', async suffix => withExpectedWarning({ route: 'ncsc', status: 401, code: 'dashboard_authentication_required' }, async () => {
         const h = configured(), handler = h.build();
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/ncsc/assessments' + suffix,
             method: suffix.includes('/save') || suffix.includes('/submit') ? 'POST' : 'GET',
             ...(suffix.includes('/save') || suffix.includes('/submit') ? { body: {} } : {}) })),
         401, 'dashboard_authentication_required');
         expect(h.options.pool.connect).not.toHaveBeenCalled();
-    });
+    }));
     test.each(['/', '/a/delete', '/a/b/save', '/%61', '/a?limit=1'])('rejects noncanonical item route %s before providers', async suffix => {
         const h = configured(), handler = h.build();
         const result = await handler.handleRequest(request({ url: '/api/dashboard/ncsc/assessments' + suffix }));
         expect([400, 404]).toContain(result.status); expectNoAuthorityIo(h);
     });
-    test.each(['?limit=01', '?limit=0', '?limit=101', '?limit=1&limit=2', '?unknown=1', '?afterAssessmentId=%61', '?afterAssessmentId=a/b', '?'])('rejects invalid collection query %s', async query => {
+    test.each(['?limit=01', '?limit=0', '?limit=101', '?limit=1&limit=2', '?unknown=1', '?afterAssessmentId=%61', '?afterAssessmentId=a/b', '?'])('rejects invalid collection query %s', async query => withExpectedWarning({ route: 'ncsc', status: 400, code: 'dashboard_input_invalid' }, async () => {
         const h = configured(), handler = h.build();
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/ncsc/assessments' + query })), 400, 'dashboard_input_invalid');
         expectNoAuthorityIo(h);
-    });
-    test.each(['?limit=100', '?afterAssessmentId=assessment%3A1', '?limit=1&afterAssessmentId=assessment-1'])('canonical collection query %s reaches authentication', async query => {
+    }));
+    test.each(['?limit=100', '?afterAssessmentId=assessment%3A1', '?limit=1&afterAssessmentId=assessment-1'])('canonical collection query %s reaches authentication', async query => withExpectedWarning({ route: 'ncsc', status: 401, code: 'dashboard_authentication_required' }, async () => {
         const h = configured(), handler = h.build();
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/ncsc/assessments' + query })), 401, 'dashboard_authentication_required');
-    });
-    test.each(['missing', 'invalid', 'duplicate'])('requires unique generation: %s', async kind => {
+    }));
+    test.each(['missing', 'invalid', 'duplicate'])('requires unique generation: %s', async kind => withExpectedWarning({ route: 'ncsc', status: 403, code: 'dashboard_access_denied' }, async () => {
         const h = configured(), handler = h.build(), issued = await h.login();
         const key = 'x-nofries-dashboard-generation', headers = kind === 'missing' ? {} : { [key]: kind === 'invalid' ? 'bad' : digest('generation') };
         const rawHeaders = ['cookie', issued.cookie, ...Object.entries(headers).flat()];
@@ -815,26 +829,27 @@ describe('opt-in NCSC HTTP request boundary', () => {
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/ncsc/assessments', cookieHeader: issued.cookie, headers, rawHeaders })),
             403, 'dashboard_access_denied');
         expect(h.options.pool.connect).not.toHaveBeenCalled();
-    });
-    test('foreign-origin mutation is denied before authentication and quota lookup', async () => {
+    }));
+    test('foreign-origin mutation is denied before authentication and quota lookup', async () => withExpectedWarning({ route: 'ncsc', status: 403, code: 'dashboard_access_denied' }, async () => {
         const h = configured(), handler = h.build();
         expectError(await handler.handleRequest(request({ method: 'POST', url: '/api/dashboard/ncsc/assessments/a/save',
             headers: { origin: 'https://foreign.invalid' }, body: {} })), 403, 'dashboard_access_denied');
         expectNoAuthorityIo(h); expect(h.options.ncsc.resolveSubmissionQuota).not.toHaveBeenCalled();
-    });
-    test.each(['malformed', 'media', 'oversized', 'get-body'])('retains raw wire guard for %s', async kind => {
+    }));
+    test.each(['malformed', 'media', 'oversized', 'get-body'])('retains raw wire guard for %s', async kind => withExpectedWarning({ route: 'ncsc', status: kind === 'oversized' ? 413 : kind === 'media' ? 415 : 400,
+            code: kind === 'oversized' ? 'dashboard_request_too_large' : kind === 'media' ? 'dashboard_unsupported_media_type' : 'dashboard_input_invalid' }, async () => {
         const h = configured(), handler = h.build();
         const result = await handler.handleRequest(request({ url: '/api/dashboard/ncsc/assessments', method: kind === 'get-body' ? 'GET' : 'POST',
             headers: kind === 'media' ? { 'content-type': 'text/plain' } : {},
             body: kind === 'oversized' ? 'x'.repeat(524289) : kind === 'malformed' ? '{' : '{}' }));
         expect(result.status).toBe(kind === 'oversized' ? 413 : kind === 'media' ? 415 : 400);
         expectNoAuthorityIo(h);
-    });
-    test('authentication completion after deadline cannot reach binding or quota', async () => {
+    }));
+    test('authentication completion after deadline cannot reach binding or quota', async () => withExpectedWarning({ route: 'ncsc', status: 503, code: 'dashboard_unavailable' }, async () => {
         const h = configured(), handler = h.build(), issued = await h.login();
         h.state.afterLoad = (_id, value) => { h.state.now += 1000; return value; };
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/ncsc/assessments', cookieHeader: issued.cookie,
             headers: { 'x-nofries-dashboard-generation': digest('generation') } })), 503, 'dashboard_unavailable');
         expect(h.options.pool.connect).not.toHaveBeenCalled(); expect(h.options.ncsc.resolveSubmissionQuota).not.toHaveBeenCalled();
-    });
+    }));
 });

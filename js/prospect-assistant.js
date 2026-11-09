@@ -182,7 +182,7 @@
                 setRuntime(payload.assistant.runtime);
                 if (!publicHelp) setPricing(payload.assistant.pricing);
                 if (!publicHelp && options.restoreHistory !== false) restoreMessages(payload.conversation && payload.conversation.messages || []);
-                progress.textContent = publicHelp ? 'Public help · no account or assessment changes' : 'Indicative pricing · no commitment';
+                progress.textContent = publicHelp ? '' : 'Indicative pricing · no commitment';
                 updateProgress(payload.organisation);
                 ready = payload.assistant.runtime.mode !== 'disabled';
                 if (!ready) progress.textContent = unavailable;
@@ -223,7 +223,7 @@
                 ? 'How can I help?'
                 : 'Hi, what would you like to know about No Fries?');
             if (prompts) prompts.hidden = false;
-            progress.textContent = publicHelp ? 'Public help · no account or assessment changes' : 'Indicative pricing · no commitment';
+            progress.textContent = publicHelp ? '' : 'Indicative pricing · no commitment';
             setControlsEnabled(ready);
         }
 
@@ -281,7 +281,7 @@
                     }, current);
                 })());
                 guard();
-                progress.textContent = publicHelp ? 'Public help · no account or assessment changes' : progress.textContent;
+                progress.textContent = publicHelp ? '' : progress.textContent;
             } catch (error) {
                 if (chatOperation !== current) return;
                 // Do not present a partial or unvalidated stream as an answer.

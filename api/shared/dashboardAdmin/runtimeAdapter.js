@@ -59,7 +59,7 @@ function createDashboardAdminRuntime(input) {
         // uninstalled read-only composition refuses every backing-store write,
         // including cleanup during uncertain audit reconciliation.
         session = createDashboardOperatorSession(readOnlyCaptureOptions(config));
-        repository = createPostgresDashboardAdministrationRepository({ pool: config.pool, clock: config.clock,
+        repository = createPostgresDashboardAdministrationRepository({ pool: require('./accountActionsPool').accountActionsPool(config.pool), clock: config.clock,
             instanceId: config.instanceId, historyBudget: config.historyBudget, readExternalRuntimeEpoch: config.readExternalRuntimeEpoch,
             newId: config.newId, captureRequest: request => session.captureRequest(request), authoriseAdministration: nativePolicy,
             beforeQuery() {

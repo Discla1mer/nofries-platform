@@ -258,7 +258,8 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             metadata.questions.forEach((_question, index) => answer(ui, index, index === 0 ? 'not_applicable' : 'unknown', index === 0 ? rationale : undefined));
             button(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 3'));
             ui.controller.destroy(); const finalTransport = composed(first); ui = await resume(finalTransport);
-            button(ui, 'Submit assessment').click(); await until(() => !button(ui, 'Submit assessment'));
+            button(ui, 'Review and submit').click(); button(ui, 'Save and submit assessment').click();
+            await until(() => ui.root.querySelector('.ncsc-sealed'));
             const sealed = (await finalTransport.client.read(assessmentId)).assessment;
             expect(sealed).toMatchObject({ status: 'submitted', revision: 4, scopePopulation: { description: declaration },
                 submission: { revision: 4, evaluation: { countsCompletion: { claimedNotApplicableAtoms: 1, approvedNotApplicableAtoms: 0 } } } });
@@ -437,7 +438,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             expect(second.assessments.map(row => row.assessmentId)).toEqual(['assessment-b']);
             expect(second.nextAfterAssessmentId).toBeNull();
             first.assessments.forEach(row => expect(Object.keys(row).sort()).toEqual([
-                'assessmentId', 'moduleId', 'profileRef', 'status', 'revision', 'revisionSha256', 'createdAt', 'updatedAt', 'progress'
+                'assessmentId', 'moduleId', 'profileRef', 'status', 'revision', 'revisionSha256', 'createdAt', 'updatedAt', 'progress', 'scopePopulation'
             ].sort()));
         });
 

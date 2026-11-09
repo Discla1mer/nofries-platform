@@ -115,6 +115,17 @@
       }
     },
     {
+      "route": "/api/enquiry",
+      "allowedRoles": [
+        "anonymous"
+      ],
+      "headers": {
+        "Cache-Control": "private, no-store, max-age=0",
+        "X-Robots-Tag": "noindex, nofollow",
+        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+      }
+    },
+    {
       "route": "/api/scope/request",
       "allowedRoles": [
         "anonymous"
@@ -1077,6 +1088,26 @@
       "allowedRoles": [
         "anonymous"
       ]
+    },
+    {
+      "route": "/api/dashboard-admin/approve-extension",
+      "methods": ["POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/dashboard-admin/extend-expired-access",
+      "methods": ["POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/dashboard-admin/accounts/lookup",
+      "methods": ["POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/dashboard-admin/accounts/app.js",
+      "methods": ["GET"],
+      "allowedRoles": ["anonymous"]
     },
     {
       "route": "/api/*",

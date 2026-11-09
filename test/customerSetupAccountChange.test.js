@@ -15,6 +15,7 @@ const { createDom } = require('./fixtures/dashboardDom');
 const { buildSignupDocument, buildHostedSignupDocument } = require('../lib/signupDocument');
 const { mountSignupJourney } = require('../api/shared/customerSignup/signupJourney');
 const { resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
+const withRef = value => new RegExp('^' + value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '&ref=NF-[A-Z2-9]{6}$');
 
 const LOGOUT = '/api/external-customer-auth/logout';
 const CHOOSE = '/signup?provider=external&account=choose';
@@ -138,7 +139,7 @@ test('the visible setup form posts through production logout, preserving saved s
     h.exchange.mockClear();
     const replay = await request(h.app).post('/api/external-customer-auth/callback').set('Cookie', tx)
         .set('Accept', 'text/html').type('form').send({ state: new URL(started.headers.location).searchParams.get('state'), code: PRIVATE });
-    expect(replay.status).toBe(303); expect(replay.headers.location).toBe('/login?signin=retry&provider=external');
+    expect(replay.status).toBe(303); expect(replay.headers.location).toMatch(withRef('/login?signin=retry&provider=external'));
     expect(h.exchange).not.toHaveBeenCalled(); expect(preserved(h)).toBe(retained);
     expect(JSON.stringify(warn.mock.calls)).not.toContain(PRIVATE);
 });
@@ -430,8 +431,10 @@ describe('the setup form traverses the Static Web Apps routing boundary', () => 
         expect(config.routes.indexOf(rule)).toBeLessThan(config.routes.findIndex(value => value.route === '/api/*'));
         const reference = matched(configs.source, 'POST', LOGOUT);
         expect(roles(rule)).toEqual(roles(reference)); expect(rule.methods).toEqual(reference.methods);
+        // The built-only 'none' shorthand means exactly noindex,nofollow:
+        // https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag#directives
         const normalizedHeaders = headers => Object.fromEntries(Object.entries(headers).map(([key, value]) =>
-            [key, value.replace(/([,;])\s+/g, '$1')]));
+            [key, key === 'X-Robots-Tag' && value === 'none' ? 'noindex,nofollow' : value.replace(/([,;])\s+/g, '$1')]));
         const expectedHeaders = name === 'built' ? { ...reference.headers, 'Cache-Control': 'no-store' } : reference.headers;
         expect(normalizedHeaders(rule.headers)).toEqual(normalizedHeaders(expectedHeaders));
         for (const method of ['GET', 'HEAD', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']) {

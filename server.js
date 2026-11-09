@@ -55,8 +55,11 @@ const {
     ScopeAccessError
 } = require('./api/shared/scopeAccess');
 const { getServiceScope } = require('./api/shared/serviceScope');
+const { createEnquiryService } = require('./api/shared/enquiry');
+const { errorResult: enquiryErrorResult } = require('./api/enquiry');
 const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
+const { logSafeFailure: logStaffAuthFailure } = require('./api/shared/browserAuthDiagnostics');
 const { createAuthLoginFunction } = require('./api/authLogin');
 const { createAuthCallbackFunction } = require('./api/authCallback');
 const { createAuthLogoutFunction } = require('./api/authLogout');
@@ -71,6 +74,7 @@ const { startStandaloneHost } = require('./lib/hostStartup');
 const { createDashboardRuntimeHandlers } = require('./api/shared/dashboardRuntimeHandlers');
 const { createDashboardAdminService } = require('./api/shared/dashboardAdmin/service');
 const { createSignupListService } = require('./api/shared/dashboardAdmin/signupService');
+const { createProductionAccountLookup } = require('./api/shared/dashboardAdmin/accountLookupStore');
 const { createDashboardAdminHandlers } = require('./api/shared/dashboardAdmin/handlers');
 const { createCustomerSignupRuntime, customerSignupErrorResponse } = require('./api/shared/customerSignup/customerSignupRuntime');
 const { withSignupSupportContext } = require('./api/shared/customerSignup/signupSupportContext');
@@ -112,13 +116,13 @@ function createNoFriesApp(configuration = {}) {
         const invocation = nativeAdminInvocation();
         return Object.freeze({ request: invocation.request, signal: AbortSignal.any([signal, invocation.signal]) });
     };
-    let dashboardAdminSignupListService = null;
+    let dashboardAdminSignupListService = null, dashboardAdminAccountActions = null;
     let dashboard = null, customerSignup = null, externalCustomerSignup = null, authEnvironment = null, retainedTrialRead = null, dashboardAdminService = null, dashboardAdminRequestBudgetMs = 10000;
     try {
         if (!configuration || typeof configuration !== 'object' || isProxy(configuration)) throw new Error();
         const keys = Reflect.ownKeys(configuration);
         fields(configuration, keys);
-        if (keys.some(key => !['dashboard', 'dashboardAdmin', 'dashboardAdminSignupList', 'customerSignup', 'externalCustomerSignup', 'signupBootstrap', 'organisationSetup', 'externalOrganisationSetup', 'starterClients', 'externalStarterClients', 'customerEntry', 'retainedTrialRead', 'tryDemo'].includes(key))) throw new Error();
+        if (keys.some(key => !['dashboard', 'dashboardAdmin', 'dashboardAdminSignupList', 'dashboardAdminAccountActions', 'customerSignup', 'externalCustomerSignup', 'signupBootstrap', 'organisationSetup', 'externalOrganisationSetup', 'starterClients', 'externalStarterClients', 'customerEntry', 'retainedTrialRead', 'tryDemo'].includes(key))) throw new Error();
         if (keys.includes('customerEntry') && configuration.customerEntry !== 'external') throw new Error();
         if (keys.includes('tryDemo') && configuration.tryDemo !== true) throw new Error();
         if (keys.includes('starterClients') && typeof configuration.starterClients !== 'function') throw new Error();
@@ -203,6 +207,11 @@ function createNoFriesApp(configuration = {}) {
             dashboardAdminRequestBudgetMs = dashboardAdminService
                 ? Math.max(dashboardAdminRequestBudgetMs, port.requestBudgetMs) : port.requestBudgetMs;
         }
+        if (keys.includes('dashboardAdminAccountActions') && authEnvironment?.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true') {
+            if (!dashboardAdminService) throw new Error();
+            dashboardAdminAccountActions = require('./api/shared/dashboardAdmin/accountActionsRuntime').createAccountActionsRuntime(
+                configuration.dashboardAdminAccountActions, configuration.dashboard, dashboardAdminService.authorise);
+        }
         if (keys.includes('customerSignup') && configuration.customerSignup !== null) {
             customerSignup = createCustomerSignupRuntime(configuration.customerSignup);
         }
@@ -220,7 +229,9 @@ function createNoFriesApp(configuration = {}) {
     } catch (_) { throw new BrowserAuthError(503, 'browser_auth_dashboard_unavailable'); }
     const apiEnvironment = authEnvironment || process.env;
     const dashboardAdmin = createDashboardAdminHandlers({ service: dashboardAdminService,
+        accountActions: dashboardAdminAccountActions,
         signupListService: dashboardAdminSignupListService,
+        accountLookupReader: createProductionAccountLookup(apiEnvironment),
         readOperatorSession: dashboard ? cookie => dashboard.authServices.session.readSessionDetails(cookie) : null,
         env: apiEnvironment, requestBudgetMs: dashboardAdminRequestBudgetMs });
 
@@ -314,6 +325,14 @@ function sendSignupPage(res, selected) {
 
 app.set('trust proxy', 1);
 app.set('case sensitive routing', true);
+// Observe failures before auth handlers too (body parsing, abuse controls, host errors).
+app.use(['/api/auth/login', '/api/auth/callback', '/api/auth/session'], (req, res, next) => {
+    const context = res.locals.staffAuthDiagnostics = { log: console };
+    res.once('finish', () => {
+        if (res.statusCode >= 400) logStaffAuthFailure(context, new BrowserAuthError(res.statusCode, 'browser_auth_http_failure'));
+    });
+    next();
+});
 app.use(applySecurityHeaders);
 app.use(blockSuspiciousUserAgents);
 app.use(['/scope.html', '/support', '/support/', '/portal', '/portal/', '/operator', '/operator/', '/dashboard', '/dashboard/', '/dashboard-admin', '/dashboard-admin/'], applyPrivateDocumentHeaders);
@@ -431,7 +450,7 @@ async function sendDashboardAdmin(req, res, route) {
     if (req.aborted || res.destroyed) abort();
     try {
         const result = await dashboardAdminRequests.run(Object.freeze({ request: req, signal: controller.signal }),
-            () => dashboardAdmin.handle(req, route));
+            () => dashboardAdmin.handle(req, route, controller.signal));
         if (!controller.signal.aborted && !res.destroyed && !res.writableEnded) {
             const customerCookie = /(?:^|;)\s*__Host-nofries-(?:external-customer|customer|retained-read)=/.test(String(req.headers.cookie || ''));
             if (['document', 'entry'].includes(route) && result.status === 401 && !customerCookie) {
@@ -457,7 +476,7 @@ async function sendDashboardAdmin(req, res, route) {
         await sendDashboardAdmin(req, res, 'entry');
     }));
     app.use('/api/dashboard-admin', asyncRoute(async (req, res) => {
-    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|entry\.js|entry-capabilities)$/.test(req.path) ||
+    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|extend-expired-access|approve-extension|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
         dashboardAdminSignupListService && req.path === '/signups' ? req.path.slice(1) : null;
     await sendDashboardAdmin(req, res, route);
 }));
@@ -638,6 +657,31 @@ app.post('/api/scope/request', asyncRoute(async (req, res) => {
         res.status(200).json(result);
     } catch (error) {
         sendScopeError(res, error);
+    }
+}));
+
+const enquiryService = createEnquiryService();
+app.get('/api/enquiry', (_req, res) => {
+    res.set('Cache-Control', 'no-store').json(enquiryService.availability());
+});
+app.post('/api/enquiry', asyncRoute(async (req, res) => {
+    if (requestBodySize(req) > 16 * 1024) {
+        return res.status(413).json({ error: 'Request body is too large', code: 'request_too_large' });
+    }
+    try {
+        assertSameOriginForMutation(req);
+    } catch (error) {
+        return sendResult(res, enquiryErrorResult(error));
+    }
+    const limit = checkRateLimit('apiEnquiry', getClientKeyFromHeaders(req.headers, req.ip || req.socket.remoteAddress), apiEnvironment);
+    Object.entries(rateLimitHeaders(limit)).forEach(([name, value]) => value && res.setHeader(name, value));
+    if (!limit.allowed) {
+        return res.status(429).json({ error: 'Too many enquiries have been sent. Please wait and try again.' });
+    }
+    try {
+        res.status(200).json(await enquiryService.submitEnquiry(req.body || {}));
+    } catch (error) {
+        sendResult(res, enquiryErrorResult(error, { log: console }));
     }
 }));
 
@@ -1012,7 +1056,7 @@ function sendResult(res, result) {
 }
 
 async function sendFunctionResponse(handler, req, res) {
-    const context = { log: console };
+    const context = res.locals.staffAuthDiagnostics || { log: console };
     await handler(context, req);
     const result = context.res;
     if (!result || !Number.isInteger(result.status)) {

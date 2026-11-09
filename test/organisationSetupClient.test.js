@@ -15,8 +15,13 @@ function fixture({ external = false, search = '', hash = '' } = {}) {
     const lifecycle = (name, event = { persisted: true }) => {
         for (const fn of pageEvents[name] || []) fn(event);
     };
+    const historyStates = [null]; let historyIndex = 0;
+    window.history.replaceState = state => { historyStates[historyIndex] = state; };
+    window.history.pushState = state => { historyStates.splice(historyIndex + 1); historyStates.push(state); historyIndex++; };
+    window.history.back = () => { if (historyIndex > 0) lifecycle('popstate', { state: historyStates[--historyIndex] }); };
+    window.history.forward = () => { if (historyIndex < historyStates.length - 1) lifecycle('popstate', { state: historyStates[++historyIndex] }); };
     const representativeNames = ['representative-name', 'representative-role', 'representative-address', 'representative-registration', 'representative-authority'];
-    const names = ['form', 'code-form', 'profile-form', 'details-form', 'verified', 'verified-title', 'status', 'email-hint', 'verified-name', 'name', 'email', 'code', 'restart', 'refresh', 'continue', 'choice', 'company', 'consultant', 'back', 'title', 'intro', 'name-label', 'switch', 'leave', 'returning', ...representativeNames];
+    const names = ['form', 'code-form', 'profile-form', 'details-form', 'verified', 'verified-title', 'status', 'email-hint', 'verified-name', 'name', 'email', 'code', 'restart', 'refresh', 'continue', 'choice', 'company', 'consultant', 'back', 'title', 'intro', 'name-label', 'switch', 'leave', 'returning', 'returning-sign-in', 'errors', 'verify', 'details-summary', 'name-count', 'step-email', 'step-account', 'step-continue', ...representativeNames, ...['email', 'name', 'code', ...representativeNames].map(name => name + '-error')];
     const nodes = Object.fromEntries(names.map(name => [name, document.createElement(name.includes('form') ? 'form' : ['name','email','code', ...representativeNames].includes(name) ? 'input' : 'div')]));
     document.getElementById = id => nodes[id.replace('organisation-', '')];
     document.querySelectorAll = () => [nodes.name, nodes.email, nodes.code, nodes.restart, nodes.refresh, nodes.company, nodes.consultant, nodes.back, nodes.leave, ...representativeNames.map(name => nodes[name])];
@@ -50,7 +55,7 @@ function fixture({ external = false, search = '', hash = '' } = {}) {
         for (const name of representativeNames) nodes[name].value = name === 'representative-registration' ? '' : 'Synthetic detail';
         nodes['representative-authority'].checked = true;
     };
-    const submit = name => { if (name === 'form' && !nodes.choice.hidden) choose(); for (const fn of nodes[name].events.submit) fn({ preventDefault() {} }); };
+    const submit = (name, { autofill = true } = {}) => { if (autofill && name === 'form' && !nodes.email.value) nodes.email.value = 'owner@acme.example'; if (autofill && name === 'code-form' && !nodes.code.value) nodes.code.value = '12345678'; if (name === 'form' && !nodes.choice.hidden) choose(); for (const fn of nodes[name].events.submit) fn({ preventDefault() {} }); };
     return { nodes, document, window, requests, reply, submit, lifecycle, choose, fillDetails };
 }
 beforeEach(() => jest.useFakeTimers());
@@ -292,14 +297,14 @@ test('uncertain invitation status retains email verification and stops offering 
     expect(h.nodes.continue.hidden).toBe(true);
     expect(h.requests).toHaveLength(1);
 });
-test('verification advances only on server responses and restores usable code focus', async () => {
+test('verification advances only on server responses and focuses each new step heading', async () => {
     const h = fixture(); await h.reply(0, 200, { state: 'start' });
     h.nodes.name.value = 'Example Organisation'; h.nodes.email.value = 'owner@acme.example';
     h.submit('form'); expect(h.nodes.form.getAttribute('aria-busy')).toBe('true');
     expect(JSON.parse(h.requests[1].options.body)).toEqual({ email: 'owner@acme.example' });
     expect(h.requests[1].url).not.toContain('owner'); expect(h.requests[1].options.redirect).toBe('error');
     await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example', delivery: 'confirmed' });
-    expect(h.nodes['code-form'].hidden).toBe(false); expect(h.document.activeElement).toBe(h.nodes.code);
+    expect(h.nodes['code-form'].hidden).toBe(false); expect(h.document.activeElement).toBe(h.nodes.title);
     h.submit('code-form'); await h.reply(2, 400, { code: 'verification_code_invalid' });
     expect(h.nodes.verified.hidden).toBe(true); expect(h.nodes.status.textContent).toContain('not correct');
     h.submit('code-form'); await h.reply(3, 200, { state: 'verified', organisationName: 'Example Organisation', accessGranted: false });
@@ -470,7 +475,7 @@ test.each(['details_required', 'pending_activation', 'check_invitation', 'setup_
         expect(h.nodes['representative-authority'].checked).toBe(false);
         expect(h.nodes['verified-name'].textContent).toBe('');
         expect(h.nodes.status.textContent).toContain('saved account are kept');
-        expect(h.document.activeElement).toBe(h.nodes.email);
+        expect(h.document.activeElement).toBe(h.nodes.title);
         h.nodes.refresh.click(); await h.reply(2, 200, { state: 'start' });
         expect(h.nodes.choice.hidden).toBe(true);
         h.choose('consultant'); h.nodes.name.value = 'New consultancy'; h.nodes.email.value = 'new@example.test';
@@ -765,4 +770,144 @@ test.each([
     expect(h.nodes.verified.hidden).toBe(true);
     expect(h.nodes.status.textContent).toContain('could not confirm');
     h.lifecycle('pagehide');
+});
+
+test('create intent has one primary action and follows the chosen account step with heading focus', async () => {
+    const h = fixture({ search: '?provider=legacy&intent=create' });
+    await h.reply(0, 200, { state: 'start' }, false, { 'x-nofries-customer-sign-in': 'available' });
+    expect(h.nodes['returning-sign-in'].className).toBe('text-link');
+    expect(h.nodes.title.textContent).toBe('Create your account');
+    expect(h.nodes['step-email'].getAttribute('aria-current')).toBe('step');
+    h.nodes.email.value = 'full.address@example.test'; h.submit('form');
+    await h.reply(1, 202, { state: 'awaiting_code', accountType: null, emailHint: 'f***@example.test' });
+    expect(h.nodes['email-hint'].textContent).toContain('full.address@example.test');
+    expect(h.nodes.intro.textContent).toContain('8 digits');
+    h.submit('code-form');
+    await h.reply(2, 200, { state: 'verified', accountType: null, organisationName: null, accessGranted: false, nextStep: 'choose_account' });
+    expect(h.document.activeElement).toBe(h.nodes.title);
+    expect(h.nodes.returning.hidden).toBe(true);
+    expect(h.nodes['step-account'].getAttribute('aria-current')).toBe('step');
+    const repeat = { key: 'Enter', repeat: true, preventDefault: jest.fn() };
+    h.lifecycle('keydown', repeat); expect(repeat.preventDefault).toHaveBeenCalled();
+    expect(h.nodes.choice.hidden).toBe(false);
+    h.choose('consultant');
+    expect(h.nodes.title.textContent).toBe('Name your consultancy');
+    expect(h.nodes.intro.textContent).toContain('Consultant');
+    expect(h.document.activeElement).toBe(h.nodes.title);
+    h.nodes.back.click();
+    expect(h.nodes.title.textContent).toBe('How will you use No Fries?');
+    expect(h.document.activeElement).toBe(h.nodes.title);
+});
+
+test.each(['6004 7146', ' 6004-7146 '])('code %j is normalized before validation without cutting off digits', async code => {
+    const h = fixture();
+    await h.reply(0, 200, { state: 'awaiting_code', accountType: null, emailHint: 't***@example.test' });
+    h.nodes.code.value = code; h.submit('code-form', { autofill: false });
+    expect(JSON.parse(h.requests[1].options.body)).toEqual({ code: '60047146' });
+    h.lifecycle('pagehide');
+});
+
+test('a long or incomplete code gets a linked inline error which clears on correction', async () => {
+    const h = fixture();
+    await h.reply(0, 200, { state: 'awaiting_code', accountType: null, emailHint: 't***@example.test' });
+    h.nodes.code.value = '1234 56789'; h.submit('code-form', { autofill: false });
+    expect(h.requests).toHaveLength(1);
+    expect(h.nodes.code.value).toBe('123456789');
+    expect(h.nodes.code.getAttribute('aria-invalid')).toBe('true');
+    expect(h.nodes.code.getAttribute('aria-describedby')).toContain('organisation-code-error');
+    expect(h.nodes['code-error'].textContent).toBe('Enter the 8 digits from the email.');
+    expect(h.document.activeElement).toBe(h.nodes.code);
+    expect(h.nodes.errors.querySelector('a').href).toBe('#organisation-code');
+    h.nodes.code.value = '1234 5678';
+    for (const fn of h.nodes.code.events.input) fn();
+    expect(h.nodes.code.value).toBe('12345678');
+    expect(h.nodes.code.getAttribute('aria-invalid')).toBeNull();
+    expect(h.nodes['code-error'].hidden).toBe(true); expect(h.nodes.errors.hidden).toBe(true);
+});
+
+test('resend is explicit and a locked code stays disabled until a new request succeeds', async () => {
+    const h = fixture(); await h.reply(0, 200, { state: 'start' });
+    h.nodes.email.value = 'full@example.test'; h.submit('form');
+    await h.reply(1, 202, { state: 'awaiting_code', accountType: null, emailHint: 'f***@example.test' });
+    h.submit('code-form'); await h.reply(2, 429, { code: 'verification_attempts_exhausted' });
+    expect(h.nodes.code.disabled).toBe(true); expect(h.nodes.verify.disabled).toBe(true);
+    h.submit('code-form'); expect(h.requests).toHaveLength(3);
+    h.nodes.restart.click(); h.nodes.restart.click();
+    expect(h.requests).toHaveLength(4);
+    expect(h.requests[3].url).toBe('/api/organisation-setup/request');
+    expect(JSON.parse(h.requests[3].options.body)).toEqual({ email: 'full@example.test' });
+    await h.reply(3, 202, { state: 'awaiting_code', requestId: '20000000-0000-4000-8000-000000000002', accountType: null, emailHint: 'f***@example.test' });
+    expect(h.nodes.code.disabled).toBe(false);
+    expect(h.nodes['email-hint'].textContent).toContain('full@example.test');
+});
+
+test('a full email from one request is not displayed or resent for a different server request', async () => {
+    const h = fixture(); await h.reply(0, 200, { state: 'start' });
+    h.nodes.email.value = 'old@example.test'; h.submit('form');
+    await h.reply(1, 202, { state: 'awaiting_code', accountType: null, emailHint: 'o***@example.test' });
+    h.nodes.refresh.click();
+    await h.reply(2, 200, { state: 'awaiting_code', requestId: '20000000-0000-4000-8000-000000000002', accountType: null, emailHint: 'n***@example.test' });
+    expect(h.nodes['email-hint'].textContent).toContain('n***@example.test');
+    expect(h.nodes['email-hint'].textContent).not.toContain('old@example.test');
+    h.nodes.restart.click(); expect(h.requests).toHaveLength(3);
+    expect(h.nodes.form.hidden).toBe(false); expect(h.nodes.email.value).toBe('');
+    expect(h.nodes.intro.textContent).toContain('send a new code');
+});
+
+test('required details and the optional NZBN validate independently and clear after correction', async () => {
+    const h = fixture();
+    await h.reply(0, 200, { state: 'verified', accountType: 'company', organisationName: 'Example Organisation', accessGranted: false, nextStep: 'details_required' });
+    h.fillDetails(); h.nodes['representative-name'].value = '   '; h.nodes['representative-registration'].value = 'abc123';
+    h.nodes['representative-authority'].checked = false; h.submit('details-form');
+    expect(h.requests).toHaveLength(1);
+    expect(h.document.activeElement).toBe(h.nodes['representative-name']);
+    expect(h.nodes['representative-name'].getAttribute('aria-invalid')).toBe('true');
+    expect(h.nodes['representative-registration-error'].textContent).toContain('13 digits');
+    expect(h.nodes['representative-authority-error'].textContent).toContain('authorised');
+    h.nodes['representative-name'].value = 'Test Person'; h.nodes['representative-registration'].value = '9429000000000'; h.nodes['representative-authority'].checked = true;
+    for (const id of ['representative-name', 'representative-registration', 'representative-authority']) {
+        for (const fn of h.nodes[id].events.input) fn();
+        expect(h.nodes[id].getAttribute('aria-invalid')).toBeNull();
+    }
+    expect(h.nodes.errors.hidden).toBe(true);
+    h.submit('details-form');
+    await h.reply(1, 200, { state: 'verified', accountType: 'company', organisationName: 'Example Organisation', accessGranted: false, nextStep: 'secure_sign_in' });
+    expect(h.document.activeElement).toBe(h.nodes.title);
+    expect(h.nodes.title.textContent).toBe('Continue secure sign-in');
+});
+
+test('organisation names are counted and rejected without silent truncation', async () => {
+    const h = fixture();
+    await h.reply(0, 200, { state: 'verified', accountType: null, organisationName: null, accessGranted: false, nextStep: 'choose_account' });
+    h.choose(); h.nodes.name.value = 'a'.repeat(130);
+    for (const fn of h.nodes.name.events.input) fn();
+    expect(h.nodes['name-count'].textContent).toBe('130 of 120 characters');
+    h.submit('profile-form'); expect(h.requests).toHaveLength(1);
+    expect(h.nodes.name.value).toHaveLength(130);
+    expect(h.nodes['name-error'].textContent).toContain('120 characters or fewer');
+    const html = fs.readFileSync(path.join(__dirname, '../login.html'), 'utf8');
+    expect(html.match(/<input id="organisation-name"[^>]*>/)[0]).not.toContain('maxlength');
+    expect(html.match(/<input id="organisation-code"[^>]*>/)[0]).not.toContain('maxlength');
+});
+
+test('browser Back and Forward retain the unsaved account choice without storing personal details in history', async () => {
+    const h = fixture();
+    await h.reply(0, 200, { state: 'verified', accountType: null, organisationName: null, accessGranted: false, nextStep: 'choose_account' });
+    h.choose('consultant'); h.nodes.name.value = 'Private company draft';
+    h.window.history.back(); expect(h.nodes.choice.hidden).toBe(false);
+    expect(h.document.activeElement).toBe(h.nodes.title);
+    h.window.history.forward(); expect(h.nodes['profile-form'].hidden).toBe(false);
+    expect(h.nodes.title.textContent).toBe('Name your consultancy');
+    expect(h.nodes.name.value).toBe('Private company draft');
+    expect(h.requests).toHaveLength(1);
+});
+
+test('navigation warnings apply to unsaved details and stop once account setup is saved', async () => {
+    const h = fixture();
+    await h.reply(0, 200, { state: 'verified', accountType: 'company', organisationName: 'Example', accessGranted: false, nextStep: 'details_required' });
+    const blank = { preventDefault: jest.fn() }; h.lifecycle('beforeunload', blank); expect(blank.preventDefault).not.toHaveBeenCalled();
+    h.fillDetails(); const dirty = { preventDefault: jest.fn() }; h.lifecycle('beforeunload', dirty); expect(dirty.preventDefault).toHaveBeenCalled();
+    h.submit('details-form');
+    await h.reply(1, 200, { state: 'verified', accountType: 'company', organisationName: 'Example', accessGranted: false, nextStep: 'secure_sign_in' });
+    const saved = { preventDefault: jest.fn() }; h.lifecycle('beforeunload', saved); expect(saved.preventDefault).not.toHaveBeenCalled();
 });

@@ -1,0 +1,9 @@
+# PRIVATE HOST TEMPLATE ONLY. Nothing is installed or enabled by this repository.
+# Copy into the nominated operator's private crontab after Joel chooses a channel.
+# Requires Node >=22.22.0 and util-linux flock. Keep the crontab private.
+NOFRIES_MONITOR_ENABLED=false
+# Set NOFRIES_MONITOR_ALERT_WEBHOOK only in the PRIVATE crontab/secret-injection system.
+# Never commit a real destination, use GitHub secrets, or paste it into #686.
+# Create /var/lib/nofries-monitor and /var/log/nofries-monitor for this operator.
+# Uncomment the job ONLY after destination testing and set enabled=true locally:
+# 7,22,37,52 * * * * /usr/bin/flock -n /var/lib/nofries-monitor/run.lock /usr/bin/node /opt/nofries-monitor/scripts/production-health-monitor.js --monitor >> /var/log/nofries-monitor/health.log 2>&1

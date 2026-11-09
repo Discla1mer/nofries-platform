@@ -14,18 +14,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  application:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+  unit:
+    # The Jest suite is split into parallel shards; each shard still runs its
+    # files serially (--runInBand), exactly as the previous single job did.
+    name: unit (${{ matrix.shard }}/4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
+      - run: npm ci --ignore-scripts --omit=optional --audit=false
+      - name: Run Jest shard
+        run: npx jest --runInBand --shard=${{ matrix.shard }}/4
+
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       PROMPTFOO_DISABLE_TELEMETRY: '1'
       PROMPTFOO_DISABLE_UPDATE: '1'
       PROMPTFOO_DISABLE_SHARE_EMAIL_REQUEST: '1'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.22.0
       - name: Verify pinned local dependencies
@@ -35,7 +56,10 @@ jobs:
           node scripts/verify-adm-zip-memory-only.js
           node vendor/node-forge-rsa-validated/build-package.js --check
       - run: npm ci --ignore-scripts --omit=optional --audit=false
-      - run: npm run verify
+      # Everything `npm run verify` runs after the Jest suite.
+      - run: npm run eval:prospect
+      - run: npm run build
+      - run: npm run check:syntax
       - run: npm run eval:prospect:promptfoo
         env:
           PROMPTFOO_CONFIG_DIR: ${{ runner.temp }}/promptfoo
@@ -45,8 +69,24 @@ jobs:
           cd app-service-dist
           npm ci --ignore-scripts --omit=dev --omit=optional --dry-run --offline --audit=false
 
+  application:
+    # Required check. Passes only if every unit shard and the build job succeeded;
+    # a skipped, cancelled or failed dependency fails this gate.
+    if: always()
+    needs: [unit, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require all application jobs to succeed
+        env:
+          UNIT: ${{ needs.unit.result }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          echo "unit=$UNIT build=$BUILD"
+          test "$UNIT" = success && test "$BUILD" = success
+
   postgres:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
       postgres:
@@ -60,10 +100,10 @@ jobs:
           --health-cmd "pg_isready --username=nofries_ci_owner --dbname=nofries_ci"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.22.0
       - run: npm ci --ignore-scripts --omit=optional --audit=false
@@ -75,15 +115,24 @@ jobs:
           npm run db:migrate
           npm run db:migrate
           npm run test:postgres
+      - name: Verify opt-in authenticated journey and failure cleanup
+        env:
+          NOFRIES_DATABASE_URL: postgresql://nofries_ci_owner:nofries-ci-only-password@127.0.0.1:5432/nofries_ci
+          NOFRIES_JOURNEY_DATABASE_URL: postgresql://nofries_ci_owner:nofries-ci-only-password@127.0.0.1:5432/nofries_journey
+          NOFRIES_JOURNEY_DISPOSABLE_CLUSTER: 'true'
+        run: |
+          node --test scripts/tests/authenticated-customer-journey.cjs
+          node -e 'const {Client}=require("pg"); (async()=>{const c=new Client({connectionString:process.env.NOFRIES_DATABASE_URL}); await c.connect(); try {await c.query("CREATE DATABASE nofries_journey");} finally {await c.end();}})().catch(()=>{console.error("Journey control database setup failed");process.exitCode=1;});'
+          node --test scripts/tests/authenticated-customer-journey-native.cjs
 
   dependencies:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.22.0
       - name: Audit both governed closures with the unchanged exact temporary disposition

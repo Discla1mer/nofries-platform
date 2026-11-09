@@ -1,4 +1,6 @@
 const ASSESSMENT_VERSION = '2026.08.1';
+const expandedDiscoveryEnabled = () => process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED === 'true';
+const activeQuestions = () => questions.filter(item => expandedDiscoveryEnabled() || !item.expandedDiscovery);
 
 const sections = [
     { id: 'business', title: 'What needs to improve', minutes: 4 },
@@ -72,6 +74,21 @@ const questions = [
     ]),
     question('applications.critical', 'estate', 'Which business applications are most important for us to understand?', 'text'),
 
+    servicePresence('voice.present', 'Does the business use a phone or calling service that needs review?'),
+    serviceDetail('voice.inventory', 'voice.present', 'List the calling platform and supplier, sites, approximate users and numbers, important call routes or queues, and any fax, alarm or lift lines. Identify internet, power and any emergency-calling or location requirements that need supplier confirmation.'),
+    serviceDetail('voice.ownership', 'voice.present', 'Who owns the phone account and numbers, authorises changes or number transfers, and provides support? Record support entitlement, escalation and call-recording or retention responsibility, and what No Fries would coordinate versus manage.'),
+    serviceDetail('voice.continuity', 'voice.present', 'What happens if calling or the internet fails? Record business impact, agreed fallback, test evidence, change windows and any proposed number-transfer date. Leave unverified arrangements as needing confirmation.'),
+
+    servicePresence('servers.present', 'Are servers, virtual machines or network storage used for business work?'),
+    serviceDetail('servers.inventory', 'servers.present', 'List physical hosts, virtual machines and storage separately from staff computers: quantities, roles, operating-system versions, hosting location, support status and dependencies such as identity, network and business applications.'),
+    serviceDetail('servers.support', 'servers.present', 'Who owns and supports each server workload, hardware and hosting account? Record supplier support entitlement, an authorised access process, current monitoring and protection, patch/restart windows and who approves disruption. Do not enter credentials.'),
+    serviceDetail('servers.recovery', 'servers.present', 'Which server data and applications are protected, by which backup service and owner? Record retention, acceptable data loss and downtime, restore order, dependencies, and the date and outcome of the last restore test. Mark missing evidence as unverified.'),
+
+    servicePresence('web.present', 'Does the business rely on websites, domains or other hosted web services?'),
+    serviceDetail('web.inventory', 'web.present', 'List business domains and websites, their registrar, DNS, hosting and application suppliers, and important dependencies such as email, forms or payments. Describe business impact without entering customer records or payment details.'),
+    serviceDetail('web.ownership', 'web.present', 'Who is the registered owner and authorised administrator for the domain, DNS, hosting, certificates and website? Record who renews, changes, maintains and supports each part, and the approved access process. Do not enter passwords, keys or transfer codes.'),
+    serviceDetail('web.recovery', 'web.present', 'What website and DNS changes, updates, backups and restores are covered by the current suppliers? Record alert escalation, restore-test evidence, fallback, acceptable downtime and change windows. Which journeys need testing, such as enquiry, login, booking or checkout? Separate content or development work from support.'),
+
     question('support.model', 'support', 'How is IT support provided today?', 'single', [
         option('managed_provider', 'External managed IT provider'),
         option('internal', 'Internal IT person or team'),
@@ -141,6 +158,9 @@ const questions = [
         option('no', 'No'),
         option('unknown', 'Not yet confirmed')
     ]),
+    confirmedFact('operations.authority', 'operations', 'Who is the customer decision-maker, technical contact and after-hours escalation role? Record who can approve access, disruption, supplier work and spending, and which responsibilities stay with the customer or another supplier.'),
+    confirmedFact('operations.deployment', 'operations', 'What must be confirmed before management tools are installed? Record device ownership and operating-system versions, installer authority, existing agents, correct customer/site allocation, high-level internet or proxy restrictions, rollout group, change window and rollback contact. Which systems must not be scanned, installed on, restarted or isolated? Collect no credentials, installer secrets or raw security settings; validate provider requirements separately.'),
+    confirmedFact('operations.costs', 'operations', 'For each phone, server, backup and web supplier, record the current recurring charge and currency, billing owner, renewal/expiry dates, notice periods, usage or storage charges, and any transition or one-off fees. Mark unknown amounts and separately quoted work; this review does not approve spending or include these services in the standard price.'),
 
     question('priorities.timeframe', 'priorities', 'When would the customer like the managed service in place?', 'single', [
         option('now', 'Within 90 days'),
@@ -185,22 +205,46 @@ function option(value, label) {
     return { value, label };
 }
 
+function servicePresence(id, prompt) {
+    return Object.assign(question(id, 'estate', `${prompt} Discovery records service facts and evidence references only, not passwords, access codes or customer records.`, 'single', [
+        option('yes', 'Yes, confirm the scope'),
+        option('no', 'No, not used'),
+        option('unknown', 'Not yet confirmed')
+    ]), { expandedDiscovery: true });
+}
+
+function serviceDetail(id, presenceId, prompt) {
+    return confirmedFact(id, 'estate', prompt, condition(presenceId, 'in', ['yes', 'unknown']));
+}
+
+function confirmedFact(id, section, prompt, showWhen = null) {
+    return Object.assign(question(id, section, prompt, 'text', [], showWhen), { requiresConfirmation: true, expandedDiscovery: true });
+}
+
 function condition(questionId, operator, values) {
     return { questionId, operator, values };
 }
 
 function getAssessmentBlueprint() {
+    const expandedDiscovery = expandedDiscoveryEnabled();
+    const selectedSections = sections.map(section => ({ ...section, minutes: expandedDiscovery && section.id === 'estate' ? 17 :
+        expandedDiscovery && section.id === 'operations' ? 6 : section.minutes }));
     return {
-        version: ASSESSMENT_VERSION,
+        version: expandedDiscovery ? '2026.11.1' : ASSESSMENT_VERSION,
+        expandedDiscovery,
         title: 'Managed IT customer review',
-        estimatedMinutes: sections.reduce((total, section) => total + section.minutes, 0),
-        sections: sections.map((section) => Object.assign({}, section)),
-        questions: questions.map((item) => JSON.parse(JSON.stringify(item)))
+        estimatedMinutes: selectedSections.reduce((total, section) => total + section.minutes, 0),
+        sections: selectedSections,
+        questions: activeQuestions().map((item) => JSON.parse(JSON.stringify(item)))
     };
 }
 
 function getQuestionMap() {
-    return new Map(questions.map((item) => [item.id, item]));
+    return new Map(activeQuestions().map((item) => [item.id, item]));
+}
+
+function isExpandedDiscoveryQuestion(id) {
+    return questions.some(item => item.id === id && item.expandedDiscovery);
 }
 
 function isQuestionVisible(questionItem, answers) {
@@ -228,5 +272,6 @@ module.exports = {
     answerLabel,
     getAssessmentBlueprint,
     getQuestionMap,
+    isExpandedDiscoveryQuestion,
     isQuestionVisible
 };

@@ -1,3 +1,8 @@
+jest.mock('../api/shared/enquiryRateLimit', () => {
+    const reserve = jest.fn(async () => ({ allowed: true }));
+    return { createEnquiryRateLimiter: () => ({ reserve }), reserveForTests: reserve };
+});
+
 const request = require('supertest');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -292,6 +297,8 @@ describe('dormant dashboard document', () => {
 });
 
 describe('No Fries MSP discovery-to-onboarding workspace', () => {
+    beforeAll(() => { process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED = 'true'; });
+    afterAll(() => { delete process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED; });
     afterAll(() => {
         fs.rmSync(process.env.NOFRIES_DATA_DIR, { recursive: true, force: true });
     });
@@ -354,13 +361,13 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         }
         expect(response.text).toContain('<p class="eyebrow">Optional support</p>');
         expect(response.text).toContain('id="other-services-title">Need a hand with the day-to-day?</h2>');
-        expect(response.text).toContain('Public help only. No access to your organisation, forms or assessments. Keep private information out.');
+        expect(response.text).toContain('Public help only. No access to your organisation, forms or assessments, and no account or assessment changes. Keep private information out.');
         expect(response.text).not.toContain('Tell us about your people, devices and current set-up.');
         expect(response.text).not.toContain('one useful question at a time');
         expect(response.text).not.toContain('Plan your Lean Managed IT service.');
         expect(response.text).toContain('Protection and backup are selected separately.');
         expect(response.text).not.toContain('id="managed-it-per-user-price"');
-        expect(response.text).toContain('<title>No Fries Dashboard | Clearer IT. Confident next steps.</title>');
+        expect(response.text).toContain('<title>No Fries | Dashboard. Managed IT.</title>');
         expect(response.text).not.toContain('Automatic updates and connected data feeds are planned');
         expect(response.text).toContain('data-assistant-help-only="true"');
         expect(response.text).not.toContain('NZ$119 + GST');
@@ -466,6 +473,72 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(operatorShell.text).toContain('>Service desk</a>');
         expect(operatorShell.text).toContain('/js/operator-loader.js');
         expect(operatorShell.text).not.toContain('/api/lifecycle/app.js');
+    });
+
+    test('enquiry availability is a non-cacheable public read with no configuration disclosure', async () => {
+        const key = process.env.RESEND_API_KEY;
+        try {
+            delete process.env.RESEND_API_KEY;
+            const response = await request(app).get('/api/enquiry');
+            expect(response.status).toBe(200);
+            expect(response.headers['cache-control']).toContain('no-store');
+            expect(response.body).toEqual({ available: false, promote: false });
+        } finally {
+            if (key === undefined) delete process.env.RESEND_API_KEY;
+            else process.env.RESEND_API_KEY = key;
+        }
+    });
+
+    test('public contact page posts enquiries to the owner by email', async () => {
+        const page = await request(app).get('/contact.html');
+        expect(page.status).toBe(200);
+        expect(page.text).toContain('/js/contact.js');
+        expect(page.text).toContain('name="website"');
+        expect((await request(app).get('/js/contact.js')).status).toBe(200);
+
+        const previousFetch = global.fetch;
+        const sent = [];
+        global.fetch = jest.fn(async (url, options) => {
+            sent.push({ url, body: JSON.parse(options.body) });
+            return { ok: true, status: 200 };
+        });
+        try {
+            const response = await request(app)
+                .post('/api/enquiry')
+                .set('x-forwarded-for', '192.0.2.81')
+                .send({ name: 'Aroha Smith', email: 'aroha@example.co.nz', message: 'Please call about an assessment.', website: '' });
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual({ received: true });
+            expect(response.headers['cache-control']).toContain('no-store');
+            expect(sent).toHaveLength(1);
+            expect(sent[0].body).toMatchObject({ to: ['hello@nofries.nz'], reply_to: 'aroha@example.co.nz' });
+
+            const crossSite = await request(app)
+                .post('/api/enquiry')
+                .set('sec-fetch-site', 'cross-site')
+                .send({ name: 'X', email: 'x@example.com', message: 'Cross-site attempt here.' });
+            expect(crossSite.status).toBe(403);
+            expect(sent).toHaveLength(1);
+        } finally {
+            global.fetch = previousFetch;
+        }
+    });
+
+    test.each([429, 503])('App Service refuses email with shared-limit HTTP %s', async status => {
+        const reserve = require('../api/shared/enquiryRateLimit').reserveForTests;
+        if (status === 429) reserve.mockResolvedValueOnce({ allowed: false, retryAfter: 3606 });
+        else reserve.mockRejectedValueOnce(new Error('private@example.invalid'));
+        const fetchSpy = jest.spyOn(global, 'fetch');
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const response = await request(app).post('/api/enquiry').set('x-forwarded-for', '192.0.2.82')
+                .send({ name: 'Private', email: 'private@example.invalid', message: 'Synthetic message text' });
+            expect(response.status).toBe(status);
+            expect(response.body.error).toContain('was not sent');
+            expect(fetchSpy).not.toHaveBeenCalled();
+            expect(JSON.stringify(warn.mock.calls)).not.toContain('private@example.invalid');
+            if (status === 429) expect(response.headers['retry-after']).toBe('3606');
+        } finally { fetchSpy.mockRestore(); warn.mockRestore(); }
     });
 
     test('email verification unlocks the server-side standard scope once', async () => {
@@ -1066,11 +1139,11 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         }
     });
 
-    test('blueprint contains the compact six-section MSP onboarding scope', () => {
+    test('blueprint contains six sections with conditional complex-service discovery', () => {
         const blueprint = getAssessmentBlueprint();
-        expect(blueprint.estimatedMinutes).toBe(25);
+        expect(blueprint.estimatedMinutes).toBe(40);
         expect(blueprint.sections).toHaveLength(6);
-        expect(blueprint.questions).toHaveLength(22);
+        expect(blueprint.questions).toHaveLength(37);
         expect(blueprint.questions.find((item) => item.id === 'productivity.platform').options.map((item) => item.value)).toContain('microsoft_365');
         expect(blueprint.questions.find((item) => item.id === 'support.frustrations').type).toBe('multi');
         expect(blueprint.questions.find((item) => item.id === 'operations.incumbent_handover')).toBeDefined();
@@ -1322,11 +1395,41 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             .send({
                 expectedRevision: assessmentResponse.body.revision,
                 status: 'completed',
-                answers: answerSet()
+                answers: Object.assign(answerSet(), {
+                    'voice.present': answer('yes'),
+                    'voice.inventory': Object.assign(answer('Fictional calling supplier; 20 users'), { evidence: 'Supplier schedule, reviewed by customer', confidence: 'high', verification: 'confirmed' }),
+                    'servers.present': answer('unknown'),
+                    'servers.recovery': answer('Customer to confirm restore owner and test evidence'),
+                    'web.present': answer('yes'),
+                    'web.ownership': answer('Customer owns domain; fictional web supplier manages DNS'),
+                    'operations.costs': answer('Supplier charges and renewal dates unconfirmed')
+                })
             });
         expect(saved.status).toBe(200);
         expect(saved.body.assessment.status).toBe('completed');
         expect(saved.body.assessment.answers['security.cloud_posture']).toBeUndefined();
+        const resumed = await request(app).get(`/api/sales/assessments/${assessmentId}`);
+        expect(resumed.status).toBe(200);
+        expect(resumed.body.assessment.answers['voice.inventory']).toMatchObject({
+            value: 'Fictional calling supplier; 20 users', evidence: 'Supplier schedule, reviewed by customer', confidence: 'high', verification: 'confirmed'
+        });
+        expect(resumed.body.assessment.answers['servers.recovery'].verification).toBe('pending');
+        expect(resumed.body.assessment.answers['servers.present'].value).toBe('unknown');
+        expect(resumed.body.assessment.answers['web.ownership'].value).toContain('Customer owns domain');
+        expect(resumed.body.assessment.answers['operations.costs'].value).toContain('unconfirmed');
+
+        process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED = 'false';
+        try {
+            const disabled = await request(app).put(`/api/sales/assessments/${assessmentId}/answers`).send({
+                expectedRevision: saved.body.revision, status: 'completed',
+                answers: { ...resumed.body.assessment.answers, 'voice.inventory': answer('Attempted disabled edit'),
+                    'web.recovery': answer('Attempted disabled addition') }
+            });
+            expect(disabled.status).toBe(200);
+            expect(disabled.body.assessment.answers['voice.inventory']).toEqual(resumed.body.assessment.answers['voice.inventory']);
+            expect(disabled.body.assessment.answers['web.recovery']).toBeUndefined();
+            saved.body.revision = disabled.body.revision;
+        } finally { process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED = 'true'; }
 
         const matched = await request(app)
             .post(`/api/sales/assessments/${assessmentId}/match`)
@@ -1823,7 +1926,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(scopingRoute).toBeDefined();
         expect(scopingRoute.allowedRoles).toEqual(['anonymous']);
         expect(scopingRoute.headers['Cache-Control']).toBe('no-store');
-        expect(scopingRoute.headers['X-Robots-Tag'].split(',').map(value => value.trim())).toEqual(['noindex', 'nofollow']);
+        expect(scopingRoute.headers['X-Robots-Tag']).toBe('none'); // noindex,nofollow shorthand
         expect(scriptSourceDirective(scopingRoute.headers['Content-Security-Policy'])).toBe(`script-src 'self' ${expectedHash}`);
         expect(scopingRoute.headers['Content-Security-Policy']).not.toContain("'unsafe-inline'");
         expect(scopingRoute.headers['Content-Security-Policy']).not.toContain('blob:');
@@ -1839,7 +1942,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             const assetRule = staticConfig.routes.find((route) => route.route === assetRoute);
             expect(assetRule).toMatchObject({
                 headers: {
-                    'X-Robots-Tag': 'noindex,nofollow'
+                    'X-Robots-Tag': 'none'
                 }
             });
             expect(assetRule.headers['Cache-Control']).toBe('no-store');

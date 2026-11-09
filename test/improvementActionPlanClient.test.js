@@ -93,7 +93,8 @@ test('mount uses actual retained IDs and unchanged renderer through canonical re
     expect(h.request.mock.calls.map(args => args[0])).toEqual(['/api/dashboard/improvement/plans?limit=20', '/api/dashboard/improvement/view?planId=plan-a',
         '/api/dashboard/improvement/editor?planId=plan-a']);
     expect(h.root.textContent).toContain('Improvement action plan');
-    expect(h.root.textContent).toContain('Read-only plan.');
+    expect(h.root.textContent).toContain('Where available, use Update an improvement action above to make changes.');
+    expect(h.root.textContent).not.toContain('Changes cannot be made in this view.');
     expect(h.root.textContent).toContain('Risk priority has not been calculated.');
     expect(h.root.querySelector('select').getAttribute('aria-label')).toBe('Saved improvement plans');
     expect(button(h, 'Create improvement plan for this assessment')).toBeUndefined();
@@ -253,6 +254,30 @@ test('uncertain writes retain their exact immutable command for explicit retry a
     expect(button(h, 'Retry pending improvement command')).toBeDefined();
     expect(await h.controller.retry()).toBe(true); expect(attempts).toBe(2); expect(h.options.newId).toHaveBeenCalledTimes(2);
     expect(await h.controller.requestLeave(leave)).toBe(true); expect(leave).toHaveBeenCalledTimes(1);
+});
+
+test.each([408, 429])('an unexpected %i response after plan creation retains the operation identity for retry', async status => {
+    let attempts = 0, captured;
+    const h = harness({ options: { sourceAssessment: source() }, respond(path, body, state) {
+        if (path.includes('/plans?')) return { status: 200, value: page([]) };
+        if (path.endsWith('/execute')) {
+            captured ||= body; expect(body).toBe(captured);
+            if (++attempts === 1) {
+                state.plans.set(body.planId, seed(body.planId));
+                return { status, value: { code: 'intermediary_error' } };
+            }
+            return { status: 200, value: { schemaVersion: 1, plan: getImprovementPlanView(state.plans.get(body.planId)) } };
+        }
+        return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
+    } });
+    await h.controller.ready;
+    expect(await h.controller.generate()).toBe(false);
+    expect(h.root.textContent).toContain('outcome is unconfirmed');
+    expect(await h.controller.requestLeave(jest.fn())).toBe(false);
+    expect(await h.controller.generate()).toBe(false);
+    expect(await h.controller.retry()).toBe(true);
+    expect(attempts).toBe(2); expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(h.state.plans.size).toBe(2); // The fixture's existing plan plus the single created plan.
 });
 
 test.each([401, 403])('denial %i clears presentation and prevents further reads/writes in the old mount', async status => {
@@ -474,6 +499,8 @@ test.each(OPERATIONS)('actual $type form sends the retained command and refreshe
 test('read-only editor context retains the read-only view without forms or action commands', async () => {
     const h = harness({ canWrite: false }); expect(await h.controller.ready).toBe(true);
     expect(h.root.textContent).toContain('Improvement action plan');
+    expect(h.root.textContent).toContain('Where available, use Update an improvement action above to make changes.');
+    expect(h.root.textContent).toContain('This plan is read-only for the current access.');
     for (const operation of OPERATIONS) expect(button(h, operation.label)).toBeUndefined();
     expect(form(h)).toBeUndefined(); expect(h.options.newId).not.toHaveBeenCalled();
     const before = h.request.mock.calls.length;

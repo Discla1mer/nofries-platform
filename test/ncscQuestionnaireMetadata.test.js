@@ -26,6 +26,26 @@ function projectChangedCatalogue(change) {
 }
 
 describe('questionnaire source display metadata', () => {
+    test('every accepted question has a frozen small-business explanation, example and checklist without changing the question', () => {
+        const accepted = createAcceptedNcscFrameworkProfile(), metadata = createNcscQuestionnaireMetadata();
+        expect(metadata.questions.map(question => question.id)).toEqual(accepted.questions.map(question => question.id));
+        for (const question of metadata.questions) {
+            const source = accepted.questions.find(row => row.id === question.id);
+            expect(question.prompt).toBe(source.prompt);
+            expect(question.guidance).toEqual(source.guidance);
+            expect(question.responseOptionIds).toEqual(source.responseOptionIds);
+            expect(question.smallBusiness.meaning.length).toBeGreaterThan(30);
+            expect(question.smallBusiness.example.length).toBeGreaterThan(30);
+            expect(question.smallBusiness.checks).toHaveLength(3);
+            expect(Object.isFrozen(question.smallBusiness)).toBe(true);
+            expect(Object.isFrozen(question.smallBusiness.checks)).toBe(true);
+        }
+        expect(metadata.questions.find(question => question.id === 'NF-NCSC-MCSS-PA-01-Q1').smallBusiness.checks.join(' '))
+            .toMatch(/Test updates.*check they succeeded.*recovery plan.*unsupported systems/);
+        expect(metadata.questions.find(question => question.id === 'NF-NCSC-MCSS-LP-01-Q1').smallBusiness.meaning)
+            .toContain('start, change roles or leave');
+    });
+
     test('each question links exactly to its accepted sources with the recorded verification date', () => {
         const accepted = createAcceptedNcscFrameworkProfile(), metadata = createNcscQuestionnaireMetadata();
         expect(metadata.questions).toHaveLength(14);
@@ -65,7 +85,7 @@ describe('closed browser client source metadata contract', () => {
         expect(() => client(metadata)).not.toThrow();
         const previous = clone(metadata);
         delete previous.sourceDisclosure;
-        previous.questions.forEach(question => { delete question.sources; });
+        previous.questions.forEach(question => { delete question.sources; delete question.smallBusiness; });
         expect(() => client(previous)).not.toThrow();
     });
 
@@ -97,6 +117,19 @@ describe('closed browser client source metadata contract', () => {
         ['too many sources', metadata => { metadata.questions[0].sources = Array.from({ length: 17 }, (_, index) => ({ ...metadata.questions[0].sources[0], id: `source-${index}` })); }],
         ['empty disclosure', metadata => { metadata.sourceDisclosure = ''; }]
     ])('rejects malformed supplied display fields: %s', (_label, change) => {
+        const metadata = clone(createNcscQuestionnaireMetadata());
+        change(metadata);
+        expect(() => client(metadata)).toThrow(expect.objectContaining({ code: 'ncsc_input_invalid' }));
+    });
+
+    test.each([
+        ['missing meaning', metadata => { delete metadata.questions[0].smallBusiness.meaning; }],
+        ['empty example', metadata => { metadata.questions[0].smallBusiness.example = ''; }],
+        ['unexpected field', metadata => { metadata.questions[0].smallBusiness.html = '<script>'; }],
+        ['empty checklist', metadata => { metadata.questions[0].smallBusiness.checks = []; }],
+        ['oversized checklist', metadata => { metadata.questions[0].smallBusiness.checks = Array(9).fill('Check this'); }],
+        ['invalid checklist entry', metadata => { metadata.questions[0].smallBusiness.checks[0] = {}; }]
+    ])('rejects malformed small-business reading aids: %s', (_label, change) => {
         const metadata = clone(createNcscQuestionnaireMetadata());
         change(metadata);
         expect(() => client(metadata)).toThrow(expect.objectContaining({ code: 'ncsc_input_invalid' }));

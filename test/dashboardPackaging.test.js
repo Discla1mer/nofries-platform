@@ -10,12 +10,13 @@ const test = global.test || require('node:test');
 const root = path.resolve(__dirname, '..');
 
 // Compare directives and all structural/authorization fields, not optional
-// HTTP header whitespace and the closed no-store policy compacted to fit the provider's configuration limit.
+// HTTP header whitespace, closed no-store policy and equivalent robots shorthand compacted for the provider limit.
 function assertEquivalentHeaders(actual, expected) {
     const semantic = value => JSON.parse(JSON.stringify(value), (key, entry) => {
         if (entry && typeof entry === 'object' && typeof entry.route === 'string') {
             return { ...entry, allowedRoles: entry.allowedRoles ?? ['anonymous'] };
         }
+        if (key === 'X-Robots-Tag' && entry === 'none') return ['noindex', 'nofollow'];
         if (key === 'Cache-Control' && entry === 'private, no-store, max-age=0') return ['no-store'];
         return typeof entry === 'string' && ['Content-Security-Policy', 'Cache-Control', 'X-Robots-Tag'].includes(key)
             ? entry.split(key === 'Content-Security-Policy' ? ';' : ',').map(part => part.trim()) : entry;
@@ -130,7 +131,7 @@ test('real static and App Service builds bind their distinct customer entry mode
             assertEquivalentHeaders({ 'Content-Security-Policy': routes[0].headers['Content-Security-Policy'] },
                 { 'Content-Security-Policy': expected.contentSecurityPolicy });
             assert.deepEqual(routes[0].headers['Cache-Control'].split(',').map(value => value.trim()), ['no-store']);
-            assert.match(routes[0].headers['X-Robots-Tag'], /noindex/);
+            assertEquivalentHeaders({ 'X-Robots-Tag': routes[0].headers['X-Robots-Tag'] }, { 'X-Robots-Tag': 'noindex, nofollow' });
         }
         for (const file of ['app/dashboard.html', 'app/dashboard.css', 'js/dashboard-loader.js', 'lib/dashboardDocument.js',
             'api/shared/protectedAssets/dashboardRegistry.js', 'api/shared/protectedAssets/dashboardShell.js',
@@ -318,7 +319,7 @@ for (const useExample of [false, true]) {
                 assert.equal(route?.rewrite, '/app/signup.html');
                 assert.deepEqual((route.allowedRoles ?? ['anonymous']), ['anonymous']);
                 assert.deepEqual(route.headers['Cache-Control'].split(',').map(value => value.trim()), ['no-store']);
-                assert.match(route.headers['X-Robots-Tag'], /noindex/);
+                assertEquivalentHeaders({ 'X-Robots-Tag': route.headers['X-Robots-Tag'] }, { 'X-Robots-Tag': 'noindex, nofollow' });
                 const csp = route.headers['Content-Security-Policy'];
                 assert.ok(csp.includes("script-src 'sha256-" + scriptHash + "'"));
                 assert.ok(csp.includes("connect-src 'self'"));

@@ -179,12 +179,18 @@ function requireNcscContext(input) {
 // output before projection. These named public fields never include raw state.
 function projectNcscSummary({ envelope, revisionSha256 }) {
     const state = envelope.state;
+    // Keep a full 100-row page within the browser's bounded response budget.
+    // Slice by code point so a label never ends in half an emoji/surrogate pair.
+    const scopeCharacters = Array.from(envelope.scopePopulation.body.description);
+    const scopeDescription = scopeCharacters.length > 160
+        ? scopeCharacters.slice(0, 160).join('') + '…' : scopeCharacters.join('');
     return freeze({ assessmentId: state.assessmentId, moduleId: state.moduleId,
         profileRef: { frameworkId: state.profileRef.frameworkId, frameworkVersion: state.profileRef.frameworkVersion,
             profileId: state.profileRef.profileId, profileVersion: state.profileRef.profileVersion,
             catalogueSha256: state.profileRef.catalogueSha256, sourceCatalogueSha256: state.profileRef.sourceCatalogueSha256 },
         status: state.status, revision: state.revision, revisionSha256,
         createdAt: state.createdAt, updatedAt: state.updatedAt,
+        scopePopulation: { description: scopeDescription },
         progress: getAssessmentProgress(state, acceptedRegistry) });
 }
 function projectNcscDetail({ envelope, revisionSha256 }) {

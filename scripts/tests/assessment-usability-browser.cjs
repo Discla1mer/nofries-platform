@@ -26,10 +26,8 @@ const server = http.createServer((request, response) => {
     response.end(fs.readFileSync(preview.frameOutput));
 });
 async function openCyber(page) {
-    const desktop = page.locator('.dashboard-module-link[data-module="cyber_security"]');
-    if (await desktop.isVisible()) await desktop.click();
-    else await page.getByRole('navigation', { name: 'Dashboard tasks', exact: true })
-        .getByRole('button', { name: 'Assess', exact: true }).click();
+    // The desktop rail and the mobile task bar both render this link; use the one shown at this width.
+    await page.locator('.dashboard-module-link[data-module="cyber_security"]').filter({ visible: true }).click();
     await page.locator('.ncsc-assessment-list button').first().waitFor();
 }
 async function jump(page, index) {
@@ -79,9 +77,10 @@ async function screenshot(page, name, selector = '.ncsc-questionnaire') {
             assert.equal(await rows.count(), 2);
             for (let index = 0; index < 2; index++) {
                 const record = fixtures.tenants[0].assessments[index], row = rows.nth(index);
-                assert.ok((await row.locator('p').textContent()).includes(record.assessmentId));
-                assert.ok((await row.locator('p').textContent()).includes(record.updatedAt.replace('T', ' ').replace('Z', ' UTC')));
-                assert.equal(await row.locator('button').getAttribute('aria-describedby'), await row.locator('p').getAttribute('id'));
+                const reference = row.locator('.ncsc-assessment-reference p');
+                assert.ok((await reference.textContent()).includes(record.assessmentId));
+                assert.ok((await reference.textContent()).includes(record.updatedAt.replace('T', ' ').replace('Z', ' UTC')));
+                assert.equal(await row.locator('button').getAttribute('aria-describedby'), await reference.getAttribute('id'));
             }
             await layout(page); await screenshot(page, 'assessment-list-' + width);
             await rows.first().locator('button').click();
@@ -98,8 +97,7 @@ async function screenshot(page, name, selector = '.ncsc-questionnaire') {
             await page.locator('#scenario').selectOption('delay');
             await page.getByRole('button', { name: 'Arm next mutation', exact: true }).click();
             await page.getByRole('button', { name: 'Save progress', exact: true }).click();
-            const home = width === 1440 ? page.locator('.dashboard-module-link[data-module="overview"]') :
-                page.getByRole('navigation', { name: 'Dashboard tasks', exact: true }).getByRole('button', { name: 'Home', exact: true });
+            const home = page.locator('.dashboard-module-link[data-module="overview"]').filter({ visible: true });
             const originalHome = await home.elementHandle();
             await home.focus(); await page.keyboard.press('Enter');
             await page.waitForFunction(() => document.querySelector('.ncsc-status')?.textContent.includes('Resolve the running'));
@@ -111,7 +109,8 @@ async function screenshot(page, name, selector = '.ncsc-questionnaire') {
             await page.keyboard.press('Enter');
             await page.waitForFunction(() => !document.querySelector('.ncsc-questionnaire'));
             await openCyber(page); await rows.nth(1).locator('button').click();
-            await page.getByRole('button', { name: 'Submit assessment', exact: true }).click();
+            await page.getByRole('button', { name: 'Review and submit', exact: true }).click();
+            await page.getByRole('button', { name: 'Save and submit assessment', exact: true }).click();
             await page.locator('.ncsc-sealed').waitFor();
             await jump(page, 1); // Submitted Unknown answers remain available read-only.
             assert.equal(await page.getByRole('button', { name: 'Save progress', exact: true }).count(), 0);

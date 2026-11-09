@@ -69,7 +69,8 @@ describe('optional staff administration navigation', () => {
         expect(h.window.location.replace).toHaveBeenCalledWith('/api/auth/login?returnTo=%2Foperator');
     });
 
-    test('shows the native link only after permission to open the empty staff entry', async () => {
+    test.each([{ entry: true }, { entry: true, accountActions: true }, { entry: true, accountActions: false }])
+    ('shows the native link only after permission to open the empty staff entry: %j', async capability => {
         const h = navigationHarness(); await h.verify();
         expect(h.scripts).toHaveLength(1);
         expect(h.scripts[0].src).toBe('/api/lifecycle/app.js');
@@ -77,7 +78,7 @@ describe('optional staff administration navigation', () => {
         expect(h.requests[1]).toMatchObject({ url: '/api/dashboard-admin/entry-capabilities', options: {
             credentials: 'same-origin', cache: 'no-store', redirect: 'error', headers: { Accept: 'application/json' }
         } });
-        await h.reply(1, 200, { entry: true });
+        await h.reply(1, 200, capability);
         expect(h.link.hidden).toBe(false);
         h.link.focus(); expect(h.document.activeElement).toBe(h.link);
         expect(h.link.href).toBe('/dashboard-admin/entry');
@@ -87,6 +88,8 @@ describe('optional staff administration navigation', () => {
         [200, { entry: false }], [200, { entry: 'true' }],
         [200, {}], [200, { lookup: true, recovery: [] }],
         [200, { entry: true, error: 'untrusted' }],
+        [200, { entry: true, accountActions: 'true' }], [200, { entry: true, accountActions: null }],
+        [200, { entry: true, accountActions: true, extra: true }], [200, { accountActions: true }],
         [200, null], [401, { code: 'dashboard_admin_authentication_required' }],
         [403, { code: 'dashboard_admin_access_denied' }], [404, {}], [503, {}]
     ])('keeps optional navigation hidden for missing, malformed or denied capability %s %j', async (statusCode, body) => {

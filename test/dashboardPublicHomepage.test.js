@@ -13,11 +13,11 @@ const controller = fs.readFileSync(path.join(root, 'js', 'home.js'), 'utf8');
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
 
 test('public identity and metadata lead with the standalone Dashboard', () => {
-    assert.match(html, /<title>No Fries Dashboard \| Clearer IT\. Confident next steps\.<\/title>/);
+    assert.match(html, /<title>No Fries \| Dashboard\. Managed IT\.<\/title>/);
     assert.match(html, /data-product="dashboard"/);
-    assert.match(html, /property="og:title" content="No Fries Dashboard \| Clearer IT\. Confident next steps\."/);
+    assert.match(html, /property="og:title" content="No Fries \| Dashboard\. Managed IT\."/);
     assert.equal((html.match(/<h1\b/g) || []).length, 1);
-    assert.match(html, /id="home-title">Clearer IT\.<br><em>Confident<br>next steps\.<\/em>/);
+    assert.match(html, /id="home-title" class="homepage-lockup"><span class="lockup-row"><span class="lockup-word">No<\/span><img class="lockup-mark" src="\/images\/nofries-mark-large\.webp" width="640" height="640" alt=""><\/span> <span class="lockup-row"><span class="lockup-word">Fries<\/span> <span class="lockup-tagline">Dashboard\.<br>Managed IT\.<\/span><\/span><\/h1>/);
     assert.equal((html.match(/Understand your IT and cyber security, see where the gaps are and decide what needs attention\./g) || []).length, 2);
     assert.match(html, /Understand where your IT and cyber security stand\. See the gaps, make informed decisions and start improving\./);
     assert.doesNotMatch(html, /in real time|continuous monitoring|automatically updated/i);
@@ -63,7 +63,7 @@ test('public customer links exclude the separate staff entry', () => {
     assert.match(html, /href="\/terms\.html"/);
     const footer = html.match(/<footer\b[\s\S]*?<\/footer>/)[0];
     assert.deepEqual([...footer.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]),
-        ['https://news.nofries.nz/', '/roadmap.html', '/privacy.html', '/terms.html']);
+        ['https://news.nofries.nz/', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html']);
     const mainNav = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
     assert.deepEqual([...mainNav.matchAll(/href="([^"]+)"/g)].map(match => match[1]),
         ['https://news.nofries.nz/', '/roadmap.html', '/login?intent=login']);
@@ -92,9 +92,9 @@ test('service pricing remains server-owned rather than embedded in the homepage'
 
 test('gateway template includes only reviewed public scripts and a hash-bound loader marker', () => {
     const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
-    assert.equal(scripts.length, 3);
+    assert.equal(scripts.length, 5);
     assert.deepEqual(scripts.map(match => match[1].match(/src="([^"]+)"/)[1]),
-        ['/js/organisation-setup.js', '/js/home.js', '/js/prospect-assistant.js']);
+        ['/js/organisation-setup.js', '/js/home.js', '/js/enquiry-availability.js', '/js/enquiry-home.js', '/js/prospect-assistant.js']);
     assert.ok(scripts.every(match => match[2].trim() === ''));
     assert.doesNotMatch(html, /\bon(?:click|load|error|submit)\s*=/i);
     assert.doesNotMatch(html, /(?:src|href)="(?:\/api\/dashboard\/(?:app\.js|bootstrap)|\/test\/fixtures\/)/);

@@ -32,10 +32,8 @@ const server = http.createServer((request, response) => {
 });
 
 async function openAssessment(page) {
-    const cyber = page.locator('.dashboard-module-link[data-module="cyber_security"]');
-    if (await cyber.isVisible()) await cyber.click();
-    else await page.getByRole('navigation', { name: 'Dashboard tasks', exact: true })
-        .getByRole('button', { name: 'Assess', exact: true }).click();
+    // The desktop rail and the mobile task bar both render this link; use the one shown at this width.
+    await page.locator('.dashboard-module-link[data-module="cyber_security"]').filter({ visible: true }).click();
     await page.locator('.ncsc-assessment-list button').first().click();
     await page.locator('#ncsc-question-index').waitFor();
 }
@@ -145,7 +143,8 @@ function fits(metric) {
             assert.match(await page.locator('.ncsc-status').textContent(), /unsaved changes/);
             // This seeded draft has unanswered questions. Submission must stop at
             // client validation, retain the hint and error, and issue no command.
-            await page.getByRole('button', { name: 'Submit assessment', exact: true }).click();
+            await page.getByRole('button', { name: 'Review and submit', exact: true }).click();
+            await page.getByRole('button', { name: 'Save and submit assessment', exact: true }).click();
             await page.locator('.ncsc-errors a').first().click();
             const described = (await page.locator('.ncsc-answer').getAttribute('aria-describedby')).split(' ');
             assert.equal(described.length, 2);

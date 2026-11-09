@@ -336,3 +336,10 @@ test('standalone browser global works without require, request, storage, clock o
     expect(dom.root.textContent).toContain('Showing 14 of 14 actions.'); expect(forbidden).not.toHaveBeenCalled();
     expect(source).not.toMatch(/\binnerHTML\b|\bfetch\s*\(|addEventListener\s*\(/);
 });
+
+test('plan guidance points to the action editor only when the host supplies it', () => {
+    const dom = createDom();
+    mount(dom.root, presentation(), { actionEditorAbove: true });
+    expect(dom.root.textContent).toContain('Where available, use Update an improvement action above to make changes.');
+    expect(dom.root.textContent).not.toContain('Changes cannot be made in this view.');
+});

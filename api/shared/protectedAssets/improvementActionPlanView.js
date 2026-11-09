@@ -162,7 +162,7 @@
 
     // A trusted host supplies a current authorised presentation. This component
     // grants no access, reads no clock and performs no requests or commands.
-    function mount(root, presentation) {
+    function mount(root, presentation, options) {
         if (!root || !root.ownerDocument || typeof root.replaceChildren !== 'function') throw new Error('improvement_view_root_required');
         if (mounted.has(root)) mounted.get(root).destroy();
         const doc = root.ownerDocument, actionCards = new Map();
@@ -201,8 +201,12 @@
                 'Visible overdue: ' + model.counts.visible.overdue + ' · Unassigned: ' + model.counts.visible.unassigned + '.'));
             panel.append(node('p', 'dashboard-muted', model.notices.priority + ' ' + model.notices.order),
                 node('p', 'dashboard-muted', model.notices.evidence + ' ' + model.notices.owner));
-            panel.append(node('p', '', 'Read-only plan. Review each action’s next step, owner and due date. ' +
-                'Open Action history for earlier updates. Changes cannot be made in this view.'));
+            const guidance = options && options.actionEditorAbove === true ?
+                'Plan details are read-only. Review each action’s next step, owner and due date. ' +
+                    'Open Action history for earlier updates. Where available, use Update an improvement action above to make changes.' :
+                'Read-only plan. Review each action’s next step, owner and due date. ' +
+                    'Open Action history for earlier updates. Changes cannot be made in this view.';
+            panel.append(node('p', '', guidance));
             const sourceDetails = disclosure('Source and plan metadata');
             sourceDetails.append(record('Retained source', [
                 ['Plan ID', model.scope.planId], ['Plan revision', String(model.planRevision)], ['Plan last updated (UTC)', model.updatedAt],

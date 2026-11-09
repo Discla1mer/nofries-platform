@@ -8,6 +8,9 @@
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
     let sequence = 0;
     const copy = value => JSON.parse(JSON.stringify(value));
+    const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
+        dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
+    }).format(new Date(value)) + ' NZ time';
     function sameProfile(actual, expected) {
         return actual && expected && Object.keys(expected).every(key => actual[key] === expected[key]);
     }
@@ -134,10 +137,13 @@
             if (!live()) return;
             clearExplanation();
             root.replaceChildren(); root.classList.add('organisation-picture');
-            const header = node('header', 'picture-heading');
-            header.append(node('h2', '', 'Cyber baseline'),
-                node('p', 'dashboard-muted', 'A saved assessment of the selected scope, not a live check of connected systems.'));
-            root.append(header);
+            const isEmpty = !loading && !rows.length && loaded && !message && !selected && after === null;
+            if (!isEmpty) {
+                const header = node('header', 'picture-heading');
+                header.append(node('h2', '', 'Cyber baseline'),
+                    node('p', 'dashboard-muted', 'A saved assessment of the selected scope, not a live check of connected systems.'));
+                root.append(header);
+            }
             const status = node('p', 'picture-status', message || (loading ? 'Loading saved assessment…' : ''));
             status.setAttribute('role', 'status'); status.hidden = !message && !loading; root.append(status);
             if (denied) return;
@@ -146,7 +152,8 @@
                 const toolbar = node('div', 'picture-toolbar');
                 const label = node('label', '', 'Saved assessment'); label.htmlFor = id;
                 const picker = node('select'); picker.id = id; picker.disabled = loading;
-                const labelFor = row => row.updatedAt.slice(0, 10) + ' · ' + row.status + ' · revision ' + row.revision;
+                const labelFor = row => (row.scopePopulation ? row.scopePopulation.description + ' · ' : '') +
+                    (row.status === 'submitted' ? 'Submitted' : 'In progress') + ' · ' + displayDate(row.updatedAt);
                 const labelCounts = new Map(), referenceCounts = new Map();
                 rows.forEach(row => {
                     const label = labelFor(row), key = JSON.stringify([label, row.assessmentId.slice(0, 8)]);
@@ -172,16 +179,39 @@
                 if (after !== null) root.append(node('p', 'dashboard-muted', 'More saved assessments are available. Load more to see them.'));
                 if (!detail) root.append(node('p', 'dashboard-muted', 'Refresh reloads saved assessments. It does not check whether answers still reflect the organisation today.'));
             }
-            if (!loading && !rows.length && loaded && !message) {
-                const empty = node('section', 'picture-empty');
-                empty.append(node('h3', '', 'Start with an honest baseline'), node('p', '', 'No saved assessments yet. Complete and submit an assessment to see implementation and evidence measures here.'));
-                if (typeof options.openCyber === 'function') empty.append(button('Open Cyber Security', options.openCyber));
+            if (isEmpty) {
+                const empty = node('section', 'picture-first-use');
+                empty.append(node('p', 'picture-first-use-eyebrow', 'Welcome to No Fries'),
+                    node('h2', '', 'Build your first baseline'),
+                    node('p', 'picture-first-use-intro', 'No saved assessments yet. A cyber assessment helps you understand where you stand.'));
+                const steps = node('ol', 'picture-first-use-steps'); steps.setAttribute('role', 'list');
+                [
+                    ['Assessment', 'Answer questions about your chosen scope.'],
+                    ['Results', 'Submit to see your saved baseline and its limitations.'],
+                    ['Next steps', 'Review follow-up points from your results.']
+                ].forEach((step, index) => {
+                    const item = node('li', 'picture-first-use-step');
+                    const number = node('span', 'picture-first-use-number', String(index + 1));
+                    number.setAttribute('aria-hidden', 'true');
+                    const content = node('div');
+                    content.append(node('h3', '', step[0]), node('p', '', step[1]));
+                    item.append(number, content); steps.append(item);
+                });
+                empty.append(steps);
+                if (typeof options.openCyber === 'function') {
+                    const token = epoch;
+                    const action = button('Open assessment', () => {
+                        if (live(token) && !loading && !message && !rows.length && !selected && after === null &&
+                            action.parentElement === empty && empty.parentElement === root) options.openCyber();
+                    });
+                    action.classList.add('picture-first-use-action'); empty.append(action);
+                }
                 root.append(empty);
             }
             if (message && !loading) root.append(button('Retry', () => { if (retry) retry(); }));
             if (!detail) return;
-            const facts = node('p', 'picture-source', 'Saved ' + detail.updatedAt.slice(0, 10) +
-                ' · ' + detail.status + ' · revision ' + detail.revision);
+            const facts = node('p', 'picture-source', (detail.status === 'submitted' ? 'Submitted ' : 'Saved ') +
+                displayDate(detail.updatedAt));
             root.append(facts);
             if (detail.status !== 'submitted') {
                 root.append(sourceDetails()); return;
@@ -398,7 +428,8 @@
                 // first page. Fetch it again, never reuse cached scores or assume
                 // a saved identifier grants access to the record.
                 if (!rows.some(row => row.assessmentId === assessmentId)) rows.push({ assessmentId: value.assessmentId,
-                    moduleId: value.moduleId, profileRef: copy(value.profileRef), status: value.status, updatedAt: value.updatedAt });
+                    moduleId: value.moduleId, profileRef: copy(value.profileRef), status: value.status, updatedAt: value.updatedAt,
+                    scopePopulation: copy(value.scopePopulation) });
                 if (typeof options.onSelection === 'function') options.onSelection(value.assessmentId);
             } catch (error) { if (live(token)) failure(error, () => read(assessmentId)); }
             finally { if (live(token)) { loading = false; render(); restoreFocus(savedFocus); } }

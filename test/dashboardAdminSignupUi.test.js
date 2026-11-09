@@ -102,3 +102,130 @@ test('queue-only capability scopes lookup status to lookup data', async () => {
     expect(h.nodes.get('adminAccessStatus').textContent).toContain('No lookup data has been loaded');
     expect(h.nodes.get('signupQueueLoad').disabled).toBe(false);
 });
+
+describe('authorised signup search', () => {
+    async function pages(count, rowsPerPage = 1, continuation = 'end') {
+        const base = await page();
+        return Array.from({ length: count }, (_, index) => ({ ...f.clone(base),
+            rows: Array.from({ length: rowsPerPage }, (__, row) => ({ ...f.clone(base.rows[0]),
+                email: `person${index * rowsPerPage + row}@example.invalid`, organisation: `Organisation ${index}` })),
+            nextCursor: index < count - 1 ? String(index).padStart(43, 'x') : null,
+            continuation: index < count - 1 ? 'more' : continuation }));
+    }
+    async function start(bodies, query = '') {
+        const fetch = jest.fn().mockResolvedValueOnce(reply({ signupList: true }));
+        for (const body of bodies) fetch.mockResolvedValueOnce(reply(body));
+        const h = harness(fetch); await h.ready(); h.nodes.get('signupQueueSearch').value = query;
+        h.emit('signupQueueSearchForm', 'submit'); await h.ready(); return { h, fetch };
+    }
+    test('searches email and organisation case-insensitively across approved pages without transmitting the query', async () => {
+        const bodies = await pages(3); bodies[1].rows[0].organisation = 'A MATCH Company'; bodies[2].rows[0].email = 'MATCH@example.invalid';
+        const { h, fetch } = await start(bodies, '  match  ');
+        expect(h.nodes.get('signupQueueStatus').textContent).toBe('2 matching signups in the authorised population.');
+        expect(h.nodes.get('signupQueueResult').textContent).toContain('A MATCH Company');
+        expect(h.nodes.get('signupQueueResult').textContent).toContain('MATCH@example.invalid');
+        expect(h.nodes.get('signupQueueResult').textContent).not.toContain('person0@example.invalid');
+        expect(fetch.mock.calls.slice(1).map(call => JSON.parse(call[1].body))).toEqual([
+            { cursor: null }, { cursor: bodies[0].nextCursor }, { cursor: bodies[1].nextCursor }]);
+        for (const [url, options] of fetch.mock.calls.slice(1)) {
+            expect(url).toBe('/api/dashboard-admin/signups');
+            expect(options).toMatchObject({ method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
+            expect(options.body).not.toContain('match');
+        }
+        expect(h.nodes.get('signupQueueNext').disabled).toBe(true);
+        expect(h.document.activeElement.id).toBe('signupQueueResultHeading');
+    });
+    test.each([['person', 2, false], ['person1', 1, false], ['absent', 0, false], ['person', 2, true]])(
+        'shows the full observation range for query %s (%s matches, reversed times: %s)', async (query, matches, reversed) => {
+            const bodies = await pages(2), first = '2026-11-09T00:00:00.000Z', last = '2026-11-09T00:00:05.000Z';
+            bodies[0].observedAt = reversed ? last : first; bodies[1].observedAt = reversed ? first : last;
+            bodies[reversed ? 0 : 1].rows[0].milestones.accountActivated = { status: 'recorded', at: last };
+            const { h } = await start(bodies, query), result = h.nodes.get('signupQueueResult');
+            expect(result.hidden).toBe(false);
+            expect(result.querySelector('p').textContent).toBe('Pages observed from ' + first + ' to ' + last);
+            expect(h.nodes.get('signupQueueStatus').textContent).toBe(matches + ' matching signups in the authorised population.');
+            if (matches) expect(result.querySelectorAll('dd').some(item => item.textContent === last)).toBe(true);
+            else expect(result.textContent).toContain('No matching signups');
+        });
+    test('uses a single observation time when every page has the same timestamp', async () => {
+        const { h } = await start(await pages(2));
+        expect(h.nodes.get('signupQueueResult').querySelector('p').textContent).toBe('Observed at ' + f.NOW);
+    });
+    test('includes an empty final page in the observation range', async () => {
+        const bodies = await pages(2); bodies[1].rows = []; bodies[1].observedAt = '2026-11-09T00:00:05.000Z';
+        const { h } = await start(bodies);
+        expect(h.nodes.get('signupQueueResult').querySelector('p').textContent).toBe('Pages observed from ' + f.NOW + ' to ' + bodies[1].observedAt);
+        expect(h.nodes.get('signupQueueStatus').textContent).toBe('1 matching signups in the authorised population.');
+    });
+    test('rejects a milestone after its own page observation even within the overall range', async () => {
+        const bodies = await pages(2); bodies[1].observedAt = '2026-11-09T00:00:05.000Z';
+        bodies[0].rows[0].milestones.accountActivated = { status: 'recorded', at: bodies[1].observedAt };
+        const { h, fetch } = await start(bodies);
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(h.nodes.get('signupQueueResult').textContent).toBe('');
+        expect(h.nodes.get('signupQueueStatus').textContent).toContain('could not be loaded');
+    });
+    test.each([[4, 25], [10, 10]])('accepts exactly 100 authorised rows across %s pages', async (count, size) => {
+        const { h, fetch } = await start(await pages(count, size));
+        expect(fetch).toHaveBeenCalledTimes(count + 1);
+        expect(h.nodes.get('signupQueueStatus').textContent).toBe('100 matching signups in the authorised population.');
+        expect(h.nodes.get('signupQueueResult').hidden).toBe(false);
+    });
+    test.each([[5, 25, 4], [11, 1, 10]])('never requests another page after the row/page bound (%s pages)', async (count, size, requested) => {
+        const { h, fetch } = await start(await pages(count, size));
+        expect(fetch).toHaveBeenCalledTimes(requested + 1);
+        expect(h.nodes.get('signupQueueResult').textContent).toBe('');
+        expect(h.nodes.get('signupQueueStatus').textContent).toContain('could not be loaded');
+    });
+    test('rejects a page that would exceed 100 cumulative rows and never displays partial matches', async () => {
+        const bodies = await pages(5, 21), { h, fetch } = await start(bodies);
+        expect(fetch).toHaveBeenCalledTimes(6); expect(h.nodes.get('signupQueueResult').hidden).toBe(true);
+        expect(h.nodes.get('signupQueueResult').textContent).toBe('');
+    });
+    test('retains limit warning and distinguishes no matches from unavailable records', async () => {
+        const { h } = await start(await pages(1, 1, 'limit_reached'), 'absent');
+        expect(h.nodes.get('signupQueueResult').textContent).toContain('No matching signups');
+        expect(h.nodes.get('signupQueueStatus').textContent).toBe('0 matching signups in the authorised population. The viewing limit was reached; other records may exist.');
+    });
+    test.each(['invalid', 'unavailable'])('validates every fetched page and fails closed on %s', async kind => {
+        const bodies = await pages(2);
+        if (kind === 'invalid') bodies[1].rows[0].secret = 'PRIVATE';
+        else Object.assign(bodies[1], { status: 'unavailable', rows: [], observedAt: null, nextCursor: null, continuation: 'unavailable' });
+        const { h } = await start(bodies);
+        expect(h.nodes.get('signupQueueResult').textContent).toBe('');
+        expect(h.nodes.get('signupQueueStatus').textContent).toContain('could not be loaded');
+    });
+    test.each(['cancel', 'timeout', 'pagehide', 'revoke', 'new-search'])('%s interrupts pagination and ignores a late successful page', async kind => {
+        const bodies = await pages(2), late = deferred();
+        const fetch = jest.fn().mockResolvedValueOnce(reply({ signupList: true })).mockResolvedValueOnce(reply(bodies[0]))
+            .mockReturnValueOnce(late.promise).mockResolvedValueOnce(reply({ ...bodies[1], rows: [] }));
+        const h = harness(fetch); await h.ready(); h.nodes.get('signupQueueSearch').value = 'person'; h.emit('signupQueueSearchForm', 'submit'); await h.ready();
+        expect(h.nodes.get('signupQueueResult').hidden).toBe(true); expect(h.nodes.get('signupQueueSearchButton').disabled).toBe(true);
+        if (kind === 'cancel') h.emit('signupQueueCancel');
+        if (kind === 'timeout') h.timers.at(-1)();
+        if (kind === 'pagehide') h.dispatch('pagehide');
+        if (kind === 'revoke') h.dispatch('dashboard-admin-revoked', { detail: 403 });
+        if (kind === 'new-search') { h.nodes.get('signupQueueSearch').value = 'absent'; h.emit('signupQueueSearchForm', 'submit'); await h.ready(); }
+        expect(fetch.mock.calls[2][1].signal.aborted).toBe(true);
+        const status = h.nodes.get('signupQueueStatus').textContent;
+        late.resolve(reply(bodies[1])); await h.ready();
+        expect(h.nodes.get('signupQueueStatus').textContent).toBe(status);
+        expect(h.nodes.get('signupQueueResult').textContent).not.toContain('person');
+        expect(h.nodes.get('signupQueueSearchButton').disabled).toBe(['pagehide', 'revoke'].includes(kind));
+        if (['pagehide', 'revoke'].includes(kind)) expect(h.nodes.get('signupQueueSearch').value).toBe('');
+    });
+    test.each([401, 403])('a stale %s during search revokes access and clears the query', async code => {
+        const late = deferred(), fetch = jest.fn().mockResolvedValueOnce(reply({ signupList: true })).mockReturnValueOnce(late.promise);
+        const h = harness(fetch); await h.ready(); h.nodes.get('signupQueueSearch').value = 'person';
+        h.emit('signupQueueSearchForm', 'submit'); h.emit('signupQueueCancel'); late.resolve(reply({}, code)); await h.ready();
+        expect(h.nodes.get('signupQueueSearch').value).toBe(''); expect(h.nodes.get('signupQueueSearchButton').disabled).toBe(true);
+        h.emit('signupQueueSearchForm', 'submit'); expect(fetch).toHaveBeenCalledTimes(2);
+    });
+    test('denied capability prevents search and document keeps the query out of fallback form data', async () => {
+        const fetch = jest.fn(async () => reply({ signupList: false })), h = harness(fetch); await h.ready();
+        h.emit('signupQueueSearchForm', 'submit'); expect(fetch).toHaveBeenCalledTimes(1);
+        expect(h.nodes.get('signupQueueSearch').disabled).toBe(true);
+        const form = buildDashboardAdminDocument().match(/<form id="signupQueueSearchForm"[\s\S]*?<\/form>/)[0];
+        expect(form).toContain('method="post"'); expect(form).toContain('autocomplete="off"'); expect(form).not.toMatch(/\bname=/);
+    });
+});
