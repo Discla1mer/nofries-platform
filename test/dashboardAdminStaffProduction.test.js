@@ -52,6 +52,7 @@ test.each([['TRUE', ENABLED_SETTING], ['1', ENABLED_SETTING], ['Synthetic', 'AZU
     ['bad-tenant', 'NOFRIES_ENTRA_TENANT_ID'], ['../x', 'NOFRIES_STARTER_AUTHORITY_CONTAINER'], ['legacy-signups', 'NOFRIES_CUSTOMER_AUTHORITY_CONTAINER'],
     ['dashboard-proofs', 'NOFRIES_STARTER_AUTHORITY_CONTAINER'], ['nofries-browser-auth', 'NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER'],
     ['admin-audit', 'NOFRIES_STARTER_AUTHORITY_CONTAINER'], ['', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'], ['legacy-signups', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'],
+    ['dashboard-proofs', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'], ['nofries-browser-auth', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'],
     ['{', 'NOFRIES_DASHBOARD_ADMIN_BINDING'], ['not-a-guid', 'NOFRIES_MANAGED_IDENTITY_CLIENT_ID']])('invalid value %p for %s fails closed and logs one safe line', (value, key) => {
     const env = { ...base(), [key]: value }, dependencies = sdk();
     expect(() => readStaffAdminSettings(env)).toThrow();
