@@ -85,7 +85,6 @@ function createExpiryAction({ source: rawSource, authorityContainer, auditContai
             }
             await audit('terminal', 'succeeded', { status: 'active', expiresAt: input.newExpiresAt });
             attempted = false; // A terminal outcome must never be overwritten.
-            await current();
             return { operationId, outcome: 'succeeded' };
         } catch (error) {
             const conflict = [409, 412].includes(error?.statusCode);

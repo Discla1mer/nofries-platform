@@ -167,7 +167,11 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 if (action) {
                     await checked(() => permission(currentActor, route, selector, checked));
                     if (!accountActions) fail(503, 'dashboard_admin_unavailable');
-                    body = await checked(() => accountActions.execute(currentActor, input, { request, signal }));
+                    // The action has already checked authority before its write.
+                    // Once success is durable, later revocation/deadline checks
+                    // must not misreport that committed outcome as a failure.
+                    body = await accountActions.execute(currentActor, input, { request, signal });
+                    return response(200, body);
                 } else body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
             } else if (route === 'entry-capabilities') body = { entry: true };
             else if (route === 'entry') { body = buildDashboardAdminEntryDocument(); contentType = 'text/html; charset=utf-8'; }

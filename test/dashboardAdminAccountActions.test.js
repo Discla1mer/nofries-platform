@@ -118,6 +118,21 @@ test('a delayed audit must finish before success resolves', async () => {
     const result = f.execute().then(() => { complete = true; });
     await pending; expect(complete).toBe(false); release(); await result; expect(complete).toBe(true);
 });
+test('revocation after durable terminal audit cannot turn committed success into failure', async () => {
+    const f = fixture(), get = f.config.auditContainer.getBlockBlobClient;
+    f.config.auditContainer.getBlockBlobClient = key => {
+        const blob = get(key), upload = blob.uploadData;
+        blob.uploadData = async (...args) => {
+            const result = await upload(...args);
+            if (key.endsWith('terminal.json')) f.config.readContext.mockRejectedValue(new Error('PRIVATE_REVOKED_DETAIL'));
+            return result;
+        };
+        return blob;
+    };
+    await expect(f.execute()).resolves.toMatchObject({ outcome: 'succeeded' });
+    expect(f.config.readContext).toHaveBeenCalledTimes(2);
+    expect(f.terminal().outcome).toBe('succeeded');
+});
 test.each(['disabled', 'anonymous', 'customer', 'non_admin', 'origin', 'success'])('HTTP %s uses staff authorization and logs only a safe code', async mode => {
     const f = fixture(), warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const env = { NOFRIES_REQUIRE_AUTH: 'true', NOFRIES_PUBLIC_URL: 'https://actions.invalid', NOFRIES_ENTRA_TENANT_ID: SUBJECT.slice(0, 36),
@@ -125,9 +140,12 @@ test.each(['disabled', 'anonymous', 'customer', 'non_admin', 'origin', 'success'
         NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS: mode === 'disabled' ? 'false' : 'true' };
     const identity = { ...actor, tenantId: SUBJECT.slice(0, 36), principalId: SUBJECT.slice(37) };
     if (mode === 'customer') identity.provider = 'external';
-    const handler = createDashboardAdminHandlers({ env, accountActions: f.action,
+    let completed = false;
+    const handler = createDashboardAdminHandlers({ env, accountActions: { execute: async (...args) => {
+        const result = await f.action.execute(...args); completed = true; return result;
+    } },
         service: { authorise: jest.fn(), capabilities: jest.fn(), lookup: jest.fn() },
-        readOperatorSession: async () => ({ identity: mode === 'anonymous' ? null : identity }) });
+        readOperatorSession: async () => ({ identity: mode === 'anonymous' || completed ? null : identity }) });
     const req = Readable.from([Buffer.from(JSON.stringify(f.input))]);
     Object.assign(req, { method: 'POST', url, headers: { 'content-type': 'application/json',
         origin: mode === 'origin' ? 'https://other.invalid' : env.NOFRIES_PUBLIC_URL, 'sec-fetch-site': 'same-origin' } });
