@@ -11,9 +11,12 @@
         window.location.replace('/signup?provider=invalid'); return;
     }
     const recoveries = query ? query.getAll('signin') : [];
-    const signInRecovery = recoveries.length === 1 && ['retry', 'expired'].includes(recoveries[0])
+    const signInRecovery = recoveries.length === 1 && ['retry', 'expired', 'account'].includes(recoveries[0])
         ? recoveries[0] : undefined;
-    const recoverySuffix = signInRecovery ? '&signin=' + signInRecovery : '';
+    // Support references are display-only (NF- plus six characters); anything else is dropped.
+    const references = query ? query.getAll('ref') : [];
+    const supportReference = signInRecovery && references.length === 1 && /^NF-[A-Z2-9]{6}$/.test(references[0]) ? references[0] : '';
+    const recoverySuffix = signInRecovery ? '&signin=' + signInRecovery + (supportReference ? '&ref=' + supportReference : '') : '';
     const accounts = query ? query.getAll('account') : [];
     const accountSuffix = accounts.length === 1 && accounts[0] === 'choose' ? '&account=choose' : '';
     const intents = query ? query.getAll('intent') : [];
@@ -189,6 +192,8 @@
             status.textContent = choosing ? '' : details ? 'Your email is verified.' : verificationOnly ? 'Your email is verified and your organisation details are saved. Account access has not been activated.' : continuing ? 'Continue secure sign-in to open your existing account or finish activation. Your saved work is kept.' : value.nextStep === 'setup_review_required' ? 'Your details are saved. Invitation delivery could not be confirmed and needs review. Your signup has not been reset or resent.' : 'Your saved setup is waiting for activation. Your account and saved details are kept.';
         } else status.textContent = signInRecovery === 'expired'
             ? 'This sign-in attempt has expired or is no longer valid. Start secure sign-in again with the same email. Your saved work is kept.'
+            : signInRecovery === 'account'
+            ? 'Your sign-in worked, but your No Fries account is not active. Email hello@nofries.nz' + (supportReference ? ' and quote ' + supportReference : '') + ' so we can restore access. Your saved work is kept.'
             : signInRecovery === 'retry'
             ? 'Sign-in did not finish. Try secure sign-in again, or verify the same email to recover access. Your saved work is kept.' : '';
         byId('organisation-returning').hidden = !returningAvailable || value.state === 'verified' || legacySignIn;

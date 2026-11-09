@@ -14,6 +14,7 @@ const { createAuthCallbackFunction } = require('../api/authCallback');
 const { resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
 const { buildSignupDocument, buildHostedSignupDocument } = require('../lib/signupDocument');
 const { mountSignupJourney } = require('../api/shared/customerSignup/signupJourney');
+const withRef = value => new RegExp('^' + value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '&ref=NF-[A-Z2-9]{6}$');
 
 const NOW = Date.parse('2026-10-13T00:00:00.000Z');
 const PRIVATE = 'synthetic-private-provider-code';
@@ -77,13 +78,13 @@ test.each([false, true])('a real five-minute boundary consumes %s customer login
     expect(before.expiresAt - before.issuedAt).toBe(300000);
     f.setNow(NOW + 300000);
     const expired = await f.invoke(started);
-    expect(expired).toMatchObject({ status: 303, headers: {
-        Location: `/login?signin=expired&provider=${external ? 'external' : 'legacy'}` } });
+    expect(expired).toMatchObject({ status: 303 });
+    expect(expired.headers.Location).toMatch(withRef(`/login?signin=expired&provider=${external ? 'external' : 'legacy'}`));
     expect(expired.headers['Set-Cookie']).toContain(external ? '__Host-nofries-external-customer-tx=' : '__Host-nofries-customer-tx=');
     expect(expired.headers['Set-Cookie']).toContain('Max-Age=0');
     expect(f.store.transactions.has(cookieId(started.cookie))).toBe(false);
     expect(f.store.sessions.size).toBe(0); expect(f.exchange).not.toHaveBeenCalled();
-    expect((await f.invoke(started)).headers.Location).toBe(`/login?signin=retry&provider=${external ? 'external' : 'legacy'}`);
+    expect((await f.invoke(started)).headers.Location).toMatch(withRef(`/login?signin=retry&provider=${external ? 'external' : 'legacy'}`));
     expect(f.exchange).not.toHaveBeenCalled();
     const fresh = await f.service.beginLogin(), current = f.store.transactions.get(cookieId(fresh.cookie));
     for (const name of ['state', 'nonce', 'codeVerifier']) expect(current[name]).not.toBe(before[name]);
@@ -98,7 +99,7 @@ test.each([false, true])('a real five-minute boundary consumes %s customer login
 test.each([false, true])('a missing %s customer transaction cookie stays generic and never exchanges a code', async external => {
     const f = authentication(external), started = await f.service.beginLogin();
     const response = await f.invoke(started, { missingCookie: true });
-    expect(response.headers.Location).toBe(`/login?signin=retry&provider=${external ? 'external' : 'legacy'}`);
+    expect(response.headers.Location).toMatch(withRef(`/login?signin=retry&provider=${external ? 'external' : 'legacy'}`));
     expect(f.exchange).not.toHaveBeenCalled(); expect(f.store.sessions.size).toBe(0);
     expect(f.store.transactions.has(cookieId(started.cookie))).toBe(true);
 });
@@ -117,7 +118,7 @@ test.each([new BrowserAuthError(400, 'browser_auth_code_exchange_failed', PRIVAT
     await createAuthCallbackFunction({ customerEntry: true, customerTransport: 'external',
         service: { completeLogin: async () => { throw failure; } } })(context,
     { method: 'POST', headers: { accept: 'text/html', 'x-forwarded-for': '192.0.2.18' }, body: { code: PRIVATE } });
-    expect(context.res.headers.Location).toBe('/login?signin=retry&provider=external');
+    expect(context.res.headers.Location).toMatch(withRef('/login?signin=retry&provider=external'));
     expect(JSON.stringify(context)).not.toContain(PRIVATE);
     expect(JSON.stringify(context.log.warn.mock.calls)).not.toContain(PRIVATE);
 });
@@ -144,11 +145,11 @@ test('an expired production-composed attempt leaves durable consent, identity an
     const callback = () => request(h.app).post('/api/customer-auth/callback').set('Cookie', `${first.cookie}; ${tx}`)
         .set('Accept', 'text/html').type('form').send({ state: stateValue, code: PRIVATE });
     const expired = await callback();
-    expect(expired.headers.location).toBe('/login?signin=expired&provider=legacy');
+    expect(expired.headers.location).toMatch(withRef('/login?signin=expired&provider=legacy'));
     expect(expired.headers['set-cookie']).toHaveLength(1);
     expect(expired.headers['set-cookie'][0]).toMatch(/^__Host-nofries-customer-tx=;/);
     expect(exchange).not.toHaveBeenCalled(); expect(activeSessions()).toEqual(originalSession);
-    expect((await callback()).headers.location).toBe('/login?signin=retry&provider=legacy');
+    expect((await callback()).headers.location).toMatch(withRef('/login?signin=retry&provider=legacy'));
     expect((await state()).body.state).toEqual(retainedState);
     const fresh = await h.login(user, { bootstrap: false });
     expect(fresh.response.status).toBe(303); expect(fresh.cookie).not.toBe(first.cookie);
@@ -202,11 +203,11 @@ test('an expired production-composed external attempt keeps saved setup, immutab
     const callback = () => request(h.app).post('/api/external-customer-auth/callback')
         .set('Cookie', `${first.cookie}; ${tx}`).set('Accept', 'text/html').type('form').send({ state, code: PRIVATE });
     const expired = await callback();
-    expect(expired.headers.location).toBe('/login?signin=expired&provider=external');
+    expect(expired.headers.location).toMatch(withRef('/login?signin=expired&provider=external'));
     expect(expired.headers['set-cookie']).toHaveLength(1);
     expect(expired.headers['set-cookie'][0]).toMatch(/^__Host-nofries-external-customer-tx=;/);
     expect(auth.has(txKey)).toBe(false); expect(exchange).not.toHaveBeenCalled();
-    expect((await callback()).headers.location).toBe('/login?signin=retry&provider=external');
+    expect((await callback()).headers.location).toMatch(withRef('/login?signin=retry&provider=external'));
     expect(exchange).not.toHaveBeenCalled(); expect(saved()).toBe(retained);
     expect(auth.get(sessionKey(first.cookie)).equals(originalSession)).toBe(true);
     const existing = await getState(first.cookie);

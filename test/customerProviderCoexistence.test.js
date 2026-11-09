@@ -5,6 +5,7 @@
 const { createBrowserAuthService, readBrowserSessionDetails, BrowserAuthError } = require('../api/shared/browserAuth');
 const { MemoryBrowserSessionStore } = require('../api/shared/browserSessionStore');
 const { createDashboardRuntimeHandlers } = require('../api/shared/dashboardRuntimeHandlers');
+const withRef = value => new RegExp('^' + value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '&ref=NF-[A-Z2-9]{6}$');
 
 const id = n => '92000000-0000-4000-8000-' + String(n).padStart(12, '0');
 const now = Date.parse('2026-10-08T00:00:00Z');
@@ -390,7 +391,7 @@ test('both customer callback retries preserve their selected provider', async ()
         const failed = await http(app).post(route + '/callback').set('Accept', 'text/html')
             .set('Cookie', started.headers['set-cookie'][0].split(';')[0]).type('form')
             .send({ error: 'access_denied', state: new URL(started.headers.location).searchParams.get('state') });
-        expect(failed.status).toBe(303); expect(failed.headers.location).toBe(destination);
+        expect(failed.status).toBe(303); expect(failed.headers.location).toMatch(withRef(destination));
     }
 });
 

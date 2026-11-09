@@ -1,6 +1,7 @@
 'use strict';
 const request = require('supertest');
 const { customerProductionHarness, uid } = require('./helpers/customerProductionHarness');
+const withRef = value => new RegExp('^' + value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '&ref=NF-[A-Z2-9]{6}$');
 
 test('production activation port composes with customer logout and denies customer or cross-origin administration', async () => {
     const h = customerProductionHarness({ adminSubject: uid(1) + ':' + uid(98) + ';' + uid(1) + ':' + uid(99) }), user = h.addUser();
@@ -270,9 +271,9 @@ test('missing first-login email proof is diagnosable and browsers return to a re
     try {
         const missing = await h.login(user, { bootstrap: false });
         expect(missing.response.status).toBe(401);
-        expect(log).toHaveBeenCalledWith('Browser sign-in callback failed: browser_auth_email_verification_required');
+        expect(log).toHaveBeenCalledWith(expect.stringMatching(/^Browser sign-in callback failed: browser_auth_email_verification_required ref=NF-[A-Z2-9]{6}$/));
         const page = await h.login(user, { bootstrap: false, html: true });
-        expect(page.response.status).toBe(303); expect(page.response.headers.location).toBe('/login?signin=retry&provider=legacy');
+        expect(page.response.status).toBe(303); expect(page.response.headers.location).toMatch(withRef('/login?signin=account&provider=legacy'));
         expect(page.response.headers['set-cookie']).toEqual([expect.stringMatching(/^__Host-nofries-customer-tx=;.*Max-Age=0/)]);
         expect(JSON.stringify(log.mock.calls)).not.toContain(user.authority.email);
     } finally { log.mockRestore(); }
