@@ -116,7 +116,7 @@
             } else if (action === 'delete-customer') {
                 showDeleteCustomerDialog(app.customerDetail && app.customerDetail.customer);
             } else if (action === 'new-assessment') {
-                showAssessmentDialog(actionElement.dataset.customerId || activeCustomerId());
+                await showAssessmentDialog(actionElement.dataset.customerId || activeCustomerId());
             } else if (action === 'open-assessment') {
                 await openAssessment(actionElement.dataset.assessmentId, actionElement.dataset.targetView || 'discovery');
             } else if (action === 'discovery-section') {
@@ -336,7 +336,7 @@
             '<div class="quick-start">',
             quickLink('Create a customer', 'Capture the account context before discovery.', 'new-customer'),
             quickLink('Open fictional demo', 'Create or reopen a clearly marked, non-customer example.', 'prepare-demo-customer'),
-            quickLink('Continue a discovery', 'Resume a saved customer service review.', '', 'data-view="discovery"'),
+            quickLink('Continue a discovery', app.blueprint?.expandedDiscovery ? 'Resume a saved customer service review.' : 'Resume a saved 30-minute conversation.', '', 'data-view="discovery"'),
             quickLink('Review matches', 'Accept, reject, or validate each service recommendation.', '', 'data-view="recommendations"'),
             quickLink('Prepare a proposal', 'Edit the customer-facing output before approval.', '', 'data-view="proposals"'),
             '</div>',
@@ -493,7 +493,7 @@
         const assessments = app.bootstrap.assessments.slice().sort(sortUpdated);
         elements.viewRoot.innerHTML = [
             '<section class="page">',
-            pageHeading('Discovery', 'Start with the business overview, then review the services the customer uses. Complex environments may need a follow-up meeting.', [
+            pageHeading('Discovery', app.blueprint?.expandedDiscovery ? 'Start with the business overview, then review the services the customer uses. Complex environments may need a follow-up meeting.' : 'Run a branching customer conversation designed to fit a 30-minute meeting.', [
                 button('Start discovery', 'new-assessment', 'button-primary')
             ]),
             !app.bootstrap.catalogue.publishedVersionId ? notice('Publish the service catalogue first', 'You can capture answers now, but matching needs an approved catalogue version.', 'notice-warning', '<button class="button" type="button" data-view="catalogue">Open catalogue</button>') : '',
@@ -1110,19 +1110,20 @@
         ].join(''));
     }
 
-    function showAssessmentDialog(customerId) {
+    async function showAssessmentDialog(customerId) {
         if (!app.bootstrap.customers.length) {
             showToast('Create a customer before starting discovery.', true);
             showCustomerDialog();
             return;
         }
-        openDialog('Guided discovery', 'Start a customer service review', [
+        if (!app.blueprint) app.blueprint = await api('/api/sales/blueprint');
+        openDialog('Guided discovery', app.blueprint?.expandedDiscovery ? 'Start a customer service review' : 'Start a 30-minute assessment', [
             '<form data-form="assessment">',
             '<div class="form-grid">',
             `<label class="wide"><span>Customer</span><select name="customerId" required>${app.bootstrap.customers.map(function (customer) {
                 return `<option value="${h(customer.id)}" ${customer.id === customerId ? 'selected' : ''}>${h(customer.name)}</option>`;
             }).join('')}</select></label>`,
-            '<label class="wide"><span>Assessment title</span><input name="title" value="Managed IT customer review" maxlength="180"></label>',
+            `<label class="wide"><span>Assessment title</span><input name="title" value="${app.blueprint?.expandedDiscovery ? 'Managed IT customer review' : '30-minute customer discovery'}" maxlength="180"></label>`,
             '<div class="wide notice notice-warning"><strong>Use approved information only.</strong><p>For an internal pilot, use fictional or specifically approved customer data.</p></div>',
             '<div class="wide button-row"><button class="button button-primary" type="submit">Start discovery</button><button class="button" type="button" data-action="close-dialog">Cancel</button></div>',
             '</div>',

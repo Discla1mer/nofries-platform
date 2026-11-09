@@ -297,6 +297,8 @@ describe('dormant dashboard document', () => {
 });
 
 describe('No Fries MSP discovery-to-onboarding workspace', () => {
+    beforeAll(() => { process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED = 'true'; });
+    afterAll(() => { delete process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED; });
     afterAll(() => {
         fs.rmSync(process.env.NOFRIES_DATA_DIR, { recursive: true, force: true });
     });
@@ -1415,6 +1417,19 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(resumed.body.assessment.answers['servers.present'].value).toBe('unknown');
         expect(resumed.body.assessment.answers['web.ownership'].value).toContain('Customer owns domain');
         expect(resumed.body.assessment.answers['operations.costs'].value).toContain('unconfirmed');
+
+        process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED = 'false';
+        try {
+            const disabled = await request(app).put(`/api/sales/assessments/${assessmentId}/answers`).send({
+                expectedRevision: saved.body.revision, status: 'completed',
+                answers: { ...resumed.body.assessment.answers, 'voice.inventory': answer('Attempted disabled edit'),
+                    'web.recovery': answer('Attempted disabled addition') }
+            });
+            expect(disabled.status).toBe(200);
+            expect(disabled.body.assessment.answers['voice.inventory']).toEqual(resumed.body.assessment.answers['voice.inventory']);
+            expect(disabled.body.assessment.answers['web.recovery']).toBeUndefined();
+            saved.body.revision = disabled.body.revision;
+        } finally { process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED = 'true'; }
 
         const matched = await request(app)
             .post(`/api/sales/assessments/${assessmentId}/match`)

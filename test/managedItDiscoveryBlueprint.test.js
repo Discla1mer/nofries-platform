@@ -8,6 +8,19 @@ const { proposalReviewEvidence } = require('../api/shared/salesRuntime');
 const groups = ['voice', 'servers', 'web'];
 
 describe('complex managed IT discovery', () => {
+    beforeEach(() => { process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED = 'true'; });
+    afterEach(() => { delete process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED; });
+
+    test.each([undefined, 'false', 'TRUE', '1'])('expansion stays off for flag %p', flag => {
+        if (flag === undefined) delete process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED;
+        else process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED = flag;
+        const blueprint = getAssessmentBlueprint();
+        expect(blueprint).toMatchObject({ version: '2026.08.1', estimatedMinutes: 25, expandedDiscovery: false });
+        expect(blueprint.questions).toHaveLength(22);
+        expect(getQuestionMap().has('voice.present')).toBe(false);
+        expect(proposalReviewEvidence({ answers: { 'voice.inventory': { value: 'Fictional supplier', verification: 'confirmed' } } })).toEqual([]);
+    });
+
     test('keeps stable existing questions and all new IDs unique, with valid conditions', () => {
         const blueprint = getAssessmentBlueprint();
         expect(blueprint.version).toBe('2026.11.1');

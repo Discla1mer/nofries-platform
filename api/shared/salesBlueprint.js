@@ -1,11 +1,13 @@
-const ASSESSMENT_VERSION = '2026.11.1';
+const ASSESSMENT_VERSION = '2026.08.1';
+const expandedDiscoveryEnabled = () => process.env.NOFRIES_MANAGED_IT_DISCOVERY_ENABLED === 'true';
+const activeQuestions = () => questions.filter(item => expandedDiscoveryEnabled() || !item.expandedDiscovery);
 
 const sections = [
     { id: 'business', title: 'What needs to improve', minutes: 4 },
-    { id: 'estate', title: 'Users and environment', minutes: 17 },
+    { id: 'estate', title: 'Users and environment', minutes: 5 },
     { id: 'support', title: 'Current IT support', minutes: 5 },
     { id: 'security', title: 'Security and backup', minutes: 5 },
-    { id: 'operations', title: 'Suppliers and getting started', minutes: 6 },
+    { id: 'operations', title: 'Suppliers and getting started', minutes: 3 },
     { id: 'priorities', title: 'Timing and next step', minutes: 3 }
 ];
 
@@ -204,11 +206,11 @@ function option(value, label) {
 }
 
 function servicePresence(id, prompt) {
-    return question(id, 'estate', `${prompt} Discovery records service facts and evidence references only, not passwords, access codes or customer records.`, 'single', [
+    return Object.assign(question(id, 'estate', `${prompt} Discovery records service facts and evidence references only, not passwords, access codes or customer records.`, 'single', [
         option('yes', 'Yes, confirm the scope'),
         option('no', 'No, not used'),
         option('unknown', 'Not yet confirmed')
-    ]);
+    ]), { expandedDiscovery: true });
 }
 
 function serviceDetail(id, presenceId, prompt) {
@@ -216,7 +218,7 @@ function serviceDetail(id, presenceId, prompt) {
 }
 
 function confirmedFact(id, section, prompt, showWhen = null) {
-    return Object.assign(question(id, section, prompt, 'text', [], showWhen), { requiresConfirmation: true });
+    return Object.assign(question(id, section, prompt, 'text', [], showWhen), { requiresConfirmation: true, expandedDiscovery: true });
 }
 
 function condition(questionId, operator, values) {
@@ -224,17 +226,25 @@ function condition(questionId, operator, values) {
 }
 
 function getAssessmentBlueprint() {
+    const expandedDiscovery = expandedDiscoveryEnabled();
+    const selectedSections = sections.map(section => ({ ...section, minutes: expandedDiscovery && section.id === 'estate' ? 17 :
+        expandedDiscovery && section.id === 'operations' ? 6 : section.minutes }));
     return {
-        version: ASSESSMENT_VERSION,
+        version: expandedDiscovery ? '2026.11.1' : ASSESSMENT_VERSION,
+        expandedDiscovery,
         title: 'Managed IT customer review',
-        estimatedMinutes: sections.reduce((total, section) => total + section.minutes, 0),
-        sections: sections.map((section) => Object.assign({}, section)),
-        questions: questions.map((item) => JSON.parse(JSON.stringify(item)))
+        estimatedMinutes: selectedSections.reduce((total, section) => total + section.minutes, 0),
+        sections: selectedSections,
+        questions: activeQuestions().map((item) => JSON.parse(JSON.stringify(item)))
     };
 }
 
 function getQuestionMap() {
-    return new Map(questions.map((item) => [item.id, item]));
+    return new Map(activeQuestions().map((item) => [item.id, item]));
+}
+
+function isExpandedDiscoveryQuestion(id) {
+    return questions.some(item => item.id === id && item.expandedDiscovery);
 }
 
 function isQuestionVisible(questionItem, answers) {
@@ -262,5 +272,6 @@ module.exports = {
     answerLabel,
     getAssessmentBlueprint,
     getQuestionMap,
+    isExpandedDiscoveryQuestion,
     isQuestionVisible
 };

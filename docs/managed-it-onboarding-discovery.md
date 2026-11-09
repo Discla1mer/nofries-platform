@@ -4,6 +4,13 @@ This slice expands the private staff service review. It records customer claims
 and supporting references. It does not install tools, accept responsibility for a
 service, promise supplier compatibility, calculate a new price or approve changes.
 
+The expansion defaults off. Set `NOFRIES_MANAGED_IT_DISCOVERY_ENABLED=true`
+explicitly to expose the new blueprint and accept its answers. Unset, false and
+other values keep the original 22 questions, version and timings; retained
+expansion answers are excluded from proposal-review evidence while disabled.
+Saving while disabled preserves existing expansion answers and ignores changes
+or additions to them, so switching the flag off does not erase saved work.
+
 ## Gap assessment
 
 On public main `ec6f558`, the review has 22 questions in six sections. It covers
@@ -62,10 +69,10 @@ vendor-neutral MSP discovery, not a claim that Datto mandates these answers.
 - [Website monitoring](https://rmm.datto.com/help/en/Content/2SETUP/BestPractices/Best_Practices_Website_Monitoring.htm): content/certificate checks do not establish transaction success or website maintenance responsibility.
 - [NIST MSP backup guidance](https://csrc.nist.gov/pubs/other/2020/04/24/protecting-data-from-ransomware-and-other-data-los/final): backup operation and tested recovery are distinct.
 
-## Release acceptance still needed
+## Validation boundaries
 
-Run the final application checks and native database CI, plus actual-browser
-desktop/mobile and keyboard checks of yes/no/unknown branching, gap mode,
-focus, draft save/reopen and retained hidden answers. Use synthetic data only.
-Then reconcile the operator's findings into a customer-specific service schedule
-and technical onboarding plan. This change has no deployment authority.
+Validation covers application/native database CI and synthetic desktop/mobile
+browser checks of branching, gap mode, focus, confirmation and draft save/reopen.
+It does not establish live identity-provider acceptance or supplier support.
+Customer-specific service schedules and technical onboarding plans still require
+the operator's review. This change has no deployment authority.

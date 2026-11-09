@@ -6,6 +6,7 @@ const {
     answerLabel,
     getAssessmentBlueprint,
     getQuestionMap,
+    isExpandedDiscoveryQuestion,
     isQuestionVisible
 } = require('./salesBlueprint');
 const { getProductRequestIdentity } = require('./identity');
@@ -1134,14 +1135,14 @@ async function handleAssessments(method, segments, body, access) {
             action: 'assessment.created',
             targetType: 'assessment',
             targetId: assessmentId,
-            summary: 'Managed IT customer review started'
+            summary: blueprint.expandedDiscovery ? 'Managed IT customer review started' : '30-minute discovery started'
         }, (state) => {
             findCustomer(state, customerId);
             const now = new Date().toISOString();
             const assessment = {
                 id: assessmentId,
                 customerId,
-                title: cleanText(body.title || 'Managed IT customer review', 180),
+                title: cleanText(body.title || (blueprint.expandedDiscovery ? 'Managed IT customer review' : '30-minute customer discovery'), 180),
                 blueprintVersion: blueprint.version,
                 status: 'draft',
                 answers: {},
@@ -1193,6 +1194,11 @@ async function handleAssessments(method, segments, body, access) {
             summary: status === 'completed' ? 'Discovery completed' : 'Discovery draft saved'
         }, (state) => {
             const assessment = findAssessment(state, assessmentId);
+            if (!getAssessmentBlueprint().expandedDiscovery) {
+                for (const [id, answer] of Object.entries(assessment.answers || {})) {
+                    if (isExpandedDiscoveryQuestion(id)) answers[id] = answer;
+                }
+            }
             assessment.answers = answers;
             assessment.status = status;
             assessment.updatedBy = access.user.email;
@@ -2934,7 +2940,7 @@ function proposalReviewEvidence(assessment) {
     const questionMap = getQuestionMap();
     return Object.entries(assessment.answers || {}).map(([questionId, answer]) => {
         const question = questionMap.get(questionId);
-        if (question && (!isQuestionVisible(question, assessment.answers) || question.requiresConfirmation && answer.verification !== 'confirmed')) return null;
+        if (!question || !isQuestionVisible(question, assessment.answers) || question.requiresConfirmation && answer.verification !== 'confirmed') return null;
         return {
             questionId,
             question: question && question.prompt || questionId,
