@@ -72,3 +72,28 @@ Session/approval revocation can race that small interval; ETag fencing protects
 subject-record changes, not native revocation. This remains a documented limit
 of the default-off expiry action; strict cross-store revocation fencing needs a
 separate design. The PostgreSQL membership action uses transaction fences.
+
+`POST /api/dashboard-admin/suspend` and `POST /api/dashboard-admin/restore`
+use the same flag and HTTP guards. Their JSON bodies contain `selector`,
+`operationId`, `confirmationEmail`, and `expectedMembershipRevision` from the
+scoped authority lookup (not the customer-subject revision). Only that membership
+changes. Sign-in and other organisations remain available; restoration does not
+renew an expired membership or authority.
+
+`POST /api/dashboard-admin/approve-suspend` and `approve-restore` accept the same
+body without `operationId` and return a server-issued operation ID. They verify
+typed email and current membership revision, then durably audit a 15-minute
+approval in the protected store. Configure `auditPolicy`; omit `readApprovedAction`
+to use this issuer/reader. Execution always verifies the protected issuance audit.
+An optional custom reader can additionally revoke approval and must return the same closed wrapper,
+binding the #109 grant to one operation, session digest, exact target/revision,
+subject-record digest, source and audit destination. Bare reusable grants fail.
+The operator cannot suspend their own membership. Restore requires a successful
+staff suspend audit plus its native receipt. Up to 100 intervening revisions
+must be verified actions on other members; unknown or same-member changes refuse.
+Native session,
+restore epoch, approval and subject authority are rechecked before SQL writes
+and COMMIT. The existing canonical repository checks revisions and preserves
+operation receipts; no new SQL permissions or schema are installed. Nested native
+checks reuse the current connection through read-only savepoints, restoring its
+role, tenant and timeout settings. This also supports a pool maximum of one.

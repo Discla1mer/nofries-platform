@@ -1108,6 +1108,26 @@
       "allowedRoles": ["anonymous"]
     },
     {
+      "route": "/api/dashboard-admin/approve-suspend",
+      "methods": ["POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/dashboard-admin/approve-restore",
+      "methods": ["POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/dashboard-admin/suspend",
+      "methods": ["POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/dashboard-admin/restore",
+      "methods": ["POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/api/dashboard-admin/accounts/lookup",
       "methods": ["POST"],
       "allowedRoles": ["anonymous"]

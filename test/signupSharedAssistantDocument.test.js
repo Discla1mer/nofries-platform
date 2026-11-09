@@ -7,6 +7,7 @@ const { execFileSync } = require('node:child_process');
 const request = require('supertest');
 const { buildSignupDocument, buildHostedSignupDocument } = require('../lib/signupDocument');
 const { withHashBoundSharedAssistantDocument } = require('../lib/withHashBoundSharedAssistantDocument');
+const effectiveCsp = require('./helpers/effectiveCsp');
 
 const root = path.resolve(__dirname, '..');
 const read = name => fs.readFileSync(path.join(root, name), 'utf8');
@@ -107,6 +108,6 @@ test('actual static signup HTML and route policy remain paired within the existi
     const original = build('hosted'), expected = withHashBoundSharedAssistantDocument(original, helpers());
     expect(route.rewrite).toBe('/app/signup.html');
     expect(read('dist/app/signup.html')).toBe(expected.html);
-    expect(policy(route.headers['Content-Security-Policy'])).toEqual(policy(expected.contentSecurityPolicy));
+    expect(effectiveCsp(route.headers['Content-Security-Policy'])).toEqual(effectiveCsp(expected.contentSecurityPolicy));
     assertBound(expected, original);
 });

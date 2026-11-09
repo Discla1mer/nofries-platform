@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
+const effectiveCsp = require('./helpers/effectiveCsp');
 
 test('the finalizer compacts only closed cache/robots policies and retains every header', () => {
     const vm = require('node:vm');
@@ -84,5 +85,23 @@ test('the customer entry builds within the SWA limit with API routes and securit
         const hash = "'sha256-" + crypto.createHash('sha256').update(runtime).digest('base64') + "'";
         expect(built.routes.find(rule => rule.route === route).headers['Content-Security-Policy']).toContain(hash);
     }
-    expect(directives(built.globalHeaders['Content-Security-Policy'], ';')).toEqual(directives(source.globalHeaders['Content-Security-Policy'], ';'));
+    expect(effectiveCsp(built.globalHeaders['Content-Security-Policy'])).toEqual(effectiveCsp(source.globalHeaders['Content-Security-Policy']));
+});
+
+test('static CSP compaction preserves fallbacks, explicit denies, hashes and all navigation directives', () => {
+    const vm = require('node:vm'), script = fs.readFileSync(path.join(ROOT, 'scripts/build-static.js'), 'utf8');
+    const finalizer = script.slice(script.indexOf('function finalizeStaticWebAppConfig()'), script.indexOf('function copyDirectory('));
+    const policies = ["default-src 'none';object-src 'none';frame-src 'none';worker-src 'none';script-src 'self';base-uri 'none';form-action 'none';frame-ancestors 'none'",
+        "default-src 'self';script-src 'self';style-src 'self';connect-src 'self';object-src 'none'",
+        "default-src 'none';child-src 'self';frame-src 'none';script-src 'sha256-synthetic';img-src data:",
+        "default-src 'self';script-src 'self';script-src 'none'"];
+    const source = { routes: policies.flatMap((policy, i) => ['/static/', '/api/'].map(prefix => ({ route: prefix + i, headers: { 'Content-Security-Policy': policy } }))) };
+    let output; vm.runInNewContext(finalizer + '\nfinalizeStaticWebAppConfig();', { path, distDir: '/synthetic', Buffer, MAX_STATIC_CONFIG_BYTES: 20000,
+        fs: { readFileSync: () => JSON.stringify(source), writeFileSync: (_file, value) => { output = JSON.parse(value); } } });
+    output.routes.forEach((route, index) => expect(effectiveCsp(route.headers['Content-Security-Policy'])).toEqual(effectiveCsp(source.routes[index].headers['Content-Security-Policy'])));
+    expect(output.routes[0].headers['Content-Security-Policy']).not.toContain('object-src');
+    expect(output.routes[0].headers['Content-Security-Policy']).toContain("worker-src 'none'");
+    expect(output.routes[1].headers['Content-Security-Policy']).toContain("object-src 'none'");
+    expect(output.routes[4].headers['Content-Security-Policy']).toContain("frame-src 'none'");
+    expect(output.routes[6].headers['Content-Security-Policy']).toBe(policies[3]);
 });

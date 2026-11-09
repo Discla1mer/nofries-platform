@@ -3,14 +3,19 @@
 const { fields, hash } = require('../appLifecycle/dashboardRuntimeRecords');
 const { createDashboardOperatorSession } = require('../dashboardOperatorSession');
 const { createPostgresDashboardAdministrationRepository } = require('../appLifecycle/postgresDashboardRuntimeRepository');
+const { createMembershipAction } = require('./accountActionsMembership');
+const { createAccountActionsRepository } = require('./accountActionsRepository');
 const { createExpiryAction } = require('./accountActionsExpiry');
 const { accountActionsPool } = require('./accountActionsPool');
 const { createExpiryApproval } = require('./accountActionsApproval');
 
 function createAccountActionsRuntime(configuration, dashboard, authorise) {
+    const hasMembership = ['readApprovedAction', 'auditPolicy'].some(key => Object.hasOwn(configuration, key));
     fields(configuration, ['source', 'authorityContainer', 'auditContainer',
+        ...(hasMembership ? ['auditPolicy'] : []), ...(Object.hasOwn(configuration, 'readApprovedAction') ? ['readApprovedAction'] : []),
         ...(Object.hasOwn(configuration, 'readApprovedExtension') ? ['readApprovedExtension'] : [])]);
     if (Object.hasOwn(configuration, 'readApprovedExtension') && typeof configuration.readApprovedExtension !== 'function') throw new Error('dashboard_admin_configuration_invalid');
+    if (Object.hasOwn(configuration, 'readApprovedAction') && typeof configuration.readApprovedAction !== 'function') throw new Error('dashboard_admin_configuration_invalid');
     const select = names => Object.fromEntries(names.map(key => [key, dashboard[key]]));
     const pool = accountActionsPool(dashboard.pool);
     const session = createDashboardOperatorSession(select(['browserAuthOptions', 'identityPolicy', 'proofStore',
@@ -33,9 +38,12 @@ function createAccountActionsRuntime(configuration, dashboard, authorise) {
         } };
     const issuer = configuration.readApprovedExtension ? null : createExpiryApproval(options);
     const expiry = createExpiryAction({ ...options, readApprovedExtension: configuration.readApprovedExtension || issuer.readApprovedExtension });
+    const membership = hasMembership ? createMembershipAction({ ...options, identityPolicy: dashboard.identityPolicy,
+        createRepository: (guard, allowed, context) => createAccountActionsRepository(pool, dashboard.clock, guard, allowed, context) }) : null;
     return Object.freeze({ execute(actor, input, invocation, action) {
-        if (action !== 'extend-expired-access') throw new Error('dashboard_admin_unavailable');
-        return expiry.execute(actor, input, invocation);
+        if (action === 'extend-expired-access') return expiry.execute(actor, input, invocation);
+        if (!membership || !['suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(action)) throw new Error('dashboard_admin_unavailable');
+        return membership.execute(actor, input, invocation, action);
     },
         ...(issuer ? { approve: issuer.approve } : {}) });
 }
