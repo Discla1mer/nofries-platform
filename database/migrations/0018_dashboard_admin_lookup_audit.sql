@@ -1,5 +1,5 @@
--- Owner decision, 11 November 2026: promote the reviewed staff-console lookup
--- audit proposal (database/proposals/dashboard_admin_lookup_audit.sql, SHA-256
+-- Promotes the reviewed staff-console lookup audit proposal
+-- (database/proposals/dashboard_admin_lookup_audit.sql, SHA-256
 -- 48e226de251589cac37de64990f6065958a967168e5ffa218087c56b4d64ac3d) to a
 -- migration so "Show dashboard access" can record its attempt and terminal
 -- audit rows. Only this comment header changed; the DO block below is the
