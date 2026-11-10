@@ -6,7 +6,7 @@ const { detectProspectPromptInjection } = require('./prospectInjectionGuard');
 // Change this version whenever the public facts or availability change.
 const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
     schemaVersion: 1,
-    knowledgeVersion: 'public-stack-2026-10-19-v1',
+    knowledgeVersion: 'public-stack-2026-11-10-v1',
     links: {
         home: 'https://nofries.nz/',
         dashboard: 'https://nofries.nz/dashboard',
@@ -75,6 +75,26 @@ const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
     }
 });
 
+// Public, generic assessment help. Definitions are copied from the answer
+// guidance shown beside each option (ncscQuestionnaire.js ANSWER_GUIDANCE);
+// the formula matches the evaluator (assessmentEvaluator.js creditForSemantic)
+// and the results-page explanation. No private assessment data is used.
+const ASSESSMENT_ANSWER_HELP = deepFreeze({
+    options: {
+        yes: { label: 'Yes', meaning: 'All parts of this statement are in place across your declared scope.' },
+        partial: { label: 'Partial', meaning: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.' },
+        no: { label: 'No', meaning: 'None of this is in place yet, including when work is only planned.' },
+        unknown: { label: 'Unknown', meaning: 'You do not have enough information to confirm what is in place.' },
+        not_applicable: { label: 'N/A (Not applicable)', meaning: 'You believe this does not apply to your scope. Explain why; this remains unresolved.' }
+    },
+    formula: 'Each question has equal weight: Yes = 1, Partial = 0.5, No = 0. Unknown, unanswered and pending N/A answers are unresolved and widen the score range: the lower end counts them as 0 and the upper end counts them as 1. N/A stays in the denominator unless formally approved, and N/A approval is not available in this journey. This is a No Fries calculation, not an NCSC score.',
+    questionGuidance: 'For a specific question, open "Guidance and evidence examples" under that question in the assessment for its own example and evidence.',
+    privateLimit: 'Ask Fry can\'t see your saved assessment, answers, score or gaps.',
+    fixFirst: 'Sign in to the dashboard, open your submitted assessment from the assessment area or Overview and choose View results. The "Fix these first" list there groups the gaps you reported (No, then Partial, then Unknown and N/A) with a next step for each. It groups your answers; it is not a calculated risk ranking.',
+    complianceLead: 'This assessment can\'t establish compliance or certification.',
+    complianceDetail: 'Results are self-reported gap indicators from your submitted answers. They are not an audit, independent assurance, certification, compliance finding or proof of effective controls. The assessment does not cover every NCSC Minimum Standard requirement and is not an NCSC certification, endorsement or official NCSC score. It does not certify against ISO 27001, Cyber Essentials or any other scheme.'
+});
+
 function prospectPublicKnowledgePrompt() {
     const { links, capabilities } = NOFRIES_PUBLIC_KNOWLEDGE;
     return [
@@ -122,8 +142,13 @@ function publicHelpReply(message) {
     const productOverview = brand && !dashboard && !service && !assessment && !pricing &&
         /^(?:please\s+)?(?:what|who|tell me|explain|how|describe)\b/.test(text);
     const question = /^(?:please\s+)?(?:what|which|who|how|where|when|why|can|could|should|does|do|is|are|will|explain|tell me|show me|help me understand|help me)\b/.test(text);
+    const compliance = complianceQuestion(text);
+    const answerOption = answerOptionQuestion(text);
+    const scoringFormula = scoringFormulaQuestion(text);
+    const privatePriorities = privatePrioritiesQuestion(text);
     if (!question && !accountTopic && !accountChoice && !assessmentAction &&
-        !securityIntent && !assistantIdentity && !productOverview) return null;
+        !securityIntent && !assistantIdentity && !productOverview &&
+        !answerOption && !scoringFormula) return null;
     // Remove only a bounded personal-help opening before applying the existing
     // discovery exclusions. Other contact details or discovery clauses still win.
     const discoveryText = text.replace(/\bi (?:need|want)(?: help)?\s+(?:(?:to|with)\s+)?/g,
@@ -136,6 +161,19 @@ function publicHelpReply(message) {
     if (pricing) {
         topic = 'feature_availability';
         answer = `${capabilities.dashboardTerms.summary} ${capabilities.trialTerms.summary} Account access: ${links.signIn} Service scoping: ${links.scoping}`;
+    } else if (compliance) {
+        topic = 'compliance_limits';
+        answer = `${ASSESSMENT_ANSWER_HELP.complianceLead} ${ASSESSMENT_ANSWER_HELP.complianceDetail} Dashboard: ${links.dashboard}`;
+    } else if (answerOption) {
+        topic = 'answer_definitions';
+        answer = answerDefinitionsReply(answerOption);
+    } else if (scoringFormula) {
+        topic = 'scoring_formula';
+        const { formula, privateLimit } = ASSESSMENT_ANSWER_HELP;
+        answer = `${formula} ${answerOptionLines()} ${privateLimit} Your own range is on your results page. Dashboard: ${links.dashboard}`;
+    } else if (privatePriorities) {
+        topic = 'private_priorities';
+        answer = `${ASSESSMENT_ANSWER_HELP.privateLimit} ${ASSESSMENT_ANSWER_HELP.fixFirst} Dashboard: ${links.dashboard}`;
     } else if (/\b(?:assistant|chatbot|chat|you)\b/.test(text) &&
         /\b(?:fill|populate|change|edit|save|submit|read|see|access|upload)\b/.test(text) &&
         /\b(?:assessments?|answers?|results|scores?|fields?|forms?|organisation|organization|private|documents?)\b/.test(text)) {
@@ -200,6 +238,61 @@ function publicHelpReply(message) {
     return publicReply(topic, answer);
 }
 
+const ANSWER_OPTION_ORDER = Object.freeze(['yes', 'partial', 'no', 'unknown', 'not_applicable']);
+
+function complianceQuestion(text) {
+    return /\b(?:complian(?:t|ce)|certif(?:y|ied|ies|ication|icate)|accredit(?:ed|ation)?|iso(?: ?27001)?|cyber essentials|soc ?2|conform(?:s|ance|ity)?)\b/.test(text) ||
+        /\bmeet(?:s|ing)?\b[^.!?;]{0,40}\b(?:requirements?|standards?)\b/.test(text);
+}
+
+// Returns the answer options a question asks about, or null. Yes and No are
+// common words, so they only count with an answer/option cue, another option,
+// or as the direct subject of "what does ... mean".
+function answerOptionQuestion(text) {
+    const t = text.replace(/\bno ?fries\b/g, ' ');
+    if (!/\b(?:mean|means|meaning|definitions?|define[ds]?|difference|differ|stand for|count as|(?:should|do|would) (?:i|we) (?:answer|choose|pick|select|use))\b/.test(t)) return null;
+    const strong = {
+        partial: /\bpartial(?:ly)?\b/.test(t),
+        unknown: /\bunknown\b/.test(t),
+        not_applicable: /\bn\/a\b|\bnot applicable\b/.test(t)
+    };
+    const weak = { yes: /\byes\b/.test(t), no: /\bno\b/.test(t) };
+    const strongCount = Object.values(strong).filter(Boolean).length;
+    const weakCount = Object.values(weak).filter(Boolean).length;
+    const optionCue = /\b(?:answers?|options?|responses?|choices?)\b/.test(t) ||
+        /\bwhat (?:does|do) (?:an? )?["']?(?:yes|no)["']? mean\b/.test(t);
+    const weakCounts = weakCount > 0 && (optionCue || strongCount + weakCount >= 2);
+    const asked = ANSWER_OPTION_ORDER.filter(id => strong[id] || (weakCounts && weak[id]));
+    return asked.length ? asked : null;
+}
+
+function scoringFormulaQuestion(text) {
+    const calculation = /\b(?:calculat\w*|ranges?|formula|weight(?:s|ed|ing)?)\b/;
+    return (/\bscor(?:e|es|ed|ing)\b/.test(text) &&
+            (calculation.test(text) || /\b(?:work(?:s|ed)?|scored|scoring|counted|mean)\b/.test(text))) ||
+        (/\b(?:results?|ratings?|percentages?)\b/.test(text) && calculation.test(text));
+}
+
+function privatePrioritiesQuestion(text) {
+    if (/\b(?:fix(?:ing)? first|prioriti[sz]e|top priorit(?:y|ies)|(?:my|our) (?:biggest |main |top |weakest |worst )?(?:gaps?|weak(?:est)? (?:areas?|spots?|points?)|priorities)|what (?:are|is) (?:my|our) (?:biggest |main |top )?(?:gaps?|risks?|weaknesses))\b/.test(text)) return true;
+    if (/^(?:please\s+)?how did (?:i|we) (?:score|do)\b/.test(text)) return true;
+    return /^(?:please\s+)?(?:what|which|tell me)\b/.test(text) &&
+        /\b(?:my|our) (?:assessment |overall |cyber ?security |current )?(?:score|results?|rating|grade)\b/.test(text);
+}
+
+function answerOptionLines(ids = ANSWER_OPTION_ORDER, heading = 'The answer options:') {
+    return `${heading} ${ids.map(id => `${ASSESSMENT_ANSWER_HELP.options[id].label}: ${ASSESSMENT_ANSWER_HELP.options[id].meaning}`).join(' ')}`;
+}
+
+function answerDefinitionsReply(asked) {
+    const { options, formula, questionGuidance } = ASSESSMENT_ANSWER_HELP;
+    const others = ANSWER_OPTION_ORDER.filter(id => !asked.includes(id));
+    const definitions = others.length
+        ? `${asked.map(id => `${options[id].label} means: ${options[id].meaning}`).join(' ')} ${answerOptionLines(others, 'Other answer options:')}`
+        : answerOptionLines();
+    return `${definitions} Scoring: ${formula} ${questionGuidance}`;
+}
+
 function hasPublicHelpAction(text) {
     return /^(?:(?:reset(?:ting)?|recover(?:ing)?|chang(?:e|ing)) (?:my |an? |the )?(?:password|account)|(?:my |an? )?password (?:reset|recovery))\b/.test(text) ||
         /^(?:(?:sign(?:ing)?|log(?:ging)?)[ -]?(?:in|up)|creat(?:e|ing) (?:an? |my )?account)\b/.test(text) ||
@@ -243,6 +336,7 @@ function deepFreeze(value) {
 }
 
 module.exports = {
+    ASSESSMENT_ANSWER_HELP,
     NOFRIES_PUBLIC_KNOWLEDGE,
     prospectPublicKnowledgePrompt,
     publicHelpFallbackReply,
