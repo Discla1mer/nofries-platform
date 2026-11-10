@@ -192,7 +192,7 @@ describe('opaque same-domain Entra browser authentication', () => {
         expect(() => normaliseReturnTo(returnTo, 'https://nofries.nz', '/operator')).toThrow(expect.objectContaining({ code: 'browser_auth_return_path_invalid' }));
     });
 
-    test('starts a tenant-specific code flow and stores a five-minute PKCE transaction server-side', async () => {
+    test('starts a tenant-specific code flow and stores a ten-minute PKCE transaction server-side', async () => {
         const harness = serviceHarness();
         const result = await harness.service.beginLogin({ returnTo: '/operator?organisationId=org-1' });
         const url = new URL(result.location);
@@ -213,7 +213,7 @@ describe('opaque same-domain Entra browser authentication', () => {
         expect(result.cookie).toContain('HttpOnly');
         expect(result.cookie).toContain('Secure');
         expect(result.cookie).toContain('SameSite=None');
-        expect(result.cookie).toContain('Max-Age=300');
+        expect(result.cookie).toContain('Max-Age=600');
         expect(result.cookie).not.toMatch(/(?:^|;)\s*Domain=/i);
         expect(result.cookie).not.toContain(harness.calls.urlRequest.state);
         expect(result.cookie).not.toContain('organisationId');
@@ -225,7 +225,7 @@ describe('opaque same-domain Entra browser authentication', () => {
             nonce: harness.calls.urlRequest.nonce,
             codeVerifier: 'v'.repeat(64),
             returnTo: '/operator?organisationId=org-1',
-            expiresAt: NOW + (5 * 60 * 1000)
+            expiresAt: NOW + (10 * 60 * 1000)
         });
     });
 
@@ -329,7 +329,7 @@ describe('opaque same-domain Entra browser authentication', () => {
         let current = NOW;
         const harness = serviceHarness({ now: () => current });
         const started = await harness.service.beginLogin();
-        current += (5 * 60 * 1000);
+        current += (10 * 60 * 1000);
         await expect(harness.service.completeLogin({
             body: { code: 'one-time-code', state: harness.calls.urlRequest.state },
             cookieHeader: requestCookie(started.cookie)

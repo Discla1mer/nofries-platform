@@ -16,7 +16,23 @@ const RETAINED_READ_TRANSACTION_COOKIE_NAME = RETAINED_READ_COOKIE_NAME + '-tx';
 const COOKIE_NAME = SESSION_COOKIE_NAME;
 const TRANSACTION_KIND = 'oidc_transaction';
 const SESSION_KIND = 'browser_session';
+// Lifetime of a pending OIDC authorization-code round-trip (the __Host-*-tx
+// cookie and its server record).
 const TRANSACTION_TTL_MS = 5 * 60 * 1000;
+// Staff/legacy sign-in always sends prompt=select_account, so its *first*
+// attempt is forced through the full interactive path at the IdP -- the account
+// picker, a password/MFA challenge and any consent or "stay signed in?" step.
+// That routinely outran the five-minute window, so the form_post callback came
+// back with the transaction already expired (or the cookie gone) and failed
+// with browser_auth_transaction_missing/_expired; the user's retry then reused
+// the IdP's freshly established SSO session, completed in seconds and "worked on
+// the second try". Give that forced-interactive flow a ten-minute window.
+// Customer flows ride the provider SSO session (no forced picker) and keep the
+// shorter window. Every security property is intact: the transaction is still
+// one-time (atomically consumed), PKCE/state/nonce-bound, and the cookie stays
+// __Host- + Secure + HttpOnly + SameSite=None. Ten minutes also stays within the
+// provider authorization-code validity, so it never outlives a usable code.
+const STAFF_TRANSACTION_TTL_MS = 10 * 60 * 1000;
 const SESSION_ABSOLUTE_TTL_MS = 4 * 60 * 60 * 1000;
 const MAX_COOKIE_BYTES = 4096;
 const MAX_FORM_BYTES = 16 * 1024;
@@ -53,6 +69,10 @@ function createBrowserAuthService(options = {}) {
     const config = readBrowserAuthConfig(env, customerPolicy !== null, customerProvider, customerTransport, assertion);
     const sessionCookie = customerPurpose ? RETAINED_READ_COOKIE_NAME : customerTransport ? '__Host-nofries-external-customer' : customerPolicy ? '__Host-nofries-customer' : SESSION_COOKIE_NAME;
     const transactionCookie = customerPurpose ? RETAINED_READ_TRANSACTION_COOKIE_NAME : customerTransport ? '__Host-nofries-external-customer-tx' : customerPolicy ? '__Host-nofries-customer-tx' : TRANSACTION_COOKIE_NAME;
+    // Only the staff/legacy flow (no customer policy, transport or purpose)
+    // forces prompt=select_account, so only it gets the longer window.
+    const transactionTtlMs = !customerPolicy && !customerTransport && !customerPurpose
+        ? STAFF_TRANSACTION_TTL_MS : TRANSACTION_TTL_MS;
     const store = options.store || createBrowserSessionStore({
         env,
         containerClient: options.containerClient,
@@ -134,7 +154,7 @@ function createBrowserAuthService(options = {}) {
             v: 1,
             kind: TRANSACTION_KIND,
             issuedAt,
-            expiresAt: issuedAt + TRANSACTION_TTL_MS,
+            expiresAt: issuedAt + transactionTtlMs,
             state,
             nonce,
             codeVerifier: pkce.verifier,
@@ -151,7 +171,7 @@ function createBrowserAuthService(options = {}) {
         });
         return {
             location,
-            cookie: makeCookie(transactionCookie, correlationId, TRANSACTION_TTL_MS / 1000, 'None')
+            cookie: makeCookie(transactionCookie, correlationId, transactionTtlMs / 1000, 'None')
         };
     }
 
@@ -171,7 +191,7 @@ function createBrowserAuthService(options = {}) {
         }
         const transaction = consumed.record;
         try {
-            validateTransaction(transaction, now, customerPurpose);
+            validateTransaction(transaction, now, customerPurpose, transactionTtlMs);
             if (Object.hasOwn(transaction, 'customer') !== !!customerPolicy) throw new BrowserAuthError(401, 'browser_auth_transaction_invalid');
             if (transaction.customerProviderKey !== config.customerProviderKey) throw new BrowserAuthError(401, 'browser_auth_transaction_invalid');
             if (transaction.customerTransport !== customerTransport) throw new BrowserAuthError(401, 'browser_auth_transaction_invalid');
@@ -192,7 +212,7 @@ function createBrowserAuthService(options = {}) {
                     codeVerifier: transaction.codeVerifier,
                     nonce: transaction.nonce
                 });
-                validateTransaction(transaction, now, customerPurpose);
+                validateTransaction(transaction, now, customerPurpose, transactionTtlMs);
                 identity = validatedIdentity(result, transaction.nonce, config, now);
                 if (customerPolicy) customerAssurance = await customerPolicy.verify({
                     identity, claims: result.idTokenClaims, context: transaction.customer, now: Number(now())
@@ -208,7 +228,7 @@ function createBrowserAuthService(options = {}) {
 
             // Provider exchange and token-cache cleanup may outlast the original
             // five-minute attempt. Consuming it never extends that deadline.
-            validateTransaction(transaction, now, customerPurpose);
+            validateTransaction(transaction, now, customerPurpose, transactionTtlMs);
             const sessionId = randomOpaqueId(randomBytes);
             const issuedAt = Number(now());
             const absoluteExpiresAt = customerPolicy
@@ -230,7 +250,7 @@ function createBrowserAuthService(options = {}) {
                 ...(customerPurpose ? { customerPurpose } : {})
             }));
             try {
-                validateTransaction(transaction, now, customerPurpose);
+                validateTransaction(transaction, now, customerPurpose, transactionTtlMs);
             } catch (error) {
                 // No session cookie has been issued. A delayed save must not
                 // turn an ended transaction into browser authentication.
@@ -507,13 +527,13 @@ function isGuid(value) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(value || ''));
 }
 
-function validateTransaction(value, now, customerPurpose) {
+function validateTransaction(value, now, customerPurpose, ttlMs = TRANSACTION_TTL_MS) {
     const current = Number(now());
     if (
         !value || typeof value !== 'object' || Array.isArray(value) ||
         value.v !== 1 || value.kind !== TRANSACTION_KIND ||
         !Number.isFinite(value.issuedAt) || !Number.isFinite(value.expiresAt) ||
-        value.expiresAt <= value.issuedAt || value.expiresAt - value.issuedAt !== TRANSACTION_TTL_MS ||
+        value.expiresAt <= value.issuedAt || value.expiresAt - value.issuedAt !== ttlMs ||
         value.issuedAt > current + (CLOCK_SKEW_SECONDS * 1000) || value.expiresAt <= current
     ) {
         throw new BrowserAuthError(401, 'browser_auth_transaction_expired');
