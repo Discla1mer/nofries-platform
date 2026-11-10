@@ -297,6 +297,24 @@ test('Escape closes the non-modal dialog, returns focus and preserves an unsubmi
     expect(count(h, '/session')).toBe(1); expect(count(h, '/chat')).toBe(0);
 });
 
+test('Escape on the page behind the open chat closes it, unless another dialog or menu owns the key', async () => {
+    const h = harness(); h.launcher.fire('click'); await settle();
+    const pageControl = h.document.createElement('button');
+    const menuOwned = Object.assign(h.document.createElement('button'), { closest: () => ({}) });
+    let prevented = false;
+    h.document.fire('keydown', { key: 'Escape', target: menuOwned, preventDefault() { prevented = true; } }); await settle();
+    expect(h.dialog.open).toBe(true); expect(prevented).toBe(false);
+    h.document.fire('keydown', { key: 'Escape', target: pageControl, defaultPrevented: true, preventDefault() { prevented = true; } }); await settle();
+    expect(h.dialog.open).toBe(true); expect(prevented).toBe(false);
+    h.document.fire('keydown', { key: 'Escape', target: pageControl, isComposing: true, preventDefault() { prevented = true; } }); await settle();
+    expect(h.dialog.open).toBe(true);
+    h.document.fire('keydown', { key: 'Escape', target: pageControl, preventDefault() { prevented = true; } }); await settle();
+    expect(prevented).toBe(true); expect(h.dialog.open).toBe(false); expect(h.document.activeElement).toBe(h.launcher);
+    prevented = false;
+    h.document.fire('keydown', { key: 'Escape', target: pageControl, preventDefault() { prevented = true; } }); await settle();
+    expect(prevented).toBe(false);
+});
+
 test('outside pointer dismissal preserves the page action focus and ignores drags out of the panel', async () => {
     const h = harness(); h.launcher.fire('click'); await settle(); const other = h.element();
     h.document.fire('pointerdown', { target: h.elements.get('assistant-input'), button: 0 });
