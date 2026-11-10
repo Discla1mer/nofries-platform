@@ -14,7 +14,9 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         throw new TypeError('signup_view_dependencies_required');
     }
     const doc = root.ownerDocument;
-    let disposed = false, busy = false, generation = 0, viewRevision = 0;
+    // True until the first state read succeeds. A failure while opening is a
+    // sign-in/access check failure, not a statement that signup is unavailable.
+    let disposed = false, busy = false, generation = 0, viewRevision = 0, opening = true;
     let cancelOperation = null, setupDraft = null;
     const element = (tag, text) => {
         const node = doc.createElement(tag);
@@ -263,6 +265,29 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         }
         heading.focus();
     }
+    function showAccessUnconfirmed(diagnosticSource) {
+        if (disposed) return;
+        viewRevision++;
+        setupDraft = null;
+        root.replaceChildren();
+        const heading = element('h1', 'We could not open your account');
+        heading.tabIndex = -1;
+        root.append(heading,
+            element('p', 'Your sign-in may have worked, but No Fries could not check your account and workspace access just now. If you already have an account, it and your saved work are kept. You do not need to sign up again.'),
+            element('p', 'Try again now. If your account still does not open, sign in again with the same email and password.'),
+            element('p', 'Error code: NF-SIGNIN-UNCONFIRMED'));
+        showDiagnostic(diagnosticSource);
+        const retry = button('Try again', signal => client.load({ signal }));
+        retry.classList.add('signup-entry-action'); root.append(retry);
+        signInLinks();
+        const help = element('p', 'If this keeps happening, contact No Fries for help and include this error code.');
+        const report = element('a', 'Report this problem');
+        report.href = reportLink(diagnosticSource);
+        report.target = '_blank'; report.rel = 'noopener noreferrer';
+        report.setAttribute('aria-label', 'Report this problem (opens in a new tab)');
+        help.className = 'field-help signup-status-help'; help.append(element('span', ' '), report); root.append(help);
+        heading.focus();
+    }
     function showDiagnostic(value) {
         let reference, stage, reason;
         try {
@@ -366,9 +391,13 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         for (const node of [...root.querySelectorAll('button'), ...root.querySelectorAll('input'), ...root.querySelectorAll('select')]) node.disabled = true;
         try {
             const state = await Promise.race([action(controller.signal), cancelled]);
-            if (!disposed && current === generation) show(state, state, restoreDraft);
+            if (!disposed && current === generation) { opening = false; show(state, state, restoreDraft); }
         } catch (error) {
-            if (!disposed && current === generation) show({ status: 'unavailable' }, error);
+            // Failure or timeout always ends in a visible state with a way on.
+            if (!disposed && current === generation) {
+                if (customerTransport && opening) showAccessUnconfirmed(error);
+                else show({ status: 'unavailable' }, error);
+            }
         } finally {
             clearTimeout(timer);
             if (!disposed && current === generation) {
