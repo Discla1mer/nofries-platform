@@ -50,14 +50,14 @@
         </section>
         <div id="operatorRoot" hidden></div>
         <section id="accountActionsPanel" class="operator-loading-panel" hidden aria-labelledby="accountActionsHeading">
-            <h2 id="accountActionsHeading">Extend expired access</h2>
-            <p>Select an account from lookup, approve an expiry, then extend access. Approval lasts 15 minutes in this staff session.</p>
+            <h2 id="accountActionsHeading">Suspend or restore dashboard access</h2>
+            <p>Select an account from lookup and read its dashboard access. Approve the change by typing the account email, then apply it. Approval lasts 15 minutes in this staff session. Suspension blocks only that organisation's dashboard membership; no data is deleted.</p>
+            <p id="accountActionsSummary" aria-live="polite"></p>
             <form id="accountActionsForm" autocomplete="off">
                 <label>Account email <input id="accountActionsEmail" type="email" readonly required maxlength="254"></label>
                 <label>Type the account email to confirm <input id="accountActionsConfirmation" type="email" required maxlength="254" autocomplete="off"></label>
-                <label>New expiry (your local time, within 90 days) <input id="accountActionsExpiry" type="datetime-local" required></label>
-                <button id="accountActionsApprove" type="submit">Approve extension</button>
-                <button id="accountActionsExtend" type="button" disabled>Extend access</button>
+                <button id="accountActionsApprove" type="submit" disabled>Approve</button>
+                <button id="accountActionsApply" type="button" disabled>Apply</button>
             </form>
             <p id="accountActionsStatus" role="status" aria-live="polite"></p>
         </section>

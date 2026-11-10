@@ -168,6 +168,9 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET' };
             const action = isAccountAction(route);
             if (action && env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS !== 'true') fail(404, 'dashboard_admin_not_found');
+            // Expiry extension is withdrawn from the staff console: both routes
+            // are absent before authentication, body parsing or any storage.
+            if (['approve-extension', 'extend-expired-access'].includes(route) && accountActions?.expiry === false) fail(404, 'dashboard_admin_not_found');
             if (!Object.hasOwn(methods, route)) fail(404, 'dashboard_admin_not_found');
             if (request.method !== methods[route]) return response(405, { code: 'dashboard_admin_method_not_allowed' }, { Allow: methods[route] });
             if (String(request.originalUrl || request.url || '').includes('?') || Object.keys(request.query || {}).length) fail(400, 'dashboard_admin_input_invalid');
@@ -197,11 +200,11 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                     return response(200, body);
                 } else body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
             } else if (route === 'entry-capabilities') body = { entry: true,
-                ...(env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.approve ? { accountActions: true } : {}) };
+                ...(env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.execute ? { accountActions: true } : {}) };
             else if (route === 'entry') { body = buildDashboardAdminEntryDocument(); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'entry.js') {
                 body = fs.readFileSync(path.join(__dirname, '../protectedAssets/dashboardAdminEntry.js'), 'utf8');
-                if (env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.approve)
+                if (env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.execute)
                     body += '\n' + fs.readFileSync(path.join(__dirname, '../protectedAssets/accountActions.js'), 'utf8');
                 contentType = 'application/javascript; charset=utf-8';
             }
