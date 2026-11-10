@@ -132,6 +132,25 @@ function fits(metric) {
                 assert.equal(await guidance.evaluate(element => element.open), false, 'Native disclosure closes with Enter');
                 measurements.push({ id: question.id, hint: hintMetric, example: exampleMetric });
             }
+            const sensitiveId = 'NF-NCSC-CC-SV-01-Q1';
+            await picker.selectOption(String(metadata.questions.findIndex(question => question.id === sensitiveId)));
+            await page.locator('.ncsc-answer input[value="not_applicable"]').check();
+            const rationale = page.locator('#ncsc-rationale-' + sensitiveId);
+            const scopeHelp = page.locator('#ncsc-rationale-help-' + sensitiveId);
+            await rationale.fill('Synthetic scope: no payment requests.');
+            assert.equal(await rationale.getAttribute('aria-describedby'), 'ncsc-rationale-help-' + sensitiveId);
+            const scopeMetric = await textMetrics(scopeHelp); fits(scopeMetric);
+            for (const text of ['Not handling payments is not enough', 'payment or bank-detail changes',
+                'password or MFA resets', 'account recovery', 'sensitive-data changes', 'If you are unsure, choose Unknown.']) {
+                assert.ok(scopeMetric.text.includes(text));
+            }
+            await page.screenshot({ path: path.join(artifacts, 'sensitive-request-na-' + width + '.png') });
+            await picker.selectOption('0');
+            await picker.selectOption(String(metadata.questions.findIndex(question => question.id === sensitiveId)));
+            assert.equal(await rationale.inputValue(), 'Synthetic scope: no payment requests.', 'Navigation retains the explanation');
+            assert.equal(await scopeHelp.isVisible(), true);
+            await page.locator('.ncsc-answer input[value="unknown"]').check();
+            assert.equal(await rationale.count(), 0); assert.equal(await scopeHelp.count(), 0);
             await picker.focus(); await page.keyboard.press('Home'); assert.equal(await picker.inputValue(), '0');
             await page.keyboard.press('ArrowDown'); assert.equal(await picker.inputValue(), '1');
             await page.keyboard.press('End'); assert.equal(await picker.inputValue(), String(metadata.questions.length - 1));
@@ -155,7 +174,7 @@ function fits(metric) {
             assert.deepEqual(transport, originalTransport, 'Guidance, local answer changes and validation make no transport calls');
             assert.deepEqual(await page.evaluate(() => window.questionGuidanceViolations), []);
             results.push({ width, questions: measurements.length, measurements, keyboard: true, unsavedAnswerPreserved: true,
-                validationHintAndError: true, transportReads: transport.length, transportWrites: 0 });
+                validationHintAndError: true, sensitiveRequestNaScope: true, transportReads: transport.length, transportWrites: 0 });
             await context.close();
         }
         assert.deepEqual(errors, []); assert.deepEqual(outside, []); assert.deepEqual(hashes(), before);
