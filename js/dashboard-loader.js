@@ -735,7 +735,6 @@
                 if (readOnly) csrf = null;
                 heading.textContent = readOnly ? 'Saved organisation setups' : 'Add organisation';
                 unlimitedList = state.remaining === null;
-                if (readOnly) content.append(element('p', 'New organisations cannot be added from this account right now. Email hello@nofries.nz if you need another.'));
                 // Only the directory grants ready workspaces. Saved setup
                 // records contribute incomplete rows to the same list.
                 elements.choices.querySelectorAll('.client-workspace-row').forEach(function (row) { row.remove(); });

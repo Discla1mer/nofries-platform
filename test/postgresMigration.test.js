@@ -70,6 +70,7 @@ require('./integration/dashboardAdminSignupPostgres')();
 require('./integration/organisationAccessAcceptance')();
 require('./integration/evidencePostgres')();
 require('./integration/evidenceMetadataPostgres')();
+require('./integration/starterClientPeriodPostgres')();
 // restrictedMaintenancePostgres: private controller integration suite remains private.
 // databasePublicHardeningPostgres: private controller integration suite remains private.
 

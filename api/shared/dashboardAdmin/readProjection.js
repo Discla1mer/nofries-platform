@@ -42,7 +42,8 @@ function projectAuthorityRead(input, selector) {
         organisation: { displayName: organisation.displayName, status: organisation.recordStatus },
         memberships: selectedMembers.map(row => ({ membershipId: row.membershipId, status: row.status,
             roles: row.roles, validFrom: row.validFrom, validUntil: row.validUntil,
-            effectiveStatus: row.status !== 'active' ? row.status : at < row.validFrom ? 'not_started' : at >= row.validUntil ? 'expired' : 'active' })),
+            // Accounts do not expire: a passed validUntil is shown as a saved date, never as an expired member.
+            effectiveStatus: row.status !== 'active' ? row.status : at < row.validFrom ? 'not_started' : 'active' })),
         invitations: invitations.map(row => ({ status: row.status, roles: row.roles,
             validFrom: row.validFrom, validUntil: row.validUntil, expiresAt: row.expiresAt })),
         entitlements: entitlement.grants.map(row => ({ grantId: row.grantId, code: row.code, status: row.status,

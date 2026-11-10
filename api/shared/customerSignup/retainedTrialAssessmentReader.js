@@ -191,7 +191,7 @@ function createRetainedTrialAssessmentReader({ captureRequest, readSubject, acco
             if (version === null) throw new RetainedTrialReadError('retained_read_not_found', 404);
             if (version.envelope.state.status !== 'submitted' || version.envelope.submission === null ||
                 version.envelope.state.createdAt < selected.a.occurredAt || version.envelope.state.updatedAt >= selected.a.validUntil) deny();
-            return freeze({ schemaVersion: 1, readOnly: true, trialEndedAt: selected.a.validUntil, assessment: projectNcscDetail(version) });
+            return freeze({ schemaVersion: 1, readOnly: true, assessment: projectNcscDetail(version) });
         }, time, audit);
         // Transaction acknowledgement can itself outlast or revoke the current
         // browser session. Recheck genuine current authentication/owner DATA
