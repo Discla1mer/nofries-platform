@@ -206,6 +206,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                     const element = original(tag);
                     Object.defineProperty(element, 'id', { get: () => element.getAttribute('id') || '', set: value => element.setAttribute('id', value) });
                     element.removeChild = child => { element.children = element.children.filter(item => item !== child); child.parentElement = null; return child; };
+                    if (tag === 'dialog') { element.showModal = () => { element.open = true; }; element.close = () => { element.open = false; }; }
                     return element;
                 };
                 dom.root = dom.document.createElement('div');
