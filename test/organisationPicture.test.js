@@ -925,3 +925,233 @@ test('changing the selected assessment invalidates a loaded trend back to its re
     assert.equal(reads, readsAfterLoad + 1);
     dom.controller.destroy();
 });
+
+// Compare with previous (T-001). Synthetic re-assessments of one identical
+// scope, built through the real store/projection so resultModel accepts them.
+function submittedRecord(assessmentId, scope, pick, at) {
+    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation', now: at });
+    const responses = allResponses().map((row, index) => ({ ...row, optionId: pick(index), rationale: null }));
+    let version = null;
+    for (const command of [createCommand(assessmentId, 'create-' + assessmentId, scope),
+        saveCommand(assessmentId, 0, 'save-' + assessmentId, responses), submitCommand(assessmentId, 1, 'submit-' + assessmentId)]) {
+        version = makeVersion({ ...tenant.scope, actorSubjectKey: SUBJECT, assessmentId: command.assessmentId,
+            action: command.action, expectedRevision: command.expectedRevision, payload: command.payload },
+        command.idempotencyKey, version, tenant.state.tenantAggregate, at);
+    }
+    return projectNcscDetail(version);
+}
+const SAME_SCOPE = 'Synthetic head office, laptops and cloud email.';
+const reassessments = (scopes = [SAME_SCOPE, SAME_SCOPE, SAME_SCOPE]) => [
+    submittedRecord('assessment-1-oldest', scopes[0], index => index < 2 ? 'yes' : 'no', '2026-09-10T00:00:00.000Z'),
+    submittedRecord('assessment-2-previous', scopes[1], index => index < 4 ? 'yes' : index < 8 ? 'partial' : index < 11 ? 'unknown' : 'no', '2026-10-01T00:00:00.000Z'),
+    submittedRecord('assessment-3-current', scopes[2], index => ['yes', 'yes', 'yes', 'yes', 'partial', 'partial', 'partial',
+        'yes', 'yes', 'yes', 'yes', 'partial', 'yes', 'no'][index], '2026-10-20T00:00:00.000Z')];
+const organisationResult = record => questionnaire.resultModel(record, buildFixtures().metadata,
+    buildFixtures().tenants[0].model.context.organisationId);
+function countingClient(records, settings = {}) {
+    const state = { reads: [], writes: 0, fail: settings.fail || new Set() };
+    state.client = { list: async () => ({ assessments: records.map(clone), nextAfterAssessmentId: null }),
+        read: async id => {
+            state.reads.push(id);
+            if (state.fail.has(id)) { state.fail.delete(id); throw Object.assign(new Error('synthetic outage'), { status: 503 }); }
+            return { assessment: clone(records.find(row => row.assessmentId === id)) };
+        },
+        create: () => state.writes++, save: () => state.writes++, submit: () => state.writes++ };
+    return state;
+}
+const compareSection = dom => dom.root.querySelector('.picture-compare');
+
+test('scopeCompatibility treats identical scope and questionnaire as like-for-like and names every difference', () => {
+    const profileRef = buildFixtures().metadata.profileRef;
+    const base = { scopePopulation: { description: SAME_SCOPE }, profileRef };
+    const same = picture.scopeCompatibility(base, clone(base));
+    assert.equal(same.comparable, true); assert.equal(same.sameScope, true); assert.equal(same.sameQuestionnaire, true);
+    assert.equal(same.scope, SAME_SCOPE); assert.equal(same.profileVersion, profileRef.profileVersion);
+    assert.deepEqual(same.differences, []);
+    const scope = picture.scopeCompatibility(base, { ...base, scopePopulation: { description: SAME_SCOPE + ' Plus warehouse.' } });
+    assert.equal(scope.comparable, false); assert.equal(scope.sameQuestionnaire, true);
+    assert.deepEqual(scope.differences, [{ field: 'scope', previous: SAME_SCOPE, current: SAME_SCOPE + ' Plus warehouse.' }]);
+    const version = picture.scopeCompatibility(base, { ...base, profileRef: { ...profileRef, profileVersion: 'later' } });
+    assert.equal(version.comparable, false); assert.equal(version.sameScope, true);
+    assert.deepEqual(version.differences[0].fields, ['profileVersion']);
+    assert.equal(version.differences[0].previous, profileRef.profileVersion); assert.equal(version.differences[0].current, 'later');
+    const missing = picture.scopeCompatibility({ profileRef }, { profileRef });
+    assert.equal(missing.comparable, false); assert.equal(missing.differences[0].field, 'scope');
+    assert.equal(picture.scopeCompatibility(null, base).comparable, false);
+});
+
+test('compareModel reports saved ranges, function deltas and grouped answer changes without re-scoring', () => {
+    const [, previous, current] = reassessments();
+    const model = picture.compareModel(organisationResult(previous), organisationResult(current));
+    assert.equal(model.previous.attainment, '42.9%–64.3%'); assert.equal(model.current.attainment, '78.6%');
+    assert.equal(model.delta, 357);
+    assert.equal(model.changedCount, 6); assert.equal(model.unchangedCount, 8); assert.equal(model.notComparedCount, 0);
+    assert.deepEqual(model.domains.map(domain => domain.title), buildFixtures().metadata.domains.map(domain => domain.title));
+    const byTitle = Object.fromEntries(model.domains.map(domain => [domain.title, domain]));
+    assert.deepEqual([byTitle['Prevent and Protect'].previous, byTitle['Prevent and Protect'].current, byTitle['Prevent and Protect'].delta],
+        ['35.7%–50.0%', '78.6%', 429]);
+    assert.deepEqual([byTitle['Guide and Govern'].delta, byTitle['Guide and Govern'].changed.length, byTitle['Guide and Govern'].unchanged], [0, 0, 2]);
+    const transitions = model.domains.flatMap(domain => domain.changed.map(change => change.previous + ' → ' + change.current));
+    for (const expected of ['No → Partial', 'Unknown → Yes', 'Partial → Yes', 'No → Yes']) assert.ok(transitions.includes(expected), expected);
+    const reverse = picture.compareModel(organisationResult(current), organisationResult(previous));
+    assert.equal(reverse.delta, -357); assert.equal(reverse.changedCount, 6);
+    assert.equal(picture.compareModel(null, organisationResult(current)), null);
+    assert.equal(picture.compareModel({ attainment: 'Not scored', domains: [] }, { attainment: '50.0%', domains: [] }).delta, null);
+});
+
+test('compare with previous defaults to the immediately earlier submission and shows like-for-like changes on request', async () => {
+    const records = reassessments(), state = countingClient(records);
+    const dom = setup({ client: state.client, options: { initialAssessmentId: 'assessment-3-current' } }); await flush();
+    assert.deepEqual(state.reads, ['assessment-3-current']);
+    const section = compareSection(dom);
+    assert.equal(section.querySelector('h3').textContent, 'Compare with previous');
+    assert.equal(section.getAttribute('aria-labelledby'), section.querySelector('h3').id);
+    const picker = section.querySelector('select');
+    assert.equal(section.querySelector('label').htmlFor, picker.id);
+    assert.deepEqual(picker.querySelectorAll('option').map(option => option.value), ['assessment-2-previous', 'assessment-1-oldest']);
+    assert.equal(picker.value, 'assessment-2-previous');
+    assert.match(picker.querySelectorAll('option')[0].textContent, /^Previous · /);
+    assert.equal(section.querySelector('.picture-compare-result'), null);
+    click(dom, 'Compare with previous'); await flush();
+    assert.deepEqual(state.reads, ['assessment-3-current', 'assessment-2-previous']); assert.equal(state.writes, 0);
+    const result = compareSection(dom).querySelector('.picture-compare-result');
+    assert.match(result.querySelector('h4').textContent, /^Changes since /);
+    assert.equal(dom.document.activeElement, result.querySelector('h4'));
+    assert.match(result.querySelector('.picture-compare-compatible').textContent, /identical scope text and the same questionnaire version/);
+    assert.ok(result.textContent.includes('Scope: ' + SAME_SCOPE));
+    assert.equal(result.querySelector('.picture-compare-warning'), null);
+    const range = result.querySelector('.picture-compare-range');
+    assert.equal(range.querySelector('strong').textContent, '42.9%–64.3% → 78.6%');
+    assert.equal(range.querySelector('strong').getAttribute('aria-hidden'), 'true');
+    assert.match(range.querySelector('.picture-compare-sr').textContent, /^From 42\.9%–64\.3% on .* to 78\.6% in the selected assessment\.$/);
+    assert.match(range.textContent, /\+35\.7 points in the reported lower bound/);
+    const table = result.querySelector('table');
+    assert.ok(table.querySelector('caption'));
+    assert.deepEqual(table.querySelector('thead').querySelectorAll('th').map(cell => cell.getAttribute('scope')), ['col', 'col', 'col', 'col']);
+    const rows = table.querySelector('tbody').children;
+    assert.equal(rows.length, 5);
+    const protect = rows.find(row => row.children[0].textContent === 'Prevent and Protect');
+    assert.deepEqual(protect.children.map(cell => cell.textContent), ['Prevent and Protect', '35.7%–50.0%', '78.6%', '+42.9 points']);
+    assert.equal(protect.children[0].getAttribute('scope'), 'row');
+    assert.equal(rows.find(row => row.children[0].textContent === 'Guide and Govern').children[3].textContent, 'No change');
+    assert.match(result.querySelector('.picture-compare-summary').textContent, /^6 of 14 answers changed; 8 unchanged\.$/);
+    const groups = result.querySelectorAll('.picture-compare-function');
+    assert.equal(groups.length, 5);
+    assert.ok(groups.every(group => group.querySelector('h6')));
+    const guide = groups.find(group => group.querySelector('h6').textContent === 'Guide and Govern');
+    assert.match(guide.textContent, /No answers changed · 2 unchanged/); assert.equal(guide.querySelector('ul'), null);
+    const items = result.querySelectorAll('li');
+    assert.equal(items.length, 6);
+    const answers = items.map(item => item.querySelector('.picture-compare-answer').textContent);
+    for (const expected of ['No → Partial', 'Unknown → Yes', 'Partial → Yes', 'No → Yes']) assert.ok(answers.includes(expected), expected);
+    assert.ok(items.every(item => item.querySelector('.picture-compare-answer').getAttribute('aria-hidden') === 'true' &&
+        /^changed from \w+ to \w+$/.test(item.querySelector('.picture-compare-sr').textContent) && item.getAttribute('data-question-id')));
+    // A different earlier choice needs its own explicit read.
+    change(compareSection(dom).querySelector('select'), 'assessment-1-oldest'); await flush();
+    assert.equal(compareSection(dom).querySelector('.picture-compare-result'), null);
+    assert.equal(dom.document.activeElement, compareSection(dom).querySelector('select'));
+    assert.equal(state.reads.length, 2);
+    click(dom, 'Compare with previous'); await flush();
+    assert.deepEqual(state.reads.slice(2), ['assessment-1-oldest']); assert.equal(state.writes, 0);
+    assert.equal(compareSection(dom).querySelector('.picture-compare-range').querySelector('strong').textContent, '14.3% → 78.6%');
+    dom.controller.destroy();
+});
+
+test('compare reuses records the trend already read and the trend still works afterwards', async () => {
+    const records = reassessments(), state = countingClient(records);
+    const dom = setup({ client: state.client, options: { initialAssessmentId: 'assessment-3-current' } }); await flush();
+    click(dom, 'Compare to previous and show trend'); await flush();
+    assert.equal(state.reads.length, 3);
+    click(dom, 'Compare with previous'); await flush();
+    assert.equal(state.reads.length, 3); assert.equal(state.writes, 0);
+    assert.ok(dom.root.querySelector('svg'));
+    assert.equal(compareSection(dom).querySelector('.picture-compare-range').querySelector('strong').textContent, '42.9%–64.3% → 78.6%');
+    dom.controller.destroy();
+});
+
+test('different scope text is flagged as not like-for-like and changes stay behind an explicit disclosure', async () => {
+    const records = reassessments([SAME_SCOPE, 'Synthetic head office only.', SAME_SCOPE]), state = countingClient(records);
+    const dom = setup({ client: state.client, options: { initialAssessmentId: 'assessment-3-current' } }); await flush();
+    click(dom, 'Compare with previous'); await flush();
+    const result = compareSection(dom).querySelector('.picture-compare-result');
+    assert.equal(result.querySelector('.picture-compare-compatible'), null);
+    const warning = result.querySelector('.picture-compare-warning');
+    assert.equal(warning.querySelector('h5').textContent, 'Not a like-for-like comparison');
+    assert.match(warning.textContent, /The saved scope text differs/);
+    assert.ok(warning.textContent.includes('Earlier: Synthetic head office only.'));
+    assert.ok(warning.textContent.includes('Selected: ' + SAME_SCOPE));
+    assert.match(warning.textContent, /indicative only/);
+    const anyway = result.querySelector('.picture-compare-anyway');
+    assert.equal(anyway.tagName, 'DETAILS'); assert.equal(anyway.getAttribute('open'), null);
+    assert.equal(anyway.querySelector('summary').textContent, 'Show changes anyway (not like-for-like)');
+    assert.ok(anyway.querySelector('table'));
+    assert.equal(result.children.filter(child => child.classList.contains('picture-compare-body')).length, 0);
+    assert.equal(state.writes, 0);
+    dom.controller.destroy();
+});
+
+test('a failed earlier read offers a retry without showing figures, and retry recovers', async () => {
+    const records = reassessments(), state = countingClient(records, { fail: new Set(['assessment-2-previous']) });
+    const dom = setup({ client: state.client, options: { initialAssessmentId: 'assessment-3-current' } }); await flush();
+    click(dom, 'Compare with previous'); await flush();
+    let section = compareSection(dom);
+    assert.match(section.querySelector('.picture-status').textContent, /could not be read/);
+    assert.equal(section.querySelector('.picture-status').getAttribute('role'), 'status');
+    assert.equal(section.querySelector('.picture-compare-result'), null);
+    assert.doesNotMatch(section.textContent, /42\.9%/);
+    assert.match(dom.root.textContent, /78\.6%/);
+    click(dom, 'Retry comparison'); await flush();
+    section = compareSection(dom);
+    assert.ok(section.querySelector('.picture-compare-result'));
+    assert.deepEqual(state.reads, ['assessment-3-current', 'assessment-2-previous', 'assessment-2-previous']);
+    assert.equal(state.writes, 0);
+    dom.controller.destroy();
+});
+
+test('an earlier record that fails result validation is never compared', async () => {
+    const records = reassessments(), altered = clone(records[1]);
+    altered.submission.evaluation.attainment.lowerPercentTenths = 999;
+    const state = countingClient([records[0], altered, records[2]]);
+    const dom = setup({ client: state.client, options: { initialAssessmentId: 'assessment-3-current' } }); await flush();
+    click(dom, 'Compare with previous'); await flush();
+    const section = compareSection(dom);
+    assert.match(section.querySelector('.ncsc-warning').textContent, /No comparison has been inferred/);
+    assert.equal(section.querySelector('.picture-compare-result'), null);
+    dom.controller.destroy();
+});
+
+test('compare has graceful single-submission and earliest-submission states with no extra reads', async () => {
+    const single = countingClient([reassessments()[2]]);
+    let dom = setup({ client: single.client }); await flush();
+    let section = compareSection(dom);
+    assert.match(section.textContent, /Only one submitted assessment is available/);
+    assert.equal(section.querySelectorAll('button').length, 0); assert.equal(section.querySelector('select'), null);
+    assert.equal(single.reads.length, 1);
+    dom.controller.destroy();
+    const many = countingClient(reassessments());
+    dom = setup({ client: many.client, options: { initialAssessmentId: 'assessment-1-oldest' } }); await flush();
+    section = compareSection(dom);
+    assert.match(section.textContent, /This is your earliest submitted assessment/);
+    assert.equal(section.querySelectorAll('button').length, 0);
+    assert.equal(many.reads.length, 1);
+    dom.controller.destroy();
+});
+
+test('changing the selected assessment discards a loaded comparison and ignores a late earlier read', async () => {
+    const records = reassessments(); let release;
+    const reads = [];
+    const client = { list: async () => ({ assessments: records.map(clone), nextAfterAssessmentId: null }),
+        read: async id => { reads.push(id);
+            if (id === 'assessment-1-oldest' && reads.length === 2) await new Promise(resolve => { release = resolve; });
+            return { assessment: clone(records.find(row => row.assessmentId === id)) }; } };
+    const dom = setup({ client, options: { initialAssessmentId: 'assessment-3-current' } }); await flush();
+    change(compareSection(dom).querySelector('select'), 'assessment-1-oldest'); await flush();
+    click(dom, 'Compare with previous'); await flush();
+    assert.match(compareSection(dom).textContent, /Reading the earlier assessment/);
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), 'assessment-2-previous'); await flush();
+    release(); await flush();
+    const section = compareSection(dom);
+    assert.equal(section.querySelector('.picture-compare-result'), null);
+    assert.deepEqual(section.querySelector('select').querySelectorAll('option').map(option => option.value), ['assessment-1-oldest']);
+    dom.controller.destroy();
+});
