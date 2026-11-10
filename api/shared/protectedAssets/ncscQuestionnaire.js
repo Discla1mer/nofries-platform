@@ -1482,10 +1482,10 @@
             content.append(panel);
         }
         function renderConflict() {
-            const panel = node('section', 'ncsc-warning'); panel.append(node('h3', '', 'Saved answers need review'), node('p', '', 'Your unsaved answers are retained. Choose whether to reapply them to the current saved revision or use the saved answers.'));
+            const panel = node('section', 'ncsc-warning'); panel.append(node('h3', '', 'These answers were changed somewhere else'), node('p', '', 'Someone saved newer answers to this assessment, in another tab or on another device, after you opened it. Your unsaved answers are still here.'), node('p', '', 'Keep my answers puts your answers on top of the newer saved ones so you can review and save them. Use saved answers drops your unsaved changes.'));
             panel.append(button('Reload current saved answers', async function () { const expected = epoch; await refreshCurrent(true, expected); if (live(expected)) render(); }));
             if (acknowledged.status !== 'submitted') {
-                const keep = button('Keep my draft on current revision', function () { if (!currentChecked) return; conflict = false; statusText = 'Draft retained on the current revision. Review it and save explicitly.'; render(); });
+                const keep = button('Keep my answers', function () { if (!currentChecked) return; conflict = false; statusText = 'Your answers are kept on top of the newer saved ones. Review them, then save.'; render(); });
                 keep.disabled = !currentChecked; panel.append(keep);
             }
             panel.append(button('Use saved answers', function () { resetDrafts(); conflict = !currentChecked; errors = []; statusText = 'Showing saved answers.'; render(); }, 'dashboard-text-button')); content.append(panel);
