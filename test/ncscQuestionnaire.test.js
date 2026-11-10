@@ -2798,3 +2798,138 @@ describe('reconciled persona journey', () => {
         } finally { ui.controller.destroy(); }
     });
 });
+
+describe('results report, copy summary and CSV export actions (A-004)', () => {
+    const renderer = require('../api/shared/protectedAssets/ncscQuestionnaire');
+    const PREPARED = Date.parse('2026-11-10T01:30:00.000Z');
+    async function mixed(h) {
+        const source = require('./fixtures/ncscAcceptedEvaluation.json');
+        await h.execute(createCommand());
+        await h.execute(saveCommand('assessment-a', 0, 'mixed-save', source.input.atomInputs.map(atom => ({ itemId: atom.itemId,
+            optionId: atom.response.optionId, rationale: atom.response.optionId === 'not_applicable' ? { text: 'Synthetic pending claim' } : null }))));
+        await h.execute(submitCommand());
+        return (await h.client.read('assessment-a')).assessment;
+    }
+    const shareActions = ui => ui.root.querySelector('.ncsc-share-actions');
+    const actionLabels = ui => (shareActions(ui)?.querySelectorAll('button') || []).map(element => element.textContent);
+
+    test('next steps group saved gaps in fixed answer order and the summary text is plain and stable', async () => {
+        const h = await backend(), assessment = await mixed(h), steps = renderer.nextStepsModel(metadata(), assessment.responses);
+        const order = ['no', 'partial', 'unknown', 'not_applicable'];
+        expect(steps.map(step => order.indexOf(step.optionId))).toEqual(steps.map(step => order.indexOf(step.optionId)).sort((a, b) => a - b));
+        expect(steps.length).toBe(assessment.responses.filter(item => item.optionId !== 'yes').length);
+        steps.forEach(step => { expect(step.title).toMatch(/ — (No|Partial|Unknown|Not applicable)$/); expect(step.action.length).toBeGreaterThan(0); });
+        const text = renderer.providerSummaryText({ scope: 'Synthetic scope', submittedAt: '2026-09-02T00:00:00.000Z', steps });
+        const lines = text.split('\n');
+        expect(lines.slice(0, 4)).toEqual(['Cyber security assessment', 'Scope: Synthetic scope', 'Submitted: 2 Sept 2026, 12:00 pm NZ time',
+            'Self-reported gaps; not a risk ranking or certification.']);
+        expect(lines.slice(4)).toEqual(steps.map(step => step.title + ': ' + step.action));
+        expect(renderer.providerSummaryText({ scope: 'S', submittedAt: '2026-09-02T00:00:00.000Z', steps: [] }).split('\n')).toHaveLength(4);
+    });
+
+    test('print model carries metadata, scope, overall range, section scores, every answer and next steps verbatim', async () => {
+        const h = await backend(), assessment = await mixed(h), results = renderer.resultModel(assessment, metadata(), h.organisationId);
+        const before = clone(results);
+        const model = renderer.printReportModel({ metadata: metadata(), assessment, results, organisationId: h.organisationId, preparedAt: PREPARED });
+        expect(results).toEqual(before);
+        expect(model.title).toBe('Cyber security assessment report');
+        expect(model.details).toEqual(expect.arrayContaining([['Organisation', h.organisationId], ['Assessment reference', 'assessment-a'],
+            ['Submitted revision', String(assessment.submission.revision)], ['Report prepared', '10 Nov 2026, 2:30 pm NZ time']]));
+        expect(model.details.find(row => row[0] === 'Submitted')[1]).toMatch(/NZ time$/);
+        expect(model.scope).toBe(assessment.scopePopulation.description);
+        expect(model.overall[0]).toEqual(['Reported implementation', '46.4%–60.7%']);
+        expect(model.overall).toContainEqual(['Resolved answers', '12 of 14 (85.7%)']);
+        expect(model.overall).toContainEqual(['Pending N/A claims', '1']);
+        expect(model.sections.map(section => section.title)).toEqual(metadata().domains.map(domain => domain.title));
+        expect(model.sections.flatMap(section => section.controls)).toHaveLength(metadata().controls.length);
+        model.sections.forEach((section, index) => expect(section.attainment).toBe(results.domains[index].attainment));
+        expect(model.answers.map(row => row.number)).toEqual(metadata().questions.map((_, index) => index + 1));
+        expect(model.answers.map(row => row.prompt)).toEqual(metadata().questions.map(question => question.prompt));
+        expect(model.answers.filter(row => row.rationale)).toEqual([expect.objectContaining({ answer: 'Not applicable', rationale: 'Synthetic pending claim' })]);
+        expect(model.answers.every(row => row.evidence === 'Not provided')).toBe(true);
+        expect(model.nextSteps).toEqual(renderer.nextStepsModel(metadata(), assessment.responses));
+        expect(model.calculation).toContainEqual(['Output SHA-256', assessment.submission.evaluation.outputSha256]);
+    });
+
+    test('actions appear only for submitted results; unavailable results keep only Copy summary', async () => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand('assessment-a', 0, 'all-yes', allResponses('yes')));
+        const draft = await resumeUi(h);
+        expect(shareActions(draft)).toBeNull(); expect(control(draft, 'Copy summary')).toBeUndefined();
+        expect(control(draft, 'Print or save as PDF')).toBeUndefined(); expect(control(draft, 'Export results (CSV)')).toBeUndefined();
+        draft.controller.destroy();
+        await h.execute(submitCommand());
+        const ui = await resumeUi(h);
+        expect(shareActions(ui).getAttribute('role')).toBe('group');
+        expect(actionLabels(ui)).toEqual(['Copy summary', 'Print or save as PDF', 'Export results (CSV)']);
+        expect(ui.root.querySelector('.ncsc-share').textContent).toContain('Summary to share with your IT provider');
+        ui.controller.destroy();
+        const result = clone(await h.client.read('assessment-a')); result.assessment.submission.evaluation = null;
+        const broken = await resumeUi(h, { client: { ...h.client, read: jest.fn(async () => result) } });
+        expect(actionLabels(broken)).toEqual(['Copy summary']); broken.controller.destroy();
+    });
+
+    test('Copy summary writes the plain-text summary to the clipboard and confirms in a polite live region', async () => {
+        const h = await backend(); await mixed(h);
+        const dom = interactiveDom(), writeText = jest.fn(async () => {}); dom.window.navigator = { clipboard: { writeText } };
+        const ui = await resumeUi(h, { dom }), before = h.calls.length;
+        control(ui, 'Copy summary').click();
+        const note = byId(ui, 'ncsc-share-status');
+        await until(() => note.textContent.startsWith('Copied'));
+        expect(writeText).toHaveBeenCalledWith(byId(ui, 'ncsc-provider-summary').value);
+        expect(writeText.mock.calls[0][0]).toContain('Scope: Synthetic office and cloud services.');
+        expect(note.getAttribute('role')).toBe('status'); expect(note.getAttribute('aria-live')).toBe('polite');
+        expect(h.calls).toHaveLength(before); ui.controller.destroy();
+    });
+
+    test('Copy summary falls back to a temporary field, and selects the text when copying is unavailable', async () => {
+        const h = await backend(); await mixed(h);
+        const dom = interactiveDom(); dom.window.navigator = { clipboard: { writeText: jest.fn(async () => { throw new Error('denied'); }) } };
+        dom.document.execCommand = jest.fn(() => true);
+        const ui = await resumeUi(h, { dom }), copyButton = control(ui, 'Copy summary');
+        copyButton.focus(); copyButton.click();
+        await until(() => byId(ui, 'ncsc-share-status').textContent.startsWith('Copied'));
+        expect(dom.document.execCommand).toHaveBeenCalledWith('copy');
+        expect(ui.root.querySelector('.ncsc-copy-buffer')).toBeNull();
+        expect(ui.document.activeElement).toBe(copyButton);
+        delete dom.document.execCommand; dom.window.navigator = {};
+        control(ui, 'Copy summary').click();
+        await until(() => byId(ui, 'ncsc-share-status').textContent.startsWith('Copying is not available'));
+        expect(ui.root.querySelector('.ncsc-share-text').open).toBe(true);
+        expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-provider-summary'));
+        ui.controller.destroy();
+    });
+
+    test('Print or save as PDF renders the full report, calls window.print once and removes the report afterwards', async () => {
+        const h = await backend(); await mixed(h);
+        const dom = interactiveDom(); let printed = null;
+        dom.window.print = jest.fn(() => {
+            const report = dom.root.querySelector('.ncsc-print-report');
+            printed = { text: report.textContent, active: dom.root.classList.contains('ncsc-print-active'), buttons: report.querySelectorAll('button').length,
+                questions: report.querySelectorAll('.ncsc-print-question').length, rows: report.querySelectorAll('tr').length };
+        });
+        const ui = await resumeUi(h, { dom, now: () => PREPARED }), before = h.calls.length, records = h.records.length;
+        control(ui, 'Print or save as PDF').click();
+        expect(dom.window.print).toHaveBeenCalledTimes(1);
+        expect(printed.active).toBe(true); expect(printed.buttons).toBe(0);
+        expect(printed.questions).toBe(metadata().questions.length);
+        expect(printed.rows).toBe(1 + metadata().domains.length + metadata().controls.length);
+        ['Cyber security assessment report', h.organisationId, 'assessment-a', 'Synthetic office and cloud services.', '46.4%–60.7%',
+            '10 Nov 2026, 2:30 pm NZ time', 'Fix these first', 'Pending N/A rationale: Synthetic pending claim', 'not an audit or certification',
+            ...metadata().questions.map(question => question.prompt)].forEach(text => expect(printed.text).toContain(text));
+        expect(byId(ui, 'ncsc-share-status').textContent).toContain('Save as PDF');
+        dom.window.dispatch('afterprint');
+        expect(dom.root.querySelector('.ncsc-print-report')).toBeNull();
+        expect(dom.root.classList.contains('ncsc-print-active')).toBe(false);
+        expect(dom.window.listenerCount('afterprint')).toBe(0);
+        expect(h.calls).toHaveLength(before); expect(h.records).toHaveLength(records);
+        ui.controller.destroy();
+    });
+
+    test('Print explains when the browser cannot print and leaves no report behind', async () => {
+        const h = await backend(); await mixed(h);
+        const ui = await resumeUi(h);
+        control(ui, 'Print or save as PDF').click();
+        expect(byId(ui, 'ncsc-share-status').textContent).toBe('Printing is not available in this browser.');
+        expect(ui.root.querySelector('.ncsc-print-report')).toBeNull(); ui.controller.destroy();
+    });
+});

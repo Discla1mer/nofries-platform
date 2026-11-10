@@ -227,6 +227,13 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-result-control { margin: .5rem 0; padding: .25rem .5rem; border-left: 3px solid var(--dashboard-line, #d3c9b7); }
 .ncsc-results summary, .organisation-picture > .ncsc-result-provenance > summary { cursor: pointer; padding: .75rem .25rem; min-height: 44px; box-sizing: border-box; font-weight: var(--dashboard-weight-regular); }
 .ncsc-results summary:focus-visible { outline: 3px solid var(--dashboard-focus, #17140f); outline-offset: 2px; }
+.ncsc-share { margin: 1rem 0 1.5rem; padding: 1rem; border: 1px solid var(--dashboard-line, #d3c9b7); border-radius: .5rem; }
+.ncsc-share h3 { margin-top: 0; }
+.ncsc-share-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin: .75rem 0; }
+.ncsc-share-status { margin: .5rem 0; min-height: 1.5em; }
+.ncsc-copy-buffer { position: fixed; top: 0; left: -10000px; width: 1px; height: 1px; opacity: 0; }
+/* The full results report is built only for printing and stays hidden on screen. */
+.ncsc-print-report { display: none; }
 .ncsc-result-provenance dt { font-weight: var(--dashboard-weight-regular); margin-top: .75rem; }
 .ncsc-result-provenance dd { margin: .25rem 0; overflow-wrap: anywhere; }
 .ncsc-questionnaire label, .ncsc-questionnaire legend { font-weight: var(--dashboard-weight-regular); }
@@ -343,6 +350,29 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .dashboard-subscription-panel, .dashboard-badge, .dashboard-attention-item .dashboard-badge, .dashboard-route-status, .ncsc-warning, .ncsc-errors, .ncsc-sealed, .ncsc-review-blocked, .ncsc-review-ready, .ncsc-review-badge, .ncsc-review-item { color: #17201f; background: white; }
     .ncsc-inline-error { color: #9b241c; }
     .dashboard-panel { box-shadow: none; }
+    /* "Print or save as PDF" prints only the results report, without application chrome. */
+    body.ncsc-print-active { background: white; color: #17201f; }
+    body.ncsc-print-active > :not(.ncsc-print-report) { display: none !important; }
+    .ncsc-print-active > .ncsc-print-report { display: block; color: #17201f; background: white; font-size: 11pt; line-height: 1.45; overflow-wrap: anywhere; }
+    .ncsc-print-report h1 { font-size: 20pt; margin: 0 0 .25rem; }
+    .ncsc-print-report h2 { font-size: 14pt; margin: 1.25rem 0 .5rem; padding-bottom: .25rem; border-bottom: 1px solid #c5cfcc; break-after: avoid; page-break-after: avoid; }
+    .ncsc-print-report h3 { font-size: 11pt; margin: .25rem 0; break-after: avoid; page-break-after: avoid; }
+    .ncsc-print-report p { margin: .25rem 0; }
+    .ncsc-print-report dl { display: grid; grid-template-columns: minmax(10rem, max-content) 1fr; gap: .2rem 1rem; margin: .5rem 0; }
+    .ncsc-print-report dt { font-weight: 600; }
+    .ncsc-print-report dd { margin: 0; }
+    .ncsc-print-header { border-bottom: 2px solid #17201f; padding-bottom: .5rem; }
+    .ncsc-print-scores { width: 100%; border-collapse: collapse; }
+    .ncsc-print-scores th, .ncsc-print-scores td { border: 1px solid #c5cfcc; padding: .3rem .5rem; text-align: left; vertical-align: top; }
+    .ncsc-print-scores thead { display: table-header-group; }
+    .ncsc-print-scores tr { break-inside: avoid; page-break-inside: avoid; }
+    .ncsc-print-function th, .ncsc-print-function td { font-weight: 600; background: #eef2f1; }
+    .ncsc-print-topic th { font-weight: 400; padding-left: 1.5rem; }
+    .ncsc-print-answers { break-before: page; page-break-before: always; }
+    .ncsc-print-answer-list { padding-left: 0; list-style: none; }
+    .ncsc-print-question, .ncsc-print-section li { break-inside: avoid; page-break-inside: avoid; }
+    .ncsc-print-question { padding: .5rem 0; border-bottom: 1px solid #c5cfcc; }
+    .ncsc-print-report .dashboard-eyebrow { color: #405550; font-size: 9pt; text-transform: none; }
 }
 
 /* The visible range complements the native meter and textual bounds. */
