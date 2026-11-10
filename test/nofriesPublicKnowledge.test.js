@@ -84,7 +84,6 @@ describe('one verified public No Fries knowledge source', () => {
             managedIt: 'https://nofries.nz/managed-it.html',
             signIn: 'https://nofries.nz/login',
             scoping: 'https://nofries.nz/scoping',
-            news: 'https://news.nofries.nz/',
             salesAgency: 'https://sales.nofries.nz/',
             luna: 'https://luna.nofries.nz/'
         });
@@ -211,5 +210,15 @@ describe('one verified public No Fries knowledge source', () => {
         expect(prompt).toContain('Do not promote Luna');
         expect(publicHelpReply('Where is Luna?').text).toContain('https://luna.nofries.nz/');
         expect(publicHelpReply('Can a Luna profile sign me into the dashboard?').text).toContain('profiles are not live');
+    });
+
+    test('never offers the retired News site and points News questions to the Roadmap', () => {
+        expect(Object.values(NOFRIES_PUBLIC_KNOWLEDGE.links)).not.toContain('https://news.nofries.nz/');
+        for (const message of ['Where is the No Fries news?', 'Where are the public links?', 'What products are in the full No Fries offering?']) {
+            const reply = publicHelpReply(message);
+            expect(reply.text).not.toMatch(/news\.nofries\.nz/);
+        }
+        expect(publicHelpReply('Where is the No Fries news?').text).toContain('https://nofries.nz/roadmap.html');
+        expect(prospectPublicKnowledgePrompt()).not.toMatch(/news\.nofries\.nz/);
     });
 });

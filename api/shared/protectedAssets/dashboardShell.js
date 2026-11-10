@@ -138,7 +138,7 @@
             appendMenu(nav, false);
             const subscription = element('div', 'dashboard-subscription');
             subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', model.subscription),
-                element('p', '', 'Managed and advisory services are scoped separately.'));
+                element('p', '', 'This is the name of your dashboard plan, not a result. Managed IT and advisory services are arranged separately.'));
             rail.append(brand, context, nav, subscription);
             const workspace = element('div', 'dashboard-workspace');
             const top = element('header', 'dashboard-topbar');
@@ -218,7 +218,7 @@
             current = target;
             if (doc && current && current.label) doc.title = current.label + ' · No Fries Dashboard';
             status.hidden = !!requested || !route;
-            status.textContent = requested || !route ? '' : 'That view is not available for this organisation. Showing ' + target.label + '.';
+            status.textContent = requested || !route ? '' : 'We could not find that view, so we have taken you to ' + target.label + '.';
             if (changeLocation && !repeatedRoute) pushEntry(current.route);
             render(initialAssessmentId, sourceAssessment); updateNavigation();
             if (focus) main.querySelector('h1').focus();

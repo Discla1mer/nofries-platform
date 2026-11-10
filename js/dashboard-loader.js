@@ -41,6 +41,12 @@
         if (!accountMenu || accountMenu.hidden) return;
         setAccountMenuOpen(accountToggle.getAttribute('aria-expanded') !== 'true');
     });
+    if (accountMenu) accountMenu.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || !accountToggle || accountToggle.getAttribute('aria-expanded') !== 'true') return;
+        event.preventDefault();
+        setAccountMenuOpen(false);
+        accountToggle.focus();
+    });
     const directorySearch = document.getElementById('dashboardOrganisationSearch');
     const directoryStatus = document.getElementById('dashboardOrganisationStatus');
     const directorySearchControls = document.getElementById('dashboardOrganisationSearchControls');

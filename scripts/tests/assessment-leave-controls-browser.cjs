@@ -143,10 +143,10 @@ async function geometry(page, label) {
             // A lost response leaves an unconfirmed operation; retry acknowledges the same revision.
             await choose(page, 'yes'); await arm(page, 'lost'); await leave(page);
             await keyboardClick(page, button(page, 'Save and leave'));
-            await button(page, 'Retry same operation').waitFor();
+            await button(page, 'Try the save again').waitFor();
             await keyboardClick(page, button(page, 'Back to assessments'));
             assert.equal(await page.locator('dialog').count(), 0);
-            await keyboardClick(page, button(page, 'Retry same operation'));
+            await keyboardClick(page, button(page, 'Try the save again'));
             await page.waitForFunction(() => document.querySelector('.ncsc-status')?.textContent.includes('The operation is confirmed'));
             await keyboardClick(page, button(page, 'Back to assessments')); await openAssessment(page);
             assert.equal(await page.locator('.ncsc-question input[value="yes"]').isChecked(), true);

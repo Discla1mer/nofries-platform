@@ -33,8 +33,8 @@ const moduleView = { schemaVersion: 1, context: model.context, generatedAt: mode
     services: [], admissionGranted: false, providerAccessGranted: false, metadata: fixture.metadata, presentationMode: 'editable' };
 const assets = { '/style.css': ['text/css', read('style.css')], '/home.css': ['text/css', read('home.css')],
     '/favicon.svg': ['image/svg+xml', read('favicon.svg')], '/images/nofrieslogo.png': ['image/png', read('images/nofrieslogo.png')] };
-const targets = { '/dashboard': ['/roadmap.html', 'https://news.nofries.nz/'],
-    '/': ['https://news.nofries.nz/', '/roadmap.html', '/privacy.html', '/terms.html'] };
+const targets = { '/dashboard': ['/roadmap.html'],
+    '/': ['/roadmap.html', '/privacy.html', '/terms.html'] };
 const errors = [], unexpected = [], results = [];
 let anonymous = false;
 const server = http.createServer((request, response) => {

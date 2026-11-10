@@ -588,7 +588,7 @@
             const dirty = dirtyEntries().length;
             // Keep draft feedback beside Save so changing status text cannot move its pointer target.
             status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
-            status.textContent = statusText || (busy ? 'Operation in progress. Saving. ' + saved : loading ?
+            status.textContent = statusText || (busy ? 'Saving your answers. ' + saved : loading ?
                 view === 'assessment' && !acknowledged ? 'Loading the selected assessment.' : 'Loading assessments.'
                 : saved + (dirty ? dirty + (dirty === 1 ? ' answer has' : ' answers have') + ' unsaved changes.' : ''));
             if (saveStatus && root.contains(saveStatus)) saveStatus.textContent = status.textContent;
@@ -831,7 +831,7 @@
             index.value = String(activeQuestion);
             index.addEventListener('change', function () { const i = Number(index.value); if (live(renderedEpoch) && index.parentElement === content && Number.isInteger(i) && i >= 0 && i < questions.length) { activeQuestion = i; renderQuestion(); } });
             content.append(indexLabel, index);
-            const indexHelp = node('p', 'dashboard-muted', 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable && !sealed ? ' Answers save automatically after a short pause.' : ''));
+            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable ? ' Answers save automatically after a short pause.' : ''));
             indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
@@ -1040,7 +1040,7 @@
                 const parts = node('details'); parts.append(node('summary', '', 'What to check')); const checks = node('ul');
                 question.smallBusiness.checks.forEach(function (text) { checks.append(node('li', '', text)); }); parts.append(checks); fieldset.append(parts);
             }
-            fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
+            if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
             const writable = canEdit();
             question.responseOptionIds.forEach(function (id) {
                 const option = optionById.get(id); const label = node('label', 'ncsc-option');
@@ -1477,8 +1477,8 @@
         }
         function renderPending() {
             const panel = node('section', 'ncsc-warning');
-            panel.append(node('h3', '', busy ? 'Operation in progress' : 'Operation unconfirmed'), node('p', '', 'The exact operation is retained in this view. Leaving cannot discard it while its result is unknown.'));
-            if (!busy) panel.append(button('Retry same operation', function () { if (pending && !busy) perform(pending.command, pending.captures, true); }));
+            panel.append(node('h3', '', busy ? 'Saving your answers' : 'We could not confirm the save'), node('p', '', busy ? 'Please wait and do not submit again. Your answers stay on this page until the save finishes.' : 'Your answers are still on this page. Use the retry button below; do not start again.'));
+            if (!busy) panel.append(button('Try the save again', function () { if (pending && !busy) perform(pending.command, pending.captures, true); }));
             content.append(panel);
         }
         function renderConflict() {

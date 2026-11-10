@@ -15,7 +15,6 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const START = new Date(Date.parse(NOW) - 60000).toISOString();
 const END = new Date(Date.parse(NOW) + 3600000).toISOString();
 const BUDGET = { maxRecords: 4096, maxBytes: 67108864, maxDurationMs: 60000 };
-const predecessor = fs.readFileSync(path.join(__dirname, '../../database/proposals/dashboard_admin_lookup_audit.sql'), 'utf8');
 const proposal = fs.readFileSync(path.join(__dirname, '../../database/proposals/dashboard_admin_signup_list_audit.sql'), 'utf8');
 const quote = name => '"' + name.replace(/"/g, '""') + '"';
 
@@ -111,13 +110,10 @@ module.exports = function registerDashboardAdminSignupPostgresTests() {
             url.username = runtimeRole; url.password = password;
             runtimePool = new Pool({ connectionString: url.toString(), max: 2, connectionTimeoutMillis: 5000 });
             closeRuntime = trackPoolClientEnds(runtimePool);
-            // The real old constraints must refuse this category. The proposal
-            // remains outside the migration catalog and is applied only here.
+            // The lookup predecessor is now migration 0018, installed by db:migrate.
+            // The real constraints must still refuse this category. The signup-list
+            // proposal remains outside the migration catalog and is applied only here.
             const h = await harness();
-            await expect(h.repository.persistSignupAudit(h.request, h.envelope(), h.authority)).rejects.toMatchObject({ statusCode: 503 });
-            await expect(owner.query(proposal)).rejects.toMatchObject({ code: 'P0001',
-                message: 'dashboard_admin_signup_audit_constraint_drift' });
-            await owner.query(predecessor);
             await expect(h.repository.persistSignupAudit(h.request, h.envelope(), h.authority)).rejects.toMatchObject({ statusCode: 503 });
             await owner.query(proposal);
             await owner.query(proposal);
