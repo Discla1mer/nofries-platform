@@ -333,7 +333,7 @@ async function guardTour(page, base, route, width, extra) {
         if (target === 'organisation') { await readyChooser(page); await page.locator('#dashboardChoices button').last().click(); }
         else if (target === 'signout') {
             if (!await page.locator('#dashboardAccountMenu').evaluate(node => node.open)) {
-                await page.locator('#dashboardAccountMenu > summary').focus(); await page.keyboard.press('Enter');
+                await page.locator('#dashboardAccountToggle').focus(); await page.keyboard.press('Enter');
             }
             await page.locator('#dashboardSignOut').click();
         }

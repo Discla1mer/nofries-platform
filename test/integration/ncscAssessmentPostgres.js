@@ -259,6 +259,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             button(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 3'));
             ui.controller.destroy(); const finalTransport = composed(first); ui = await resume(finalTransport);
             button(ui, 'Review and submit').click(); button(ui, 'Save and submit assessment').click();
+            button(ui, 'Submit').click();
             await until(() => ui.root.querySelector('.ncsc-sealed'));
             const sealed = (await finalTransport.client.read(assessmentId)).assessment;
             expect(sealed).toMatchObject({ status: 'submitted', revision: 4, scopePopulation: { description: declaration },

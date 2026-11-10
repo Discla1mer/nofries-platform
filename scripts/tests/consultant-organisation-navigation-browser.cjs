@@ -112,7 +112,7 @@ const server = http.createServer(async (req, res) => {
 
 async function checkGeometry(page, name) {
     const geometry = await page.evaluate(() => ({ viewport: innerWidth, scrollWidth: document.documentElement.scrollWidth,
-        controls: [...document.querySelectorAll('#dashboardChoices button, #clientSetupControls button, #clientSetupControls input, #dashboardOrganisationSearchControls input, #dashboardOrganisationSearchControls button, #dashboardAccountMenu > summary, #dashboardAccountActions button')]
+        controls: [...document.querySelectorAll('#dashboardChoices button, #clientSetupControls button, #clientSetupControls input, #dashboardOrganisationSearchControls input, #dashboardOrganisationSearchControls button, #dashboardAccountToggle, #dashboardAccountActions button')]
             .filter(node => node.getClientRects().length).map(node => {
                 const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, text: node.textContent };
             }) }));
@@ -186,12 +186,12 @@ async function keyboardFocus(page, selector) {
             const back = page.locator('#consultantPortfolioControls');
             assert.equal(await back.count(), 1);
             assert.equal(await back.isVisible(), false, 'Account disclosure initially contains the Return action');
-            await keyboardFocus(page, '#dashboardAccountMenu > summary'); await page.keyboard.press('Enter');
+            await keyboardFocus(page, '#dashboardAccountToggle'); await page.keyboard.press('Enter');
             assert.equal(await back.isVisible(), true, 'Keyboard opening Account exposes Return');
             assert.equal(await back.evaluate(node => node.parentElement.id), 'dashboardAccountActions');
             assert.equal(await page.locator('#dashboardSignOut').isVisible(), true);
             const accountGeometry = await page.locator('#dashboardAccountMenu').evaluate(menu => {
-                const nodes = [menu.querySelector('summary'), ...menu.querySelectorAll('button:not([hidden])')];
+                const nodes = [menu.querySelector('#dashboardAccountToggle'), ...menu.querySelectorAll('#dashboardAccountActions button:not([hidden])')];
                 return nodes.map(node => { const r = node.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; });
             });
             for (const rect of accountGeometry) assert.ok(rect.height >= 44, 'Account action has a usable touch target');
@@ -207,8 +207,8 @@ async function keyboardFocus(page, selector) {
             assert.equal(await page.locator('#dashboardChoices > .consultant-organisation-ready').count(), 2);
             assert.deepEqual(await page.locator('#dashboardChoices > .consultant-organisation-ready').evaluateAll(rows =>
                 rows.map(row => ({ label: row.getAttribute('aria-label'), badge: getComputedStyle(row, '::after').content }))), [
-                { label: 'Synthetic consultancy · Open to check access', badge: '"Open to check access"' },
-                { label: 'Synthetic client · Open to check access', badge: '"Open to check access"' }
+                { label: 'Synthetic consultancy · Open organisation', badge: '"Open organisation"' },
+                { label: 'Synthetic client · Open organisation', badge: '"Open organisation"' }
             ]);
             assert.equal(await page.locator('#dashboardOrganisationStatus option[value="ready"]').textContent(), 'Setup complete');
             assert.equal(await page.locator('#dashboardChoices > .client-workspace-row').count(), 1);
@@ -267,7 +267,7 @@ async function keyboardFocus(page, selector) {
             await page.waitForFunction(() => document.body.dataset.dashboardState === 'ready');
             assert.equal(await page.locator('#dashboardHeading').textContent(), 'Viewing Synthetic client');
             assert.equal(await back.isVisible(), false);
-            await keyboardFocus(page, '#dashboardAccountMenu > summary'); await page.keyboard.press('Enter');
+            await keyboardFocus(page, '#dashboardAccountToggle'); await page.keyboard.press('Enter');
             assert.equal(await back.isVisible(), true);
             await checkGeometry(page, 'consultant-client-' + width);
             await page.close();

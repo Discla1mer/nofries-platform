@@ -277,6 +277,10 @@
       }
     },
     {
+      "route": "/forgot-password",
+      "redirect": "/login"
+    },
+    {
       "route": "/service-desk",
       "redirect": "/support"
     },
