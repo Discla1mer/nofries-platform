@@ -101,7 +101,7 @@ describe('bundled service-plan API', () => {
         expect(reviewed.status).toBe(200);
         expect(reviewed.body.servicePlan).toMatchObject({
             status: 'reviewed',
-            pricing: { monthly: 240, onboarding: 750 }
+            pricing: { monthly: 198, onboarding: 750 }
         });
 
         const proposalResponse = await request(app)
@@ -110,14 +110,14 @@ describe('bundled service-plan API', () => {
         expect(proposalResponse.status).toBe(201);
         expect(proposalResponse.body.proposal).toMatchObject({
             commercialModel: 'bundled_managed_it',
-            pricing: { monthly: 240, onboarding: 750 }
+            pricing: { monthly: 198, onboarding: 750 }
         });
         expect(proposalResponse.body.proposal.recommendations).toHaveLength(1);
 
         const exported = await request(app)
             .get(`/api/sales/proposals/${proposalResponse.body.proposal.id}/export?format=html`);
         expect(exported.status).toBe(200);
-        expect(exported.text).toContain('NZ$240 + GST per month');
+        expect(exported.text).toContain('NZ$198 + GST per month');
         expect(exported.text).toContain('NZ$750 + GST initial set-up');
         expect(exported.text).toContain('Included components');
 
@@ -128,15 +128,15 @@ describe('bundled service-plan API', () => {
         expect(preview.body.payload.opportunities).toHaveLength(1);
         expect(preview.body.payload.opportunities[0]).toMatchObject({
             serviceKey: 'managed-it-core',
-            estimatedMonthlyRevenue: 240,
+            estimatedMonthlyRevenue: 198,
             estimatedOneOffRevenue: 750
         });
     });
 
     test.each([
-        ['essentials', 150, 75],
-        ['managed', 240, 120],
-        ['secure', 330, 165]
+        ['essentials', 118, 59],
+        ['managed', 198, 99],
+        ['secure', 278, 139]
     ])('prices the full flow at the %s tier for two users', async (tier, monthly, perUser) => {
         const bootstrap = (await request(app).get('/api/sales/bootstrap')).body;
         const customerResponse = await request(app)
@@ -264,9 +264,9 @@ describe('bundled service-plan API', () => {
             serviceKey: component.serviceKey,
             status: component.status
         }));
-        // 2 users on the Managed tier (NZ$120) plus monthly add-ons for
+        // 2 users on the Managed tier (NZ$99) plus monthly add-ons for
         // 2 extra computers (NZ$20) and 1 extra location (NZ$125) = NZ$165.
-        // Monthly = 2*120 + 165 = 405; set-up stays the base NZ$750 (no
+        // Monthly = 2*99 + 165 = 363; set-up stays the base NZ$750 (no
         // one-time per-device/per-location charge that once made it 1060).
         const reviewed = await request(app)
             .post(`/api/sales/assessments/${assessmentId}/service-plan`)
@@ -280,20 +280,20 @@ describe('bundled service-plan API', () => {
                 nextAction: 'Review the draft proposal.'
             });
         expect(reviewed.status).toBe(200);
-        expect(reviewed.body.servicePlan.pricing.monthly).toBe(405);
+        expect(reviewed.body.servicePlan.pricing.monthly).toBe(363);
         expect(reviewed.body.servicePlan.pricing.onboarding).toBe(750);
 
         const proposalResponse = await request(app)
             .post(`/api/sales/assessments/${assessmentId}/proposal`)
             .send({ expectedRevision: reviewed.body.revision });
         expect(proposalResponse.status).toBe(201);
-        expect(proposalResponse.body.proposal.pricing.monthly).toBe(405);
+        expect(proposalResponse.body.proposal.pricing.monthly).toBe(363);
         expect(proposalResponse.body.proposal.pricing.onboarding).toBe(750);
 
         const exported = await request(app)
             .get(`/api/sales/proposals/${proposalResponse.body.proposal.id}/export?format=html`);
         expect(exported.status).toBe(200);
-        expect(exported.text).toContain('NZ$405 + GST per month');
+        expect(exported.text).toContain('NZ$363 + GST per month');
         expect(exported.text).toContain('750');
         expect(exported.text).not.toContain('1060');
     });

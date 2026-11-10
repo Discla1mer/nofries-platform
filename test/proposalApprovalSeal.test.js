@@ -66,7 +66,7 @@ describe('proposal approval seals', () => {
                 locationCount: 1,
                 managedEndpointCount: 2,
                 userCount: 2,
-                monthlyTotalExGst: 240
+                monthlyTotalExGst: 198
             },
             pricing: Object.assign({}, proposalFixture().pricing)
         });
@@ -351,7 +351,7 @@ describe('proposal approval seals', () => {
         expect(currentExport.status).toBe(200);
         expect(currentExport.body).toContain('<h2>Your No Fries Managed IT service</h2>');
         expect(currentExport.body).not.toContain('Legacy &lt;em&gt;Managed IT&lt;/em&gt;');
-        expect(currentExport.body).toContain('NZ$240 + GST per month');
+        expect(currentExport.body).toContain('NZ$198 + GST per month');
     });
 
     test('approved API records are immutable and exports remain stable after customer metadata changes', async () => {
@@ -481,7 +481,7 @@ function proposalFixture(overrides = {}) {
             serviceName: 'No Fries Managed IT',
             currency: 'NZD',
             gstExclusive: true,
-            perUserMonthly: 120,
+            perUserMonthly: 99,
             includedEndpointsPerUser: 1,
             includedLocations: 1,
             onboardingFrom: 750,
@@ -504,7 +504,7 @@ function proposalFixture(overrides = {}) {
             termMonths: 12,
             plannedStart: '2026-09-01',
             confirmed: true,
-            monthlyTotalExGst: 240
+            monthlyTotalExGst: 198
         },
         roadmap: { now: ['Managed support'], next: [], later: [] },
         assumptions: ['Scope changes require a new proposal version.'],
@@ -550,7 +550,7 @@ function bundledProposalFixture(serviceName, overrides = {}) {
             users: 2,
             endpoints: 2,
             locations: 1,
-            monthly: 240,
+            monthly: 198,
             onboarding: 750
         }),
         roadmap: { now: [serviceName], next: [], later: [] }

@@ -11,7 +11,7 @@ const MANAGED_IT_POLICY = deepFreeze({
     pricing: {
         // Mirrors the recommended tier (Managed) so existing single-rate
         // consumers keep working; see `tiers` for the full three-tier model.
-        perUserMonthly: 120,
+        perUserMonthly: 99,
         includedEndpointsPerUser: 1,
         includedLocations: 1,
         onboardingFrom: 750,
@@ -22,7 +22,7 @@ const MANAGED_IT_POLICY = deepFreeze({
             {
                 id: 'essentials',
                 name: 'Essentials',
-                perUserMonthly: 75,
+                perUserMonthly: 59,
                 tagline: 'Get visible & supported',
                 recommended: false,
                 inheritsFromTierId: null,
@@ -36,7 +36,7 @@ const MANAGED_IT_POLICY = deepFreeze({
             {
                 id: 'managed',
                 name: 'Managed',
-                perUserMonthly: 120,
+                perUserMonthly: 99,
                 tagline: 'We look after it for you',
                 recommended: true,
                 inheritsFromTierId: 'essentials',
@@ -50,7 +50,7 @@ const MANAGED_IT_POLICY = deepFreeze({
             {
                 id: 'secure',
                 name: 'Secure',
-                perUserMonthly: 165,
+                perUserMonthly: 139,
                 tagline: 'Tightened & watched',
                 recommended: false,
                 inheritsFromTierId: 'managed',

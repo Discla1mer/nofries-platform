@@ -408,15 +408,15 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             streaming: true,
             pricing: {
                 currency: 'NZD',
-                perUserMonthly: 120,
+                perUserMonthly: 99,
                 includedEndpointsPerUser: 1,
                 onboardingFrom: 750,
                 gstExclusive: true,
                 recommendedTierId: 'managed',
                 tiers: [
-                    expect.objectContaining({ id: 'essentials', perUserMonthly: 75 }),
-                    expect.objectContaining({ id: 'managed', perUserMonthly: 120, recommended: true }),
-                    expect.objectContaining({ id: 'secure', perUserMonthly: 165 })
+                    expect.objectContaining({ id: 'essentials', perUserMonthly: 59 }),
+                    expect.objectContaining({ id: 'managed', perUserMonthly: 99, recommended: true }),
+                    expect.objectContaining({ id: 'secure', perUserMonthly: 139 })
                 ]
             }
         });
@@ -1472,7 +1472,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(proposal.pricing).toMatchObject({
             policyId: 'managed_it_2026_11_1',
             policyVersion: '2026.11.1',
-            perUserMonthly: 120,
+            perUserMonthly: 99,
             includedEndpointsPerUser: 1,
             onboardingFrom: 750,
             additionalEndpointMonthly: 20,

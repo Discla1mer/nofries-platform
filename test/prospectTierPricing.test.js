@@ -78,12 +78,12 @@ describe('prospect chat tier-aware pricing', () => {
         expect(runTurn).toHaveBeenCalledWith(expect.objectContaining({ tier: 'essentials' }));
         const done = events.find((event) => event.event === 'done').data;
         expect(done.text).toContain('On the Essentials plan');
-        expect(done.text).toContain('NZ$150 + GST per month');
-        expect(done.text).not.toContain('$240');
+        expect(done.text).toContain('NZ$118 + GST per month');
+        expect(done.text).not.toContain('$198');
     });
 
     test('corrects a reply that already quotes the wrong (Managed) tier amount', async () => {
-        const stale = 'On the Managed plan, based on 2 users, 2 devices and 1 location, the current No Fries estimate is NZ$240 + GST per month (NZ$120 + GST per user), with initial set-up from NZ$750 + GST.';
+        const stale = 'On the Managed plan, based on 2 users, 2 devices and 1 location, the current No Fries estimate is NZ$198 + GST per month (NZ$99 + GST per user), with initial set-up from NZ$750 + GST.';
         const { response, events } = await run(
             { message: 'what is the price', tier: 'essentials' },
             {
@@ -98,8 +98,8 @@ describe('prospect chat tier-aware pricing', () => {
         expect(response.status).toBe(200);
         const done = events.find((event) => event.event === 'done').data;
         expect(done.text).toContain('On the Essentials plan');
-        expect(done.text).toContain('NZ$150 + GST per month');
-        expect(done.text).not.toContain('NZ$240 + GST per month');
+        expect(done.text).toContain('NZ$118 + GST per month');
+        expect(done.text).not.toContain('NZ$198 + GST per month');
     });
 
     test('falls back to the tier stored in prospect context when no tier is sent', async () => {
@@ -119,6 +119,6 @@ describe('prospect chat tier-aware pricing', () => {
         expect(lifecycleService.recordProspectSelectedTier).not.toHaveBeenCalled();
         const done = events.find((event) => event.event === 'done').data;
         expect(done.text).toContain('On the Secure plan');
-        expect(done.text).toContain('NZ$330 + GST per month');
+        expect(done.text).toContain('NZ$278 + GST per month');
     });
 });

@@ -16,7 +16,7 @@ describe('effective managed IT policy', () => {
             customerFacingServiceName: 'No Fries Managed IT',
             pricing: {
                 // Top-level per-user rate mirrors the recommended tier (Managed).
-                perUserMonthly: 120,
+                perUserMonthly: 99,
                 onboardingFrom: 750,
                 additionalEndpointMonthly: 20,
                 additionalLocationMonthly: 125,
@@ -32,7 +32,7 @@ describe('effective managed IT policy', () => {
         expect(STANDARD_PRICE).toMatchObject({
             currency: 'NZD',
             gstExclusive: true,
-            perUserMonthly: 120,
+            perUserMonthly: 99,
             manualReviewUsers: 150,
             manualReviewLocations: 5
         });
@@ -41,9 +41,9 @@ describe('effective managed IT policy', () => {
     test('defines the three managed-IT tiers with correct rates, names and the recommended flag', () => {
         const tiers = MANAGED_IT_POLICY.pricing.tiers;
         expect(tiers.map((tier) => [tier.id, tier.name, tier.perUserMonthly])).toEqual([
-            ['essentials', 'Essentials', 75],
-            ['managed', 'Managed', 120],
-            ['secure', 'Secure', 165]
+            ['essentials', 'Essentials', 59],
+            ['managed', 'Managed', 99],
+            ['secure', 'Secure', 139]
         ]);
         expect(MANAGED_IT_POLICY.pricing.recommendedTierId).toBe('managed');
         expect(tiers.filter((tier) => tier.recommended).map((tier) => tier.id)).toEqual(['managed']);
@@ -57,9 +57,9 @@ describe('effective managed IT policy', () => {
     test('generates customer and prompt summaries from the same policy', () => {
         expect(managedItPolicyCustomerSummary()).toContain('No Fries Managed IT');
         expect(managedItPolicyCustomerSummary()).toContain('three tiers');
-        expect(managedItPolicyCustomerSummary()).toContain('Essentials at NZ$75');
-        expect(managedItPolicyCustomerSummary()).toContain('Managed at NZ$120 (recommended)');
-        expect(managedItPolicyCustomerSummary()).toContain('Secure at NZ$165');
+        expect(managedItPolicyCustomerSummary()).toContain('Essentials at NZ$59');
+        expect(managedItPolicyCustomerSummary()).toContain('Managed at NZ$99 (recommended)');
+        expect(managedItPolicyCustomerSummary()).toContain('Secure at NZ$139');
         expect(managedItPolicyCustomerSummary()).not.toContain('24/7');
         expect(managedItPolicyPromptSummary()).toContain(MANAGED_IT_POLICY.policyId);
         expect(managedItPolicyIdentity()).toEqual({
