@@ -113,7 +113,7 @@ function publicHelpReply(message) {
     const assessmentAction = assessment && /\b(?:save|saved|saving|resum(?:e|ing)|progress|draft|continue|reopen|results?|scores?|scoring|scored|grade[ds]?|grading|rating)\b/.test(text);
     // Topic intents let a plainly-worded basic question through the first filter
     // without opening it to discovery statements (still removed below).
-    const pricing = /\b(?:price|pricing|quote|how much|cost|costs|fees?|subscription|monthly|per user|setup fee|set-up fee|onboarding fee)\b/.test(text);
+    const pricing = /\b(?:price|pricing|quote|how much|cost|monthly|per user|setup fee|set-up fee|onboarding fee)\b/.test(text);
     const securityIntent = /\b(?:privacy|data protection|gdpr)\b/.test(text) ||
         (/\b(?:secur(?:e|ity)|safe|private|protected?|encrypt(?:ed|ion)?|breach|confidential)\b/.test(text) &&
             /\b(?:my|data|information|details|answers?|assessments?|dashboard|account)\b/.test(text));
@@ -123,16 +123,13 @@ function publicHelpReply(message) {
         /^(?:please\s+)?(?:what|who|tell me|explain|how|describe)\b/.test(text);
     const question = /^(?:please\s+)?(?:what|which|who|how|where|when|why|can|could|should|does|do|is|are|will|explain|tell me|show me|help me understand|help me)\b/.test(text);
     if (!question && !accountTopic && !accountChoice && !assessmentAction &&
-        !pricing && !securityIntent && !assistantIdentity && !productOverview) return null;
+        !securityIntent && !assistantIdentity && !productOverview) return null;
     // Remove only a bounded personal-help opening before applying the existing
     // discovery exclusions. Other contact details or discovery clauses still win.
     const discoveryText = text.replace(/\bi (?:need|want)(?: help)?\s+(?:(?:to|with)\s+)?/g,
         (opening, offset) => hasPublicHelpAction(text.slice(offset + opening.length)) ? '' : opening);
     if (hasDiscoveryOrContactInput(discoveryText)) return null;
-    // A managed-service price or quote request stays on the human discovery
-    // path; a general cost question still gets the honest dashboard-terms answer.
-    const managedPricingContext = /\b(?:quote|managed|service|services|support|per user|per seat|licen[cs]e[ds]?|seats?)\b/.test(text);
-    if (pricing && !dashboard && managedPricingContext) return null;
+    if (pricing && !dashboard) return null;
     let topic;
     let answer;
 

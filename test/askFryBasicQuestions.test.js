@@ -69,14 +69,22 @@ describe('Ask Fry answers basic first-time-visitor questions deterministically',
         ['Is my data safe?', 'data_security'],
         ['How secure is my data?', 'data_security'],
         ['Is my information private?', 'data_security'],
-        ['What does it cost?', 'feature_availability'],
-        ['How much is pricing?', 'feature_availability'],
-        ['pricing', 'feature_availability'],
         ['How do I export a report?', 'feature_availability'],
         ['How do I download a board report?', 'feature_availability']
     ])('answers a basic question regardless of exact phrasing: %s', (message, topic) => {
         const answer = expectRealAnswer(message);
         expect(answer.topic).toBe(topic);
+    });
+
+    // General cost/price questions deliberately fall through (null) so the
+    // sales flow answers them from the server pricing policy with real prices.
+    test.each([
+        'What does it cost?',
+        'How much is pricing?',
+        'pricing',
+        'What does No Fries cost each month?'
+    ])('leaves cost/pricing questions to the server pricing-policy path: %s', message => {
+        expect(publicHelpReply(message)).toBeNull();
     });
 
     test('matching is forgiving about case and punctuation', () => {
