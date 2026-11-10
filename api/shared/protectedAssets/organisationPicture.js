@@ -56,6 +56,59 @@
         const d = coords.map((coord, i) => (i === 0 ? 'M' : 'L') + coord.x.toFixed(1) + ' ' + coord.y.toFixed(1)).join(' ');
         return { coords, d };
     }
+    // Two saved assessments are like-for-like only when their saved scope text
+    // is identical and they were answered against the same questionnaire
+    // profile. Anything else is reported as a difference, never ignored.
+    function scopeCompatibility(previous, current) {
+        const scopeOf = record => record && record.scopePopulation &&
+            typeof record.scopePopulation.description === 'string' ? record.scopePopulation.description : null;
+        const previousScope = scopeOf(previous), currentScope = scopeOf(current);
+        const previousProfile = previous && previous.profileRef || {}, currentProfile = current && current.profileRef || {};
+        const sameScope = previousScope !== null && previousScope === currentScope;
+        const changedFields = PROFILE_FIELDS.filter(key => typeof previousProfile[key] !== 'string' ||
+            previousProfile[key] !== currentProfile[key]);
+        const sameQuestionnaire = changedFields.length === 0;
+        const differences = [];
+        if (!sameScope) differences.push({ field: 'scope', previous: previousScope, current: currentScope });
+        if (!sameQuestionnaire) differences.push({ field: 'questionnaire', fields: changedFields,
+            previous: previousProfile.profileVersion || null, current: currentProfile.profileVersion || null });
+        return { comparable: sameScope && sameQuestionnaire, sameScope, sameQuestionnaire,
+            scope: sameScope ? currentScope : null, profileVersion: sameQuestionnaire ? currentProfile.profileVersion : null,
+            differences };
+    }
+    // Pure difference of two validated result models. Every figure is a saved
+    // display string or saved tenths; deltas are plain subtraction of saved
+    // lower bounds. Questions are matched by saved item ID, functions by title.
+    function compareModel(previous, current) {
+        if (!previous || !current || !Array.isArray(previous.domains) || !Array.isArray(current.domains)) return null;
+        const tenths = value => Number.isSafeInteger(value) ? value : null;
+        const difference = (before, after) => before === null || after === null ? null : after - before;
+        const questionsOf = domain => domain.controls.flatMap(control => control.questions);
+        const previousDomains = new Map(previous.domains.map(domain => [domain.title, domain]));
+        const previousAnswers = new Map(previous.domains.flatMap(domain => questionsOf(domain).map(question => [question.itemId, question])));
+        let changedCount = 0, unchangedCount = 0, notComparedCount = 0;
+        const domains = current.domains.map(domain => {
+            const before = previousDomains.get(domain.title) || null, changed = [];
+            let unchanged = 0, notCompared = 0;
+            questionsOf(domain).forEach(question => {
+                const earlier = previousAnswers.get(question.itemId);
+                if (!earlier) { notCompared++; return; }
+                if (earlier.responseOptionId === question.responseOptionId) { unchanged++; return; }
+                changed.push({ itemId: question.itemId, prompt: question.prompt,
+                    previous: earlier.answer, current: question.answer,
+                    previousOptionId: earlier.responseOptionId, currentOptionId: question.responseOptionId });
+            });
+            changedCount += changed.length; unchangedCount += unchanged; notComparedCount += notCompared;
+            const previousLower = before ? tenths(before.lowerPercentTenths) : null, currentLower = tenths(domain.lowerPercentTenths);
+            return { title: domain.title, previous: before ? before.attainment : null, current: domain.attainment,
+                previousLower, currentLower, delta: difference(previousLower, currentLower), changed, unchanged, notCompared };
+        });
+        const previousBounds = overallBounds(previous), currentBounds = overallBounds(current);
+        return { previous: { attainment: previous.attainment, bounds: previousBounds },
+            current: { attainment: current.attainment, bounds: currentBounds },
+            delta: previousBounds && currentBounds ? currentBounds.lower - previousBounds.lower : null,
+            domains, changedCount, unchangedCount, notComparedCount };
+    }
 
     // Read-only presentation over the existing authorised client. A score is
     // displayed only after the submitted-result validator accepts the complete
@@ -78,6 +131,10 @@
         // explicit request only; it never auto-fetches and is bound to the epoch
         // it loaded under, so any selection or refresh invalidates it.
         let history = null, historyEpoch = -1, historyLoading = false, historyFailed = false;
+        // Compare-with-previous follows the same rule: an explicit request, one
+        // fresh authorised read of the chosen earlier record (or a record the
+        // trend already read in this epoch), and no figures kept across epochs.
+        let compareTarget = '', compareState = null, recordCache = new Map(), recordCacheEpoch = -1;
         const HISTORY_LIMIT = 24, SVG_NS = 'http://www.w3.org/2000/svg';
         function live(token) { return !disposed && (token === undefined || token === epoch); }
         function node(tag, cls, text) {
@@ -309,6 +366,7 @@
             const evidenceMetric = metric('Supporting evidence', result.substantiated, 'Coverage recorded in this saved assessment. Tested or observed coverage: ' + result.tested + '. This assessment journey does not yet accept evidence uploads or reviews. Zero coverage means evidence has not been supplied here; confidence is not assessed.');
             root.append(metrics);
             root.append(renderTrend());
+            root.append(renderCompare(result));
             const domains = node('section', 'picture-domains');
             domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show the reported lower bound; the striped extension shows uncertainty. The range is not achieved performance.'));
             result.domains.forEach(domain => {
@@ -490,7 +548,55 @@
             } catch (error) { if (live(token)) failure(error, () => read(assessmentId)); }
             finally { if (live(token)) { loading = false; render(); restoreFocus(savedFocus); } }
         }
-        function resetHistory() { history = null; historyEpoch = -1; historyLoading = false; historyFailed = false; }
+        function resetHistory() {
+            history = null; historyEpoch = -1; historyLoading = false; historyFailed = false;
+            compareTarget = ''; compareState = null; recordCache = new Map(); recordCacheEpoch = -1;
+        }
+        function cacheRecord(token, record) {
+            if (recordCacheEpoch !== token) { recordCache = new Map(); recordCacheEpoch = token; }
+            recordCache.set(record.assessmentId, copy(record));
+        }
+        function cachedRecord(assessmentId) { return recordCacheEpoch === epoch ? recordCache.get(assessmentId) || null : null; }
+        const chronological = (a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.assessmentId.localeCompare(b.assessmentId);
+        // Submitted assessments before the selected one, most recent first, in
+        // the same order the trend uses. The first is "immediately before".
+        function earlierSubmitted() {
+            if (!detail) return [];
+            return submittedRows().filter(row => row.assessmentId !== detail.assessmentId && chronological(row, detail) < 0)
+                .sort(chronological).reverse();
+        }
+        function validSubmitted(record, assessmentId) {
+            return !!record && record.assessmentId === assessmentId && record.moduleId === metadata.moduleId &&
+                sameProfile(record.profileRef, metadata.profileRef) && record.status === 'submitted' &&
+                questionnaire.resultModel(record, metadata, organisationId) !== null;
+        }
+        async function loadCompare(targetId) {
+            if (!live() || denied || loading || !detail || detail.status !== 'submitted' ||
+                compareState && compareState.loading && compareState.epoch === epoch) return;
+            if (!earlierSubmitted().some(row => row.assessmentId === targetId)) return;
+            const token = epoch, currentId = detail.assessmentId, hadFocus = doc.activeElement && root.contains(doc.activeElement);
+            compareTarget = targetId;
+            compareState = { epoch: token, currentId, targetId, loading: true, failed: false, invalid: false, record: null }; render();
+            let record = cachedRecord(targetId), failed = false;
+            try {
+                if (!record) {
+                    const response = await call('read', targetId, token);
+                    if (!response) return;
+                    record = response.assessment;
+                }
+            } catch (_) { failed = true; }
+            if (!live(token) || !compareState || compareState.epoch !== token || compareState.targetId !== targetId) return;
+            const valid = !failed && validSubmitted(record, targetId);
+            if (valid) cacheRecord(token, record);
+            compareState = { epoch: token, currentId, targetId, loading: false, failed,
+                invalid: !failed && !valid, record: valid ? copy(record) : null };
+            render();
+            if (hadFocus) {
+                const section = root.querySelector('.picture-compare');
+                const target = section && (section.querySelector('h4') || section.querySelector('button'));
+                if (target) { if (target.tagName === 'H4') target.tabIndex = -1; target.focus(); }
+            }
+        }
         function submittedRows() { return rows.filter(row => row.status === 'submitted'); }
         // Read the overall score of each accessible submitted assessment, reusing
         // the already-authorised selected record and freshly authorising the rest.
@@ -516,7 +622,9 @@
                     }
                     if (!record || record.assessmentId !== row.assessmentId || record.moduleId !== metadata.moduleId ||
                         !sameProfile(record.profileRef, metadata.profileRef) || record.status !== 'submitted') continue;
-                    const bounds = overallBounds(questionnaire.resultModel(record, metadata, organisationId));
+                    const model = questionnaire.resultModel(record, metadata, organisationId);
+                    if (model && record !== detail) cacheRecord(token, record);
+                    const bounds = overallBounds(model);
                     if (bounds) points.push({ assessmentId: record.assessmentId, submittedAt: record.updatedAt,
                         lower: bounds.lower, upper: bounds.upper });
                 }
@@ -624,6 +732,157 @@
                 'Comparison uses each assessment’s reported implementation lower bound. Scores from different scopes are not directly comparable.'));
             return section;
         }
+        function srText(text) { return node('span', 'picture-compare-sr', text); }
+        function visual(text) { const value = node('span', 'picture-compare-answer', text); value.setAttribute('aria-hidden', 'true'); return value; }
+        function pointsText(delta) {
+            if (delta === null) return 'Not comparable';
+            if (delta === 0) return 'No change';
+            return (delta > 0 ? '+' : '−') + (Math.abs(delta) / 10).toFixed(1) + ' points';
+        }
+        function renderCompare(result) {
+            const section = node('section', 'picture-compare');
+            const heading = node('h3', '', 'Compare with previous'); heading.id = id + '-compare-heading';
+            section.setAttribute('aria-labelledby', heading.id); section.append(heading);
+            if (submittedRows().length <= 1) {
+                section.append(node('p', 'dashboard-muted',
+                    'Only one submitted assessment is available, so there is nothing to compare with yet. Submit a re-assessment of the same scope to see what changed.'));
+                return section;
+            }
+            const candidates = earlierSubmitted();
+            if (!candidates.length) {
+                section.append(node('p', 'dashboard-muted', 'This is your earliest submitted assessment, so there is no earlier assessment to compare with. Select a later assessment to compare it with this one.' +
+                    (after !== null ? ' More saved assessments are available; load more to include older ones.' : '')));
+                return section;
+            }
+            if (!candidates.some(row => row.assessmentId === compareTarget)) compareTarget = candidates[0].assessmentId;
+            const state = compareState && compareState.epoch === epoch && compareState.currentId === detail.assessmentId &&
+                compareState.targetId === compareTarget ? compareState : null;
+            const busy = loading || !!(state && state.loading), token = epoch;
+            section.append(node('p', 'dashboard-muted', 'Choose an earlier submitted assessment. Scope and questionnaire version are checked first, then score, function and answer changes are shown from the saved results. Nothing is re-scored.'));
+            const toolbar = node('div', 'picture-compare-toolbar');
+            const label = node('label', '', 'Compare with'), picker = node('select');
+            picker.id = id + '-compare'; label.htmlFor = picker.id; picker.disabled = busy;
+            const labelFor = (row, index) => (index === 0 ? 'Previous · ' : '') + displayDate(row.updatedAt) +
+                (row.scopePopulation ? ' · ' + row.scopePopulation.description : '');
+            const counts = new Map();
+            candidates.forEach((row, index) => { const text = labelFor(row, index); counts.set(text, (counts.get(text) || 0) + 1); });
+            candidates.forEach((row, index) => {
+                const text = labelFor(row, index);
+                const item = node('option', '', text + (counts.get(text) > 1 ? ' · ' + row.assessmentId : ''));
+                item.value = row.assessmentId; picker.append(item);
+            });
+            picker.value = compareTarget;
+            picker.addEventListener('change', () => {
+                if (!live(token) || denied || loading || !candidates.some(row => row.assessmentId === picker.value)) return;
+                compareTarget = picker.value; render();
+                const next = root.querySelector('.picture-compare'), control = next && next.querySelector('select');
+                if (control) control.focus();
+            });
+            const action = button(state && state.failed ? 'Retry comparison' : 'Compare with previous', () => {
+                if (live(token) && !loading) loadCompare(picker.value);
+            });
+            action.classList.add('dashboard-button-secondary'); action.disabled = busy;
+            toolbar.append(label, picker, action); section.append(toolbar);
+            if (after !== null) section.append(node('p', 'dashboard-muted', 'More saved assessments are available. Load more to choose from older ones.'));
+            if (state && state.loading) {
+                const status = node('p', 'picture-status', 'Reading the earlier assessment…');
+                status.setAttribute('role', 'status'); section.append(status);
+            } else if (state && state.failed) {
+                const status = node('p', 'picture-status', 'The earlier assessment could not be read. Retry the comparison; no figures are shown from an unconfirmed read.');
+                status.setAttribute('role', 'status'); section.append(status);
+            } else if (state && state.invalid) {
+                section.append(node('p', 'ncsc-warning', 'Results are unavailable for the earlier saved submission. No comparison has been inferred.'));
+            } else if (state && state.record) section.append(renderComparison(state.record, result));
+            return section;
+        }
+        function renderComparison(record, result) {
+            const wrap = node('div', 'picture-compare-result');
+            wrap.append(node('h4', '', 'Changes since ' + displayDate(record.updatedAt)));
+            const compatibility = scopeCompatibility(record, detail);
+            const model = compareModel(questionnaire.resultModel(record, metadata, organisationId), result);
+            if (!model) { wrap.append(node('p', 'ncsc-warning', 'Results are unavailable for the earlier saved submission. No comparison has been inferred.')); return wrap; }
+            if (compatibility.comparable) {
+                wrap.append(node('p', 'picture-compare-compatible', 'Like-for-like: both assessments use identical scope text and the same questionnaire version (' +
+                    compatibility.profileVersion + ').'));
+                const scope = node('p', 'dashboard-muted ncsc-preserve-text', 'Scope: ' + compatibility.scope); wrap.append(scope);
+                wrap.append(renderChanges(model, record));
+                return wrap;
+            }
+            const warning = node('div', 'ncsc-warning picture-compare-warning');
+            warning.append(node('h5', '', 'Not a like-for-like comparison'));
+            const reasons = node('ul');
+            compatibility.differences.forEach(difference => {
+                const item = node('li');
+                if (difference.field === 'scope') {
+                    item.append(node('p', '', 'The saved scope text differs.'),
+                        node('p', 'ncsc-preserve-text', 'Earlier: ' + (difference.previous === null ? 'not recorded' : difference.previous)),
+                        node('p', 'ncsc-preserve-text', 'Selected: ' + (difference.current === null ? 'not recorded' : difference.current)));
+                } else item.append(node('p', '', 'The questionnaire version differs (earlier ' + (difference.previous || 'unknown') +
+                    ', selected ' + (difference.current || 'unknown') + '). Questions and weights may not match.'));
+                reasons.append(item);
+            });
+            warning.append(reasons, node('p', '', 'Changes may reflect different systems, people or questions rather than a change in security practice. Treat the figures as indicative only.'));
+            wrap.append(warning);
+            const anyway = node('details', 'picture-compare-anyway');
+            anyway.append(node('summary', '', 'Show changes anyway (not like-for-like)'), renderChanges(model, record));
+            wrap.append(anyway);
+            return wrap;
+        }
+        function renderChanges(model, record) {
+            const body = node('div', 'picture-compare-body'), earlierDate = shortDate(record.updatedAt);
+            const range = node('p', 'picture-compare-range');
+            const values = node('strong', 'picture-large', model.previous.attainment + ' → ' + model.current.attainment);
+            values.setAttribute('aria-hidden', 'true');
+            range.append(node('span', 'picture-trend-label', 'Reported implementation range'), values,
+                srText('From ' + model.previous.attainment + ' on ' + earlierDate + ' to ' + model.current.attainment + ' in the selected assessment.'));
+            if (model.delta !== null) {
+                const direction = model.delta > 0 ? 'up' : model.delta < 0 ? 'down' : 'none';
+                const badge = node('span', 'picture-trend-delta picture-trend-delta-' + direction);
+                const glyph = node('span', 'picture-trend-arrow', direction === 'up' ? '▲' : direction === 'down' ? '▼' : '●');
+                glyph.setAttribute('aria-hidden', 'true');
+                badge.append(glyph, node('span', '', pointsText(model.delta) + ' in the reported lower bound'));
+                range.append(badge);
+            }
+            body.append(range);
+            body.append(node('h5', '', 'Change by NCSC function'));
+            const table = node('table', 'picture-compare-table');
+            table.append(node('caption', '', 'Reported implementation by NCSC function: earlier (' + earlierDate + ') and selected assessment. Change is in the reported lower bound.'));
+            const thead = node('thead'), head = node('tr');
+            ['NCSC function', 'Earlier', 'Selected', 'Change'].forEach(text => { const cell = node('th', '', text); cell.setAttribute('scope', 'col'); head.append(cell); });
+            thead.append(head); table.append(thead);
+            const tbody = node('tbody');
+            model.domains.forEach(domain => {
+                const row = node('tr'), title = node('th', '', domain.title); title.setAttribute('scope', 'row');
+                row.append(title, node('td', '', domain.previous === null ? 'Not available' : domain.previous),
+                    node('td', '', domain.current), node('td', '', pointsText(domain.delta)));
+                tbody.append(row);
+            });
+            table.append(tbody); body.append(table);
+            body.append(node('h5', '', 'Answer changes'));
+            const total = model.changedCount + model.unchangedCount;
+            body.append(node('p', 'picture-compare-summary', model.changedCount + ' of ' + total + (total === 1 ? ' answer' : ' answers') +
+                ' changed; ' + model.unchangedCount + ' unchanged.' +
+                (model.notComparedCount ? ' ' + model.notComparedCount + ' not in the earlier assessment.' : '')));
+            model.domains.forEach(domain => {
+                const group = node('section', 'picture-compare-function');
+                group.append(node('h6', '', domain.title), node('p', 'dashboard-muted',
+                    (domain.changed.length ? domain.changed.length + ' changed' : 'No answers changed') + ' · ' + domain.unchanged + ' unchanged'));
+                if (domain.changed.length) {
+                    const list = node('ul', 'picture-compare-answers');
+                    domain.changed.forEach(change => {
+                        const item = node('li'); item.setAttribute('data-question-id', change.itemId);
+                        item.append(node('span', 'picture-compare-prompt', change.prompt),
+                            visual(change.previous + ' → ' + change.current),
+                            srText('changed from ' + change.previous + ' to ' + change.current));
+                        list.append(item);
+                    });
+                    group.append(list);
+                }
+                body.append(group);
+            });
+            body.append(node('p', 'dashboard-muted', 'Figures are the saved results of each assessment; nothing is re-scored. A changed answer is self-reported and does not establish control effectiveness.'));
+            return body;
+        }
         const controller = { requestLeave(commit) {
             if (!live()) return Promise.resolve(false);
             if (typeof commit === 'function') commit(); return Promise.resolve(true);
@@ -633,5 +892,5 @@
         } };
         mounted.set(root, controller); load(false); return controller;
     }
-    return Object.freeze({ mount, overallBounds, trendModel, sparklineGeometry });
+    return Object.freeze({ mount, overallBounds, trendModel, sparklineGeometry, scopeCompatibility, compareModel });
 }));
