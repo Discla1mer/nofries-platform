@@ -54,10 +54,10 @@ testCase('separately scoped extras retain every public policy exclusion', () => 
 
 testCase('separate service-page links survive the dashboard-focused homepage and removed Luna promotion', () => {
     assert.doesNotMatch(home, /Product and services|id="service-dialog"|id="discovery-dialog"|id="pricing-dialog"/);
-    for (const href of ['https://news.nofries.nz/', '/roadmap.html', '/privacy.html', '/terms.html']) {
+    for (const href of ['/roadmap.html', '/privacy.html', '/terms.html']) {
         assert.ok(home.includes(`href="${href}"`), `homepage footer lost ${href}`);
     }
-    for (const href of ['/', 'https://news.nofries.nz/', '/roadmap.html', '/contact.html', '/portal', '/privacy.html', '/terms.html']) {
+    for (const href of ['/', '/roadmap.html', '/contact.html', '/portal', '/privacy.html', '/terms.html']) {
         assert.ok(html.includes(`href="${href}"`), `information page lost ${href}`);
     }
     assert.match(html, /href="\/managed-it\.html" aria-current="page"/);

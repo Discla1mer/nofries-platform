@@ -19,7 +19,7 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const START = new Date(Date.parse(NOW) - 60000).toISOString();
 const END = new Date(Date.parse(NOW) + 3600000).toISOString();
 const BUDGET = { maxRecords: 4096, maxBytes: 67108864, maxDurationMs: 60000 };
-const proposal = fs.readFileSync(path.join(__dirname, '../../database/proposals/dashboard_admin_lookup_audit.sql'), 'utf8');
+const migration = fs.readFileSync(path.join(__dirname, '../../database/migrations/0018_dashboard_admin_lookup_audit.sql'), 'utf8');
 const quote = name => '"' + name.replace(/"/g, '""') + '"';
 
 function isolatedTestUrl(value) {
@@ -125,12 +125,12 @@ module.exports = function registerDashboardAdminPostgresTests() {
             url.username = runtimeRole; url.password = password;
             runtimePool = new Pool({ connectionString: url.toString(), max: 2, connectionTimeoutMillis: 5000 });
             closeRuntime = trackPoolClientEnds(runtimePool);
-            // The real old constraints must refuse this category. The proposal
-            // remains outside the migration catalog and is applied only here.
-            const h = await harness();
-            await expect(h.repository.persistAudit(h.request, h.envelope(), h.selector)).rejects.toMatchObject({ statusCode: 503 });
-            await owner.query(proposal);
-            await owner.query(proposal);
+            // db:migrate installed 0018 above. Replaying its exact body against the
+            // installed candidate must be a no-op, then a lookup attempt persists.
+            await owner.query(migration);
+            await owner.query(migration);
+            const ledger = await owner.query("SELECT migration_id FROM nofries.schema_migrations WHERE migration_id LIKE '0018_%'");
+            expect(ledger.rows).toEqual([{ migration_id: '0018_dashboard_admin_lookup_audit.sql' }]);
         }, 30000);
 
         afterAll(async () => {
@@ -302,7 +302,7 @@ module.exports = function registerDashboardAdminPostgresTests() {
             expect(h.state.trace.slice(start).some(({ sql }) => /^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);
         });
 
-        test.each(['payload', 'type', 'index'])('proposal rejects %s drift atomically without partially changing schema', async kind => {
+        test.each(['payload', 'type', 'index'])('migration 0018 rejects %s drift atomically without partially changing schema', async kind => {
             const client = await owner.connect();
             const schema = async () => ({ constraints: (await client.query("SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid='nofries.dashboard_runtime_audit'::regclass ORDER BY conname")).rows,
                 indexes: (await client.query("SELECT indexname,indexdef FROM pg_indexes WHERE schemaname='nofries' AND tablename='dashboard_runtime_audit' ORDER BY indexname")).rows });
@@ -322,7 +322,7 @@ module.exports = function registerDashboardAdminPostgresTests() {
                 }
                 const drifted = await schema();
                 await client.query('SAVEPOINT proposed_change');
-                await expect(client.query(proposal)).rejects.toMatchObject({ code: 'P0001',
+                await expect(client.query(migration)).rejects.toMatchObject({ code: 'P0001',
                     message: kind === 'index' ? 'dashboard_admin_audit_index_drift' : 'dashboard_admin_audit_constraint_drift' });
                 await client.query('ROLLBACK TO SAVEPOINT proposed_change');
                 expect(await schema()).toEqual(drifted);

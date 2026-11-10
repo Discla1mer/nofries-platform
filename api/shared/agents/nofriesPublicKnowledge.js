@@ -6,7 +6,7 @@ const { detectProspectPromptInjection } = require('./prospectInjectionGuard');
 // Change this version whenever the public facts or availability change.
 const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
     schemaVersion: 1,
-    knowledgeVersion: 'public-stack-2026-10-19-v1',
+    knowledgeVersion: 'public-stack-2026-11-10-v1',
     links: {
         home: 'https://nofries.nz/',
         dashboard: 'https://nofries.nz/dashboard',
@@ -14,7 +14,6 @@ const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
         signIn: 'https://nofries.nz/login',
         scoping: 'https://nofries.nz/scoping',
         roadmap: 'https://nofries.nz/roadmap.html',
-        news: 'https://news.nofries.nz/',
         salesAgency: 'https://sales.nofries.nz/',
         luna: 'https://luna.nofries.nz/',
         privacy: 'https://nofries.nz/privacy.html'
@@ -64,6 +63,25 @@ const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
             availability: 'not_live',
             summary: 'The Luna game has its own public site. Shared Luna and dashboard profiles are not live. A game nickname, score or badge does not create a dashboard identity or entitlement.'
         },
+        // Wording below mirrors the assessment form and results surfaces in
+        // api/shared/protectedAssets/ncscQuestionnaire.js and
+        // api/shared/securityGap/ncscProfile.js; keep them in step.
+        answerMeanings: {
+            availability: 'available',
+            summary: 'Assessment answers mean: Yes - all parts of the statement are in place across your declared scope. Partial - some parts are in place, or only part of your scope is covered; plans alone do not count. No - none of it is in place yet, including when work is only planned. Unknown - you do not have enough information to confirm what is in place. Not applicable (N/A) - you believe it does not apply to your scope; explain why, and it stays unresolved until approved.'
+        },
+        scoringMethod: {
+            availability: 'available',
+            summary: 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The result is a range. The lower end counts Unknown, unanswered and unapproved N/A answers as 0; the upper end counts them as 1, so unresolved answers widen the range. Lower end = (Yes + 0.5 x Partial) / total questions. The 0.5 for Partial is a No Fries planning convention, not an NCSC weight, and this is a No Fries calculation, not an NCSC score.'
+        },
+        complianceLimit: {
+            availability: 'available',
+            summary: 'This assessment can\'t establish compliance or certification. It is a self-reported gap assessment based on selected NCSC guidance, not an audit, assurance opinion, certification or an NCSC score. A high result does not prove controls are effective or that business risk is low.'
+        },
+        priorityGuidance: {
+            availability: 'available',
+            summary: 'After you submit, your saved results include Fix these first: your own No answers, then Partial, then Unknown and N/A, each with a starting action. It groups your answers; it is not a calculated risk ranking. Start with the gaps you reported, then ask your IT provider to check anything you marked Unknown.'
+        },
         assistanceLimits: {
             availability: 'public_help_only',
             summary: 'This public assistant can explain the offering and public workflows. It cannot read your selected organisation, private assessment answers, documents or customer systems, and it cannot fill, save, submit or change assessment scores for you. Use the existing forms and review your entries before saving. Private dashboard assistance and reviewed update proposals require a separately enabled, authorised workflow. Do not paste private assessment content, passwords, tokens or recovery material into public chat.'
@@ -112,7 +130,8 @@ function publicHelpReply(message) {
         /\b(?:accounts?|choose|choice|difference|dashboard|clients?|organisation|organization|company or consultant|consultant or company)\b/.test(text);
     const assessmentAction = assessment && /\b(?:save|saved|saving|resum(?:e|ing)|progress|draft|continue|reopen|results|scores?)\b/.test(text);
     const question = /^(?:please\s+)?(?:what|which|how|where|when|why|can|could|should|does|do|is|are|will|explain|tell me|show me|help me understand|help me)\b/.test(text);
-    if (!question && !accountTopic && !accountChoice && !assessmentAction) return null;
+    const assessmentTopic = service && !assessment ? null : publicAssessmentTopic(text);
+    if (!question && !accountTopic && !accountChoice && !assessmentAction && !assessmentTopic) return null;
     // Remove only a bounded personal-help opening before applying the existing
     // discovery exclusions. Other contact details or discovery clauses still win.
     const discoveryText = text.replace(/\bi (?:need|want)(?: help)?\s+(?:(?:to|with)\s+)?/g,
@@ -146,6 +165,21 @@ function publicHelpReply(message) {
         const fact = accountTopic === 'password_recovery' ? capabilities.passwordRecovery
             : accountTopic === 'sign_in_recovery' ? capabilities.signInRecovery : capabilities.accountEntry;
         answer = `${fact.summary} Account access: ${links.signIn}`;
+    } else if (assessmentTopic === 'assessment_compliance') {
+        topic = assessmentTopic;
+        answer = `${capabilities.complianceLimit.summary} Your result shows how much you reported as in place, as a No Fries calculation. Dashboard: ${links.dashboard}`;
+    } else if (assessmentTopic === 'assessment_priority') {
+        topic = assessmentTopic;
+        answer = `This chat cannot read your answers, so it cannot rank your gaps. ${capabilities.priorityGuidance.summary} Dashboard: ${links.dashboard}`;
+    } else if (assessmentTopic === 'assessment_scoring') {
+        topic = assessmentTopic;
+        answer = `${capabilities.scoringMethod.summary} This chat cannot see your answers or your result. Dashboard: ${links.dashboard}`;
+    } else if (assessmentTopic === 'assessment_answers') {
+        topic = assessmentTopic;
+        const mfa = /\b(?:mfa|multi[ -]?factor|2fa|two[ -]factor)\b/.test(text)
+            ? ' For MFA, Partial fits when, for example, administrators must use MFA but some important services still accept a password alone.'
+            : '';
+        answer = `${capabilities.answerMeanings.summary}${mfa} For the result, Yes counts 1, Partial 0.5 and No 0; Unknown and N/A widen the range. Each question in the form also explains its answers.`;
     } else if (/\b(?:improvement plans?|evidence|documents?|uploads?|board reports?|ai governance|it optimisation|ai suggestions?|ai editing|automatic updates?|connected (?:data )?feeds?|(?:edit(?:ing)?|change) (?:my |the )?(?:submitted|saved) (?:assessment )?(?:answers?|assessments?))\b/.test(text)) {
         topic = 'feature_availability';
         answer = `${capabilities.futureDashboard.summary} ${capabilities.savedResults.summary} Roadmap: ${links.roadmap}`;
@@ -171,7 +205,7 @@ function publicHelpReply(message) {
         answer = `${capabilities.enquiry.summary} Managed IT information: ${links.managedIt} Service discovery/scoping: ${links.scoping} Sign-in or existing service access may be required.`;
     } else if (/\b(?:news|sales agency|public links|products|full stack|offering)\b/.test(text)) {
         topic = 'public_links';
-        answer = `${capabilities.platform.summary} ${MANAGED_IT_POLICY.customerFacingServiceName} is separately scoped. Dashboard: ${links.dashboard} Managed IT: ${links.managedIt} Service scoping: ${links.scoping} News: ${links.news} Sales Agency: ${links.salesAgency} Roadmap: ${links.roadmap}`;
+        answer = `${capabilities.platform.summary} ${MANAGED_IT_POLICY.customerFacingServiceName} is separately scoped. Dashboard: ${links.dashboard} Managed IT: ${links.managedIt} Service scoping: ${links.scoping} Sales Agency: ${links.salesAgency} Roadmap (what is live, in development and planned): ${links.roadmap}`;
     } else if (dashboard || assessment) {
         topic = 'platform_overview';
         answer = `${capabilities.platform.summary} ${capabilities.assessmentProgress.summary} ${capabilities.savedResults.summary} Dashboard: ${links.dashboard}`;
@@ -188,6 +222,27 @@ function hasPublicHelpAction(text) {
     return /^(?:(?:reset(?:ting)?|recover(?:ing)?|chang(?:e|ing)) (?:my |an? |the )?(?:password|account)|(?:my |an? )?password (?:reset|recovery))\b/.test(text) ||
         /^(?:(?:sign(?:ing)?|log(?:ging)?)[ -]?(?:in|up)|creat(?:e|ing) (?:an? |my )?account)\b/.test(text) ||
         /^(?:save|saving|resume|resuming|see|view|reopen) (?:my |an? |the )?(?:assessments?|results|scores?)\b/.test(text);
+}
+
+// Generic assessment-method questions: answer meanings, the scoring formula,
+// what to fix first and compliance. Answers are fixed public facts; none reads
+// or infers an organisation's own answers or result.
+function publicAssessmentTopic(text) {
+    if (/\b(?:complian(?:t|ce)|certif(?:y|ied|icate|ication)|accredit(?:ed|ation)?|audited|official (?:ncsc )?(?:score|result|rating)|(?:did|do|will|would) (?:i|we|my business|our business) pass)\b/.test(text)) {
+        return 'assessment_compliance';
+    }
+    if (/\b(?:fix|tackle|address|improve|work on|focus on)\b[^.!?;]{0,25}\bfirst\b|\b(?:prioriti[sz]\w*|priority|priorities|biggest (?:risk|gap)s?|top (?:risk|gap|priority)|needs? attention)\b/.test(text)) {
+        return 'assessment_priority';
+    }
+    if (/\b(?:scores?|scoring|results?|percentages?|implementation)\b/.test(text) &&
+        /\b(?:calculat\w*|work(?:ed|s)? out|comput\w*|weight\w*|formula|range|scored|counted)\b/.test(text)) {
+        return 'assessment_scoring';
+    }
+    if (/\b(?:partial|unknown|not applicable|n\/a|answer (?:options?|choices?)|answer(?:ed|ing)? (?:yes|no))\b/.test(text) &&
+        /\b(?:mean|means|meaning|definition|define|stand for|difference|count|counts|choose|pick|select|use|when)\b/.test(text)) {
+        return 'assessment_answers';
+    }
+    return null;
 }
 
 function publicAccountTopic(text) {
