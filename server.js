@@ -918,6 +918,13 @@ app.get(['/operator', '/operator/'], (req, res) => {
     res.type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, 'app', 'operator.html'), 'utf8')));
 });
 
+app.get(['/forgot-password', '/forgot-password/'], (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    // Password reset is handled by Microsoft on the existing sign-in flow.
+    res.redirect(302, '/login');
+});
+
 app.get(['/service-desk', '/service-desk/'], (req, res) => {
     res.redirect(302, '/support');
 });

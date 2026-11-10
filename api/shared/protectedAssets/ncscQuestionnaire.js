@@ -322,6 +322,8 @@
         let errorBox;
         let controls;
         let dialog;
+        let submitPrompt = false;
+        let submitLocked = false;
         let questionRegion;
         let questionIndex;
         let questionProgress;
@@ -561,6 +563,7 @@
             root.append(provenance()); updateStatus(); renderErrors();
             if (questionProgress && Number.isFinite(progressHeight)) questionProgress.style.setProperty('min-height', progressHeight + 'px');
             if (leave) renderLeave();
+            else if (submitPrompt) renderSubmitDialog();
             else restoreFocus(root, focused, heading);
             if (focused && win && typeof win.scrollTo === 'function' && Number.isFinite(scrollY)) win.scrollTo(scrollX, scrollY);
         }
@@ -627,7 +630,8 @@
                 : 'Search by the date created, date last saved, or assessment reference.');
             note.id = 'ncsc-assessment-filter-note';
             const empty = node('div', 'ncsc-assessment-empty');
-            empty.append(node('p', '', 'No loaded assessments match your search and status.'));
+            const emptyCopy = node('p', '');
+            empty.append(emptyCopy);
             const clear = button('Clear filters', function () {
                 listSearch = ''; listStatus = 'all'; search.value = ''; filter.value = 'all'; updateList(); search.focus();
             }, 'dashboard-button dashboard-button-secondary');
@@ -643,7 +647,7 @@
                     const row = node('li', 'ncsc-assessment-card');
                     const heading = node('div', 'ncsc-assessment-card-heading');
                     heading.append(node('h3', '', 'Assessment started ' + localDate(item.createdAt)),
-                        node('span', 'dashboard-badge', submitted ? 'Submitted' : item.status === 'created' ? 'Not started' : 'In progress'));
+                        node('span', 'dashboard-badge', submitted ? 'Submitted' : unfinishedStatusLabel(item)));
                     const saved = node('p', 'ncsc-assessment-saved', item.progress.answered + ' of ' + item.progress.total + ' responses saved');
                     const progress = node('progress', 'ncsc-saved-progress'); progress.max = item.progress.total; progress.value = item.progress.answered;
                     progress.setAttribute('aria-label', 'Saved responses');
@@ -660,6 +664,10 @@
                         node('p', 'dashboard-muted ncsc-assessment-date', 'Last saved ' + localDate(item.updatedAt)), open, details); list.append(row);
                 });
                 const matches = list.children.length;
+                const submittedLoaded = summaries.some(function (item) { return item.status === 'submitted'; });
+                emptyCopy.textContent = listStatus === 'submitted' && !submittedLoaded
+                    ? 'No submitted assessments yet. Results appear here once an assessment is submitted.'
+                    : 'No loaded assessments match your search and status.';
                 count.textContent = matches + ' of ' + summaries.length + ' loaded assessments shown';
                 empty.hidden = matches !== 0 || !summaries.length;
             }
@@ -860,7 +868,7 @@
             const consequence = node('p', 'dashboard-muted', (unsaved ? 'Your ' + unsaved + ' unsaved ' + (unsaved === 1 ? 'answer is' : 'answers are') + ' saved first, then the assessment is submitted. ' : 'The assessment is submitted with the saved answers shown. ') +
                 'A submitted baseline is read-only and cannot be edited.');
             consequence.id = 'ncsc-review-consequence';
-            const confirm = button('Save and submit assessment', submitAssessment); confirm.dataset.mutation = 'true'; confirm.setAttribute('aria-describedby', consequence.id);
+            const confirm = button('Save and submit assessment', requestSubmit); confirm.id = 'ncsc-review-submit'; confirm.dataset.mutation = 'true'; confirm.setAttribute('aria-describedby', consequence.id);
             controls.append(confirm, button('Back to questions', closeReview, 'dashboard-text-button'));
             panel.append(consequence, controls);
             content.append(panel);
@@ -1085,9 +1093,12 @@
             const panel = node('details', 'ncsc-guidance');
             panel.append(node('summary', '', 'Help me answer this question'));
             panel.append(node('p', '', question.guidance && question.guidance.summary || question.prompt));
-            panel.append(node('p', 'dashboard-muted', 'Describe what actually happens, who manages it, and what information supports it. Unknown is a valid answer. AI suggestions need your review and do not verify evidence.'));
+            panel.append(node('p', 'dashboard-muted', 'Describe what actually happens, who manages it, and what information supports it. Unknown is a valid answer.'));
             questionRegion.append(panel);
             const assistant = options.assistance;
+            if (writable && assistant && typeof assistant.suggest === 'function') {
+                panel.append(node('p', 'dashboard-muted', 'AI suggestions need your review and do not verify evidence.'));
+            }
             if (!writable || !assistant || typeof assistant.suggest !== 'function') {
                 panel.append(node('p', 'dashboard-muted', 'AI assistance and document interpretation are not enabled in this assessment. You can still use the guidance and answer manually.'));
                 return;
@@ -1262,6 +1273,59 @@
             } while (drain && dirtyEntries().length);
             return !dirtyEntries().length || !drain;
         }
+        function unfinishedStatusLabel(item) {
+            const answered = item.progress && Number.isFinite(item.progress.answered) ? item.progress.answered : 0;
+            return answered > 0 ? 'In progress' : 'Not started';
+        }
+        function requestSubmit() {
+            if (!live() || submitPrompt || submitLocked || busy || pending || conflict || !currentChecked || leave ||
+                !reviewing || !editable || !acknowledged || acknowledged.status === 'submitted') return;
+            if (!validateDraft(true)) return;
+            submitPrompt = true; renderSubmitDialog();
+        }
+        function renderSubmitDialog() {
+            if (!live() || !submitPrompt) return;
+            removeDialog();
+            dialog = node('dialog', 'ncsc-leave-dialog ncsc-submit-dialog');
+            dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'ncsc-submit-title');
+            const title = node('h3', '', 'Submit this assessment?'); title.id = 'ncsc-submit-title';
+            dialog.append(title, node('p', '', 'Submitting locks this assessment and its scope. The assessment becomes read-only.'));
+            const submit = button('Submit', acceptSubmit);
+            const cancel = button('Cancel', cancelSubmit, 'dashboard-text-button');
+            dialog.append(submit, cancel);
+            dialog.addEventListener('keydown', function (event) {
+                if (!live() || !submitPrompt) return;
+                if (event.key === 'Escape') { event.preventDefault(); cancelSubmit(); }
+                if (event.key === 'Tab') {
+                    const items = Array.from(dialog.querySelectorAll('button')).filter(function (item) { return !item.disabled; });
+                    const index = items.indexOf(doc.activeElement);
+                    const next = event.shiftKey ? (index <= 0 ? items.length - 1 : index - 1) : (index + 1) % items.length;
+                    event.preventDefault(); if (items[next]) items[next].focus();
+                }
+            });
+            dialog.addEventListener('cancel', function (event) { event.preventDefault(); if (live() && submitPrompt) cancelSubmit(); });
+            root.append(dialog);
+            if (typeof dialog.showModal !== 'function') {
+                submitPrompt = false; removeDialog(); dialog = null;
+                statusText = 'This browser cannot open the confirmation. The assessment was not submitted.'; updateStatus(); return;
+            }
+            try { dialog.showModal(); cancel.focus(); }
+            catch (error) {
+                submitPrompt = false; removeDialog(); dialog = null;
+                statusText = 'The confirmation could not open. The assessment was not submitted.'; updateStatus();
+            }
+        }
+        function acceptSubmit() {
+            if (!live() || !submitPrompt || submitLocked) return;
+            submitLocked = true; submitPrompt = false; removeDialog(); dialog = null;
+            Promise.resolve(submitAssessment()).finally(function () { submitLocked = false; });
+        }
+        function cancelSubmit() {
+            if (!submitPrompt) return;
+            submitPrompt = false; removeDialog(); dialog = null;
+            const opener = live() ? root.querySelector('[id="ncsc-review-submit"]') : null;
+            if (opener) opener.focus();
+        }
         async function submitAssessment() {
             if (!live() || busy || pending || conflict || !currentChecked || !acknowledged || acknowledged.status === 'submitted' || !editable) return;
             if (!validateDraft(true)) return;
@@ -1374,6 +1438,7 @@
         function hasDraft() { return view === 'create' ? declaration.length > 0 : dirtyEntries().length > 0; }
         function requestLeave(commit) {
             if (!live()) return Promise.resolve(false);
+            if (submitPrompt) { submitPrompt = false; removeDialog(); dialog = null; }
             if (leave) return leave.promise;
             if (pending || busy) { statusText = 'Resolve the running or unconfirmed operation before leaving this view.'; updateStatus(); return Promise.resolve(false); }
             if (!hasDraft()) { if (typeof commit === 'function') commit(); return Promise.resolve(true); }
@@ -1441,6 +1506,7 @@
             if (disposed) return;
             disposed = true; epoch += 1; abortRequests();
             syncUnloadWarning();
+            submitPrompt = false; submitLocked = false;
             if (leave) { leave.resolve(false); leave = null; }
             removeDialog(); dialog = null;
             pending = null; drafts.clear(); assistanceNotes.clear(); summaries = []; selected = null; acknowledged = null; declaration = ''; errors = []; workshopPanel = null; reviewing = false; returnToReview = null;

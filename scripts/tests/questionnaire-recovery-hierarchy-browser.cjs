@@ -398,7 +398,8 @@ async function doubleText(page) {
             await page.locator('.ncsc-assessment-list button').nth(1).click(); await page.locator('#ncsc-question-index').waitFor();
             await dirty(page, 'yes'); const finalStart = operations.length; holdWrites = true;
             await button(page, 'Review and submit').click();
-            await button(page, 'Save and submit assessment').click(); await awaitingHeldWrite();
+            await button(page, 'Save and submit assessment').click();
+            await button(page, 'Submit').click(); await awaitingHeldWrite();
             assert.ok(operations.at(-1).path.endsWith('/save'));
             await button(page, 'Save and submit assessment').evaluate(element => { element.click(); element.click(); });
             assert.equal(operations.length, finalStart + 1);

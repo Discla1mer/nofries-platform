@@ -154,7 +154,7 @@ test('a single saved choice omits its technical ID while the draft source disclo
         dom.fixtures.metadata.profileRef.profileVersion, 'Synthetic organisation A']) {
         assert.ok(provenance.textContent.includes(value), value);
     }
-    assert.match(dom.root.textContent, /Baseline in progress/);
+    assert.match(dom.root.textContent, /In progress/);
     assert.match(dom.root.textContent, /Saved progress is not a score/);
     assert.equal(dom.root.querySelector('.picture-metrics'), null);
     dom.controller.destroy();
@@ -255,10 +255,43 @@ test('legacy Board options cannot expose another presentation mode or navigation
     assert.equal(opened, 0);
 });
 
+test('a blank saved assessment is Not started, while a newer unfinished record does not hide the latest submission', async () => {
+    const draft = clone(buildFixtures().tenants[0].assessments[0]);
+    draft.assessmentId = 'assessment-newer-draft';
+    draft.updatedAt = '2099-01-01T00:00:00.000Z';
+    draft.status = 'created'; draft.revision = 0; draft.responses = []; draft.submission = null;
+    draft.createdAt = draft.updatedAt;
+    draft.progress = { total: draft.progress.total, answered: 0, missing: draft.progress.total, unknown: 0, notApplicableClaims: 0 };
+    const submitted = mixed();
+    const summary = row => { const copy = clone(row); delete copy.responses; delete copy.submission; return copy; };
+    const submittedSummary = summary(submitted); submittedSummary.updatedAt = '2020-01-01T00:00:00.000Z';
+    let source;
+    const client = {
+        list: async () => ({ assessments: [summary(draft), submittedSummary], nextAfterAssessmentId: null }),
+        read: async id => ({ assessment: clone(id === submitted.assessmentId ? submitted : draft) })
+    };
+    const dom = setup({ client, options: { onSelection: (_id, kind) => { source = kind; } } });
+    await flush();
+    assert.equal(dom.root.querySelector('select').value, submitted.assessmentId);
+    assert.equal(source, undefined);
+    const blank = setup({ client: {
+        list: async () => ({ assessments: [summary(draft)], nextAfterAssessmentId: null }),
+        read: async () => ({ assessment: clone(draft) })
+    } });
+    await flush();
+    assert.match(blank.root.querySelector('.picture-resume').textContent, /Not started/);
+    assert.equal(blank.root.querySelector('option').textContent.includes('Not started'), true);
+    const picker = dom.root.querySelector('select');
+    change(picker, draft.assessmentId); await flush();
+    assert.equal(source, 'user');
+    assert.equal(dom.root.querySelector('select').value, draft.assessmentId);
+    dom.controller.destroy(); blank.controller.destroy();
+});
+
 test('a saved draft shows progress with no submitted score', async () => {
     const record = buildFixtures().tenants[0].assessments[0];
     const dom = setup({ records: [record] }); await flush();
-    assert.match(dom.root.textContent, /Baseline in progress/);
+    assert.match(dom.root.textContent, /In progress/);
     assert.match(dom.root.textContent, /Saved progress is not a score/);
     assert.equal(dom.root.querySelectorAll('meter').length, 0);
     assert.doesNotMatch(dom.root.textContent, /Reported implementation|100\.0%/);

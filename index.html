@@ -44,12 +44,12 @@
                 <button class="button" id="dashboardRetry" type="button" hidden>Retry</button>
                 <a class="button" id="dashboardSignIn" href="/login" hidden>Sign up / Sign in</a>
             </div>
-            <details class="dashboard-account-menu" id="dashboardAccountMenu" hidden>
-                <summary>Account</summary>
-                <div class="dashboard-account-actions" id="dashboardAccountActions">
+            <div class="dashboard-account-menu" id="dashboardAccountMenu" hidden>
+                <button class="dashboard-account-toggle" id="dashboardAccountToggle" type="button" aria-expanded="false" aria-controls="dashboardAccountActions">Account</button>
+                <div class="dashboard-account-actions" id="dashboardAccountActions" hidden>
                     <button class="button" id="dashboardSignOut" type="button" hidden>Sign out</button>
                 </div>
-            </details>
+            </div>
         </section>
         <section id="dashboardChooser" aria-labelledby="dashboardChooserHeading" hidden>
             <h2 id="dashboardChooserHeading">Your organisations</h2>
