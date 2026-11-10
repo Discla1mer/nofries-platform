@@ -11,6 +11,9 @@ const root = path.resolve(__dirname, '..');
 const endpoints = [
     ['GET', '/api/external-customer-auth/login'],
     ['POST', '/api/external-customer-auth/callback'],
+    // A plain visit (for example Cancel on the hosted page) is redirected to
+    // sign-in recovery by the backend, which reads no parameters or cookies.
+    ['GET', '/api/external-customer-auth/callback'],
     ['GET', '/api/external-customer-signup/state'],
     ['POST', '/api/external-customer-signup/terms'],
     ['POST', '/api/external-customer-signup/setup']
@@ -52,7 +55,8 @@ describe.each(['staticwebapp.config.json', 'azure/staticwebapp.config.example.js
             expect(rule.methods).toEqual([method]);
             expect(rule.headers['Cache-Control']).toContain('no-store');
             expect(rule.headers['Content-Security-Policy']).toContain("default-src 'none'");
-            for (const other of methods.filter(value => value !== method)) {
+            const admitted = endpoints.filter(([, path]) => path === endpoint).map(([value]) => value);
+            for (const other of methods.filter(value => !admitted.includes(value))) {
                 expect(matched(config, other, endpoint)?.allowedRoles).toEqual(['authenticated']);
             }
             for (const suffix of ['-extra', '/nested', '/admin', '.json']) {
