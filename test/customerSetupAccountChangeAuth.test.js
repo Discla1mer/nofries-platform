@@ -339,7 +339,7 @@ test('Azure simultaneous callback consume and cancellation have one winner; leas
 test.each([false, true])('a %s callback whose exchange crosses transaction expiry is refused before customer admission or session issuance', async external => {
     const h = harness({ external }), started = await h.service.beginLogin(), exchange = h.exchange.getMockImplementation();
     h.exchange.mockImplementationOnce(async input => {
-        const result = await exchange(input); h.setNow(NOW + 300000); return result;
+        const result = await exchange(input); h.setNow(NOW + 600000); return result;
     });
     await expect(h.callback(started)).rejects.toMatchObject({ code: 'browser_auth_transaction_expired', clearTransactionCookie: true });
     expect(h.admission.reserve).not.toHaveBeenCalled(); expect(h.store.sessions.size).toBe(0);
@@ -349,7 +349,7 @@ test.each([false, true])('a %s callback whose exchange crosses transaction expir
 
 test.each([false, true])('a %s callback whose token-cache cleanup crosses expiry issues no session', async external => {
     const h = harness({ external }), started = await h.service.beginLogin();
-    h.removeAccount.mockImplementationOnce(async () => { h.setNow(NOW + 300000); });
+    h.removeAccount.mockImplementationOnce(async () => { h.setNow(NOW + 600000); });
     await expect(h.callback(started)).rejects.toMatchObject({ code: 'browser_auth_transaction_expired', clearTransactionCookie: true });
     expect(h.store.sessions.size).toBe(0);
 });
@@ -358,7 +358,7 @@ test.each([false, true])('a %s callback whose session save crosses expiry delete
     const h = harness({ external }), keptId = opaque(200), retained = { kind: 'synthetic-retained-record' };
     await h.store.createSession(keptId, retained);
     const started = await h.service.beginLogin(), save = h.store.createSession.bind(h.store), remove = jest.spyOn(h.store, 'deleteSession');
-    jest.spyOn(h.store, 'createSession').mockImplementationOnce(async (...args) => { await save(...args); h.setNow(NOW + 300000); });
+    jest.spyOn(h.store, 'createSession').mockImplementationOnce(async (...args) => { await save(...args); h.setNow(NOW + 600000); });
     await expect(h.callback(started)).rejects.toMatchObject({ code: 'browser_auth_transaction_expired', clearTransactionCookie: true });
     expect(remove).toHaveBeenCalledTimes(1); expect(remove.mock.calls[0][0]).not.toBe(keptId);
     expect([...h.store.sessions]).toEqual([[keptId, retained]]);
@@ -366,7 +366,7 @@ test.each([false, true])('a %s callback whose session save crosses expiry delete
 
 test.each([false, true])('a %s expired post-save cleanup ambiguity remains unavailable and never returns a session cookie', async external => {
     const h = harness({ external }), started = await h.service.beginLogin(), save = h.store.createSession.bind(h.store);
-    jest.spyOn(h.store, 'createSession').mockImplementationOnce(async (...args) => { await save(...args); h.setNow(NOW + 300000); });
+    jest.spyOn(h.store, 'createSession').mockImplementationOnce(async (...args) => { await save(...args); h.setNow(NOW + 600000); });
     jest.spyOn(h.store, 'deleteSession').mockRejectedValueOnce(new Error('cleanup acknowledgement unknown'));
     await expect(h.callback(started)).rejects.toMatchObject({ statusCode: 503, code: 'browser_auth_store_unavailable', clearTransactionCookie: true });
     expect(h.store.sessions.size).toBe(1);
