@@ -99,9 +99,10 @@
                 return live(token) ? result : null;
             } finally { requests.delete(request); }
         }
+        function refused(error) { return [401, 403].includes(error && (error.status || error.statusCode)); }
         function failure(error, retryRequest) {
             detail = null; retry = retryRequest;
-            if ([401, 403].includes(error && (error.status || error.statusCode))) {
+            if (refused(error)) {
                 denied = true; rows = []; selected = ''; after = null; retry = null;
                 message = 'This organisation picture is unavailable. Reopen your authenticated dashboard.';
             } else message = 'The saved assessment could not be confirmed. Retry to load a fresh picture.';
@@ -290,24 +291,24 @@
             if (!live(token) || loading || denied || trend !== state || state.status !== 'idle' ||
                 !control || control.parentElement !== state.section || !root.contains(state.section)) return;
             state.status = 'loading'; paintTrend();
-            Promise.all(state.reads.map(async row => {
+            // Settle every read so a refusal is never hidden behind an earlier failure.
+            Promise.allSettled(state.reads.map(async row => {
                 const response = await call('read', row.assessmentId, token);
                 const value = response && response.assessment;
                 if (!value || value.assessmentId !== row.assessmentId || value.moduleId !== metadata.moduleId ||
                     !sameProfile(value.profileRef, metadata.profileRef)) return;
                 const earlier = questionnaire.resultModel(value, metadata, organisationId);
                 if (earlier) state.points.set(value.assessmentId, trendPoint(value, earlier));
-            })).then(() => {
+            })).then(results => {
                 if (!live(token) || trend !== state) return;
+                const errors = results.filter(result => result.status === 'rejected').map(result => result.reason);
+                if (errors.some(refused)) {
+                    abort(); epoch++; failure({ statusCode: 403 }, null); render(); return;
+                }
+                if (errors.length) { state.status = 'failed'; paintTrend(); return; }
                 state.status = 'ready'; const heading = paintTrend();
                 // The Compare button is replaced; keep keyboard users in this section.
                 if (!root.contains(doc.activeElement)) heading.focus();
-            }, error => {
-                if (!live(token) || trend !== state) return;
-                if ([401, 403].includes(error && (error.status || error.statusCode))) {
-                    abort(); epoch++; failure({ statusCode: 403 }, null); render(); return;
-                }
-                state.status = 'failed'; paintTrend();
             });
         }
         function paintTrend() {

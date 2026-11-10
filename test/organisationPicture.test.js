@@ -990,6 +990,30 @@ test('a failed earlier read leaves the selected result intact, and a denied read
     dom.controller.destroy();
 });
 
+test('a denied earlier read clears the picture even when another read fails first', async () => {
+    const oldest = submittedAt('assessment-oldest', '2026-09-08T00:00:00.000Z', allResponses('yes'));
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    let releaseDenial;
+    const denial = new Promise(resolve => { releaseDenial = resolve; });
+    const { client, reads } = trendClient([oldest, earlier, later]);
+    const base = client.read;
+    client.read = async (id, options) => {
+        if (id === earlier.assessmentId) { reads.push(id); throw { statusCode: 503 }; }
+        if (id === oldest.assessmentId) { reads.push(id); await denial; throw { statusCode: 403 }; }
+        return base(id, options);
+    };
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
+    click(dom, 'Compare with previous assessment'); await flush();
+    assert.deepEqual(reads.slice().sort(), [earlier.assessmentId, later.assessmentId, oldest.assessmentId].sort());
+    releaseDenial(); await flush();
+    assert.match(dom.root.textContent, /This organisation picture is unavailable/);
+    assert.equal(dom.root.querySelector('.picture-trend'), null);
+    assert.equal(dom.root.querySelector('.picture-metrics'), null);
+    assert.doesNotMatch(dom.root.textContent, /100\.0%|46\.4%|Earlier results could not be loaded/);
+    dom.controller.destroy();
+});
+
 test('a stale Compare button cannot start reads after the selection changes', async () => {
     const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', mixedResponses());
     const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
