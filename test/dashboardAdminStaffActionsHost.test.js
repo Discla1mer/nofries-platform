@@ -105,9 +105,20 @@ test.each(['approve-extension', 'extend-expired-access'])('removed %s does not e
     expect(h.reads.filter(row => row.account === 'syntheticdata')).toEqual([]); expect(h.writes).toEqual([]);
     expect(h.state.committed).toBe(0);
 });
-test('a malformed legacy listing locator cannot stop a host that selects account actions', () => {
+test('a malformed legacy listing locator cannot stop the host or the console and is reported in one safe line', async () => {
     const h = host(); h.env.NOFRIES_DASHBOARD_ADMIN_BINDING = '{'; h.env.NOFRIES_DASHBOARD_ADMIN_ENABLED = 'true';
-    expect(() => h.build()).not.toThrow();
-    expect(warning.mock.calls.flat().every(line => /^\[dashboard-admin(-account-actions)?\] dashboard_admin_(unavailable|configuration_invalid)$/.test(line))).toBe(true);
-    expect(warning).toHaveBeenCalled(); expect(h.reads).toEqual([]); expect(h.writes).toEqual([]);
+    let app; expect(() => { app = h.build(); }).not.toThrow();
+    expect(warning.mock.calls).toEqual([['[dashboard-admin-account-actions] dashboard_admin_unavailable']]);
+    expect(h.reads).toEqual([]); expect(h.writes).toEqual([]);
+    const { cookie } = await h.login(app);
+    expect((await h.send('get', '/api/dashboard-admin/entry-capabilities', app).set('Cookie', cookie)).body).toEqual({ entry: true, accountActions: true });
+});
+test('the composed action configuration is deeply frozen and carries only sources, audit container and audit policy', () => {
+    const h = host(), { createStaffDashboardAdministration } = require('../lib/dashboardAdminStaffProduction');
+    const configuration = createStaffDashboardAdministration(h.env, h.dashboard, h.sdk).dashboardAdminAccountActions;
+    expect(Object.keys(configuration).sort()).toEqual(['auditContainer', 'auditPolicy', 'sources']);
+    for (const value of [configuration, configuration.sources, ...configuration.sources, ...configuration.sources.map(row => row.source), configuration.auditPolicy, configuration.auditPolicy.retention])
+        expect(Object.isFrozen(value)).toBe(true);
+    expect(() => { 'use strict'; configuration.readApprovedAction = async () => ({}); }).toThrow(TypeError);
+    expect(() => { 'use strict'; configuration.sources.push({}); }).toThrow(TypeError);
 });

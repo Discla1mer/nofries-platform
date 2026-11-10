@@ -50,4 +50,14 @@ Set `NOFRIES_STAFF_CONSOLE=false` to turn the whole console off. Set `NOFRIES_DA
 
 **Suspend or restore.** Type the account email to approve, then apply within 15 minutes. The approval is bound to the staff session, the customer, the membership revision that was read and one operation. Suspension blocks only that organisation's dashboard membership; restore needs the matching staff suspension on record. Each approval and each action writes an attempt record and an outcome record under `dashboard-admin-account-actions/<operation>/`; success is reported only after the outcome record is stored. If the page says the outcome could not be confirmed, read dashboard access again before retrying.
 
+## If a restore is refused after a suspension that did happen
+
+A suspension is committed in the database before its outcome record is written. If that final audit write fails (storage outage at that moment), the page reports that the outcome could not be confirmed, the membership **is** suspended, and the operation's `terminal.json` says `"outcome": "uncertain"` instead of `succeeded`.
+
+Restore deliberately trusts only suspensions with a `succeeded` outcome record that matches the database receipt. So from then on every restore for that organisation is refused with a conflict (HTTP 409, "Request refused" in the console), for that member and for any other member whose restore check has to walk back past that operation.
+
+How to recognise it: dashboard access shows the membership as suspended; restore keeps being refused although the email and revision are right; and in the audit container `dashboard-admin-account-actions/<operationId>/terminal.json` for the suspension has outcome `uncertain` (or is missing) while `attempt.json` exists.
+
+There is no button for this and the check is not relaxed in code. Recovery is a manual, reviewed fix by the owner: confirm from the database operation receipt that the suspension committed, then either correct the membership directly through the database maintenance procedure or repair the audit evidence under the audit policy. Record what was done and why.
+
 Signup listing (`NOFRIES_DASHBOARD_ADMIN_ENABLED`, `NOFRIES_DASHBOARD_ADMIN_BINDING`) is a separate feature and is not needed for any of the above.
