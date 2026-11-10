@@ -1107,7 +1107,9 @@
             if (!current(cycle)) throw invalid();
             return questionnaire.mount(root, { window: window, metadata: value.metadata, client: client,
                 presentationMode: value.presentationMode, organisationId: organisationId,
-                initialAssessmentId: presentation && presentation.initialAssessmentId });
+                initialAssessmentId: presentation && presentation.initialAssessmentId,
+                // Overview's first-use action opens the new-assessment step directly.
+                startNew: !!(presentation && presentation.startNew === true) });
         };
         const picture = window.NoFriesOrganisationPicture;
         let pictureSelection = null;

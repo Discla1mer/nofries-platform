@@ -1528,6 +1528,17 @@ describe('ready Cyber composition', () => {
         h.window.dispatch('pagehide');
         expect(h.elements.dashboardApp.children).toHaveLength(0);
     });
+    test('Overview first-use action reaches the production questionnaire as a new-assessment start', async () => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+        await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(h.ncscMounts).toHaveLength(0);
+        control(h, 'Open assessment').click(); await flush();
+        expect(h.ncscMounts).toHaveLength(1);
+        expect(h.ncscMounts[0][1]).toMatchObject({ startNew: true, initialAssessmentId: undefined,
+            organisationId: h.cyberProjection.context.organisationId });
+        h.window.dispatch('pagehide');
+    });
     test.each([200, 403])('Overview continues its exact saved record through a fresh generation-bound read (%s), without another list or write', async status => {
         const stored = await records();
         stored.execute(createCommand('assessment-direct', 'seed-direct', 'Synthetic Overview selected scope.'));
