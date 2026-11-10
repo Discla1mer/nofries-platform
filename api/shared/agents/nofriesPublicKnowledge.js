@@ -106,20 +106,33 @@ function publicHelpReply(message) {
     const { links, capabilities } = NOFRIES_PUBLIC_KNOWLEDGE;
     const dashboard = /\b(?:dashboard|platform)\b/.test(text);
     const service = /\b(?:managed[ -]it|managed service|it support|service)\b/.test(text);
-    const assessment = /\b(?:assessments?|ncsc|cyber security|results|scores?)\b/.test(text);
+    const assessment = /\b(?:assessments?|ncsc|cyber ?security|results?|scores?|scoring|scored|grade[ds]?|grading|rating)\b/.test(text);
     const accountTopic = !service || dashboard ? publicAccountTopic(text) : null;
     const accountChoice = /\b(?:company|consultant)\b/.test(text) &&
         /\b(?:accounts?|choose|choice|difference|dashboard|clients?|organisation|organization|company or consultant|consultant or company)\b/.test(text);
-    const assessmentAction = assessment && /\b(?:save|saved|saving|resum(?:e|ing)|progress|draft|continue|reopen|results|scores?)\b/.test(text);
-    const question = /^(?:please\s+)?(?:what|which|how|where|when|why|can|could|should|does|do|is|are|will|explain|tell me|show me|help me understand|help me)\b/.test(text);
-    if (!question && !accountTopic && !accountChoice && !assessmentAction) return null;
+    const assessmentAction = assessment && /\b(?:save|saved|saving|resum(?:e|ing)|progress|draft|continue|reopen|results?|scores?|scoring|scored|grade[ds]?|grading|rating)\b/.test(text);
+    // Topic intents let a plainly-worded basic question through the first filter
+    // without opening it to discovery statements (still removed below).
+    const pricing = /\b(?:price|pricing|quote|how much|cost|costs|fees?|subscription|monthly|per user|setup fee|set-up fee|onboarding fee)\b/.test(text);
+    const securityIntent = /\b(?:privacy|data protection|gdpr)\b/.test(text) ||
+        (/\b(?:secur(?:e|ity)|safe|private|protected?|encrypt(?:ed|ion)?|breach|confidential)\b/.test(text) &&
+            /\b(?:my|data|information|details|answers?|assessments?|dashboard|account)\b/.test(text));
+    const assistantIdentity = /\b(?:ask fry|who are you|what are you|who is fry|what is fry|what can you (?:do|help)|are you (?:a |an )?(?:bot|ai|human|real|robot|chatbot))\b/.test(text);
+    const brand = /\bno ?fries\b/.test(text);
+    const productOverview = brand && !dashboard && !service && !assessment && !pricing &&
+        /^(?:please\s+)?(?:what|who|tell me|explain|how|describe)\b/.test(text);
+    const question = /^(?:please\s+)?(?:what|which|who|how|where|when|why|can|could|should|does|do|is|are|will|explain|tell me|show me|help me understand|help me)\b/.test(text);
+    if (!question && !accountTopic && !accountChoice && !assessmentAction &&
+        !pricing && !securityIntent && !assistantIdentity && !productOverview) return null;
     // Remove only a bounded personal-help opening before applying the existing
     // discovery exclusions. Other contact details or discovery clauses still win.
     const discoveryText = text.replace(/\bi (?:need|want)(?: help)?\s+(?:(?:to|with)\s+)?/g,
         (opening, offset) => hasPublicHelpAction(text.slice(offset + opening.length)) ? '' : opening);
     if (hasDiscoveryOrContactInput(discoveryText)) return null;
-    const pricing = /\b(?:price|pricing|quote|how much|cost|monthly|per user|setup fee|set-up fee|onboarding fee)\b/.test(text);
-    if (pricing && !dashboard) return null;
+    // A managed-service price or quote request stays on the human discovery
+    // path; a general cost question still gets the honest dashboard-terms answer.
+    const managedPricingContext = /\b(?:quote|managed|service|services|support|per user|per seat|licen[cs]e[ds]?|seats?)\b/.test(text);
+    if (pricing && !dashboard && managedPricingContext) return null;
     let topic;
     let answer;
 
@@ -131,6 +144,9 @@ function publicHelpReply(message) {
         /\b(?:assessments?|answers?|results|scores?|fields?|forms?|organisation|organization|private|documents?)\b/.test(text)) {
         topic = 'assistance_limits';
         answer = `${capabilities.assistanceLimits.summary} Privacy: ${links.privacy}`;
+    } else if (assistantIdentity) {
+        topic = 'assistance_limits';
+        answer = `Ask Fry is this public No Fries assistant. ${capabilities.assistanceLimits.summary} Privacy: ${links.privacy}`;
     } else if (/\b(?:three[ -]month|3[ -]month|unlimited|trial)\b/.test(text) &&
         (dashboard || assessment || /\b(?:trial|three[ -]month|3[ -]month)\b/.test(text))) {
         topic = 'feature_availability';
@@ -146,7 +162,7 @@ function publicHelpReply(message) {
         const fact = accountTopic === 'password_recovery' ? capabilities.passwordRecovery
             : accountTopic === 'sign_in_recovery' ? capabilities.signInRecovery : capabilities.accountEntry;
         answer = `${fact.summary} Account access: ${links.signIn}`;
-    } else if (/\b(?:improvement plans?|evidence|documents?|uploads?|board reports?|ai governance|it optimisation|ai suggestions?|ai editing|automatic updates?|connected (?:data )?feeds?|(?:edit(?:ing)?|change) (?:my |the )?(?:submitted|saved) (?:assessment )?(?:answers?|assessments?))\b/.test(text)) {
+    } else if (/\b(?:improvement plans?|evidence|documents?|uploads?|export(?:s|ing)?|download(?:s|ing)?|board reports?|reports?|pdf|ai governance|it optimisation|ai suggestions?|ai editing|automatic updates?|connected (?:data )?feeds?|(?:edit(?:ing)?|change) (?:my |the )?(?:submitted|saved) (?:assessment )?(?:answers?|assessments?))\b/.test(text)) {
         topic = 'feature_availability';
         answer = `${capabilities.futureDashboard.summary} ${capabilities.savedResults.summary} Roadmap: ${links.roadmap}`;
     } else if (dashboard && service) {
@@ -155,7 +171,7 @@ function publicHelpReply(message) {
     } else if (accountChoice) {
         topic = 'account_choice';
         answer = `${capabilities.accountChoice.summary} Account access: ${links.signIn}`;
-    } else if (assessment && /\b(?:results|scores?|overview|submitted|reopen)\b/.test(text)) {
+    } else if (assessment && /\b(?:results?|scores?|scoring|scored|grade[ds]?|grading|rating|overview|submitted|reopen)\b/.test(text)) {
         topic = 'saved_results';
         answer = `${capabilities.savedResults.summary} This chat cannot inspect your answers or explain your private score. Dashboard: ${links.dashboard}`;
     } else if (assessment && /\b(?:save|saved|saving|resum(?:e|ing)|progress|draft|start|work|leave|later|continue)\b/.test(text)) {
@@ -172,7 +188,10 @@ function publicHelpReply(message) {
     } else if (/\b(?:news|sales agency|public links|products|full stack|offering)\b/.test(text)) {
         topic = 'public_links';
         answer = `${capabilities.platform.summary} ${MANAGED_IT_POLICY.customerFacingServiceName} is separately scoped. Dashboard: ${links.dashboard} Managed IT: ${links.managedIt} Service scoping: ${links.scoping} News: ${links.news} Sales Agency: ${links.salesAgency} Roadmap: ${links.roadmap}`;
-    } else if (dashboard || assessment) {
+    } else if (securityIntent) {
+        topic = 'data_security';
+        answer = `${capabilities.assistanceLimits.summary} No Fries Dashboard works from the assessment answers you submit; for how your information is handled, review the privacy page and the terms shown during account setup. Do not paste passwords, verification codes or recovery material into public chat. Privacy: ${links.privacy}`;
+    } else if (productOverview || dashboard || assessment) {
         topic = 'platform_overview';
         answer = `${capabilities.platform.summary} ${capabilities.assessmentProgress.summary} ${capabilities.savedResults.summary} Dashboard: ${links.dashboard}`;
     } else if (service && /\b(?:include|cover|provide|offer|work|scope|support|managed)\b/.test(text)) {
@@ -194,7 +213,7 @@ function publicAccountTopic(text) {
     if (/\b(?:forgot(?:ten)?|lost|reset(?:ting)?|recover(?:ing|y)?|chang(?:e|ing))\b[^.!?;]{0,35}\bpassword\b|\bpassword\b[^.!?;]{0,25}\b(?:reset|recovery|forgotten|lost)\b/.test(text)) return 'password_recovery';
     const account = /\b(?:log[ -]?in|logging in|sign[ -]?in|signing in|sign[ -]?up|signup|account|workspace|organisation|organization|dashboard)\b/.test(text);
     if (account && /\b(?:cannot|can't|can not|couldn't|unable|not able|locked out|stuck|trouble|expired|failed|fails|not working|doesn't work|does not work|didn't finish|did not finish|recover|recovery|wrong account)\b/.test(text)) return 'sign_in_recovery';
-    if (/\b(?:log[ -]?in|logging in|sign[ -]?in|signing in|sign[ -]?up|signup|creat(?:e|ing) (?:an? |my )?account)\b/.test(text)) return 'account_entry';
+    if (/\b(?:log[ -]?in|logging in|sign[ -]?in|signing in|sign[ -]?up|signup|creat(?:e|ing) (?:an? |my )?account|get(?:ting)? started|getting set up|onboard(?:ing)?|register|registration|join)\b/.test(text)) return 'account_entry';
     return null;
 }
 
