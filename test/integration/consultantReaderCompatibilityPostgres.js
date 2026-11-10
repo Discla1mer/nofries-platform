@@ -206,7 +206,7 @@ function registerConsultantReaderCompatibility() {
                 '0004_ncsc_assessments.sql', '0005_dashboard_runtime.sql', '0006_dashboard_host_events.sql',
                 '0007_evidence_metadata.sql', '0008_signup_acceptance_receipts.sql',
                 '0009_signup_registrations.sql', '0010_signup_acceptance_schedule.sql',
-                '0011_starter_signup.sql', '0016_dashboard_improvement_plans.sql'
+                '0011_starter_signup.sql', '0016_dashboard_improvement_plans.sql', '0018_dashboard_admin_lookup_audit.sql'
             ]));
         });
         for (const stage of ['before_claim', 'incomplete_claim', 'committed_claim']) api.test(`${stage}: normal enabled reader exposes saved own details and never completes a new-policy lifecycle`, async () => atFixtureTime(async () => {

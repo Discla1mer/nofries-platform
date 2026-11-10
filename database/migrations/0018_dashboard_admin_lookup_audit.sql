@@ -1,12 +1,23 @@
--- UNAPPLIED PROPOSAL ONLY: not a migration-catalog entry or runtime action.
--- Held 0012 Board and 0013 document-operation proposals remain unchanged.
--- Only a separately reviewed, sequenced owner transaction may apply this delta.
--- This fixture adds no role, policy, grant, ownership or retention decision.
--- A temporary parser reference verifies exact predecessor/candidate constraints;
--- it is dropped before return and is not a new retained destination.
--- Current native operator/proof/epoch policy remains the application boundary.
--- Existing audit RLS binds its supplied native context; it is not a proof of
--- operator purpose. The canonical outer event hash is verified by the writer.
+-- Promotes the reviewed staff-console lookup audit proposal
+-- (database/proposals/dashboard_admin_lookup_audit.sql, SHA-256
+-- 48e226de251589cac37de64990f6065958a967168e5ffa218087c56b4d64ac3d) to a
+-- migration so "Show dashboard access" can record its attempt and terminal
+-- audit rows. Only this comment header changed; the DO block below is the
+-- proposal's, byte for byte.
+--
+-- It widens nofries.dashboard_runtime_audit's event-type and payload CHECK
+-- constraints with the closed dashboard.admin.lookup branch and adds the
+-- dashboard_audit_admin_lookup_phase unique index. It adds no role, policy,
+-- grant, ownership or retention decision and rewrites no rows. It refuses with
+-- dashboard_admin_audit_constraint_drift, _index_drift, _index_missing or
+-- _partial_schema on any unexpected predecessor, and is a no-op when the exact
+-- candidate is already installed. dashboard_admin_signup_list_audit.sql stays
+-- an unapplied proposal.
+--
+-- Rollback: restore the 0006 dashboard_audit_event_type and
+-- dashboard_audit_payload definitions and drop dashboard_audit_admin_lookup_phase,
+-- only after confirming no dashboard.admin.lookup rows exist (they would violate
+-- the restored constraints).
 DO $proposal$
 DECLARE
     baseline_payload text; candidate_payload text; baseline_expression text;
