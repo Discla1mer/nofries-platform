@@ -1808,10 +1808,10 @@ describe('questionnaire public controls and retained mutation intent', () => {
         choose(ui, 1, 'not_applicable', 'New text during current GET');
         const id = `ncsc-rationale-${metadata().questions[1].id}`; byId(ui, id).focus(); byId(ui, id).setSelectionRange(5, 8);
         await h.execute(saveCommand('assessment-a', 2, 'other-session', [{ ...rows[1], rationale: { text: 'Another saved change' } }]));
-        gate.resolve(); await until(() => control(ui, 'Keep my draft on current revision'));
+        gate.resolve(); await until(() => control(ui, 'Keep my answers'));
         expect(byId(ui, id).value).toBe('New text during current GET'); expect(ui.document.activeElement.id).toBe(id);
         expect(ui.document.activeElement.selectionStart).toBe(5); expect(h.records).toHaveLength(4);
-        control(ui, 'Keep my draft on current revision').click(); control(ui, 'Save progress').click();
+        control(ui, 'Keep my answers').click(); control(ui, 'Save progress').click();
         await until(() => h.records.length === 5);
         expect(h.records.at(-1)).toMatchObject({ expectedRevision: 3, payload: { responses: [{ itemId: rows[1].itemId,
             optionId: 'not_applicable', rationale: { text: 'New text during current GET' } }] } }); ui.controller.destroy();
@@ -1824,9 +1824,9 @@ describe('questionnaire public controls and retained mutation intent', () => {
         const ui = await createInUi(h, { client: { ...h.client, save, read } }); choose(ui, 0, 'yes');
         control(ui, 'Save progress').click(); await until(() => control(ui, 'Retry same operation'));
         blockRead = true; control(ui, 'Retry same operation').click(); await until(() => control(ui, 'Reload current saved answers'));
-        const keep = control(ui, 'Keep my draft on current revision'); expect(keep.disabled).toBe(true);
+        const keep = control(ui, 'Keep my answers'); expect(keep.disabled).toBe(true);
         keep.click(); control(ui, 'Save progress')?.click(); await pause(); expect(save).toHaveBeenCalledTimes(2);
-        blockRead = false; control(ui, 'Reload current saved answers').click(); await until(() => !control(ui, 'Keep my draft on current revision').disabled);
+        blockRead = false; control(ui, 'Reload current saved answers').click(); await until(() => !control(ui, 'Keep my answers').disabled);
         ui.controller.destroy();
     });
 

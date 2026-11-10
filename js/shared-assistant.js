@@ -143,6 +143,16 @@
             if (event.key === 'Escape' && !event.isComposing) { event.preventDefault(); close(); }
         });
         dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
+        // The chat is non-modal, so focus can be on the page behind it. Escape still
+        // closes it, unless another open dialog or menu on the page handled the key.
+        document.addEventListener('keydown', event => {
+            if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented || !dialog.open) return;
+            const target = event.target;
+            if (target && root.contains(target)) return;
+            if (target && typeof target.closest === 'function' && target.closest('dialog[open], [role="dialog"], [aria-expanded="true"]')) return;
+            event.preventDefault(); close();
+            if (launcher && typeof launcher.focus === 'function') launcher.focus();
+        });
         dialog.addEventListener('close', () => {
             // A queued native close event may arrive after a deliberate reopen.
             if (dialog.open) return;
