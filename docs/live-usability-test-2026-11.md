@@ -99,7 +99,7 @@ Fixed on this branch:
 
 - **One set of links.** Home, Roadmap, Managed IT, Contact, Privacy, Terms,
   the pilot terms and the error pages share the header links Dashboard,
-  Managed IT, Roadmap, News, Contact and Log in, and the same footer plus
+  Managed IT, Roadmap, Contact and Log in, and the same footer plus
   Privacy and Terms. Before, the header on Contact, Privacy and Terms said
   "Managed IT" but opened the Dashboard home, and Roadmap's header links
   were hidden on phones.
@@ -108,10 +108,9 @@ Fixed on this branch:
   section.
 - **Sales Agency** is no longer linked from nofries.nz pages, matching the
   homepage. News and the Sales site still link to each other.
-- **Roadmap and News.** The Roadmap is the one place for status; the empty
-  "Ready for release" section is gone. News becomes "What's new." and points
-  to the Roadmap instead of repeating status labels. The News change is in
-  `sites/news/` and must be published separately (see its README).
+- **Roadmap and News.** News repeated the Roadmap, so it is being retired.
+  nofries.nz and Ask Fry no longer link to it, and the Roadmap is the one
+  place for status; its empty "Ready for release" section is gone.
 
 Not changed: the sign-up and Report a bug pages keep their short "Back to
 home" headers, so the task in front of the visitor stays in focus.

@@ -14,7 +14,6 @@ const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
         signIn: 'https://nofries.nz/login',
         scoping: 'https://nofries.nz/scoping',
         roadmap: 'https://nofries.nz/roadmap.html',
-        news: 'https://news.nofries.nz/',
         salesAgency: 'https://sales.nofries.nz/',
         luna: 'https://luna.nofries.nz/',
         privacy: 'https://nofries.nz/privacy.html'
@@ -206,7 +205,7 @@ function publicHelpReply(message) {
         answer = `${capabilities.enquiry.summary} Managed IT information: ${links.managedIt} Service discovery/scoping: ${links.scoping} Sign-in or existing service access may be required.`;
     } else if (/\b(?:news|sales agency|public links|products|full stack|offering)\b/.test(text)) {
         topic = 'public_links';
-        answer = `${capabilities.platform.summary} ${MANAGED_IT_POLICY.customerFacingServiceName} is separately scoped. Dashboard: ${links.dashboard} Managed IT: ${links.managedIt} Service scoping: ${links.scoping} News: ${links.news} Sales Agency: ${links.salesAgency} Roadmap: ${links.roadmap}`;
+        answer = `${capabilities.platform.summary} ${MANAGED_IT_POLICY.customerFacingServiceName} is separately scoped. Dashboard: ${links.dashboard} Managed IT: ${links.managedIt} Service scoping: ${links.scoping} Sales Agency: ${links.salesAgency} Roadmap (what is live, in development and planned): ${links.roadmap}`;
     } else if (dashboard || assessment) {
         topic = 'platform_overview';
         answer = `${capabilities.platform.summary} ${capabilities.assessmentProgress.summary} ${capabilities.savedResults.summary} Dashboard: ${links.dashboard}`;
