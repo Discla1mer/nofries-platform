@@ -36,7 +36,15 @@ Grant the App Service managed identity these data-plane roles, each scoped to th
 
 Do not lower a role another feature already needs on the same container (signup writes to the starter containers). The existing session, proof and epoch container roles and the PostgreSQL runtime role are unchanged.
 
-If a setting is unusable the app still starts; it logs one line (`[dashboard-admin] dashboard_admin_configuration_invalid`, or `[dashboard-admin-account-actions] dashboard_admin_unavailable` when only the action settings are wrong) and leaves that part off.
+If a setting is unusable the app still starts and leaves that part off, logging one line:
+
+| Log line | Meaning |
+| --- | --- |
+| `[dashboard-admin] dashboard_admin_configuration_invalid` | A console setting above is missing or malformed; the whole console is off. |
+| `[dashboard-admin-account-actions] dashboard_admin_unavailable` | Only the suspend/restore settings are unusable (for example a customer container is missing); lookup still works. |
+| `[dashboard-admin-listing] dashboard_admin_binding_invalid` | `NOFRIES_DASHBOARD_ADMIN_BINDING` or `NOFRIES_DASHBOARD_ADMIN_ENABLED` is unusable; signup listing is off. The console is not affected. |
+
+One exception is outside the console: if customer signup is enabled and `NOFRIES_DASHBOARD_ADMIN_BINDING` is set but malformed, the app does not start, rather than accept untracked account writes. Remove or correct the locator before deploying.
 
 ## Turn it off
 

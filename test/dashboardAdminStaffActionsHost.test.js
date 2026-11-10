@@ -105,13 +105,17 @@ test.each(['approve-extension', 'extend-expired-access'])('removed %s does not e
     expect(h.reads.filter(row => row.account === 'syntheticdata')).toEqual([]); expect(h.writes).toEqual([]);
     expect(h.state.committed).toBe(0);
 });
-test('a malformed legacy listing locator cannot stop the host or the console and is reported in one safe line', async () => {
+test.each(['true', 'false', null])('a malformed listing locator with the actions flag %p cannot stop the host or the console and is reported in one safe line', async actions => {
     const h = host(); h.env.NOFRIES_DASHBOARD_ADMIN_BINDING = '{'; h.env.NOFRIES_DASHBOARD_ADMIN_ENABLED = 'true';
+    if (actions === null) delete h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS; else h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS = actions;
     let app; expect(() => { app = h.build(); }).not.toThrow();
-    expect(warning.mock.calls).toEqual([['[dashboard-admin-account-actions] dashboard_admin_unavailable']]);
+    expect(warning.mock.calls).toEqual([['[dashboard-admin-listing] dashboard_admin_binding_invalid']]);
     expect(h.reads).toEqual([]); expect(h.writes).toEqual([]);
     const { cookie } = await h.login(app);
-    expect((await h.send('get', '/api/dashboard-admin/entry-capabilities', app).set('Cookie', cookie)).body).toEqual({ entry: true, accountActions: true });
+    expect((await h.send('get', '/api/dashboard-admin/entry-capabilities', app).set('Cookie', cookie)).body)
+        .toEqual(actions === 'true' ? { entry: true, accountActions: true } : { entry: true });
+    expect((await h.send('post', '/api/dashboard-admin/signups', app).set('Cookie', cookie).set('Origin', h.env.NOFRIES_PUBLIC_URL)
+        .set('Sec-Fetch-Site', 'same-origin').send({ cursor: null })).status).toBe(404);
 });
 test('the composed action configuration is deeply frozen and carries only sources, audit container and audit policy', () => {
     const h = host(), { createStaffDashboardAdministration } = require('../lib/dashboardAdminStaffProduction');

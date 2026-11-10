@@ -17,6 +17,23 @@ test('durable membership success survives revocation after its terminal audit', 
     };
     await expect(h.run('suspend')).resolves.toMatchObject({ outcome: 'succeeded' });
     expect(h.state.committed).toBe(1);
+    expect([...h.state.rows].find(([key, row]) => key.endsWith('/terminal.json') && row.action === 'suspend')[1].outcome).toBe('succeeded');
+});
+test('a delayed terminal audit must finish before a suspension reports success', async () => {
+    const h = fixture(), get = h.config.auditContainer.getBlockBlobClient;
+    let release, reached;
+    const pending = new Promise(resolve => { reached = resolve; });
+    h.config.auditContainer.getBlockBlobClient = key => {
+        const blob = get(key), upload = blob.uploadData;
+        return { ...blob, async uploadData(...args) {
+            if (key.endsWith('/terminal.json')) { reached(); await new Promise(resolve => { release = resolve; }); }
+            return upload(...args);
+        } };
+    };
+    let complete = false;
+    const result = h.run('suspend').then(() => { complete = true; });
+    await pending; expect(h.state.committed).toBe(1); expect(complete).toBe(false);
+    release(); await result; expect(complete).toBe(true);
 });
 
 test('suspend blocks only scoped admission; restore preserves all data and returns access', async () => {

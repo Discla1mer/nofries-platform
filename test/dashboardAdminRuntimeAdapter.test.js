@@ -260,6 +260,24 @@ test.each(['absent', 'conflicting', 'revoked'])('failed ambiguous terminal readb
     expect(h.repository.readAuthoritySnapshot).toHaveBeenCalledTimes(1);
 });
 
+test.each(['revoked gate', 'revoked parent', 'restore epoch', 'aborted request'])
+('revocation during snapshot await withholds account data: %s', async mode => {
+    const h = await harness(), req = h.request(), entered = deferred(), resume = deferred();
+    h.state.readHook = async () => { entered.resolve(); await resume.promise; return { snapshot: h.snapshot,
+        revisions: dataCodec.revisionVector(h.snapshot), evaluatedAt: new Date(h.state.now).toISOString() }; };
+    const lookup = h.serviceFor(req).lookup(principal, h.selector); const outcome = lookup.catch(error => error); await entered.promise;
+    if (mode === 'revoked gate') h.state.gateReady = false;
+    if (mode === 'revoked parent') h.store.sessions.clear();
+    if (mode === 'restore epoch') h.state.epoch = '10000000-0000-4000-8000-000000000007';
+    if (mode === 'aborted request') req.aborted = true;
+    resume.resolve(); const error = await outcome;
+    expect([403, 503]).toContain(error.statusCode);
+    expect(['dashboard_admin_access_denied', 'dashboard_admin_unavailable']).toContain(error.message);
+    expect(error).not.toHaveProperty('result');
+    expect(h.repository.readAuthoritySnapshot).toHaveBeenCalledTimes(1);
+    expect(h.repository.persistAudit).toHaveBeenCalledTimes(1);
+});
+
 test('interleaved genuine native requests retain separate capture, audit IDs and attempt acknowledgements', async () => {
     const h = await harness(), a = h.request(), b = h.request(), entered = deferred(), release = deferred();
     h.state.persistHook = async ({ request, envelope }) => {
