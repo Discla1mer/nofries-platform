@@ -1291,3 +1291,6 @@ body[data-dashboard-gateway="true"]:has(#dashboardStatusPanel:not([hidden])) .ho
 @media (max-width: 620px) {
     .access-page .site-header { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Keep signed-in dashboard footer text as readable as workspace helper text. */
+body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .home-footer { color: #40382e; font-size: 1rem; }
