@@ -3,6 +3,7 @@
 // Deterministic source/controller tests with synthetic server records. The small
 // DOM fixture does not establish browser layout, deployed access or SQL behavior.
 const explanation = require('../api/shared/protectedAssets/assessmentExplanation');
+const { createClient } = require('../api/shared/protectedAssets/ncscAssessmentClient');
 const { resultModel } = require('../api/shared/protectedAssets/ncscQuestionnaire');
 const { createNcscQuestionnaireMetadata } = require('../api/shared/ncscQuestionnaireMetadata');
 const { makeVersion, stableIntent } = require('../api/shared/assessmentLifecycle/postgresNcscAssessmentStore');
@@ -202,6 +203,27 @@ describe('explicit saved explanation controller', () => {
             await jest.advanceTimersByTimeAsync(30000);
             expect(signal.aborted).toBe(false); expect(view.root.textContent).toContain('100.0%');
         });
+        test('the real transport deadline offers explicit retry before the controller fallback', async () => {
+            const source = saved(), pending = deferred();
+            const fetch = jest.fn().mockReturnValueOnce(pending.promise).mockResolvedValueOnce(new Response(
+                JSON.stringify({ schemaVersion: 1, assessment: source.assessment }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            view = ui(source, { client: createClient({ metadata, fetch }) });
+            control(view, 'Explain this saved result').click();
+            await jest.advanceTimersByTimeAsync(11999);
+            expect(view.root.textContent).toContain('Loading the saved submission');
+            await jest.advanceTimersByTimeAsync(1);
+            expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
+            expect(view.root.textContent).toContain('The saved explanation is unavailable');
+            expect(control(view, 'Retry saved explanation')).toBeDefined();
+            expect(jest.getTimerCount()).toBe(0);
+            expect(fetch).toHaveBeenCalledTimes(1);
+            control(view, 'Retry saved explanation').click(); await jest.advanceTimersByTimeAsync(0);
+            expect(fetch).toHaveBeenCalledTimes(2);
+            expect(view.root.textContent).toContain('100.0%');
+            expect(jest.getTimerCount()).toBe(0);
+            expect(fetch.mock.calls.every(([, init]) => init.method === 'GET' && init.body === undefined)).toBe(true);
+        });
     });
     test.each(['range', 'unresolved', 'actions'])('exact citations are retained in closed source disclosures for %s', async topic => {
         const source = saved('mixed'), view = ui(source);
@@ -394,7 +416,7 @@ describe('explicit saved explanation controller', () => {
         control(view, 'Explain this saved result').click(); await pause();
         expect(view.client.read).toHaveBeenCalledTimes(1); expect(view.root.textContent).toContain('unavailable');
         expect(view.root.textContent).not.toContain('private-secret-canary');
-        control(view, 'Explain this saved result').click(); await pause(); expect(view.client.read).toHaveBeenCalledTimes(2);
+        control(view, 'Retry saved explanation').click(); await pause(); expect(view.client.read).toHaveBeenCalledTimes(2);
         view.controller.destroy();
     });
     test('selected summary is snapshotted and update never starts a read', async () => {

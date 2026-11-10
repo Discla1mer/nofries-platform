@@ -273,7 +273,8 @@
                     }
                     if (typeof options.onDenied === 'function') options.onDenied();
                 } else if (!destroyed && token === generation) {
-                    detail = null; message = 'The saved explanation is unavailable. Choose the load button to try again.';
+                    detail = null; retry = true;
+                    message = 'The saved explanation is unavailable. Your saved answers are unchanged. Choose Retry saved explanation to try again.';
                 }
             } finally {
                 if (!destroyed && token === generation) { clearLoadTimer(); controller = null; busy = false; render(); }
