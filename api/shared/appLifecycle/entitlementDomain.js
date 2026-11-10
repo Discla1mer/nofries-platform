@@ -210,15 +210,22 @@ function resolveContext(stateInput, aggregate, scopeInput, nowInput, flagsInput)
  * product's recorded validUntil is retained but no longer ends it: the active
  * product inside its window applies; otherwise the most recently started
  * product stays in force, provided it is still active, until a successor
- * starts. Suspension or revocation still removes it. Service grants keep their
+ * starts. Suspension or revocation still removes it; a suspended or revoked
+ * later-starting successor does not revive the product it replaced. Service grants keep their
  * contracted window. Pure: no clock, I/O or normalisation.
  */
 function currentProductGrant(grants, now) {
     const started = grants.filter(grant => own(TIERS, grant.code) && grant.validFrom <= now);
     const inWindow = started.find(grant => grant.status === 'active' && now < grant.validUntil);
     if (inWindow) return inWindow;
-    const latest = started.reduce((a, b) => a === null || b.validFrom > a.validFrom ? b : a, null);
-    return latest && latest.status === 'active' ? latest : null;
+    // Grant records carry no creation order or supersedes link, so products
+    // sharing the latest start cannot be ordered. Decide them together,
+    // independent of array or ID order, and prefer the active one: an active
+    // account never expires (a revoked product and its active replacement may
+    // legitimately share a start). At most one can be active, and new
+    // equal-start products are refused at write time (entitlement.update).
+    const latestStart = started.reduce((a, b) => a === null || b.validFrom > a ? b.validFrom : a, null);
+    return started.find(grant => grant.validFrom === latestStart && grant.status === 'active') || null;
 }
 
 function normaliseFlags(input, scope) {

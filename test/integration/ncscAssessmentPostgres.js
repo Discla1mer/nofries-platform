@@ -505,7 +505,8 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             await ready(example, 'assessment-b'); await repository.executeNcscAssessment(example.context, submitCommand('assessment-b'));
             const entitlement = clone(example.state.entitlementState); entitlement.revision++;
             const old = entitlement.grants.find(grant => grant.grantId === 'synthetic-product');
-            const renewed = { ...clone(old), grantId: 'synthetic-product-renewed', agreementRef: 'synthetic-renewal-order' };
+            const renewed = { ...clone(old), grantId: 'synthetic-product-renewed', agreementRef: 'synthetic-renewal-order',
+                validFrom: new Date(Date.parse(old.validFrom) + 1).toISOString() }; // A new product needs its own start.
             old.status = 'revoked'; entitlement.grants.push(renewed);
             entitlement.grants.sort((a, b) => a.grantId < b.grantId ? -1 : 1);
             await changeAuthority(example, 'entitlement.update', entitlement);
