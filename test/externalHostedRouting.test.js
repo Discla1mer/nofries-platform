@@ -10,10 +10,10 @@ const { createProductionApplication } = require('../lib/productionApplication');
 const root = path.resolve(__dirname, '..');
 const endpoints = [
     ['GET', '/api/external-customer-auth/login'],
-    ['POST', '/api/external-customer-auth/callback'],
     // A plain visit (for example Cancel on the hosted page) is redirected to
     // sign-in recovery by the backend, which reads no parameters or cookies.
     ['GET', '/api/external-customer-auth/callback'],
+    ['POST', '/api/external-customer-auth/callback'],
     ['GET', '/api/external-customer-signup/state'],
     ['POST', '/api/external-customer-signup/terms'],
     ['POST', '/api/external-customer-signup/setup']
@@ -52,10 +52,10 @@ describe.each(['staticwebapp.config.json', 'azure/staticwebapp.config.example.js
             const config = read(), rule = matched(config, method, endpoint);
             expect(rule?.route).toBe(endpoint);
             expect(roles(rule)).toEqual(['anonymous']);
-            expect(rule.methods).toEqual([method]);
+            const admitted = endpoints.filter(([, path]) => path === endpoint).map(([value]) => value);
+            expect(rule.methods).toEqual(admitted);
             expect(rule.headers['Cache-Control']).toContain('no-store');
             expect(rule.headers['Content-Security-Policy']).toContain("default-src 'none'");
-            const admitted = endpoints.filter(([, path]) => path === endpoint).map(([value]) => value);
             for (const other of methods.filter(value => !admitted.includes(value))) {
                 expect(matched(config, other, endpoint)?.allowedRoles).toEqual(['authenticated']);
             }
