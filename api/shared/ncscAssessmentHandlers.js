@@ -5,6 +5,7 @@ const { apiSecurityHeaders } = require('./securityHeaders');
 const { TenantRequestContextError } = require('./appLifecycle/tenantRequestContext');
 const { NcscAssessmentError, normaliseNcscCommand, normaliseNcscPage,
     normaliseNcscSelector } = require('./ncscAssessmentService');
+const { buildNcscResultsCsv, ncscResultsCsvFilename, NcscResultsCsvError } = require('./ncscResultsCsv');
 
 const PUBLIC_ERRORS = Object.freeze({
     ncsc_input_invalid: 400, ncsc_selected_scope_unsupported: 400, ncsc_access_denied: 403,
@@ -34,6 +35,28 @@ function response(status, body, headers = {}) {
     return { status, headers: apiSecurityHeaders({ 'Content-Type': 'application/json; charset=utf-8', ...headers }),
         body, isRaw: false };
 }
+function rawResponse(status, body, headers = {}) {
+    return { status, headers: apiSecurityHeaders(headers), body, isRaw: true };
+}
+// Serialise an already-authorised, submitted assessment read into a downloadable
+// CSV. A read that is not a submitted assessment surfaces as a 409, matching the
+// mutation-side submission-unavailable contract.
+function exportResponse(readResult) {
+    const assessment = readResult && readResult.assessment;
+    let csv, filename;
+    try {
+        csv = buildNcscResultsCsv(assessment);
+        filename = ncscResultsCsvFilename(assessment);
+    } catch (error) {
+        if (error instanceof NcscResultsCsvError) throw new NcscAssessmentError('ncsc_submission_unavailable', 409);
+        throw error;
+    }
+    return rawResponse(200, csv, {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="' + filename + '"',
+        'Cache-Control': 'private, no-store, max-age=0'
+    });
+}
 function errorResponse(error) {
     if (error instanceof TenantRequestContextError) return response(403, { code: 'ncsc_access_denied' });
     const code = error instanceof NcscAssessmentError && Object.hasOwn(PUBLIC_ERRORS, error.code)
@@ -43,9 +66,10 @@ function errorResponse(error) {
 function routeSelection(relativeRoute) {
     if (relativeRoute === '') return { kind: 'collection', allow: 'GET, POST' };
     if (typeof relativeRoute !== 'string' || relativeRoute.length > 127) return null;
-    const match = /^([A-Za-z0-9][A-Za-z0-9._:-]{0,119})(?:\/(save|submit))?$/.exec(relativeRoute);
+    const match = /^([A-Za-z0-9][A-Za-z0-9._:-]{0,119})(?:\/(save|submit|export))?$/.exec(relativeRoute);
     if (!match) return null;
-    return { assessmentId: match[1], kind: match[2] || 'item', allow: match[2] ? 'POST' : 'GET' };
+    const kind = match[2] || 'item';
+    return { assessmentId: match[1], kind, allow: kind === 'save' || kind === 'submit' ? 'POST' : 'GET' };
 }
 function page(query) {
     const values = record(query, [], ['limit', 'afterAssessmentId']);
@@ -105,7 +129,9 @@ function createNcscAssessmentHandlers(adapters) {
                 if (body !== undefined) invalid();
                 if (selected.kind === 'collection') return response(200, await list(request, page(query)));
                 record(query, []);
-                return response(200, await read(request, normaliseNcscSelector({ assessmentId: selected.assessmentId })));
+                const readResult = await read(request, normaliseNcscSelector({ assessmentId: selected.assessmentId }));
+                if (selected.kind === 'export') return exportResponse(readResult);
+                return response(200, readResult);
             } catch (error) { return errorResponse(error); }
         }
     });

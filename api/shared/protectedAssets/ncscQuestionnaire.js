@@ -891,6 +891,45 @@
             focusTarget(content.querySelector('[id="ncsc-review-edit-' + id + '"]') || content.querySelector('[id="ncsc-review-title"]'));
         }
         function canEdit() { return editable && acknowledged && acknowledged.status !== 'submitted' && !conflict && !(pending && pending.command.action === 'submit'); }
+        function downloadCsv(filename, text) {
+            const anchor = node('a'); anchor.download = filename; anchor.rel = 'noopener';
+            const winUrl = win && win.URL || (typeof URL !== 'undefined' ? URL : null);
+            const winBlob = win && win.Blob || (typeof Blob !== 'undefined' ? Blob : null);
+            let objectUrl = null;
+            if (winBlob && winUrl && typeof winUrl.createObjectURL === 'function') {
+                objectUrl = winUrl.createObjectURL(new winBlob([text], { type: 'text/csv;charset=utf-8' }));
+                anchor.href = objectUrl;
+            } else {
+                anchor.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(text);
+            }
+            const host = doc.body || root; host.append(anchor);
+            if (typeof anchor.click === 'function') anchor.click();
+            anchor.remove();
+            if (objectUrl && typeof winUrl.revokeObjectURL === 'function') winUrl.revokeObjectURL(objectUrl);
+        }
+        function renderResultsExport(panel) {
+            // Only a submitted assessment the user is authorised to read has results,
+            // and the export reuses the same session-bound read, so the button is
+            // offered only when both the results and the export transport exist.
+            if (!client || typeof client.exportResults !== 'function' || !acknowledged) return;
+            const row = node('p', 'ncsc-result-export');
+            const statusNote = node('span', 'dashboard-muted'); statusNote.setAttribute('role', 'status'); statusNote.setAttribute('aria-live', 'polite');
+            const exportButton = button('Export results (CSV)', async function () {
+                const createdEpoch = epoch;
+                exportButton.disabled = true; statusNote.textContent = 'Preparing your results export…';
+                try {
+                    const file = await client.exportResults(acknowledged.assessmentId);
+                    if (!live(createdEpoch)) return;
+                    downloadCsv(file.filename, file.text);
+                    statusNote.textContent = 'Results exported as ' + file.filename + '.';
+                } catch (_) {
+                    if (live(createdEpoch)) statusNote.textContent = 'Results export is unavailable right now. Please try again.';
+                } finally {
+                    if (live(createdEpoch)) exportButton.disabled = false;
+                }
+            }, 'dashboard-button');
+            row.append(exportButton, statusNote); panel.append(row);
+        }
         function renderResults(results) {
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
@@ -904,6 +943,7 @@
                 return;
             }
             panel.append(node('p', 'dashboard-muted', 'These results describe the saved submission and its declared scope. They are gap indicators, not an audit or certification.'));
+            renderResultsExport(panel);
             const metrics = node('div', 'ncsc-result-metrics'); panel.append(metrics);
             function metric(title, value, explanation) {
                 const card = node('section', 'ncsc-result-metric'); card.append(node('h3', '', title), node('p', 'ncsc-result-value', value), node('p', '', explanation)); metrics.append(card);

@@ -388,6 +388,41 @@
                 const config = record(settings === undefined ? {} : settings, [], ['signal']);
                 return request(PREFIX + '/' + encodeURIComponent(assessmentId), 'read', { assessmentId }, config.signal);
             },
+            // Download the submitted results as CSV. This is a read: the host fetch
+            // carries the same session and generation binding as every other
+            // request, so a caller cannot export an assessment it may not read.
+            // The bounded CSV body is returned verbatim for a blob download.
+            async exportResults(assessmentId, settings) {
+                identifier(assessmentId);
+                const config = record(settings === undefined ? {} : settings, [], ['signal']);
+                const url = PREFIX + '/' + encodeURIComponent(assessmentId) + '/export';
+                let response;
+                try {
+                    response = await fetch(url, { method: 'GET', credentials: 'same-origin', cache: 'no-store',
+                        redirect: 'error', headers: { Accept: 'text/csv' },
+                        ...(config.signal === undefined ? {} : { signal: config.signal }) });
+                } catch { throw unavailable(false); }
+                if (!response || response.redirected === true || response.type === 'opaqueredirect' ||
+                    response.type === 'opaque' || !Number.isInteger(response.status)) throw unavailable(false);
+                if (response.status !== 200) {
+                    let value;
+                    try { value = await response.json(); } catch { throw unavailable(false); }
+                    try { record(value, ['code']); if (!Object.hasOwn(ERRORS, value.code) || ERRORS[value.code] !== response.status) invalid(); }
+                    catch { throw unavailable(false); }
+                    throw error(value.code, response.status, false);
+                }
+                const type = response.headers?.get?.('Content-Type');
+                if (typeof type !== 'string' || !/^text\/csv(?:\s*;\s*charset=utf-8)?$/i.test(type)) throw unavailable(false);
+                const length = response.headers.get('Content-Length');
+                if (length !== null && /^\d+$/.test(length) && Number(length) > RESPONSE_BYTES) throw unavailable(false);
+                let text;
+                try { text = await response.text(); } catch { throw unavailable(false); }
+                if (typeof text !== 'string' || utf8Length(text) > RESPONSE_BYTES) throw unavailable(false);
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const match = /filename="([^"\\]+)"/.exec(disposition);
+                const filename = match && /^[A-Za-z0-9._-]+\.csv$/.test(match[1]) ? match[1] : 'nofries-ncsc-results.csv';
+                return freeze({ filename, text });
+            },
             create: (command, settings) => mutate('create', command, settings),
             save: (command, settings) => mutate('save', command, settings),
             submit: (command, settings) => mutate('submit', command, settings)

@@ -799,7 +799,7 @@ describe('opt-in NCSC HTTP request boundary', () => {
         Object.defineProperty(h.options, 'ncsc', { get: getter, enumerable: true });
         expect(() => h.build()).toThrow(BrowserAuthError); expect(getter).not.toHaveBeenCalled();
     });
-    test.each(['', '/example', '/example%3Aone', '/example%3Aone/save', '/example/save', '/example/submit'])('configured route %s reaches authentication instead of 404', async suffix => withExpectedWarning({ route: 'ncsc', status: 401, code: 'dashboard_authentication_required' }, async () => {
+    test.each(['', '/example', '/example%3Aone', '/example%3Aone/save', '/example/save', '/example/submit', '/example/export', '/example%3Aone/export'])('configured route %s reaches authentication instead of 404', async suffix => withExpectedWarning({ route: 'ncsc', status: 401, code: 'dashboard_authentication_required' }, async () => {
         const h = configured(), handler = h.build();
         expectError(await handler.handleRequest(request({ url: '/api/dashboard/ncsc/assessments' + suffix,
             method: suffix.includes('/save') || suffix.includes('/submit') ? 'POST' : 'GET',
