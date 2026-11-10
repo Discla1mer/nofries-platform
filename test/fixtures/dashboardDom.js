@@ -41,6 +41,7 @@ function createDom() {
         closest(selector) { return this.matches(selector) ? this : this.parentElement?.closest(selector) || null; }
     }
     document.createElement = tag => new Element(tag);
+    document.createElementNS = (_namespace, tag) => new Element(tag);
     const listeners = {};
     const window = { location: { hash: '' }, history: { pushState(_state, _title, hash) { window.location.hash = hash; },
             replaceState(_state, _title, hash) { window.location.hash = hash; } },
