@@ -393,6 +393,7 @@ button { cursor: pointer; }
 .login-brand span { font-size: .66rem; font-weight: 500; letter-spacing: .16em; text-transform: uppercase; }
 .public-header nav { display: flex; flex-wrap: wrap; gap: 14px; }
 .public-header nav a, .public-panel a { color: var(--green); font-weight: 800; }
+body[data-page="contact"] .public-header nav a { display: inline-flex; align-items: center; min-height: 44px; }
 /* Long addresses such as the support email must wrap on narrow screens and enlarged text. */
 .public-footer nav a { min-width: 0; overflow-wrap: anywhere; }
 .public-panel { display: grid; gap: 12px; }
