@@ -1,6 +1,6 @@
 'use strict';
 
-const { inspectCustomerAuthority } = require('./customerAuthorityExpiry');
+const { inspectCustomerAuthority } = require('./customerAuthorityRecords');
 const { subjectHash } = require('../customerSignup/customerAuthority');
 const { AzureStarterAccountStore } = require('../customerSignup/azureStarterAccountStore');
 const { starterAccountKey } = require('../customerSignup/starterAccountAllocation');

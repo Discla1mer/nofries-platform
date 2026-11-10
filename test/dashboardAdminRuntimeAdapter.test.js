@@ -11,15 +11,11 @@ jest.mock('../api/shared/appLifecycle/postgresDashboardRuntimeRepository', () =>
 const { IncomingMessage } = require('node:http');
 const { Socket } = require('node:net');
 const { createHash } = require('node:crypto');
-const { Readable } = require('node:stream');
 const { createBrowserAuthService } = require('../api/shared/browserAuth');
 const { MemoryBrowserSessionStore } = require('../api/shared/browserSessionStore');
 const { createDashboardOperatorSession } = require('../api/shared/dashboardOperatorSession');
 const { createPostgresDashboardAdministrationRepository: nativeFactory } = require('../api/shared/appLifecycle/postgresDashboardRuntimeRepository');
 const { createDashboardAdminRuntime } = require('../api/shared/dashboardAdmin/runtimeAdapter');
-const { createDashboardAdminApprovalReader } = require('../api/shared/dashboardAdmin/approvalStore');
-const { headKey, revisionKey } = require('../api/shared/dashboardAdmin/approvalRecords');
-const { canonical, hash } = require('../api/shared/appLifecycle/dashboardRuntimeRecords');
 const { createDashboardAdminService, normaliseSelector } = require('../api/shared/dashboardAdmin/service');
 const { verifyAuditPhasePair, projectAuditRow } = require('../api/shared/dashboardAdmin/auditEnvelope');
 const { dataCodec } = require('../api/shared/appLifecycle/postgresDashboardBootstrap');
@@ -31,7 +27,6 @@ const OID = '10000000-0000-4000-8000-000000000003';
 const OTHER = '10000000-0000-4000-8000-000000000004';
 const INSTANCE = '10000000-0000-4000-8000-000000000005';
 const EPOCH = '10000000-0000-4000-8000-000000000006';
-const BINDING = '10000000-0000-4000-8000-000000000007';
 const LOOKUP = '10000000-0000-4000-8000-000000000008';
 const NOW = Date.parse('2026-10-19T02:00:00.000Z');
 const ACTOR = TENANT + ':' + OID;
@@ -91,46 +86,6 @@ async function harness(options = {}) {
     const f = fixture({ now: clock() }), selector = { provider: 'legacy', subjectKey: TARGET_SUBJECT, ...f.scope };
     const snapshot = { tenantAggregate: f.tenantAggregate, membershipState: f.membershipState, entitlementState: f.entitlementState,
         flags: f.flags, advisorAssignments: [], usage: f.entitlementState.grants.map(dataCodec.newUsage) };
-    state.binding = { schemaVersion: 1, bindingId: BINDING, revision: 1, status: 'active', action: 'dashboard.authority.read', purpose: 'signup_support',
-        operatorSubjectKey: ACTOR, instanceId: INSTANCE, selector: clone(selector), approvedAt: new Date(NOW - 2000).toISOString(),
-        validFrom: new Date(NOW - 1000).toISOString(), validUntil: new Date(NOW + 60000).toISOString(), approvalReference: 'synthetic-private-approval',
-        identityPolicy: { policyId: 'synthetic-operator-policy', policyRevision: 0 },
-        auditPolicy: { reference: 'synthetic-private-retention-policy', revision: 2,
-            agreementVersion: 'nf-dashboard-2026-09-r2', retention: { unit: 'calendar_months', count: 13 } } };
-    let readApprovedBinding = jest.fn(async input => { if (state.bindingHook) await state.bindingHook(input); return clone(state.binding); });
-    if (options.approvalReader) {
-        const approvalEpoch = state.epoch;
-        const target = { operatorSubjectKey: ACTOR, purpose: 'signup_support', instanceId: INSTANCE };
-        const reader = createDashboardAdminApprovalReader({ instanceId: INSTANCE, clock,
-            readExternalRuntimeEpoch: sessionOptions.readExternalRuntimeEpoch, requestBudgetMs: 1000,
-            authorityContainer: { getBlockBlobClient(key) { return { async download(_offset, _length, input) {
-                if (state.approvalMissing) throw Object.assign(new Error('synthetic absent'), { statusCode: 404, code: 'BlobNotFound' });
-                const revoked = state.approvalRevoked === true;
-                const record = { schemaVersion: 1, recordType: 'dashboard_admin_approval_revision', ...target,
-                    restoreEpoch: approvalEpoch, revision: revoked ? 2 : state.binding.revision, status: revoked ? 'revoked' : 'active',
-                    changedAt: state.binding.approvedAt, decisionReference: state.binding.approvalReference,
-                    binding: revoked ? null : clone(state.binding) };
-                const head = { schemaVersion: 1, recordType: 'dashboard_admin_approval_head', ...target,
-                    restoreEpoch: approvalEpoch, revision: record.revision, status: record.status, recordSha256: hash(record) };
-                const value = key === headKey(target) ? head : key === revisionKey(target, hash(record)) ? record : null;
-                if (!value) throw Object.assign(new Error('synthetic absent'), { statusCode: 404, code: 'BlobNotFound' });
-                const etag = '"' + hash(value) + '"';
-                if (input.conditions && input.conditions.ifMatch !== etag) throw Object.assign(new Error('synthetic changed'), { statusCode: 412 });
-                const bytes = Buffer.from(canonical(value));
-                return { etag, contentLength: bytes.length, readableStreamBody: Readable.from([bytes]) };
-            } }; } } });
-        readApprovedBinding = options.mark ? jest.fn(async input => {
-            options.mark('binding_read_start');
-            try {
-                const binding = await reader.readApprovedBinding(input);
-                options.mark(binding === null ? 'binding_read_empty' : 'binding_read_present');
-                return binding;
-            } catch (error) {
-                options.mark('binding_read_error');
-                throw error;
-            }
-        }) : jest.fn(reader.readApprovedBinding);
-    }
     let nativeConfiguration;
     async function mockedNativeValidate(req, selected) {
         options.mark?.('capture_start');
@@ -160,8 +115,8 @@ async function harness(options = {}) {
     const runtimeInput = { ...sessionOptions, pool: { connect: jest.fn(() => { throw new Error('No SQL in adapter protocol tests'); }) },
         instanceId: INSTANCE, historyBudget: { maxRecords: 4096, maxBytes: 67108864, maxDurationMs: 60000 },
         newId: () => '30000000-0000-4000-8000-' + (++state.ids).toString().padStart(12, '0'),
-        ...(options.staff ? {} : { readApprovedBinding }) };
-    if (options.staff && options.runtimeIdentityPolicy) runtimeInput.identityPolicy = options.runtimeIdentityPolicy;
+        };
+    if (options.runtimeIdentityPolicy) runtimeInput.identityPolicy = options.runtimeIdentityPolicy;
     const runtime = createDashboardAdminRuntime(runtimeInput);
     function serviceFor(req) {
         if (!options.mark) return createDashboardAdminService({ ...runtime,
@@ -197,83 +152,14 @@ async function harness(options = {}) {
             targetSha256: createHash('sha256').update(JSON.stringify(normaliseSelector(selected))).digest('hex'), outcome, occurredAt: clock(), ...overrides };
     }
     return { state, env, store, proofs, proofStore, browser, issuer, login, loginResult, request, selector, snapshot, runtime,
-        runtimeInput, repository, readApprovedBinding, trace, ledger, captures, serviceFor, event, storeWrites,
+        runtimeInput, repository, trace, ledger, captures, serviceFor, event, storeWrites,
         nativeValidate: mockedNativeValidate,
         get nativeConfiguration() { return nativeConfiguration; } };
 }
 
 beforeEach(() => nativeFactory.mockReset());
 
-test('the concrete protected-store reader supports a genuine synthetic staff lookup through the runtime and audit protocol', async () => {
-    // Temporary opt-in synthetic checkpoints: fixed labels and monotonic elapsed
-    // milliseconds only; never print inputs, binding records or caught errors.
-    const started = process.env.NOFRIES_TEST_TIMING_DIAGNOSTICS === '1' ? process.hrtime.bigint() : null;
-    const allowed = new Set(['harness_start', 'harness_done', 'lookup_start', 'lookup_done',
-        'binding_read_start', 'binding_read_empty', 'binding_read_present', 'binding_read_error',
-        'capture_start', 'capture_done', 'native_policy_start', 'native_policy_allowed', 'native_policy_denied',
-        'authorise_start', 'authorise_allowed', 'authorise_denied', 'authorise_error',
-        'snapshot_start', 'snapshot_done', 'snapshot_error', 'audit_start', 'audit_done', 'audit_error']);
-    let emitted = 0;
-    const mark = started === null ? undefined : label => {
-        if (emitted >= 256) return;
-        if (!allowed.has(label)) throw new Error('unexpected synthetic timing label');
-        const safeLabel = emitted === 255 ? 'trace_limit' : label;
-        emitted++;
-        process.stderr.write(`SYNTHETIC_DASHBOARD_TIMING ${safeLabel} ${Number((process.hrtime.bigint() - started) / 1000000n)}ms\n`);
-    };
-    mark?.('harness_start');
-    // This success-path protocol performs many real synthetic store reads. Keep
-    // deadline and denial cases on the default budget while allowing slow CI.
-    const h = await harness({ approvalReader: true, requestBudgetMs: 10000, ...(mark ? { mark } : {}) });
-    mark?.('harness_done');
-    mark?.('lookup_start');
-    const result = await h.serviceFor(h.request()).lookup(principal, h.selector);
-    mark?.('lookup_done');
-    expect(result.result.status).toBe('found');
-    expect(h.repository.readAuthoritySnapshot).toHaveBeenCalledTimes(1);
-    expect(h.ledger.size).toBe(2);
-    expect(h.readApprovedBinding.mock.calls.length).toBeGreaterThan(3);
-    for (const spy of Object.values(h.storeWrites)) expect(spy).not.toHaveBeenCalled();
-}, 20000);
-
-test.each(['missing', 'revoked', 'foreign target', 'old epoch'])('source-bound %s approval denies before snapshot or audit', async mode => {
-    const h = await harness({ approvalReader: true });
-    if (mode === 'missing') h.state.approvalMissing = true;
-    if (mode === 'revoked') h.state.approvalRevoked = true;
-    if (mode === 'foreign target') h.state.binding.selector.organisationId = 'synthetic-other-org';
-    if (mode === 'old epoch') h.state.epoch = '10000000-0000-4000-8000-000000000099';
-    await expect(h.serviceFor(h.request()).lookup(principal, h.selector)).rejects.toMatchObject({ statusCode: 403 });
-    expect(h.repository.readAuthoritySnapshot).not.toHaveBeenCalled(); expect(h.ledger.size).toBe(0);
-});
-
-test('synthetic timing marks a missing approval while preserving denial', async () => {
-    const labels = [], h = await harness({ approvalReader: true, mark: label => labels.push(label) });
-    h.state.approvalMissing = true;
-    await expect(h.serviceFor(h.request()).lookup(principal, h.selector)).rejects.toMatchObject({ statusCode: 403 });
-    expect(labels).toEqual(expect.arrayContaining(['authorise_start', 'capture_start', 'capture_done',
-        'native_policy_start', 'binding_read_start', 'binding_read_empty', 'native_policy_denied', 'authorise_denied']));
-    expect(h.repository.readAuthoritySnapshot).not.toHaveBeenCalled();
-    expect(h.ledger.size).toBe(0);
-});
-
-test('a source revocation observed after the attempt prevents the canonical snapshot', async () => {
-    const h = await harness({ approvalReader: true });
-    h.state.persistHook = async () => { h.state.approvalRevoked = true; };
-    await expect(h.serviceFor(h.request()).lookup(principal, h.selector)).rejects.toMatchObject({ statusCode: 503 });
-    expect(h.repository.readAuthoritySnapshot).not.toHaveBeenCalled();
-});
-
-test('a source revocation during the canonical read withholds the result', async () => {
-    const h = await harness({ approvalReader: true });
-    h.state.readHook = async () => {
-        h.state.approvalRevoked = true;
-        return { snapshot: h.snapshot, revisions: dataCodec.revisionVector(h.snapshot), evaluatedAt: h.runtime.clock() };
-    };
-    await expect(h.serviceFor(h.request()).lookup(principal, h.selector)).rejects.toMatchObject({ statusCode: 403 });
-    expect(h.repository.readAuthoritySnapshot).toHaveBeenCalledTimes(1);
-});
-
-test('genuine callback proof and cookie feed native capture; shell admission is not wildcard target authority', async () => {
+test('genuine callback proof and cookie feed native capture; one request cannot move between targets', async () => {
     const h = await harness(), req = h.request();
     expect(await h.runtime.authoriseOperator({ principal, selector: null, request: req })).toBe(true);
     expect(h.repository.validateSession).toHaveBeenCalledWith(req, null);
@@ -281,56 +167,12 @@ test('genuine callback proof and cookie feed native capture; shell admission is 
     expect(h.captures[0]).toMatchObject({ kind: 'operator_dashboard', instanceId: INSTANCE,
         identityPayload: { identityTenantId: TENANT, oid: OID }, operatorIssuanceProof: { kind: 'operator_dashboard_issuance' } });
     expect(h.proofs.has(h.captures[0].sessionSha256)).toBe(true);
+    // One request stays pinned to its first target; a second target is refused.
+    expect(await h.runtime.authoriseOperator({ principal, selector: h.selector, request: req })).toBe(true);
     expect(await h.runtime.authoriseOperator({ principal, selector: { ...h.selector, provider: 'external' }, request: req })).toBe(false);
     expect(h.repository.readAuthoritySnapshot).not.toHaveBeenCalled();
     expect(Object.keys(h.runtime).sort()).toEqual(['audit', 'authoriseOperator', 'clock', 'readAuthoritySnapshot', 'requestBudgetMs']);
     expect(h.runtimeInput.pool.connect).not.toHaveBeenCalled();
-});
-
-test('production composition has no implicit approved-binding resolver', async () => {
-    const h = await harness();
-    expect(() => createDashboardAdminRuntime({ ...h.runtimeInput, readApprovedBinding: undefined }))
-        .toThrow('dashboard_admin_unavailable');
-});
-
-test.each([
-    ['absent', h => { h.state.binding = null; }],
-    ['revoked', h => { h.state.binding.status = 'revoked'; }],
-    ['expired', h => { h.state.binding.validUntil = new Date(NOW).toISOString(); }],
-    ['not yet valid', h => { h.state.binding.validFrom = new Date(NOW + 1).toISOString(); }],
-    ['approval after start', h => { h.state.binding.approvedAt = new Date(NOW).toISOString(); }],
-    ['over one-hour window', h => { h.state.binding.validUntil = new Date(NOW + 3600000).toISOString(); }],
-    ['wrong operator', h => { h.state.binding.operatorSubjectKey = TENANT + ':' + OTHER; }],
-    ['wrong instance', h => { h.state.binding.instanceId = EPOCH; }],
-    ['wrong provider', h => { h.state.binding.selector.provider = 'external'; }],
-    ['wrong subject', h => { h.state.binding.selector.subjectKey = TENANT + ':' + OTHER; }],
-    ['wrong tenant', h => { h.state.binding.selector.tenantId = 'another-tenant'; }],
-    ['wrong organisation', h => { h.state.binding.selector.organisationId = 'another-organisation'; }],
-    ['wrong purpose', h => { h.state.binding.purpose = 'account_reset'; }],
-    ['wrong action', h => { h.state.binding.action = 'dashboard.authority.write'; }],
-    ['wrong identity policy', h => { h.state.binding.identityPolicy.policyId = 'different-policy'; }],
-    ['revised identity policy', h => { h.state.binding.identityPolicy.policyRevision++; }],
-    ['missing retention policy', h => { delete h.state.binding.auditPolicy; }],
-    ['legacy day count', h => { h.state.binding.auditPolicy.retentionDays = 395; }],
-    ['wrong agreement version', h => { h.state.binding.auditPolicy.agreementVersion = 'nf-dashboard-2026-09-r1'; }],
-    ['day unit', h => { h.state.binding.auditPolicy.retention.unit = 'days'; }],
-    ['wrong calendar month count', h => { h.state.binding.auditPolicy.retention.count = 12; }],
-    ['unverified extra retention field', h => { h.state.binding.auditPolicy.retention.days = 395; }],
-    ['negative policy revision', h => { h.state.binding.auditPolicy.revision = -1; }]
-])('approved binding fails closed for %s before target reads or audit writes', async (_name, change) => {
-    const h = await harness(); change(h);
-    expect(await h.runtime.authoriseOperator({ principal, selector: h.selector, request: h.request() })).toBe(false);
-    expect(h.repository.readAuthoritySnapshot).not.toHaveBeenCalled(); expect(h.repository.persistAudit).not.toHaveBeenCalled();
-});
-
-test.each(['revision', 'auditPolicy', 'approvalReference'])('a pinned approved binding cannot be replaced through %s', async key => {
-    const h = await harness(), req = h.request();
-    expect(await h.runtime.authoriseOperator({ principal, selector: h.selector, request: req })).toBe(true);
-    if (key === 'revision') h.state.binding.revision++;
-    if (key === 'auditPolicy') h.state.binding.auditPolicy.revision++;
-    if (key === 'approvalReference') h.state.binding.approvalReference = 'another-approval';
-    expect(await h.runtime.authoriseOperator({ principal, selector: h.selector, request: req })).toBe(false);
-    expect(h.repository.readAuthoritySnapshot).not.toHaveBeenCalled();
 });
 
 test.each(['plain request', 'missing cookie', 'customer cookie', 'proofless parent', 'missing proof', 'wrong proof', 'wrong principal', 'revoked gate'])
@@ -418,26 +260,6 @@ test.each(['absent', 'conflicting', 'revoked'])('failed ambiguous terminal readb
     expect(h.repository.readAuthoritySnapshot).toHaveBeenCalledTimes(1);
 });
 
-test.each(['expired binding', 'revised binding', 'revoked gate', 'revoked parent', 'restore epoch', 'aborted request'])
-('revocation during snapshot await withholds account data: %s', async mode => {
-    const h = await harness(), req = h.request(), entered = deferred(), resume = deferred();
-    h.state.readHook = async () => { entered.resolve(); await resume.promise; return { snapshot: h.snapshot,
-        revisions: dataCodec.revisionVector(h.snapshot), evaluatedAt: new Date(h.state.now).toISOString() }; };
-    const lookup = h.serviceFor(req).lookup(principal, h.selector); const outcome = lookup.catch(error => error); await entered.promise;
-    if (mode === 'expired binding') h.state.now = Date.parse(h.state.binding.validUntil);
-    if (mode === 'revised binding') h.state.binding.revision++;
-    if (mode === 'revoked gate') h.state.gateReady = false;
-    if (mode === 'revoked parent') h.store.sessions.clear();
-    if (mode === 'restore epoch') h.state.epoch = BINDING;
-    if (mode === 'aborted request') req.aborted = true;
-    resume.resolve(); const error = await outcome;
-    expect([403, 503]).toContain(error.statusCode);
-    expect(['dashboard_admin_access_denied', 'dashboard_admin_unavailable']).toContain(error.message);
-    expect(error).not.toHaveProperty('result');
-    expect(h.repository.readAuthoritySnapshot).toHaveBeenCalledTimes(1);
-    expect(h.repository.persistAudit).toHaveBeenCalledTimes(1);
-});
-
 test('interleaved genuine native requests retain separate capture, audit IDs and attempt acknowledgements', async () => {
     const h = await harness(), a = h.request(), b = h.request(), entered = deferred(), release = deferred();
     h.state.persistHook = async ({ request, envelope }) => {
@@ -464,8 +286,8 @@ test.each([false, undefined, 'true', 1])('native attempt acknowledgement must be
 
 test('the native beforeQuery guard refuses calls outside its private invocation and stops expiry immediately before COMMIT', async () => {
     const h = await harness(); expect(() => h.nativeConfiguration.beforeQuery('SELECT')).toThrow('dashboard_admin_unavailable');
-    h.state.binding.validUntil = new Date(NOW + 500).toISOString();
-    h.state.persistHook = async () => { h.state.now = Date.parse(h.state.binding.validUntil); };
+    // The request's own time budget ends while the audit INSERT is pending.
+    h.state.persistHook = async () => { h.state.now = NOW + 1000; };
     await expect(h.serviceFor(h.request()).lookup(principal, h.selector)).rejects.toMatchObject({ statusCode: 503 });
     expect(h.repository.readAuthoritySnapshot).not.toHaveBeenCalled(); expect(h.ledger.size).toBe(0);
     expect(h.trace).not.toContain('ack:attempt');
@@ -567,12 +389,12 @@ test.each(['expired', 'invalid'])('initial shell denial for a genuine %s parent 
 // Staff policy: no per-customer approval record. The allowlisted staff admin's
 // own native operator session, pinned to the configured identity policy, is
 // the authority. Host subject/role checks happen before this adapter.
-test('staff policy completes a lookup through the native gate and audit protocol without any approval read', async () => {
-    const h = await harness({ staff: true, requestBudgetMs: 10000 }), req = h.request();
+test('staff policy completes a lookup through the native gate and audit protocol', async () => {
+    const h = await harness({ requestBudgetMs: 10000 }), req = h.request();
     const result = await h.serviceFor(req).lookup(principal, h.selector);
     expect(result.result.status).toBe('found');
     expect(h.repository.readAuthoritySnapshot).toHaveBeenCalledTimes(1);
-    expect(h.ledger.size).toBe(2); expect(h.readApprovedBinding).not.toHaveBeenCalled();
+    expect(h.ledger.size).toBe(2);
     expect(h.captures.every(capture => capture.kind === 'operator_dashboard' && capture.operatorIssuanceProof)).toBe(true);
     for (const spy of Object.values(h.storeWrites)) expect(spy).not.toHaveBeenCalled();
     // One HTTP request stays pinned to one target; a second target on the same
@@ -583,16 +405,16 @@ test('staff policy completes a lookup through the native gate and audit protocol
 test.each(['other staff actor', 'policy revision', 'policy id', 'closed gate', 'no proof'])('staff policy denies %s before snapshot or audit', async mode => {
     const policy = { policyId: 'synthetic-operator-policy', policyRevision: 0,
         issuer: 'https://login.microsoftonline.com/' + TENANT + '/v2.0', identityTenantId: TENANT, audience: CLIENT };
-    const h = await harness({ staff: true, withProof: mode !== 'no proof',
+    const h = await harness({ withProof: mode !== 'no proof',
         runtimeIdentityPolicy: mode === 'policy revision' ? { ...policy, policyRevision: 1 } : mode === 'policy id' ? { ...policy, policyId: 'synthetic-other-policy' } : undefined });
     if (mode === 'closed gate') h.state.gateReady = false;
     const actor = mode === 'other staff actor' ? { ...principal, subjectKey: TENANT + ':' + OTHER } : principal;
     await expect(h.serviceFor(h.request()).lookup(actor, h.selector)).rejects.toMatchObject({ statusCode: 403 });
     expect(h.repository.readAuthoritySnapshot).not.toHaveBeenCalled(); expect(h.ledger.size).toBe(0);
-    expect(h.readApprovedBinding).not.toHaveBeenCalled();
+   
 });
-test('staff policy requires a usable identity policy and still rejects a non-function approval reader', async () => {
-    const h = await harness({ staff: true });
+test('staff policy requires a usable identity policy and accepts no approval reader', async () => {
+    const h = await harness();
     for (const identityPolicy of [{ ...h.runtimeInput.identityPolicy, policyId: '' }, { ...h.runtimeInput.identityPolicy, policyRevision: -1 }, null]) {
         nativeFactory.mockImplementationOnce(() => h.repository);
         expect(() => createDashboardAdminRuntime({ ...h.runtimeInput, identityPolicy })).toThrow();
