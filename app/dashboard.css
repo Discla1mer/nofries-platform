@@ -1,13 +1,13 @@
 /* One readable scale for the protected workspace and its ready account controls. */
 .nofries-dashboard,
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] {
-    --dashboard-font-small: .875rem; --dashboard-font-body: 1rem;
+    --dashboard-font-small: 1rem; --dashboard-font-body: 1rem;
     --dashboard-font-section: 1.25rem; --dashboard-font-display: clamp(1.5rem, 2.5vw, 2rem);
     --dashboard-weight-regular: 400; --dashboard-weight-emphasis: 600;
 }
 .nofries-dashboard {
     color-scheme: light;
-    --dashboard-ink: #17140f; --dashboard-muted: #5f574b; --dashboard-blue: #7a5711;
+    --dashboard-ink: #17140f; --dashboard-muted: #40382e; --dashboard-blue: #7a5711;
     --dashboard-navy: #f2e4bc; --dashboard-line: #d3c9b7; --dashboard-paper: #ece6da;
     --dashboard-surface: #f6f2ea; --dashboard-yellow: #e5b53b; --dashboard-control-border: #7d7262;
     --dashboard-focus: #17140f;
