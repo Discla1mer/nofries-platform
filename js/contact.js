@@ -9,9 +9,14 @@
     const FALLBACK = 'Please email hello@nofries.nz instead.';
 
     let available = false;
+    let checking;
 
     form.addEventListener('submit', async function (event) {
         event.preventDefault();
+        if (checking) {
+            status.textContent = 'One moment…';
+            await checking;
+        }
         if (!available) {
             status.textContent = 'The enquiry form is not available right now. ' + FALLBACK;
             return;
@@ -55,9 +60,15 @@
         }
         send.disabled = false;
     });
-    try {
-        available = (await window.enquiryAvailability()).available === true;
-    } catch (_) { /* Missing client script also fails closed. */ }
+    // The handler is attached, so the button can be used while availability is checked.
+    send.disabled = false;
+    checking = (async function () {
+        try {
+            available = (await window.enquiryAvailability()).available === true;
+        } catch (_) { /* Missing client script also fails closed. */ }
+    }());
+    await checking;
+    checking = null;
     send.disabled = !available;
-    status.textContent = available ? '' : 'The enquiry form is not available right now. ' + FALLBACK;
+    if (!available) status.textContent = 'The enquiry form is not available right now. ' + FALLBACK;
 }());

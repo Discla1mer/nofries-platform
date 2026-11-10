@@ -128,7 +128,7 @@
             progress.max = detail.progress.total; progress.value = detail.progress.answered;
             progress.setAttribute('aria-label', 'Saved responses');
             const scope = node('section', 'picture-scope');
-            scope.append(node('h3', '', 'Scope'), node('p', '', detail.scopePopulation.description));
+            scope.append(node('h3', '', 'Scope'), node('p', 'ncsc-preserve-text', detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.'));
             draft.append(heading, saved, progress, scope,
                 node('p', 'dashboard-muted', 'Saved progress is not a score. Submit this assessment when it is ready; unknown answers remain visible as uncertainty.'));
             root.append(draft);
@@ -217,7 +217,7 @@
                 root.append(sourceDetails()); return;
             }
             const scope = node('section', 'picture-scope');
-            scope.append(node('h3', '', 'Scope'), node('p', '', detail.scopePopulation.description)); root.append(scope);
+            scope.append(node('h3', '', 'Scope'), node('p', 'ncsc-preserve-text', detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.')); root.append(scope);
             const result = questionnaire.resultModel(detail, metadata, organisationId);
             if (!result) { root.append(node('p', 'ncsc-warning', 'Results are unavailable for this saved submission. No score has been inferred.'), sourceDetails()); return; }
             if (typeof options.openCyber === 'function') root.append(openSavedAssessment('View saved assessment'));

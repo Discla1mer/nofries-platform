@@ -14,7 +14,7 @@
         partial: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
         no: 'None of this is in place yet, including when work is only planned.',
         unknown: 'You do not have enough information to confirm what is in place.',
-        not_applicable: 'You believe this does not apply to your scope. Explain why; this remains unresolved.'
+        not_applicable: 'You believe this does not apply to your scope. Explain why. It counts as still to confirm, not as in place.'
     };
     // Display aids only. The accepted catalogue still owns each question and
     // answer meaning; these examples neither choose an answer nor prove it.
@@ -655,7 +655,7 @@
                     reference.id = 'ncsc-assessment-reference-' + index; open.setAttribute('aria-describedby', reference.id);
                     const details = node('details', 'ncsc-assessment-reference'), summary = node('summary', '', 'Saved record details');
                     summary.id = 'ncsc-assessment-details-' + index; details.append(summary, reference);
-                    if (item.scopePopulation) row.append(node('p', 'ncsc-assessment-scope', item.scopePopulation.description));
+                    if (item.scopePopulation) row.append(node('p', 'ncsc-assessment-scope ncsc-preserve-text', item.scopePopulation.description));
                     row.append(heading, saved, progress,
                         node('p', 'dashboard-muted ncsc-assessment-date', 'Last saved ' + localDate(item.updatedAt)), open, details); list.append(row);
                 });
