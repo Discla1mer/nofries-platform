@@ -1623,9 +1623,9 @@ describe('ready Cyber composition', () => {
         input.checked = true; inputEvent(input, 'change');
     }
     const footerTargets = [
-        [false, 0, '/roadmap.html'], [false, 1, 'https://news.nofries.nz/'],
-        [true, 0, '/'], [true, 1, '/managed-it.html'], [true, 2, '/roadmap.html'], [true, 3, 'https://news.nofries.nz/'],
-        [true, 4, '/contact.html'], [true, 5, '/privacy.html'], [true, 6, '/terms.html']
+        [false, 0, '/roadmap.html'],
+        [true, 0, '/'], [true, 1, '/managed-it.html'], [true, 2, '/roadmap.html'],
+        [true, 3, '/contact.html'], [true, 4, '/privacy.html'], [true, 5, '/terms.html']
     ];
     test.each(footerTargets)('footer gateway=%s link=%s preserves draft, focus and first destination %s', async (gateway, index, target) => {
         const h = harness({ gateway, cyber: true, hash: '#cyber-security' }); await ready(h);
