@@ -166,12 +166,13 @@ test('exports no native session, pool, COMMIT or arbitrary SQL capability', () =
         .toEqual(['DashboardAdminAuditWriterError', 'persistAudit', 'reconcileAudit']);
 });
 
-test('the unapplied SQL proposal preserves exact old payload branches and adds closed phase uniqueness without privilege changes', () => {
-    const proposal = fs.readFileSync(path.join(__dirname, '../database/proposals/dashboard_admin_lookup_audit.sql'), 'utf8');
+test('migration 0018 preserves exact old payload branches and adds closed phase uniqueness without privilege changes', () => {
+    const proposal = fs.readFileSync(path.join(__dirname, '../database/migrations/0018_dashboard_admin_lookup_audit.sql'), 'utf8');
     const predecessor = fs.readFileSync(path.join(__dirname, '../database/migrations/0006_dashboard_host_events.sql'), 'utf8');
     const predicate = predecessor.slice(predecessor.indexOf('CHECK ('), predecessor.lastIndexOf(';'));
     expect(proposal).toContain(predicate);
-    expect(proposal).toContain('UNAPPLIED PROPOSAL ONLY');
+    expect(proposal).not.toContain('UNAPPLIED PROPOSAL ONLY');
+    expect(proposal).toContain('48e226de251589cac37de64990f6065958a967168e5ffa218087c56b4d64ac3d');
     expect(proposal).toMatch(/\(instance_id, session_sha256, request_id,\s*\(payload->>'lookupRequestId'\), \(payload->>'phase'\)\)/);
     expect(proposal).not.toMatch(/\b(?:GRANT|REVOKE|CREATE POLICY|ALTER POLICY|DROP POLICY|UPDATE|DELETE)\b/);
 });

@@ -20,6 +20,21 @@
 -- (CREATE OR REPLACE FUNCTION; DROP POLICY IF EXISTS + CREATE POLICY). Scopes
 -- activated after the original period while this version was live stay valid
 -- stored rows; only new late activations would be refused again.
+-- Refuse if the unapplied three-calendar-month trial proposal
+-- (database/proposals/customer_three_calendar_month_trial.sql) was ever applied
+-- by hand: replacing the guard below would silently undo its rules.
+DO $precheck$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_constraint c
+               JOIN pg_catalog.pg_class t ON t.oid = c.conrelid
+               JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
+               WHERE n.nspname = 'nofries' AND t.relname = 'dashboard_starter_scopes'
+                 AND c.conname = 'dashboard_starter_scopes_versioned_contract') THEN
+        RAISE EXCEPTION 'starter_client_period_precondition: three-month trial proposal is applied; reconcile before 0017';
+    END IF;
+END
+$precheck$;
+
 CREATE OR REPLACE FUNCTION nofries.guard_starter_scope() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog, nofries AS $guard$
 DECLARE start_at timestamptz; stop_at timestamptz; actual_at timestamptz; a jsonb; grant_value jsonb; membership_value jsonb; consent jsonb; usage_value jsonb;

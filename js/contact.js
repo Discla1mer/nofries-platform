@@ -79,5 +79,10 @@
     await checking;
     checking = null;
     if (!submitting) send.disabled = !available;
-    if (!available && !submitting) status.textContent = 'The enquiry form is not available right now. ' + FALLBACK;
+    if (!available && !submitting) {
+        status.textContent = 'The enquiry form is not available right now. ' + FALLBACK;
+        // Say so above the fields too, so nobody writes a message they cannot send.
+        const notice = document.getElementById('contact-unavailable');
+        if (notice) notice.hidden = false;
+    }
 }());

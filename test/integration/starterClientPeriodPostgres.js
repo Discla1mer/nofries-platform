@@ -107,8 +107,9 @@ module.exports = function registerStarterClientPeriodTests() {
 
     test('migration replaces only the guard function and the insert policy and rewrites no rows', () => {
         const sql = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../database/migrations/0017_starter_client_period.sql'), 'utf8');
-        const statements = sql.replace(/--[^\n]*\n/g, '').replace(/\$guard\$[\s\S]*?\$guard\$/g, '').split(';').map(s => s.trim()).filter(Boolean);
-        expect(statements.map(s => s.split(/\s+/).slice(0, 3).join(' '))).toEqual(['CREATE OR REPLACE', 'DROP POLICY IF', 'CREATE POLICY starter_scopes_new']);
+        const statements = sql.replace(/--[^\n]*\n/g, '').replace(/\$guard\$[\s\S]*?\$guard\$/g, '').replace(/\$precheck\$[\s\S]*?\$precheck\$/g, '').split(';').map(s => s.trim()).filter(Boolean);
+        expect(statements.map(s => s.split(/\s+/).slice(0, 3).join(' '))).toEqual(['DO', 'CREATE OR REPLACE', 'DROP POLICY IF', 'CREATE POLICY starter_scopes_new']);
+        expect(sql).toMatch(/conname = 'dashboard_starter_scopes_versioned_contract'\) THEN\s+RAISE EXCEPTION/);
         expect(sql).not.toMatch(/\b(UPDATE|DELETE\s+FROM|INSERT\s+INTO|ALTER\s+TABLE|TRUNCATE|GRANT|SECURITY\s+DEFINER)\b\s+nofries\./i);
         expect(sql).toMatch(/nf-starter-2026-09-r1/); expect(sql).toMatch(/257fdd66a5359392428c0e5f16734a7ac64ff886e9b359218e4e87b4c7f68acc/);
     });

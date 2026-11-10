@@ -290,6 +290,15 @@ test('native Account actions retain guarded consultant return and disappear afte
     h.document.getElementById('dashboardAccountToggle').click();
     expect(actions.hidden).toBe(false);
     expect(h.document.getElementById('dashboardAccountToggle').getAttribute('aria-expanded')).toBe('true');
+    // Escape closes the open menu and returns focus to the Account button.
+    const toggle = h.document.getElementById('dashboardAccountToggle');
+    const escape = { key: 'Escape', preventDefault: jest.fn() };
+    menu.events.keydown.forEach(listener => listener(escape));
+    expect(actions.hidden).toBe(true); expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(escape.preventDefault).toHaveBeenCalledTimes(1); expect(h.document.activeElement).toBe(toggle);
+    const other = { key: 'Tab', preventDefault: jest.fn() };
+    menu.events.keydown.forEach(listener => listener(other)); expect(other.preventDefault).not.toHaveBeenCalled();
+    toggle.click(); expect(actions.hidden).toBe(false);
     back.onclick(); await flush();
     expect(h.document.getElementById('dashboardAccountToggle').getAttribute('aria-expanded')).toBe('false');
     expect(actions.hidden).toBe(true); expect(back.hidden).toBe(true);

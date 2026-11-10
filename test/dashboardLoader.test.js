@@ -106,7 +106,7 @@ function harness(options = {}) {
         });
     }
     const headerLinks = links(homeEntry.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)[1], header);
-    const homeLinks = headerLinks.filter(link => link.href === '/');
+    const homeLinks = headerLinks.filter(link => link.getAttribute('data-dashboard-home') !== null);
     const footer = document.createElement('footer');
     const footerLinks = links(homeEntry.match(/<footer\b[^>]*>([\s\S]*?)<\/footer>/)[1], footer);
     document.body.append(header, elements.dashboardEntry, footer);
@@ -1531,6 +1531,17 @@ describe('ready Cyber composition', () => {
         h.window.dispatch('pagehide');
         expect(h.elements.dashboardApp.children).toHaveLength(0);
     });
+    test('Overview first-use action reaches the production questionnaire as a new-assessment start', async () => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+        await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(h.ncscMounts).toHaveLength(0);
+        control(h, 'Open assessment').click(); await flush();
+        expect(h.ncscMounts).toHaveLength(1);
+        expect(h.ncscMounts[0][1]).toMatchObject({ startNew: true, initialAssessmentId: undefined,
+            organisationId: h.cyberProjection.context.organisationId });
+        h.window.dispatch('pagehide');
+    });
     test.each([200, 403])('Overview continues its exact saved record through a fresh generation-bound read (%s), without another list or write', async status => {
         const stored = await records();
         stored.execute(createCommand('assessment-direct', 'seed-direct', 'Synthetic Overview selected scope.'));
@@ -1612,9 +1623,9 @@ describe('ready Cyber composition', () => {
         input.checked = true; inputEvent(input, 'change');
     }
     const footerTargets = [
-        [false, 0, '/roadmap.html'], [false, 1, 'https://news.nofries.nz/'],
-        [true, 0, 'https://news.nofries.nz/'], [true, 1, '/roadmap.html'],
-        [true, 2, '/contact.html'], [true, 3, '/privacy.html'], [true, 4, '/terms.html']
+        [false, 0, '/roadmap.html'],
+        [true, 0, '/'], [true, 1, '/managed-it.html'], [true, 2, '/roadmap.html'],
+        [true, 3, '/contact.html'], [true, 4, '/privacy.html'], [true, 5, '/terms.html']
     ];
     test.each(footerTargets)('footer gateway=%s link=%s preserves draft, focus and first destination %s', async (gateway, index, target) => {
         const h = harness({ gateway, cyber: true, hash: '#cyber-security' }); await ready(h);
@@ -1864,7 +1875,7 @@ describe('ready Cyber composition', () => {
         const h = harness({ cyber: true, hash: '#cyber-security' }); await openedRecord(h, stored);
         selectAnswer(h);
         expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
-        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('1 with unsaved changes');
+        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('1 not saved yet');
         expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/\*$/);
         h.homeClick(); control(h, 'Discard unsent changes').click(); await flush();
         expect(h.requests.filter(request => request.init.method === 'POST')).toHaveLength(0);
@@ -2036,12 +2047,12 @@ describe('ready Cyber composition', () => {
         const bytes = h.requests[6].init.body;
         const unavailable = { code: 'ncsc_unavailable' };
         await h.reply(6, 503, unavailable, { headers: { get: key => key.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null }, text: async () => JSON.stringify(unavailable) });
-        expect(app.textContent).toContain('Operation unconfirmed');
+        expect(app.textContent).toContain('We could not confirm the save');
         h.window.dispatch('focus'); await flush(); await h.reply(7, 503, { code: 'dashboard_unavailable' });
         expect(app.hidden).toBe(false); expect(h.mounts[0].destroy).not.toHaveBeenCalled();
         h.click('dashboardRetry'); await flush(); await refresh(h, 8);
-        expect(app.textContent).toContain('Operation unconfirmed');
-        button('Retry same operation').click(); await flush();
+        expect(app.textContent).toContain('We could not confirm the save');
+        button('Try the save again').click(); await flush();
         expect(h.requests[13].init.body).toBe(bytes);
         expect(h.requests[13].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
     });

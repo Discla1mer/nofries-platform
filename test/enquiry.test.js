@@ -153,10 +153,10 @@ describe('contact form progressive enhancement', () => {
         expect(html).toMatch(/<noscript>[\s\S]*mailto:hello@nofries.nz[\s\S]*<\/noscript>/);
     });
 
-    test('contact home link matches the managed IT accessible name and fields use cream paper', () => {
-        expect(html).toMatch(/aria-label="No Fries Managed IT home"/);
-        expect(html).toMatch(/<strong>No Fries<\/strong> <span>Managed IT<\/span>/);
-        expect(html).not.toMatch(/<strong>No Fries<\/strong><span>Managed IT<\/span>/);
+    test('contact home link names the No Fries home page it opens and fields use cream paper', () => {
+        expect(html).toMatch(/<a class="login-brand" href="\/" aria-label="No Fries home">/);
+        expect(html).toMatch(/<strong>No Fries<\/strong><\/div>/);
+        expect(html).not.toMatch(/aria-label="No Fries Managed IT home"/);
         const css = fs.readFileSync(path.join(__dirname, '../style.css'), 'utf8');
         const fields = css.match(/\.contact-form input, \.contact-form textarea \{[^}]+\}/);
         expect(fields).not.toBeNull();
@@ -168,6 +168,7 @@ describe('contact form progressive enhancement', () => {
     function browser(attachFails = false, response, availability = async () => ({ available: true })) {
         const send = { disabled: true };
         const status = { textContent: '' };
+        const notice = { hidden: true };
         const values = { ...VALID, website: '' };
         const fetchImpl = jest.fn(async () => response);
         const plausible = jest.fn();
@@ -183,14 +184,14 @@ describe('contact form progressive enhancement', () => {
         };
         const document = {
             body: { dataset: { page: 'contact' } },
-            getElementById: id => ({ 'contact-form': form, 'contact-send': send, 'contact-status': status })[id]
+            getElementById: id => ({ 'contact-form': form, 'contact-send': send, 'contact-status': status, 'contact-unavailable': notice })[id]
         };
         class FormData {
             constructor(target) { expect(target).toBe(form); }
             get(field) { return values[field]; }
         }
         return {
-            send, status, form, values, fetchImpl, plausible,
+            send, status, notice, form, values, fetchImpl, plausible,
             run: () => vm.runInNewContext(script, { document, FormData, fetch: fetchImpl, window: { plausible, enquiryAvailability: availability } }),
             submit: () => submit
         };
@@ -203,6 +204,7 @@ describe('contact form progressive enhancement', () => {
         await page.run();
         expect(page.send.disabled).toBe(true);
         expect(page.status.textContent).toContain('Please email hello@nofries.nz');
+        expect(page.notice.hidden).toBe(false);
         const event = { preventDefault: jest.fn() };
         await page.submit()(event);
         expect(event.preventDefault).toHaveBeenCalledTimes(1);
@@ -213,6 +215,7 @@ describe('contact form progressive enhancement', () => {
     test('enables submission only after attaching a handler that cancels native navigation', async () => {
         const page = browser();
         await page.run();
+        expect(page.notice.hidden).toBe(true);
         expect(page.send.disabled).toBe(false);
         const event = { preventDefault: jest.fn() };
         await page.submit()(event);

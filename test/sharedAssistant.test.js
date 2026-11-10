@@ -297,6 +297,24 @@ test('Escape closes the non-modal dialog, returns focus and preserves an unsubmi
     expect(count(h, '/session')).toBe(1); expect(count(h, '/chat')).toBe(0);
 });
 
+test('Escape on the page behind the open chat closes it, unless another dialog or menu owns the key', async () => {
+    const h = harness(); h.launcher.fire('click'); await settle();
+    const pageControl = h.document.createElement('button');
+    const menuOwned = Object.assign(h.document.createElement('button'), { closest: () => ({}) });
+    let prevented = false;
+    h.document.fire('keydown', { key: 'Escape', target: menuOwned, preventDefault() { prevented = true; } }); await settle();
+    expect(h.dialog.open).toBe(true); expect(prevented).toBe(false);
+    h.document.fire('keydown', { key: 'Escape', target: pageControl, defaultPrevented: true, preventDefault() { prevented = true; } }); await settle();
+    expect(h.dialog.open).toBe(true); expect(prevented).toBe(false);
+    h.document.fire('keydown', { key: 'Escape', target: pageControl, isComposing: true, preventDefault() { prevented = true; } }); await settle();
+    expect(h.dialog.open).toBe(true);
+    h.document.fire('keydown', { key: 'Escape', target: pageControl, preventDefault() { prevented = true; } }); await settle();
+    expect(prevented).toBe(true); expect(h.dialog.open).toBe(false); expect(h.document.activeElement).toBe(h.launcher);
+    prevented = false;
+    h.document.fire('keydown', { key: 'Escape', target: pageControl, preventDefault() { prevented = true; } }); await settle();
+    expect(prevented).toBe(false);
+});
+
 test('outside pointer dismissal preserves the page action focus and ignores drags out of the panel', async () => {
     const h = harness(); h.launcher.fire('click'); await settle(); const other = h.element();
     h.document.fire('pointerdown', { target: h.elements.get('assistant-input'), button: 0 });
@@ -344,6 +362,13 @@ test.each(['home', 'dashboard'])('%s reserves mounted, resized and removed dashb
     expect(h.root.properties['--nf-assistant-dashboard-bottom']).toBe('121px');
     h.controller.setPosition({ bottom: 12, right: 8 });
     expect(h.root.properties['--nf-assistant-bottom-offset']).toBe('12px');
+    expect(h.root.properties['--nf-assistant-dashboard-bottom']).toBe('121px');
+    // An in-flow bar scrolled far above, or sitting mid-page, reserves nothing.
+    bounds = { width: 320, height: 75, top: -5000 }; h.geometry.windowResize();
+    expect(h.root.properties['--nf-assistant-dashboard-bottom']).toBe('0px');
+    bounds = { width: 320, height: 75, top: 200 }; h.geometry.windowResize();
+    expect(h.root.properties['--nf-assistant-dashboard-bottom']).toBe('0px');
+    bounds = { width: 320, height: 121, top: 519 }; h.geometry.resize();
     expect(h.root.properties['--nf-assistant-dashboard-bottom']).toBe('121px');
     // The desktop breakpoint hides this same nav; sign-out removes it.
     bounds = { width: 0, height: 0, top: 0 }; h.geometry.windowResize();

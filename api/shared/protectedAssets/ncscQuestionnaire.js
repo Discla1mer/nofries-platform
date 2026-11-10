@@ -9,6 +9,11 @@
     const PLACEHOLDER = '00000000-0000-4000-8000-000000000000';
     const LIMIT = 65536;
     const SAVE_CEILING = 127;
+    // Each save uses one of an assessment's revisions, so answers are never
+    // saved one at a time. Automatic saves wait for a pause in editing and
+    // stop early enough to leave revisions for Save progress and Submit.
+    const AUTOSAVE_IDLE_MS = 45000;
+    const AUTOSAVE_RESERVE = 27;
     const ANSWER_GUIDANCE = {
         yes: 'All parts of this statement are in place across your declared scope.',
         partial: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
@@ -65,7 +70,8 @@
         },
         'NF-NCSC-CC-SV-01-Q1': {
             consider: 'Think about requests to change payments, sign-in details, account recovery or sensitive data. Is the request checked through a trusted route separate from the original message?',
-            example: 'Payment changes are checked using a known phone number, but password and MFA resets are not independently checked. This matches Partial.'
+            example: 'Payment changes are checked using a known phone number, but password and MFA resets are not independently checked. This matches Partial.',
+            notApplicable: 'Not handling payments is not enough to make this whole question Not applicable. Explain why payment or bank-detail changes, password or MFA resets, account recovery and sensitive-data changes are all outside your declared scope. If you are unsure, choose Unknown.'
         },
         'NF-NCSC-CC-AC-01-Q1': {
             consider: 'Check what prevents unapproved or risky programs, scripts, macros and files from running on systems where they could cause serious harm.',
@@ -282,6 +288,8 @@
         const client = options.client;
         const organisationId = options.organisationId;
         const initialAssessmentId = options.initialAssessmentId;
+        // Opened from the first-use action: go straight to the new-assessment step if nothing is saved yet.
+        let startNewWhenEmpty = options.startNew === true && initialAssessmentId === undefined && options.presentationMode === 'editable';
         if (!metadata || metadata.schemaVersion !== 1 || !Array.isArray(metadata.questions) || !metadata.questions.length ||
             initialAssessmentId !== undefined && (typeof initialAssessmentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(initialAssessmentId)) ||
             !client || !['list', 'read', 'create', 'save', 'submit', 'normaliseCommand', 'commandByteLength'].every(function (key) { return typeof client[key] === 'function'; })) {
@@ -338,6 +346,9 @@
         // editing from or leaving it never sends a command.
         let reviewing = false;
         let returnToReview = null;
+        let autosaveTimer = null;
+        const autosaveIdleMs = options.autosaveIdleMs === undefined ? AUTOSAVE_IDLE_MS : options.autosaveIdleMs;
+        const autosaveEnabled = Number.isFinite(autosaveIdleMs) && autosaveIdleMs > 0;
         const controller = { requestLeave: requestLeave, destroy: destroy };
         mounted.set(root, controller);
         root.replaceChildren(); root.classList.add('ncsc-questionnaire');
@@ -429,18 +440,21 @@
         function updateQuestionNavigation() {
             if (!live() || !acknowledged || !questionIndex || !questionProgress) return;
             const sealed = acknowledged.status === 'submitted';
-            let answered = 0, resolved = 0;
+            let answered = 0, unresolved = 0;
             questions.forEach(function (question, index) {
                 const value = displayedAnswer(question), option = optionById.get(value.optionId);
                 if (value.optionId !== null) answered += 1;
-                if (['yes', 'partial', 'no'].includes(value.optionId)) resolved += 1;
+                if (['unknown', 'not_applicable'].includes(value.optionId)) unresolved += 1;
                 const label = value.optionId === 'not_applicable' ? 'Pending N/A' : option ? option.label : 'Unanswered';
                 const unsaved = !sealed && !equal(value, savedAnswer(question.id)) ? ' *' : '';
                 questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
             });
             const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length;
-            questionProgress.textContent = (sealed || !editable ? 'Saved answers: ' : 'Local draft: ') + answered + ' of ' + questions.length +
-                ' answers selected · ' + resolved + ' resolved · ' + missing + ' unanswered' + (dirty ? ' · ' + dirty + ' with unsaved changes' : '') + '. Counts are not a score.';
+            // One progress line. What is saved and what is still only in this
+            // browser are stated together so the counts cannot disagree.
+            questionProgress.textContent = answered + ' of ' + questions.length + ' answered' + (missing ? ' · ' + missing + ' to go' : '') +
+                (unresolved ? ' · ' + unresolved + ' to check later (Unknown or pending N/A)' : '') +
+                (sealed ? ' · submitted' : !editable ? ' · saved' : dirty ? ' · ' + dirty + ' not saved yet' : ' · all saved') + '.';
             if (navigationSummary) navigationSummary.textContent = 'Question ' + (activeQuestion + 1) + ' of ' + questions.length + ' · ' + missing + ' unanswered';
             if (nextUnanswered) nextUnanswered.disabled = unansweredIndex(activeQuestion) === -1;
             if (nextUnresolved) nextUnresolved.disabled = unresolvedIndex(activeQuestion) === -1;
@@ -570,11 +584,11 @@
         function updateStatus() {
             syncUnloadWarning();
             if (!live() || !status) return;
-            const saved = acknowledged ? 'Saved revision ' + acknowledged.revision + '. ' + acknowledged.progress.answered + ' of ' + acknowledged.progress.total + ' answered. ' : '';
+            const saved = acknowledged ? 'Saved revision ' + acknowledged.revision + '. ' : '';
             const dirty = dirtyEntries().length;
             // Keep draft feedback beside Save so changing status text cannot move its pointer target.
             status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
-            status.textContent = statusText || (busy ? 'Operation in progress. Saving. ' + saved : loading ?
+            status.textContent = statusText || (busy ? 'Saving your answers. ' + saved : loading ?
                 view === 'assessment' && !acknowledged ? 'Loading the selected assessment.' : 'Loading assessments.'
                 : saved + (dirty ? dirty + (dirty === 1 ? ' answer has' : ' answers have') + ' unsaved changes.' : ''));
             if (saveStatus && root.contains(saveStatus)) saveStatus.textContent = status.textContent;
@@ -585,8 +599,33 @@
         }
         function edited() {
             if (!pending && !busy && !conflict) statusText = '';
-            updateStatus();
+            updateStatus(); scheduleAutosave();
         }
+        function cancelAutosave() { if (autosaveTimer !== null) { clearTimeout(autosaveTimer); autosaveTimer = null; } }
+        function scheduleAutosave() {
+            cancelAutosave();
+            if (!autosaveEnabled || !live()) return;
+            autosaveTimer = setTimeout(function () { autosaveTimer = null; autosave(); }, autosaveIdleMs);
+            if (autosaveTimer && typeof autosaveTimer.unref === 'function') autosaveTimer.unref();
+        }
+        // Silent: an automatic save never shows validation messages, opens a
+        // dialog or sends a draft the person could not save by hand.
+        function canAutosave() {
+            if (!autosaveEnabled || !live() || !editable || !acknowledged || acknowledged.status === 'submitted' || view !== 'assessment' ||
+                busy || pending || conflict || !currentChecked || reviewing || leave || !dirtyEntries().length ||
+                SAVE_CEILING - acknowledged.revision <= AUTOSAVE_RESERVE) return false;
+            return questions.every(function (question) {
+                const value = drafts.get(question.id).value, option = optionById.get(value.optionId);
+                return !option || option.applicable || !!value.rationale && validText(value.rationale.text);
+            });
+        }
+        function autosave() {
+            cancelAutosave();
+            if (!canAutosave()) return;
+            saveAll(false).then(function () { if (live() && dirtyEntries().length) scheduleAutosave(); }, function () {});
+        }
+        function autosaveWhenHidden() { if (doc.visibilityState === 'hidden') autosave(); }
+        if (autosaveEnabled && typeof doc.addEventListener === 'function') doc.addEventListener('visibilitychange', autosaveWhenHidden);
         function returnToList() {
             abortRequests(); epoch += 1; loading = false;
             acknowledged = null; selected = null; drafts.clear(); assistanceNotes.clear(); reviewing = false; returnToReview = null;
@@ -686,7 +725,7 @@
             if (!live() || loading) return;
             const previousIds = new Set(summaries.map(function (item) { return item.assessmentId; }));
             let ownsFocus = append && doc.activeElement === root.querySelector('[id="ncsc-assessment-more"]');
-            let appended = false;
+            let appended = false, autoStarted = false;
             function releaseFocus() { ownsFocus = false; }
             // An old empty page cannot establish that a fresh list is empty.
             // Failed replacement reads must retain an explicit retry path.
@@ -703,12 +742,15 @@
                 result.assessments.forEach(function (item) { map.set(item.assessmentId, copy(item)); });
                 summaries = Array.from(map.values()); nextAfter = result.nextAfterAssessmentId; listLoaded = true;
                 appended = append;
+                if (startNewWhenEmpty && !append && view === 'list' && !summaries.length) { view = 'create'; declaration = ''; errors = []; autoStarted = true; }
+                startNewWhenEmpty = false;
             } catch (error) { if (live(expected)) fixedFailure(error); }
             finally {
                 heading.removeEventListener('blur', releaseFocus);
                 if (live(expected)) {
                     const restorePageFocus = ownsFocus && doc.activeElement === heading && view === 'list' && !leave;
                     loading = false; render();
+                    if (autoStarted) { const scope = content.querySelector('textarea'); if (scope) scope.focus(); }
                     if (restorePageFocus) {
                         const list = root.querySelector('.ncsc-assessment-list');
                         const firstNew = appended && list && Array.from(list.querySelectorAll('button')).find(function (control) {
@@ -760,13 +802,11 @@
         function renderAssessment() {
             const renderedEpoch = epoch;
             const sealed = acknowledged.status === 'submitted';
-            const progress = acknowledged.progress;
-            content.append(node('p', 'ncsc-saved-progress', 'Saved responses: ' + progress.answered + ' of ' + progress.total + ' selected; ' + progress.missing + ' unanswered; ' + progress.unknown + ' Unknown; ' + progress.notApplicableClaims + ' pending N/A claims.'));
-            content.append(node('p', 'dashboard-muted', 'Saved resolved answers: ' + (progress.answered - progress.unknown - progress.notApplicableClaims) + ' of ' + progress.total + ' (Yes, Partial or No). Unknown and pending N/A are saved responses but remain unresolved.'));
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
             const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description)); content.append(declarationPanel);
             if (sealed) {
-                content.append(node('p', 'ncsc-sealed', 'Submitted ' + acknowledged.submission.submittedAt + ' at revision ' + acknowledged.submission.revision + '. Answers below are the saved, read-only submission.'));
+                const sealedNote = node('p', 'ncsc-sealed', 'Submitted ' + localDate(acknowledged.submission.submittedAt) + '. Your results are below, followed by your read-only answers.');
+                sealedNote.id = 'ncsc-sealed'; content.append(sealedNote);
                 renderResults(acknowledged.submission.results);
                 if (dirtyEntries().length) {
                     const unsent = node('details', 'ncsc-warning'); unsent.append(node('summary', '', 'Unsubmitted local changes (' + dirtyEntries().length + ')'));
@@ -791,7 +831,7 @@
             index.value = String(activeQuestion);
             index.addEventListener('change', function () { const i = Number(index.value); if (live(renderedEpoch) && index.parentElement === content && Number.isInteger(i) && i >= 0 && i < questions.length) { activeQuestion = i; renderQuestion(); } });
             content.append(indexLabel, index);
-            const indexHelp = node('p', 'dashboard-muted', 'The full question is below. * marks unsaved changes.');
+            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable ? ' Answers save automatically after a short pause.' : ''));
             indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
@@ -918,7 +958,9 @@
             }
             metric('Reported implementation', results.attainment, 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
             metric('Resolved answers', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
-            metric('Supporting evidence', results.substantiated, 'Current substantiated evidence coverage. Tested coverage: ' + results.tested + '. Confidence is not assessed. Self-attested answers alone do not demonstrate effectiveness.');
+            if (results.substantiated === '0.0%' && results.tested === '0.0%') {
+                metric('Supporting evidence', 'None recorded', 'No supporting evidence has been recorded for this submission, so these results reflect your answers only. Confidence is not assessed.');
+            } else metric('Supporting evidence', results.substantiated, 'Current substantiated evidence coverage. Tested coverage: ' + results.tested + '. Confidence is not assessed. Self-attested answers alone do not demonstrate effectiveness.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: No comparison available; changes require comparable assessment versions and scope.'));
             panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Pending N/A claims: ' + results.pending + '.'));
             panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. N/A stays in the denominator unless formally approved; N/A approval is not available in this journey. This is a No Fries calculation, not an NCSC score.'));
@@ -945,7 +987,13 @@
         }
         function renderNextSteps(panel) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Gaps to work through'));
+            const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(savedAnswer(question.id).optionId); }).length; };
+            const toFix = countOf(['no', 'partial']), toCheck = countOf(['unknown', 'not_applicable']);
+            const plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
+            // One plain verdict before any percentages.
+            if (toFix || toCheck) section.append(node('p', 'ncsc-verdict', 'You have ' + plural(toFix, 'gap', 'gaps') + ' to fix and ' + plural(toCheck, 'answer', 'answers') + ' to check.' + (toFix + toCheck > 3 ? ' Start with the first three below.' : '')));
             section.append(node('p', '', 'Start with the gaps you reported, then check what you are unsure about with your IT provider. The list is grouped by your answer (No, then Partial, then Unknown, then Not applicable). It is not ranked by risk or urgency.'));
+            if (toCheck) section.append(node('p', 'dashboard-muted', 'No IT provider? Ask whoever looks after your computers and accounts, or a local IT support business, to check these with you.'));
             const list = node('ol'), summary = ['Cyber security assessment', 'Scope: ' + acknowledged.scopePopulation.description, 'Submitted: ' + localDate(acknowledged.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
             ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
                 questions.filter(function (question) { return savedAnswer(question.id).optionId === optionId; }).forEach(function (question) {
@@ -964,7 +1012,7 @@
             const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
             const copy = button('Copy summary', function () {
                 const clipboard = win && win.navigator && win.navigator.clipboard;
-                const fallback = function () { if (typeof input.select === 'function') input.select(); copied.textContent = 'Summary selected. Press Ctrl+C or Cmd+C to copy it.'; };
+                const fallback = function () { input.focus(); if (typeof input.select === 'function') input.select(); copied.textContent = 'Summary selected. Press Ctrl+C or Cmd+C to copy it.'; };
                 if (!clipboard || typeof clipboard.writeText !== 'function') { fallback(); return; }
                 Promise.resolve(clipboard.writeText(input.value)).then(function () { copied.textContent = 'Summary copied.'; }, fallback);
             }, 'dashboard-button dashboard-button-secondary');
@@ -992,7 +1040,7 @@
                 const parts = node('details'); parts.append(node('summary', '', 'What to check')); const checks = node('ul');
                 question.smallBusiness.checks.forEach(function (text) { checks.append(node('li', '', text)); }); parts.append(checks); fieldset.append(parts);
             }
-            fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
+            if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
             const writable = canEdit();
             question.responseOptionIds.forEach(function (id) {
                 const option = optionById.get(id); const label = node('label', 'ncsc-option');
@@ -1019,7 +1067,8 @@
                 const rationale = node('textarea', 'ncsc-textarea'); rationale.id = 'ncsc-rationale-' + question.id; rationale.value = entry.value.rationale ? entry.value.rationale.text : '';
                 rationale.rows = 6; rationale.required = true; rationale.readOnly = !writable;
                 rationale.setAttribute('aria-describedby', 'ncsc-rationale-help-' + question.id);
-                const help = node('p', 'dashboard-muted', 'Explain why this does not apply, in up to 4,000 characters. This remains unresolved and included in the score denominator unless formally approved. N/A approval is not available in this journey.'); help.id = 'ncsc-rationale-help-' + question.id;
+                const scopeHelp = writable && inputGuidance && inputGuidance.notApplicable ? inputGuidance.notApplicable + ' ' : '';
+                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. This remains unresolved and included in the score denominator unless formally approved. N/A approval is not available in this journey.'); help.id = 'ncsc-rationale-help-' + question.id;
                 rationale.addEventListener('input', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit()) return;
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });
@@ -1090,16 +1139,15 @@
         }
         function renderAssistance(question, writable) {
             if (acknowledged.status === 'submitted') assistanceNotes.clear();
-            const panel = node('details', 'ncsc-guidance');
-            panel.append(node('summary', '', 'Help me answer this question'));
-            panel.append(node('p', '', question.guidance && question.guidance.summary || question.prompt));
-            panel.append(node('p', 'dashboard-muted', 'Describe what actually happens, who manages it, and what information supports it. Unknown is a valid answer.'));
-            questionRegion.append(panel);
             const assistant = options.assistance;
-            if (writable && assistant && typeof assistant.suggest === 'function') {
-                panel.append(node('p', 'dashboard-muted', 'AI suggestions need your review and do not verify evidence.'));
-            }
-            if (!writable || !assistant || typeof assistant.suggest !== 'function') {
+            const assisted = writable && assistant && typeof assistant.suggest === 'function';
+            const panel = node('details', 'ncsc-guidance');
+            // Without AI the panel is plain guidance; do not promise help that is switched off.
+            panel.append(node('summary', '', assisted ? 'Help me answer this question' : 'How to answer this question'));
+            panel.append(node('p', '', question.guidance && question.guidance.summary || question.prompt));
+            panel.append(node('p', 'dashboard-muted', 'Describe what actually happens, who manages it, and what information supports it. Unknown is a valid answer.' + (assisted ? ' AI suggestions need your review and do not verify evidence.' : '')));
+            questionRegion.append(panel);
+            if (!assisted) {
                 panel.append(node('p', 'dashboard-muted', 'AI assistance and document interpretation are not enabled in this assessment. You can still use the guidance and answer manually.'));
                 return;
             }
@@ -1180,6 +1228,8 @@
             if (!live()) return;
             const index = content.querySelector('select'); if (index) index.value = String(activeQuestion);
             renderQuestion(); const legend = questionRegion.querySelector('legend'); legend.tabIndex = -1; legend.focus();
+            // Navigation is often pressed from below the question; bring the new question into view.
+            if (typeof questionRegion.scrollIntoView === 'function') questionRegion.scrollIntoView({ block: 'start' });
         }
         function validateDraft(requireComplete) {
             errors = [];
@@ -1390,6 +1440,11 @@
                     const restoreSave = operation.restoreSave && doc.activeElement === saveStatus;
                     busy = false; render();
                     if (restoreSave && !pending && !conflict) { const save = root.querySelector('[id="ncsc-save"]'); if (save && !save.disabled) save.focus({ preventScroll: true }); }
+                    if (!failed && command.action === 'submit' && !pending && !conflict && acknowledged && acknowledged.status === 'submitted') {
+                        // Confirm the submission where the person is looking, not only in an off-screen heading.
+                        const sealedNote = root.querySelector('[id="ncsc-sealed"]');
+                        if (sealedNote) { sealedNote.tabIndex = -1; sealedNote.focus({ preventScroll: true }); if (typeof sealedNote.scrollIntoView === 'function') sealedNote.scrollIntoView({ block: 'start' }); }
+                    }
                     if (focusFailure) { const feedback = status.hidden && saveStatus && root.contains(saveStatus) ? saveStatus : status; feedback.tabIndex = -1; feedback.focus({ preventScroll: true }); }
                 }
             }
@@ -1422,15 +1477,15 @@
         }
         function renderPending() {
             const panel = node('section', 'ncsc-warning');
-            panel.append(node('h3', '', busy ? 'Operation in progress' : 'Operation unconfirmed'), node('p', '', 'The exact operation is retained in this view. Leaving cannot discard it while its result is unknown.'));
-            if (!busy) panel.append(button('Retry same operation', function () { if (pending && !busy) perform(pending.command, pending.captures, true); }));
+            panel.append(node('h3', '', busy ? 'Saving your answers' : 'We could not confirm the save'), node('p', '', busy ? 'Please wait and do not submit again. Your answers stay on this page until the save finishes.' : 'Your answers are still on this page. Use the retry button below; do not start again.'));
+            if (!busy) panel.append(button('Try the save again', function () { if (pending && !busy) perform(pending.command, pending.captures, true); }));
             content.append(panel);
         }
         function renderConflict() {
-            const panel = node('section', 'ncsc-warning'); panel.append(node('h3', '', 'Saved answers need review'), node('p', '', 'Your unsaved answers are retained. Choose whether to reapply them to the current saved revision or use the saved answers.'));
+            const panel = node('section', 'ncsc-warning'); panel.append(node('h3', '', 'These answers were changed somewhere else'), node('p', '', 'Someone saved newer answers to this assessment, in another tab or on another device, after you opened it. Your unsaved answers are still here.'), node('p', '', 'Keep my answers puts your answers on top of the newer saved ones so you can review and save them. Use saved answers drops your unsaved changes.'));
             panel.append(button('Reload current saved answers', async function () { const expected = epoch; await refreshCurrent(true, expected); if (live(expected)) render(); }));
             if (acknowledged.status !== 'submitted') {
-                const keep = button('Keep my draft on current revision', function () { if (!currentChecked) return; conflict = false; statusText = 'Draft retained on the current revision. Review it and save explicitly.'; render(); });
+                const keep = button('Keep my answers', function () { if (!currentChecked) return; conflict = false; statusText = 'Your answers are kept on top of the newer saved ones. Review them, then save.'; render(); });
                 keep.disabled = !currentChecked; panel.append(keep);
             }
             panel.append(button('Use saved answers', function () { resetDrafts(); conflict = !currentChecked; errors = []; statusText = 'Showing saved answers.'; render(); }, 'dashboard-text-button')); content.append(panel);
@@ -1504,7 +1559,8 @@
         }
         function destroy() {
             if (disposed) return;
-            disposed = true; epoch += 1; abortRequests();
+            disposed = true; epoch += 1; abortRequests(); cancelAutosave();
+            if (autosaveEnabled && typeof doc.removeEventListener === 'function') doc.removeEventListener('visibilitychange', autosaveWhenHidden);
             syncUnloadWarning();
             submitPrompt = false; submitLocked = false;
             if (leave) { leave.resolve(false); leave = null; }
