@@ -11,8 +11,50 @@
     const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
     }).format(new Date(value)) + ' NZ time';
+    const shortDate = value => new Intl.DateTimeFormat('en-NZ', {
+        day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Pacific/Auckland'
+    }).format(new Date(value));
     function sameProfile(actual, expected) {
         return actual && expected && Object.keys(expected).every(key => actual[key] === expected[key]);
+    }
+    // Trend and comparison derive only from figures the submitted-result
+    // validator already accepted. The displayed percentage is authoritative, so
+    // tenths are recovered from it rather than recomputed; scoring maths is never
+    // repeated here. A null means there is no comparable overall score.
+    function parseScoreTenths(display) {
+        if (typeof display !== 'string') return null;
+        const match = /^(\d+(?:\.\d)?)%$/.exec(display.trim());
+        return match ? Math.round(parseFloat(match[1]) * 10) : null;
+    }
+    function overallBounds(result) {
+        if (!result || typeof result.attainment !== 'string' || result.attainment === 'Not scored') return null;
+        const parts = result.attainment.split('–');
+        const lower = parseScoreTenths(parts[0]), upper = parseScoreTenths(parts[parts.length - 1]);
+        if (lower === null || upper === null || lower > upper) return null;
+        return { lower, upper };
+    }
+    // Pure comparison over chronological points; no network, no scoring. The
+    // previous point is the submission immediately before the selected one.
+    function trendModel(points, selectedId) {
+        if (!Array.isArray(points) || !points.length) return null;
+        let index = points.findIndex(point => point.assessmentId === selectedId);
+        if (index < 0) index = points.length - 1;
+        const current = points[index], previous = index > 0 ? points[index - 1] : null;
+        const values = points.map(point => point.lower);
+        return { current, previous, index, count: points.length,
+            delta: previous ? current.lower - previous.lower : null,
+            min: Math.min.apply(null, values), max: Math.max.apply(null, values) };
+    }
+    // Plot coordinates for a mini line chart on a fixed 0-100% scale, so small
+    // changes are never exaggerated by a truncated axis.
+    function sparklineGeometry(points, width, height, pad) {
+        const inner = { w: width - pad * 2, h: height - pad * 2 }, n = points.length;
+        const coords = points.map((point, i) => ({
+            x: n <= 1 ? width / 2 : pad + (inner.w * i) / (n - 1),
+            y: pad + inner.h * (1 - Math.max(0, Math.min(1000, point.lower)) / 1000),
+            lower: point.lower, assessmentId: point.assessmentId }));
+        const d = coords.map((coord, i) => (i === 0 ? 'M' : 'L') + coord.x.toFixed(1) + ' ' + coord.y.toFixed(1)).join(' ');
+        return { coords, d };
     }
 
     // Read-only presentation over the existing authorised client. A score is
@@ -32,10 +74,20 @@
         let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null;
         let selected = initialAssessmentId || '', detail = null, loading = false, message = '', denied = false;
         let loaded = false, retry = null, explanationController = null;
+        // Trend/compare reads the organisation's other submitted assessments on
+        // explicit request only; it never auto-fetches and is bound to the epoch
+        // it loaded under, so any selection or refresh invalidates it.
+        let history = null, historyEpoch = -1, historyLoading = false, historyFailed = false;
+        const HISTORY_LIMIT = 24, SVG_NS = 'http://www.w3.org/2000/svg';
         function live(token) { return !disposed && (token === undefined || token === epoch); }
         function node(tag, cls, text) {
             const value = doc.createElement(tag); if (cls) value.className = cls;
             if (text !== undefined) value.textContent = String(text); return value;
+        }
+        function svgNode(tag, attrs) {
+            const value = doc.createElementNS(SVG_NS, tag);
+            if (attrs) Object.keys(attrs).forEach(key => value.setAttribute(key, String(attrs[key])));
+            return value;
         }
         function button(label, action) {
             const control = node('button', 'dashboard-button', label); control.type = 'button';
@@ -256,6 +308,7 @@
             const completionMetric = metric('Resolved answers', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + result.pending + ' pending N/A claims. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             const evidenceMetric = metric('Supporting evidence', result.substantiated, 'Coverage recorded in this saved assessment. Tested or observed coverage: ' + result.tested + '. This assessment journey does not yet accept evidence uploads or reviews. Zero coverage means evidence has not been supplied here; confidence is not assessed.');
             root.append(metrics);
+            root.append(renderTrend());
             const domains = node('section', 'picture-domains');
             domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show the reported lower bound; the striped extension shows uncertainty. The range is not achieved performance.'));
             result.domains.forEach(domain => {
@@ -380,8 +433,11 @@
             follow.append(node('p', 'dashboard-muted', 'A question can appear in more than one category. Counts are not a combined total or a risk ranking. Questions follow the profile order; no action is assigned or evidence uploaded here.'));
             root.append(follow);
             const limits = node('section', 'picture-limitations');
+            const trendSentence = submittedRows().length >= 2
+                ? 'Trend and comparison across your submitted assessments are shown above, using each assessment’s reported implementation lower bound; scores from different scopes are not directly comparable.'
+                : 'Trend: submit another assessment to compare your reported implementation over time.';
             limits.append(node('h3', '', 'How to read this picture'), node('p', '',
-                'Risk priority: not calculated. Trend: no comparable assessment selected. A high implementation score does not establish control effectiveness or low business risk.'),
+                'Risk priority: not calculated. ' + trendSentence + ' A high implementation score does not establish control effectiveness or low business risk.'),
                 node('p', '', 'This is a self-reported gap assessment, not an audit, assurance opinion or certification. Reports and findings must be reviewed and linked before they can support evidence confidence.'));
             root.append(limits);
             const calculation = node('details', 'picture-calculation');
@@ -398,7 +454,7 @@
         async function load(append) {
             if (!live() || denied || loading) return;
             const savedFocus = captureFocus();
-            abort(); const token = ++epoch; loading = true; message = ''; detail = null; retry = null; render();
+            abort(); const token = ++epoch; loading = true; message = ''; detail = null; retry = null; resetHistory(); render();
             try {
                 const response = await call('list', { limit: 50, afterAssessmentId: append ? after : null }, token);
                 if (!response) return;
@@ -417,7 +473,7 @@
         }
         async function read(assessmentId) {
             if (!live() || denied || !rows.some(row => row.assessmentId === assessmentId) && assessmentId !== initialAssessmentId && assessmentId !== selected) return;
-            abort(); const token = ++epoch; const savedFocus = captureFocus(); selected = assessmentId; detail = null; message = ''; retry = null; loading = true; render();
+            abort(); const token = ++epoch; const savedFocus = captureFocus(); selected = assessmentId; detail = null; message = ''; retry = null; loading = true; resetHistory(); render();
             try {
                 const response = await call('read', assessmentId, token); if (!response) return;
                 const value = response.assessment;
@@ -434,14 +490,148 @@
             } catch (error) { if (live(token)) failure(error, () => read(assessmentId)); }
             finally { if (live(token)) { loading = false; render(); restoreFocus(savedFocus); } }
         }
+        function resetHistory() { history = null; historyEpoch = -1; historyLoading = false; historyFailed = false; }
+        function submittedRows() { return rows.filter(row => row.status === 'submitted'); }
+        // Read the overall score of each accessible submitted assessment, reusing
+        // the already-authorised selected record and freshly authorising the rest.
+        // Never mutates the current selection; a failed point is skipped, a failed
+        // batch degrades the trend without clearing the saved result.
+        async function loadHistory() {
+            if (!live() || denied || loading || historyLoading) return;
+            const token = epoch, hadFocus = doc.activeElement && root.contains(doc.activeElement);
+            historyLoading = true; historyFailed = false; render();
+            const submitted = submittedRows(), limited = submitted.slice(0, HISTORY_LIMIT);
+            if (detail && detail.status === 'submitted' && !limited.some(row => row.assessmentId === detail.assessmentId)) {
+                const chosen = submitted.find(row => row.assessmentId === detail.assessmentId);
+                if (chosen) limited.push(chosen);
+            }
+            const points = [];
+            try {
+                for (const row of limited) {
+                    let record = detail && detail.assessmentId === row.assessmentId ? detail : null;
+                    if (!record) {
+                        const response = await call('read', row.assessmentId, token);
+                        if (!response) return;
+                        record = response.assessment;
+                    }
+                    if (!record || record.assessmentId !== row.assessmentId || record.moduleId !== metadata.moduleId ||
+                        !sameProfile(record.profileRef, metadata.profileRef) || record.status !== 'submitted') continue;
+                    const bounds = overallBounds(questionnaire.resultModel(record, metadata, organisationId));
+                    if (bounds) points.push({ assessmentId: record.assessmentId, submittedAt: record.updatedAt,
+                        lower: bounds.lower, upper: bounds.upper });
+                }
+                if (!live(token)) return;
+                points.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt) || a.assessmentId.localeCompare(b.assessmentId));
+                history = points; historyEpoch = token;
+            } catch (_) { if (live(token)) historyFailed = true; }
+            finally {
+                if (live(token)) {
+                    historyLoading = false; render();
+                    if (hadFocus && history && historyEpoch === token) {
+                        const heading = root.querySelector('.picture-trend');
+                        const target = heading && heading.querySelector('h3');
+                        if (target) { target.tabIndex = -1; target.focus(); }
+                    }
+                }
+            }
+        }
+        function renderTrend() {
+            const display = tenths => (tenths / 10).toFixed(1) + '%';
+            const section = node('section', 'picture-trend');
+            section.append(node('h3', '', 'Trend and comparison'));
+            const submitted = submittedRows();
+            if (submitted.length <= 1) {
+                section.append(node('p', 'dashboard-muted',
+                    'Submit another assessment to see your trend. This is your only submitted assessment, so there is nothing to compare yet.'));
+                return section;
+            }
+            if (historyEpoch !== epoch || !history) {
+                section.append(node('p', 'dashboard-muted',
+                    'Compare this assessment with your other submitted assessments. Loading reads each saved assessment your access allows; scores from different scopes are not combined.'));
+                if (historyFailed) section.append(node('p', 'picture-status',
+                    'The trend could not be loaded. Retry to read your submitted assessments again.'));
+                if (historyLoading) {
+                    const status = node('p', 'picture-status', 'Reading your submitted assessments…');
+                    status.setAttribute('role', 'status'); section.append(status);
+                }
+                const action = button(historyFailed ? 'Retry trend' : 'Compare to previous and show trend',
+                    () => { if (!loading && !historyLoading) loadHistory(); });
+                action.classList.add('dashboard-button-secondary'); action.disabled = loading || historyLoading;
+                section.append(action);
+                return section;
+            }
+            const model = trendModel(history, detail.assessmentId);
+            if (!model) { section.append(node('p', 'dashboard-muted',
+                'No comparable overall scores are available across your submitted assessments.')); return section; }
+            const compare = node('div', 'picture-trend-compare');
+            const current = node('p', 'picture-trend-current');
+            current.append(node('span', 'picture-trend-label', 'Reported implementation (lower bound)'),
+                node('strong', 'picture-large', display(model.current.lower)));
+            compare.append(current);
+            if (model.previous) {
+                const delta = model.delta;
+                const direction = delta > 0 ? 'up' : delta < 0 ? 'down' : 'none';
+                const arrow = direction === 'up' ? '▲' : direction === 'down' ? '▼' : '●';
+                const phrase = delta > 0 ? (delta / 10).toFixed(1) + ' points higher than the previous assessment'
+                    : delta < 0 ? (Math.abs(delta) / 10).toFixed(1) + ' points lower than the previous assessment'
+                    : 'No change from the previous assessment';
+                const badge = node('span', 'picture-trend-delta picture-trend-delta-' + direction);
+                const sign = delta > 0 ? '+' : delta < 0 ? '−' : '±';
+                const glyph = node('span', 'picture-trend-arrow', arrow); glyph.setAttribute('aria-hidden', 'true');
+                badge.append(glyph, node('span', '', sign + Math.abs(delta / 10).toFixed(1)));
+                const vs = node('p', 'picture-trend-vs');
+                vs.append(badge, node('span', '', ' ' + phrase + ' (' + display(model.previous.lower) +
+                    '), submitted ' + shortDate(model.previous.submittedAt) + '.'));
+                compare.append(vs);
+            } else {
+                compare.append(node('p', 'dashboard-muted',
+                    'This is your earliest submitted assessment, so there is no previous assessment to compare. Later submissions appear in the trend.'));
+            }
+            section.append(compare);
+            const summaryText = 'Trend of reported implementation lower bound across ' + model.count +
+                ' submitted assessments, from ' + display(history[0].lower) + ' on ' + shortDate(history[0].submittedAt) +
+                ' to ' + display(history[history.length - 1].lower) + ' on ' + shortDate(history[history.length - 1].submittedAt) +
+                '. Selected assessment: ' + display(model.current.lower) + '.';
+            const width = 320, height = 56, pad = 6, geo = sparklineGeometry(history, width, height, pad);
+            const chart = svgNode('svg', { viewBox: '0 0 ' + width + ' ' + height, class: 'picture-trend-sparkline',
+                role: 'img', focusable: 'false' });
+            chart.setAttribute('aria-label', summaryText);
+            if (geo.coords.length > 1) chart.append(svgNode('path', { d: geo.d, class: 'picture-trend-line', fill: 'none' }));
+            geo.coords.forEach(coord => {
+                const selectedPoint = coord.assessmentId === detail.assessmentId;
+                chart.append(svgNode('circle', { cx: coord.x.toFixed(1), cy: coord.y.toFixed(1), r: selectedPoint ? 4 : 2.5,
+                    class: selectedPoint ? 'picture-trend-dot picture-trend-dot-selected' : 'picture-trend-dot' }));
+            });
+            section.append(chart, node('p', 'picture-trend-summary dashboard-muted', summaryText));
+            const table = node('table'), thead = node('thead'), head = node('tr');
+            head.append(node('th', '', 'Submitted'), node('th', '', 'Reported implementation (lower)'), node('th', '', 'Range'));
+            thead.append(head); table.append(thead);
+            const body = node('tbody');
+            history.forEach(point => {
+                const row = node('tr');
+                row.append(node('td', '', shortDate(point.submittedAt)), node('td', '', display(point.lower)),
+                    node('td', '', point.upper !== point.lower ? display(point.lower) + '–' + display(point.upper) : display(point.lower)));
+                body.append(row);
+            });
+            table.append(body);
+            const data = node('details', 'picture-trend-data');
+            data.append(node('summary', '', 'Trend values'), table); section.append(data);
+            if (submitted.length > model.count) section.append(node('p', 'dashboard-muted',
+                'Showing your ' + model.count + ' most recent comparable submitted assessments.'));
+            if (after !== null) section.append(node('p', 'dashboard-muted',
+                'More saved assessments are available. Load more to include them in the trend.'));
+            section.append(node('p', 'dashboard-muted',
+                'Comparison uses each assessment’s reported implementation lower bound. Scores from different scopes are not directly comparable.'));
+            return section;
+        }
         const controller = { requestLeave(commit) {
             if (!live()) return Promise.resolve(false);
             if (typeof commit === 'function') commit(); return Promise.resolve(true);
         }, destroy() {
-            if (disposed) return; disposed = true; epoch++; abort(); rows = []; detail = null; selected = ''; retry = null;
+            if (disposed) return; disposed = true; epoch++; abort(); rows = []; detail = null; selected = ''; retry = null; resetHistory();
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
         } };
         mounted.set(root, controller); load(false); return controller;
     }
-    return Object.freeze({ mount });
+    return Object.freeze({ mount, overallBounds, trendModel, sparklineGeometry });
 }));

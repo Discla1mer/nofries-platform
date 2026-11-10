@@ -826,3 +826,102 @@ test('denial and detached result controls cannot open a plan or change follow-up
         dom.controller.destroy();
     }
 });
+
+
+const questionnaire = require('../api/shared/protectedAssets/ncscQuestionnaire');
+const lowerTenths = record => picture.overallBounds(questionnaire.resultModel(record,
+    buildFixtures().metadata, buildFixtures().tenants[0].model.context.organisationId)).lower;
+
+test('overallBounds recovers the exact displayed reported-implementation range without recomputing scores', () => {
+    assert.deepEqual(picture.overallBounds({ attainment: '46.4%–60.7%' }), { lower: 464, upper: 607 });
+    assert.deepEqual(picture.overallBounds({ attainment: '100.0%' }), { lower: 1000, upper: 1000 });
+    assert.equal(picture.overallBounds({ attainment: 'Not scored' }), null);
+    assert.equal(picture.overallBounds({ attainment: '12' }), null);
+    assert.equal(picture.overallBounds(null), null);
+});
+
+test('trendModel compares the selected point with the one submitted immediately before it', () => {
+    const points = [{ assessmentId: 'a', lower: 400 }, { assessmentId: 'b', lower: 460 }, { assessmentId: 'c', lower: 450 }];
+    const middle = picture.trendModel(points, 'b');
+    assert.equal(middle.index, 1); assert.equal(middle.delta, 60);
+    assert.equal(middle.previous.lower, 400); assert.equal(middle.current.lower, 460);
+    assert.equal(middle.min, 400); assert.equal(middle.max, 460);
+    assert.equal(picture.trendModel(points, 'a').previous, null);
+    assert.equal(picture.trendModel(points, 'a').delta, null);
+    assert.equal(picture.trendModel(points, 'missing').index, 2);
+    assert.equal(picture.trendModel([], 'a'), null);
+});
+
+test('sparklineGeometry maps the fixed 0-100% scale and centres a single point', () => {
+    const two = picture.sparklineGeometry([{ assessmentId: 'a', lower: 0 }, { assessmentId: 'b', lower: 1000 }], 320, 56, 6);
+    assert.equal(two.coords.length, 2);
+    assert.equal(two.coords[0].x, 6); assert.equal(two.coords[1].x, 314);
+    assert.equal(two.coords[0].y, 50); assert.equal(two.coords[1].y, 6);
+    assert.ok(two.d.startsWith('M6.0 50.0 L314.0 6.0'));
+    const one = picture.sparklineGeometry([{ assessmentId: 'a', lower: 500 }], 320, 56, 6);
+    assert.equal(one.coords.length, 1); assert.equal(one.coords[0].x, 160); assert.ok(one.d.startsWith('M'));
+});
+
+test('a single submitted assessment shows a graceful trend empty state and no extra reads', async () => {
+    const record = mixed(); let reads = 0;
+    const client = { list: async () => ({ assessments: [record], nextAfterAssessmentId: null }),
+        read: async () => { reads++; return { assessment: record }; } };
+    const dom = setup({ client }); await flush();
+    const trend = dom.root.querySelector('.picture-trend');
+    assert.ok(trend); assert.equal(trend.querySelector('h3').textContent, 'Trend and comparison');
+    assert.match(trend.textContent, /Submit another assessment to see your trend/);
+    assert.equal(trend.querySelectorAll('button').length, 0);
+    assert.equal(dom.root.querySelector('svg'), null);
+    assert.match(dom.root.querySelector('.picture-limitations').textContent, /submit another assessment to compare/);
+    assert.equal(reads, 1);
+    dom.controller.destroy();
+});
+
+test('compare-to-previous and the trend sparkline load only on request and reuse the selected record', async () => {
+    const a = mixed(), b = buildFixtures().tenants[0].assessments.find(record => record.status === 'submitted');
+    const ordered = [a, b].slice().sort((x, y) => x.updatedAt.localeCompare(y.updatedAt));
+    const earliest = ordered[0], latest = ordered[1];
+    let reads = 0, writes = 0;
+    const client = { list: async () => ({ assessments: [a, b], nextAfterAssessmentId: null }),
+        read: async id => { reads++; return { assessment: id === a.assessmentId ? a : b }; },
+        create: () => writes++, save: () => writes++, submit: () => writes++ };
+    const dom = setup({ client, options: { initialAssessmentId: latest.assessmentId } }); await flush();
+    assert.equal(reads, 1);
+    const trend = dom.root.querySelector('.picture-trend');
+    assert.match(dom.root.querySelector('.picture-limitations').textContent, /Trend and comparison across your submitted assessments are shown above/);
+    assert.equal(dom.root.querySelector('svg'), null);
+    click(dom, 'Compare to previous and show trend'); await flush();
+    assert.equal(reads, 2); assert.equal(writes, 0);
+    const loaded = dom.root.querySelector('.picture-trend');
+    const chart = loaded.querySelector('svg');
+    assert.ok(chart); assert.equal(chart.getAttribute('class'), 'picture-trend-sparkline');
+    assert.equal(chart.getAttribute('role'), 'img');
+    assert.match(chart.getAttribute('aria-label'), /Trend of reported implementation lower bound across 2 submitted assessments/);
+    assert.equal(chart.querySelectorAll('path').length, 1);
+    assert.equal(chart.querySelectorAll('circle').length, 2);
+    assert.equal(chart.querySelectorAll('circle').filter(dot => /picture-trend-dot-selected/.test(dot.getAttribute('class') || '')).length, 1);
+    const toDisplay = tenths => (tenths / 10).toFixed(1) + '%';
+    const delta = ((lowerTenths(latest) - lowerTenths(earliest)) / 10).toFixed(1);
+    assert.ok(loaded.textContent.includes(toDisplay(lowerTenths(latest))));
+    assert.ok(loaded.textContent.includes(toDisplay(lowerTenths(earliest))));
+    assert.match(loaded.textContent, new RegExp(delta + ' points (higher|lower) than the previous assessment'));
+    assert.equal(loaded.querySelector('.picture-trend-data').querySelector('tbody').children.length, 2);
+    dom.controller.destroy();
+});
+
+test('changing the selected assessment invalidates a loaded trend back to its request state', async () => {
+    const a = mixed(), b = buildFixtures().tenants[0].assessments.find(record => record.status === 'submitted');
+    const ordered = [a, b].slice().sort((x, y) => x.updatedAt.localeCompare(y.updatedAt));
+    let reads = 0;
+    const client = { list: async () => ({ assessments: [a, b], nextAfterAssessmentId: null }),
+        read: async id => { reads++; return { assessment: id === a.assessmentId ? a : b }; } };
+    const dom = setup({ client, options: { initialAssessmentId: ordered[1].assessmentId } }); await flush();
+    click(dom, 'Compare to previous and show trend'); await flush();
+    assert.ok(dom.root.querySelector('svg'));
+    const readsAfterLoad = reads;
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), ordered[0].assessmentId); await flush();
+    assert.equal(dom.root.querySelector('svg'), null);
+    assert.ok(dom.root.querySelectorAll('button').some(control => control.textContent === 'Compare to previous and show trend'));
+    assert.equal(reads, readsAfterLoad + 1);
+    dom.controller.destroy();
+});
