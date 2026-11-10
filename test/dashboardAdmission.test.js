@@ -87,7 +87,6 @@ const cases = {
     'missing membership': s => { s.input.membershipState.memberships = []; },
     'missing product': s => { s.input.entitlementState.grants = []; },
     'revoked product': s => { s.input.entitlementState.grants[0].status = 'revoked'; },
-    'expired product': s => { s.input.entitlementState.grants[0].validUntil = s.now; },
     'future product': s => { s.input.entitlementState.grants[0].validFrom = '2026-09-06T10:00:00.000Z'; },
     'disabled dashboard': s => { s.input.flags.enabled.dashboard = false; },
     'no eligible modules': s => { registry.modules.forEach(item => { s.input.flags.enabled[item.key] = false; }); },
@@ -129,7 +128,7 @@ test('each request observes committed membership removal and old projections can
     assert.equal(state.calls.filter(call => call === 'loadSnapshot').length, 2);
 });
 
-test('clock sampled after asynchronous snapshot loading rejects the exclusive expiry boundary', async () => {
+test('clock is sampled after asynchronous snapshot loading; a passed recorded end does not deny', async () => {
     const { adapters, state } = admissionFixture();
     const load = adapters.loadSnapshot;
     adapters.loadSnapshot = async (...args) => {
@@ -137,8 +136,12 @@ test('clock sampled after asynchronous snapshot loading rejects the exclusive ex
         state.now = state.input.membershipState.memberships[0].validUntil;
         return snapshot;
     };
-    await denied(() => createDashboardAdmission(adapters)(request));
-    assert.equal(state.calls.at(-1), 'clock');
+    // Accounts do not expire: membership and product continue past validUntil.
+    assert.ok(await createDashboardAdmission(adapters)(request));
+    assert.ok(state.calls.lastIndexOf('clock') > state.calls.lastIndexOf('loadSnapshot'));
+    // The later sample still decides: a clock before the membership update is refused.
+    adapters.loadSnapshot = async (...args) => { const snapshot = await load(...args); state.now = '2000-01-01T00:00:00.000Z'; return snapshot; };
+    await assert.rejects(() => createDashboardAdmission(adapters)(request));
 });
 
 for (const [name, mutate] of Object.entries({
@@ -427,9 +430,10 @@ test('HA01 future product starts exactly at its inclusive lower bound', async ()
     await parity(f, null, 'denied'); f.state.now = CUTOFF; await parity(f);
 });
 
-test('HA02 product expiry is exclusive in actual typed and legacy projections', async () => {
+test('HA02 a product continues past its recorded end in actual typed and legacy projections', async () => {
     const f = admissionFixture(); f.state.input.entitlementState.grants[0].validUntil = CUTOFF;
-    await parity(f); f.state.now = CUTOFF; await parity(f, null, 'denied');
+    await parity(f); f.state.now = CUTOFF; await parity(f); // Accounts do not expire.
+    f.state.input.entitlementState.grants[0].status = 'suspended'; await parity(f, null, 'denied');
 });
 
 test('HA03 only selected advisor expiry removes its otherwise eligible module', async () => {

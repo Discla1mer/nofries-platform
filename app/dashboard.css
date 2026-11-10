@@ -437,3 +437,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 }
 
 .ncsc-verdict { font-size: 1.1rem; font-weight: 600; }
+/* Phones: stack the decorative module code above the label so whole words fit; long words still wrap. */
+@media (max-width: 30rem) {
+    .nofries-dashboard .dashboard-mobile-nav .dashboard-task { flex-direction: column; justify-content: center; gap: .15rem; text-align: center; }
+}

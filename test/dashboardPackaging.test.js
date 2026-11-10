@@ -8,6 +8,7 @@ const { execFileSync } = require('node:child_process');
 const vm = require('node:vm');
 const test = global.test || require('node:test');
 const root = path.resolve(__dirname, '..');
+const effectiveCsp = require('./helpers/effectiveCsp');
 
 // Compare directives and all structural/authorization fields, not optional
 // HTTP header whitespace, closed no-store policy and equivalent robots shorthand compacted for the provider limit.
@@ -16,6 +17,7 @@ function assertEquivalentHeaders(actual, expected) {
         if (entry && typeof entry === 'object' && typeof entry.route === 'string') {
             return { ...entry, allowedRoles: entry.allowedRoles ?? ['anonymous'] };
         }
+        if (key === 'Content-Security-Policy' && typeof entry === 'string') return effectiveCsp(entry);
         if (key === 'X-Robots-Tag' && entry === 'none') return ['noindex', 'nofollow'];
         if (key === 'Cache-Control' && entry === 'private, no-store, max-age=0') return ['no-store'];
         return typeof entry === 'string' && ['Content-Security-Policy', 'Cache-Control', 'X-Robots-Tag'].includes(key)
@@ -541,7 +543,7 @@ test('static CSP inheritance preserves different policies, API headers and unlis
         fs.writeFileSync(sourcePath, JSON.stringify(source));
         execFileSync(process.execPath, [path.join(directory, 'scripts/build-static.js')], { cwd: directory, stdio: 'pipe' });
         const built = JSON.parse(fs.readFileSync(path.join(directory, 'dist/staticwebapp.config.json'), 'utf8'));
-        assert.deepEqual(built.globalHeaders, source.globalHeaders);
+        assertEquivalentHeaders(built.globalHeaders, source.globalHeaders);
         for (const expected of [scope, operator, api, other]) {
             assertEquivalentHeaders(built.routes.find(route => route.route === expected.route), expected);
         }

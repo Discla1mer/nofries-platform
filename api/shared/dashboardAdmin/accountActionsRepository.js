@@ -4,6 +4,7 @@ const { createPostgresDatabase } = require('../database/postgres');
 const { createPostgresDashboardRepository } = require('../appLifecycle/postgresDashboardRepository');
 const { accountActionsPool } = require('./accountActionsPool');
 const { digest, uuid } = require('../appLifecycle/dashboardRuntimeRecords');
+const { verifyRestore } = require('./accountActionsProvenance');
 
 // The canonical repository owns locks, revision comparisons, scoped membership
 // transitions and immutable operation receipts. Recheck native authority before
@@ -26,7 +27,10 @@ function createAccountActionsRepository(pool, clock, guard, authoriseAdministrat
             return result;
         } };
     } };
-    const repository = createPostgresDashboardRepository({ database: createPostgresDatabase({ pool: guarded }), clock, authoriseAdministration });
+    const database = createPostgresDatabase({ pool: guarded });
+    const repository = { ...createPostgresDashboardRepository({ database, clock, authoriseAdministration }),
+        verifyRestore: (selector, snapshot, readTerminal) => database.withTenantTransaction(selector.tenantId,
+            tx => verifyRestore(tx, selector, snapshot, { instanceId: context.instanceId, restoreEpoch: context.restoreEpoch }, readTerminal, clock())) };
     return Object.freeze(Object.fromEntries(Object.entries(repository).map(([key, fn]) =>
         [key, (...args) => pool.run(() => fn(...args))])));
 }

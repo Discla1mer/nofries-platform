@@ -81,14 +81,17 @@ test('delayed consent starts a full fourteen-day term at activation and binds th
     assert.deepEqual(normaliseMembershipState(s.membershipState), s.membershipState);
     assert.ok(Object.isFrozen(r)); assert.ok(Object.isFrozen(s));
 });
-test('starter eligibility has no staff/adviser/provider, evidence, export or AI expansion and expiry preserves the record', () => {
+test('starter eligibility has no staff/adviser/provider, evidence, export or AI expansion and continues past the recorded end', () => {
     const f = fixture(), { nextState: s, activationIntent: r } = f.activate();
     const e = resolveEntitlements(s.entitlementState, s.tenantAggregate, f.preparation.scope, LATER, s.flags);
     assert.equal(e.product.code, 'dashboard_score'); assert.equal(e.modules.cyber_security.eligible, true);
     for (const module of ['evidence', 'board_reports', 'ai_governance', 'it_optimisation', 'services']) assert.equal(e.modules[module].eligible, false);
     assert.equal(e.admissionGranted, false); assert.equal(e.providerAccessGranted, false);
     assert.equal(e.governanceWorkflowEligible, false);
-    assert.equal(resolveEntitlements(s.entitlementState, s.tenantAggregate, f.preparation.scope, r.validUntil, s.flags).product, null);
+    // Accounts do not expire: the same product and limits apply after the recorded 14 days.
+    const later = resolveEntitlements(s.entitlementState, s.tenantAggregate, f.preparation.scope, '2027-01-01T00:00:00.000Z', s.flags);
+    assert.deepEqual(later.product, e.product); assert.equal(later.product.validUntil, r.validUntil);
+    assert.equal(later.product.limits.assessment_runs, 5);
     assert.equal(s.tenantAggregate.organisations[0].recordStatus, 'active');
 });
 test('consultant client activation shares the original term and creates no backdated membership', () => {

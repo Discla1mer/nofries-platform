@@ -120,12 +120,17 @@ test('two accounts share the transport but can read and edit only their own UUID
     assert.equal(blob.calls.writes, writes);
 });
 
-test('anonymous, expired, revoked and mismatched-account requests release no profile and make no writes', async () => {
-    for (const mode of ['anonymous', 'session-expired', 'authority-expired', 'revoked', 'wrong-binding']) {
+test('a passed account end date still releases the active customer\'s own profile', async () => {
+    const h = await fixture(); await h.service().save(h.header, request());
+    h.customer.current.expiresAt = AT;
+    assert.ok(await h.service().read(h.header));
+});
+
+test('anonymous, session-expired, revoked and mismatched-account requests release no profile and make no writes', async () => {
+    for (const mode of ['anonymous', 'session-expired', 'revoked', 'wrong-binding']) {
         const h = await fixture(); await h.service().save(h.header, request());
         if (mode === 'anonymous') h.revoke();
         if (mode === 'session-expired') h.customer.details.expiresAt = new Date(AT).toISOString();
-        if (mode === 'authority-expired') h.customer.current.expiresAt = AT;
         if (mode === 'revoked') h.customer.current.status = 'revoked';
         if (mode === 'wrong-binding') h.customer.current.bindingId = ID(999);
         const before = h.blob.calls.writes, rejection = mode === 'anonymous' ? denied(401, 'luna_profile_unauthenticated') : denied();

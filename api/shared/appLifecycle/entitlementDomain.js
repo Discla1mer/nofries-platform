@@ -199,9 +199,26 @@ function resolveContext(stateInput, aggregate, scopeInput, nowInput, flagsInput)
     const now = timestamp(nowInput), flags = normaliseFlags(flagsInput, scope);
     // resolveOrganisation first validates all ownership fields without defaults.
     const ownerActive = aggregate.tenant.recordStatus === 'active' && organisation.recordStatus === 'active';
-    const live = ownerActive ? state.grants.filter(grant => grant.status === 'active' &&
-        grant.validFrom <= now && now < grant.validUntil) : [];
+    const product = ownerActive ? currentProductGrant(state.grants, now) : null;
+    const live = ownerActive ? state.grants.filter(grant => grant === product || !own(TIERS, grant.code) &&
+        grant.status === 'active' && grant.validFrom <= now && now < grant.validUntil) : [];
     return { state, flags, live, now };
+}
+
+/**
+ * Accounts do not expire (owner decision, 10 November 2026). A dashboard
+ * product's recorded validUntil is retained but no longer ends it: the active
+ * product inside its window applies; otherwise the most recently started
+ * product stays in force, provided it is still active, until a successor
+ * starts. Suspension or revocation still removes it. Service grants keep their
+ * contracted window. Pure: no clock, I/O or normalisation.
+ */
+function currentProductGrant(grants, now) {
+    const started = grants.filter(grant => own(TIERS, grant.code) && grant.validFrom <= now);
+    const inWindow = started.find(grant => grant.status === 'active' && now < grant.validUntil);
+    if (inWindow) return inWindow;
+    const latest = started.reduce((a, b) => a === null || b.validFrom > a.validFrom ? b : a, null);
+    return latest && latest.status === 'active' ? latest : null;
 }
 
 function normaliseFlags(input, scope) {
@@ -289,4 +306,4 @@ function freeze(value) {
 }
 
 module.exports = { SCHEMA_VERSION, MODULES, TIERS, SERVICES, EntitlementDomainError,
-    normaliseEntitlementState, resolveEntitlements, assertServiceEntitlement, consumeEntitlementLimit };
+    normaliseEntitlementState, resolveEntitlements, currentProductGrant, assertServiceEntitlement, consumeEntitlementLimit };

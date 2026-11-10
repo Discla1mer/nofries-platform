@@ -68,8 +68,9 @@ test('invalid cursors are refused before database I/O and stale generations neve
     await expect(h.runtime.readWorkQueue(h.request(), { expectedGeneration: 'f'.repeat(64) }, { limit: 1, cursor: null }))
         .rejects.toMatchObject({ code: 'work_queue_access_denied', statusCode: 403 });
 });
-test('the server-only disclosure assertion retains child expiry checks after the queue promise settles', async () => {
-    const cutoff = '2026-09-07T11:00:30.000Z', h = await ready({ membershipEndsAt: cutoff }), request = h.request();
+test('the server-only disclosure assertion retains child session expiry checks after the queue promise settles', async () => {
+    // Membership no longer expires; the session gate is the remaining clock-driven authority.
+    const cutoff = '2026-09-07T11:00:30.000Z', h = await ready({ sessionEndsAt: cutoff }), request = h.request();
     const result = await queue(h, { limit: 50, cursor: null }, request);
     expect(result.rows.length).toBeGreaterThan(0);
     expect(h.runtime.assertWorkQueueDisclosure(request)).toBe(h.state.at);

@@ -126,11 +126,14 @@ test('anonymous or missing-account reads return null rather than facts from call
     assert.throws(() => h.reader({ accountCreatedAt: { source: 'nofries_account_created_at', valueMs: AT } }), TypeError);
 });
 
-test('the wrapper preserves exact account ownership and current commercial/session expiry checks', async () => {
+test('the wrapper preserves exact account ownership, suspension and session expiry checks', async () => {
+    const lasting = await fixture(); lasting.assign('genuine_customer');
+    lasting.mutateCustomer(customer => { customer.current.expiresAt = AT; });
+    assert.ok(await lasting.reader().read(HEADER)); // A passed account end date is not a refusal.
     for (const mutate of [
         h => h.mutateAccount(account => { account.identitySubjectKey = TENANT + ':' + ID(999); }),
         h => h.mutateAccount(account => { account.organisations[0].bindingId = ID(999); }),
-        h => h.mutateCustomer(customer => { customer.current.expiresAt = AT; }),
+        h => h.mutateCustomer(customer => { customer.current.status = 'suspended'; }),
         h => h.mutateCustomer(customer => { customer.details.expiresAt = new Date(AT).toISOString(); }),
     ]) {
         const h = await fixture(); h.assign('genuine_customer'); mutate(h);

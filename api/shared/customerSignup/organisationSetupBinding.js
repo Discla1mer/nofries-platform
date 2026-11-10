@@ -172,7 +172,7 @@ async function provisionVerifiedOrganisationSetup({ approval: input, setupStore,
     // Exact historical completion is returned without reopening delivery or
     // asserting that today's policy still permits customer sign-in.
     if (completed) return Object.freeze(completionRecord(completed, binding).result);
-    if (a.approvedAt > now() || a.expiresAt <= now() || a.authorityExpiresAt <= now()) fail();
+    if (a.approvedAt > now() || a.expiresAt <= now()) fail(); // authorityExpiresAt is a recorded account date, not a deadline.
     await currentOffer(records, a, now());
     await beforeMutation();
     // Cloud/source guards can be slow. Re-read the current offer after them,

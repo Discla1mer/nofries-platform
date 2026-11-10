@@ -100,7 +100,8 @@ const moduleModel = { schemaVersion: 1, context: model.context, generatedAt: mod
     module: model.modules.find(item => item.key === 'cyber_security'), summary: model.summary, services: model.services,
     admissionGranted: false, providerAccessGranted: false, metadata: fixtures.metadata, presentationMode: 'editable' };
 const assets = Object.fromEntries(['style.css', 'home.css', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png',
-    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js'].map(file => ['/' + file, file]));
+    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js', 'js/enquiry-availability.js', 'js/enquiry-home.js', 'images/paper-texture.webp', 'images/nofries-mark-large.webp',
+    'assets/fonts/fraunces-latin-opsz-normal.woff2', 'assets/fonts/fraunces-latin-opsz-italic.woff2'].map(file => ['/' + file, file]));
 const requests = [], blocked = [], errors = [], knownBaselineGaps = [], results = [];
 let state = 'ready', selectionUnbrokenProbe = true, textScale = false;
 const pendingSessions = new Set();
@@ -127,6 +128,7 @@ const server = http.createServer((req, res) => {
         body = JSON.stringify({ schemaVersion: 1, bindings: available, nextAfterBindingId: null });
     }
     else if (pathname === '/api/dashboard/bootstrap') { body = JSON.stringify(model); }
+    else if (pathname === '/api/enquiry') { body = JSON.stringify({ available: false }); }
     else if (pathname === '/api/dashboard/modules/cyber_security') { body = JSON.stringify(moduleModel); }
     else if (pathname === '/api/dashboard/ncsc/assessments') { body = JSON.stringify({ schemaVersion: 1, assessments: summaries, nextAfterAssessmentId: null }); }
     else if (pathname.startsWith('/api/dashboard/ncsc/assessments/')) {

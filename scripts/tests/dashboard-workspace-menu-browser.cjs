@@ -51,7 +51,8 @@ const primaryKeys = ['overview', 'cyber_security', 'services'];
 const requests = [], blocked = [], errors = [], results = [], guards = [], screenshots = [], focusWitnesses = [], labelLegibility = [];
 let scenario = 'all', text200 = false, browser, activePage, failure = null;
 const assets = Object.fromEntries(['style.css', 'home.css', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png',
-    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js'].map(file => ['/' + file, file]));
+    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js', 'js/enquiry-availability.js', 'js/enquiry-home.js', 'images/paper-texture.webp', 'images/nofries-mark-large.webp',
+    'assets/fonts/fraunces-latin-opsz-normal.woff2', 'assets/fonts/fraunces-latin-opsz-italic.woff2'].map(file => ['/' + file, file]));
 const server = http.createServer((request, response) => {
     const pathname = new URL(request.url, 'http://127.0.0.1').pathname;
     requests.push({ method: request.method, path: pathname });
@@ -72,6 +73,7 @@ const server = http.createServer((request, response) => {
         { bindingId: '10000000-0000-4000-8000-000000000002', organisationLabel: 'Another synthetic organisation' }
     ], nextAfterBindingId: null };
     else if (pathname === '/api/dashboard/bootstrap') body = model;
+    else if (pathname === '/api/enquiry') body = { available: false };
     else if (pathname === '/api/dashboard/modules/cyber_security') body = { schemaVersion: 1,
         context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'),
         summary: model.summary, services: model.services, admissionGranted: false, providerAccessGranted: false,
@@ -296,6 +298,19 @@ async function guardChecks(page, shell, width) {
                 }));
                 assert.equal(primary.length, 3);
                 assert.ok(primary.every(item => item.top >= 0 && item.bottom <= item.height), label + ': all three primary destinations are visible on initial ready view without scrolling');
+                // Whole words stay on one line, including the longest real label (DOM-only, restored).
+                for (const replacement of [null, 'Improvement Plan']) {
+                    const split = await menu(page).locator('.dashboard-menu-primary').evaluate((node, text) => {
+                        const spans = [...node.querySelectorAll('[data-module] span:not(.dashboard-icon)')], original = spans[1].firstChild.nodeValue;
+                        if (text) spans[1].firstChild.nodeValue = text;
+                        const broken = spans.flatMap(span => [...span.firstChild.nodeValue.matchAll(/\S+/g)].filter(match => {
+                            const range = document.createRange(); range.setStart(span.firstChild, match.index); range.setEnd(span.firstChild, match.index + match[0].length);
+                            return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size > 1;
+                        }).map(match => match[0]));
+                        spans[1].firstChild.nodeValue = original; return broken;
+                    }, replacement);
+                    assert.deepEqual(split, [], label + ': mobile tab words are not split ' + (replacement || 'actual labels'));
+                }
             }
             const summary = disclosure(page).locator('summary');
             await summary.focus(); await page.keyboard.press('Enter'); assert.equal(await disclosure(page).evaluate(node => node.open), true);

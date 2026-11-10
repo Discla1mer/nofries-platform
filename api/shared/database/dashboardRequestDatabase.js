@@ -8,7 +8,7 @@ const { DashboardPersistenceError, dataStorage } = require('../appLifecycle/post
 const { createDashboardAudit } = require('../appLifecycle/dashboardAudit');
 const { requireTenantRequestContext } = require('../appLifecycle/tenantRequestContext');
 const { MembershipDomainError, resolveActiveMembership, normaliseMembershipState } = require('../appLifecycle/membershipDomain');
-const { resolveEntitlements, normaliseEntitlementState, TIERS } = require('../appLifecycle/entitlementDomain');
+const { resolveEntitlements, normaliseEntitlementState, currentProductGrant } = require('../appLifecycle/entitlementDomain');
 const { resolveOrganisation } = require('../appLifecycle/tenantDomain');
 const { resolvePortalPermission, normaliseAdvisorAssignment, PortalPermissionError } = require('../appLifecycle/portalPermissions');
 const { createPostgresDashboardRepository } = require('../appLifecycle/postgresDashboardRepository');
@@ -315,15 +315,19 @@ function currentGate(inv, gate, at) {
     // checked selected gate once; every later fence checks that same generation.
     if (inv.nativeAsset && inv.expectedGeneration === null) inv.expectedGeneration = gate.generationToken;
 }
+// Accounts do not expire (owner decision, 10 November 2026): the recorded
+// validUntil of a binding, admission, membership or dashboard product stays in
+// its row and digests but is not enforced here. Status, withdrawal, identity
+// and the session gate's own expiry still deny.
 function currentBinding(inv, binding, target, at) {
     if (!binding || !equal(binding.scope, target) || binding.status !== 'active' ||
         !equal(binding.identity, inv.capture.identityPayload) || binding.subjectKey !== subjectOf(inv.capture.identityPayload) ||
-        at < binding.updatedAt || at < binding.validFrom || at >= binding.validUntil) inv.deny();
+        at < binding.updatedAt || at < binding.validFrom) inv.deny();
 }
 function currentAdmission(inv, admissions, target, binding, at) {
     const a = admissions.current, birth = admissions.birth, p = a.payload;
     if (!equal(a.scope, target) || a.authorityId !== binding.authorityRef.authorityId ||
-        p.decision !== 'eligible' || at < p.occurredAt || at < p.validFrom || at >= p.validUntil ||
+        p.decision !== 'eligible' || at < p.occurredAt || at < p.validFrom ||
         p.identityPolicyRef.policyId !== binding.identity.policyId || p.identityPolicyRef.policyRevision !== binding.identity.policyRevision ||
         p.approvedEffectSha256 !== birth.payload.approvedEffectSha256) inv.deny();
 }
@@ -433,7 +437,7 @@ function currentAuthorityAt(inv, operation, evidence, at) {
             const product = authority.entitlementState.grants.find(item => item.grantId === selection.productGrantId);
             if (!product || decision.product.grantId !== selection.productGrantId || product.agreementRef !== selection.agreementRef ||
                 policy.productGrantId !== product.grantId || policy.agreementRef !== product.agreementRef ||
-                !(product.validFrom <= at && at < product.validUntil) || !(policy.validFrom <= at && at < policy.validUntil)) inv.deny();
+                product.validFrom > at || !(policy.validFrom <= at && at < policy.validUntil)) inv.deny();
         }
     }
 }
@@ -792,7 +796,7 @@ function hostBaseFacts(inv, context, input) {
         const grants = normaliseEntitlementState(inv.charge(snapshot.entitlementState), inv.charge(snapshot.tenantAggregate)).grants;
         if (snapshot.tenantAggregate.tenant.recordStatus !== 'active' || organisation.recordStatus !== 'active') inv.deny();
         const member = state.memberships.find(row => row.subjectKey === context.binding.subjectKey && row.status === 'active' &&
-            row.validFrom <= at && at < row.validUntil);
+            row.validFrom <= at);
         if (!member) inv.deny();
         for (const key of ['membershipId', 'invitationId', 'grantEvidenceId', 'validFrom', 'validUntil']) {
             if (member[key] !== context.binding[key]) inv.deny();
@@ -871,7 +875,7 @@ function prepareHostFacts(inv, context, input, resource, writeAuthority = null, 
 
 function hostProjectionAt(frame, at, configured = true) {
     const live = grant => grant.status === 'active' && grant.validFrom <= at && at < grant.validUntil;
-    const product = frame.grants.find(grant => Object.prototype.hasOwnProperty.call(TIERS, grant.code) && live(grant));
+    const product = currentProductGrant(frame.grants, at);
     const service = code => code !== 'managed_it_core' && frame.grants.some(grant => grant.code === code && live(grant));
     const fractional = service('fractional_advisory') && frame.flags.enabled['service:fractional_advisory'] === true;
     const ncscReady = configured && frame.ncscEnabled && Boolean(product && product.frameworks.some(ref =>
@@ -941,8 +945,8 @@ function bufferedHostVector(resource, buffered) {
 function hostBaseAt(inv, frame, at) {
     const c = frame.capture, g = frame.gate, b = frame.binding, a = frame.admission, m = frame.member;
     if (at < c.issuedAt || at < frame.instance.changedAt || at < g.updatedAt || at >= g.expiresAt ||
-        at < b.updatedAt || at < b.validFrom || at >= b.validUntil || at < a.occurredAt ||
-        at < a.validFrom || at >= a.validUntil || at < frame.membershipUpdatedAt || at < m.validFrom || at >= m.validUntil) inv.deny();
+        at < b.updatedAt || at < b.validFrom || at < a.occurredAt ||
+        at < a.validFrom || at < frame.membershipUpdatedAt || at < m.validFrom) inv.deny();
 }
 function hostAuthorityAt(inv, operation, frame, at) {
     // Every identity/shape/hash agreement was proved before sealing. Later
