@@ -78,10 +78,6 @@ Fixed on this branch:
 - **Progress.** One line: answered, to go, to check later, and saved state.
 - **Waits.** Sign-up buttons now show "Working on it. This can take up to
   20 seconds." as soon as they are pressed.
-- **Schedule wording and r4.** The plan `nf-starter-2026-11-r3` pins the r4
-  agreement and lists the Improvement Plan as "included when it is
-  released". It is in source but not selected. The steps to turn it on are
-  in `docs/legal/drafts/nf-dashboard-2026-11-r4-changes.md`.
 
 Not changed:
 
@@ -92,8 +88,9 @@ Not changed:
   redirects with 303. Back returns to Microsoft's own page, which re-posts
   an expired request. This can't be fixed in the app's source.
 - **NZBN:** kept as free text while testing, as decided.
-- **Turning on r3/r4:** legal review, the database proposal, the terms
-  archive, the launcher setting and `/terms.html` (see the r4 change note).
+- **Schedule wording and the r4 agreement.** A new default-off starter plan
+  under a revised agreement is being proposed in a separate pull request, so
+  it can have legal review on its own.
 - **Entra settings** in the section above.
 
 ## Fourth pass: navigation and Roadmap/News

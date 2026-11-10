@@ -13,7 +13,7 @@ const { normaliseNcscSelector, projectNcscDetail } = require('../ncscAssessmentS
 const { MODULE_ID, ACCEPTED_PROFILE_REF } = require('../assessmentEngine/ncscAssessmentEvaluator');
 const { workEmail } = require('../organisationSetup');
 const { starterAccountKey, starterAccountRecord, starterClientRecord } = require('./starterAccountAllocation');
-const { isThreeMonthPlan, approvedStarterPlan } = require('./customerStarterPlan');
+const { THREE_MONTH_PLAN_ID, approvedStarterPlan } = require('./customerStarterPlan');
 const { retainedStarterPreparation, retainedStarterActivation } = require('./starterProvisioning');
 const { createPostgresRetainedTrialAssessmentStore } = require('./postgresRetainedTrialAssessmentStore');
 const { createRetainedTrialReadAudit } = require('./postgresRetainedTrialReadAudit');
@@ -61,7 +61,7 @@ async function readRetainedTrialOwner({ subjectKey, readSubject, accountStore })
     const found = await accountStore.load(starterAccountKey(index.email));
     if (!found) deny();
     const account = starterAccountRecord(found.record), plan = approvedStarterPlan(account.planId), own = account.organisations[0];
-    if (!isThreeMonthPlan(plan.planId) || plan.readSavedResultsAfterExpiry !== true || account.activation === null ||
+    if (plan.planId !== THREE_MONTH_PLAN_ID || plan.readSavedResultsAfterExpiry !== true || account.activation === null ||
         account.activation.subjectKey !== subjectKey || account.identitySubjectKey !== undefined && account.identitySubjectKey !== subjectKey ||
         account.activation.receiptId !== own.activationId || account.email !== index.email || account.accountType !== index.accountType ||
         own.bindingId !== index.bindingId || own.tenantId !== index.tenantId || own.organisationId !== index.organisationId ||
