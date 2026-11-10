@@ -1460,6 +1460,48 @@ describe('questionnaire form accessibility', () => {
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
 
+    test('sensitive-request N/A guidance covers every request type without changing saved answers', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        const index = questions.findIndex(question => question.id === 'NF-NCSC-CC-SV-01-Q1');
+        const id = questions[index].id, explanation = 'Synthetic scope: no payment requests.';
+        const acceptedDisplay = JSON.stringify(metadata());
+        try {
+            choose(ui, index, 'not_applicable', explanation);
+            const help = byId(ui, `ncsc-rationale-help-${id}`);
+            expect(byId(ui, `ncsc-rationale-${id}`).getAttribute('aria-describedby')).toBe(help.id);
+            expect(help.textContent).toContain('Not handling payments is not enough');
+            for (const requestType of ['payment or bank-detail changes', 'password or MFA resets', 'account recovery', 'sensitive-data changes']) {
+                expect(help.textContent).toContain(requestType);
+            }
+            expect(help.textContent).toContain('all outside your declared scope');
+            expect(help.textContent).toContain('If you are unsure, choose Unknown.');
+            expect(help.textContent).toContain('included in the score denominator');
+            expect(h.records).toHaveLength(1);
+            control(ui, 'Save progress').click();
+            await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            expect(h.records[1].payload.responses).toEqual([{ itemId: id, optionId: 'not_applicable', rationale: { text: explanation } }]);
+            expect(byId(ui, `ncsc-rationale-${id}`).value).toBe(explanation);
+            expect(byId(ui, `ncsc-rationale-help-${id}`).textContent).toContain('Not handling payments is not enough');
+            expect(JSON.stringify(metadata())).toBe(acceptedDisplay);
+            const readOnly = await resumeUi(h, { presentationMode: 'read-only' });
+            try {
+                const picker = byId(readOnly, 'ncsc-question-index'); picker.value = String(index); event(picker, 'change');
+                expect(byId(readOnly, `ncsc-rationale-${id}`).readOnly).toBe(true);
+                expect(readOnly.root.textContent).not.toContain('Not handling payments is not enough');
+            } finally { readOnly.controller.destroy(); }
+
+            choose(ui, index, 'unknown');
+            expect(byId(ui, `ncsc-rationale-${id}`)).toBeUndefined();
+            expect(ui.root.textContent).not.toContain('Not handling payments is not enough');
+            choose(ui, index, 'not_applicable', explanation);
+            expect(ui.root.textContent).toContain('Not handling payments is not enough');
+            choose(ui, 0, 'not_applicable', 'Synthetic unrelated exclusion.');
+            expect(ui.root.textContent).not.toContain('Not handling payments is not enough');
+            expect(byId(ui, `ncsc-rationale-help-${questions[0].id}`).textContent).toContain('N/A approval is not available in this journey.');
+            expect(h.records).toHaveLength(2);
+        } finally { ui.controller.destroy(); }
+    });
+
     test('official source links stay in question guidance and preserve the open draft in a separate tab', async () => {
         const h = await backend(), ui = await createInUi(h), question = metadata().questions[0];
         const guidance = ui.root.querySelectorAll('details').find(item => item.querySelector('summary').textContent === 'Guidance and evidence examples');
@@ -1805,10 +1847,10 @@ describe('questionnaire public controls and retained mutation intent', () => {
         choose(ui, 1, 'not_applicable', 'New text during current GET');
         const id = `ncsc-rationale-${metadata().questions[1].id}`; byId(ui, id).focus(); byId(ui, id).setSelectionRange(5, 8);
         await h.execute(saveCommand('assessment-a', 2, 'other-session', [{ ...rows[1], rationale: { text: 'Another saved change' } }]));
-        gate.resolve(); await until(() => control(ui, 'Keep my draft on current revision'));
+        gate.resolve(); await until(() => control(ui, 'Keep my answers'));
         expect(byId(ui, id).value).toBe('New text during current GET'); expect(ui.document.activeElement.id).toBe(id);
         expect(ui.document.activeElement.selectionStart).toBe(5); expect(h.records).toHaveLength(4);
-        control(ui, 'Keep my draft on current revision').click(); control(ui, 'Save progress').click();
+        control(ui, 'Keep my answers').click(); control(ui, 'Save progress').click();
         await until(() => h.records.length === 5);
         expect(h.records.at(-1)).toMatchObject({ expectedRevision: 3, payload: { responses: [{ itemId: rows[1].itemId,
             optionId: 'not_applicable', rationale: { text: 'New text during current GET' } }] } }); ui.controller.destroy();
@@ -1821,9 +1863,9 @@ describe('questionnaire public controls and retained mutation intent', () => {
         const ui = await createInUi(h, { client: { ...h.client, save, read } }); choose(ui, 0, 'yes');
         control(ui, 'Save progress').click(); await until(() => control(ui, 'Retry same operation'));
         blockRead = true; control(ui, 'Retry same operation').click(); await until(() => control(ui, 'Reload current saved answers'));
-        const keep = control(ui, 'Keep my draft on current revision'); expect(keep.disabled).toBe(true);
+        const keep = control(ui, 'Keep my answers'); expect(keep.disabled).toBe(true);
         keep.click(); control(ui, 'Save progress')?.click(); await pause(); expect(save).toHaveBeenCalledTimes(2);
-        blockRead = false; control(ui, 'Reload current saved answers').click(); await until(() => !control(ui, 'Keep my draft on current revision').disabled);
+        blockRead = false; control(ui, 'Reload current saved answers').click(); await until(() => !control(ui, 'Keep my answers').disabled);
         ui.controller.destroy();
     });
 
