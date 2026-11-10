@@ -32,7 +32,7 @@
         const openImprovement = typeof options.openImprovement === 'function' ? options.openImprovement : null;
         const id = 'picture-assessment-' + (++sequence);
         const initialAssessmentId = typeof options.initialAssessmentId === 'string' ? options.initialAssessmentId : null;
-        let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null;
+        let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null, allowance = null;
         let selected = initialAssessmentId || '', detail = null, loading = false, message = '', denied = false;
         let loaded = false, retry = null, explanationController = null;
         let trend = null;
@@ -156,6 +156,15 @@
             const status = node('p', 'picture-status', message || (loading ? 'Loading saved assessment…' : ''));
             status.setAttribute('role', 'status'); status.hidden = !message && !loading; root.append(status);
             if (denied) return;
+            if (allowance) {
+                // Plan usage in plain English, so the limit is known before starting work.
+                const exhausted = allowance.used >= allowance.limit;
+                const usage = node('p', exhausted ? 'ncsc-warning picture-allowance' : 'dashboard-muted picture-allowance',
+                    allowance.used + ' of ' + allowance.limit + ' assessment ' + (allowance.limit === 1 ? 'submission' : 'submissions') + ' used on your plan.' +
+                    (exhausted ? ' You can still read your saved assessments, but you cannot submit another assessment. ' : ''));
+                if (exhausted) { const contact = node('a', '', 'Contact No Fries about more submissions'); contact.href = '/contact.html'; usage.append(contact); }
+                root.append(usage);
+            }
             if (detail && detail.status !== 'submitted') renderResume();
             if (rows.length) {
                 const toolbar = node('div', 'picture-toolbar');
@@ -550,6 +559,7 @@
                 response.assessments.forEach(row => combined.set(row.assessmentId, copy(row)));
                 rows = Array.from(combined.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId));
                 after = response.nextAfterAssessmentId; loaded = true;
+                allowance = response.submissionAllowance ? copy(response.submissionAllowance) : null;
                 // Keep a carried or manual selection across refresh. Otherwise prefer
                 // the latest submitted record on this page, then the latest unfinished one.
                 if (!selected) selected = preferredAssessmentId(rows);

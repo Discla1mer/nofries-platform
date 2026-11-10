@@ -312,6 +312,7 @@
         let listSearch = '';
         let listStatus = 'all';
         let nextAfter = null;
+        let allowance = null;
         let listLoaded = false;
         let loading = false;
         let refreshing = false;
@@ -471,10 +472,31 @@
                 : error && error.code === 'ncsc_request_too_large'
                 ? 'This assessment is too large for this operation. Your saved answers and unsent text remain here. ' + (view === 'create' ? 'Shorten the scope description, then try again.' : acknowledged && acknowledged.revision >= SAVE_CEILING ? 'This assessment has reached its save limit. Start a new assessment with shorter rationales.' : 'Shorten one or more rationales, save the corrected draft, then try again.')
                 : error && error.code === 'ncsc_submission_unavailable' ? 'Submission is not available yet. Your saved answers remain editable.'
-                : error && error.code === 'ncsc_quota_exceeded' ? 'Submission is unavailable under the current allowance. Your saved answers remain available.'
+                : error && error.code === 'ncsc_quota_exceeded' ? quotaMessage()
                 : view === 'list' ? 'The assessment service is unavailable. Retry loading the list to check your saved work.'
                 : 'The assessment service is unavailable. Your unsent draft remains in this view.';
             updateStatus();
+        }
+        function allowanceExhausted() { return !!allowance && allowance.used >= allowance.limit; }
+        function allowanceUsage() {
+            return allowance.used + ' of ' + allowance.limit + ' assessment ' + (allowance.limit === 1 ? 'submission' : 'submissions') + ' used on your plan.';
+        }
+        // Plain-English plan usage, shown before anyone starts work it cannot submit.
+        function allowanceNote() {
+            if (!allowance) return null;
+            const exhausted = allowanceExhausted();
+            const note = node('p', exhausted ? 'ncsc-warning ncsc-allowance' : 'dashboard-muted ncsc-allowance', allowanceUsage() +
+                (exhausted ? ' You can still open and read your saved assessments, but you cannot submit another assessment. ' : ''));
+            note.id = 'ncsc-allowance';
+            if (exhausted) { const contact = node('a', '', 'Contact No Fries about more submissions'); contact.href = '/contact.html'; note.append(contact); }
+            return note;
+        }
+        function quotaMessage() {
+            // The server refused because the plan's submissions are used up; keep later views consistent with that.
+            if (allowance) allowance = { used: Math.max(allowance.used, allowance.limit), limit: allowance.limit };
+            return (allowance ? 'This assessment was not submitted. All ' + allowance.limit + ' assessment submissions on your plan have been used (' + allowance.used + ' of ' + allowance.limit + ').'
+                : 'This assessment was not submitted. All assessment submissions on your plan have been used.') +
+                ' Your saved answers are kept and you can still read them. To ask about more submissions, contact No Fries.';
         }
         function provenance() {
             const section = node('details', 'ncsc-provenance');
@@ -643,10 +665,16 @@
         function renderList() {
             const introduction = node('div', 'ncsc-assessment-intro');
             introduction.append(node('p', '', 'Pick up where you left off, or view the results of a submitted assessment. Only saved progress appears here.'));
-            if (editable) introduction.append(button('Start an assessment', function () {
-                view = 'create'; declaration = ''; errors = []; render();
-                const scope = content.querySelector('textarea'); if (scope) scope.focus();
-            }, summaries.length ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button'));
+            if (editable) {
+                const start = button('Start an assessment', function () {
+                    view = 'create'; declaration = ''; errors = []; render();
+                    const scope = content.querySelector('textarea'); if (scope) scope.focus();
+                }, summaries.length ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button');
+                // Starting is pointless once nothing more can be submitted; say why beside the control.
+                if (allowanceExhausted()) { start.disabled = true; start.setAttribute('aria-describedby', 'ncsc-allowance'); }
+                introduction.append(start);
+            }
+            const usage = allowanceNote(); if (usage) introduction.append(usage);
             content.append(introduction);
             if (!loading && listLoaded && !summaries.length) content.append(node('p', '', 'No saved assessments yet.'));
             const filters = node('div', 'ncsc-assessment-filters');
@@ -729,7 +757,7 @@
             function releaseFocus() { ownsFocus = false; }
             // An old empty page cannot establish that a fresh list is empty.
             // Failed replacement reads must retain an explicit retry path.
-            if (!append) { listLoaded = false; summaries = []; nextAfter = null; }
+            if (!append) { listLoaded = false; summaries = []; nextAfter = null; allowance = null; }
             const expected = epoch; loading = true; statusText = ''; render();
             // The disabled loading control temporarily hands focus to the heading.
             // Any deliberate move away cancels this request's eventual handoff.
@@ -741,8 +769,9 @@
                 const map = new Map((append ? summaries : []).map(function (item) { return [item.assessmentId, item]; }));
                 result.assessments.forEach(function (item) { map.set(item.assessmentId, copy(item)); });
                 summaries = Array.from(map.values()); nextAfter = result.nextAfterAssessmentId; listLoaded = true;
+                allowance = result.submissionAllowance ? copy(result.submissionAllowance) : null;
                 appended = append;
-                if (startNewWhenEmpty && !append && view === 'list' && !summaries.length) { view = 'create'; declaration = ''; errors = []; autoStarted = true; }
+                if (startNewWhenEmpty && !append && view === 'list' && !summaries.length && !allowanceExhausted()) { view = 'create'; declaration = ''; errors = []; autoStarted = true; }
                 startNewWhenEmpty = false;
             } catch (error) { if (live(expected)) fixedFailure(error); }
             finally {
@@ -784,14 +813,18 @@
             input.addEventListener('input', function () { if (live(renderedEpoch) && !busy && !pending) { declaration = input.value; edited(); } });
             content.append(label, input, node('p', 'dashboard-muted', 'Describe the people, systems and locations covered, in up to 4,000 characters. For example: our Auckland office, staff laptops and Microsoft 365; excluding the warehouse systems.'));
             content.children[content.children.length - 1].id = 'ncsc-scope-help';
+            const usage = allowanceNote(); if (usage) content.append(usage);
             controls = node('div', 'ncsc-actions');
-            const start = button('Create assessment', createAssessment); start.dataset.mutation = 'true';
+            const start = button('Create assessment', createAssessment);
+            if (allowanceExhausted()) { start.disabled = true; start.setAttribute('aria-describedby', 'ncsc-allowance'); }
+            else start.dataset.mutation = 'true';
             controls.append(start, button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
             content.append(controls);
             if (pending) renderPending();
         }
         async function createAssessment() {
             if (!editable || busy || pending || !live()) return false;
+            if (allowanceExhausted()) { statusText = allowanceUsage() + ' You cannot submit another assessment.'; updateStatus(); return false; }
             if (!validText(declaration)) { errors = [{ id: 'scope', message: textError(declaration, true) }]; renderErrors(true); return false; }
             errors = []; renderErrors();
             try {
@@ -910,6 +943,7 @@
             consequence.id = 'ncsc-review-consequence';
             const confirm = button('Save and submit assessment', requestSubmit); confirm.id = 'ncsc-review-submit'; confirm.dataset.mutation = 'true'; confirm.setAttribute('aria-describedby', consequence.id);
             controls.append(confirm, button('Back to questions', closeReview, 'dashboard-text-button'));
+            if (allowanceExhausted()) panel.append(allowanceNote());
             panel.append(consequence, controls);
             content.append(panel);
         }
