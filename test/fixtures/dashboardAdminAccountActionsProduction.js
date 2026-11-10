@@ -1,8 +1,7 @@
 'use strict';
 const { Readable } = require('node:stream');
-const { entrySessionFixture, uid, NOW, SUBJECT } = require('./dashboardAdminEntrySession');
-const { hash, canonical } = require('../../api/shared/appLifecycle/dashboardRuntimeRecords');
-const { headKey, revisionKey } = require('../../api/shared/dashboardAdmin/approvalRecords');
+const { entrySessionFixture, uid, NOW } = require('./dashboardAdminEntrySession');
+const { canonical } = require('../../api/shared/appLifecycle/dashboardRuntimeRecords');
 const { subjectHash } = require('../../api/shared/customerSignup/customerAuthority');
 const { createProductionApplication } = require('../../lib/productionApplication');
 const iso = n => new Date(n).toISOString();
@@ -18,9 +17,7 @@ function fixture(kind = 'legacy_admin') {
         NOFRIES_CUSTOMER_SIGNUP_ENABLED: 'false', NOFRIES_EXTERNAL_CUSTOMER_ENABLED: 'false', NOFRIES_EXTERNAL_CUSTOMER_TENANT_ID: uid(40),
         NOFRIES_CUSTOMER_AUTHORITY_CONTAINER: 'customer-authority', NOFRIES_STARTER_AUTHORITY_CONTAINER: 'legacy-signups',
         NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER: 'external-signups', NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER: 'account-action-audit',
-        NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS: 'true', NOFRIES_DASHBOARD_ADMIN_ENABLED: 'true',
-        NOFRIES_DASHBOARD_ADMIN_BINDING: JSON.stringify({ schemaVersion: 1, provider: 'legacy', authorityContainer: 'private-approvals',
-            populationId: 'synthetic-population', indexId: 'synthetic-index', writerContract: 'all_application_account_writes_v2' }) });
+        NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS: 'true', NOFRIES_STAFF_CONSOLE: 'true', NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: 'true' });
     const connect = h.pool.connect.getMockImplementation();
     h.pool.connect.mockImplementation(async () => { const client = await connect(); return { release: client.release,
         query: (sql, values) => /^(SAVEPOINT |ROLLBACK TO SAVEPOINT |RELEASE SAVEPOINT )/.test(sql) ? Promise.resolve({ rows: [] }) : client.query(sql, values) }; });
@@ -56,16 +53,6 @@ function fixture(kind = 'legacy_admin') {
     const selector = { provider: kind === 'external_starter' ? 'external' : 'legacy', subjectKey: record.subjectKey, tenantId: record.tenantId, organisationId: record.organisationId };
     const put = (name, key, value) => bucket('syntheticdata', name).set(key, { bytes: Buffer.from(canonical(value)), etag: '"initial"' });
     const subjectPath = `customer-subjects/${subjectHash(record.subjectKey)}.json`; put(sourceName, subjectPath, record);
-    const target = { operatorSubjectKey: SUBJECT, purpose: 'signup_support', instanceId: h.dashboard.instanceId };
-    const grant = { schemaVersion: 1, bindingId: uid(42), revision: 1, status: 'active', action: 'dashboard.authority.read', ...target,
-        selector, approvedAt: iso(NOW), validFrom: iso(NOW), validUntil: iso(NOW + 3600000), approvalReference: 'synthetic-approval',
-        identityPolicy: { policyId: h.dashboard.identityPolicy.policyId, policyRevision: 1 }, auditPolicy: { reference: 'synthetic-audit', revision: 1,
-            agreementVersion: 'nf-dashboard-2026-09-r2', retention: { unit: 'calendar_months', count: 13 } } };
-    const archive = { schemaVersion: 1, recordType: 'dashboard_admin_approval_revision', ...target, restoreEpoch: h.state.epoch,
-        revision: 1, status: 'active', changedAt: iso(NOW), decisionReference: 'synthetic-approval', binding: grant };
-    put('private-approvals', headKey(target), { schemaVersion: 1, recordType: 'dashboard_admin_approval_head', ...target,
-        restoreEpoch: h.state.epoch, revision: 1, status: 'active', recordSha256: hash(archive) });
-    put('private-approvals', revisionKey(target, hash(archive)), archive);
     const build = () => createProductionApplication(h.env, sdk);
     return { ...h, sdk, build, bucket, put, reads, writes, clients, record, sourceName, subjectPath, selector,
         input: { selector, confirmationEmail: record.email, newExpiresAt: iso(NOW + 86400000) } };

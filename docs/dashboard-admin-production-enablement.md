@@ -2,11 +2,29 @@
 
 Owner runbook for nofries.nz, [#45](https://github.com/Discla1mer/nofries-platform/issues/45). Deploy the reviewed PR through the existing release controller first. This repository and its CI do not apply Azure changes. The commands below are for the release owner's approved workstation, not GitHub Actions. They contain no secret values; keep shell tracing off and retain plans privately.
 
-## What the flags actually enable
+## Staff console (current lookup procedure)
 
-Release 3's `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP=true` selects a reader and route, not the required `dashboardAdmin` service. The old environment binding selects **signup listing only**. This PR adds `NOFRIES_DASHBOARD_ADMIN_LOOKUP_AUTHORITY_CONTAINER`: with `NOFRIES_DASHBOARD_ADMIN_ENABLED=true`, it connects the existing protected approval reader to `createDashboardAdminRuntime`. No approval, SQL row, index or customer record is created at startup. Trusted `dependencies.dashboardAdministration` still takes precedence.
+Account lookup no longer uses a per-customer approval record. `NOFRIES_DASHBOARD_ADMIN_LOOKUP_AUTHORITY_CONTAINER` is not read any more, and the approval publication tool below is not needed for lookup. Wherever this page still mentions approval records for lookup or `scripts/dashboard-admin-approve.js`, treat it as superseded by this section; a short replacement guide follows with the clean-up change.
 
-For lookup only, leave `NOFRIES_DASHBOARD_ADMIN_BINDING` **unset**. A valid BFF admin is necessary but insufficient: native session/restore-epoch checks and a current protected approval must also pass. Approvals cover **one exact customer subject, tenant and organisation**, for **at most one hour**. There is no permanent/global owner grant. A second target requires the next approved revision; a lookup matching an unauthorized scope is refused rather than partially disclosed.
+The read-only console is composed when **all** of these are set on the App Service (exact values, default off):
+
+| Setting | Value |
+| --- | --- |
+| `NOFRIES_STAFF_CONSOLE` | `true` |
+| `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP` | `true` (setting it `false` turns off email and selector lookup) |
+| `NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER` | Existing private container on `AZURE_STORAGE_ACCOUNT_NAME`, different from every authority, session, proof and epoch container |
+| `NOFRIES_CUSTOMER_AUTHORITY_CONTAINER`, `NOFRIES_STARTER_AUTHORITY_CONTAINER`, `NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER` | The existing customer stores (at least one; `NOFRIES_EXTERNAL_CUSTOMER_TENANT_ID` is needed with the external one) |
+
+The existing workforce sign-in, `NOFRIES_ALLOWED_SUBJECTS`/`NOFRIES_ADMIN_SUBJECTS`, native dashboard runtime, `NOFRIES_SCOPE_SIGNING_SECRET` and `NOFRIES_MANAGED_IDENTITY_CLIENT_ID` settings in the table below still apply. `NOFRIES_DASHBOARD_ADMIN_ENABLED` and `NOFRIES_DASHBOARD_ADMIN_BINDING` are for signup listing only and are not needed.
+
+The App Service managed identity needs these data-plane roles, each scoped to the named container:
+
+| Container | Role |
+| --- | --- |
+| Each configured customer authority container (three settings above) | Storage Blob Data Reader |
+| `NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER` | Storage Blob Data Contributor (create-only lookup audit records) |
+
+Staff authority is the allowlisted admin subject, the native operator session gate, its issuance proof and the restore epoch. Email lookup and the selector lookup (`POST /api/dashboard-admin/lookup`) are approval-free reads by design; each authorised email lookup writes one digest-only audit record and is refused if that write fails. Unusable settings log one line (`[dashboard-admin] dashboard_admin_configuration_invalid`) and leave the console off without stopping the app. To disable, set `NOFRIES_STAFF_CONSOLE=false`.
 
 ## Stop points and durable changes
 
@@ -22,8 +40,8 @@ UUID means canonical lower-case `8-4-4-4-12` hexadecimal; subject means `<identi
 | Setting | Required value / purpose |
 | --- | --- |
 | `NOFRIES_DASHBOARD_ADMIN_ENABLED` | Exact `true` to select environment administration; unset/empty/`false` disables it. |
-| `NOFRIES_DASHBOARD_ADMIN_LOOKUP_AUTHORITY_CONTAINER` | New, private approval container in `AZURE_STORAGE_ACCOUNT_NAME`; different from all session/proof/epoch/customer/starter container names. Unset/empty selects no lookup service. |
-| `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP` | Exact `true` exposes the read-only POST lookup and GET client script. Otherwise 404. |
+| `NOFRIES_DASHBOARD_ADMIN_LOOKUP_AUTHORITY_CONTAINER` | **Superseded; no longer read.** See the staff console section above. |
+| `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP` | Exact `true`, together with `NOFRIES_STAFF_CONSOLE=true`, exposes the read-only lookups. Otherwise off. |
 | `NOFRIES_DASHBOARD_ADMIN_BINDING` | **Unset for this procedure.** Optional listing JSON contract below; not an administrator grant. |
 | `NOFRIES_DASHBOARD_RUNTIME_ENABLED` | Exact `true`; otherwise no native dashboard composition. |
 | `NOFRIES_DASHBOARD_INSTANCE_ID` | Existing runtime instance UUID; must match PostgreSQL, epoch blob and approval. |
@@ -59,6 +77,7 @@ APP='<App Service name>'
 DATA_RG='<application storage resource group>'
 AUTH_RG='<auth storage resource group>'
 APPROVAL_CONTAINER='dashboard-admin-approvals'
+AUDIT_CONTAINER='<existing private admin audit container>'
 JOEL_OID='<Joel user object UUID in the workforce tenant>'
 PUBLISHER_OID='<approved release operator object UUID>'
 PUBLISHER_TYPE='User' # Use ServicePrincipal for an approved automation identity.
@@ -109,13 +128,13 @@ Preserve the existing **Key Vault Secrets User** assignment for referenced secre
 
 3. **Verify PostgreSQL independently.** The database owner runs the existing migrations (including `0003_dashboard.sql` and `0005_dashboard_runtime.sql`, plus subsequent migrations). An Entra administrator registers the managed identity as an Entra database principal (Azure PostgreSQL `pgaadauth_create_principal_with_oid`, object type `service`, using the MI **object** ID), matching `NOFRIES_POSTGRES_USER`, and grants `nofries_runtime WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`. This is SQL, not an Azure RBAC role; do not assign the app PostgreSQL server administrator. Existing migrations provide the subject/capability-reader roles and RLS. No `SUPERUSER`, `BYPASSRLS`, schema ownership or `nofries_dashboard_maintenance` membership for the app. Use the existing private database administration procedure; never print a database token or connection string.
 
-4. **Select the read-only service after the approved release is deployed.** Preserve all other existing settings, especially secrets and any previously adopted writer locator. For a fresh lookup-only adoption, verify `NOFRIES_DASHBOARD_ADMIN_BINDING` is absent; do not delete an existing one. These are the only new/changed settings normally needed when workforce login and native dashboard are already working:
+4. **Select the read-only console after the approved release is deployed.** Preserve all other existing settings, especially secrets. Step 1's approval container and publisher assignments are not needed for the staff console; skip them. Grant the audit container role, then set the flags:
 
 ```bash
+az role assignment create --assignee-object-id "$MI_PRINCIPAL_ID" --assignee-principal-type ServicePrincipal --role 'Storage Blob Data Contributor' --scope "$DATA_ID/blobServices/default/containers/$AUDIT_CONTAINER" --output none
 az webapp config appsettings set --resource-group "$APP_RG" --name "$APP" --settings \
-  NOFRIES_DASHBOARD_ADMIN_ENABLED=true \
-  "NOFRIES_DASHBOARD_ADMIN_LOOKUP_AUTHORITY_CONTAINER=$APPROVAL_CONTAINER" \
-  NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP=true \
+  NOFRIES_STAFF_CONSOLE=true NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP=true \
+  "NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER=$AUDIT_CONTAINER" \
   "NOFRIES_ALLOWED_SUBJECTS=$JOEL_SUBJECT" "NOFRIES_ADMIN_SUBJECTS=$JOEL_SUBJECT" \
   --output none
 ```
@@ -136,7 +155,9 @@ Do not overwrite either subject list if there are separately approved staff iden
 
 The native runtime schemas and receipts are defined in [runtime repository](../api/shared/appLifecycle/postgresDashboardRuntimeRepository.js), [runtime records](../api/shared/appLifecycle/dashboardRuntimeRecords.js) and migrations; [operator session](../api/shared/dashboardOperatorSession.js) owns proof derivation. Do not copy raw operational records into this public repository.
 
-## Publish Joel's scoped approval
+## Publish Joel's scoped approval (superseded for lookup)
+
+Not needed for the staff console. Kept for reference until the clean-up change removes the tool.
 
 Use a private local request file, mode `0600`, outside the checkout. It is **not** an App Setting. Replace every placeholder with reviewed non-secret identifiers. `record.operatorSubjectKey` and `binding.operatorSubjectKey` are Joel's workforce subject; `selector.subjectKey` is the **customer's** immutable provider subject. Scope IDs come from the customer's existing authority record, not an email inference. Use the live epoch and identity policy. All timestamps below are placeholders; use current canonical UTC times, with `approvedAt = changedAt <= validFrom < validUntil` and a maximum one-hour interval. Revision 0 is only for a missing head.
 
@@ -184,11 +205,11 @@ az storage blob download --account-name "$DATA_ACCOUNT" --container-name "$APPRO
 
 ## Verify and disable
 
-Joel signs in with the workforce account, opens `/dashboard-admin/entry`, and initializes the native session through the button. In that same browser session, `/api/dashboard-admin/entry-capabilities` should return 200; `/api/dashboard-admin/capabilities` should report `lookup:true`; `/api/dashboard-admin/accounts/app.js` should return JavaScript/200. Use `/operator` for the lookup: email travels only in the same-origin POST JSON body. An unauthenticated request is 401; a missing/expired/revoked approval or invalid native session is denied; absent composition and customer-source read failures remain unavailable. Approval-store or native-storage failures can also be masked as denial, so 403 alone does not prove the approval record is absent. Check protected storage/RBAC/epoch and App Service safe logs rather than weakening a gate. No user email belongs in a diagnostic URL or pasted log.
+Joel signs in with the workforce account and opens `/operator`. The account lookup panel opens the native operator session itself on the first lookup; email travels only in the same-origin POST JSON body. An unauthenticated request is 401; a missing native session, a non-admin subject or a disabled flag is refused; storage or audit failures return unavailable. Check RBAC, the epoch and App Service safe logs rather than weakening a gate. No user email belongs in a diagnostic URL or pasted log.
 
 ```bash
 # Reversible lookup-only disable; retains all durable records and any writer locator.
-az webapp config appsettings set --resource-group "$APP_RG" --name "$APP" --settings NOFRIES_DASHBOARD_ADMIN_ENABLED=false NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP=false --output none
+az webapp config appsettings set --resource-group "$APP_RG" --name "$APP" --settings NOFRIES_STAFF_CONSOLE=false --output none
 ```
 
 ## Optional signup listing: separate adoption, not required above

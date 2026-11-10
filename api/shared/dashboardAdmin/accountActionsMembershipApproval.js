@@ -19,8 +19,12 @@ function validateMembershipApproval(raw, expected, context, action, policy, at) 
 }
 async function readMembershipApproval(container, operationId, clock) {
     const path = `dashboard-admin-account-actions/${operationId}/`, signal = AbortSignal.timeout(5000);
-    const { record } = await readActionRecord(container, path + 'approval.json', signal);
-    const { record: raw } = await readActionRecord(container, path + 'approval-terminal.json', signal);
+    // An operation nobody approved is a refusal, not a storage outage.
+    const read = async name => {
+        try { return (await readActionRecord(container, path + name, signal)).record; }
+        catch (error) { if (error?.statusCode === 404) denied(); throw error; }
+    };
+    const record = await read('approval.json'), raw = await read('approval-terminal.json');
     const audit = fields(copy(raw, 8192), ['schemaVersion', 'operationId', 'actorSubjectKey', 'action', 'selector', 'targetSha256',
         'before', 'proposedAfter', 'approvalSha256', 'context', 'phase', 'outcome', 'after', 'occurredAt']);
     const grant = accountActionApproval(record.grant); instant(audit.occurredAt);
