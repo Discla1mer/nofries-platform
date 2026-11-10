@@ -273,7 +273,8 @@
         function trendSection(result) {
             const section = node('section', 'picture-trend'), key = epoch + ':' + detail.assessmentId;
             if (trend && trend.key === key) { trend.section = section; paintTrend(); return section; }
-            // Order the loaded submitted results, with the selected record placed by its own saved time.
+            // Order the loaded submitted results by saved time, never by list position:
+            // the list pages by assessment ID, so an unloaded page can hold any date.
             const ordered = rows.filter(row => row.status === 'submitted' && row.assessmentId !== detail.assessmentId)
                 .concat([{ assessmentId: detail.assessmentId, updatedAt: detail.updatedAt }]).sort(newestFirst);
             const index = ordered.findIndex(row => row.assessmentId === detail.assessmentId);
@@ -319,7 +320,8 @@
                 const others = trend.reads.length, state = trend, token = epoch;
                 section.append(node('p', '', (others === 1 ? 'There is 1 other submitted assessment.'
                     : 'There are ' + others + ' other submitted assessments.') + ' Compare results to see what has changed.'));
-                const action = button(trend.previousId ? 'Compare with previous assessment' : 'Compare with later assessments',
+                const action = button(trend.previousId ? (after !== null ? 'Compare with an earlier assessment'
+                    : 'Compare with previous assessment') : 'Compare with later assessments',
                     () => compareTrend(state, token, action));
                 action.classList.add('dashboard-button-secondary'); section.append(action); return heading;
             }
@@ -332,20 +334,26 @@
             }
             if (trend.total === 1) {
                 section.append(node('p', '', 'This is the only submitted assessment so far. Submit another assessment later to see what has changed since this one.'));
-                if (after !== null) section.append(node('p', 'dashboard-muted', 'Older saved assessments may not be loaded yet. Load more to include them.'));
+                if (after !== null) section.append(node('p', 'dashboard-muted', 'Other saved assessments may not be loaded yet. Load more to include them.'));
                 return heading;
             }
             const previous = trend.previousId && trend.points.get(trend.previousId);
+            // While pages remain unloaded, an unseen submission may fall between
+            // these two, so do not call the comparison "the previous assessment".
+            const incomplete = after !== null, earlier = incomplete ? 'Earlier' : 'Previous';
             if (!trend.previousId) section.append(node('p', '', 'This is the earliest submitted assessment shown, so there is nothing earlier to compare it with. Choose a later assessment to see what changed.'));
-            else if (!previous) section.append(node('p', '', 'The previous assessment\'s results could not be shown, so no change is shown.'));
+            else if (!previous) section.append(node('p', '', (incomplete ? 'The earlier' : 'The previous') + ' assessment\'s results could not be shown, so no change is shown.'));
             else {
-                section.append(node('p', '', 'Compared with the previous assessment, submitted ' + displayDate(previous.submittedAt) + '.'));
+                section.append(node('p', '', incomplete
+                    ? 'Compared with the most recent earlier assessment loaded so far, submitted ' + displayDate(previous.submittedAt) +
+                        '. Other saved assessments are not loaded yet, so there may be one in between. Load more to check.'
+                    : 'Compared with the previous assessment, submitted ' + displayDate(previous.submittedAt) + '.'));
                 if (previous.scope !== current.scope) section.append(node('p', 'ncsc-warning',
                     'The two assessments describe their scope differently. Some of the change may come from the different scope rather than from changes in the organisation.'));
                 const table = node('table', 'picture-trend-table');
-                table.append(node('caption', '', 'Reported implementation, previous and now'));
+                table.append(node('caption', '', 'Reported implementation, ' + earlier.toLowerCase() + ' and now'));
                 const head = node('thead'), headRow = node('tr');
-                ['Area', 'Previous', 'Now', 'Change'].forEach(label => { const cell = node('th', '', label); cell.setAttribute('scope', 'col'); headRow.append(cell); });
+                ['Area', earlier, 'Now', 'Change'].forEach(label => { const cell = node('th', '', label); cell.setAttribute('scope', 'col'); headRow.append(cell); });
                 head.append(headRow);
                 const body = node('tbody');
                 const line = (label, before, now) => {
@@ -370,7 +378,7 @@
             });
             section.append(list);
             if (trend.order.length < trend.total || after !== null) section.append(node('p', 'dashboard-muted',
-                'Showing ' + trend.order.length + ' of ' + trend.total + ' loaded submitted assessments, newest first.' + (after !== null ? ' Load more to include older ones.' : '')));
+                'Showing ' + trend.order.length + ' of ' + trend.total + ' loaded submitted assessments, newest first.' + (after !== null ? ' Other saved assessments are not loaded yet and may be from any date. Load more to include them.' : '')));
             return heading;
         }
         function renderResult(result) {

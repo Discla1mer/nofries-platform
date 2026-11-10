@@ -1028,3 +1028,39 @@ test('a stale Compare button cannot start reads after the selection changes', as
     const late = dom.root.textContent; stale.click(); await flush();
     assert.equal(reads.length, count); assert.equal(dom.root.textContent, late);
 });
+
+test('with assessments still unloaded, the comparison is labelled as against the most recent earlier loaded assessment', async () => {
+    // The list pages by assessment ID, not by submission time. The first page
+    // holds November and September; October sits on an unloaded later page.
+    const november = submittedAt('assessment-a', '2026-11-10T00:00:00.000Z', mixedResponses());
+    const september = submittedAt('assessment-b', '2026-09-10T00:00:00.000Z', allResponses('no'));
+    const october = submittedAt('assessment-c', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    const all = [november, september, october], reads = [];
+    const summary = row => { const value = clone(row); delete value.responses; delete value.submission; return value; };
+    const client = {
+        list: async input => input.afterAssessmentId === null
+            ? { assessments: [november, september].map(summary), nextAfterAssessmentId: september.assessmentId }
+            : { assessments: [october].map(summary), nextAfterAssessmentId: null },
+        read: async id => { reads.push(id); return { assessment: clone(all.find(row => row.assessmentId === id)) }; }
+    };
+    const dom = setup({ client, options: { initialAssessmentId: november.assessmentId } }); await flush();
+    assert.deepEqual(trendSection(dom).querySelectorAll('button').map(button => button.textContent), ['Compare with an earlier assessment']);
+    click(dom, 'Compare with an earlier assessment'); await flush();
+    let section = trendSection(dom);
+    // Chronological among loaded rows: September is the nearest earlier loaded result.
+    assert.deepEqual(trendRows(dom)[0], ['Overall', '0.0%', '46.4%–60.7%', 'Up 46.4 points']);
+    assert.match(section.textContent, /Compared with the most recent earlier assessment loaded so far, submitted 10 Sept 2026, [^.]+\. Other saved assessments are not loaded yet, so there may be one in between\. Load more to check\./);
+    assert.doesNotMatch(section.textContent, /the previous assessment|Previous/);
+    assert.equal(section.querySelector('caption').textContent, 'Reported implementation, earlier and now');
+    assert.doesNotMatch(section.textContent, /older ones/);
+    assert.match(section.textContent, /Other saved assessments are not loaded yet and may be from any date\. Load more to include them\./);
+    // Once every page is loaded, October is the true previous submission.
+    click(dom, 'Load more'); await flush();
+    click(dom, 'Compare with previous assessment'); await flush();
+    section = trendSection(dom);
+    assert.deepEqual(trendRows(dom)[0], ['Overall', '100.0%', '46.4%–60.7%', 'Down 53.6 points']);
+    assert.match(section.textContent, /Compared with the previous assessment, submitted 10 Oct 2026, [^.]+\./);
+    assert.deepEqual(section.querySelector('.picture-trend-history').querySelectorAll('li')
+        .map(item => item.textContent.slice(0, 11)), ['10 Nov 2026', '10 Oct 2026', '10 Sept 202']);
+    dom.controller.destroy();
+});
