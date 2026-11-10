@@ -1312,38 +1312,11 @@ function registerRealPostgresTests() {
                 expect(switched.status).toBe(200);
                 const foreign = await request(h.app).get('/api/dashboard/ncsc/assessments/assessment-a').set('Cookie', login.cookie).set(generationHeader, switched.body.generation);
                 expect(foreign.status).toBe(404);
-                const reserved = [];
                 for (let n = 2; n <= 3; n++) {
-                    const id = nextId(), saved = await clientPost({ action: 'create', requestId: id, organisationName: 'Synthetic client ' + n, details });
-                    expect(saved.status).toBe(200); reserved.push({ requestId: id, state: saved.body.state });
+                    expect((await clientPost({ action: 'create', requestId: nextId(), organisationName: 'Synthetic client ' + n, details })).status).toBe(200);
                 }
                 const full = await clientPost({ action: 'create', requestId: nextId(), organisationName: 'Fourth synthetic client', details });
                 expect(full.status).toBe(409); expect(full.body.code).toBe('starter_client_limit');
-                // A slot reserved inside the recorded period but accepted after it
-                // stays read-only: no consent is recorded and the SQL activation
-                // guard is never reached. Existing organisations remain listed.
-                // The earlier browser session has expired by then, so sign in again.
-                if (external) {
-                    const realNow = Date.now, count = async sql => (await ownerPool.query(sql)).rows[0].n;
-                    const activatedSql = 'SELECT count(*)::int AS n FROM nofries.dashboard_starter_scopes WHERE activation IS NOT NULL';
-                    const receiptsSql = 'SELECT count(*)::int AS n FROM nofries.signup_acceptance_receipts';
-                    const receiptsBefore = await count(receiptsSql);
-                    Date.now = () => realNow() + 15 * 86400000; // Moves the application clock only; stored dates stay as written.
-                    try {
-                        const later = await h.loginExternal(); expect(later.response.status).toBe(303);
-                        const closed = await request(h.app).get('/api/customer-signup/clients').set('Cookie', later.cookie);
-                        expect(closed.body.state).toMatchObject({ status: 'clients_read_only', remaining: null });
-                        expect(closed.body.state.clients.find(row => row.requestId === requestId)).toMatchObject({ status: 'ready' });
-                        const latePost = body => h.sameOrigin(request(h.app).post('/api/customer-signup/clients'))
-                            .set('Cookie', later.cookie).set('X-CSRF-Token', closed.body.csrfToken).send(body);
-                        const accept = await latePost({ action: 'accept', requestId: reserved[0].requestId, terms: { accepted: true,
-                            ...Object.fromEntries(['termsVersion', 'termsDigest', 'scheduleId', 'scheduleDigest'].map(k => [k, reserved[0].state[k]])) } });
-                        expect({ status: accept.status, state: accept.body.state }).toEqual({ status: 200, state: { status: 'setup_read_only' } });
-                        const resumed = await latePost({ action: 'resume', requestId: reserved[1].requestId });
-                        expect({ status: resumed.status, state: resumed.body.state }).toEqual({ status: 200, state: { status: 'setup_read_only' } });
-                        expect(await count(activatedSql)).toBe(2); expect(await count(receiptsSql)).toBe(receiptsBefore);
-                    } finally { Date.now = realNow; }
-                }
                 // The real membership state, not a BFF or immutable plan, governs
                 // further client operations after an owner revocation.
                 await createPostgresDatabase({ pool: ownerPool }).withTenantTransaction(current.tenantId, async tx => {

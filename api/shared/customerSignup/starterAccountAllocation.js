@@ -99,13 +99,6 @@ function createStarterAccountAllocator({ store, readActivation, captureOwner, no
         if (value.accountType !== 'consultant' || !value.activation || value.activation.subjectKey !== actor.subjectKey ||
             value.email !== actor.email || time() < Date.parse(value.activation.activatedAt)) fail('starter_client_setup_denied');
     }
-    // Reading and resuming existing clients has no end date (accounts do not
-    // expire). Reserving a client slot stays bounded by the recorded period,
-    // which the SQL insert policy and activation trigger (migration 0011) require.
-    function reservable(value, actor) {
-        current(value, actor);
-        if (time() >= Date.parse(value.activation.validUntil)) fail('starter_client_setup_denied');
-    }
     async function currentAccount(request, actor, expected) {
         const loaded = await load(actor.email); if (!loaded) fail('starter_account_missing');
         current(loaded.record, actor);
@@ -240,17 +233,17 @@ function createStarterAccountAllocator({ store, readActivation, captureOwner, no
             const actor = await owner(request);
             for (let attempt = 0; attempt < 8; attempt++) {
                 const loaded = await load(actor.email); if (!loaded) fail('starter_account_missing');
-                reservable(loaded.record, actor);
+                current(loaded.record, actor);
                 const original = loaded.record.organisations.find(item => item.requestId === command.requestId);
                 if (original) {
                     if (original.kind !== 'client' || original.organisationName !== command.organisationName) fail('starter_request_changed');
                     if (hash(await owner(request)) !== hash(actor)) fail('starter_owner_changed');
-                    reservable(loaded.record, actor); return original;
+                    current(loaded.record, actor); return original;
                 }
                 if (loaded.record.organisations.length - 1 >= approvedStarterPlan(loaded.record.planId).consultantClientOrganisations) fail('starter_client_limit');
                 const next = record({ ...loaded.record, organisations: [...loaded.record.organisations,
                     slot(command.requestId, 'client', command.organisationName)] });
-                if (hash(await owner(request)) !== hash(actor)) fail('starter_owner_changed'); reservable(loaded.record, actor);
+                if (hash(await owner(request)) !== hash(actor)) fail('starter_owner_changed'); current(loaded.record, actor);
                 try { if (!await store.replace(key(actor.email), loaded.version, next)) continue; }
                 catch (error) {
                     const observed = await load(actor.email);
@@ -259,9 +252,9 @@ function createStarterAccountAllocator({ store, readActivation, captureOwner, no
                     // never refund it or perform its external provisioning here.
                 }
                 const observed = await load(actor.email); if (!observed) fail('starter_reconciliation_required');
-                reservable(observed.record, actor);
+                current(observed.record, actor);
                 if (hash(await owner(request)) !== hash(actor)) fail('starter_owner_changed');
-                reservable(observed.record, actor);
+                current(observed.record, actor);
                 const saved = observed.record.organisations.find(item => item.requestId === command.requestId);
                 if (!saved || saved.kind !== 'client' || saved.organisationName !== command.organisationName) fail('starter_reconciliation_required');
                 return saved;

@@ -58,6 +58,8 @@ Set `NOFRIES_STAFF_CONSOLE=false` to turn the whole console off. Set `NOFRIES_DA
 
 **Suspend or restore.** Type the account email to approve, then apply within 15 minutes. The approval is bound to the staff session, the customer, the membership revision that was read and one operation. Suspension blocks only that organisation's dashboard membership; restore needs the matching staff suspension on record. Each approval and each action writes an attempt record and an outcome record under `dashboard-admin-account-actions/<operation>/`; success is reported only after the outcome record is stored. If the page says the outcome could not be confirmed, read dashboard access again before retrying.
 
+To stop a customer's access, suspend the membership. Accounts do not expire, and if two dashboard product grants already stored for an organisation share a start date, suspending one of them does not stop access.
+
 ## If a restore is refused after a suspension that did happen
 
 A suspension is committed in the database before its outcome record is written. If that final audit write fails (storage outage at that moment), the page reports that the outcome could not be confirmed, the membership **is** suspended, and the operation's `terminal.json` says `"outcome": "uncertain"` instead of `succeeded`.

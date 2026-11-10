@@ -116,10 +116,10 @@ test('no matching member/invitation is only absence in this exact scope, with no
     expect(value.result.signup.status).toBe('unavailable');
 });
 
-test('expired memberships and actual grant validity stay visible without declaring signup success', async () => {
+test('a membership past its recorded end is reported as active, with the saved dates still visible', async () => {
     const h = setup(); h.state.now = '2026-09-08T09:00:00.000Z';
     const { result } = await h.service.lookup(principal, h.selector);
-    expect(result.memberships[0]).toMatchObject({ status: 'active', effectiveStatus: 'expired', validUntil: '2026-09-07T09:00:00.000Z' });
+    expect(result.memberships[0]).toMatchObject({ status: 'active', effectiveStatus: 'active', validUntil: '2026-09-07T09:00:00.000Z' });
     expect(result.entitlements[0].validUntil).toBe('2026-09-07T09:00:00.000Z');
     expect(result.signup).toEqual({ status: 'unavailable' });
 });

@@ -440,7 +440,7 @@ describe('consultant client setup', () => {
         expect(h.requests.filter(request=>request.init.method==='POST')).toHaveLength(1);
         expect(buttons(h).some(button=>button.textContent==='Accept and create client dashboard')).toBe(false);
         const text=h.document.getElementById('clientSetupControls').textContent;
-        expect(text).toContain('New organisations cannot be added from this account right now.');
+        expect(text).not.toContain('cannot be added'); // Nothing closes additions by date; read-only lists say nothing about it.
         expect(text).not.toMatch(/access period|expir|trial/i);
     });
     test('setup read-only response prevents a detached old form from resubmitting its lifecycle command',async()=>{
