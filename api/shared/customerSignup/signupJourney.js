@@ -39,7 +39,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             section.append(element('p', 'A module marked “Coming next” in your dashboard is not available yet. It becomes available when it is released.'));
         }
         section.append(
-            element('p', 'These points are quoted from your organisation schedule below. The full schedule and agreement are what you accept.'));
+            element('p', 'These points summarise your organisation schedule below. The full schedule and agreement are what you accept.'));
         return section;
     }
     function button(label, action, timeoutMs = 30000, restoreDraft = false) {
