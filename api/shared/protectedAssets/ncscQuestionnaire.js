@@ -70,7 +70,8 @@
         },
         'NF-NCSC-CC-SV-01-Q1': {
             consider: 'Think about requests to change payments, sign-in details, account recovery or sensitive data. Is the request checked through a trusted route separate from the original message?',
-            example: 'Payment changes are checked using a known phone number, but password and MFA resets are not independently checked. This matches Partial.'
+            example: 'Payment changes are checked using a known phone number, but password and MFA resets are not independently checked. This matches Partial.',
+            notApplicable: 'Not handling payments is not enough to make this whole question Not applicable. Explain why payment or bank-detail changes, password or MFA resets, account recovery and sensitive-data changes are all outside your declared scope. If you are unsure, choose Unknown.'
         },
         'NF-NCSC-CC-AC-01-Q1': {
             consider: 'Check what prevents unapproved or risky programs, scripts, macros and files from running on systems where they could cause serious harm.',
@@ -1066,7 +1067,8 @@
                 const rationale = node('textarea', 'ncsc-textarea'); rationale.id = 'ncsc-rationale-' + question.id; rationale.value = entry.value.rationale ? entry.value.rationale.text : '';
                 rationale.rows = 6; rationale.required = true; rationale.readOnly = !writable;
                 rationale.setAttribute('aria-describedby', 'ncsc-rationale-help-' + question.id);
-                const help = node('p', 'dashboard-muted', 'Explain why this does not apply, in up to 4,000 characters. This remains unresolved and included in the score denominator unless formally approved. N/A approval is not available in this journey.'); help.id = 'ncsc-rationale-help-' + question.id;
+                const scopeHelp = writable && inputGuidance && inputGuidance.notApplicable ? inputGuidance.notApplicable + ' ' : '';
+                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. This remains unresolved and included in the score denominator unless formally approved. N/A approval is not available in this journey.'); help.id = 'ncsc-rationale-help-' + question.id;
                 rationale.addEventListener('input', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit()) return;
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });
