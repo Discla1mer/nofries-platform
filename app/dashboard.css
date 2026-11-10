@@ -150,6 +150,13 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-follow-up-filter select { min-width: 0; max-width: 100%; flex: 1 1 16rem; min-height: 2.875rem; padding: .6rem; border: 1px solid var(--dashboard-control-border); border-radius: .5rem; color: var(--dashboard-ink); background: var(--dashboard-surface); font: inherit; }
 .picture-limitations { padding: 1rem 0; font-size: var(--dashboard-font-small); }
 .picture-limitations h3 { margin-bottom: .5rem; }
+.picture-trend { padding: 1rem 0; }
+.picture-trend-table { width: 100%; margin: .75rem 0; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.picture-trend-table caption { text-align: left; font-weight: var(--dashboard-weight-regular); margin-bottom: .4rem; }
+.picture-trend-table :is(th, td) { padding: .45rem .5rem; border-bottom: 1px solid var(--dashboard-control-border); text-align: left; vertical-align: top; }
+.picture-trend-table tbody th { font-weight: var(--dashboard-weight-regular); }
+.picture-trend-history { padding-left: 1.3rem; }
+.picture-trend-history li { margin: .4rem 0; }
 .organisation-picture > .dashboard-button { margin-top: 1rem; }
 .picture-status { color: var(--dashboard-muted); }
 @media (max-width: 60rem) {

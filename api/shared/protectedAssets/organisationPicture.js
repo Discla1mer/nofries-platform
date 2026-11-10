@@ -7,6 +7,9 @@
     const mounted = new WeakMap();
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
     let sequence = 0;
+    // Bounded number of submitted results shown in the history. Each one is a
+    // separate authorised read; nothing is cached across selections.
+    const TREND_LIMIT = 5;
     const copy = value => JSON.parse(JSON.stringify(value));
     const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
@@ -32,6 +35,7 @@
         let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null;
         let selected = initialAssessmentId || '', detail = null, loading = false, message = '', denied = false;
         let loaded = false, retry = null, explanationController = null;
+        let trend = null;
         function live(token) { return !disposed && (token === undefined || token === epoch); }
         function node(tag, cls, text) {
             const value = doc.createElement(tag); if (cls) value.className = cls;
@@ -251,6 +255,123 @@
                     } });
             }
         }
+        const newestFirst = (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId);
+        // Display-only view over results the validator already accepted. It
+        // subtracts saved percentages for display and never re-scores answers.
+        function trendPoint(value, result) {
+            const attainment = value.submission.evaluation.attainment;
+            return { assessmentId: value.assessmentId, submittedAt: value.updatedAt, scope: value.scopePopulation.description,
+                attainment: result.attainment, lower: attainment.lowerPercentTenths,
+                domains: result.domains.map(domain => ({ title: domain.title, attainment: domain.attainment, lower: domain.lowerPercentTenths })) };
+        }
+        function changeText(before, after) {
+            if (before === null || after === null) return 'Not comparable';
+            const difference = after - before, points = (Math.abs(difference) / 10).toFixed(1);
+            return difference === 0 ? 'No change' : (difference > 0 ? 'Up ' : 'Down ') + points + (points === '1.0' ? ' point' : ' points');
+        }
+        function trendSection(result) {
+            const section = node('section', 'picture-trend'), key = epoch + ':' + detail.assessmentId;
+            if (trend && trend.key === key) { trend.section = section; paintTrend(); return section; }
+            // Order the loaded submitted results, with the selected record placed by its own saved time.
+            const ordered = rows.filter(row => row.status === 'submitted' && row.assessmentId !== detail.assessmentId)
+                .concat([{ assessmentId: detail.assessmentId, updatedAt: detail.updatedAt }]).sort(newestFirst);
+            const index = ordered.findIndex(row => row.assessmentId === detail.assessmentId);
+            const start = Math.max(0, index + 2 - TREND_LIMIT), shown = ordered.slice(start, start + TREND_LIMIT);
+            const state = trend = { key, section, status: 'ready', total: ordered.length, order: shown.map(row => row.assessmentId),
+                previousId: ordered[index + 1] ? ordered[index + 1].assessmentId : null,
+                points: new Map([[detail.assessmentId, trendPoint(detail, result)]]) };
+            state.reads = shown.filter(row => row.assessmentId !== detail.assessmentId);
+            if (state.reads.length) state.status = 'idle';
+            paintTrend(); return section;
+        }
+        // Earlier results are read only when asked: each read is a fresh,
+        // authorised and audited request, and nothing is cached between views.
+        function compareTrend(state, token, control) {
+            if (!live(token) || loading || denied || trend !== state || state.status !== 'idle' ||
+                !control || control.parentElement !== state.section || !root.contains(state.section)) return;
+            state.status = 'loading'; paintTrend();
+            Promise.all(state.reads.map(async row => {
+                const response = await call('read', row.assessmentId, token);
+                const value = response && response.assessment;
+                if (!value || value.assessmentId !== row.assessmentId || value.moduleId !== metadata.moduleId ||
+                    !sameProfile(value.profileRef, metadata.profileRef)) return;
+                const earlier = questionnaire.resultModel(value, metadata, organisationId);
+                if (earlier) state.points.set(value.assessmentId, trendPoint(value, earlier));
+            })).then(() => {
+                if (!live(token) || trend !== state) return;
+                state.status = 'ready'; const heading = paintTrend();
+                // The Compare button is replaced; keep keyboard users in this section.
+                if (!root.contains(doc.activeElement)) heading.focus();
+            }, error => {
+                if (!live(token) || trend !== state) return;
+                if ([401, 403].includes(error && (error.status || error.statusCode))) {
+                    abort(); epoch++; failure({ statusCode: 403 }, null); render(); return;
+                }
+                state.status = 'failed'; paintTrend();
+            });
+        }
+        function paintTrend() {
+            const section = trend.section, current = trend.points.get(detail.assessmentId);
+            const heading = node('h3', '', 'Change over time'); heading.tabIndex = -1;
+            section.replaceChildren(heading);
+            if (trend.status === 'idle') {
+                const others = trend.reads.length, state = trend, token = epoch;
+                section.append(node('p', '', (others === 1 ? 'There is 1 other submitted assessment.'
+                    : 'There are ' + others + ' other submitted assessments.') + ' Compare results to see what has changed.'));
+                const action = button(trend.previousId ? 'Compare with previous assessment' : 'Compare with later assessments',
+                    () => compareTrend(state, token, action));
+                action.classList.add('dashboard-button-secondary'); section.append(action); return heading;
+            }
+            if (trend.status === 'loading') {
+                const status = node('p', 'dashboard-muted', 'Loading earlier submitted results…');
+                status.setAttribute('role', 'status'); section.append(status); return heading;
+            }
+            if (trend.status === 'failed') {
+                section.append(node('p', 'dashboard-muted', 'Earlier results could not be loaded, so no change is shown. Refresh to try again.')); return heading;
+            }
+            if (trend.total === 1) {
+                section.append(node('p', '', 'This is the only submitted assessment so far. Submit another assessment later to see what has changed since this one.'));
+                if (after !== null) section.append(node('p', 'dashboard-muted', 'Older saved assessments may not be loaded yet. Load more to include them.'));
+                return heading;
+            }
+            const previous = trend.previousId && trend.points.get(trend.previousId);
+            if (!trend.previousId) section.append(node('p', '', 'This is the earliest submitted assessment shown, so there is nothing earlier to compare it with. Choose a later assessment to see what changed.'));
+            else if (!previous) section.append(node('p', '', 'The previous assessment\'s results could not be shown, so no change is shown.'));
+            else {
+                section.append(node('p', '', 'Compared with the previous assessment, submitted ' + displayDate(previous.submittedAt) + '.'));
+                if (previous.scope !== current.scope) section.append(node('p', 'ncsc-warning',
+                    'The two assessments describe their scope differently. Some of the change may come from the different scope rather than from changes in the organisation.'));
+                const table = node('table', 'picture-trend-table');
+                table.append(node('caption', '', 'Reported implementation, previous and now'));
+                const head = node('thead'), headRow = node('tr');
+                ['Area', 'Previous', 'Now', 'Change'].forEach(label => { const cell = node('th', '', label); cell.setAttribute('scope', 'col'); headRow.append(cell); });
+                head.append(headRow);
+                const body = node('tbody');
+                const line = (label, before, now) => {
+                    const row = node('tr'), title = node('th', '', label); title.setAttribute('scope', 'row');
+                    row.append(title, node('td', '', before.attainment), node('td', '', now.attainment),
+                        node('td', 'picture-trend-change', changeText(before.lower, now.lower)));
+                    body.append(row);
+                };
+                line('Overall', previous, current);
+                current.domains.forEach((domain, position) => line(domain.title, previous.domains[position], domain));
+                table.append(head, body); section.append(table,
+                    node('p', 'dashboard-muted', 'Change compares the lower figure in each range: what was reported as in place. Unknown answers and Not applicable answers waiting for review are not counted as in place. These are self-reported answers, not a risk trend or proof that controls work.'));
+            }
+            section.append(node('h4', '', 'Submitted assessments'));
+            const list = node('ol', 'picture-trend-history');
+            trend.order.forEach(assessmentId => {
+                const point = trend.points.get(assessmentId), row = rows.find(item => item.assessmentId === assessmentId);
+                const item = node('li', '', point ? displayDate(point.submittedAt) + ' · ' + point.attainment + ' reported implementation · ' + point.scope
+                    : displayDate(row.updatedAt) + ' · Result unavailable');
+                if (assessmentId === detail.assessmentId) { item.append(node('strong', '', '(shown above)')); item.setAttribute('aria-current', 'true'); }
+                list.append(item);
+            });
+            section.append(list);
+            if (trend.order.length < trend.total || after !== null) section.append(node('p', 'dashboard-muted',
+                'Showing ' + trend.order.length + ' of ' + trend.total + ' loaded submitted assessments, newest first.' + (after !== null ? ' Load more to include older ones.' : '')));
+            return heading;
+        }
         function renderResult(result) {
             const metrics = node('div', 'picture-metrics');
             function metric(label, value, copyText, primary) {
@@ -281,6 +402,7 @@
                 row.append(node('p', 'picture-domain-detail', domain.completed + ' / ' + domain.total + ' answers resolved · scoring weight ' + domain.denominatorWeight));
                 domains.append(row);
             }); root.append(domains);
+            root.append(trendSection(result));
             const follow = node('section', 'picture-follow-up ncsc-results');
             follow.append(node('h3', '', 'What to do next'));
             const filterEpoch = epoch;
@@ -387,7 +509,7 @@
             root.append(follow);
             const limits = node('section', 'picture-limitations');
             limits.append(node('h3', '', 'How to read this picture'), node('p', '',
-                'Risk priority: not calculated. Trend: no comparable assessment selected. A high implementation score does not establish control effectiveness or low business risk.'),
+                'Risk priority: not calculated. Change over time compares submitted answers only; it is not a risk trend. A high implementation score does not establish control effectiveness or low business risk.'),
                 node('p', '', 'This is a self-reported gap assessment, not an audit, assurance opinion or certification. Reports and findings must be reviewed and linked before they can support evidence confidence.'));
             root.append(limits);
             const calculation = node('details', 'picture-calculation');

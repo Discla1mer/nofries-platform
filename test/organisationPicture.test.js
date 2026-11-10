@@ -859,3 +859,148 @@ test('denial and detached result controls cannot open a plan or change follow-up
         dom.controller.destroy();
     }
 });
+
+// Change over time: submitted results of the same profile, compared on request.
+function submittedAt(assessmentId, at, responses, scope = 'Synthetic office and cloud scope.') {
+    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
+    let version = null;
+    for (const command of [createCommand(assessmentId, 'create-' + assessmentId, scope),
+        saveCommand(assessmentId, 0, 'save-' + assessmentId, responses), submitCommand(assessmentId, 1, 'submit-' + assessmentId)]) {
+        version = makeVersion({ ...tenant.scope, actorSubjectKey: SUBJECT, assessmentId, action: command.action,
+            expectedRevision: command.expectedRevision, payload: command.payload },
+        command.idempotencyKey, version, tenant.state.tenantAggregate, at);
+    }
+    return projectNcscDetail(version);
+}
+function mixedResponses() {
+    return allResponses().map((row, index) => ({ ...row,
+        optionId: index < 3 ? 'yes' : index < 10 ? 'partial' : index < 12 ? 'no' : index === 12 ? 'unknown' : 'not_applicable',
+        rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null }));
+}
+function trendClient(records, settings = {}) {
+    const reads = []; let writes = 0;
+    const summary = row => { const value = clone(row); delete value.responses; delete value.submission; return value; };
+    const client = { list: async () => ({ assessments: records.map(summary), nextAfterAssessmentId: settings.after || null }),
+        read: async id => { reads.push(id); if (settings.fail && settings.fail(id)) throw settings.fail(id);
+            return { assessment: clone(records.find(row => row.assessmentId === id)) }; },
+        create: () => writes++, save: () => writes++, submit: () => writes++ };
+    return { client, reads, writes: () => writes };
+}
+const trendSection = dom => dom.root.querySelector('.picture-trend');
+const trendRows = dom => trendSection(dom).querySelector('tbody').querySelectorAll('tr')
+    .map(row => row.children.map(cell => cell.textContent));
+
+test('a single submitted assessment explains that there is nothing to compare yet and makes no extra reads', async () => {
+    const only = submittedAt('assessment-only', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const draft = clone(buildFixtures().tenants[0].assessments[0]);
+    const { client, reads } = trendClient([only, draft]);
+    const dom = setup({ client, options: { initialAssessmentId: only.assessmentId } }); await flush();
+    const section = trendSection(dom);
+    assert.equal(section.querySelector('h3').textContent, 'Change over time');
+    assert.match(section.textContent, /This is the only submitted assessment so far\. Submit another assessment later/);
+    assert.equal(section.querySelectorAll('button').length, 0);
+    assert.equal(section.querySelector('table'), null);
+    assert.deepEqual(reads, [only.assessmentId]);
+    assert.match(dom.root.textContent, /Change over time compares submitted answers only; it is not a risk trend/);
+    dom.controller.destroy();
+});
+
+test('comparing with the previous submitted assessment shows overall and per-function change without writes', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    const draft = clone(buildFixtures().tenants[0].assessments[0]);
+    const before = clone([earlier, later]);
+    const { client, reads, writes } = trendClient([earlier, later, draft]);
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
+    let section = trendSection(dom);
+    assert.match(section.textContent, /There is 1 other submitted assessment\. Compare results to see what has changed\./);
+    assert.deepEqual(reads, [later.assessmentId]);
+    const compare = section.querySelectorAll('button').find(button => button.textContent === 'Compare with previous assessment');
+    compare.focus(); compare.click(); await flush();
+    assert.deepEqual(reads, [later.assessmentId, earlier.assessmentId]);
+    section = trendSection(dom);
+    assert.match(section.textContent, /Compared with the previous assessment, submitted 10 Sept 2026/);
+    assert.equal(section.querySelector('.ncsc-warning'), null);
+    const rows = trendRows(dom);
+    assert.deepEqual(rows[0], ['Overall', '46.4%–60.7%', '100.0%', 'Up 53.6 points']);
+    assert.equal(rows.length, 1 + dom.fixtures.metadata.domains.length);
+    assert.deepEqual(rows.slice(1).map(row => row[0]), dom.fixtures.metadata.domains.map(domain => domain.title));
+    assert.ok(rows.slice(1).every(row => row[2] === '100.0%' && /^(Up \d+\.\d points?|No change)$/.test(row[3])));
+    assert.match(section.textContent, /compares the lower figure in each range: what was reported as in place/);
+    const history = section.querySelector('.picture-trend-history').querySelectorAll('li');
+    assert.equal(history.length, 2);
+    assert.match(history[0].textContent, /100\.0% reported implementation .*\(shown above\)/);
+    assert.equal(history[0].getAttribute('aria-current'), 'true');
+    assert.match(history[1].textContent, /46\.4%–60\.7% reported implementation/);
+    // The replaced Compare button hands focus to the section heading.
+    assert.ok(dom.document.activeElement === section.querySelector('h3'));
+    // The main saved result is unchanged by the comparison.
+    assert.match(dom.root.querySelector('.picture-metrics').textContent, /100\.0%/);
+    assert.equal(writes(), 0); assert.deepEqual([earlier, later], before);
+    dom.controller.destroy();
+});
+
+test('a decline is shown as down, the earliest record has no previous result and a changed scope is flagged', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('yes'), 'Head office only.');
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());
+    const { client, reads } = trendClient([earlier, later]);
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
+    click(dom, 'Compare with previous assessment'); await flush();
+    assert.deepEqual(trendRows(dom)[0], ['Overall', '100.0%', '46.4%–60.7%', 'Down 53.6 points']);
+    assert.match(trendSection(dom).querySelector('.ncsc-warning').textContent, /describe their scope differently/);
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), earlier.assessmentId); await flush();
+    assert.equal(reads.length, 3);
+    assert.equal(trendSection(dom).querySelectorAll('button').map(button => button.textContent).join(), 'Compare with later assessments');
+    click(dom, 'Compare with later assessments'); await flush();
+    assert.equal(reads.length, 4);
+    assert.match(trendSection(dom).textContent, /earliest submitted assessment shown, so there is nothing earlier to compare/);
+    assert.equal(trendSection(dom).querySelector('table'), null);
+    assert.equal(trendSection(dom).querySelectorAll('li').length, 2);
+    dom.controller.destroy();
+});
+
+test('identical results show no change and the history is bounded to five submitted assessments', async () => {
+    const records = Array.from({ length: 7 }, (_, index) => submittedAt('assessment-' + index,
+        new Date(Date.parse(NOW) + (index + 1) * 86400000).toISOString(), allResponses('yes')));
+    const { client, reads } = trendClient(records);
+    const dom = setup({ client, options: { initialAssessmentId: 'assessment-6' } }); await flush();
+    assert.match(trendSection(dom).textContent, /There are 4 other submitted assessments/);
+    click(dom, 'Compare with previous assessment'); await flush();
+    assert.equal(reads.length, 5);
+    assert.ok(trendRows(dom).every(row => row[3] === 'No change'));
+    assert.equal(trendSection(dom).querySelector('.picture-trend-history').querySelectorAll('li').length, 5);
+    assert.match(trendSection(dom).textContent, /Showing 5 of 7 loaded submitted assessments, newest first\./);
+    dom.controller.destroy();
+});
+
+test('a failed earlier read leaves the selected result intact, and a denied read clears the picture', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    let status = 503;
+    const { client } = trendClient([earlier, later], { fail: id => id === earlier.assessmentId ? { statusCode: status } : null });
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
+    click(dom, 'Compare with previous assessment'); await flush();
+    assert.match(trendSection(dom).textContent, /Earlier results could not be loaded, so no change is shown/);
+    assert.match(dom.root.querySelector('.picture-metrics').textContent, /100\.0%/);
+    status = 403; click(dom, 'Refresh'); await flush();
+    click(dom, 'Compare with previous assessment'); await flush();
+    assert.match(dom.root.textContent, /This organisation picture is unavailable/);
+    assert.equal(dom.root.querySelector('.picture-trend'), null);
+    assert.doesNotMatch(dom.root.textContent, /100\.0%|46\.4%/);
+    dom.controller.destroy();
+});
+
+test('a stale Compare button cannot start reads after the selection changes', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    const { client, reads } = trendClient([earlier, later]);
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
+    const stale = dom.root.querySelectorAll('button').find(button => button.textContent === 'Compare with previous assessment');
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), earlier.assessmentId); await flush();
+    const count = reads.length; stale.click(); await flush();
+    assert.equal(reads.length, count);
+    assert.equal(trendSection(dom).querySelector('table'), null);
+    dom.controller.destroy();
+    const late = dom.root.textContent; stale.click(); await flush();
+    assert.equal(reads.length, count); assert.equal(dom.root.textContent, late);
+});
