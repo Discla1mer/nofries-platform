@@ -6,7 +6,7 @@
         'https://nofries.nz/', 'https://nofries.nz/dashboard', 'https://nofries.nz/login',
         'https://nofries.nz/managed-it.html', 'https://nofries.nz/scoping',
         'https://nofries.nz/roadmap.html', 'https://nofries.nz/privacy.html',
-        'https://news.nofries.nz/', 'https://sales.nofries.nz/', 'https://luna.nofries.nz/'
+        'https://sales.nofries.nz/', 'https://luna.nofries.nz/'
     ]);
 
     function mount(options = {}) {

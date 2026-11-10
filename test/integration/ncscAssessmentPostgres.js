@@ -238,10 +238,10 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             await until(() => button(ui, 'Save progress'));
             const assessmentId = transport.calls[0].assessmentId, rationale = '  Synthetic pending N/A claim.\n界 \uD83D\uDE80  ';
             answer(ui, 0, 'not_applicable', rationale); button(ui, 'Save progress').click();
-            await until(() => button(ui, 'Retry same operation'));
+            await until(() => button(ui, 'Try the save again'));
             expect((await repository.readNcscAssessment(first.context, { assessmentId })).assessment.revision).toBe(1);
             expect(await ui.controller.requestLeave()).toBe(false);
-            button(ui, 'Retry same operation').click();
+            button(ui, 'Try the save again').click();
             await until(() => ui.root.textContent.includes('The operation is confirmed and the current saved version has been checked.'));
             expect(transport.calls[2]).toEqual(transport.calls[1]);
             expect((await usageOf(first.scope)).counters.assessment_runs).toBe(0);

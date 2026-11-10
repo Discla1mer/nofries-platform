@@ -307,8 +307,8 @@
       "turns": ["Where are the public links for News and Sales Agency?"],
       "expect": {
         "topic": "public_links",
-        "replyMustInclude": ["https://news.nofries.nz/", "https://sales.nofries.nz/", "https://nofries.nz/dashboard"],
-        "forbiddenReplyPatterns": ["automatically signed in", "account already linked", "Luna", "luna\\.nofries\\.nz"]
+        "replyMustInclude": ["https://nofries.nz/roadmap.html", "https://sales.nofries.nz/", "https://nofries.nz/dashboard"],
+        "forbiddenReplyPatterns": ["automatically signed in", "account already linked", "Luna", "luna\\.nofries\\.nz", "news\\.nofries\\.nz"]
       }
     },
     {

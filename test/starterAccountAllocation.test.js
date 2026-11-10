@@ -137,21 +137,24 @@ test('revocation during a committed reservation denies its response and retains 
     await assert.rejects(h.allocator.reserveClient({}, h.client('Client')), /starter_owner_changed/);
     assert.equal([...h.records.values()][0].record.organisations.length, 2);
 });
-test('expiry refuses new and repeated reservations while retaining all saved records', async () => {
+test('client reservations have no end date: repeated and new reservations work after the recorded period', async () => {
     const h = harness(), active = await h.active(), command = h.client('Retained client');
-    await h.allocator.reserveClient({}, command); const before = clone([...h.records.values()]);
-    h.setTime(Date.parse(active.activation.validUntil));
-    await assert.rejects(h.allocator.reserveClient({}, command), /starter_client_setup_denied/);
-    await assert.rejects(h.allocator.reserveClient({}, h.client('Too late')), /starter_client_setup_denied/);
-    assert.deepEqual([...h.records.values()], before);
+    const first = await h.allocator.reserveClient({}, command), before = clone([...h.records.values()]);
+    h.setTime(Date.parse(active.activation.validUntil) + 30 * 86400000);
+    assert.deepEqual(await h.allocator.reserveClient({}, command), first); assert.deepEqual([...h.records.values()], before);
+    const later = await h.allocator.reserveClient({}, h.client('Added later'));
+    assert.equal(later.kind, 'client'); assert.equal([...h.records.values()][0].record.organisations.length, 3);
+    // The plan's client allowance still applies.
+    await h.allocator.reserveClient({}, h.client('Third client'));
+    await assert.rejects(h.allocator.reserveClient({}, h.client('Fourth client')), /starter_client_limit/);
 });
-test('expiry during the final identity recheck cannot return a usable reservation', async () => {
+test('the recorded period passing during the final identity recheck does not refuse the reservation', async () => {
     const h = harness(), active = await h.active(); let captures = 0;
     const allocator = createStarterAccountAllocator({ ...h.options, captureOwner: async () => {
         if (++captures === 3) h.setTime(Date.parse(active.activation.validUntil));
         return { subjectKey: SUBJECT, email: h.proof.email };
     } });
-    await assert.rejects(allocator.reserveClient({}, h.client('At the boundary')), /starter_client_setup_denied/);
+    assert.equal((await allocator.reserveClient({}, h.client('At the boundary'))).kind, 'client');
     assert.equal([...h.records.values()][0].record.organisations.length, 2);
 });
 test('tampered plan, duplicate scope IDs and anonymous activation fail the durable record codec', async () => {

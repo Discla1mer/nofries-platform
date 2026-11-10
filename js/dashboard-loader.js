@@ -41,6 +41,12 @@
         if (!accountMenu || accountMenu.hidden) return;
         setAccountMenuOpen(accountToggle.getAttribute('aria-expanded') !== 'true');
     });
+    if (accountMenu) accountMenu.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || !accountToggle || accountToggle.getAttribute('aria-expanded') !== 'true') return;
+        event.preventDefault();
+        setAccountMenuOpen(false);
+        accountToggle.focus();
+    });
     const directorySearch = document.getElementById('dashboardOrganisationSearch');
     const directoryStatus = document.getElementById('dashboardOrganisationStatus');
     const directorySearchControls = document.getElementById('dashboardOrganisationSearchControls');
@@ -729,7 +735,6 @@
                 if (readOnly) csrf = null;
                 heading.textContent = readOnly ? 'Saved organisation setups' : 'Add organisation';
                 unlimitedList = state.remaining === null;
-                if (readOnly) content.append(element('p', 'New organisations cannot be added from this account right now. Email hello@nofries.nz if you need another.'));
                 // Only the directory grants ready workspaces. Saved setup
                 // records contribute incomplete rows to the same list.
                 elements.choices.querySelectorAll('.client-workspace-row').forEach(function (row) { row.remove(); });

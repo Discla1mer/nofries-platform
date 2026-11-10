@@ -440,7 +440,7 @@ describe('consultant client setup', () => {
         expect(h.requests.filter(request=>request.init.method==='POST')).toHaveLength(1);
         expect(buttons(h).some(button=>button.textContent==='Accept and create client dashboard')).toBe(false);
         const text=h.document.getElementById('clientSetupControls').textContent;
-        expect(text).toContain('New organisations cannot be added from this account right now.');
+        expect(text).not.toContain('cannot be added'); // Nothing closes additions by date; read-only lists say nothing about it.
         expect(text).not.toMatch(/access period|expir|trial/i);
     });
     test('setup read-only response prevents a detached old form from resubmitting its lifecycle command',async()=>{
@@ -1623,9 +1623,9 @@ describe('ready Cyber composition', () => {
         input.checked = true; inputEvent(input, 'change');
     }
     const footerTargets = [
-        [false, 0, '/roadmap.html'], [false, 1, 'https://news.nofries.nz/'],
-        [true, 0, '/'], [true, 1, '/managed-it.html'], [true, 2, '/roadmap.html'], [true, 3, 'https://news.nofries.nz/'],
-        [true, 4, '/contact.html'], [true, 5, '/privacy.html'], [true, 6, '/terms.html']
+        [false, 0, '/roadmap.html'],
+        [true, 0, '/'], [true, 1, '/managed-it.html'], [true, 2, '/roadmap.html'],
+        [true, 3, '/contact.html'], [true, 4, '/privacy.html'], [true, 5, '/terms.html']
     ];
     test.each(footerTargets)('footer gateway=%s link=%s preserves draft, focus and first destination %s', async (gateway, index, target) => {
         const h = harness({ gateway, cyber: true, hash: '#cyber-security' }); await ready(h);
@@ -2047,12 +2047,12 @@ describe('ready Cyber composition', () => {
         const bytes = h.requests[6].init.body;
         const unavailable = { code: 'ncsc_unavailable' };
         await h.reply(6, 503, unavailable, { headers: { get: key => key.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null }, text: async () => JSON.stringify(unavailable) });
-        expect(app.textContent).toContain('Operation unconfirmed');
+        expect(app.textContent).toContain('We could not confirm the save');
         h.window.dispatch('focus'); await flush(); await h.reply(7, 503, { code: 'dashboard_unavailable' });
         expect(app.hidden).toBe(false); expect(h.mounts[0].destroy).not.toHaveBeenCalled();
         h.click('dashboardRetry'); await flush(); await refresh(h, 8);
-        expect(app.textContent).toContain('Operation unconfirmed');
-        button('Retry same operation').click(); await flush();
+        expect(app.textContent).toContain('We could not confirm the save');
+        button('Try the save again').click(); await flush();
         expect(h.requests[13].init.body).toBe(bytes);
         expect(h.requests[13].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
     });

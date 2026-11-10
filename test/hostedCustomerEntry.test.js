@@ -300,7 +300,8 @@ test('an external customer with old valid setup bypasses unavailable legacy read
     } finally { page.close(); store.getBlockBlobClient = original; }
 });
 
-function execute({ runtime = prepared.runtime, search = '', hash = '', fetch = jest.fn(async () => response({ status: 'create_account' })) } = {}) {
+function execute({ runtime = prepared.runtime, search = '', hash = '', fetch = jest.fn(async () => response({ status: 'create_account' })),
+    timers = { setTimeout, clearTimeout } } = {}) {
     const dom = createDom(), create = dom.document.createElement;
     dom.document.createElement = tag => Object.assign(create(tag), { style: {}, reportValidity: () => true });
     const help = dom.document.createElement('a'); help.setAttribute('href', '/login');
@@ -308,7 +309,8 @@ function execute({ runtime = prepared.runtime, search = '', hash = '', fetch = j
     const listeners = {}, assign = jest.fn(), replace = jest.fn(), replaceState = jest.fn();
     const window = { fetch, location: { search, hash, assign, replace }, history: { replaceState },
         addEventListener(name, fn) { listeners[name] = fn; } };
-    vm.runInNewContext(runtime, { document: dom.document, window, URLSearchParams, AbortController, TextDecoder, setTimeout, clearTimeout });
+    vm.runInNewContext(runtime, { document: dom.document, window, URLSearchParams, AbortController, TextDecoder,
+        setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
     return { ...dom, fetch, help, assign, replace, replaceState, close() { listeners.pagehide?.(); } };
 }
 function response(state, token) {
@@ -351,6 +353,43 @@ test.each(['dynamic', 'hosted'].flatMap(kind => ['login', 'create'].map(intent =
             await settle(); expect(page.assign).not.toHaveBeenCalled();
             if (intent === 'login') expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login']]);
             else { expect(page.replace).not.toHaveBeenCalled(); expect(page.root.textContent).toContain('Sign in again'); }
+        } finally { page.close(); await settle(); }
+    });
+
+// UX log: a returning customer's first "Log in" showed "Signup is unavailable"
+// (NF-SIGNUP-UNCONFIRMED), then a spinner, and a second try worked. The page
+// stays open until Microsoft sign-in loads, so the state read's 30-second view
+// backstop must not apply to that redirect.
+function manualTimers() {
+    const pending = new Map(); let next = 0;
+    return { pending, setTimeout(fn, ms) { pending.set(++next, { fn, ms }); return next; },
+        clearTimeout(id) { pending.delete(id); },
+        fire(minimum) { for (const [id, timer] of [...pending]) if (timer.ms >= minimum) { pending.delete(id); timer.fn(); } } };
+}
+test.each(['dynamic', 'hosted'].flatMap(kind => [['create_account', response({ status: 'create_account' })],
+    ['signin_required', new Response(JSON.stringify({ error: 'Signup is unavailable', code: 'signup_signin_required' }),
+        { status: 401, headers: { 'content-type': 'application/json' } })]].map(([state, reply]) => [kind, state, reply])))(
+    '%s automatic login after %s shows no error while Microsoft sign-in is still loading', async (kind, state, reply) => {
+        const timers = manualTimers();
+        const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=login',
+            fetch: jest.fn(async () => reply), timers });
+        try {
+            await settle();
+            expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login']]);
+            // The navigation has not committed yet: run the 30-second view backstop.
+            timers.fire(30000); await settle();
+            expect(page.root.textContent).not.toContain('Signup is unavailable');
+            expect(page.root.textContent).not.toContain('NF-SIGNUP-UNCONFIRMED');
+            expect(page.replace).toHaveBeenCalledTimes(1); expect(page.assign).not.toHaveBeenCalled();
+            // If the redirect never completes, the visitor can still start sign-in by hand.
+            if (state === 'create_account') {
+                const entry = [...page.root.querySelectorAll('button')].find(node => node.textContent === 'Log in');
+                expect(entry.disabled).not.toBe(true); entry.click(); await settle();
+                expect(page.assign.mock.calls).toEqual([['/api/external-customer-auth/login']]);
+            } else {
+                const link = [...page.root.querySelectorAll('a')].find(node => node.textContent === 'Sign in again');
+                expect(link.href).toBe('/api/external-customer-auth/login');
+            }
         } finally { page.close(); await settle(); }
     });
 

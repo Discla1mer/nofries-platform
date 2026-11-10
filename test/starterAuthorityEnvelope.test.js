@@ -124,6 +124,8 @@ test('actual external claim persists and replays an envelope covering the origin
     const compiled = compileStarterActivation({ preparation, accountId: f.account.accountId, activationId: crypto.randomUUID(),
         membershipId: crypto.randomUUID(), acceptance: receipt, occurredAt: clientAt, accountActivatedAt: start });
     assert.equal(compiled.activationIntent.validUntil, accountEnd);
-    assert.throws(() => compileStarterActivation({ preparation, accountId: f.account.accountId, activationId: crypto.randomUUID(),
-        membershipId: crypto.randomUUID(), acceptance: receipt, occurredAt: accountEnd, accountActivatedAt: start }));
+    // At the account's recorded end a client no longer fails: it records its own period.
+    const late = compileStarterActivation({ preparation, accountId: f.account.accountId, activationId: crypto.randomUUID(),
+        membershipId: crypto.randomUUID(), acceptance: receipt, occurredAt: accountEnd, accountActivatedAt: start });
+    assert.ok(late.activationIntent.validUntil > accountEnd); assert.equal(late.activationIntent.accountActivatedAt, start);
 });

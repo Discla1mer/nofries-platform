@@ -51,7 +51,12 @@ test('verified personal email and explicit details produce an immutable scoped o
     assert.equal(saved.offerInput.contact.authorityEvidenceId, saved.representativeEvidenceId);
     assert.equal(saved.assertion.setupRequestId, f.proof.requestId); assert.equal(saved.assertion.confirmed, true);
     assert.equal(saved.assertion.receivedAt, new Date(f.now()).toISOString());
-    assert.match(saved.offer.schedule.scheduleText, /14 days from account activation/);
+    // New offers state that access has no fixed end date; the per-organisation allowance is unchanged.
+    assert.equal(saved.offerInput.accessPolicy, 'no-fixed-end-v1');
+    assert.match(saved.offer.schedule.scheduleText, /Access period: no fixed end date\. Access continues until it is suspended or the agreement ends\./);
+    assert.match(saved.offer.schedule.scheduleText, /Client organisations can be added at any time\./);
+    assert.match(saved.offer.schedule.scheduleText, /Allowance: 5 assessment submissions and 1 user per organisation\.\n/);
+    assert.doesNotMatch(saved.offer.schedule.scheduleText, /14 days|Expiry|expiry|for this access period/);
     assert.match(saved.offer.schedule.scheduleText, /up to 3 client organisations/);
     assert.equal([...f.accountRows.values()][0].record.activation, null);
     assert.equal(saved.membership, undefined); assert.equal(saved.acceptance, undefined);

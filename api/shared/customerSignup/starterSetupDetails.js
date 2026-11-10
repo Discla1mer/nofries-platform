@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const { fields, copy, freeze, uuid, instant, hash } = require('../appLifecycle/dashboardRuntimeRecords');
 const { starterSetupSnapshot: verifiedSnapshot } = require('./managedSignupProof');
-const { compileStarterSchedule, approvedStarterPlan, usesUnlimitedConsultantPolicy } = require('./customerStarterPlan');
+const { compileStarterSchedule, approvedStarterPlan, usesUnlimitedConsultantPolicy, ACCESS_POLICY } = require('./customerStarterPlan');
 const { workEmail } = require('../organisationSetup');
 const ASSERTION_VERSION = 'nf-starter-authority-2026-09-r1';
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
@@ -89,7 +89,7 @@ function createStarterSetupDetails({ accounts, store, framework, now = Date.now,
             const offerInput = { tenantId: slot.tenantId, organisationId: slot.organisationId,
                 organisationName: slot.organisationName, grantId: slot.grantId, scheduleId: slot.scheduleId,
                 kind: 'own', accountType: account.accountType,
-                ...(plan.schemaVersion === 2 ? { planId: plan.planId } : {}),
+                ...(plan.schemaVersion === 2 ? { planId: plan.planId } : {}), accessPolicy: ACCESS_POLICY,
                 contact: { ...supplied, email: snapshot.email, authorityEvidenceId: evidenceId }, framework: await framework() };
             proof(input);
             const candidate = starterSetupRecord({ schemaVersion: 1, accountId: account.accountId, requestId: slot.requestId,
