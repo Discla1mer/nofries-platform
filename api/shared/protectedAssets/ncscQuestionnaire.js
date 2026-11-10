@@ -908,7 +908,7 @@
             function metric(title, value, explanation) {
                 const card = node('section', 'ncsc-result-metric'); card.append(node('h3', '', title), node('p', 'ncsc-result-value', value), node('p', '', explanation)); metrics.append(card);
             }
-            metric('Reported implementation', results.attainment, 'Weighted implementation range. Unknown answers and pending N/A claims widen the range; they do not count as implemented.');
+            metric('Reported implementation', results.attainment, 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
             metric('Resolved answers', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             metric('Supporting evidence', results.substantiated, 'Current substantiated evidence coverage. Tested coverage: ' + results.tested + '. Confidence is not assessed. Self-attested answers alone do not demonstrate effectiveness.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: No comparison available; changes require comparable assessment versions and scope.'));
@@ -936,8 +936,8 @@
             return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
         }
         function renderNextSteps(panel) {
-            const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Fix these first'));
-            section.append(node('p', '', 'Start with the gaps you reported, then check what you are unsure about with your IT provider. This list groups your answers; it is not a calculated risk ranking.'));
+            const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Gaps to work through'));
+            section.append(node('p', '', 'Start with the gaps you reported, then check what you are unsure about with your IT provider. The list is grouped by your answer (No, then Partial, then Unknown, then Not applicable). It is not ranked by risk or urgency.'));
             const list = node('ol'), summary = ['Cyber security assessment', 'Scope: ' + acknowledged.scopePopulation.description, 'Submitted: ' + localDate(acknowledged.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
             ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
                 questions.filter(function (question) { return savedAnswer(question.id).optionId === optionId; }).forEach(function (question) {
@@ -952,7 +952,17 @@
             if (!list.children.length) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
             const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with your IT provider'));
             const label = node('label', '', 'Copy this summary into an email or document'); label.htmlFor = 'ncsc-provider-summary';
-            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.join('\n'); handoff.append(label, input); section.append(handoff); panel.append(section);
+            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.join('\n'); handoff.append(label, input);
+            const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
+            const copy = button('Copy summary', function () {
+                const clipboard = win && win.navigator && win.navigator.clipboard;
+                const fallback = function () { if (typeof input.select === 'function') input.select(); copied.textContent = 'Summary selected. Press Ctrl+C or Cmd+C to copy it.'; };
+                if (!clipboard || typeof clipboard.writeText !== 'function') { fallback(); return; }
+                Promise.resolve(clipboard.writeText(input.value)).then(function () { copied.textContent = 'Summary copied.'; }, fallback);
+            }, 'dashboard-button dashboard-button-secondary');
+            handoff.append(copy);
+            if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
+            handoff.append(copied); section.append(handoff); panel.append(section);
         }
         function renderQuestion() {
             if (!live() || !questionRegion || !acknowledged) return;
@@ -1066,7 +1076,7 @@
             }, 'dashboard-text-button');
             nextUnresolved = unresolved; navigationActions.append(unresolved);
             nav.append(navigationSummary, navigationActions); questionRegion.append(nav); updateQuestionNavigation();
-            questionRegion.append(node('p', 'dashboard-muted', 'Unresolved includes unanswered, Unknown and pending N/A. Unknown and pending N/A remain valid responses for submission.'));
+            questionRegion.append(node('p', 'dashboard-muted', 'Unresolved means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
             applyInlineErrors();
             restoreFocus(questionRegion, focused, fieldset.querySelector('legend'));
         }
