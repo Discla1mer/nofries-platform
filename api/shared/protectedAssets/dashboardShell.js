@@ -126,8 +126,8 @@
             const nav = element('nav'); nav.setAttribute('aria-label', 'Workspace');
             appendMenu(nav, false);
             const subscription = element('div', 'dashboard-subscription');
-            subscription.append(element('span', 'dashboard-eyebrow', 'Dashboard subscription'), element('strong', '', model.subscription),
-                element('p', '', 'Managed and advisory services are scoped separately.'));
+            subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', model.subscription),
+                element('p', '', 'This is the name of your dashboard plan, not a result. Managed IT and advisory services are arranged separately.'));
             rail.append(brand, context, nav, subscription);
             const workspace = element('div', 'dashboard-workspace');
             const top = element('header', 'dashboard-topbar');
@@ -207,7 +207,7 @@
             current = target;
             if (doc && current && current.label) doc.title = current.label + ' · No Fries Dashboard';
             status.hidden = !!requested || !route;
-            status.textContent = requested || !route ? '' : 'That view is not available for this organisation. Showing ' + target.label + '.';
+            status.textContent = requested || !route ? '' : 'We could not find that view, so we have taken you to ' + target.label + '.';
             if (changeLocation && !repeatedRoute) pushEntry(current.route);
             render(initialAssessmentId, sourceAssessment); updateNavigation();
             if (focus) main.querySelector('h1').focus();
@@ -276,9 +276,13 @@
             else if (current.key === 'improvement_plan' && stateFor(current.key) === 'ready' && typeof options.mountImprovement === 'function') renderImprovement(sourceAssessment);
             else renderModule();
             const footer = element('footer', 'dashboard-provenance');
-            const stamp = element('time', '', model.generatedAt.replace('T', ' ').replace('.000Z', ' UTC'));
+            let loadedAt = model.generatedAt.replace('T', ' ').replace('.000Z', ' UTC');
+            try {
+                loadedAt = new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(model.generatedAt)) + ' NZ time';
+            } catch (_) { /* Keep the UTC text when the time zone data is missing. */ }
+            const stamp = element('time', '', loadedAt);
             stamp.dateTime = model.generatedAt;
-            footer.append(element('span', '', 'Display snapshot · '), stamp,
+            footer.append(element('span', '', 'Page loaded · '), stamp,
                 element('p', '', 'Assessment indicators are not audit, assurance or certification.'));
             main.append(footer);
         }

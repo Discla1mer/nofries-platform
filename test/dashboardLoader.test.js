@@ -2036,12 +2036,12 @@ describe('ready Cyber composition', () => {
         const bytes = h.requests[6].init.body;
         const unavailable = { code: 'ncsc_unavailable' };
         await h.reply(6, 503, unavailable, { headers: { get: key => key.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null }, text: async () => JSON.stringify(unavailable) });
-        expect(app.textContent).toContain('Operation unconfirmed');
+        expect(app.textContent).toContain('We could not confirm the save');
         h.window.dispatch('focus'); await flush(); await h.reply(7, 503, { code: 'dashboard_unavailable' });
         expect(app.hidden).toBe(false); expect(h.mounts[0].destroy).not.toHaveBeenCalled();
         h.click('dashboardRetry'); await flush(); await refresh(h, 8);
-        expect(app.textContent).toContain('Operation unconfirmed');
-        button('Retry same operation').click(); await flush();
+        expect(app.textContent).toContain('We could not confirm the save');
+        button('Try the save again').click(); await flush();
         expect(h.requests[13].init.body).toBe(bytes);
         expect(h.requests[13].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
     });
