@@ -1098,16 +1098,6 @@
       ]
     },
     {
-      "route": "/api/dashboard-admin/approve-extension",
-      "methods": ["POST"],
-      "allowedRoles": ["anonymous"]
-    },
-    {
-      "route": "/api/dashboard-admin/extend-expired-access",
-      "methods": ["POST"],
-      "allowedRoles": ["anonymous"]
-    },
-    {
       "route": "/api/dashboard-admin/approve-suspend",
       "methods": ["POST"],
       "allowedRoles": ["anonymous"]

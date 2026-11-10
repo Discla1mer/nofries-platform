@@ -68,7 +68,7 @@ test.each([['TRUE', ENABLED_SETTING], ['1', ENABLED_SETTING], ['Synthetic', 'AZU
     ['dashboard-proofs', 'NOFRIES_STARTER_AUTHORITY_CONTAINER'], ['nofries-browser-auth', 'NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER'],
     ['admin-audit', 'NOFRIES_STARTER_AUTHORITY_CONTAINER'], ['', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'], ['legacy-signups', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'],
     ['dashboard-proofs', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'], ['nofries-browser-auth', 'NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER'],
-    ['{', 'NOFRIES_DASHBOARD_ADMIN_BINDING'], ['TRUE', 'NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP'], ['short', 'NOFRIES_SCOPE_SIGNING_SECRET'], ['not-a-guid', 'NOFRIES_MANAGED_IDENTITY_CLIENT_ID']])('invalid value %p for %s fails closed and logs one safe line', (value, key) => {
+    ['TRUE', 'NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP'], ['short', 'NOFRIES_SCOPE_SIGNING_SECRET'], ['not-a-guid', 'NOFRIES_MANAGED_IDENTITY_CLIENT_ID']])('invalid value %p for %s fails closed and logs one safe line', (value, key) => {
     const env = { ...base(), [key]: value }, dependencies = sdk();
     expect(() => readStaffAdminSettings(env)).toThrow();
     expect(createStaffDashboardAdministration(env, dashboard(), dependencies)).toEqual({});
@@ -84,6 +84,8 @@ test('no configured source, an accessor setting or a missing native dashboard le
     const locator = JSON.stringify({ schemaVersion: 1, provider: 'legacy', authorityContainer: 'legacy-signups', populationId: 'p', indexId: 'i', writerContract: 'all_application_account_writes_v2' });
     expect(() => readStaffAdminSettings({ ...base(), NOFRIES_DASHBOARD_ADMIN_BINDING: locator })).toThrow();
     expect(readStaffAdminSettings({ ...base(), NOFRIES_DASHBOARD_ADMIN_BINDING: locator.replace('legacy-signups', 'private-approvals') })).toBeTruthy();
+    // An unusable locator names no approval container and does not switch the console off.
+    expect(readStaffAdminSettings({ ...base(), NOFRIES_DASHBOARD_ADMIN_BINDING: '{' })).toBeTruthy();
     expect(createStaffDashboardAdministration(base(), null, sdk())).toEqual({});
     expect(createStaffDashboardAdministration(base(), { ...dashboard(), requestBudgetMs: 0 }, sdk())).toEqual({});
     expect(warning).toHaveBeenCalledTimes(2);
