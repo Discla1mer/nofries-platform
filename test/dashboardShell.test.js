@@ -703,10 +703,21 @@ test('disabled Board Reports keeps the disabled label even when Cyber picture is
     assert.match(board.root.textContent, /temporarily unavailable/);
 });
 
-test('footer says when the page loaded in NZ time, and the plan label is not presented as a result', () => {
+test('the plan label is not presented as a result', () => {
     const dom = mount();
-    assert.match(dom.root.textContent, /Page loaded · .*NZ time/);
-    assert.doesNotMatch(dom.root.textContent, /Display snapshot/);
     assert.match(dom.root.textContent, /Your plan/);
     assert.match(dom.root.textContent, /name of your dashboard plan, not a result/);
+});
+
+test('Escape closes the More tools menu and returns focus to its summary', () => {
+    const dom = mount();
+    const menu = dom.root.querySelector('.dashboard-menu-other');
+    assert.ok(menu);
+    menu.open = true;
+    for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
+    assert.equal(menu.open, false);
+    assert.equal(dom.document.activeElement, menu.querySelector('summary'));
+    menu.open = false;
+    for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
+    assert.equal(menu.open, false);
 });

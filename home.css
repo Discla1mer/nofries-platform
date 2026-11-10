@@ -884,6 +884,13 @@ body[data-dashboard-state="ready"] #dashboardMessage, body[data-dashboard-state=
 .signup-card .signup-secondary-action { display: flex; justify-content: center; min-height: 44px; margin-top: 12px; text-align: center; }
 .signup-legal { padding: clamp(16px, 3vw, 24px); margin-block: 20px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--page); overflow-wrap: anywhere; }
 .signup-legal h2 { margin: 0 0 16px; font-size: 1.15rem; }
+.signup-glance { padding: clamp(16px, 3vw, 24px); margin-block: 20px; border: 2px solid var(--line-strong); border-radius: 12px; background: var(--page); }
+.signup-glance h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.signup-glance ul { margin: 0 0 12px; padding-left: 1.2em; display: grid; gap: 6px; }
+.signup-glance p { margin: 0; font-size: 0.95rem; }
+.signup-progress { margin-block: 16px; font-weight: 600; }
+/* Roadmap shares the public navigation; keep wrapped rows close on phones. */
+body[data-page="product-roadmap"] .site-header nav { gap: 0 20px; }
 .signup-legal p { max-width: 78ch; margin: 0; color: var(--ink-soft); font-size: .9375rem; line-height: 1.75; white-space: pre-wrap; }
 .signup-schedule { border-top: 3px solid var(--green); }
 .access-layout:has(.signup-legal) { max-width: 66rem; grid-template-columns: minmax(0, 1fr); gap: 0; padding-block: 24px 48px; }
