@@ -85,6 +85,21 @@ test('external fresh credentials are deliberate, strip the old hint and retain f
     expect((await h.callback(fresh)).identity.subjectKey).toBe(`${TENANT}:${SUBJECT}`);
 });
 
+test('sign-out leaves a marker that makes the next external sign-in ask for credentials again', async () => {
+    const h = harness(), MARKER = '__Host-nofries-external-signed-out';
+    const out = await h.service.logout({ cookieHeader: '' });
+    expect(out.cookie).toHaveLength(2);
+    expect(out.cookie[1]).toBe(MARKER + '=1; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=7776000');
+    const fresh = await h.service.beginLogin({ cookieHeader: 'other=1; ' + MARKER + '=1' });
+    expect(h.requests[0].prompt).toBe('login'); expect(h.requests[0]).not.toHaveProperty('loginHint');
+    expect(new URL(fresh.location).searchParams.getAll('prompt')).toEqual(['login']);
+    // Only the exact marker counts, and account creation keeps its own prompt.
+    await h.service.beginLogin({ cookieHeader: MARKER + '=0; x' + MARKER + '=1' });
+    expect(h.requests[1].prompt).toBeUndefined();
+    await h.service.beginLogin({ cookieHeader: MARKER + '=1', registration: true });
+    expect(h.requests[2].prompt).toBe('create');
+});
+
 test('staff account selection remains unchanged and setup logout/selectAccount are refused without storage effects', async () => {
     const h = harness({ external: false });
     await h.service.beginLogin(); expect(h.requests[0].prompt).toBe('select_account');
@@ -322,7 +337,8 @@ test('an already-consumed in-flight callback blocks setup logout without deletin
     release(); const late = await completion;
     expect(h.store.sessions.has(id(late.cookie))).toBe(true);
     expect(id(late.cookie)).not.toBe(id(original.cookie));
-    expect(late.cookies).toEqual([late.cookie, expect.stringContaining(TX_COOKIE + '=;')]);
+    expect(late.cookies).toEqual([late.cookie, expect.stringContaining(TX_COOKIE + '=;'),
+        expect.stringContaining('__Host-nofries-external-signed-out=;')]);
     expect(late.cookies[1]).toContain('Max-Age=0');
 });
 

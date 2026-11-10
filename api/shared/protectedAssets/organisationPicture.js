@@ -121,14 +121,14 @@
         function renderResume() {
             const draft = node('section', 'picture-empty picture-resume');
             const heading = node('div', 'picture-resume-heading');
-            heading.append(node('h3', '', 'Baseline in progress'));
+            heading.append(node('h3', '', detail.progress.answered > 0 ? 'In progress' : 'Not started'));
             if (typeof options.openCyber === 'function') heading.append(openSavedAssessment('Continue saved assessment'));
             const saved = node('p', 'picture-large', detail.progress.answered + ' / ' + detail.progress.total + ' responses saved');
             const progress = node('progress', 'ncsc-saved-progress');
             progress.max = detail.progress.total; progress.value = detail.progress.answered;
             progress.setAttribute('aria-label', 'Saved responses');
             const scope = node('section', 'picture-scope');
-            scope.append(node('h3', '', 'Scope'), node('p', '', detail.scopePopulation.description));
+            scope.append(node('h3', '', 'Scope'), node('p', 'ncsc-preserve-text', detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.'));
             draft.append(heading, saved, progress, scope,
                 node('p', 'dashboard-muted', 'Saved progress is not a score. Submit this assessment when it is ready; unknown answers remain visible as uncertainty.'));
             root.append(draft);
@@ -152,8 +152,14 @@
                 const toolbar = node('div', 'picture-toolbar');
                 const label = node('label', '', 'Saved assessment'); label.htmlFor = id;
                 const picker = node('select'); picker.id = id; picker.disabled = loading;
+                const pictureStatus = row => {
+                    if (row.status === 'submitted') return 'Submitted';
+                    const answered = row.progress && Number.isFinite(row.progress.answered) ? row.progress.answered : null;
+                    if (answered === null) return row.status === 'created' ? 'Not started' : 'In progress';
+                    return answered > 0 ? 'In progress' : 'Not started';
+                };
                 const labelFor = row => (row.scopePopulation ? row.scopePopulation.description + ' · ' : '') +
-                    (row.status === 'submitted' ? 'Submitted' : 'In progress') + ' · ' + displayDate(row.updatedAt);
+                    pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
                 const labelCounts = new Map(), referenceCounts = new Map();
                 rows.forEach(row => {
                     const label = labelFor(row), key = JSON.stringify([label, row.assessmentId.slice(0, 8)]);
@@ -170,7 +176,7 @@
                     item.value = row.assessmentId; picker.append(item);
                 });
                 picker.value = selected;
-                picker.addEventListener('change', () => { if (live() && !denied) read(picker.value); });
+                picker.addEventListener('change', () => { if (live() && !denied) read(picker.value, 'user'); });
                 const refresh = button('Refresh', () => load(false)); refresh.disabled = loading;
                 refresh.classList.add('dashboard-button-secondary');
                 toolbar.append(label, picker, refresh);
@@ -202,7 +208,7 @@
                     const token = epoch;
                     const action = button('Open assessment', () => {
                         if (live(token) && !loading && !message && !rows.length && !selected && after === null &&
-                            action.parentElement === empty && empty.parentElement === root) options.openCyber();
+                            action.parentElement === empty && empty.parentElement === root) options.openCyber(undefined, { startNew: true });
                     });
                     action.classList.add('picture-first-use-action'); empty.append(action);
                 }
@@ -217,7 +223,7 @@
                 root.append(sourceDetails()); return;
             }
             const scope = node('section', 'picture-scope');
-            scope.append(node('h3', '', 'Scope'), node('p', '', detail.scopePopulation.description)); root.append(scope);
+            scope.append(node('h3', '', 'Scope'), node('p', 'ncsc-preserve-text', detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.')); root.append(scope);
             const result = questionnaire.resultModel(detail, metadata, organisationId);
             if (!result) { root.append(node('p', 'ncsc-warning', 'Results are unavailable for this saved submission. No score has been inferred.'), sourceDetails()); return; }
             if (typeof options.openCyber === 'function') root.append(openSavedAssessment('View saved assessment'));
@@ -408,14 +414,23 @@
                 response.assessments.forEach(row => combined.set(row.assessmentId, copy(row)));
                 rows = Array.from(combined.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId));
                 after = response.nextAfterAssessmentId; loaded = true;
-                // Preserve an explicit selection across refresh/pagination. Its ID is
-                // only a read target; the client must freshly authorize the record.
-                if (!selected) selected = rows.length ? rows[0].assessmentId : '';
+                // Keep a carried or manual selection across refresh. Otherwise prefer
+                // the latest submitted record on this page, then the latest unfinished one.
+                if (!selected) selected = preferredAssessmentId(rows);
             } catch (error) { if (live(token)) failure(error, () => load(append)); }
             finally { if (live(token)) { loading = false; render(); restoreFocus(savedFocus); } }
             if (live(token) && !message && selected) await read(selected);
         }
-        async function read(assessmentId) {
+        function newestRow(list) {
+            return list.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId))[0] || null;
+        }
+        function preferredAssessmentId(list) {
+            const submitted = newestRow(list.filter(row => row.status === 'submitted'));
+            if (submitted) return submitted.assessmentId;
+            const draft = newestRow(list.filter(row => row.status !== 'submitted'));
+            return draft ? draft.assessmentId : '';
+        }
+        async function read(assessmentId, source) {
             if (!live() || denied || !rows.some(row => row.assessmentId === assessmentId) && assessmentId !== initialAssessmentId && assessmentId !== selected) return;
             abort(); const token = ++epoch; const savedFocus = captureFocus(); selected = assessmentId; detail = null; message = ''; retry = null; loading = true; render();
             try {
@@ -429,8 +444,8 @@
                 // a saved identifier grants access to the record.
                 if (!rows.some(row => row.assessmentId === assessmentId)) rows.push({ assessmentId: value.assessmentId,
                     moduleId: value.moduleId, profileRef: copy(value.profileRef), status: value.status, updatedAt: value.updatedAt,
-                    scopePopulation: copy(value.scopePopulation) });
-                if (typeof options.onSelection === 'function') options.onSelection(value.assessmentId);
+                    progress: value.progress ? copy(value.progress) : undefined, scopePopulation: copy(value.scopePopulation) });
+                if (typeof options.onSelection === 'function') options.onSelection(value.assessmentId, source);
             } catch (error) { if (live(token)) failure(error, () => read(assessmentId)); }
             finally { if (live(token)) { loading = false; render(); restoreFocus(savedFocus); } }
         }

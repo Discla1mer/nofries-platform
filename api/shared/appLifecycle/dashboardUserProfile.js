@@ -14,7 +14,7 @@ async function readDashboardUserProfile(tx, selector, at) {
         scope(target.scope); subject(target.subjectKey); instant(at);
         for (const key of ['bindingId', 'authorityId', 'membershipId', 'invitationId', 'grantEvidenceId']) id(target[key]);
         instant(target.validFrom); instant(target.validUntil);
-        if (target.validFrom > at || at >= target.validUntil) throw new Error();
+        if (target.validFrom > at) throw new Error();
         const result = await tx.query(
             `SELECT preparation, activation FROM nofries.dashboard_starter_scopes
              WHERE tenant_id = $1 AND organisation_id = $2 AND subject_key = $3

@@ -219,7 +219,7 @@ test('consultant sees both distinct ready binding IDs, pending setup once, and n
     expect(choices).toHaveLength(3);
     expect(choices.slice(0, 2).map(item => item.textContent)).toEqual(['Shared name', 'Shared name']);
     expect(choices.slice(0, 2).map(item => item.getAttribute('aria-label'))).toEqual([
-        'Shared name · Open to check access', 'Shared name · Open to check access']);
+        'Shared name · Open organisation', 'Shared name · Open organisation']);
     expect(choices[2].textContent).toContain('Draft client');
     expect(h.document.getElementById('clientSetupControls').textContent).toContain('Add organisation');
     choices[1].click(); await flush();
@@ -308,10 +308,10 @@ test.each([null, A])('discovery does not claim access for a retained suspended b
     await h.reply(0, 200, state(selected));
     await h.reply(1, 200, listing([row(A, 'Retained client')]));
     const choice = h.elements.dashboardChoices.children[0];
-    expect(choice.getAttribute('aria-label')).toBe('Retained client · Open to check access');
+    expect(choice.getAttribute('aria-label')).toBe('Retained client · Open organisation');
     expect(choice.getAttribute('aria-pressed')).toBe(String(selected === A));
     const css = fs.readFileSync(path.join(__dirname, '../home.css'), 'utf8');
-    expect(css).toMatch(/\.consultant-organisation-ready::after\s*\{\s*content: 'Open to check access'/);
+    expect(css).toMatch(/\.consultant-organisation-ready::after\s*\{\s*content: 'Open organisation'/);
     expect(h.requests).toHaveLength(2);
     choice.click(); await flush();
     expect(h.requests[2].url).toBe('/api/dashboard/selection');

@@ -323,7 +323,7 @@ test.each(['draft', 'invalid-result'])('Overview offers no explanation for a sel
     const dom = createDom(), controller = picture.mount(dom.root, { metadata, client: h.client,
         organisationId: h.organisationId, initialAssessmentId: 'assessment-a' });
     try {
-        await until(() => dom.root.textContent.includes(kind === 'draft' ? 'Baseline in progress' : 'unavailable'));
+        await until(() => dom.root.textContent.includes(kind === 'draft' ? 'In progress' : 'unavailable'));
         expect(button(dom, 'Explain this saved result')).toBeUndefined();
         expect(explanation(dom)).toBeNull(); expect(dom.root.querySelector('.picture-metrics')).toBeNull(); expectReadOnly(h);
     } finally { controller.destroy(); }

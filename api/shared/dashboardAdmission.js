@@ -143,7 +143,7 @@ function preflight(snapshot, scope, actor, now) {
     // Validate neighboring and disabled-module assignments as well: the genuine
     // projector consults all entitled modules and otherwise hides malformed rows.
     const ownerActive = snapshot.tenantAggregate.tenant.recordStatus === 'active' && organisation.recordStatus === 'active';
-    const activeMember = ownerActive && state.memberships.some(row => row.subjectKey === actor && row.status === 'active' && row.validFrom <= now && now < row.validUntil);
+    const activeMember = ownerActive && state.memberships.some(row => row.subjectKey === actor && row.status === 'active' && row.validFrom <= now);
     return { ownerActive, activeMember, entitlement, advisors };
 }
 

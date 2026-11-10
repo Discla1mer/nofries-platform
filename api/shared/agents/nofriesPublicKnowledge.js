@@ -54,11 +54,11 @@ const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
         },
         trialTerms: {
             availability: 'not_live',
-            summary: 'A proposed three-month trial is not live. Refer to the terms actually presented during account setup. This chat cannot confirm a new duration, unlimited use, a price or trial eligibility.'
+            summary: 'A proposed three-month trial is not live. Refer to the terms actually presented during account setup. Complimentary starter access has no charge, needs no card and does not turn into paid access without a separate express agreement; its access period and allowance are shown in the schedule before you accept. This chat cannot confirm a new duration, unlimited use, a price or trial eligibility.'
         },
         dashboardTerms: {
             availability: 'account_terms_apply',
-            summary: 'Managed IT prices apply to optional managed services, not dashboard access. Review the dashboard terms shown during account setup for the applicable plan and limits. This chat cannot confirm a new trial or paid dashboard plan.'
+            summary: 'Managed IT prices apply to optional managed services, not dashboard access. Complimentary starter dashboard access has no charge and needs no card. Review the schedule and terms shown during account setup for the access period and limits; the public terms are at /terms.html. This chat cannot confirm a new trial or paid dashboard plan.'
         },
         lunaProfile: {
             availability: 'not_live',

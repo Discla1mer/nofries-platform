@@ -671,17 +671,21 @@ describe('NCSC assessment durable facade contract', () => {
         expect(h.policy).toHaveBeenCalledTimes(1);
         expect(h.memory.rows(USAGE)[0].payload.counters.assessment_runs).toBe(1);
     });
-    test('authority expiring during asynchronous policy read rolls back before any assessment write', async () => {
+    // Membership and product no longer expire. The separately approved submission
+    // policy still has a window, so it carries these mid-transaction expiry checks.
+    const POLICY_END = '2026-09-08T09:00:00.000Z';
+    const endingPolicy = h => selection => ({ ...h.adapters.resolveSubmissionQuota(selection), validUntil: POLICY_END });
+    test('submission policy expiring during its asynchronous read rolls back with no retained assessment write', async () => {
         const h = await ready(), before = h.memory.snapshot(); let release, entered;
         const started = new Promise(resolve => { entered = resolve; });
         h.policy.mockImplementation(selection => new Promise(resolve => {
-            const retained = h.adapters.resolveSubmissionQuota(selection);
+            const retained = endingPolicy(h)(selection);
             release = () => resolve(retained); entered();
         }));
-        const queries = h.memory.queries.length, pending = h.submit(); await started;
+        const pending = h.submit(); await started;
         h.clock.set('2026-09-08T09:00:00.000Z'); release();
         await expectCode(pending, 'ncsc_access_denied');
-        expect(h.memory.snapshot()).toEqual(before); onlyReadsSince(h, queries);
+        expect(h.memory.snapshot()).toEqual(before); // Rolled back: nothing is retained.
     });
     test('asynchronous missing policy is a no-write refusal and does not seal the draft', async () => {
         const h = await ready(), before = h.memory.snapshot();
@@ -749,14 +753,15 @@ describe('NCSC assessment durable facade contract', () => {
         expect(h.memory.snapshot()).toEqual(before);
     });
 
-    test('read awaits its audit sink and rechecks expiry afterward', async () => {
+    test('read awaits its audit sink; a recorded account end passing meanwhile does not deny it', async () => {
         const h = await ready(); let release;
         h.auditWrite.mockImplementation(() => new Promise(resolve => { release = resolve; }));
         let finished = false; const pending = h.read().finally(() => { finished = true; });
         for (let i = 0; i < 100 && !release; i += 1) await new Promise(resolve => setImmediate(resolve));
         expect(release).toEqual(expect.any(Function)); expect(finished).toBe(false);
         h.clock.set('2026-09-08T09:00:00.000Z'); release();
-        await expectCode(pending, 'ncsc_access_denied');
+        expect((await pending).assessment.assessmentId).toEqual(expect.any(String)); // Accounts do not expire.
+        expect(finished).toBe(true);
     });
 
     test.each(['postgres_commit_failed', 'postgres_rollback_failed'])('lost committed response %s reconciles the exact original result without another write', async code => {
@@ -785,22 +790,24 @@ describe('NCSC assessment durable facade contract', () => {
         expect(h.memory.queries.slice(queryStart).some(row => row.sql.includes(`FROM nofries.${RECEIPT}`))).toBe(false);
     });
 
-    test.each(['lock', 'receipt-read', 'last-write'])('expiry crossing at %s denies before the authorization linearization point', async when => {
-        const h = await ready(), before = h.memory.snapshot();
+    test.each(['lock', 'receipt-read', 'last-write'])('policy expiry crossing at %s denies before the authorization linearization point', async when => {
+        const h = await ready(), before = h.memory.snapshot(); h.policy.mockImplementation(endingPolicy(h));
         h.memory.hooks.afterQuery = async ({ sql }) => {
             if ((when === 'lock' && sql.endsWith('FOR UPDATE')) ||
                 (when === 'receipt-read' && sql.startsWith(`SELECT * FROM nofries.${RECEIPT}`)) ||
                 (when === 'last-write' && sql.startsWith(`INSERT INTO nofries.${RECEIPT}`))) h.clock.set('2026-09-08T09:00:00.000Z');
         };
-        await expectCode(h.submit(), 'ncsc_access_denied');
+        // Before selection an ended policy is unavailable; after it, the final recheck denies.
+        await expectCode(h.submit(), when === 'last-write' ? 'ncsc_access_denied' : 'ncsc_unavailable');
         expect(h.memory.snapshot()).toEqual(before);
     });
 
-    test('expiry beginning during successful COMMIT does not alter the already checked original result', async () => {
-        const h = await ready();
+    test('policy expiry beginning during successful COMMIT does not alter the already checked original result', async () => {
+        const h = await ready(); h.policy.mockImplementation(endingPolicy(h));
         h.memory.hooks.beforeCommit = async () => { h.clock.set('2026-09-08T09:00:00.000Z'); };
         const result = await h.submit(); expect(result.assessment.status).toBe('submitted');
-        await expectCode(h.submit(), 'ncsc_access_denied');
+        // An exact replay returns the retained result; it is not charged or re-authorised against the ended policy.
+        expect((await h.submit()).assessment).toEqual(result.assessment);
         expect(h.memory.rows(USAGE)[0].payload.counters.assessment_runs).toBe(1);
     });
 
@@ -837,7 +844,8 @@ describe('NCSC assessment durable facade contract', () => {
         const retained = clone(receipt(h)), entitlement = clone(h.fixture.state.entitlementState);
         entitlement.revision += 1;
         const prior = entitlement.grants.find(row => row.grantId === 'synthetic-product');
-        const renewed = { ...clone(prior), grantId: 'renewed-product', agreementRef: 'synthetic-renewed-agreement' };
+        const renewed = { ...clone(prior), grantId: 'renewed-product', agreementRef: 'synthetic-renewed-agreement',
+            validFrom: new Date(Date.parse(prior.validFrom) + 1).toISOString() }; // A new product needs its own start.
         prior.status = 'revoked'; entitlement.grants.push(renewed);
         entitlement.grants.sort((a, b) => a.grantId < b.grantId ? -1 : 1);
         await authorityCommand(h, 'entitlement.update', entitlement, 'renew-product');

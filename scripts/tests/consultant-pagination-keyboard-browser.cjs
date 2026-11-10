@@ -234,7 +234,7 @@ async function reachMore(page, from, end) {
             const page = await open(width, { route: '#overview', setupAvailable: true });
             assert.equal(await page.locator('#consultantPortfolioControls').isVisible(), false);
             assert.equal(await page.locator('#clientSetupControls').count(), 0);
-            await page.locator('#dashboardAccountMenu > summary').focus(); await page.keyboard.press('Enter');
+            await page.locator('#dashboardAccountToggle').focus(); await page.keyboard.press('Enter');
             assert.equal(await page.locator('#consultantPortfolioControls').isVisible(), true);
             await page.locator('#consultantPortfolioControls').focus(); await page.keyboard.press('Enter');
             await page.waitForFunction(() => document.body.dataset.dashboardState === 'selection');
@@ -272,7 +272,7 @@ async function reachMore(page, from, end) {
             assert.ok((await page.locator('#dashboardHeading').textContent()).includes(bindings[50].organisationLabel));
             await page.waitForLoadState('networkidle');
             const beforeReturn = requests.length;
-            await page.locator('#dashboardAccountMenu > summary').focus(); await page.keyboard.press('Enter');
+            await page.locator('#dashboardAccountToggle').focus(); await page.keyboard.press('Enter');
             await page.locator('#consultantPortfolioControls').focus(); await page.keyboard.press('Enter');
             await page.waitForFunction(() => document.body.dataset.dashboardState === 'selection');
             await page.waitForLoadState('networkidle');

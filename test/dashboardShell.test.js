@@ -103,7 +103,7 @@ for (const role of ['end_user', 'customer_admin', 'operator']) test(`legacy/unma
 
 for (const mutate of [input => { input.scope.tenantId = 'other'; }, input => { input.scope.organisationId = 'other'; },
     input => { input.subjectKey = '10000000-0000-4000-8000-000000000000:10000000-0000-4000-8000-000000000002'; },
-    input => { input.entitlementState.grants = []; }, input => { input.now = '2028-01-01T00:00:00.000Z'; },
+    input => { input.entitlementState.grants = []; }, input => { input.entitlementState.grants[0].status = 'revoked'; },
     input => { input.membershipState.memberships[0].status = 'suspended'; }, input => { input.flags.enabled.dashboard = false; }]) {
     test('missing/currently unauthorised context fails closed with no record detail', () => {
         const input = clone(fixture()); mutate(input);
@@ -220,10 +220,21 @@ for (const route of ['#ai-governance', '#cyber-security/foreign-record', '#evide
 test('keyboard-compatible navigation updates title, route and current-link semantics', () => {
     const dom = mount(); dom.root.querySelectorAll('[data-module]').find(item => item.dataset.module === 'services').click();
     assert.equal(dom.window.location.hash, '#services');
+    assert.equal(dom.document.title, 'Services · No Fries Dashboard');
     assert.equal(dom.document.activeElement.textContent, 'Services');
     assert.equal(dom.root.querySelector('.dashboard-rail').querySelector('[aria-current="page"]').dataset.module, 'services');
     dom.window.location.hash = '#cyber-security'; dom.window.dispatch('popstate');
     assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
+    assert.equal(dom.document.title, 'Cyber Security · No Fries Dashboard');
+});
+
+test('a host skip link is not repeated inside the dashboard', () => {
+    const dom = mount(view(), { omitSkipLink: true });
+    assert.equal(dom.root.querySelector('.dashboard-skip'), null);
+    assert.equal(dom.root.querySelector('main').id, 'dashboard-content');
+    assert.equal(dom.document.title, 'Overview · No Fries Dashboard');
+    dom.controller.destroy();
+    assert.equal(dom.document.title, '');
 });
 
 test('attention drill-down has source, owner, next action and focus restoration', () => {
@@ -690,4 +701,17 @@ test('disabled Board Reports keeps the disabled label even when Cyber picture is
     const board = mount(model, { ...options, initialRoute: 'board-reports' });
     assert.doesNotMatch(board.root.textContent, /Draft assessment snapshot/);
     assert.match(board.root.textContent, /temporarily unavailable/);
+});
+
+test('Escape closes the More tools menu and returns focus to its summary', () => {
+    const dom = mount();
+    const menu = dom.root.querySelector('.dashboard-menu-other');
+    assert.ok(menu);
+    menu.open = true;
+    for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
+    assert.equal(menu.open, false);
+    assert.equal(dom.document.activeElement, menu.querySelector('summary'));
+    menu.open = false;
+    for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
+    assert.equal(menu.open, false);
 });

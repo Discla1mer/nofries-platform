@@ -163,6 +163,10 @@ function createPostgresDashboardRepository(options) {
                     (old.status === 'revoked' && replacement.status !== 'revoked')) fail('grant_history_invalid', 409);
             }
             const added = proposed.grants.filter(grant => own(TIERS, grant.code) && !next.entitlementState.grants.some(old => old.grantId === grant.grantId));
+            // Two products with one start cannot be ordered (grants record no
+            // creation order). Stored pairs are kept; no new one may be created.
+            if (added.some(grant => proposed.grants.some(other => other !== grant && own(TIERS, other.code) &&
+                other.validFrom === grant.validFrom))) fail('product_start_ambiguous', 409);
             next.entitlementState = proposed;
             await dataStorage.updateEntitlementState(tx, proposed);
             for (const grant of added) {
@@ -216,7 +220,8 @@ function createPostgresDashboardRepository(options) {
             policy.limit !== 'assessment_runs' || policy.amount < 1 ||
             !(policy.validFrom <= selection.at && selection.at < policy.validUntil) ||
             product.grantId !== policy.productGrantId || product.agreementRef !== policy.agreementRef ||
-            !(product.validFrom <= selection.at && selection.at < product.validUntil)) ncscFail();
+            // Accounts do not expire: the product's recorded end is not enforced.
+            product.validFrom > selection.at) ncscFail();
         return freeze(policy);
     }
     async function selectQuota(snapshot, context, command, decision, version, at) {
@@ -365,7 +370,7 @@ function createPostgresDashboardRepository(options) {
             const finalAt = now();
             const finalDecision = ncscAccess(snapshot, context, 'assessment.write', finalAt);
             if (quota && (finalDecision.product.grantId !== quota.policy.productGrantId ||
-                !(quota.productGrant.validFrom <= finalAt && finalAt < quota.productGrant.validUntil) ||
+                quota.productGrant.validFrom > finalAt ||
                 !(quota.policy.validFrom <= finalAt && finalAt < quota.policy.validUntil))) ncscFail('ncsc_access_denied', 403);
             return freeze(receiptValue.result);
         });

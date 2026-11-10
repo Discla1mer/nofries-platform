@@ -796,7 +796,7 @@ body[data-dashboard-state="ready"] #dashboardMessage, body[data-dashboard-state=
 /* Same client setup component is served within the main-site dashboard gateway. */
 #clientSetupControls { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--line); min-width: 0; }
 #dashboardChoices { display: grid; gap: .8rem; }
-#dashboardChoices .consultant-organisation-ready::after { content: 'Open to check access'; display: block; margin-top: .3rem; color: var(--muted); font-size: .8rem; font-weight: 400; }
+#dashboardChoices .consultant-organisation-ready::after { content: 'Open organisation'; display: block; margin-top: .3rem; color: var(--muted); font-size: .8rem; font-weight: 400; }
 #dashboardChoices .client-workspace-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem 1.5rem; padding: 1.25rem; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--page); list-style: none; }
 #dashboardChoices .client-workspace-row h3 { grid-column: 1; margin: 0; }
 #dashboardChoices .client-workspace-row p { grid-column: 1; margin: 0; color: var(--muted); }
@@ -884,6 +884,13 @@ body[data-dashboard-state="ready"] #dashboardMessage, body[data-dashboard-state=
 .signup-card .signup-secondary-action { display: flex; justify-content: center; min-height: 44px; margin-top: 12px; text-align: center; }
 .signup-legal { padding: clamp(16px, 3vw, 24px); margin-block: 20px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--page); overflow-wrap: anywhere; }
 .signup-legal h2 { margin: 0 0 16px; font-size: 1.15rem; }
+.signup-glance { padding: clamp(16px, 3vw, 24px); margin-block: 20px; border: 2px solid var(--line-strong); border-radius: 12px; background: var(--page); }
+.signup-glance h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.signup-glance ul { margin: 0 0 12px; padding-left: 1.2em; display: grid; gap: 6px; }
+.signup-glance p { margin: 0; font-size: 0.95rem; }
+.signup-progress { margin-block: 16px; font-weight: 600; }
+/* Roadmap shares the public navigation; keep wrapped rows close on phones. */
+body[data-page="product-roadmap"] .site-header nav { gap: 0 20px; }
 .signup-legal p { max-width: 78ch; margin: 0; color: var(--ink-soft); font-size: .9375rem; line-height: 1.75; white-space: pre-wrap; }
 .signup-schedule { border-top: 3px solid var(--green); }
 .access-layout:has(.signup-legal) { max-width: 66rem; grid-template-columns: minmax(0, 1fr); gap: 0; padding-block: 24px 48px; }
@@ -936,8 +943,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
    duplicate consultant chooser while an organisation is open. */
 .dashboard-account-menu { position: relative; align-self: start; justify-self: end; min-width: 0; max-width: 100%; }
 .dashboard-account-menu[hidden], .dashboard-account-menu [hidden] { display: none !important; }
-.dashboard-account-menu > summary { min-height: 44px; box-sizing: border-box; padding: .65rem .9rem; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--paper); font-size: .875rem; font-weight: 650; cursor: pointer; }
-.dashboard-account-menu > summary:focus-visible, .dashboard-account-actions > .button:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+.dashboard-account-menu > #dashboardAccountToggle { min-height: 44px; box-sizing: border-box; padding: .65rem .9rem; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--paper); font: inherit; font-size: .875rem; font-weight: 650; text-align: left; cursor: pointer; }
+.dashboard-account-menu > #dashboardAccountToggle:focus-visible, .dashboard-account-actions > .button:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
 .dashboard-account-actions { display: flex; flex-direction: column; gap: .5rem; padding-top: .5rem; min-width: min(14rem, 100%); }
 .dashboard-account-actions > .button, .dashboard-account-actions > #dashboardSignOut { width: 100%; min-height: 44px; box-sizing: border-box; margin: 0; padding: .65rem .9rem; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--paper); box-shadow: none; font: inherit; font-size: .875rem; text-align: left; overflow-wrap: anywhere; }
 .dashboard-account-actions > .button:hover { border-color: var(--green); background: var(--green-soft); transform: none; }
@@ -953,7 +960,7 @@ body[data-dashboard-state="ready"][data-dashboard-account-type="consultant"] #da
 @media (max-width: 640px) {
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"]):is([data-dashboard-state="selection"], [data-dashboard-state="ready"]) #dashboardStatusPanel { grid-template-columns: minmax(0, 1fr); }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"]):is([data-dashboard-state="selection"], [data-dashboard-state="ready"]) #dashboardAccountMenu { grid-column: 1; grid-row: auto; justify-self: start; width: min(100%, 18rem); }
-    .dashboard-account-menu > summary { width: fit-content; }
+    .dashboard-account-menu > #dashboardAccountToggle { width: fit-content; }
 }
 /* Consultant directory: names and opening a workspace lead the account view. */
 .organisation-search { display: grid; gap: .5rem; margin: 1.25rem 0; }
@@ -971,7 +978,7 @@ body[data-dashboard-state="ready"][data-dashboard-account-type="consultant"] #da
 .organisation-search #dashboardOrganisationEmpty { margin-top: .5rem; padding: 1rem; border: 1px dashed var(--line-strong); border-radius: 10px; color: var(--ink-soft); }
 #dashboardChooser #dashboardChoices .consultant-organisation-ready { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 1rem; min-height: 9rem; padding: 20px 48px 20px 20px; border-radius: 12px; line-height: 1.55; transition: border-color .15s ease, background-color .15s ease; }
 #dashboardChooser #dashboardChoices .consultant-organisation-ready::before { content: ''; position: absolute; top: calc(20px + .45em); right: 20px; width: .5em; height: .5em; border-top: 2px solid var(--green); border-right: 2px solid var(--green); transform: rotate(45deg); }
-#dashboardChooser #dashboardChoices .consultant-organisation-ready::after { content: 'Open to check access'; display: block; margin-top: auto; color: var(--green); font-size: .875rem; font-weight: 650; }
+#dashboardChooser #dashboardChoices .consultant-organisation-ready::after { content: 'Open organisation'; display: block; margin-top: auto; color: var(--green); font-size: .875rem; font-weight: 650; }
 #dashboardChooser #dashboardChoices .client-workspace-row { display: flex; flex-direction: column; gap: .5rem; padding: 20px; border-radius: 12px; border-top: 3px solid var(--yellow); overflow-wrap: anywhere; }
 #dashboardChooser #dashboardChoices .client-workspace-row h3 { font-size: 1rem; line-height: 1.55; }
 #dashboardChooser #dashboardChoices .client-workspace-row p { font-size: .875rem; line-height: 1.6; }

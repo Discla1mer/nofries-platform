@@ -191,5 +191,6 @@ test('reader cursor and final ownership checks reject changed or foreign pages w
     h.options.store.loadClient=async()=>{h.setOwner({subjectKey:OTHER,email:h.proof.email});return slot;};
     await assert.rejects(h.allocator.readClient({},slot.requestId),/starter_owner_changed/);
     h.setOwner({subjectKey:SUBJECT,email:h.proof.email});h.setTime(Date.parse(account.activation.validUntil));
-    await assert.rejects(h.allocator.listClients({},{}),/starter_client_setup_denied/);
+    // Accounts do not expire: existing clients stay listable after the recorded period.
+    assert.equal((await h.allocator.listClients({},{})).clients.length, 1);
 });

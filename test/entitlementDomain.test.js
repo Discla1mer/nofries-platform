@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = global.test || require('node:test');
 const { createTenantAggregate } = require('../api/shared/appLifecycle/tenantDomain');
 const { MODULES, TIERS, SERVICES, EntitlementDomainError, normaliseEntitlementState,
-    resolveEntitlements, assertServiceEntitlement, consumeEntitlementLimit } = require('../api/shared/appLifecycle/entitlementDomain');
+    resolveEntitlements, currentProductGrant, assertServiceEntitlement, consumeEntitlementLimit } = require('../api/shared/appLifecycle/entitlementDomain');
 
 const START = '2026-09-01T00:00:00.000Z', NOW = '2026-09-05T00:00:00.000Z';
 const CHANGE = '2026-09-15T00:00:00.000Z', END = '2026-10-01T00:00:00.000Z';
@@ -146,11 +146,48 @@ for (const status of ['suspended', 'revoked']) {
     });
 }
 
-test('effective dates include start and exclude end without wall-clock dependence', () => {
+test('effective dates include start; a dashboard product has no enforced end, without wall-clock dependence', () => {
     assert.ok(resolve(state(), flags(), START).product);
     assert.equal(resolve(state(), flags(), '2026-08-31T23:59:59.999Z').product, null);
-    assert.equal(resolve(state(), flags(), END).product, null);
+    // Accounts do not expire: the recorded validUntil is reported, not enforced.
+    for (const at of [END, '2031-01-01T00:00:00.000Z']) {
+        const lasting = resolve(state(), flags(), at);
+        assert.equal(lasting.product.grantId, 'product-1'); assert.equal(lasting.product.validUntil, END);
+        assert.equal(lasting.modules.cyber_security.eligible, true);
+    }
     assert.deepEqual(resolve(), resolve());
+});
+
+test('after its recorded end a product still stops on suspension, revocation or a successor; services keep their window', () => {
+    const LATE = '2026-11-10T00:00:00.000Z';
+    for (const status of ['suspended', 'revoked']) {
+        assert.equal(resolve(state([product({ status })]), flags(), LATE).product, null);
+    }
+    const next = product({ grantId: 'product-2', code: 'dashboard_govern', modules: [...TIERS.dashboard_govern],
+        frameworks: [{ moduleId: 'cyber_security', profileId: 'synthetic-profile', version: '1.0' },
+            { moduleId: 'ai_governance', profileId: 'synthetic-ai', version: '2.0' },
+            { moduleId: 'it_optimisation', profileId: 'synthetic-it', version: '1.0' }],
+        validFrom: '2026-10-20T00:00:00.000Z', validUntil: '2026-10-25T00:00:00.000Z' });
+    assert.equal(resolve(state([product(), next]), flags(), '2026-10-10T00:00:00.000Z').product.grantId, 'product-1');
+    assert.equal(resolve(state([product(), next]), flags(), LATE).product.grantId, 'product-2');
+    // A suspended successor does not revive the product it replaced.
+    assert.equal(resolve(state([product(), { ...next, status: 'suspended' }]), flags(), LATE).product, null);
+    assert.equal(currentProductGrant([product(), next], '2026-08-01T00:00:00.000Z'), null);
+    // Products sharing a start cannot be ordered, so the active one applies whatever the
+    // array or ID order: both for a suspended successor and for a revoked predecessor
+    // with its active replacement. Neither makes an active account lapse at its recorded end.
+    for (const status of ['suspended', 'revoked']) for (const [liveId, stoppedId] of [['product-a', 'product-b'], ['product-b', 'product-a']]) {
+        const live = product({ grantId: liveId }), stopped = product({ grantId: stoppedId, status, agreementRef: 'synthetic-order-2' });
+        for (const grants of [[live, stopped], [stopped, live]]) for (const at of [NOW, END, LATE]) {
+            assert.equal(currentProductGrant(grants, at).grantId, liveId);
+            assert.equal(resolve(state(grants), flags(), at).product.grantId, liveId);
+        }
+        assert.equal(currentProductGrant([{ ...live, status }, stopped], LATE), null); // None active: no product.
+    }
+    const withService = state([product(), service()]), cfg = flags({ 'service:managed_endpoint': true });
+    assert.equal(resolve(withService, cfg, NOW).services.managed_endpoint.entitled, true);
+    assert.equal(resolve(withService, cfg, END).services.managed_endpoint.entitled, false);
+    assert.ok(resolve(withService, cfg, END).product);
 });
 
 for (const owner of ['tenant', 'organisation']) {
@@ -339,7 +376,10 @@ test('every counter operation is bound to tenant, organisation and active produc
     rejects(() => consume(usage({ tenantId: 'synthetic-b' })), 'not_found', 404);
     rejects(() => consume(usage({ grantId: 'other' })), 'quota_grant_mismatch', 409);
     rejects(() => consume(usage(), command({ grantId: 'service-1' })), 'quota_grant_mismatch', 409);
-    rejects(() => consume(usage(), command(), state(), flags(), END), 'quota_grant_mismatch', 409);
+    rejects(() => consume(usage(), command(), state([product({ status: 'suspended' })])), 'quota_grant_mismatch', 409);
+    // The recorded end no longer unbinds the grant; its finite limits still apply.
+    assert.equal(consume(usage(), command(), state(), flags(), END).counters.assessment_runs, 1);
+    rejects(() => consume(usage({ counters: { ...usage().counters, assessment_runs: 2 } }), command(), state(), flags(), END), 'limit_exceeded', 403);
 });
 
 for (const field of ['expectedEntitlementRevision', 'expectedFlagRevision', 'expectedUsageRevision']) {

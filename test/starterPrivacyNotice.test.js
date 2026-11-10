@@ -31,7 +31,7 @@ describe('starter signup privacy disclosure', () => {
     test('retains a request contact without claiming automatic or immediate deletion', () => {
         expect(section('Representative records and account activation')).toContain('request access, correction or deletion');
         expect(section('Incidents and requests')).toContain('mailto:hello@nofries.nz');
-        expect(notice).toContain('Last updated: 2 November 2026');
+        expect(notice).toContain('Last updated: 9 November 2026');
         expect(notice).not.toContain('Setup and security records are stored in private Azure authentication storage. Expired records are removed');
     });
 });

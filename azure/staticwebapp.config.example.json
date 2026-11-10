@@ -221,6 +221,10 @@
       }
     },
     {
+      "route": "/forgot-password",
+      "redirect": "/login"
+    },
+    {
       "route": "/service-desk",
       "redirect": "/support"
     },
@@ -325,6 +329,7 @@
     {
       "route": "/api/external-customer-auth/callback",
       "methods": [
+        "GET",
         "POST"
       ],
       "allowedRoles": [

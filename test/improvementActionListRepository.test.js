@@ -166,9 +166,9 @@ test.each(['viewer', 'membership', 'product', 'module', 'flag', 'tenant', 'organ
     expect(h.trace).not.toContain('commit');
 });
 
-test.each(['load', 'audit'])('membership expiry during %s withholds the whole list', async phase => {
+test.each(['load', 'audit'])('membership suspension during %s withholds the whole list', async phase => {
     const h = await harness();
-    h[phase === 'load' ? 'afterLoad' : 'afterAudit'] = () => h.clock.set(h.state.membershipState.memberships[0].validUntil);
+    h[phase === 'load' ? 'afterLoad' : 'afterAudit'] = () => { h.state.membershipState.memberships[0].status = 'suspended'; };
     await expect(h.read()).rejects.toMatchObject({ code: 'improvement_list_access_denied', statusCode: 403 });
     expect(h.trace).not.toContain('commit');
     expect(h.auditEvents).toHaveLength(phase === 'load' ? 0 : 1);
@@ -244,7 +244,7 @@ test.each(['audit', 'commit'])('awaits %s completion before exposing a detached 
     expect(result.actions.some(action => action.dueDate === '2030-01-01')).toBe(false);
 });
 
-test.each(['expiry', 'revocation', 'clock-regression'])
+test.each(['suspension', 'revocation', 'clock-regression'])
 ('%s while COMMIT is pending withholds disclosure after the transaction has settled', async kind => {
     const h = await harness(), reached = deferred(), release = deferred();
     h.beforeCommit = async () => { reached.resolve(); await release.promise; };
@@ -254,7 +254,7 @@ test.each(['expiry', 'revocation', 'clock-regression'])
         error => { settled = true; return { error }; });
     await reached.promise;
     expect(settled).toBe(false); expect(h.auditEvents).toHaveLength(1);
-    if (kind === 'expiry') h.clock.set(h.state.membershipState.memberships[0].validUntil);
+    if (kind === 'suspension') h.state.membershipState.memberships[0].status = 'suspended';
     if (kind === 'revocation') h.state.flags.enabled.improvement_plan = false;
     if (kind === 'clock-regression') h.clock.advance(-1);
     release.resolve();
@@ -375,10 +375,10 @@ describe('persisted bounded plan selection', () => {
         expect(h.tx.query).toHaveBeenCalledTimes(1); expect(h.database.withTenantTransaction).toHaveBeenCalledTimes(1);
         expect(h.trace).not.toContain('commit'); expect(actionStore.loadHistory).not.toHaveBeenCalled();
     });
-    test.each(['expiry', 'revocation', 'clock-regression'])('withholds plans after settled %s without claiming rollback', async kind => {
+    test.each(['suspension', 'revocation', 'clock-regression'])('withholds plans after settled %s without claiming rollback', async kind => {
         const h = await selectionHarness();
         h.beforeCommit = () => {
-            if (kind === 'expiry') h.clock.set(h.state.membershipState.memberships[0].validUntil);
+            if (kind === 'suspension') h.state.membershipState.memberships[0].status = 'suspended';
             if (kind === 'revocation') h.state.flags.enabled.improvement_plan = false;
             if (kind === 'clock-regression') h.clock.advance(-1);
         };

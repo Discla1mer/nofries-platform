@@ -238,8 +238,6 @@ test.each([
     ['future approval', f => { f.state.approval.approvedAt = AT + 1; }],
     ['expired approval', f => { f.state.approval.expiresAt = AT; }],
     ['overlong approval', f => { f.state.approval.expiresAt = f.state.approval.approvedAt + 3600001; }],
-    ['authority deadline extension', f => { f.state.context.authority.expiresAt = AT + 5000;
-        f.state.approval.authoritySha256 = canonicalDigest(f.state.context.authority); }],
     ['expired authority', f => { f.state.context.authority.expiresAt = AT; }],
     ['invitation deadline extension', f => { f.state.context.invitation.expiresAt = AT + 5000; }],
     ['expired original invitation', f => { f.state.context.invitation.expiresAt = AT; }],

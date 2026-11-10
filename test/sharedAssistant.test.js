@@ -345,6 +345,13 @@ test.each(['home', 'dashboard'])('%s reserves mounted, resized and removed dashb
     h.controller.setPosition({ bottom: 12, right: 8 });
     expect(h.root.properties['--nf-assistant-bottom-offset']).toBe('12px');
     expect(h.root.properties['--nf-assistant-dashboard-bottom']).toBe('121px');
+    // An in-flow bar scrolled far above, or sitting mid-page, reserves nothing.
+    bounds = { width: 320, height: 75, top: -5000 }; h.geometry.windowResize();
+    expect(h.root.properties['--nf-assistant-dashboard-bottom']).toBe('0px');
+    bounds = { width: 320, height: 75, top: 200 }; h.geometry.windowResize();
+    expect(h.root.properties['--nf-assistant-dashboard-bottom']).toBe('0px');
+    bounds = { width: 320, height: 121, top: 519 }; h.geometry.resize();
+    expect(h.root.properties['--nf-assistant-dashboard-bottom']).toBe('121px');
     // The desktop breakpoint hides this same nav; sign-out removes it.
     bounds = { width: 0, height: 0, top: 0 }; h.geometry.windowResize();
     expect(h.root.properties['--nf-assistant-dashboard-bottom']).toBe('0px');

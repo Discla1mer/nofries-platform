@@ -16,7 +16,7 @@ const { createAccountLookup } = require('./accountLookup');
 const MAX_BODY_BYTES = 2048;
 const SUBJECT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const fail = (statusCode, code) => { throw Object.assign(new Error(code), { statusCode, code }); };
-const isAccountAction = route => ['extend-expired-access', 'approve-extension', 'suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(route);
+const isAccountAction = route => ['suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(route);
 
 function response(status, body, headers = {}, isRaw = false) {
     return { status, body, headers: apiSecurityHeaders({ 'Content-Type': 'application/json; charset=utf-8', ...headers }), isRaw };
@@ -163,14 +163,10 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 }, signal);
             }
             const methods = { document: 'GET', 'app.js': 'GET', 'app.css': 'GET', capabilities: 'GET', lookup: 'POST', signups: 'POST',
-                'extend-expired-access': 'POST', 'approve-extension': 'POST',
                 suspend: 'POST', restore: 'POST', 'approve-suspend': 'POST', 'approve-restore': 'POST',
                 entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET' };
             const action = isAccountAction(route);
             if (action && env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS !== 'true') fail(404, 'dashboard_admin_not_found');
-            // Expiry extension is withdrawn from the staff console: both routes
-            // are absent before authentication, body parsing or any storage.
-            if (['approve-extension', 'extend-expired-access'].includes(route) && accountActions?.expiry === false) fail(404, 'dashboard_admin_not_found');
             if (!Object.hasOwn(methods, route)) fail(404, 'dashboard_admin_not_found');
             if (request.method !== methods[route]) return response(405, { code: 'dashboard_admin_method_not_allowed' }, { Allow: methods[route] });
             if (String(request.originalUrl || request.url || '').includes('?') || Object.keys(request.query || {}).length) fail(400, 'dashboard_admin_input_invalid');
@@ -194,9 +190,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                     // The action has already checked authority before its write.
                     // Once success is durable, later revocation/deadline checks
                     // must not misreport that committed outcome as a failure.
-                    const perform = route === 'approve-extension' ? accountActions.approve : accountActions.execute;
-                    if (!perform) fail(503, 'dashboard_admin_unavailable');
-                    body = await perform(currentActor, input, { request, signal }, route);
+                    body = await accountActions.execute(currentActor, input, { request, signal }, route);
                     return response(200, body);
                 } else body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
             } else if (route === 'entry-capabilities') body = { entry: true,

@@ -85,7 +85,10 @@ jobs:
           echo "unit=$UNIT build=$BUILD"
           test "$UNIT" = success && test "$BUILD" = success
 
-  postgres:
+  postgres-native:
+    # Every native test except the real-clock elapsed-recovery case, which runs
+    # in parallel in postgres-elapsed. The split check fails unless each test
+    # ran in exactly one of the two jobs and passed there.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -114,7 +117,8 @@ jobs:
         run: |
           npm run db:migrate
           npm run db:migrate
-          npm run test:postgres
+          npm run test:postgres -- --testNamePattern='^(?!.*case: elapsed recovery\)$)' --json --outputFile="$RUNNER_TEMP/native.json"
+          node scripts/check-postgres-split.js without "$RUNNER_TEMP/native.json"
       - name: Verify opt-in authenticated journey and failure cleanup
         env:
           NOFRIES_DATABASE_URL: postgresql://nofries_ci_owner:nofries-ci-only-password@127.0.0.1:5432/nofries_ci
@@ -124,6 +128,57 @@ jobs:
           node --test scripts/tests/authenticated-customer-journey.cjs
           node -e 'const {Client}=require("pg"); (async()=>{const c=new Client({connectionString:process.env.NOFRIES_DATABASE_URL}); await c.connect(); try {await c.query("CREATE DATABASE nofries_journey");} finally {await c.end();}})().catch(()=>{console.error("Journey control database setup failed");process.exitCode=1;});'
           node --test scripts/tests/authenticated-customer-journey-native.cjs
+
+  postgres-elapsed:
+    # The one case that must let both the app and PostgreSQL clocks really
+    # elapse (301 s). Same database image, migrations and suite as
+    # postgres-native; only the test name filter differs.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.11-bookworm@sha256:84560e3b9c6874893fc4e2854f5dc3e7c1a37bc9d1dfd7a8c641310ae22ba5ad
+        env:
+          POSTGRES_DB: nofries_ci
+          POSTGRES_USER: nofries_ci_owner
+          POSTGRES_PASSWORD: nofries-ci-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready --username=nofries_ci_owner --dbname=nofries_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
+      - run: npm ci --ignore-scripts --omit=optional --audit=false
+      - name: Apply migrations twice and run the real-clock expiry case
+        env:
+          NOFRIES_DATABASE_URL: postgresql://nofries_ci_owner:nofries-ci-only-password@127.0.0.1:5432/nofries_ci
+          NOFRIES_TEST_DATABASE_URL: postgresql://nofries_ci_owner:nofries-ci-only-password@127.0.0.1:5432/nofries_ci
+        run: |
+          npm run db:migrate
+          npm run db:migrate
+          npm run test:postgres -- --testNamePattern='case: elapsed recovery\)$' --json --outputFile="$RUNNER_TEMP/elapsed.json"
+          node scripts/check-postgres-split.js only "$RUNNER_TEMP/elapsed.json"
+
+  postgres:
+    # Required check. Passes only if both native jobs succeeded; a skipped,
+    # cancelled or failed dependency fails this gate.
+    if: always()
+    needs: [postgres-native, postgres-elapsed]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require all postgres jobs to succeed
+        env:
+          NATIVE: ${{ needs.postgres-native.result }}
+          ELAPSED: ${{ needs.postgres-elapsed.result }}
+        run: |
+          echo "native=$NATIVE elapsed=$ELAPSED"
+          test "$NATIVE" = success && test "$ELAPSED" = success
 
   dependencies:
     runs-on: ubuntu-24.04

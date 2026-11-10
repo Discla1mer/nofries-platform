@@ -400,7 +400,8 @@ module.exports = function registerDashboardPostgresTests() {
             const advisor = { ...current.state.advisorAssignments[0], revision: current.state.advisorAssignments[0].revision + 1 };
             result = await repository.executeAuthorityCommand(command(current.scope, 'advisor.put', result.resultRevisions, advisor));
             const grants = [...current.state.entitlementState.grants,
-                { ...current.state.entitlementState.grants[0], grantId: 'later-product', status: 'revoked' }];
+                { ...current.state.entitlementState.grants[0], grantId: 'later-product', status: 'revoked', // A new product needs its own start.
+                    validFrom: new Date(Date.parse(current.state.entitlementState.grants[0].validFrom) + 1).toISOString() }];
             result = await repository.executeAuthorityCommand(command(current.scope, 'entitlement.update', result.resultRevisions,
                 { ...current.state.entitlementState, revision: 2, grants }));
             await repository.reserveUsage(reservation({ ...current, vector: result.resultRevisions }));
@@ -484,7 +485,7 @@ module.exports = function registerDashboardPostgresTests() {
             await expectNoReservation(current.scope);
         });
 
-        test('samples trusted time after the lock wait and denies an entitlement at its exclusive expiry boundary', async () => {
+        test('a reservation waiting on a lock past the product\'s recorded end is still accepted', async () => {
             const current = await seed({ grantEndsAt: '2026-09-06T10:00:00.000Z' });
             let pending;
             await holdingTenant(current.scope, async blocker => {
@@ -494,8 +495,7 @@ module.exports = function registerDashboardPostgresTests() {
                 await blocker.query('COMMIT');
             });
             const result = await pending;
-            expect(result.ok).toBe(false); expect(result.error.code).toBe('dashboard_quota_denied');
-            await expectNoReservation(current.scope);
+            expect(result.error).toBeUndefined(); expect(result.ok).toBe(true); // Accounts do not expire.
         });
 
         test('rechecks current authority before returning an old receipt after revocation', async () => {

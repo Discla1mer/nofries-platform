@@ -237,10 +237,12 @@ test.each(['unactivated', 'changed offer', 'changed activation', 'multiple rows'
     expect(getters).toBe(0);
 });
 
-test('expired title selection is refused before its optional SQL read', async () => {
+test('a not-yet-valid title selection is refused before its optional SQL read; a passed end date is not', async () => {
     const f = await savedProfile();
-    await expect(readDashboardUserProfile(f.tx, f.selector, f.selector.validUntil)).rejects.toMatchObject({ code: 'dashboard_unavailable' });
+    await expect(readDashboardUserProfile(f.tx, f.selector, '2000-01-01T00:00:00.000Z')).rejects.toMatchObject({ code: 'dashboard_unavailable' });
     expect(f.tx.query).not.toHaveBeenCalled();
+    await expect(readDashboardUserProfile(f.tx, f.selector, f.selector.validUntil)).resolves.toBeDefined(); // Accounts do not expire.
+    expect(f.tx.query).toHaveBeenCalledTimes(1);
 });
 
 test('users with the same permissions can have different entered titles without changing any capability', () => {
@@ -303,17 +305,16 @@ test('only the trusted detached snapshot supplies the title; request and princip
     await expect(createDashboardAdmissionDecision(f.adapters)({})).rejects.toMatchObject({ code: 'dashboard_unavailable' });
 });
 
-test('detached profile getters cannot run and a correct title never rescues removed or expired membership', async () => {
+test('detached profile getters cannot run and a correct title never rescues removed or suspended membership', async () => {
     const f = admissionFixture({ empty: true }), load = f.adapters.loadSnapshot; let getters = 0;
     const profile = boundProfile(f.state.input, 'Managing Director');
     Object.defineProperty(profile, 'jobTitle', { enumerable: true, get() { getters++; return 'Injected getter title'; } });
     f.adapters.loadSnapshot = async (...args) => ({ ...await load(...args), currentUserProfile: profile });
     await expect(createDashboardAdmissionDecision(f.adapters)({})).rejects.toMatchObject({ code: 'dashboard_unavailable' });
     expect(getters).toBe(0);
-    for (const status of ['suspended', 'removed', 'expired']) {
+    for (const status of ['suspended', 'removed']) {
         const input = clone(f.state.input), safe = boundProfile(input, 'Managing Director');
-        if (status === 'expired') input.now = input.membershipState.memberships[0].validUntil;
-        else input.membershipState.memberships[0].status = status;
+        input.membershipState.memberships[0].status = status;
         expect(() => projectDashboard({ ...input, currentUserProfile: safe })).toThrow('dashboard_unavailable');
     }
 });

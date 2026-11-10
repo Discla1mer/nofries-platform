@@ -175,12 +175,12 @@ for (const target of ['tenant', 'organisation']) {
     }
 }
 
-test('membership authority begins inclusively and expires exclusively', () => {
+test('membership authority begins inclusively and has no enforced end', () => {
     const state = membership(['viewer'], { validFrom: NOW });
     denies(() => resolve(state, {}, null, ACCEPT));
     assert.equal(resolve(state).role, 'viewer');
     assert.equal(resolve(state, {}, null, '2027-09-04T23:59:59.999Z').role, 'viewer');
-    denies(() => resolve(state, {}, null, END));
+    assert.equal(resolve(state, {}, null, END).role, 'viewer'); // Accounts do not expire.
 });
 
 test('fractional advisor role alone grants no permission, including overview and issued reports', () => {
@@ -474,11 +474,18 @@ test('time is sampled after asynchronous loads so an assignment expiring during 
     await deniesAsync(() => requirePermission({}, { permission: 'assessment.read', module: 'cyber_security' }));
 });
 
-test('time is sampled after asynchronous loads so membership expiry cannot be bypassed', async () => {
-    let now = NOW;
-    const { requirePermission } = guardFixture({ loadMembershipState: async () => { await Promise.resolve(); now = END; return membership(); },
+test('time is sampled after asynchronous loads, so an earlier clock cannot decide membership validity', async () => {
+    // Membership no longer expires, so the start boundary proves the sampling
+    // order: a clock read before the load would predate validFrom and deny.
+    let now = ACCEPT;
+    const starting = guardFixture({ loadMembershipState: async () => { await Promise.resolve(); now = NOW;
+        return membership(['viewer'], { validFrom: NOW }); }, clock: () => now });
+    await assert.doesNotReject(() => starting.requirePermission({}, overview));
+    const early = guardFixture({ loadMembershipState: async () => membership(['viewer'], { validFrom: NOW }), clock: () => ACCEPT });
+    await deniesAsync(() => early.requirePermission({}, overview));
+    const lasting = guardFixture({ loadMembershipState: async () => { await Promise.resolve(); now = END; return membership(); },
         clock: () => now });
-    await deniesAsync(() => requirePermission({}, overview));
+    await assert.doesNotReject(() => lasting.requirePermission({}, overview));
 });
 
 test('advisor lookup completing after membership expiry cannot preserve earlier authority', async () => {
