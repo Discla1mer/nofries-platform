@@ -430,7 +430,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 let id;
                 try { id = decodeURIComponent(parts[0]); } catch (_) { fail(404, 'dashboard_not_found'); }
                 if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(id) || encodeURIComponent(id) !== parts[0] ||
-                    parts.length > 2 || parts.length === 2 && !['save', 'submit'].includes(parts[1])) fail(404, 'dashboard_not_found');
+                    parts.length > 2 || parts.length === 2 && !['save', 'submit', 'export'].includes(parts[1])) fail(404, 'dashboard_not_found');
                 ncscRoute = id + (parts.length === 2 ? '/' + parts[1] : '');
             }
         }
@@ -440,7 +440,7 @@ function createDashboardRuntimeHandlers(configuration) {
         }
         entry.category = improvementRoute !== null ? 'improvement' : ncscRoute === null ? route : 'ncsc';
         const allow = workQueue ? ['GET'] : improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
-            : ncscRoute !== null ? (ncscRoute === '' ? ['GET', 'POST'] : ncscRoute.includes('/') ? ['POST'] : ['GET']) : resource ? ['GET'] : methods[route];
+            : ncscRoute !== null ? (ncscRoute === '' ? ['GET', 'POST'] : ncscRoute.endsWith('/export') ? ['GET'] : ncscRoute.includes('/') ? ['POST'] : ['GET']) : resource ? ['GET'] : methods[route];
         if (!allow.includes(snapshot.method)) fail(405, 'dashboard_method_not_allowed', { Allow: allow.join(', ') });
         const directory = { limit: 50, afterBindingId: null };
         let evidenceSelector = null;
