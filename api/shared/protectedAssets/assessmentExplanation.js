@@ -5,6 +5,7 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
     const mounted = new WeakMap();
+    const LOAD_TIMEOUT_MS = 30000;
     const TOPICS = Object.freeze({ range: 'Saved range', unresolved: 'Unresolved answers', actions: 'Framework starting actions' });
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
     const copy = value => JSON.parse(JSON.stringify(value));
@@ -130,6 +131,7 @@
         let hostSelection = summary(options.assessment, options.metadata), selected = hostSelection;
         let topic = 'range', detail = null, refreshSelection = null;
         let generation = 0, controller = null, destroyed = false, busy = false, message = '', clearanceFrame = null;
+        let loadTimer = null, retry = false;
         function node(tag, text) { const item = document.createElement(tag); if (text !== undefined) item.textContent = text; return item; }
         function button(label, action, key) {
             const item = node('button', label); item.type = 'button'; item.className = 'dashboard-button';
@@ -190,8 +192,9 @@
             const control = Array.from(root.querySelectorAll('[data-explanation-control]')).find(item => item.dataset.explanationControl === key);
             if (control && !control.disabled) control.focus();
         }
-        function cancel() { generation += 1; if (controller) controller.abort(); controller = null; busy = false; }
-        function clear() { cancel(); detail = null; refreshSelection = null; message = ''; }
+        function clearLoadTimer() { if (loadTimer !== null) clearTimeout(loadTimer); loadTimer = null; }
+        function cancel() { generation += 1; clearLoadTimer(); if (controller) controller.abort(); controller = null; busy = false; }
+        function clear() { cancel(); detail = null; refreshSelection = null; message = ''; retry = false; }
         function denied(error) { return error && (error.statusCode === 401 || error.statusCode === 403 || error.status === 401 || error.status === 403 || error.code === 'ncsc_access_denied'); }
         function render() {
             if (destroyed) return;
@@ -206,7 +209,7 @@
             if (!selected || selected.status !== 'submitted') {
                 root.append(node('p', message || 'A saved submitted result must be selected before an explanation can be loaded.')); restoreFocus(focus); return;
             }
-            root.append(button(refreshSelection ? 'Refresh saved explanation' : detail ? 'Reload saved explanation' : 'Explain this saved result', load, 'load'));
+            root.append(button(retry ? 'Retry saved explanation' : refreshSelection ? 'Refresh saved explanation' : detail ? 'Reload saved explanation' : 'Explain this saved result', load, 'load'));
             const clearButton = button('Clear saved explanation', function () { if (destroyed) return; clear(); render(); }, 'clear');
             clearButton.disabled = false; clearButton.setAttribute('aria-disabled', 'false'); root.append(clearButton);
             if (busy || message) { const status = node('p', busy ? 'Loading the saved submission…' : message); status.setAttribute('role', 'status'); root.append(status); }
@@ -237,7 +240,15 @@
             if (destroyed || busy || !selected || selected.status !== 'submitted') return;
             const expected = refreshSelection || selected;
             cancel(); const token = generation; controller = new AbortController(); const signal = controller.signal;
-            detail = null; busy = true; message = ''; render();
+            detail = null; busy = true; message = ''; retry = false; render();
+            loadTimer = setTimeout(function () {
+                if (destroyed || token !== generation) return;
+                // Invalidate the read even when its transport ignores abort.
+                // Keep observing its rejection so a late denial still tears down access.
+                cancel(); retry = true;
+                message = 'Loading the saved explanation took too long. Your saved answers are unchanged. Choose Retry saved explanation to try again.';
+                render();
+            }, LOAD_TIMEOUT_MS);
             try {
                 const response = await options.client.read(expected.assessmentId, { signal });
                 if (destroyed || token !== generation) return;
@@ -265,7 +276,7 @@
                     detail = null; message = 'The saved explanation is unavailable. Choose the load button to try again.';
                 }
             } finally {
-                if (!destroyed && token === generation) { controller = null; busy = false; render(); }
+                if (!destroyed && token === generation) { clearLoadTimer(); controller = null; busy = false; render(); }
             }
         }
         // Text reflow need not emit a window resize. Observe only this module
