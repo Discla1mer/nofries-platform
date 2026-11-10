@@ -1,5 +1,15 @@
 # Production account actions
 
+> Superseded in part: account actions are now composed by the staff console from
+> `NOFRIES_STAFF_CONSOLE=true`, `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP=true` and
+> `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS=true`. `NOFRIES_DASHBOARD_ADMIN_BINDING`,
+> `NOFRIES_DASHBOARD_ADMIN_ENABLED` and a scoped lookup approval are not used, and the
+> approval-store Reader role in the table below is not needed. Only suspend and
+> restore are available; they read the customer's subject record and change the
+> PostgreSQL membership, so the managed identity needs Storage Blob Data Reader on
+> the three authority containers and Storage Blob Data Contributor on the audit
+> container only. The container settings below still apply.
+
 The bound production composition uses `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS=true` with the existing native dashboard runtime, `NOFRIES_DASHBOARD_ADMIN_ENABLED=true`, and `NOFRIES_DASHBOARD_ADMIN_BINDING`. The binding's private approval store must already contain a current scoped lookup approval for the staff operator. Environment locators never grant customer access.
 
 On `AZURE_STORAGE_ACCOUNT_NAME`, configure all three distinct customer authority containers:

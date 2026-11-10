@@ -69,13 +69,3 @@ test('partial archive publication can be replanned and completed without replaci
     await expect(h.run(first.planSha256)).rejects.toThrow();
     await h.run(retry.planSha256); expect(h.writes).toHaveLength(3);
 });
-test('lookup-only locator is inert while disabled and rejects source/approval collisions without SDK access', () => {
-    const { createEnvironmentLookupReader } = require('../lib/dashboardAdminLookupProduction');
-    const get = jest.fn(() => { throw new Error('unexpected SDK'); }), dependencies = {};
-    Object.defineProperty(dependencies, 'ManagedIdentityCredential', { get });
-    const env = { NOFRIES_DASHBOARD_ADMIN_LOOKUP_AUTHORITY_CONTAINER: 'approvals', NOFRIES_DASHBOARD_ADMIN_ENABLED: 'false' };
-    expect(createEnvironmentLookupReader(env, null, dependencies)).toBeNull();
-    Object.assign(env, { NOFRIES_DASHBOARD_ADMIN_ENABLED: 'true', AZURE_STORAGE_ACCOUNT_NAME: 'syntheticdata',
-        NOFRIES_BROWSER_AUTH_STORAGE_ACCOUNT: 'syntheticauth', NOFRIES_STARTER_AUTHORITY_CONTAINER: 'approvals' });
-    expect(() => createEnvironmentLookupReader(env, null, dependencies)).toThrow(); expect(get).not.toHaveBeenCalled();
-});

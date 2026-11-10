@@ -2,7 +2,7 @@
 const { Readable } = require('node:stream');
 const { createDashboardAdminHandlers } = require('../api/shared/dashboardAdmin/handlers');
 const { createAccountLookup } = require('../api/shared/dashboardAdmin/accountLookup');
-const { createAccountLookupReader, createProductionAccountLookup } = require('../api/shared/dashboardAdmin/accountLookupStore');
+const { createAccountLookupReader } = require('../api/shared/dashboardAdmin/accountLookupStore');
 const { subjectHash } = require('../api/shared/customerSignup/customerAuthority');
 const uid = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const subject = uid(1) + ':' + uid(2), email = 'customer@example.test', now = Date.parse('2026-11-09T12:00:00Z');
@@ -14,23 +14,26 @@ const record = { schemaVersion: 1, subjectKey: subject, email, revision: 7, stat
     termsVersion: 'private-terms', termsDigest: '3'.repeat(64), bindingId: null, accountType: 'company' };
 const origin = 'https://operator.example.test';
 const env = { NOFRIES_PUBLIC_URL: origin };
+const base = { email, kind: 'legacy_admin', schemaVersion: null, plan: null, accountType: null,
+    organisation: null, status: 'missing', effectiveAt: null, expiresAt: null, revision: null };
 const wire = (input = { email }, method = 'POST') => Object.assign(Readable.from([Buffer.from(JSON.stringify(input))]), {
     method, url: '/api/dashboard-admin/accounts/lookup', headers: { 'content-type': 'application/json', origin, 'sec-fetch-site': 'same-origin' }
 });
 const readJson = async request => { const chunks = []; for await (const chunk of request) chunks.push(chunk); return JSON.parse(Buffer.concat(chunks)); };
 const allowedService = () => ({ authorise: jest.fn(async actor => actor), capabilities: async () => ({}), lookup: async () => ({}) });
 const signal = () => new AbortController().signal;
-function reader(records, overrides = {}) {
-    const entries = records.map((r, i) => ({ name: `customer-subjects/${subjectHash(r.subjectKey)}.json`, record: r }));
+const targetDigest = value => require('node:crypto').createHmac('sha256', 'synthetic-key').update(value).digest('hex');
+function reader(records, overrides = {}, kind = 'legacy_admin') {
+    const entries = records.map(r => ({ name: `customer-subjects/${subjectHash(r.subjectKey)}.json`, record: r }));
     const container = { async *listBlobsFlat() { yield* entries; }, getBlockBlobClient(name) {
         return { async download() { const bytes = Buffer.from(JSON.stringify(entries.find(e => e.name === name).record));
             return { etag: '"test-etag"', contentLength: bytes.length, readableStreamBody: Readable.from([bytes]) }; } };
     }, ...overrides };
-    const read = createAccountLookupReader([{ source, container }], () => now);
-    return (email, signal, authorise = async () => identity, includeSelector = false) => read(email, signal, authorise, includeSelector);
+    return createAccountLookupReader([{ source: { ...source, kind }, container }], () => now);
 }
-function handler(overrides = {}, readOperatorSession = async () => ({ identity }), read = jest.fn(async () => []), service = allowedService(), signupListService = null) {
-    return { read, handler: createDashboardAdminHandlers({ service, signupListService, accountLookupReader: read, readOperatorSession,
+function handler(overrides = {}, readOperatorSession = async () => ({ identity }), read = jest.fn(async () => ({ rows: [], truncated: false })), service = allowedService(), signupListService = null) {
+    const audit = jest.fn(async () => {});
+    return { read, audit, handler: createDashboardAdminHandlers({ service, signupListService, accountLookupReader: { read, audit, targetDigest }, readOperatorSession,
         env: { ...env, NOFRIES_REQUIRE_AUTH: 'true', NOFRIES_ENTRA_TENANT_ID: uid(1), NOFRIES_ALLOWED_SUBJECTS: subject,
             NOFRIES_ADMIN_SUBJECTS: subject, NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: 'true', ...overrides } }) };
 }
@@ -56,7 +59,7 @@ test.each(['entry', 'entry.js', 'entry-capabilities', 'accounts/lookup', 'accoun
 test('service revocation during storage withholds results', async () => {
     jest.spyOn(console, 'info').mockImplementation(() => {});
     const service = allowedService(), h = handler({}, undefined, async () => {
-        service.authorise.mockRejectedValue(Object.assign(new Error(), { statusCode: 403 })); return [record];
+        service.authorise.mockRejectedValue(Object.assign(new Error(), { statusCode: 403 })); return { rows: [{ ...base, status: 'active' }], truncated: false };
     }, service);
     const result = await h.handler.handle(wire(), 'accounts/lookup');
     expect(result.status).toBe(403); expect(JSON.stringify(result)).not.toContain(email);
@@ -75,7 +78,6 @@ test('foreign, absent and noncanonical origins fail before body reads and cannot
 test('queries, malformed JSON, oversized and non-JSON bodies fail without storage', async () => {
     jest.spyOn(console, 'info').mockImplementation(() => {});
     const h = handler(), query = wire(); query.url += '?email=' + encodeURIComponent(email);
-    // Keep genuine streams, exercising the shared bounded parser rather than parsed request.body.
     const badJson = Readable.from([Buffer.from('{')]); Object.assign(badJson, { method: 'POST', url: wire().url, headers: wire().headers });
     const huge = wire(); huge.headers['content-length'] = '2049';
     const form = wire(); form.headers['content-type'] = 'application/x-www-form-urlencoded';
@@ -84,19 +86,18 @@ test('queries, malformed JSON, oversized and non-JSON bodies fail without storag
     }
     expect(h.read).not.toHaveBeenCalled();
 });
-
-test.each([undefined, 'false', 'TRUE', '1'])('flag %s is off before authentication or storage', async flag => {
+test.each([undefined, 'false', 'TRUE', '1'])('lookup route flag %s keeps email lookup off before authentication or storage', async flag => {
     const h = handler({ NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: flag }, () => { throw new Error('must not read session'); });
     expect((await h.handler.handle(wire(), 'accounts/lookup')).status).toBe(404);
+    expect((await h.handler.handle(wire({}, 'GET'), 'accounts/app.js')).status).toBe(404);
     expect(h.read).not.toHaveBeenCalled();
-    expect(createProductionAccountLookup({ NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: flag })).toBeNull();
 });
 test.each([null, { ...identity, provider: 'external-id' }, { ...identity, subjectKey: uid(1) + ':' + uid(9), principalId: uid(9) }])(
     'anonymous/customer/nonstaff is rejected without storage', async actor => {
         jest.spyOn(console, 'info').mockImplementation(() => {});
         const h = handler({}, async () => ({ identity: actor }));
         expect([401, 403]).toContain((await h.handler.handle(wire(), 'accounts/lookup')).status);
-        expect(h.read).not.toHaveBeenCalled();
+        expect(h.read).not.toHaveBeenCalled(); expect(h.audit).not.toHaveBeenCalled();
     });
 test('non-admin staff and forged SWA principal cannot bypass BFF role checks', async () => {
     jest.spyOn(console, 'info').mockImplementation(() => {});
@@ -105,49 +106,78 @@ test('non-admin staff and forged SWA principal cannot bypass BFF role checks', a
     expect((await h.handler.handle(request, 'accounts/lookup')).status).toBe(403);
     expect(h.read).not.toHaveBeenCalled();
 });
+test('revocation during the durable audit write withholds buffered results', async () => {
+    jest.spyOn(console, 'info').mockImplementation(() => {});
+    let signedIn = true;
+    const h = handler({}, async () => ({ identity: signedIn ? identity : null }), reader([record]));
+    h.audit.mockImplementation(async event => { expect(event.status).toBe(200); signedIn = false; });
+    const response = await h.handler.handle(wire(), 'accounts/lookup');
+    expect(response.status).toBe(401); expect(response.body).toEqual({ code: 'dashboard_admin_account_lookup_401' });
+    expect(JSON.stringify(response)).not.toContain(email); expect(h.audit).toHaveBeenCalledTimes(1);
+    const service = allowedService(), g = handler({}, undefined, reader([record]), service);
+    g.audit.mockImplementation(async () => { service.authorise.mockRejectedValue(Object.assign(new Error(), { statusCode: 403 })); });
+    const refused = await g.handler.handle(wire(), 'accounts/lookup');
+    expect(refused.status).toBe(403); expect(JSON.stringify(refused)).not.toContain(email);
+});
 test('revocation during I/O withholds buffered results', async () => {
     jest.spyOn(console, 'info').mockImplementation(() => {});
     let signedIn = true;
-    const h = handler({}, async () => ({ identity: signedIn ? identity : null }), async () => { signedIn = false; return [record]; });
+    const h = handler({}, async () => ({ identity: signedIn ? identity : null }), async () => { signedIn = false; return { rows: [{ ...base }], truncated: false }; });
     const response = await h.handler.handle(wire(), 'accounts/lookup');
     expect(response.status).toBe(401); expect(JSON.stringify(response)).not.toContain(email);
 });
 test.each([['active', now + 1000, 'active'], ['active', now, 'expired'], ['revoked', now + 1000, 'revoked'], ['revoked', now - 1, 'revoked']])(
     'maps %s at %s to %s and only discloses allowlisted fields', async (status, expiresAt, expected) => {
-        const rows = await reader([{ ...record, status, expiresAt }, { ...record, subjectKey: uid(1) + ':' + uid(8), email: 'other@example.test' }])(email, signal());
-        expect(rows).toEqual([{ email, accountType: 'company', organisation: uid(4), status: expected, expiresAt: new Date(expiresAt).toISOString(), revision: 7 }]);
-        expect(JSON.stringify(rows)).not.toMatch(/private|other@|invitation|subjectKey|bindingId|Digest/);
+        const result = await reader([{ ...record, status, expiresAt }, { ...record, subjectKey: uid(1) + ':' + uid(8), email: 'other@example.test' }])(email, signal());
+        expect(result).toEqual({ truncated: false, rows: [{ ...base, schemaVersion: 1, accountType: 'company', organisation: uid(4), status: expected,
+            expiresAt: new Date(expiresAt).toISOString(), revision: 7 }] });
+        expect(JSON.stringify(result)).not.toMatch(/private|other@|invitation|subjectKey|bindingId|Digest/);
     });
-test.each(['deny target', 'revoke target before disclosure'])('scoped authority: %s withholds matching account data', async mode => {
-    jest.spyOn(console, 'info').mockImplementation(() => {});
-    const service = allowedService(); let scopedCalls = 0;
-    service.authorise.mockImplementation(async (actor, selector) => {
-        if (selector && (++scopedCalls > 1 || mode === 'deny target')) throw Object.assign(new Error(), { statusCode: 403 });
-        return actor;
-    });
-    const h = handler({}, undefined, reader([record]), service), result = await h.handler.handle(wire(), 'accounts/lookup');
-    expect(result.status).toBe(403); expect(JSON.stringify(result.body)).not.toMatch(/customer@|private|organisationId/);
-    expect(service.authorise).toHaveBeenCalledWith(identity, { provider: 'legacy', subjectKey: subject, tenantId: uid(3), organisationId: uid(4) });
-});
-test('authorised same-origin POST preserves projected lookup results and checks their scope before disclosure', async () => {
+test('authorised same-origin POST authorises before and after storage and returns the reader result unchanged', async () => {
     jest.spyOn(console, 'info').mockImplementation(() => {});
     const service = allowedService(), h = handler({}, undefined, reader([record]), service);
     const response = await h.handler.handle(wire(), 'accounts/lookup');
-    expect(response.status).toBe(200); expect(response.body.rows[0]).toMatchObject({ email, status: 'active', revision: 7 });
-    expect(service.authorise.mock.calls.filter(([, selector]) => selector !== null)).toHaveLength(2);
+    expect(response.status).toBe(200); expect(response.body.truncated).toBe(false);
+    expect(response.body.rows[0]).toMatchObject({ email, status: 'active', revision: 7, kind: 'legacy_admin' });
+    expect(JSON.stringify(response.body)).not.toMatch(/synthetic-authority|container/);
+    expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ status: 200, count: 1, truncated: false, targetSha256: expect.stringMatching(/^[0-9a-f]{64}$/) }));
+    expect(h.audit.mock.calls[0][0].targetSha256).not.toBe(require('node:crypto').createHash('sha256').update(email).digest('hex'));
+    // Staff authority is not scoped per customer: no selector reaches the policy.
+    expect(service.authorise.mock.calls.every(([, selector]) => selector === null)).toBe(true);
+    expect(service.authorise.mock.calls.length).toBeGreaterThanOrEqual(2);
 });
-test('absent, malformed and mismatched subjects map to missing without raw fields', async () => {
-    for (const records of [[], [{ ...record, secret: 'private-token' }], [{ ...record, subjectKey: uid(9) + ':' + uid(2) }]]) {
-        expect(await reader(records)(email, signal())).toEqual([{ email, accountType: null, organisation: null, status: 'missing', expiresAt: null, revision: null }]);
-    }
+test('absent, malformed and mismatched subjects produce no rows or unusable rows without raw fields', async () => {
+    expect(await reader([])(email, signal())).toEqual({ rows: [], truncated: false });
+    expect(await reader([{ ...record, secret: 'private-token' }])(email, signal())).toEqual({ rows: [base], truncated: false });
+    expect(await reader([{ ...record, subjectKey: uid(9) + ':' + uid(2) }])(email, signal())).toEqual({ rows: [base], truncated: false });
 });
-test('bounded scans and storage failures never pretend to be missing', async () => {
-    await expect(reader(Array.from({ length: 101 }, (_, i) => ({ ...record, subjectKey: uid(1) + ':' + uid(i + 10) })))(email, signal())).rejects.toThrow();
+test('bounded scans report the cap per source instead of a partial answer; storage failures never pretend to be missing', async () => {
+    const many = Array.from({ length: 101 }, (_, i) => ({ ...record, subjectKey: uid(1) + ':' + uid(i + 10), email: `other${i}@example.test` }));
+    expect(await reader(many)(email, signal())).toEqual({ rows: [], truncated: true });
+    expect(await reader([record, ...many])(email, signal())).toMatchObject({ truncated: true, rows: [{ status: 'active' }] });
     await expect(reader([], { async *listBlobsFlat() { throw new Error('private-provider'); } })(email, signal())).rejects.toThrow();
+    // A cap in one store does not hide a fully scanned starter account elsewhere.
+    const { AzureStarterAccountStore } = require('../api/shared/customerSignup/azureStarterAccountStore');
+    jest.spyOn(AzureStarterAccountStore.prototype, 'load').mockResolvedValue({ record: { planId: 'p', accountType: 'company', activation: null,
+        organisations: [{ tenantId: uid(3), organisationId: uid(4), organisationName: 'Synthetic organisation' }] } });
+    const container = records => ({ async *listBlobsFlat() { yield* records.map(r => ({ name: `customer-subjects/${subjectHash(r.subjectKey)}.json` })); },
+        getBlockBlobClient(name) { return { async download() { const bytes = Buffer.from(JSON.stringify(records.find(r => name.includes(subjectHash(r.subjectKey)))));
+            return { etag: '"e"', contentLength: bytes.length, readableStreamBody: Readable.from([bytes]) }; } }; } });
+    const two = createAccountLookupReader([{ source, container: container(many) }, { source: { ...source, kind: 'legacy_starter', container: 'starter' }, container: container([]) }], () => now);
+    expect(await two(email, signal())).toMatchObject({ truncated: true, rows: [{ kind: 'legacy_starter', status: 'missing', plan: 'p' }] });
+    // A starter account keyed by email is kept when its own store's scan was capped; its sign-in record is then unknown.
+    const capped = createAccountLookupReader([{ source: { ...source, kind: 'legacy_starter', container: 'starter' }, container: container(many) }], () => now);
+    expect(await capped(email, signal())).toEqual({ truncated: true, rows: [{ ...base, kind: 'legacy_starter', plan: 'p', accountType: 'company',
+        organisation: 'Synthetic organisation', status: 'unknown' }] });
+    const reached = createAccountLookupReader([{ source: { ...source, kind: 'legacy_starter', container: 'starter' }, container: container([...many.slice(0, 50), record]) }], () => now);
+    AzureStarterAccountStore.prototype.load.mockResolvedValue({ record: { identitySubjectKey: subject, planId: 'p', accountType: 'company', activation: null,
+        organisations: [{ tenantId: uid(3), organisationId: uid(4), organisationName: 'Synthetic organisation' }] } });
+    expect(await reached(email, signal())).toMatchObject({ truncated: false, rows: [{ status: 'active', plan: 'p', organisation: 'Synthetic organisation' }] });
 });
 test('lookup is POST-only, validates JSON, rate limits and audits without email or raw details', async () => {
     const audit = jest.fn(), read = jest.fn(reader([record]));
-    const handle = createAccountLookup({ read, readJson, env, audit, now: () => now });
+    const handle = createAccountLookup({ read, readJson, env, audit, targetDigest, now: () => now });
+    expect(() => createAccountLookup({ read, readJson, env, targetDigest })).toThrow(); expect(() => createAccountLookup({ read, readJson, env, audit })).toThrow();
     const run = request => handle(request, 'accounts/lookup', async () => identity, signal());
     expect((await run(wire({}, 'GET'))).status).toBe(405);
     for (const input of [{ email: 'x' }, { email: [] }, { email, extra: 1 }]) expect((await run(wire(input))).status).toBe(400);
@@ -155,30 +185,43 @@ test('lookup is POST-only, validates JSON, rate limits and audits without email 
     expect(good.status).toBe(200); expect(good.headers['Cache-Control']).toContain('no-store');
     for (let i = 0; i < 6; i++) expect((await run(wire())).status).toBe(200);
     expect((await run(wire())).status).toBe(429);
-    expect(audit).toHaveBeenCalledTimes(12);
+    expect(audit).toHaveBeenCalledTimes(11);
+    expect(audit.mock.calls[3][0]).toMatchObject({ category: 'dashboard_admin_account_lookup', status: 200, count: 1, truncated: false,
+        actorSha256: expect.stringMatching(/^[0-9a-f]{64}$/), targetSha256: expect.stringMatching(/^[0-9a-f]{64}$/), requestId: expect.any(String) });
+    expect(audit.mock.calls[3][0].targetSha256).toBe(targetDigest(email));
+    expect(audit.mock.calls[0][0]).toMatchObject({ status: 400, targetSha256: null });
+    // Unauthorised and wrong-method requests never create a durable record.
+    const before = audit.mock.calls.length;
+    for (const statusCode of [401, 403]) expect((await handle(wire(), 'accounts/lookup', async () => { throw Object.assign(new Error(), { statusCode }); }, signal())).status).toBe(statusCode);
+    expect((await run(wire({}, 'GET'))).status).toBe(405); expect(audit).toHaveBeenCalledTimes(before);
     expect(JSON.stringify(audit.mock.calls)).not.toMatch(/customer@|private|subjectKey|invitation/);
 });
-test('safe errors and audit failure prevent disclosure', async () => {
+test('safe errors, malformed reader results and audit failure prevent disclosure', async () => {
     for (const options of [{ read: async () => { throw new Error('private-provider-token'); }, audit: jest.fn() },
-        { read: async () => [record], audit: () => { throw new Error('audit-down'); } }]) {
-        const result = await createAccountLookup({ ...options, readJson, env })(wire(), 'accounts/lookup', async () => identity, signal());
+        { read: async () => [record], audit: jest.fn() },
+        { read: async () => ({ rows: [base], truncated: false }), audit: () => { throw new Error('audit-down'); } }]) {
+        const result = await createAccountLookup({ audit: jest.fn(), targetDigest, ...options, readJson, env })(wire(), 'accounts/lookup', async () => identity, signal());
         expect(result.status).toBe(503); expect(result.body).toEqual({ code: 'dashboard_admin_account_lookup_503' });
     }
 });
-test('known signup with absent or mismatched authority remains missing', async () => {
+test('starter metadata binds plan, effective date and organisation name to the matching subject record', async () => {
     const { AzureStarterAccountStore } = require('../api/shared/customerSignup/azureStarterAccountStore');
-    const load = jest.spyOn(AzureStarterAccountStore.prototype, 'load').mockResolvedValue({ record: {
-        identitySubjectKey: subject, accountType: 'company', organisations: [{ tenantId: uid(3), organisationId: uid(4), organisationName: 'Synthetic organisation' }]
-    } });
-    const container = { async *listBlobsFlat() {}, getBlockBlobClient() {} };
-    const read = createAccountLookupReader([{ source: { ...source, kind: 'legacy_starter' }, container }], () => now);
-    expect(await read(email, signal(), async () => identity)).toEqual([{ email, accountType: 'company', organisation: 'Synthetic organisation', status: 'missing', expiresAt: null, revision: null }]);
-    expect(load).toHaveBeenCalledTimes(1);
-    await expect(read(email, signal(), async () => { throw Object.assign(new Error(), { statusCode: 403 }); })).rejects.toMatchObject({ statusCode: 403 });
-    load.mockResolvedValue({ record: { accountType: 'company', activation: null, organisations: [{ organisationName: 'Private pending signup' }] } });
-    const authorise = jest.fn();
-    expect(await read(email, signal(), authorise)).toEqual([{ email, accountType: null, organisation: null, status: 'missing', expiresAt: null, revision: null }]);
-    expect(authorise).not.toHaveBeenCalled();
+    const account = { identitySubjectKey: subject, planId: 'synthetic-plan', accountType: 'consultant', createdAt: '2026-01-01T00:00:00.000Z',
+        activation: { subjectKey: subject, activatedAt: '2026-02-01T00:00:00.000Z' },
+        organisations: [{ tenantId: uid(3), organisationId: uid(4), organisationName: 'Synthetic organisation' }] };
+    const load = jest.spyOn(AzureStarterAccountStore.prototype, 'load').mockResolvedValue({ record: account });
+    const starter = { ...base, kind: 'legacy_starter' };
+    expect(await reader([record], {}, 'legacy_starter')(email, signal(), true)).toEqual({ truncated: false, rows: [{ ...starter, schemaVersion: 1,
+        plan: 'synthetic-plan', accountType: 'consultant', organisation: 'Synthetic organisation', status: 'active', effectiveAt: '2026-02-01T00:00:00.000Z',
+        expiresAt: new Date(record.expiresAt).toISOString(), revision: 7, selector: { provider: 'legacy', subjectKey: subject, tenantId: uid(3), organisationId: uid(4) } }] });
+    // A starter account whose subject record is absent is shown without sign-in authority.
+    expect(await reader([], {}, 'legacy_starter')(email, signal())).toEqual({ truncated: false, rows: [{ ...starter, plan: 'synthetic-plan',
+        accountType: 'consultant', organisation: 'Synthetic organisation', effectiveAt: '2026-02-01T00:00:00.000Z' }] });
+    // A subject record in another organisation keeps its own identifiers.
+    expect((await reader([{ ...record, organisationId: uid(5) }], {}, 'legacy_starter')(email, signal())).rows[0]).toMatchObject({ plan: null, organisation: uid(5), status: 'active' });
+    expect(load).toHaveBeenCalledTimes(3);
+    load.mockRejectedValue(Object.assign(new Error('private-store'), { code: 'starter_store_unavailable' }));
+    await expect(reader([], {}, 'legacy_starter')(email, signal())).rejects.toThrow();
 });
 test('host routes stay default-off including method and trailing-path variants', async () => {
     const request = require('supertest'), { createNoFriesApp } = require('../server');
@@ -186,16 +229,11 @@ test('host routes stay default-off including method and trailing-path variants',
         const result = await request(createNoFriesApp()).post('/api/dashboard-admin/accounts/' + path).send({ email });
         expect(result.status).toBe(404); expect(result.headers['cache-control']).toContain('no-store');
     }
+    expect(() => createNoFriesApp({ dashboardAdminAccountLookup: { read: async () => ({ rows: [], truncated: false }), audit: async () => {}, targetDigest } })).toThrow();
 });
-
-test.each([undefined, 'false', 'true'])('selected-account selectors require the actions flag %s and current scoped access', async flag => {
+test.each([undefined, 'false', 'true'])('selected-account selectors require the actions flag %s', async flag => {
     jest.spyOn(console, 'info').mockImplementation(() => {});
-    const service = allowedService(), h = handler({ NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS: flag }, undefined, reader([record]), service);
+    const h = handler({ NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS: flag }, undefined, reader([record]));
     const response = await h.handler.handle(wire(), 'accounts/lookup'); expect(response.status).toBe(200);
     expect(response.body.rows[0].selector).toEqual(flag === 'true' ? { provider: 'legacy', subjectKey: subject, tenantId: uid(3), organisationId: uid(4) } : undefined);
-    let calls = 0; service.authorise.mockImplementation(async (actor, selector) => {
-        if (selector && ++calls > 1) throw Object.assign(new Error(), { statusCode: 403 }); return actor;
-    });
-    const refused = await h.handler.handle(wire(), 'accounts/lookup'); expect(refused.status).toBe(403);
-    expect(JSON.stringify(refused.body)).not.toMatch(/subjectKey|customer@/);
 });

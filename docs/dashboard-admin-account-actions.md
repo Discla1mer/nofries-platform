@@ -1,5 +1,22 @@
 # Account action endpoints
 
+> **Extending expired access is no longer needed (10 November 2026).** Customer
+> accounts do not expire: sign-in treats the stored customer-authority
+> `expiresAt` as a retained, non-binding value, so there is nothing to extend.
+> Suspend and restore are the only account-level blocks. The
+> `extend-expired-access` endpoint below is retained, default-off, for reference
+> only and should not be enabled or used to restore access; its removal belongs
+> to the staff admin redesign.
+>
+> **Expiry extension is withdrawn from the staff console.** Under the settings-only
+> staff composition (`NOFRIES_STAFF_CONSOLE=true`), `approve-extension` and
+> `extend-expired-access` return 404 and no extension issuer or executor is built;
+> suspend and restore are the only account actions. The extension sections below
+> describe trusted-composition behaviour only and will be removed with that code.
+> Staff suspend/restore is authorised by the allowlisted admin's native operator
+> session plus a typed-email, session-bound, single-operation 15-minute approval,
+> not by a per-customer approval record.
+
 `POST /api/dashboard-admin/extend-expired-access` accepts JSON:
 
 ```json

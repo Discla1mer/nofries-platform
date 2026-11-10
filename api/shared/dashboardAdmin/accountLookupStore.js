@@ -1,28 +1,40 @@
 'use strict';
 
-const { inspectCustomerAuthority, normaliseCustomerAuthoritySource } = require('./customerAuthorityExpiry');
+const { inspectCustomerAuthority } = require('./customerAuthorityExpiry');
 const { subjectHash } = require('../customerSignup/customerAuthority');
 const { AzureStarterAccountStore } = require('../customerSignup/azureStarterAccountStore');
 const { starterAccountKey } = require('../customerSignup/starterAccountAllocation');
 const { hash } = require('../appLifecycle/dashboardRuntimeRecords');
+const MAX_SCANNED_SUBJECTS = 100;
 const unavailable = () => { throw new Error('account_lookup_unavailable'); };
-const missing = email => ({ email, accountType: null, organisation: null, status: 'missing', expiresAt: null, revision: null });
+const provider = source => source.kind === 'external_starter' ? 'external' : 'legacy';
+
+// One row per sign-in authority record (or starter account without one). Only
+// allowlisted, non-secret fields leave this reader; digests, invitation and
+// terms details stay in storage. No email ever reaches a URL or log.
+function row(email, source, extra) {
+    return { email, kind: source.kind, schemaVersion: null, plan: null, accountType: null,
+        organisation: null, status: 'missing', effectiveAt: null, expiresAt: null, revision: null, ...extra };
+}
+const starterFields = account => ({ plan: account.planId, accountType: account.accountType,
+    organisation: account.organisations[0].organisationName, effectiveAt: account.activation?.activatedAt ?? null });
 
 function createAccountLookupReader(sources, now = Date.now) {
-    return async function lookup(email, signal, authorise, includeSelector = false) {
+    return async function lookup(email, signal, includeSelector = false) {
         const rows = [];
-        let count = 0;
+        let truncated = false;
         for (const { source, container } of sources) {
             signal.throwIfAborted();
             const account = source.kind === 'legacy_admin' ? null :
                 (await new AzureStarterAccountStore(container).load(starterAccountKey(email)))?.record;
             const expectedSubject = account?.identitySubjectKey ?? account?.activation?.subjectKey;
-            let foundExpected = false;
-            // No email index exists for legacy subjects. Bound enumeration and fail
-            // closed on overflow: never report a partial scan as a missing account.
+            const slot = account?.organisations[0] ?? null;
+            let foundExpected = false, count = 0, capped = false;
+            // No email index exists for subject records. Bound enumeration and
+            // report a hit cap instead of presenting a partial scan as complete.
             for await (const blob of container.listBlobsFlat({ prefix: 'customer-subjects/', abortSignal: signal })) {
                 signal.throwIfAborted();
-                if (++count > 100) unavailable();
+                if (++count > MAX_SCANNED_SUBJECTS) { capped = truncated = true; break; }
                 if (!/^customer-subjects\/[a-f0-9]{64}\.json$/.test(blob.name)) unavailable();
                 let record, etag;
                 try {
@@ -42,61 +54,28 @@ function createAccountLookupReader(sources, now = Date.now) {
                     throw error;
                 }
                 if (record?.email !== email) continue;
-                const row = missing(email); let selector = null;
+                const value = row(email, source, {});
                 try {
                     const at = new Date(now()).toISOString();
-                    const slot = record.subjectKey === expectedSubject ? account.organisations[0] : null;
+                    const bound = record.subjectKey === expectedSubject && record.tenantId === slot?.tenantId && record.organisationId === slot?.organisationId;
                     const result = inspectCustomerAuthority({ source, blobName: blob.name, etag, observedAt: at, record },
-                        { sourceSha256: hash(source), subjectKey: record.subjectKey, tenantId: slot?.tenantId ?? record.tenantId, organisationId: slot?.organisationId ?? record.organisationId }, at);
-                    selector = { provider: source.kind === 'external_starter' ? 'external' : 'legacy',
-                        subjectKey: record.subjectKey, tenantId: record.tenantId, organisationId: record.organisationId };
-                    Object.assign(row, { accountType: record.accountType ?? null, organisation: record.organisationId,
-                        status: result.status, expiresAt: result.expiresAt, revision: result.revision });
-                    if (record.subjectKey === expectedSubject && record.tenantId === slot.tenantId && record.organisationId === slot.organisationId) {
-                        row.organisation = slot.organisationName;
-                        row.accountType = account.accountType;
-                    }
+                        { sourceSha256: hash(source), subjectKey: record.subjectKey, tenantId: record.tenantId, organisationId: record.organisationId }, at);
+                    Object.assign(value, { schemaVersion: record.schemaVersion, accountType: record.accountType ?? null, organisation: record.organisationId,
+                        status: result.status, expiresAt: result.expiresAt, revision: result.revision }, bound ? starterFields(account) : {});
+                    if (includeSelector) value.selector = { provider: provider(source), subjectKey: record.subjectKey,
+                        tenantId: record.tenantId, organisationId: record.organisationId };
                 } catch (_) { /* A malformed/misbound record is not usable authority. */ }
-                // Authorization errors must not be reinterpreted as missing authority.
-                if (selector) { await authorise(selector); if (includeSelector) row.selector = selector; }
                 if (expectedSubject && blob.name === `customer-subjects/${subjectHash(expectedSubject)}.json`) foundExpected = true;
-                rows.push(row);
+                rows.push(value);
             }
-            if (account && expectedSubject && !foundExpected) {
-                await authorise({ provider: source.kind === 'external_starter' ? 'external' : 'legacy', subjectKey: expectedSubject,
-                    tenantId: account.organisations[0].tenantId, organisationId: account.organisations[0].organisationId });
-                rows.push({ ...missing(email), accountType: account.accountType, organisation: account.organisations[0].organisationName });
-            }
+            // A starter account found by its exact email key is always shown. When
+            // the subject scan hit the cap before reaching it, its sign-in record
+            // is unknown rather than missing.
+            if (account && !foundExpected) rows.push(row(email, source, { ...starterFields(account), ...(capped ? { status: 'unknown' } : {}) }));
         }
         signal.throwIfAborted();
-        return rows.length ? rows : [missing(email)];
+        return { rows, truncated };
     };
 }
 
-function createProductionAccountLookup(env) {
-    if (env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP !== 'true') return null;
-    // Construct SDK clients lazily; the disabled feature performs no storage I/O.
-    return async (email, signal, authorise, includeSelector = false) => {
-        const account = env.AZURE_STORAGE_ACCOUNT_NAME;
-        if (!/^[a-z0-9]{3,24}$/.test(account || '') || account === env.NOFRIES_BROWSER_AUTH_STORAGE_ACCOUNT) unavailable();
-        const { ManagedIdentityCredential } = require('@azure/identity');
-        const { BlobServiceClient } = require('@azure/storage-blob');
-        const credential = env.NOFRIES_MANAGED_IDENTITY_CLIENT_ID ? new ManagedIdentityCredential({ clientId: env.NOFRIES_MANAGED_IDENTITY_CLIENT_ID }) : new ManagedIdentityCredential();
-        const service = new BlobServiceClient(`https://${account}.blob.core.windows.net`, credential, { retryOptions: { maxTries: 1 } });
-        const sources = [
-            ['legacy_admin', env.NOFRIES_CUSTOMER_AUTHORITY_CONTAINER, env.NOFRIES_ENTRA_TENANT_ID],
-            ['legacy_starter', env.NOFRIES_STARTER_AUTHORITY_CONTAINER, env.NOFRIES_ENTRA_TENANT_ID],
-            ['external_starter', env.NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER, env.NOFRIES_EXTERNAL_CUSTOMER_TENANT_ID]
-        ].filter(([, name]) => name).map(([kind, container, tenant]) => {
-            if ([env.NOFRIES_BROWSER_AUTH_CONTAINER || 'nofries-browser-auth', env.NOFRIES_DASHBOARD_PROOF_CONTAINER,
-                env.NOFRIES_DASHBOARD_EPOCH_CONTAINER].includes(container)) unavailable();
-            const source = normaliseCustomerAuthoritySource({ schemaVersion: 1, kind, storageAccount: account, container,
-                providerKind: kind === 'external_starter' ? 'external-id' : 'workforce-b2b', providerTenantId: tenant,
-                providerConfigurationSha256: hash({ kind, tenant }) });
-            return { source, container: service.getContainerClient(container) };
-        });
-        if (!sources.length || new Set(sources.map(s => s.source.container)).size !== sources.length) unavailable();
-        return createAccountLookupReader(sources)(email, signal, authorise, includeSelector);
-    };
-}
-module.exports = { createAccountLookupReader, createProductionAccountLookup };
+module.exports = { createAccountLookupReader, MAX_SCANNED_SUBJECTS };

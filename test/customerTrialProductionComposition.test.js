@@ -148,7 +148,9 @@ for (const client of [false, true]) test(`actual production launcher joins the r
     assert.equal(JSON.stringify({ account: t.f.state.account, versions: t.f.versionRows, scopes: [...t.f.scopes] }), before);
     const replay = await request(t.h.app).post('/api/external-customer-auth/callback').set('Cookie', login.tx).type('form').send(login.body);
     assert.equal(replay.status, 401); assert.equal(t.exchanges.length, 1);
-    const normal = await t.h.loginExternal(); assert.ok(normal.response.status >= 400);
+    // Accounts do not expire: the same active subject may also sign in normally.
+    // The retained-read cookie is still not a customer session (forged below).
+    const normal = await t.h.loginExternal(); assert.equal(normal.response.status, 303);
     const forged = login.cookie.replace('__Host-nofries-retained-read=', '__Host-nofries-external-customer=');
     assert.ok((await request(t.h.app).get('/api/dashboard/session').set('Cookie', forged)).status >= 400);
     assert.equal((await request(t.h.app).get(t.url).set('Cookie', login.cookie)).status, 200);
