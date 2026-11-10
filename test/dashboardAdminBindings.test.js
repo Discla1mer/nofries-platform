@@ -1,7 +1,13 @@
 'use strict';
 
-const { SETTING, ENABLED_SETTING, WRITER_CONTRACT, readDashboardAdminBinding, sourceBinding,
+const { SETTING, ENABLED_SETTING, LISTING_INVALID, WRITER_CONTRACT, readDashboardAdminBinding, sourceBinding,
     wrapDashboardAdminAccountStore, createBoundDashboardAdministration } = require('../lib/dashboardAdminBindings');
+// Listing never stops the host: an unusable selection composes nothing and logs one safe line.
+function listingOff(compose) {
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try { expect(compose()).toEqual({}); expect(warning.mock.calls).toEqual([[LISTING_INVALID]]); }
+    finally { warning.mockRestore(); }
+}
 const binding = { schemaVersion: 1, provider: 'legacy', authorityContainer: 'private-approvals',
     populationId: 'synthetic-all-signups', indexId: 'synthetic-current-index', writerContract: WRITER_CONTRACT };
 const env = { AZURE_STORAGE_ACCOUNT_NAME: 'syntheticdata', NOFRIES_BROWSER_AUTH_STORAGE_ACCOUNT: 'syntheticauth',
@@ -367,14 +373,13 @@ test.each([undefined, '', 'false'])('staged locator with visibility %p performs 
 });
 
 test.each([true, 'TRUE', ' true', '0', null])('noncanonical listing visibility %p cannot select administration', value => {
-    expect(() => createBoundDashboardAdministration({ ...env, [SETTING]: JSON.stringify(binding), [ENABLED_SETTING]: value }, null, {}, null))
-        .toThrow('dashboard_admin_production_configuration_invalid');
+    listingOff(() => createBoundDashboardAdministration({ ...env, [SETTING]: JSON.stringify(binding), [ENABLED_SETTING]: value }, null, {}, null));
 });
 
 test('listing selection never executes an accessor', () => {
     const input = { ...env, [SETTING]: JSON.stringify(binding) }, get = jest.fn(() => 'true');
     Object.defineProperty(input, ENABLED_SETTING, { get });
-    expect(() => createBoundDashboardAdministration(input, null, {}, null)).toThrow('dashboard_admin_production_configuration_invalid');
+    listingOff(() => createBoundDashboardAdministration(input, null, {}, null));
     expect(get).not.toHaveBeenCalled();
 });
 
@@ -634,14 +639,13 @@ test.each(['ManagedIdentityCredential', 'BlobServiceClient'].flatMap(key => [nul
 ('explicit invalid %s constructor %p cannot fall back to a real SDK', async (key, value) => {
     const h = await boundHost(), constructors = { ManagedIdentityCredential: jest.fn(), BlobServiceClient: jest.fn() };
     const dependencies = { ...constructors, [key]: value };
-    expect(() => createBoundDashboardAdministration(h.env, h.dashboard, dependencies, null)).toThrow('dashboard_admin_production_configuration_invalid');
+    listingOff(() => createBoundDashboardAdministration(h.env, h.dashboard, dependencies, null));
     expect(constructors.ManagedIdentityCredential).not.toHaveBeenCalled(); expect(constructors.BlobServiceClient).not.toHaveBeenCalled();
 });
 
 test.each([null, false, 0, {}, [], 'not-a-guid'])('invalid managed identity selector %p cannot construct any SDK', async value => {
     const h = await boundHost(), dependencies = { ManagedIdentityCredential: jest.fn(), BlobServiceClient: jest.fn() };
-    expect(() => createBoundDashboardAdministration({ ...h.env, NOFRIES_MANAGED_IDENTITY_CLIENT_ID: value }, h.dashboard, dependencies, null))
-        .toThrow('dashboard_admin_production_configuration_invalid');
+    listingOff(() => createBoundDashboardAdministration({ ...h.env, NOFRIES_MANAGED_IDENTITY_CLIENT_ID: value }, h.dashboard, dependencies, null));
     expect(dependencies.ManagedIdentityCredential).not.toHaveBeenCalled(); expect(dependencies.BlobServiceClient).not.toHaveBeenCalled();
 });
 

@@ -44,12 +44,12 @@
                 <button class="button" id="dashboardRetry" type="button" hidden>Retry</button>
                 <a class="button" id="dashboardSignIn" href="/login" hidden>Sign up / Sign in</a>
             </div>
-            <details class="dashboard-account-menu" id="dashboardAccountMenu" hidden>
-                <summary>Account</summary>
-                <div class="dashboard-account-actions" id="dashboardAccountActions">
+            <div class="dashboard-account-menu" id="dashboardAccountMenu" hidden>
+                <button class="dashboard-account-toggle" id="dashboardAccountToggle" type="button" aria-expanded="false" aria-controls="dashboardAccountActions">Account</button>
+                <div class="dashboard-account-actions" id="dashboardAccountActions" hidden>
                     <button class="button" id="dashboardSignOut" type="button" hidden>Sign out</button>
                 </div>
-            </details>
+            </div>
         </section>
         <section id="dashboardChooser" aria-labelledby="dashboardChooserHeading" hidden>
             <h2 id="dashboardChooserHeading">Your organisations</h2>
@@ -84,7 +84,7 @@
                         <a class="homepage-secondary" href="#dashboard-benefits">Explore the dashboard <span aria-hidden="true">↓</span></a>
                     </div>
                     <p class="homepage-reassurance">Start free, with no card needed. The cyber check is 14 questions, written for New Zealand small businesses.</p>
-                    <p class="homepage-reassurance">Works alongside your existing IT team or provider.</p>
+                    <p class="homepage-reassurance">Works alongside your existing IT team or provider. You sign in on a secure Microsoft page, then come straight back here.</p>
                 </div>
                 <figure class="homepage-preview" aria-labelledby="preview-caption">
                     <div class="preview-topbar"><span class="preview-wordmark"><img src="/images/nofrieslogo.png" width="20" height="20" alt=""> No Fries <span>Dashboard</span></span><span class="preview-example">Example</span></div>

@@ -163,6 +163,10 @@ function createPostgresDashboardRepository(options) {
                     (old.status === 'revoked' && replacement.status !== 'revoked')) fail('grant_history_invalid', 409);
             }
             const added = proposed.grants.filter(grant => own(TIERS, grant.code) && !next.entitlementState.grants.some(old => old.grantId === grant.grantId));
+            // Two products with one start cannot be ordered (grants record no
+            // creation order). Stored pairs are kept; no new one may be created.
+            if (added.some(grant => proposed.grants.some(other => other !== grant && own(TIERS, other.code) &&
+                other.validFrom === grant.validFrom))) fail('product_start_ambiguous', 409);
             next.entitlementState = proposed;
             await dataStorage.updateEntitlementState(tx, proposed);
             for (const grant of added) {

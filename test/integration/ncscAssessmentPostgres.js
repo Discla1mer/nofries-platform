@@ -206,6 +206,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                     const element = original(tag);
                     Object.defineProperty(element, 'id', { get: () => element.getAttribute('id') || '', set: value => element.setAttribute('id', value) });
                     element.removeChild = child => { element.children = element.children.filter(item => item !== child); child.parentElement = null; return child; };
+                    if (tag === 'dialog') { element.showModal = () => { element.open = true; }; element.close = () => { element.open = false; }; }
                     return element;
                 };
                 dom.root = dom.document.createElement('div');
@@ -259,6 +260,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             button(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 3'));
             ui.controller.destroy(); const finalTransport = composed(first); ui = await resume(finalTransport);
             button(ui, 'Review and submit').click(); button(ui, 'Save and submit assessment').click();
+            button(ui, 'Submit').click();
             await until(() => ui.root.querySelector('.ncsc-sealed'));
             const sealed = (await finalTransport.client.read(assessmentId)).assessment;
             expect(sealed).toMatchObject({ status: 'submitted', revision: 4, scopePopulation: { description: declaration },
@@ -505,7 +507,8 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             await ready(example, 'assessment-b'); await repository.executeNcscAssessment(example.context, submitCommand('assessment-b'));
             const entitlement = clone(example.state.entitlementState); entitlement.revision++;
             const old = entitlement.grants.find(grant => grant.grantId === 'synthetic-product');
-            const renewed = { ...clone(old), grantId: 'synthetic-product-renewed', agreementRef: 'synthetic-renewal-order' };
+            const renewed = { ...clone(old), grantId: 'synthetic-product-renewed', agreementRef: 'synthetic-renewal-order',
+                validFrom: new Date(Date.parse(old.validFrom) + 1).toISOString() }; // A new product needs its own start.
             old.status = 'revoked'; entitlement.grants.push(renewed);
             entitlement.grants.sort((a, b) => a.grantId < b.grantId ? -1 : 1);
             await changeAuthority(example, 'entitlement.update', entitlement);

@@ -489,7 +489,7 @@ async function sendDashboardAdmin(req, res, route) {
         await sendDashboardAdmin(req, res, 'entry');
     }));
     app.use('/api/dashboard-admin', asyncRoute(async (req, res) => {
-    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|extend-expired-access|approve-extension|suspend|restore|approve-suspend|approve-restore|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
+    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|suspend|restore|approve-suspend|approve-restore|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
         dashboardAdminSignupListService && req.path === '/signups' ? req.path.slice(1) : null;
     await sendDashboardAdmin(req, res, route);
 }));
@@ -923,6 +923,13 @@ app.get(['/operator', '/operator/'], (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     res.type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, 'app', 'operator.html'), 'utf8')));
+});
+
+app.get(['/forgot-password', '/forgot-password/'], (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    // Password reset is handled by Microsoft on the existing sign-in flow.
+    res.redirect(302, '/login');
 });
 
 app.get(['/service-desk', '/service-desk/'], (req, res) => {

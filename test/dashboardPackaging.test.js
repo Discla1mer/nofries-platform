@@ -641,6 +641,11 @@ test('the public dashboard login redirects to the single customer entry while st
     assert.match(operator.text, /operator/i);
     assert.equal(response.headers['set-cookie'], undefined);
     assert.match(response.headers['cache-control'], /no-store/);
+    const reset = await require('supertest')(require('../server.js')).get('/forgot-password');
+    assert.equal(reset.status, 302);
+    assert.equal(reset.headers.location, '/login');
+    assert.match(reset.headers['cache-control'], /no-store/);
+    assert.equal(reset.headers['x-robots-tag'], 'noindex, nofollow');
 }, 20000);
 
 test('the real App Service build fails when the required dashboard document is missing', async () => {

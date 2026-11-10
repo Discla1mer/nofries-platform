@@ -56,6 +56,7 @@
         let child = null;
         let navigation = null;
         const generation = Object.freeze({ mount: ++mountSequence });
+        const previousTitle = doc ? doc.title : '';
         const historySession = 'nofries-dashboard-' + generation.mount;
         const historyEntries = new Map();
         let managedHistory = (typeof options.mountCyber === 'function' || typeof options.mountPicture === 'function' ||
@@ -118,8 +119,13 @@
         }
         function initialise() {
             root.classList.add('nofries-dashboard');
-            const skip = element('a', 'dashboard-skip', 'Skip to dashboard content'); skip.href = '#dashboard-content';
-            skip.addEventListener('click', function (event) { event.preventDefault(); main.focus(); });
+            // The host page already provides the first skip link. Adding another
+            // with the same name creates a duplicate tab stop.
+            let skip = null;
+            if (!options.omitSkipLink) {
+                skip = element('a', 'dashboard-skip', 'Skip to dashboard content'); skip.href = '#dashboard-content';
+                skip.addEventListener('click', function (event) { event.preventDefault(); main.focus(); });
+            }
             const layout = element('div', 'dashboard-layout');
             rail = element('aside', 'dashboard-rail');
             const brand = element('div', 'dashboard-brand');
@@ -142,7 +148,9 @@
             main = element('main', 'dashboard-main'); main.id = 'dashboard-content'; main.tabIndex = -1;
             groups = element('nav', 'dashboard-mobile-nav'); groups.setAttribute('aria-label', 'Dashboard tasks');
             appendMenu(groups, true);
-            workspace.append(top, status, groups, main); layout.append(rail, workspace); root.append(skip, layout);
+            workspace.append(top, status, groups, main); layout.append(rail, workspace);
+            if (skip) root.append(skip);
+            root.append(layout);
             navigate(options.initialRoute == null ? (win && win.location.hash || '') : options.initialRoute, false);
         }
         function updateNavigation() {
@@ -208,6 +216,7 @@
             }
             const repeatedRoute = current.key === target.key && win && win.location.hash === '#' + target.route;
             current = target;
+            if (doc && current && current.label) doc.title = current.label + ' · No Fries Dashboard';
             status.hidden = !!requested || !route;
             status.textContent = requested || !route ? '' : 'That view is not available for this organisation. Showing ' + target.label + '.';
             if (changeLocation && !repeatedRoute) pushEntry(current.route);
@@ -513,6 +522,7 @@
             if (travelling) { travelling.resolve(false); travelling = null; }
             historyEntries.clear();
             if (win) { win.removeEventListener('hashchange', locationChanged); win.removeEventListener('popstate', locationChanged); }
+            if (doc) doc.title = previousTitle || '';
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
         } };
         initialise(); tagInitial();

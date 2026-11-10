@@ -219,6 +219,24 @@ describe('contact form progressive enhancement', () => {
         expect(event.preventDefault).toHaveBeenCalledTimes(1);
     });
 
+    test('a second submit while availability is still being checked does not send a second enquiry', async () => {
+        let resolveAvailability;
+        const pending = new Promise(resolve => { resolveAvailability = resolve; });
+        const response = { ok: true, json: async () => ({ received: true }) };
+        const page = browser(false, response, () => pending);
+        page.form.reportValidity.mockImplementation(() => true);
+        const running = page.run();
+        expect(page.send.disabled).toBe(false);
+        const first = page.submit()({ preventDefault: jest.fn() });
+        expect(page.send.disabled).toBe(true);
+        const second = page.submit()({ preventDefault: jest.fn() });
+        resolveAvailability({ available: true });
+        await Promise.all([running, first, second]);
+        expect(page.fetchImpl).toHaveBeenCalledTimes(1);
+        expect(page.send.disabled).toBe(false);
+        expect(page.status.textContent).toContain('your enquiry has been sent');
+    });
+
     test('leaves submission disabled when handler attachment fails', async () => {
         const page = browser(true);
         await expect(page.run()).rejects.toThrow('Handler unavailable');

@@ -77,7 +77,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             } else if (signInRecovery === 'account') {
                 // Display-only: the hint can be forged, so it grants nothing and
                 // names no account. Server state still owns progress and admission.
-                root.append(element('p', 'Your sign-in worked, but No Fries could not open an active account for it. Access may have expired, or setup may not be finished.'),
+                root.append(element('p', 'Your sign-in worked, but No Fries could not open an active account for it. Your account may be paused, or setup may not be finished.'),
                     element('p', 'Email hello@nofries.nz' + (supportReference ? ' and quote reference ' + supportReference : '') +
                         ' so we can restore your access. Your saved work is kept.'));
             } else if (signInRecovery) {
