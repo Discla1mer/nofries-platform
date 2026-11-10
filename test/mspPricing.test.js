@@ -79,11 +79,11 @@ describe('No Fries per-user pricing', () => {
             selectedTierId: 'managed',
             perUser: 120,
             monthly: 405,
-            onboarding: 1060
+            onboarding: 750
         });
 
         const essentials = estimateManagedItPrice({ ...context, tier: 'essentials' });
-        expect(essentials).toMatchObject({ selectedTierId: 'essentials', perUser: 75, monthly: 315, onboarding: 1060 });
+        expect(essentials).toMatchObject({ selectedTierId: 'essentials', perUser: 75, monthly: 315, onboarding: 750 });
         const secureByName = estimateManagedItPrice({ ...context, tier: 'Secure' });
         expect(secureByName).toMatchObject({ selectedTierId: 'secure', perUser: 165, monthly: 495 });
         expect(priceReply(essentials)).toContain('On the Essentials plan');

@@ -15,9 +15,7 @@ const CURRENT_PROPOSAL_PRICING = Object.freeze({
     includedLocations: MANAGED_IT_POLICY.pricing.includedLocations,
     onboardingFrom: MANAGED_IT_POLICY.pricing.onboardingFrom,
     additionalEndpointMonthly: MANAGED_IT_POLICY.pricing.additionalEndpointMonthly,
-    additionalLocationMonthly: MANAGED_IT_POLICY.pricing.additionalLocationMonthly,
-    additionalEndpointOnboarding: MANAGED_IT_POLICY.pricing.additionalEndpointOnboarding,
-    additionalLocationOnboarding: MANAGED_IT_POLICY.pricing.additionalLocationOnboarding
+    additionalLocationMonthly: MANAGED_IT_POLICY.pricing.additionalLocationMonthly
 });
 
 const CURRENT_COMMERCIAL_POLICY = Object.freeze({

@@ -40,10 +40,10 @@ testCase('the public included-service summary stays aligned with the effective p
     assert.match(text(html), /The agreed scope sets out your people, computers, tools and service coverage\./);
 });
 
-testCase('protection and backup remain explicitly optional and selected separately', () => {
+testCase('scale add-ons stay aligned with the effective policy and read as priced per use', () => {
     assert.deepEqual(policyItems('optional', true), MANAGED_IT_POLICY.optionalServices);
-    assert.match(text(html), /Optional · selected separately Protect & Recover\./);
-    assert.match(text(html), /These options are included only when selected in your agreed scope\./);
+    assert.match(text(html), /Optional · priced per use Add-ons when you need them\./);
+    assert.match(text(html), /These add-ons are priced on top of your per-user plan when your agreed scope needs them\./);
 });
 
 testCase('separately scoped extras retain every public policy exclusion', () => {

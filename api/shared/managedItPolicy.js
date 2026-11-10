@@ -17,8 +17,6 @@ const MANAGED_IT_POLICY = deepFreeze({
         onboardingFrom: 750,
         additionalEndpointMonthly: 20,
         additionalLocationMonthly: 125,
-        additionalEndpointOnboarding: 30,
-        additionalLocationOnboarding: 250,
         recommendedTierId: 'managed',
         tiers: [
             {
@@ -65,16 +63,15 @@ const MANAGED_IT_POLICY = deepFreeze({
         ]
     },
     includedServices: [
-        'Day-to-day user support during agreed business hours',
-        'Phone, chat and email support',
-        'Care for one main work computer per user',
-        'Administration of agreed business email and shared work tools',
-        'Supplier follow-up for agreed services',
-        'Monthly service reporting and review'
+        'Day-to-day support during agreed business hours',
+        'No Fries dashboard (users, devices, licences, security)',
+        'AI-assisted email helpdesk with every change approved by me',
+        'Microsoft 365 admin (new starters, leavers, passwords, licences)',
+        'A monthly plain-English summary and to-do list'
     ],
     optionalServices: [
-        'Threat protection and after-hours security help',
-        'Backup of agreed work files'
+        'Extra work computers beyond the one included per user',
+        'Extra business locations'
     ],
     exclusions: [
         'Large projects',

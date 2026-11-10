@@ -74,11 +74,7 @@ function estimateManagedItPrice(context = {}) {
         || tiers.find((tier) => tier.id === STANDARD_PRICE.recommendedTierId);
     const perUser = selectedTier.perUserMonthly;
     const monthly = selectedTier.monthly;
-    const onboarding = roundToFive(
-        STANDARD_PRICE.onboardingFrom +
-        billableEndpoints * STANDARD_PRICE.additionalEndpointOnboarding +
-        billableLocations * STANDARD_PRICE.additionalLocationOnboarding
-    );
+    const onboarding = roundToFive(STANDARD_PRICE.onboardingFrom);
 
     const reviewReasons = [];
     const platform = String(context.productivity && context.productivity.platform || '').trim();
@@ -110,11 +106,11 @@ function estimateManagedItPrice(context = {}) {
         reviewReasons,
         assumptions: [
             'Remote user support during agreed business hours',
-            'Phone, chat and email support',
-            'Support and device care for one main work computer per user',
+            'AI-assisted email helpdesk with every change approved by me',
+            'Support for one main work computer per user',
             'Help with business email and shared work tools where agreed',
-            'Threat protection and after-hours security help only when listed in the service schedule',
-            'Backup of agreed work files only when listed in the service schedule',
+            'Microsoft 365 backup is included from the Managed tier',
+            'Security hardening and alert handling are included in the Secure tier',
             'Proof every month',
             'Large projects, on-site work, hardware, supplier charges and extra phone usage are agreed separately'
         ]

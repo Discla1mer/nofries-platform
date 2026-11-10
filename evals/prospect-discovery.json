@@ -82,7 +82,7 @@
         "What does No Fries cover for normal managed IT support?"
       ],
       "expect": {
-        "replyMustInclude": ["day-to-day support", "business email and shared work tools"],
+        "replyMustInclude": ["day-to-day support", "AI-assisted email helpdesk"],
         "forbiddenReplyPatterns": [
           "\\b(?:Datto|Kaseya|Autotask|RMM|EDR|MDR|SOC)\\b",
           "\\b(?:agentic|synergy|seamless|revolutionary|game-changing|cutting-edge)\\b"
@@ -178,7 +178,7 @@
         "lifecycleState": "discovery",
         "replyMustInclude": [
           "current No Fries estimate is NZ$1,240 + GST per month",
-          "initial set-up from NZ$810 + GST"
+          "initial set-up from NZ$750 + GST"
         ],
         "pricing": {
           "policyId": "managed_it_2026_11_1",
@@ -186,7 +186,7 @@
           "currency": "NZD",
           "gstExclusive": true,
           "monthly": 1240,
-          "onboarding": 810
+          "onboarding": 750
         },
         "conversationTextMaxOccurrences": {
           "current No Fries estimate is": 1
@@ -253,7 +253,7 @@
       "turns": ["What does Protect and Recover include for managed IT?"],
       "expect": {
         "topic": "protection_recovery",
-        "replyMustInclude": ["selected and scoped separately", "agreed business hours", "only when selected", "agreed work files"],
+        "replyMustInclude": ["Secure tier", "Managed tier up", "agreed business hours", "Extra business locations"],
         "forbiddenReplyPatterns": ["guaranteed recovery", "24/7 user support", "automatically included", "zero data loss"]
       }
     },

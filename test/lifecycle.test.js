@@ -1059,7 +1059,7 @@ describe('shared customer lifecycle and prospect agent', () => {
         });
 
         expect(result.text).toContain('day-to-day support');
-        expect(result.text).toContain('business email and shared work tools');
+        expect(result.text).toContain('AI-assisted email helpdesk');
         expect(deltas.join('')).toBe(result.text);
         expect(stream).not.toHaveBeenCalled();
         expect(result.organisation.fieldStates['company.summary'].status).toBe('unknown');
