@@ -157,7 +157,7 @@
             const current = operation(15000);
             startupOperation = current;
             setControlsEnabled(false);
-            progress.textContent = 'Connecting to public help…';
+            progress.textContent = 'Connecting to general product help…';
             try {
                 const payload = await current.run((async () => {
                     const response = await fetch(helpOnly ? '/api/prospect/session?publicHelpOnly=true' : '/api/prospect/session', {

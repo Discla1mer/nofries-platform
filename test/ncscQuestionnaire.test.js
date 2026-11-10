@@ -975,7 +975,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         choose(ui, 1, 'yes'); detached.click(); expect(picker.value).toBe('1');
         control(ui, 'Next unresolved question').click(); expect(picker.value).toBe('3');
         expect(h.records).toHaveLength(1);
-        expect(ui.root.textContent).toContain('Unknown and pending N/A remain valid responses for submission.');
+        expect(ui.root.textContent).toContain('You can still submit with Unknown and Not applicable answers.');
         ui.controller.destroy(); detached.click(); expect(ui.root.textContent).toBe('');
     });
 
