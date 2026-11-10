@@ -940,6 +940,38 @@ test('comparing with the previous submitted assessment shows overall and per-fun
     dom.controller.destroy();
 });
 
+function pendingTrend() {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    const { client } = trendClient([earlier, later]);
+    const base = client.read; let release;
+    client.read = (id, settings) => id === earlier.assessmentId
+        ? new Promise(done => { release = () => done(base(id, settings)); }) : base(id, settings);
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } });
+    return { dom, release: () => release() };
+}
+
+test('completing a comparison does not pull focus back after the user moved to another dashboard control', async () => {
+    const { dom, release } = pendingTrend(); await flush();
+    const compare = trendSection(dom).querySelectorAll('button').find(button => button.textContent === 'Compare with previous assessment');
+    compare.focus(); compare.click(); await flush();
+    const elsewhere = dom.document.createElement('button'); elsewhere.focus();
+    release(); await flush();
+    assert.ok(trendSection(dom).querySelector('table'));
+    assert.ok(dom.document.activeElement === elsewhere);
+    dom.controller.destroy();
+});
+
+test('completing a comparison moves focus from the removed Compare button to the trend heading', async () => {
+    const { dom, release } = pendingTrend(); await flush();
+    const compare = trendSection(dom).querySelectorAll('button').find(button => button.textContent === 'Compare with previous assessment');
+    compare.focus(); compare.click(); await flush();
+    release(); await flush();
+    assert.ok(trendSection(dom).querySelector('table'));
+    assert.ok(dom.document.activeElement === trendSection(dom).querySelector('h3'));
+    dom.controller.destroy();
+});
+
 test('a decline is shown as down, the earliest record has no previous result and a changed scope is flagged', async () => {
     const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('yes'), 'Head office only.');
     const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());

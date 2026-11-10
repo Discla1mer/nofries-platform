@@ -79,10 +79,14 @@
             const control = Array.from(root.querySelectorAll('button')).find(value => value === active);
             return control ? { key: control.textContent, element: control } : null;
         }
+        // True when the user moved focus away from `element` (to anything but the page body) during a read.
+        function focusMoved(element) {
+            return !!doc.activeElement && doc.activeElement !== element && doc.activeElement.tagName !== 'BODY';
+        }
         function restoreFocus(saved) {
             if (!saved || !live() || denied) return;
             // Do not steal focus if the user moved it elsewhere during the read.
-            if (doc.activeElement && doc.activeElement !== saved.element && doc.activeElement.tagName !== 'BODY') return;
+            if (focusMoved(saved.element)) return;
             const control = saved.key === 'select' ? root.querySelector('select') :
                 Array.from(root.querySelectorAll('button')).find(value => value.textContent === saved.key) || root.querySelector('select');
             if (control && !control.disabled) control.focus();
@@ -308,8 +312,9 @@
                 }
                 if (errors.length) { state.status = 'failed'; paintTrend(); return; }
                 state.status = 'ready'; const heading = paintTrend();
-                // The Compare button is replaced; keep keyboard users in this section.
-                if (!root.contains(doc.activeElement)) heading.focus();
+                // The Compare button is replaced; keep keyboard users in this section,
+                // but only if focus was lost with it, not moved elsewhere by the user.
+                if (!focusMoved(control)) heading.focus();
             });
         }
         function paintTrend() {
