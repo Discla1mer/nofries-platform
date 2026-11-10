@@ -19,8 +19,13 @@ test.each(PAGES)('%s uses the shared main and footer links', name => {
     const footer = html.match(/<nav aria-label="Footer links">([\s\S]*?)<\/nav>/);
     expect(footer).not.toBeNull();
     expect(hrefs(footer[1]).filter(href => !href.startsWith('mailto:'))).toEqual(FOOTER);
-    // The logo always goes to the No Fries home page and says so.
-    expect(html).not.toMatch(/aria-label="No Fries Managed IT home"/);
+    // The logo's accessible name contains its visible text (WCAG 2.5.3) and
+    // it opens that section's home: Managed IT for its own page, otherwise /.
+    const brand = html.match(/<a class="(?:brand|login-brand)" href="([^"]+)" aria-label="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
+    expect(brand).not.toBeNull();
+    const visible = brand[3].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    expect(brand[2]).toBe(visible + ' home');
+    expect(brand[1]).toBe(visible === 'No Fries Managed IT' ? '/managed-it.html' : '/');
     // Staff sign-in is not offered in shared navigation.
     expect(main[1] + footer[1]).not.toMatch(/\/operator|\/portal|\/scoping|Staff/);
     expect(main[1]).not.toContain('↗');
