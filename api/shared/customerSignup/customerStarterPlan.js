@@ -6,6 +6,7 @@
 const crypto = require('node:crypto');
 const configured = require('./starterPlan.json');
 const trialConfigured = require('./starterTrialPlan.json');
+const trialR3Configured = require('./starterTrialPlanR3.json');
 const { fields, copy, freeze, uuid, subject, instant, id, hash } = require('../appLifecycle/dashboardRuntimeRecords');
 const { createTenantAggregate } = require('../appLifecycle/tenantDomain');
 const { createMembershipState, applyMembershipCommand } = require('../appLifecycle/membershipDomain');
@@ -15,6 +16,20 @@ const { workEmail } = require('../organisationSetup');
 const DAY = 86400000;
 const LEGACY_PLAN_ID = 'nf-starter-2026-09-r1';
 const THREE_MONTH_PLAN_ID = 'nf-starter-2026-10-r2';
+// Same three-month trial under the r4 agreement. Its schedule lists only the
+// modules that are available now. Retained r1/r2 offers keep their own bytes.
+const THREE_MONTH_PLAN_R3_ID = 'nf-starter-2026-11-r3';
+const THREE_MONTH_PLAN_IDS = Object.freeze([THREE_MONTH_PLAN_ID, THREE_MONTH_PLAN_R3_ID]);
+const APPROVED_PLAN_IDS = Object.freeze([LEGACY_PLAN_ID, ...THREE_MONTH_PLAN_IDS]);
+const isThreeMonthPlan = planId => THREE_MONTH_PLAN_IDS.includes(planId);
+const THREE_MONTH_PINS = Object.freeze({
+    [THREE_MONTH_PLAN_ID]: Object.freeze({ source: trialConfigured,
+        approvalRef: 'chatgpt-page:page_30c4fb5854a08191afa936c73b226f69:sequence21:7380e89b-bd54-42e9-bc63-e7e69f4b607f',
+        termsVersion: 'nf-dashboard-2026-10-r3', termsDigest: '441ae6d803002238cb742349e0789617ba141c2e8cc9c83c524c83015c89bf87' }),
+    [THREE_MONTH_PLAN_R3_ID]: Object.freeze({ source: trialR3Configured,
+        approvalRef: 'public-terms:nf-dashboard-2026-11-r4',
+        termsVersion: 'nf-dashboard-2026-11-r4', termsDigest: '737a94879458d795e4a8b3296773e4b995e213d54e9f7d11d93a3c2b290a2703' })
+});
 // An additive schedule policy leaves every retained plan, agreement and offer
 // digest reproducible. New schedules select it in trusted server composition.
 const CONSULTANT_ORGANISATION_POLICY = 'unlimited-v1';
@@ -33,22 +48,21 @@ const PLAN_KEYS = ['schemaVersion', 'planId', 'approvalRef', 'approvedAt', 'dura
 // A missing selector retains the historical contract. Enabling a new offer is a
 // separate server-owned choice after its schema/archive/release gates pass.
 function approvedStarterPlan(planId = LEGACY_PLAN_ID) {
-    if (![LEGACY_PLAN_ID, THREE_MONTH_PLAN_ID].includes(planId)) fail();
-    const legacy = planId === LEGACY_PLAN_ID;
+    if (!APPROVED_PLAN_IDS.includes(planId)) fail();
+    const legacy = planId === LEGACY_PLAN_ID, pin = legacy ? null : THREE_MONTH_PINS[planId];
     const keys = legacy ? PLAN_KEYS : [...PLAN_KEYS.filter(k => k !== 'durationDays'), 'durationMonths', 'readSavedResultsAfterExpiry'];
-    const plan = fields(copy(legacy ? configured : trialConfigured, 8192), keys);
+    const plan = fields(copy(legacy ? configured : pin.source, 8192), keys);
     if (plan.planId !== planId || plan.schemaVersion !== (legacy ? 1 : 2) ||
         (legacy ? plan.approvalRef !== 'github:Discla1mer/NoFries:274:5880195870' ||
             plan.durationDays !== 14 || plan.assessmentSubmissionsPerOrganisation !== 5 :
-            plan.approvalRef !== 'chatgpt-page:page_30c4fb5854a08191afa936c73b226f69:sequence21:7380e89b-bd54-42e9-bc63-e7e69f4b607f' ||
+            plan.approvalRef !== pin.approvalRef ||
             plan.durationMonths !== 3 || plan.assessmentSubmissionsPerOrganisation !== null || plan.readSavedResultsAfterExpiry !== true) ||
         plan.usersPerOrganisation !== 1 || plan.companyOrganisations !== 1 ||
         plan.consultantWorkspaces !== 1 || plan.consultantClientOrganisations !== 3 ||
         plan.priceNzd !== 0 || plan.automaticPaidConversion !== false || plan.aiRequests !== 0 ||
         plan.evidenceBytes !== 0 || plan.reportExports !== 0 || plan.deleteDataAtExpiry !== false ||
-        plan.termsVersion !== (legacy ? 'nf-dashboard-2026-09-r2' : 'nf-dashboard-2026-10-r3') ||
-        plan.termsDigest !== (legacy ? '257fdd66a5359392428c0e5f16734a7ac64ff886e9b359218e4e87b4c7f68acc' :
-            '441ae6d803002238cb742349e0789617ba141c2e8cc9c83c524c83015c89bf87')) fail();
+        plan.termsVersion !== (legacy ? 'nf-dashboard-2026-09-r2' : pin.termsVersion) ||
+        plan.termsDigest !== (legacy ? '257fdd66a5359392428c0e5f16734a7ac64ff886e9b359218e4e87b4c7f68acc' : pin.termsDigest)) fail();
     instant(plan.approvedAt);
     return freeze({ ...plan, sha256: hash(plan) });
 }
@@ -118,10 +132,10 @@ function compileStarterSchedule(input) {
     const framework = fields(value.framework, ['moduleId', 'profileId', 'version', 'scoringVersion']);
     if (framework.moduleId !== 'cyber_security') fail();
     id(framework.profileId); id(framework.version); id(framework.scoringVersion);
-    const plan = starterOfferPlan(value), legacy = plan.planId === LEGACY_PLAN_ID;
+    const plan = starterOfferPlan(value), legacy = plan.planId === LEGACY_PLAN_ID, r3 = plan.planId === THREE_MONTH_PLAN_R3_ID;
     // The reusable price/allowance decision is not evidence of this person's
     // authority to administer this particular organisation.
-    if ([LEGACY_PLAN_ID, THREE_MONTH_PLAN_ID].some(planId => {
+    if (APPROVED_PLAN_IDS.some(planId => {
         const generic = approvedStarterPlan(planId);
         return [generic.approvalRef, generic.planId].includes(contact.authorityEvidenceId);
     })) fail();
@@ -139,7 +153,8 @@ function compileStarterSchedule(input) {
         legacy ? `Access period: ${plan.durationDays} days from account activation, as recorded in the canonical activation receipt.` :
             'Access period: 3 calendar months from account activation at the same UTC time, clamped to the final day of the target month, as recorded in the canonical activation receipt.',
         'Client organisations share the original account expiry; adding a client does not start another period.',
-        `Included: Overview, manual Cyber Security assessment and Improvement Plan.`,
+        r3 ? 'Included: Overview and manual Cyber Security assessment. The Improvement Plan is included when it is released.' :
+            'Included: Overview, manual Cyber Security assessment and Improvement Plan.',
         `Assessment: ${quote(framework.profileId)}; version: ${quote(framework.version)}; scoring: ${quote(framework.scoringVersion)}.`,
         legacy ? `Allowance: ${plan.assessmentSubmissionsPerOrganisation} assessment submissions and ${plan.usersPerOrganisation} user per organisation for this access period.` :
             `Allowance: no assessment or submission cap; ${plan.usersPerOrganisation} user per organisation for this access period. Editing the same assessment consumes no additional assessment run.`,
@@ -156,7 +171,7 @@ function compileStarterSchedule(input) {
         'invitations and agreement/access archives — private Azure Storage, Australia East; identity — Microsoft Entra ID;',
         'invitation messages — Microsoft Entra B2B through Microsoft Graph; verification email — Resend.',
         'Manual assessment and deterministic results require no AI processing.',
-        'Privacy notice: privacy.html, 29 September 2026.',
+        r3 ? 'Privacy notice: privacy.html, 9 November 2026.' : 'Privacy notice: privacy.html, 29 September 2026.',
         `Agreement: ${plan.termsVersion}; SHA-256: ${plan.termsDigest}.`,
         'Acceptance must be the authenticated representative’s deliberate action. This schedule records no acceptance.',
         ''
@@ -272,5 +287,5 @@ function compileStarterActivation(input) {
     return freeze({ nextState, activationIntent });
 }
 
-module.exports = { LEGACY_PLAN_ID, THREE_MONTH_PLAN_ID, CONSULTANT_ORGANISATION_POLICY, usesUnlimitedConsultantPolicy, approvedStarterPlan, starterOfferPlan, accountWindow,
+module.exports = { LEGACY_PLAN_ID, THREE_MONTH_PLAN_ID, THREE_MONTH_PLAN_R3_ID, THREE_MONTH_PLAN_IDS, APPROVED_PLAN_IDS, isThreeMonthPlan, CONSULTANT_ORGANISATION_POLICY, usesUnlimitedConsultantPolicy, approvedStarterPlan, starterOfferPlan, accountWindow,
     starterAuthorityExpiry, compileStarterSchedule, compileStarterPreparation, compileStarterActivation };
