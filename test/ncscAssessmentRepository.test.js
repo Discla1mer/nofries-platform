@@ -844,7 +844,8 @@ describe('NCSC assessment durable facade contract', () => {
         const retained = clone(receipt(h)), entitlement = clone(h.fixture.state.entitlementState);
         entitlement.revision += 1;
         const prior = entitlement.grants.find(row => row.grantId === 'synthetic-product');
-        const renewed = { ...clone(prior), grantId: 'renewed-product', agreementRef: 'synthetic-renewed-agreement' };
+        const renewed = { ...clone(prior), grantId: 'renewed-product', agreementRef: 'synthetic-renewed-agreement',
+            validFrom: new Date(Date.parse(prior.validFrom) + 1).toISOString() }; // A new product needs its own start.
         prior.status = 'revoked'; entitlement.grants.push(renewed);
         entitlement.grants.sort((a, b) => a.grantId < b.grantId ? -1 : 1);
         await authorityCommand(h, 'entitlement.update', entitlement, 'renew-product');

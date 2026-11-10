@@ -327,7 +327,7 @@ describe('consultant client setup', () => {
         expect(controls.textContent).not.toContain('Your starter account includes up to');
         if (remaining > 0) expect(controls.textContent).toContain(remaining +
             (remaining === 1 ? ' client slot remains.' : ' client slots remain.'));
-        expect(controls.textContent).toContain('Organisations added here share your account’s original access period.');
+        expect(controls.textContent).not.toMatch(/access period|expir|trial/i); // Nothing tells a customer the account ends.
         const incomplete = clientQuota(used, remaining).state.clients.filter(client => client.status !== 'ready');
         const savedRows = h.elements.dashboardChoices.querySelectorAll('.client-workspace-row');
         expect(savedRows).toHaveLength(incomplete.length);
@@ -439,6 +439,9 @@ describe('consultant client setup', () => {
         expect(h.requests).toHaveLength(5);
         expect(h.requests.filter(request=>request.init.method==='POST')).toHaveLength(1);
         expect(buttons(h).some(button=>button.textContent==='Accept and create client dashboard')).toBe(false);
+        const text=h.document.getElementById('clientSetupControls').textContent;
+        expect(text).toContain('New organisations cannot be added from this account right now.');
+        expect(text).not.toMatch(/access period|expir|trial/i);
     });
     test('setup read-only response prevents a detached old form from resubmitting its lifecycle command',async()=>{
         const {h}=await unfinished(),form=h.document.getElementById('clientSetupControls').querySelector('form');
