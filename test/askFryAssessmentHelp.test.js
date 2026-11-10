@@ -113,20 +113,22 @@ describe('Ask Fry private assessment priorities', () => {
         'What are my results?',
         'Which gaps should I prioritise?',
         'How did we score?'
-    ])('states the access limit and points to "Fix these first" on the results page: %s', message => {
+    ])('states the access limit and points to "Gaps to work through" on the results page: %s', message => {
         const answer = reply(message);
         expect(answer.topic).toBe('private_priorities');
         expect(answer.text.startsWith("Ask Fry can't see your saved assessment, answers, score or gaps.")).toBe(true);
         expect(answer.text).toContain('View results');
-        expect(answer.text).toContain('"Fix these first"');
+        expect(answer.text).toContain('"Gaps to work through"');
+        expect(answer.text).toContain('grouped by your answer (No, then Partial, then Unknown, then Not applicable). It is not ranked by risk or urgency.');
         expect(answer.text).toContain(NOFRIES_PUBLIC_KNOWLEDGE.links.dashboard);
     });
 
     test('the referenced results-page labels exist in the assessment UI', () => {
         const source = fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/ncscQuestionnaire.js'), 'utf8');
-        expect(source).toContain("node('h3', '', 'Fix these first')");
+        expect(source).toContain("node('h3', '', 'Gaps to work through')");
+        expect(source).toContain('The list is grouped by your answer (No, then Partial, then Unknown, then Not applicable). It is not ranked by risk or urgency.');
         expect(source).toContain("'View results'");
-        // "Fix these first" lists No, Partial, Unknown and Not applicable answers, in that order.
+        // "Gaps to work through" lists No, Partial, Unknown and Not applicable answers, in that order.
         expect(source).toContain("const NEXT_STEP_ORDER = ['no', 'partial', 'unknown', 'not_applicable'];");
         expect(source).toContain("'summary', '', 'Guidance and evidence examples'");
     });

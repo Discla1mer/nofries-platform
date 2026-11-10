@@ -85,7 +85,7 @@ test('staff suspend then restore succeeds end to end with session-bound approval
     expect(h.writes.filter(row => row.name !== 'account-action-audit' && row.account === 'syntheticdata')).toEqual([]);
     expect(JSON.parse(h.bucket('syntheticdata', 'external-signups').get(h.subjectPath).bytes)).toEqual(h.record);
 });
-test.each(['approve-extension', 'extend-expired-access'])('withdrawn %s is absent on the staff console before any customer read, audit or write', async route => {
+test.each(['approve-extension', 'extend-expired-access'])('removed %s does not exist: no route, runtime action, customer read, audit or write', async route => {
     const h = host(), { app, cookie } = await signedIn(h); h.reads.length = 0; h.writes.length = 0;
     const input = { selector: h.selector, confirmationEmail: h.record.email, newExpiresAt: new Date(NOW + 86400000).toISOString(),
         ...(route === 'extend-expired-access' ? { operationId: h.nextId() } : {}) };
@@ -93,22 +93,36 @@ test.each(['approve-extension', 'extend-expired-access'])('withdrawn %s is absen
         const result = await post(h, app, session, route, input);
         expect(result.status).toBe(404); expect(result.body).toEqual({ code: 'dashboard_admin_not_found' });
     }
-    expect(h.reads.filter(row => row.account === 'syntheticdata')).toEqual([]); expect(h.writes).toEqual([]);
-    expect(h.state.committed).toBe(0);
     const { createStaffDashboardAdministration } = require('../lib/dashboardAdminStaffProduction');
     const { createAccountActionsRuntime } = require('../api/shared/dashboardAdmin/accountActionsRuntime');
     const configuration = createStaffDashboardAdministration(h.env, h.dashboard, h.sdk).dashboardAdminAccountActions;
     const runtime = createAccountActionsRuntime(configuration, h.dashboard, async () => { throw new Error('PRIVATE_MUST_NOT_AUTHORISE'); });
-    expect(runtime.expiry).toBe(false); expect(runtime).not.toHaveProperty('approve');
-    await expect(runtime.execute({ subjectKey: 'x' }, input, { signal: new AbortController().signal }, 'extend-expired-access')).rejects.toMatchObject({ statusCode: 404 });
-    const single = createAccountActionsRuntime({ ...configuration.sources[0], auditContainer: configuration.auditContainer, auditPolicy: configuration.auditPolicy, expiry: false }, h.dashboard, async () => {});
-    expect(single).not.toHaveProperty('approve');
-    await expect(Promise.resolve().then(() => single.execute({ subjectKey: 'x' }, input, { signal: new AbortController().signal }, 'extend-expired-access'))).rejects.toMatchObject({ statusCode: 404 });
+    expect(Object.keys(runtime)).toEqual(['execute']);
+    await expect(runtime.execute({ subjectKey: 'x' }, input, { signal: new AbortController().signal }, route)).rejects.toMatchObject({ statusCode: 403 });
+    for (const extra of [{ expiry: false }, { readApprovedExtension: async () => null }]) {
+        expect(() => createAccountActionsRuntime({ ...configuration, ...extra }, h.dashboard, async () => {})).toThrow();
+    }
     expect(h.reads.filter(row => row.account === 'syntheticdata')).toEqual([]); expect(h.writes).toEqual([]);
+    expect(h.state.committed).toBe(0);
 });
-test('a malformed legacy listing locator cannot stop a host that selects account actions', () => {
+test.each(['true', 'false', null])('a malformed listing locator with the actions flag %p cannot stop the host or the console and is reported in one safe line', async actions => {
     const h = host(); h.env.NOFRIES_DASHBOARD_ADMIN_BINDING = '{'; h.env.NOFRIES_DASHBOARD_ADMIN_ENABLED = 'true';
-    expect(() => h.build()).not.toThrow();
-    expect(warning.mock.calls.flat().every(line => /^\[dashboard-admin(-account-actions)?\] dashboard_admin_(unavailable|configuration_invalid)$/.test(line))).toBe(true);
-    expect(warning).toHaveBeenCalled(); expect(h.reads).toEqual([]); expect(h.writes).toEqual([]);
+    if (actions === null) delete h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS; else h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS = actions;
+    let app; expect(() => { app = h.build(); }).not.toThrow();
+    expect(warning.mock.calls).toEqual([['[dashboard-admin-listing] dashboard_admin_binding_invalid']]);
+    expect(h.reads).toEqual([]); expect(h.writes).toEqual([]);
+    const { cookie } = await h.login(app);
+    expect((await h.send('get', '/api/dashboard-admin/entry-capabilities', app).set('Cookie', cookie)).body)
+        .toEqual(actions === 'true' ? { entry: true, accountActions: true } : { entry: true });
+    expect((await h.send('post', '/api/dashboard-admin/signups', app).set('Cookie', cookie).set('Origin', h.env.NOFRIES_PUBLIC_URL)
+        .set('Sec-Fetch-Site', 'same-origin').send({ cursor: null })).status).toBe(404);
+});
+test('the composed action configuration is deeply frozen and carries only sources, audit container and audit policy', () => {
+    const h = host(), { createStaffDashboardAdministration } = require('../lib/dashboardAdminStaffProduction');
+    const configuration = createStaffDashboardAdministration(h.env, h.dashboard, h.sdk).dashboardAdminAccountActions;
+    expect(Object.keys(configuration).sort()).toEqual(['auditContainer', 'auditPolicy', 'sources']);
+    for (const value of [configuration, configuration.sources, ...configuration.sources, ...configuration.sources.map(row => row.source), configuration.auditPolicy, configuration.auditPolicy.retention])
+        expect(Object.isFrozen(value)).toBe(true);
+    expect(() => { 'use strict'; configuration.readApprovedAction = async () => ({}); }).toThrow(TypeError);
+    expect(() => { 'use strict'; configuration.sources.push({}); }).toThrow(TypeError);
 });

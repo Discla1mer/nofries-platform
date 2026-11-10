@@ -400,7 +400,8 @@ module.exports = function registerDashboardPostgresTests() {
             const advisor = { ...current.state.advisorAssignments[0], revision: current.state.advisorAssignments[0].revision + 1 };
             result = await repository.executeAuthorityCommand(command(current.scope, 'advisor.put', result.resultRevisions, advisor));
             const grants = [...current.state.entitlementState.grants,
-                { ...current.state.entitlementState.grants[0], grantId: 'later-product', status: 'revoked' }];
+                { ...current.state.entitlementState.grants[0], grantId: 'later-product', status: 'revoked', // A new product needs its own start.
+                    validFrom: new Date(Date.parse(current.state.entitlementState.grants[0].validFrom) + 1).toISOString() }];
             result = await repository.executeAuthorityCommand(command(current.scope, 'entitlement.update', result.resultRevisions,
                 { ...current.state.entitlementState, revision: 2, grants }));
             await repository.reserveUsage(reservation({ ...current, vector: result.resultRevisions }));

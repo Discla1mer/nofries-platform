@@ -23,6 +23,27 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         if (text !== undefined) node.textContent = text;
         return node;
     };
+    // A plain summary quoting the schedule's own offer lines, so people can see
+    // the price, period and limits before the full schedule and agreement.
+    function scheduleSummary(text) {
+        if (typeof text !== 'string') return null;
+        const wanted = ['Price:', 'Access period:', 'Allowance:', 'Included:', 'AI, evidence uploads', 'Excluded:'];
+        const lines = text.split('\n').filter(line => wanted.some(prefix => line.startsWith(prefix)))
+            .map(line => line.replace(/, as recorded in the canonical activation receipt\./, '.')
+                .replace(/ at the same UTC time, clamped to the final day of the target month/, ''));
+        if (!lines.length) return null;
+        const section = element('section'); section.className = 'signup-glance';
+        section.setAttribute('aria-label', 'Summary of your schedule');
+        const list = element('ul');
+        for (const line of lines) list.append(element('li', line));
+        section.append(element('h2', 'At a glance'), list);
+        if (lines.some(line => line.startsWith('Included:'))) {
+            section.append(element('p', 'A module marked “Coming next” in your dashboard is not available yet. It becomes available when it is released.'));
+        }
+        section.append(
+            element('p', 'These points summarise your organisation schedule below. The full schedule and agreement are what you accept.'));
+        return section;
+    }
     function button(label, action, timeoutMs = 30000, restoreDraft = false) {
         const node = element('button', label);
         const revision = viewRevision;
@@ -58,7 +79,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             } else if (signInRecovery === 'account') {
                 // Display-only: the hint can be forged, so it grants nothing and
                 // names no account. Server state still owns progress and admission.
-                root.append(element('p', 'Your sign-in worked, but No Fries could not open an active account for it. Access may have expired, or setup may not be finished.'),
+                root.append(element('p', 'Your sign-in worked, but No Fries could not open an active account for it. Your account may be paused, or setup may not be finished.'),
                     element('p', 'Email hello@nofries.nz' + (supportReference ? ' and quote reference ' + supportReference : '') +
                         ' so we can restore your access. Your saved work is kept.'));
             } else if (signInRecovery) {
@@ -145,7 +166,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             label.className = 'organisation-authority-check';
             authority.type = 'checkbox'; authority.required = true; authority.name = 'authorityConfirmed';
             authority.checked = false;
-            label.append(authority, element('span', ' I am authorised to set up this organisation.')); form.append(label);
+            label.append(authority, element('span', ' I am authorised to set up this organisation and to accept its terms on its behalf.')); form.append(label);
             const submit = element('button', 'Continue'); submit.type = 'submit'; submit.className = 'button'; form.append(submit);
             const revision = viewRevision;
             form.addEventListener('submit', event => {
@@ -200,6 +221,8 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 const scheduleText = element('p', state.scheduleText); scheduleText.className = 'signup-legal-text';
                 schedule.append(element('h2', 'Organisation schedule'), scheduleText);
                 schedule.className = 'signup-legal signup-schedule';
+                const glance = scheduleSummary(state.scheduleText);
+                if (glance) root.append(glance);
                 root.append(schedule);
             }
             const terms = element('section');
@@ -208,6 +231,19 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             terms.append(element('h2', 'Dashboard agreement'), termsText);
             terms.className = 'signup-legal signup-agreement';
             root.append(terms);
+            // Let the representative keep a copy of exactly what they are asked to accept.
+            const saveCopy = element('button', 'Save a copy of these terms');
+            saveCopy.type = 'button'; saveCopy.className = 'text-link signup-secondary-action';
+            saveCopy.addEventListener('click', () => {
+                const view = doc.defaultView;
+                const parts = [Object.hasOwn(state, 'scheduleId') ? 'Organisation schedule\n\n' + state.scheduleText + '\n\n' : '',
+                    'Dashboard agreement (' + state.termsVersion + ')\n\n' + state.termsText + '\n'];
+                if (!view || typeof view.Blob !== 'function' || !view.URL || typeof view.URL.createObjectURL !== 'function') return;
+                const url = view.URL.createObjectURL(new view.Blob(parts, { type: 'text/plain;charset=utf-8' }));
+                const link = element('a'); link.href = url; link.download = 'no-fries-terms-' + state.termsVersion + '.txt';
+                root.append(link); link.click(); link.remove();
+                view.setTimeout(() => view.URL.revokeObjectURL(url), 1000);
+            });
             const label = element('label'), consent = element('input');
             label.className = 'organisation-authority-check signup-consent';
             consent.type = 'checkbox';
@@ -222,7 +258,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             });
             submit.disabled = true;
             consent.addEventListener('change', () => { submit.disabled = !consent.checked || busy; });
-            root.append(label, submit);
+            root.append(label, submit, saveCopy);
         } else if (state.status === 'resume_acceptance') {
             heading.textContent = 'Complete account setup';
             root.append(element('p', 'Your acceptance was recorded, but account setup did not finish. Resume the protected setup without accepting again.'),
@@ -389,6 +425,11 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         });
         root.setAttribute('aria-busy', 'true');
         for (const node of [...root.querySelectorAll('button'), ...root.querySelectorAll('input'), ...root.querySelectorAll('select')]) node.disabled = true;
+        // Setup and acceptance can take 10 to 20 seconds. Say so straight away,
+        // so a disabled button is not mistaken for a page that has stopped.
+        const progress = element('p', 'Working on it. This can take up to 20 seconds. Please keep this page open.');
+        progress.className = 'signup-progress'; progress.setAttribute('role', 'status');
+        root.append(progress);
         try {
             const state = await Promise.race([action(controller.signal), cancelled]);
             if (!disposed && current === generation) { opening = false; show(state, state, restoreDraft); }
@@ -403,6 +444,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             if (!disposed && current === generation) {
                 cancelOperation = null;
                 busy = false;
+                progress.remove();
                 root.setAttribute('aria-busy', 'false');
             }
         }

@@ -250,11 +250,6 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-result-control { margin: .5rem 0; padding: .25rem .5rem; border-left: 3px solid var(--dashboard-line, #d3c9b7); }
 .ncsc-results summary, .organisation-picture > .ncsc-result-provenance > summary { cursor: pointer; padding: .75rem .25rem; min-height: 44px; box-sizing: border-box; font-weight: var(--dashboard-weight-regular); }
 .ncsc-results summary:focus-visible { outline: 3px solid var(--dashboard-focus, #17140f); outline-offset: 2px; }
-.ncsc-share { margin: 1rem 0 1.5rem; padding: 1rem; border: 1px solid var(--dashboard-line, #d3c9b7); border-radius: .5rem; }
-.ncsc-share h3 { margin-top: 0; }
-.ncsc-share-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin: .75rem 0; }
-.ncsc-share-status { margin: .5rem 0; min-height: 1.5em; }
-.ncsc-copy-buffer { position: fixed; top: 0; left: -10000px; width: 1px; height: 1px; opacity: 0; }
 /* The full results report is built only for printing and stays hidden on screen. */
 .ncsc-print-report { display: none; }
 .ncsc-result-provenance dt { font-weight: var(--dashboard-weight-regular); margin-top: .75rem; }
@@ -373,7 +368,7 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .dashboard-subscription-panel, .dashboard-badge, .dashboard-attention-item .dashboard-badge, .dashboard-route-status, .ncsc-warning, .ncsc-errors, .ncsc-sealed, .ncsc-review-blocked, .ncsc-review-ready, .ncsc-review-badge, .ncsc-review-item { color: #17201f; background: white; }
     .ncsc-inline-error { color: #9b241c; }
     .dashboard-panel { box-shadow: none; }
-    /* "Print or save as PDF" prints only the results report, without application chrome. */
+    /* "Print these results" prints only the results report, without application chrome. */
     body.ncsc-print-active { background: white; color: #17201f; }
     body.ncsc-print-active > :not(.ncsc-print-report) { display: none !important; }
     .ncsc-print-active > .ncsc-print-report { display: block; color: #17201f; background: white; font-size: 11pt; line-height: 1.45; overflow-wrap: anywhere; }
@@ -515,6 +510,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden]) > .dashboard-menu-primary):not(:has(#dashboardApp .ncsc-questionnaire)) .home-footer a { scroll-margin-block-end: 8px; }
     .nofries-dashboard:has(.dashboard-mobile-nav > .dashboard-menu-primary) .picture-toolbar select { scroll-margin-block: 8px; }
 }
+
+.ncsc-verdict { font-size: 1.1rem; font-weight: 600; }
 /* Phones: stack the decorative module code above the label so whole words fit; long words still wrap. */
 @media (max-width: 30rem) {
     .nofries-dashboard .dashboard-mobile-nav .dashboard-task { flex-direction: column; justify-content: center; gap: .15rem; text-align: center; }

@@ -173,6 +173,17 @@ test('after its recorded end a product still stops on suspension, revocation or 
     // A suspended successor does not revive the product it replaced.
     assert.equal(resolve(state([product(), { ...next, status: 'suspended' }]), flags(), LATE).product, null);
     assert.equal(currentProductGrant([product(), next], '2026-08-01T00:00:00.000Z'), null);
+    // Products sharing a start cannot be ordered, so the active one applies whatever the
+    // array or ID order: both for a suspended successor and for a revoked predecessor
+    // with its active replacement. Neither makes an active account lapse at its recorded end.
+    for (const status of ['suspended', 'revoked']) for (const [liveId, stoppedId] of [['product-a', 'product-b'], ['product-b', 'product-a']]) {
+        const live = product({ grantId: liveId }), stopped = product({ grantId: stoppedId, status, agreementRef: 'synthetic-order-2' });
+        for (const grants of [[live, stopped], [stopped, live]]) for (const at of [NOW, END, LATE]) {
+            assert.equal(currentProductGrant(grants, at).grantId, liveId);
+            assert.equal(resolve(state(grants), flags(), at).product.grantId, liveId);
+        }
+        assert.equal(currentProductGrant([{ ...live, status }, stopped], LATE), null); // None active: no product.
+    }
     const withService = state([product(), service()]), cfg = flags({ 'service:managed_endpoint': true });
     assert.equal(resolve(withService, cfg, NOW).services.managed_endpoint.entitled, true);
     assert.equal(resolve(withService, cfg, END).services.managed_endpoint.entitled, false);

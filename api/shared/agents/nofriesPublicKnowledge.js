@@ -54,11 +54,11 @@ const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
         },
         trialTerms: {
             availability: 'not_live',
-            summary: 'A proposed three-month trial is not live. Refer to the terms actually presented during account setup. This chat cannot confirm a new duration, unlimited use, a price or trial eligibility.'
+            summary: 'A proposed three-month trial is not live. Refer to the terms actually presented during account setup. Complimentary starter access has no charge, needs no card and does not turn into paid access without a separate express agreement; its access period and allowance are shown in the schedule before you accept. This chat cannot confirm a new duration, unlimited use, a price or trial eligibility.'
         },
         dashboardTerms: {
             availability: 'account_terms_apply',
-            summary: 'Managed IT prices apply to optional managed services, not dashboard access. Review the dashboard terms shown during account setup for the applicable plan and limits. This chat cannot confirm a new trial or paid dashboard plan.'
+            summary: 'Managed IT prices apply to optional managed services, not dashboard access. Complimentary starter dashboard access has no charge and needs no card. Review the schedule and terms shown during account setup for the access period and limits; the public terms are at /terms.html. This chat cannot confirm a new trial or paid dashboard plan.'
         },
         lunaProfile: {
             availability: 'not_live',
@@ -85,12 +85,12 @@ const ASSESSMENT_ANSWER_HELP = deepFreeze({
         partial: { label: 'Partial', meaning: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.' },
         no: { label: 'No', meaning: 'None of this is in place yet, including when work is only planned.' },
         unknown: { label: 'Unknown', meaning: 'You do not have enough information to confirm what is in place.' },
-        not_applicable: { label: 'N/A (Not applicable)', meaning: 'You believe this does not apply to your scope. Explain why; this remains unresolved.' }
+        not_applicable: { label: 'N/A (Not applicable)', meaning: 'You believe this does not apply to your scope. Explain why. It counts as still to confirm, not as in place.' }
     },
     formula: 'Each question has equal weight: Yes = 1, Partial = 0.5, No = 0. Unknown, unanswered and pending N/A answers are unresolved and widen the score range: the lower end counts them as 0 and the upper end counts them as 1. N/A stays in the denominator unless formally approved, and N/A approval is not available in this journey. This is a No Fries calculation, not an NCSC score.',
     questionGuidance: 'For a specific question, open "Guidance and evidence examples" under that question in the assessment for its own example and evidence.',
     privateLimit: 'Ask Fry can\'t see your saved assessment, answers, score or gaps.',
-    fixFirst: 'Sign in to the dashboard, open your submitted assessment from the assessment area or Overview and choose View results. The "Fix these first" list there groups the gaps you reported (No, then Partial, then Unknown and N/A) with a next step for each. It groups your answers; it is not a calculated risk ranking.',
+    fixFirst: 'Sign in to the dashboard, open your submitted assessment from the assessment area or Overview and choose View results. The "Gaps to work through" list there shows the gaps you reported with a next step for each. It is grouped by your answer (No, then Partial, then Unknown, then Not applicable). It is not ranked by risk or urgency.',
     complianceLead: 'This assessment can\'t establish compliance or certification.',
     complianceDetail: 'Results are self-reported gap indicators from your submitted answers. They are not an audit, independent assurance, certification, compliance finding or proof of effective controls. The assessment does not cover every NCSC Minimum Standard requirement and is not an NCSC certification, endorsement or official NCSC score. It does not certify against ISO 27001, Cyber Essentials or any other scheme.'
 });

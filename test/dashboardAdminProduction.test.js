@@ -255,17 +255,15 @@ test('repeated searches read current data and commit distinct audit pairs', asyn
     expect(h.state.audit).toHaveLength(4);
 }, REPEATED_SEARCH_JOURNEY_TIMEOUT_MS);
 
-test('lookup-only composition reuses existing native runtime without constructing signup stores', async () => {
-    const h = await harness({ configured: false }), readApprovedBinding = jest.fn(async () => null);
-    h.dependencies.dashboardAdministration = { lookup: { readApprovedBinding }, signupList: null };
-    const count = h.transport.clients.length;
-    const composed = createProductionDashboardAdministration(h.env, h.dashboard, h.dependencies);
-    expect(Object.keys(composed)).toEqual(['dashboardAdmin']);
-    expect(h.transport.clients).toHaveLength(count);
-    h.app = createProductionApplication(h.env, h.dependencies);
-    const result = await request(h.app).get('/dashboard-admin').set('Cookie', h.cookie);
-    expect(result.status).toBe(403); safeError(result, 'dashboard_admin_access_denied');
-    expect(readApprovedBinding).toHaveBeenCalledWith({ operatorSubjectKey: SUBJECT, purpose: 'signup_support' });
+test('trusted injection can no longer supply a lookup or account-action port', async () => {
+    const h = await harness({ configured: false });
+    for (const config of [{ lookup: { readApprovedBinding: async () => null }, signupList: null }, { lookup: {}, signupList: h.listing },
+        { lookup: null, signupList: null, accountActions: {} }]) {
+        h.dependencies.dashboardAdministration = config;
+        expect(() => createProductionDashboardAdministration(h.env, h.dashboard, h.dependencies)).toThrow('dashboard_admin_production_configuration_invalid');
+    }
+    h.dependencies.dashboardAdministration = null;
+    expect(createProductionDashboardAdministration(h.env, h.dashboard, h.dependencies)).toEqual({});
     expect(h.dataReads()).toEqual([]);
 });
 

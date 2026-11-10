@@ -85,7 +85,7 @@ async function main() {
             assert.equal(await listActions(page).count(), 2);
             await page.locator('#ncsc-assessment-status').selectOption('submitted');
             assert.equal(await listActions(page).count(), 0);
-            assert.equal(await page.getByText('No loaded assessments match your search and status.', { exact: true }).isVisible(), true);
+            assert.equal(await page.getByText('No submitted assessments yet. Results appear here once an assessment is submitted.', { exact: true }).isVisible(), true);
             assert.equal(await page.getByText('Search and filters cover loaded assessments. Load more to include more saved records.', { exact: true }).isVisible(), true);
             await action(page, 'Load more assessments').click();
             await action(page, 'View results').waitFor();

@@ -167,10 +167,16 @@ describe('document: the opening placeholder always ends', () => {
     // A view that never renders stands in for any script path that fails to
     // replace the placeholder (stalled navigation, a hung mount, etc).
     const stalledView = "module.exports = { mountSignupJourney: () => ({ ready: new Promise(() => {}), dispose() {} }) };";
+    // The heading the served document shows while opening (from #154).
+    const OPENING = /<h1>([^<]+)<\/h1>/.exec(buildSignupDocument({ clientSource, journeySource: stalledView, customerLogin: true, customerTransport: 'external' }).html)[1];
+    test('the backstop recognises the served opening heading', () => {
+        expect(OPENING).toBe('Signing you in');
+        expect(buildHostedSignupDocument({ clientSource, journeySource: stalledView }).html).toContain(`<h1>${OPENING}</h1>`);
+    });
     function run(runtime) {
         const dom = createDom(), create = dom.document.createElement;
         dom.document.createElement = tag => Object.assign(create(tag), { style: {} });
-        const placeholder = dom.document.createElement('h1'); placeholder.textContent = 'Opening your account';
+        const placeholder = dom.document.createElement('h1'); placeholder.textContent = OPENING;
         dom.root.append(placeholder);
         dom.document.getElementById = id => id === 'signup' ? dom.root : null;
         const listeners = {}, reload = jest.fn();
@@ -188,7 +194,7 @@ describe('document: the opening placeholder always ends', () => {
         jest.useFakeTimers();
         const page = run(runtimes()[index][1]);
         await jest.advanceTimersByTimeAsync(44999);
-        expect(page.root.querySelector('h1').textContent).toBe('Opening your account');
+        expect(page.root.querySelector('h1').textContent).toBe(OPENING);
         await jest.advanceTimersByTimeAsync(1);
         expect(page.root.querySelector('h1').textContent).toBe('We could not open your account');
         expect(page.root.textContent).toContain('Error code: NF-SIGNIN-UNCONFIRMED');
@@ -204,7 +210,7 @@ describe('document: the opening placeholder always ends', () => {
         const page = run(runtimes()[0][1]);
         page.listeners.pagehide();
         await jest.advanceTimersByTimeAsync(60000);
-        expect(page.root.querySelector('h1').textContent).toBe('Opening your account');
+        expect(page.root.querySelector('h1').textContent).toBe(OPENING);
         page.listeners.pageshow({ persisted: false }); expect(page.reload).not.toHaveBeenCalled();
         page.listeners.pageshow({ persisted: true }); expect(page.reload).toHaveBeenCalledTimes(1);
     });

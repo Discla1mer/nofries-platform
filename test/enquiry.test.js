@@ -153,10 +153,10 @@ describe('contact form progressive enhancement', () => {
         expect(html).toMatch(/<noscript>[\s\S]*mailto:hello@nofries.nz[\s\S]*<\/noscript>/);
     });
 
-    test('contact home link matches the managed IT accessible name and fields use cream paper', () => {
-        expect(html).toMatch(/aria-label="No Fries Managed IT home"/);
-        expect(html).toMatch(/<strong>No Fries<\/strong> <span>Managed IT<\/span>/);
-        expect(html).not.toMatch(/<strong>No Fries<\/strong><span>Managed IT<\/span>/);
+    test('contact home link names the No Fries home page it opens and fields use cream paper', () => {
+        expect(html).toMatch(/<a class="login-brand" href="\/" aria-label="No Fries home">/);
+        expect(html).toMatch(/<strong>No Fries<\/strong><\/div>/);
+        expect(html).not.toMatch(/aria-label="No Fries Managed IT home"/);
         const css = fs.readFileSync(path.join(__dirname, '../style.css'), 'utf8');
         const fields = css.match(/\.contact-form input, \.contact-form textarea \{[^}]+\}/);
         expect(fields).not.toBeNull();
@@ -217,6 +217,24 @@ describe('contact form progressive enhancement', () => {
         const event = { preventDefault: jest.fn() };
         await page.submit()(event);
         expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    });
+
+    test('a second submit while availability is still being checked does not send a second enquiry', async () => {
+        let resolveAvailability;
+        const pending = new Promise(resolve => { resolveAvailability = resolve; });
+        const response = { ok: true, json: async () => ({ received: true }) };
+        const page = browser(false, response, () => pending);
+        page.form.reportValidity.mockImplementation(() => true);
+        const running = page.run();
+        expect(page.send.disabled).toBe(false);
+        const first = page.submit()({ preventDefault: jest.fn() });
+        expect(page.send.disabled).toBe(true);
+        const second = page.submit()({ preventDefault: jest.fn() });
+        resolveAvailability({ available: true });
+        await Promise.all([running, first, second]);
+        expect(page.fetchImpl).toHaveBeenCalledTimes(1);
+        expect(page.send.disabled).toBe(false);
+        expect(page.status.textContent).toContain('your enquiry has been sent');
     });
 
     test('leaves submission disabled when handler attachment fails', async () => {

@@ -344,3 +344,13 @@ test.each([
     expect(replace).toHaveBeenCalledTimes(1); expect(replace).toHaveBeenCalledWith(target);
     expect(fetch).not.toHaveBeenCalled(); expect(JSON.stringify(replace.mock.calls)).not.toMatch(/private|evil|code=/);
 });
+
+test('a plain visit to the external callback returns to sign-in recovery without touching sign-in state', async () => {
+    const h = customerProductionHarness({ starter: true, external: true, now: Date.now(), customerClientId: uid(105) });
+    const visit = await request(h.app).get('/api/external-customer-auth/callback?error=access_denied&error_description=cancelled')
+        .set('Accept', 'text/html');
+    expect(visit.status).toBe(303);
+    expect(visit.headers.location).toBe('/login?signin=retry&provider=external');
+    expect(visit.headers['cache-control']).toBe('no-store');
+    expect(visit.headers['set-cookie']).toBeUndefined();
+});

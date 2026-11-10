@@ -413,6 +413,13 @@ for (const [key, route, clearTransactionCookie] of [
             } } });
         await sendFunctionResponse(callback, req, res);
     }));
+    // The provider answers with form_post. A plain browser visit (for example
+    // after Cancel on a hosted sign-in page) carries no usable result, so
+    // send it to the same friendly sign-in recovery page without reading it.
+    app.get(route + '/callback', (req, res) => {
+        res.set('Cache-Control', 'no-store');
+        res.redirect(303, key === 'externalCustomer' ? '/login?signin=retry&provider=external' : '/login?signin=retry&provider=legacy');
+    });
     if (key === 'externalCustomer') {
         const setupLogout = createAuthLogoutFunction({ env: authEnvironment, service: customerAuth.setupLogout, setupAccountChange: true });
         app.post(route + '/logout', express.urlencoded({ extended: false, limit: '16kb' }), asyncRoute(async (req, res) => {
@@ -482,7 +489,7 @@ async function sendDashboardAdmin(req, res, route) {
         await sendDashboardAdmin(req, res, 'entry');
     }));
     app.use('/api/dashboard-admin', asyncRoute(async (req, res) => {
-    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|extend-expired-access|approve-extension|suspend|restore|approve-suspend|approve-restore|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
+    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|suspend|restore|approve-suspend|approve-restore|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
         dashboardAdminSignupListService && req.path === '/signups' ? req.path.slice(1) : null;
     await sendDashboardAdmin(req, res, route);
 }));
@@ -916,6 +923,13 @@ app.get(['/operator', '/operator/'], (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     res.type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, 'app', 'operator.html'), 'utf8')));
+});
+
+app.get(['/forgot-password', '/forgot-password/'], (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    // Password reset is handled by Microsoft on the existing sign-in flow.
+    res.redirect(302, '/login');
 });
 
 app.get(['/service-desk', '/service-desk/'], (req, res) => {

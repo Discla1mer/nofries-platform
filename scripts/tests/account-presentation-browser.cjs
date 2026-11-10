@@ -200,7 +200,7 @@ async function main() {
 
         holdBootstrap = true; signupState = 'pending_admission';
         await page.goto(base + '/signup#invitation=' + 'x'.repeat(43));
-        await page.getByText('Opening your account', { exact: true }).waitFor();
+        await page.getByText('Signing you in', { exact: true }).waitFor();
         await focusSkip(page); await page.keyboard.press('Enter');
         assert.equal(page.url(), base + '/signup');
         assert.equal(await page.locator('#signup').evaluate(el => el === document.activeElement), true);

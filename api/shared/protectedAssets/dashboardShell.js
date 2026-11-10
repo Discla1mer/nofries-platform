@@ -5,7 +5,17 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function (registry) {
     'use strict';
 
+    // Escape closes an open disclosure menu and returns focus to its summary.
+    function closeOnEscape(details) {
+        details.addEventListener('keydown', function (event) {
+            if (event.key !== 'Escape' || !details.open) return;
+            details.open = false;
+            const summary = details.querySelector('summary'); if (summary) summary.focus();
+            if (typeof event.stopPropagation === 'function') event.stopPropagation();
+        });
+    }
     const mounted = new WeakMap();
+    const START_NEW_ASSESSMENT = Object.freeze({ startNew: true });
     let mountSequence = 0;
     const moduleStates = { ready: 'Included', planned: 'Included · workspace coming next', disabled: 'Included · unavailable' };
     const serviceStates = { not_included: 'Available to scope', disabled: 'Included · unavailable', setup_required: 'Waiting for setup' };
@@ -46,6 +56,7 @@
         let child = null;
         let navigation = null;
         const generation = Object.freeze({ mount: ++mountSequence });
+        const previousTitle = doc ? doc.title : '';
         const historySession = 'nofries-dashboard-' + generation.mount;
         const historyEntries = new Map();
         let managedHistory = (typeof options.mountCyber === 'function' || typeof options.mountPicture === 'function' ||
@@ -93,6 +104,7 @@
             if (!secondary.length) return;
             const other = element('details', 'dashboard-menu-other');
             other.append(element('summary', '', 'More tools'));
+            closeOnEscape(other);
             secondary.forEach(function (item) {
                 const labels = { ready: 'Available', planned: 'Coming next', disabled: 'Unavailable' };
                 other.append(routeLink(item, null, labels[stateFor(item.key)]));
@@ -107,8 +119,13 @@
         }
         function initialise() {
             root.classList.add('nofries-dashboard');
-            const skip = element('a', 'dashboard-skip', 'Skip to dashboard content'); skip.href = '#dashboard-content';
-            skip.addEventListener('click', function (event) { event.preventDefault(); main.focus(); });
+            // The host page already provides the first skip link. Adding another
+            // with the same name creates a duplicate tab stop.
+            let skip = null;
+            if (!options.omitSkipLink) {
+                skip = element('a', 'dashboard-skip', 'Skip to dashboard content'); skip.href = '#dashboard-content';
+                skip.addEventListener('click', function (event) { event.preventDefault(); main.focus(); });
+            }
             const layout = element('div', 'dashboard-layout');
             rail = element('aside', 'dashboard-rail');
             const brand = element('div', 'dashboard-brand');
@@ -120,7 +137,7 @@
             const nav = element('nav'); nav.setAttribute('aria-label', 'Workspace');
             appendMenu(nav, false);
             const subscription = element('div', 'dashboard-subscription');
-            subscription.append(element('span', 'dashboard-eyebrow', 'Dashboard subscription'), element('strong', '', model.subscription),
+            subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', model.subscription),
                 element('p', '', 'Managed and advisory services are scoped separately.'));
             rail.append(brand, context, nav, subscription);
             const workspace = element('div', 'dashboard-workspace');
@@ -131,7 +148,9 @@
             main = element('main', 'dashboard-main'); main.id = 'dashboard-content'; main.tabIndex = -1;
             groups = element('nav', 'dashboard-mobile-nav'); groups.setAttribute('aria-label', 'Dashboard tasks');
             appendMenu(groups, true);
-            workspace.append(top, status, groups, main); layout.append(rail, workspace); root.append(skip, layout);
+            workspace.append(top, status, groups, main); layout.append(rail, workspace);
+            if (skip) root.append(skip);
+            root.append(layout);
             navigate(options.initialRoute == null ? (win && win.location.hash || '') : options.initialRoute, false);
         }
         function updateNavigation() {
@@ -197,6 +216,7 @@
             }
             const repeatedRoute = current.key === target.key && win && win.location.hash === '#' + target.route;
             current = target;
+            if (doc && current && current.label) doc.title = current.label + ' · No Fries Dashboard';
             status.hidden = !!requested || !route;
             status.textContent = requested || !route ? '' : 'That view is not available for this organisation. Showing ' + target.label + '.';
             if (changeLocation && !repeatedRoute) pushEntry(current.route);
@@ -267,9 +287,13 @@
             else if (current.key === 'improvement_plan' && stateFor(current.key) === 'ready' && typeof options.mountImprovement === 'function') renderImprovement(sourceAssessment);
             else renderModule();
             const footer = element('footer', 'dashboard-provenance');
-            const stamp = element('time', '', model.generatedAt.replace('T', ' ').replace('.000Z', ' UTC'));
+            // People read local time; keep the exact instant in the datetime attribute.
+            let shown;
+            try { shown = new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(model.generatedAt)) + ' NZ time'; }
+            catch (_) { shown = model.generatedAt.replace('T', ' ').replace('.000Z', ' UTC'); }
+            const stamp = element('time', '', shown);
             stamp.dateTime = model.generatedAt;
-            footer.append(element('span', '', 'Display snapshot · '), stamp,
+            footer.append(element('span', '', 'Information as at '), stamp,
                 element('p', '', 'Assessment indicators are not audit, assurance or certification.'));
             main.append(footer);
         }
@@ -344,9 +368,10 @@
             try {
                 const result = options.mountPicture(childRoot, { generation: generation,
                     displayName: model.context.displayName,
-                    openCyber: cyber ? function (assessmentId) {
+                    openCyber: cyber ? function (assessmentId, intent) {
                         if (!active() || !pictureChild || child !== pictureChild) return Promise.resolve(false);
-                        return navigate(cyber.route, true, undefined, assessmentId);
+                        // The first-use action opens the new-assessment step directly.
+                        return navigate(cyber.route, true, undefined, assessmentId === undefined && intent && intent.startNew === true ? START_NEW_ASSESSMENT : assessmentId);
                     } : undefined,
                     openImprovement: improvement ? function (sourceAssessment) {
                         if (!active() || !pictureChild || child !== pictureChild) return Promise.resolve(false);
@@ -379,7 +404,8 @@
             const childRoot = element('div', 'dashboard-cyber-workspace'); main.append(childRoot);
             try {
                 const presentation = { generation: generation };
-                if (initialAssessmentId !== undefined) presentation.initialAssessmentId = initialAssessmentId;
+                if (initialAssessmentId === START_NEW_ASSESSMENT) presentation.startNew = true;
+                else if (initialAssessmentId !== undefined) presentation.initialAssessmentId = initialAssessmentId;
                 const result = options.mountCyber(childRoot, presentation);
                 if (!result || typeof result.destroy !== 'function' || typeof result.requestLeave !== 'function') throw new Error('invalid_child');
                 child = result;
@@ -496,6 +522,7 @@
             if (travelling) { travelling.resolve(false); travelling = null; }
             historyEntries.clear();
             if (win) { win.removeEventListener('hashchange', locationChanged); win.removeEventListener('popstate', locationChanged); }
+            if (doc) doc.title = previousTitle || '';
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
         } };
         initialise(); tagInitial();

@@ -25,7 +25,22 @@
     Object.keys(ids).forEach(function (key) { elements[key] = document.getElementById(ids[key]); });
     if (Object.keys(elements).some(function (key) { return !elements[key]; })) return;
     const accountMenu = document.getElementById('dashboardAccountMenu');
+    // Escape closes the account menu and returns focus to its summary.
+    if (accountMenu && typeof accountMenu.addEventListener === 'function') accountMenu.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || !accountMenu.open) return;
+        accountMenu.open = false;
+        const summary = accountMenu.querySelector && accountMenu.querySelector('summary'); if (summary) summary.focus();
+    });
     const accountActions = document.getElementById('dashboardAccountActions');
+    const accountToggle = document.getElementById('dashboardAccountToggle');
+    function setAccountMenuOpen(open) {
+        if (accountToggle) accountToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (accountActions) accountActions.hidden = !open;
+    }
+    if (accountToggle) accountToggle.addEventListener('click', function () {
+        if (!accountMenu || accountMenu.hidden) return;
+        setAccountMenuOpen(accountToggle.getAttribute('aria-expanded') !== 'true');
+    });
     const directorySearch = document.getElementById('dashboardOrganisationSearch');
     const directoryStatus = document.getElementById('dashboardOrganisationStatus');
     const directorySearchControls = document.getElementById('dashboardOrganisationSearchControls');
@@ -115,7 +130,7 @@
     function clearContent() {
         if (portfolioButton) { portfolioButton.hidden = true; portfolioButton.onclick = null; }
         if (portfolioNavigation) { portfolioNavigation.remove(); portfolioNavigation = null; }
-        if (accountMenu) { accountMenu.open = false; accountMenu.hidden = true; }
+        if (accountMenu) { setAccountMenuOpen(false); accountMenu.hidden = true; }
         delete elements.status.dataset.accessWarning;
         const activation = document.getElementById('customerActivationControls');
         if (activation) activation.remove();
@@ -201,7 +216,7 @@
             copy[0] = 'Your consultant account';
             copy[1] = owner ? 'Choose your own or a client organisation, or add an organisation.'
                 : 'Choose an organisation workspace you can access.';
-            copy[2] = owner ? 'Account owner · Organisation access is checked separately.'
+            copy[2] = owner ? 'Account owner. Access is checked when you open an organisation.'
                 : 'Only organisation workspaces available to your account are listed.';
             if (cycle.session.clientSetupAvailable && !document.getElementById('clientSetupControls')) clientSetupControls(cycle);
         }
@@ -215,7 +230,7 @@
         elements.signOut.disabled = state === 'loading';
         if (accountMenu) {
             accountMenu.hidden = elements.signOut.hidden;
-            if (accountMenu.hidden) accountMenu.open = false;
+            if (accountMenu.hidden) setAccountMenuOpen(false);
         }
         if (['ready', 'selection', 'queue'].includes(state) && cycle.session?.accountType === 'consultant') consultantNavigation(cycle, state);
         if (focusHeading !== false && state !== 'loading' && !(gateway && !hadSession)) elements.heading.focus();
@@ -495,6 +510,7 @@
         cycle.improvement = !!improvement;
         cycle.displayContract = displayContract(model);
         controller = factory.mount(elements.app, model, { window: window, initialRoute: currentRoute(),
+            ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}) });
@@ -713,7 +729,7 @@
                 if (readOnly) csrf = null;
                 heading.textContent = readOnly ? 'Saved organisation setups' : 'Add organisation';
                 unlimitedList = state.remaining === null;
-                content.append(element('p', 'Organisations added here share your account’s original access period.'));
+                if (readOnly) content.append(element('p', 'New organisations cannot be added from this account right now. Email hello@nofries.nz if you need another.'));
                 // Only the directory grants ready workspaces. Saved setup
                 // records contribute incomplete rows to the same list.
                 elements.choices.querySelectorAll('.client-workspace-row').forEach(function (row) { row.remove(); });
@@ -1101,7 +1117,9 @@
             if (!current(cycle)) throw invalid();
             return questionnaire.mount(root, { window: window, metadata: value.metadata, client: client,
                 presentationMode: value.presentationMode, organisationId: organisationId,
-                initialAssessmentId: presentation && presentation.initialAssessmentId });
+                initialAssessmentId: presentation && presentation.initialAssessmentId,
+                // Overview's first-use action opens the new-assessment step directly.
+                startNew: !!(presentation && presentation.startNew === true) });
         };
         const picture = window.NoFriesOrganisationPicture;
         let pictureSelection = null;
@@ -1110,8 +1128,10 @@
                 if (!current(cycle)) throw invalid();
                 return picture.mount(root, { metadata: value.metadata, client: client, organisationId: organisationId,
                     displayName: presentation.displayName,
-                    initialAssessmentId: pictureSelection,
-                    onSelection: function (assessmentId) { if (current(cycle)) pictureSelection = assessmentId; },
+                    ...(pictureSelection ? { initialAssessmentId: pictureSelection } : {}),
+                    onSelection: function (assessmentId, source) {
+                        if (current(cycle) && source === 'user') pictureSelection = assessmentId;
+                    },
                     openCyber: presentation.openCyber,
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
@@ -1266,7 +1286,7 @@
                 // Discovery retains bindings even when current membership denies
                 // access. Selection and resource reads establish current access.
                 button.className = 'consultant-organisation-ready';
-                button.setAttribute('aria-label', binding.organisationLabel + ' · Open to check access');
+                button.setAttribute('aria-label', binding.organisationLabel + ' · Open organisation');
             }
             button.setAttribute('aria-pressed', String(binding.bindingId === value.selectedBindingId));
             return button;

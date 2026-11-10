@@ -263,7 +263,8 @@ describe('canonical dashboard PostgreSQL repository contract', () => {
         const advisor = Object.values(fixture({ role: 'fractional_advisor' }).advisorAssignments)[0];
         advisor.revision = 0;
         changed = await h.repo.executeAuthorityCommand(h.command('advisor.put', 'later-advisor', changed.resultRevisions, advisor));
-        const grants = [...h.initial.entitlementState.grants, { ...h.initial.entitlementState.grants[0], grantId: 'later-product', status: 'revoked' }];
+        const grants = [...h.initial.entitlementState.grants, { ...h.initial.entitlementState.grants[0], grantId: 'later-product', status: 'revoked',
+            validFrom: new Date(Date.parse(h.initial.entitlementState.grants[0].validFrom) + 1000).toISOString() }]; // A new product needs its own start.
         changed = await h.repo.executeAuthorityCommand(h.command('entitlement.update', 'later-grant', changed.resultRevisions,
             { ...h.initial.entitlementState, revision: 2, grants }));
         await h.repo.reserveUsage(h.reserve('later-usage', changed.resultRevisions));
@@ -275,7 +276,8 @@ describe('canonical dashboard PostgreSQL repository contract', () => {
 
     test('rehashed entitlement receipt cannot omit the new product usage transition', async () => {
         const h = setup(); await h.bootstrap();
-        const grants = [...h.initial.entitlementState.grants, { ...h.initial.entitlementState.grants[0], grantId: 'later-product', status: 'revoked' }];
+        const grants = [...h.initial.entitlementState.grants, { ...h.initial.entitlementState.grants[0], grantId: 'later-product', status: 'revoked',
+            validFrom: new Date(Date.parse(h.initial.entitlementState.grants[0].validFrom) + 1000).toISOString() }]; // A new product needs its own start.
         const command = h.command('entitlement.update', 'add-product', INITIAL, { ...h.initial.entitlementState, revision: 2, grants });
         await h.repo.executeAuthorityCommand(command);
         const row = h.memory.rows('dashboard_operation_receipts').at(-1);
@@ -398,6 +400,25 @@ describe('canonical dashboard PostgreSQL repository contract', () => {
         changed.grants = [];
         await expect(h.repo.executeAuthorityCommand(h.command('entitlement.update', 'remove', INITIAL, changed))).rejects.toMatchObject({ code: 'dashboard_grant_history_invalid' });
         expect(h.memory.rows('dashboard_usage')[0].payload.revision).toBe(0);
+    });
+
+    test('a new product grant cannot share its start with another product; a later start is accepted', async () => {
+        const h = setup(); await h.bootstrap();
+        const first = h.initial.entitlementState.grants.find(grant => grant.code.startsWith('dashboard_'));
+        const proposal = (grantId, validFrom) => {
+            const next = copy(h.initial.entitlementState); next.revision = 2;
+            next.grants.find(grant => grant.grantId === first.grantId).status = 'revoked';
+            next.grants.push({ ...copy(first), grantId, agreementRef: 'synthetic-replacement-order', validFrom });
+            return next;
+        };
+        for (const grantId of ['!earlier-id', 'zz-later-id']) {
+            await expect(h.repo.executeAuthorityCommand(h.command('entitlement.update', 'tie-' + grantId, INITIAL, proposal(grantId, first.validFrom))))
+                .rejects.toMatchObject({ code: 'dashboard_product_start_ambiguous', statusCode: 409 });
+        }
+        expect(h.memory.rows('dashboard_usage')).toHaveLength(1);
+        const later = new Date(Date.parse(first.validFrom) + 1000).toISOString();
+        await h.repo.executeAuthorityCommand(h.command('entitlement.update', 'later-start', INITIAL, proposal('zz-later-id', later)));
+        expect(h.memory.rows('dashboard_usage')).toHaveLength(2);
     });
 
     test('advisor projection selects current relevant permission and rejects ambiguity', async () => {
