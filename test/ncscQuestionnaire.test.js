@@ -2355,7 +2355,9 @@ describe('batched automatic save', () => {
             control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
             expect(h.records).toHaveLength(before + 1);
         } finally { ui.controller.destroy(); }
-    });
+    // Setting up 100 saved revisions through the real backend takes several
+    // seconds on a loaded machine; the behaviour checked here is not timing.
+    }, 30000);
     test('leaving the page cancels a waiting save, and zero switches it off', async () => {
         const h = await backend(), ui = await createInUi(h, { autosaveIdleMs: idle }), before = h.records.length;
         choose(ui, 0, 'yes'); ui.controller.destroy(); await settle();
