@@ -126,7 +126,8 @@ describe('Ask Fry private assessment priorities', () => {
         const source = fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/ncscQuestionnaire.js'), 'utf8');
         expect(source).toContain("node('h3', '', 'Fix these first')");
         expect(source).toContain("'View results'");
-        expect(source).toContain("['no', 'partial', 'unknown', 'not_applicable'].forEach");
+        // "Fix these first" lists No, Partial, Unknown and Not applicable answers, in that order.
+        expect(source).toContain("const NEXT_STEP_ORDER = ['no', 'partial', 'unknown', 'not_applicable'];");
         expect(source).toContain("'summary', '', 'Guidance and evidence examples'");
     });
 });
