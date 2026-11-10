@@ -121,3 +121,10 @@
 }
 
 .nf-assistant[data-shared-assistant] .assistant-prompts button { max-width: 100%; }
+
+/* Keep the launcher in document flow on narrow signed-in dashboards. */
+@media screen and (max-width: 48rem) {
+    body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] > .nf-assistant[data-shared-assistant] { width: min(1180px, calc(100% - 40px)); margin: 1rem auto; }
+    body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] > .nf-assistant .nf-assistant-launcher { position: static; }
+    body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(> .nf-assistant[data-shared-assistant]) > .home-footer { padding-right: 0; }
+}
