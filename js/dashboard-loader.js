@@ -25,6 +25,12 @@
     Object.keys(ids).forEach(function (key) { elements[key] = document.getElementById(ids[key]); });
     if (Object.keys(elements).some(function (key) { return !elements[key]; })) return;
     const accountMenu = document.getElementById('dashboardAccountMenu');
+    // Escape closes the account menu and returns focus to its summary.
+    if (accountMenu && typeof accountMenu.addEventListener === 'function') accountMenu.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || !accountMenu.open) return;
+        accountMenu.open = false;
+        const summary = accountMenu.querySelector && accountMenu.querySelector('summary'); if (summary) summary.focus();
+    });
     const accountActions = document.getElementById('dashboardAccountActions');
     const accountToggle = document.getElementById('dashboardAccountToggle');
     function setAccountMenuOpen(open) {
@@ -1111,7 +1117,9 @@
             if (!current(cycle)) throw invalid();
             return questionnaire.mount(root, { window: window, metadata: value.metadata, client: client,
                 presentationMode: value.presentationMode, organisationId: organisationId,
-                initialAssessmentId: presentation && presentation.initialAssessmentId });
+                initialAssessmentId: presentation && presentation.initialAssessmentId,
+                // Overview's first-use action opens the new-assessment step directly.
+                startNew: !!(presentation && presentation.startNew === true) });
         };
         const picture = window.NoFriesOrganisationPicture;
         let pictureSelection = null;

@@ -329,6 +329,7 @@
     {
       "route": "/api/external-customer-auth/callback",
       "methods": [
+        "GET",
         "POST"
       ],
       "allowedRoles": [

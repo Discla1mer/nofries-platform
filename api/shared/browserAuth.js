@@ -13,6 +13,11 @@ const SESSION_COOKIE_NAME = '__Host-nofries-auth';
 const TRANSACTION_COOKIE_NAME = '__Host-nofries-auth-tx';
 const RETAINED_READ_COOKIE_NAME = '__Host-nofries-retained-read';
 const RETAINED_READ_TRANSACTION_COOKIE_NAME = RETAINED_READ_COOKIE_NAME + '-tx';
+// Not authentication. After a customer signs out, this browser-only marker
+// makes the next external sign-in ask the provider for credentials again, so
+// the provider's own remembered session cannot silently sign them back in.
+const EXTERNAL_SIGNED_OUT_COOKIE_NAME = '__Host-nofries-external-signed-out';
+const EXTERNAL_SIGNED_OUT_TTL_SECONDS = 90 * 24 * 60 * 60;
 const COOKIE_NAME = SESSION_COOKIE_NAME;
 const TRANSACTION_KIND = 'oidc_transaction';
 const SESSION_KIND = 'browser_session';
@@ -94,6 +99,11 @@ function createBrowserAuthService(options = {}) {
         if (registration && (input.registration !== true || customerTransport !== 'external' || customerPurpose || selectAccount)) {
             throw new BrowserAuthError(400, 'browser_auth_registration_invalid');
         }
+        // A marker can only make sign-in stricter. Account creation keeps its
+        // own prompt, which never reuses a provider session.
+        const signedOut = customerTransport === 'external' && !registration && !selectAccount &&
+            hasExternalSignedOutMarker(input.cookieHeader);
+        const freshLogin = selectAccount || signedOut;
         ensureMsalClients();
         const returnTo = customerPurpose
             ? normaliseReturnTo(input.returnTo, config.publicOrigin, '/api/retained-results', RETAINED_RETURN_PATHS)
@@ -120,14 +130,14 @@ function createBrowserAuthService(options = {}) {
                 nonce,
                 codeChallenge: pkce.challenge,
                 codeChallengeMethod: 'S256',
-                ...(registration ? { prompt: 'create' } : selectAccount ? { prompt: 'login' } : customerTransport === 'external' ? {} : { prompt: 'select_account' }),
+                ...(registration ? { prompt: 'create' } : freshLogin ? { prompt: 'login' } : customerTransport === 'external' ? {} : { prompt: 'select_account' }),
                 ...(customer ? { claims: customer.claims,
-                    ...(!selectAccount && !registration && customer.loginHint ? { loginHint: customer.loginHint } : {}) } : {})
+                    ...(!freshLogin && !registration && customer.loginHint ? { loginHint: customer.loginHint } : {}) } : {})
             });
         } catch (error) {
             throw new BrowserAuthError(503, 'browser_auth_provider_unavailable');
         }
-        assertTrustedAuthorizationUrl(location, config, { state, nonce, challenge: pkce.challenge, selectAccount, registration });
+        assertTrustedAuthorizationUrl(location, config, { state, nonce, challenge: pkce.challenge, selectAccount: freshLogin, registration });
 
         const issuedAt = Number(now());
         await storeCall(() => store.createTransaction(correlationId, {
@@ -241,7 +251,8 @@ function createBrowserAuthService(options = {}) {
             return {
                 location: transaction.returnTo,
                 cookie,
-                ...(customerTransport === 'external' ? { cookies: [cookie, clearCookie(transactionCookie, 'None')] } : {}),
+                ...(customerTransport === 'external' ? { cookies: [cookie, clearCookie(transactionCookie, 'None'),
+                    clearCookie(EXTERNAL_SIGNED_OUT_COOKIE_NAME, 'Lax')] } : {}),
                 identity,
                 expiresAt: new Date(absoluteExpiresAt).toISOString()
             };
@@ -272,7 +283,9 @@ function createBrowserAuthService(options = {}) {
         }
         return {
             location: normaliseReturnTo(input.returnTo, config.publicOrigin, '/'),
-            cookie: clearCookie(sessionCookie, 'Lax')
+            cookie: customerTransport === 'external'
+                ? [clearCookie(sessionCookie, 'Lax'), externalSignedOutCookie()]
+                : clearCookie(sessionCookie, 'Lax')
         };
     }
 
@@ -815,6 +828,16 @@ function externalCustomerCallbackPurpose(cookieHeader) {
     const retained = optionalOpaqueCookie(cookieHeader, RETAINED_READ_TRANSACTION_COOKIE_NAME);
     if (ordinary && retained) throw new BrowserAuthError(400, 'browser_auth_callback_purpose_ambiguous');
     return retained ? 'retained_read' : undefined;
+}
+
+function externalSignedOutCookie() {
+    return makeCookie(EXTERNAL_SIGNED_OUT_COOKIE_NAME, '1', EXTERNAL_SIGNED_OUT_TTL_SECONDS, 'Lax');
+}
+
+// Tolerant on purpose: any copy of the marker asks for a fresh sign-in, and a
+// malformed copy must never block sign-in or be treated as an identifier.
+function hasExternalSignedOutMarker(header) {
+    return String(header || '').split(';').some(part => part.trim() === EXTERNAL_SIGNED_OUT_COOKIE_NAME + '=1');
 }
 
 function clearCookie(name, sameSite) {

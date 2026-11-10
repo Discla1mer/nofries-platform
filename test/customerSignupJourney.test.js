@@ -126,8 +126,10 @@ test('hung client times out, aborts and permits safe status reload; late result 
         await jest.advanceTimersByTimeAsync(60000);
         expect(signal.aborted).toBe(false);
         expect(f.root.getAttribute('aria-busy')).toBe('true');
+        expect(f.root.textContent).toContain('Working on it. This can take up to 20 seconds.');
         await jest.advanceTimersByTimeAsync(570000);
         expect(signal.aborted).toBe(true);
+        expect(f.root.textContent).not.toContain('Working on it.');
         expect(f.root.getAttribute('aria-busy')).toBe('false');
         expect(f.root.textContent).toContain('Signup is unavailable');
         f.root.querySelector('button').click(); await flush();
@@ -184,6 +186,42 @@ test('renders the exact organisation schedule before combined consent', async ()
         termsVersion: scheduled.termsVersion, termsDigest: scheduled.termsDigest,
         scheduleId: scheduled.scheduleId, scheduleDigest: scheduled.scheduleDigest, accepted: true
     }, { signal: expect.any(AbortSignal) });
+});
+
+test('summarises the schedule offer lines at a glance before the full schedule', async () => {
+    const scheduleText = ['No Fries complimentary starter dashboard schedule', 'Schedule: s; version: v',
+        'Access period: 14 days from account activation, as recorded in the canonical activation receipt.',
+        'Included: Overview, manual Cyber Security assessment and Improvement Plan.',
+        'Allowance: 5 assessment submissions and 1 user per organisation for this access period.',
+        'Price: NZ$0. No payment authority, automatic renewal or conversion to paid access.',
+        'Excluded: managed IT, monitoring, incident response, remediation, audit and certification.', ''].join('\n');
+    const f = setup({ ...TERMS, scheduleId: 'schedule-v1', scheduleText, scheduleDigest: 'b'.repeat(64) }); await f.view.ready;
+    const glance = f.root.querySelector('.signup-glance');
+    expect(glance).not.toBeNull();
+    const items = glance.querySelectorAll('li').map(item => item.textContent);
+    expect(items).toEqual(['Access period: 14 days from account activation.',
+        'Included: Overview, manual Cyber Security assessment and Improvement Plan.',
+        'Allowance: 5 assessment submissions and 1 user per organisation for this access period.',
+        'Price: NZ$0. No payment authority, automatic renewal or conversion to paid access.',
+        'Excluded: managed IT, monitoring, incident response, remediation, audit and certification.']);
+    expect(f.root.textContent.indexOf('At a glance')).toBeLessThan(f.root.textContent.indexOf('Organisation schedule'));
+    expect(glance.textContent).toContain('A module marked “Coming next” in your dashboard is not available yet.');
+    expect(f.root.textContent).toContain(scheduleText.trim());
+    f.view.dispose();
+});
+
+test('the representative can save a copy of the exact schedule and agreement before accepting', async () => {
+    const scheduled = { ...TERMS, scheduleId: 'schedule-v1', scheduleText: 'Synthetic organisation schedule.', scheduleDigest: 'b'.repeat(64) };
+    const f = setup(scheduled); await f.view.ready;
+    const parts = [], createObjectURL = jest.fn(() => 'blob:copy'), revokeObjectURL = jest.fn();
+    Object.assign(f.document.defaultView, { Blob: function (chunks, options) { parts.push(...chunks); this.type = options.type; },
+        URL: { createObjectURL, revokeObjectURL }, setTimeout: fn => fn() });
+    const save = f.root.querySelectorAll('button').find(node => node.textContent === 'Save a copy of these terms');
+    save.click();
+    expect(createObjectURL).toHaveBeenCalledTimes(1); expect(revokeObjectURL).toHaveBeenCalledWith('blob:copy');
+    expect(parts.join('')).toContain(scheduled.scheduleText); expect(parts.join('')).toContain(scheduled.termsText);
+    expect(f.client.acceptTerms).not.toHaveBeenCalled();
+    f.view.dispose();
 });
 
 test('offers a distinct protected resume action without asking for consent again', async () => {
