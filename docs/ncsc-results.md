@@ -13,8 +13,8 @@ Four measures remain separate:
   display the server values; self-attestation is not proof of effectiveness.
 - Risk priority: explicitly not calculated because the current evaluator requires
   a separate priority adapter. Suggested actions are in framework order.
-- Trend: no comparison available. The current submission requests no comparison;
-  a new trend needs the appropriate version/scope comparison contract.
+- Trend: not shown in this panel. The panel points to the Overview's Change over
+  time section, which compares submitted assessments on request.
 
 Native expandable domain and control panels show attainment, saved answers,
 pending N/A rationale, evidence state, weight, suggested actions and evidence

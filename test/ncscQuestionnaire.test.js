@@ -1277,7 +1277,7 @@ describe('submitted assessment results', () => {
         expect(metrics[2].querySelector('.ncsc-result-value').textContent).toBe('None recorded');
         expect(metrics[2].textContent).toContain('reflect your answers only');
         expect(metrics[2].textContent).toContain('Confidence is not assessed.');
-        expect(panel.textContent).toContain('Not calculated'); expect(panel.textContent).toContain('No comparison available');
+        expect(panel.textContent).toContain('Not calculated'); expect(panel.textContent).toContain('use Change over time on the Overview');
         expect(panel.querySelectorAll('.ncsc-result-control')).toHaveLength(metadata().controls.length);
         expect(panel.textContent).toContain('Suggested next actions'); expect(panel.textContent).toContain('Useful evidence');
         expect(panel.textContent).toContain('not an audit or certification');
