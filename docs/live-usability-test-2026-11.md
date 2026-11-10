@@ -118,7 +118,6 @@ home" headers, so the task in front of the visitor stays in focus.
 
 ## Test data written to production
 
-Accounts on the Mailosaur server `t0tolra0` (`smoke1`, `margaret.wilson`,
-`raj.patel`, `aroha.cafe`, `sam.keys`, `chris.morgan`, `alex.qa`, `alex.qa.1`
-and a partial `alex.qa.2`), their organisations, six submitted assessments
-and four Ask Fry questions. Remove them from the tenant and database.
+The test created synthetic accounts, organisations, submitted assessments
+and Ask Fry questions in production. The list and the cleanup steps are kept
+privately with the account operations, not in this repository.
