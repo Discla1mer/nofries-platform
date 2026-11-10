@@ -127,9 +127,9 @@ test.each(['viewer', 'membership', 'product', 'improvement-module', 'evidence-mo
     expect(h.auditEvents).toEqual([]);
 });
 
-test.each(['action', 'evidence', 'audit'])('expiry during %s withholds the complete candidate', async phase => {
+test.each(['action', 'evidence', 'audit'])('membership suspension during %s withholds the complete candidate', async phase => {
     const h = await harness();
-    h['after' + phase[0].toUpperCase() + phase.slice(1)] = () => h.clock.set(h.state.membershipState.memberships[0].validUntil);
+    h['after' + phase[0].toUpperCase() + phase.slice(1)] = () => { h.state.membershipState.memberships[0].status = 'suspended'; };
     await expect(h.resolve()).rejects.toMatchObject({ statusCode: 403 });
     expect(h.trace).not.toContain('commit');
 });

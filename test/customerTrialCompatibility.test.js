@@ -96,7 +96,7 @@ test('consultant clients inherit the original clamped account end and cannot res
         occurredAt: result.activationIntent.validUntil }));
 });
 
-test('new grants permit sixth and later submissions while seats, usage integrity and expiry stay bounded', () => {
+test('new grants permit sixth and later submissions while seats and usage integrity stay bounded', () => {
     const f = prepared(THREE_MONTH_PLAN_ID), s = f.result().nextState, grant = s.entitlementState.grants[0];
     let usage = s.usage[0];
     const spend = (amount = 1, limit = 'assessment_runs', at = f.input.occurredAt) => consumeEntitlementLimit(s.entitlementState, s.tenantAggregate,
@@ -107,7 +107,8 @@ test('new grants permit sixth and later submissions while seats, usage integrity
     assert.equal(usage.counters.assessment_runs, 25); assert.equal(grant.limits.assessment_runs, null);
     assert.deepEqual(validateUsage(usage, s.entitlementState), usage);
     assert.throws(() => spend(1, 'memberships'), /limit_exceeded/);
-    assert.throws(() => spend(1, 'assessment_runs', grant.validUntil), /quota_grant_mismatch/);
+    // Accounts do not expire: the grant still binds its counters after the recorded end.
+    assert.equal(spend(1, 'assessment_runs', grant.validUntil).grantId, grant.grantId);
     usage = { ...usage, counters: { ...usage.counters, assessment_runs: Number.MAX_SAFE_INTEGER } };
     assert.throws(() => spend(), /limit_exceeded/);
     assert.throws(() => validateUsage({ ...usage, counters: { ...usage.counters, assessment_runs: null } }, s.entitlementState));

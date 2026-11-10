@@ -173,7 +173,8 @@ function applyMembershipCommand(stateInput, tenantAggregate, commandInput) {
         } else {
             const [from, to] = targets[command.action];
             if (member.status !== from) fail('transition_not_allowed', 409);
-            if (command.action === 'resume' && now >= member.validUntil) fail('grant_expired', 409);
+            // Accounts do not expire: a suspended member can be restored
+            // after the recorded end of its window.
             member.status = to;
         }
         member.updatedAt = now;
@@ -189,8 +190,10 @@ function resolveActiveMembership(stateInput, tenantAggregate, selectorInput, now
     assertScope(state, scope);
     assertOrganisation(tenantAggregate, scope, true);
     if (now < state.updatedAt) fail('time_regression', 409);
+    // Accounts do not expire (owner decision, 10 November 2026). The recorded
+    // validUntil is retained but not enforced; status is the only block.
     const member = state.memberships.find(row => row.subjectKey === actor && row.status === 'active' &&
-        row.validFrom <= now && now < row.validUntil);
+        row.validFrom <= now);
     if (!member) fail('not_found', 404);
     return member;
 }

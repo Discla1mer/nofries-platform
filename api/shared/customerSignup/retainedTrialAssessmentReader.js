@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const { copy, fields, freeze, uuid, digest, revision, instant, hash, equal } = require('../appLifecycle/dashboardRuntimeRecords');
 const { normaliseStableIdentity } = require('../appLifecycle/dashboardOnboardingDomain');
 const { normaliseMembershipState } = require('../appLifecycle/membershipDomain');
-const { resolveEntitlements } = require('../appLifecycle/entitlementDomain');
+const { resolveEntitlements, TIERS } = require('../appLifecycle/entitlementDomain');
 const { resolveOrganisation } = require('../appLifecycle/tenantDomain');
 const { normalRole } = require('../appLifecycle/dashboardResourceAuthority');
 const { normaliseNcscSelector, projectNcscDetail } = require('../ncscAssessmentService');
@@ -106,13 +106,18 @@ function assertFacts(facts, account, index, slot, capture, at) {
             membership.updatedAt > at || !member || member.status !== 'active' || member.subjectKey !== actor ||
             member.validFrom !== a.occurredAt || member.validUntil !== a.validUntil || member.invitationId !== p.invitationId ||
             member.grantEvidenceId !== p.representativeAuthorityEvidenceId || !normalRole(member, 'assessment.read')) deny();
-        const currentEntitlements = resolveEntitlements(snapshot.entitlementState, snapshot.tenantAggregate, p.scope, at, snapshot.flags);
+        resolveEntitlements(snapshot.entitlementState, snapshot.tenantAggregate, p.scope, at, snapshot.flags); // Validates the retained state.
         const grant = snapshot.entitlementState.grants.find(item => item.grantId === selected.grantId);
         if (!grant || grant.status !== 'active' || grant.code !== 'dashboard_score' || grant.agreementRef !== p.schedule.scheduleId ||
             grant.validFrom !== a.validFrom || grant.validUntil !== a.validUntil ||
             !grant.modules.includes(MODULE_ID) || !grant.frameworks.some(f => f.moduleId === MODULE_ID &&
                 f.profileId === ACCEPTED_PROFILE_REF.profileId && f.version === ACCEPTED_PROFILE_REF.profileVersion) ||
-            currentEntitlements.product !== null ||
+            // This read-only lane stays defined by the recorded dates: it opens
+            // once the retained grant's window has passed and no dashboard
+            // product is inside its own window. (Ordinary access no longer
+            // ends then; this lane's behaviour is unchanged.)
+            snapshot.entitlementState.grants.some(item => item.status === 'active' && Object.hasOwn(TIERS, item.code) &&
+                item.validFrom <= at && at < item.validUntil) ||
             snapshot.flags.enabled.dashboard !== true || snapshot.flags.enabled.cyber_security !== true ||
             !snapshot.flags.frameworks.some(f => f.moduleId === MODULE_ID && f.profileId === ACCEPTED_PROFILE_REF.profileId &&
                 f.version === ACCEPTED_PROFILE_REF.profileVersion)) deny();

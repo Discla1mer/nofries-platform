@@ -251,14 +251,13 @@ test('an explicit caller retry after failed audit starts afresh and commits exac
     expect(h.committed.events[0].eventId).not.toBe(discardedId);
 });
 
-test.each(['writer-expiry', 'writer-revoked', 'owner-expiry', 'owner-revoked', 'clock-regression'])
+test.each(['writer-suspended', 'writer-revoked', 'owner-suspended', 'clock-regression'])
 ('%s during awaited audit rolls back both effects', async kind => {
     const h = await harness(), initial = await h.execute(), before = clone(h.committed);
     h.afterAudit = () => {
-        if (kind === 'writer-expiry') h.clock.set(h.state.membershipState.memberships[0].validUntil);
+        if (kind === 'writer-suspended') h.state.membershipState.memberships[0].status = 'suspended';
         if (kind === 'writer-revoked') h.state.flags.enabled.improvement_plan = false;
-        if (kind === 'owner-expiry') h.clock.set(h.state.membershipState.memberships.find(member => member.subjectKey === OWNER).validUntil);
-        if (kind === 'owner-revoked') h.state.membershipState.memberships.find(member => member.subjectKey === OWNER).status = 'suspended';
+        if (kind === 'owner-suspended') h.state.membershipState.memberships.find(member => member.subjectKey === OWNER).status = 'suspended';
         if (kind === 'clock-regression') h.clock.advance(-1);
     };
     const outcome = await capture(h.execute(command(initial.plan)));
@@ -326,11 +325,11 @@ test('lost COMMIT refuses a corrupt retained receipt rather than trusting an ope
     expect(h.audit.writeEvent).toHaveBeenCalledTimes(1);
 });
 
-test.each(['new', 'replay', 'reconcile'])('%s result is withheld when access expires during COMMIT, without claiming rollback', async kind => {
+test.each(['new', 'replay', 'reconcile'])('%s result is withheld when the writer is suspended during COMMIT, without claiming rollback', async kind => {
     const h = await harness();
     if (kind === 'replay') await h.execute();
     if (kind === 'reconcile') h.commitMode = 'lost-committed';
-    h.beforeCommit = () => h.clock.set(h.state.membershipState.memberships[0].validUntil);
+    h.beforeCommit = () => { h.state.membershipState.memberships[0].status = 'suspended'; };
     const outcome = await capture(h.execute()); assertPrivateError(outcome.error, 'improvement_access_denied', 403);
     expect(outcome.result).toBeUndefined(); expect(h.committed.revisions).toHaveLength(1); expect(h.committed.events).toHaveLength(1);
     expect(h.transactions.filter(tx => tx.status === 'rolled_back')).toHaveLength(kind === 'reconcile' ? 1 : 0);
@@ -356,7 +355,7 @@ test.each(['new', 'replay'])('%s post-COMMIT result requires current writer acce
 
 test('replay checks the current writer without re-granting historical owner membership or re-auditing', async () => {
     const h = await harness(), initial = await h.execute(), assign = command(initial.plan), assigned = await h.execute(assign);
-    h.clock.set(h.state.membershipState.memberships.find(member => member.subjectKey === OWNER).validUntil);
+    h.state.membershipState.memberships.find(member => member.subjectKey === OWNER).status = 'suspended';
     expect(await h.execute(assign)).toEqual(assigned);
     expect(h.committed.revisions).toHaveLength(2); expect(h.committed.events).toHaveLength(2);
     const deniedNew = await capture(h.execute(command(assigned.plan, 'start')));

@@ -211,24 +211,27 @@ test('editor audit failure rolls back its read event and withholds prepared comm
     expect(h.state.borrows).toBe(h.state.released);
 });
 
-test.each(['before', 'after'])('editor withholds advertised owner commands when eligibility expires %s COMMIT', async phase => {
+// Accounts do not expire: an owner's recorded membership end is not a loss of
+// eligibility, so crossing it mid-request no longer withholds or refuses.
+// Suspension and removal are covered by the owner-eligibility repository tests.
+test.each(['before', 'after'])('editor keeps advertised owner commands when the recorded membership end passes %s COMMIT', async phase => {
     const cutoff = '2026-09-07T11:00:30.000Z', h = await ready({ ownerEndsAt: cutoff });
     const generated = await h.improvement.execute(h.generate());
     await h.improvement.execute(h.command(generated.plan, 'assign', { ownerSubjectKey: OWNER, dueDate: '2026-09-08' }));
     const current = await h.improvement.editor({ planId: 'plan-a' });
     expect(current.actions.find(action => action.actionId === generated.plan.actions[0].actionId).commands).toEqual(['assign', 'start']);
-    const before = JSON.stringify(h.state.committed), auditCount = h.state.committed.auditRows.length, boundary = h.state.trace.length;
+    const auditCount = h.state.committed.auditRows.length, boundary = h.state.trace.length;
     const crossed = phase === 'before' ? crossCommandWindowDuringCommitPreparation(h, cutoff) : () => {};
     if (phase === 'after') h.state.hook = event => {
         if (event.phase === 'after' && event.sql === 'COMMIT') h.state.at = cutoff;
     };
-    await expect(h.improvement.editor({ planId: 'plan-a' })).rejects.toMatchObject({ code: 'improvement_owner_ineligible', statusCode: 409 });
-    crossed();
+    const later = await h.improvement.editor({ planId: 'plan-a' });
+    crossed(); expect(h.state.at).toBe(cutoff);
+    expect(later.actions.find(action => action.actionId === generated.plan.actions[0].actionId).commands).toEqual(['assign', 'start']);
     const trace = h.state.trace.slice(boundary);
-    expect(trace.filter(event => event.sql === 'COMMIT')).toHaveLength(phase === 'before' ? 0 : 1);
-    expect(trace.filter(event => event.sql === 'ROLLBACK')).toHaveLength(phase === 'before' ? 1 : 0);
-    if (phase === 'before') expect(JSON.stringify(h.state.committed)).toBe(before);
-    else expect(h.state.committed.auditRows).toHaveLength(auditCount + 1);
+    expect(trace.filter(event => event.sql === 'COMMIT')).toHaveLength(1);
+    expect(trace.filter(event => event.sql === 'ROLLBACK')).toHaveLength(0);
+    expect(h.state.committed.auditRows).toHaveLength(auditCount + 1);
     expect(h.state.committed.revisions).toHaveLength(2); expect(h.state.borrows).toBe(h.state.released);
 });
 
@@ -316,16 +319,14 @@ function crossCommandWindowDuringCommitPreparation(h, at) {
     return () => expect(crossed).toBe(true);
 }
 
-test('owner eligibility expiry during final COMMIT preparation refuses assignment before sending COMMIT', async () => {
+test('assignment commits when the owner\'s recorded membership end passes during final COMMIT preparation', async () => {
     const cutoff = '2026-09-07T11:00:30.000Z', h = await ready({ ownerEndsAt: cutoff });
-    const generated = await h.improvement.execute(h.generate()), before = JSON.stringify(h.state.committed);
+    const generated = await h.improvement.execute(h.generate());
     const boundary = h.state.trace.length, crossed = crossCommandWindowDuringCommitPreparation(h, cutoff);
-    await expect(h.improvement.execute(h.command(generated.plan, 'assign', {
-        ownerSubjectKey: OWNER, dueDate: '2026-09-08' }))).rejects.toMatchObject({
-        code: 'improvement_owner_ineligible', statusCode: 409 });
-    crossed(); expect(JSON.stringify(h.state.committed)).toBe(before);
-    expect(h.state.trace.slice(boundary).filter(event => event.sql === 'COMMIT')).toEqual([]);
-    expect(h.state.transactions.at(-1).status).toBe('rolled_back');
+    const assigned = await h.improvement.execute(h.command(generated.plan, 'assign', { ownerSubjectKey: OWNER, dueDate: '2026-09-08' }));
+    crossed(); expect(assigned.plan.revision).toBe(generated.plan.revision + 1);
+    expect(h.state.trace.slice(boundary).filter(event => event.sql === 'COMMIT')).toHaveLength(1);
+    expect(h.state.transactions.at(-1).status).toBe('committed');
 });
 
 test('replay after its saved owner expires retains the original current-writer-only disclosure policy', async () => {

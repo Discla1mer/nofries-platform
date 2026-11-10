@@ -190,10 +190,9 @@ test('an explicit read-only advisor gets all retained identities with no owner c
     expect(h.committedAudit).toHaveLength(1);
 });
 
-test.each(['expired', 'suspended', 'foreign-organisation', 'removed'])('current %s owner loses owner-dependent commands without exposing identity', async kind => {
+test.each(['suspended', 'foreign-organisation', 'removed'])('current %s owner loses owner-dependent commands without exposing identity', async kind => {
     const h = await harness();
     const member = h.state.membershipState.memberships.find(row => row.subjectKey === OWNER);
-    if (kind === 'expired') h.clock.set(member.validUntil);
     if (kind === 'suspended') member.status = 'suspended';
     if (kind === 'removed') member.status = 'removed';
     if (kind === 'foreign-organisation') {
@@ -201,15 +200,6 @@ test.each(['expired', 'suspended', 'foreign-organisation', 'removed'])('current 
         // organisation's current canonical membership state.
         h.state.membershipState.memberships = h.state.membershipState.memberships.filter(row => row.subjectKey !== OWNER);
         h.state.membershipState.invitations = h.state.membershipState.invitations.filter(row => row.subjectKey !== OWNER);
-    }
-    if (kind === 'expired') {
-        // Leave the actor/product valid while this separately granted owner ends.
-        const actorEnd = '2026-10-04T00:00:00.000Z';
-        const actor = h.state.membershipState.memberships.find(row => row.subjectKey === h.subjectKey);
-        actor.validUntil = actorEnd;
-        h.state.membershipState.invitations.find(row => row.subjectKey === h.subjectKey).validUntil = actorEnd;
-        h.state.membershipState.invitations.find(row => row.subjectKey === h.subjectKey).expiresAt = actorEnd;
-        h.state.entitlementState.grants.forEach(row => { row.validUntil = actorEnd; });
     }
     const result = await h.editor();
     expect(result.canWrite).toBe(true); expect(h.action(result, 1).commands).toEqual(['assign', 'block']);
@@ -280,9 +270,11 @@ test.each(['audit', 'finalizing', 'settlement'])('writer-only expiry during %s w
     expect(h.trace.includes('commit')).toBe(phase === 'settlement');
 });
 
-test.each(['audit', 'finalizing', 'settlement'])('advertised owner expiry during %s withholds the complete response', async phase => {
+test.each(['audit', 'finalizing', 'settlement'])('advertised owner suspension during %s withholds the complete response', async phase => {
+    // Membership no longer expires; a mid-flight suspension is the remaining loss of owner eligibility.
     const until = '2026-10-02T00:00:01.000Z', h = await harness({ ownerEndsAt: until });
-    h[phase === 'audit' ? 'afterAudit' : phase === 'finalizing' ? 'beforeCommit' : 'afterCommit'] = () => h.clock.set(until);
+    h[phase === 'audit' ? 'afterAudit' : phase === 'finalizing' ? 'beforeCommit' : 'afterCommit'] = () => {
+        h.clock.set(until); h.state.membershipState.memberships.find(row => row.subjectKey === OWNER).status = 'suspended'; };
     await expect(h.editor()).rejects.toMatchObject({ code: 'improvement_owner_ineligible', statusCode: 409 });
     expect(h.database.withTenantTransaction).toHaveBeenCalledTimes(1);
     expect(h.pendingAudit).toHaveLength(1); expect(h.committedAudit).toHaveLength(phase === 'settlement' ? 1 : 0);

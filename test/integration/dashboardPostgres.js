@@ -484,7 +484,7 @@ module.exports = function registerDashboardPostgresTests() {
             await expectNoReservation(current.scope);
         });
 
-        test('samples trusted time after the lock wait and denies an entitlement at its exclusive expiry boundary', async () => {
+        test('a reservation waiting on a lock past the product\'s recorded end is still accepted', async () => {
             const current = await seed({ grantEndsAt: '2026-09-06T10:00:00.000Z' });
             let pending;
             await holdingTenant(current.scope, async blocker => {
@@ -494,8 +494,7 @@ module.exports = function registerDashboardPostgresTests() {
                 await blocker.query('COMMIT');
             });
             const result = await pending;
-            expect(result.ok).toBe(false); expect(result.error.code).toBe('dashboard_quota_denied');
-            await expectNoReservation(current.scope);
+            expect(result.error).toBeUndefined(); expect(result.ok).toBe(true); // Accounts do not expire.
         });
 
         test('rechecks current authority before returning an old receipt after revocation', async () => {

@@ -663,7 +663,9 @@ function currentAdmission(inv, value, target, identity, expectedEffect, terminal
     if (!value || !equal(value.scope, target)) denied();
     if (terminal) return value;
     const at = inv.now(), p = value.payload;
-    if (p.decision !== 'eligible' || at < p.validFrom || at >= p.validUntil ||
+    // Accounts do not expire: validUntil is recorded, not enforced. A
+    // withdrawn decision, changed identity policy or effect still denies.
+    if (p.decision !== 'eligible' || at < p.validFrom ||
         identity && (p.identityPolicyRef.policyId !== identity.policyId || p.identityPolicyRef.policyRevision !== identity.policyRevision) ||
         expectedEffect && p.approvedEffectSha256 !== expectedEffect) denied();
     return value;
@@ -684,7 +686,7 @@ async function canonicalAuthority(inv, tx, target, update = false) {
 }
 function bindingCurrent(inv, binding, authority) {
     if (!binding || binding.status !== 'active' || !equal(binding.identity, inv.capture.identityPayload) || binding.subjectKey !== subjectOf(inv.capture.identityPayload)) denied();
-    const at = inv.now(); if (at < binding.validFrom || at >= binding.validUntil || at < binding.updatedAt) denied();
+    const at = inv.now(); if (at < binding.validFrom || at < binding.updatedAt) denied();
     let member;
     try { member = resolveActiveMembership(authority.membershipState, authority.tenantAggregate, { ...binding.scope, subjectKey: binding.subjectKey }, at);
         resolveEntitlements(authority.entitlementState, authority.tenantAggregate, binding.scope, at, authority.flags); }
@@ -716,19 +718,21 @@ function finalAuthorityAt(frame, at) {
     // codec. Structural identity/lineage checks stay at their charged sites.
     const { capture: c, instance, gate, admission, caseState, proof, binding, member } = frame;
     if (frame.starterParent) finalAuthorityAt(frame.starterParent, at);
-    if (frame.starterProduct && (at < frame.starterProduct.validFrom || at >= frame.starterProduct.validUntil)) denied();
+    // Account-level windows (product, admission, binding, membership) have no
+    // enforced end; session, gate, proof and case deadlines below still do.
+    if (frame.starterProduct && at < frame.starterProduct.validFrom) denied();
     if (c && (at < c.issuedAt || !frame.terminalSession && at >= c.expiresAt)) denied();
     if (instance && at < instance.changedAt) denied();
     if (gate && (at < gate.updatedAt || !frame.terminalSession && (gate.status !== 'active' || at >= gate.expiresAt))) denied();
     if (admission) {
         const p = admission.payload;
-        if (at < p.occurredAt || !frame.terminalAdmission && (p.decision !== 'eligible' || at < p.validFrom || at >= p.validUntil)) denied();
+        if (at < p.occurredAt || !frame.terminalAdmission && (p.decision !== 'eligible' || at < p.validFrom)) denied();
     }
     if (caseState && at < caseState.updatedAt) denied();
     if (proof && (at < proof.verifiedAt || at >= proof.freshUntil)) denied();
-    if (binding && (binding.status !== 'active' || at < binding.updatedAt || at < binding.validFrom || at >= binding.validUntil)) denied();
+    if (binding && (binding.status !== 'active' || at < binding.updatedAt || at < binding.validFrom)) denied();
     if (member && (at < member.updatedAt || member.row.status !== 'active' || member.tenant.recordStatus !== 'active' ||
-        member.organisation.recordStatus !== 'active' || at < member.row.validFrom || at >= member.row.validUntil)) denied();
+        member.organisation.recordStatus !== 'active' || at < member.row.validFrom)) denied();
     if (frame.freshCaseAcceptBefore && at >= frame.freshCaseAcceptBefore ||
         frame.freshApprovalAcceptBefore && at >= frame.freshApprovalAcceptBefore) denied();
     if (frame.freshMembership && (at < frame.freshMembership.validFrom || at >= frame.freshMembership.validUntil)) denied();
@@ -2042,10 +2046,9 @@ async function approvedCustomerMutation(options, request, input) {
     }
     original = await approved();
     const approval = original.approval, commands = customerActivation.buildActivationCommands(approval), target = approval.scope;
-    // Keep both independent approvals live through the driver's final COMMIT
+    // Keep the independent approval live through the driver's final COMMIT
     // dispatch, including timeout-setting I/O after the last Blob read.
-    inv.intersect(approval.expiresAt);
-    inv.intersect(new Date(original.authority.expiresAt).toISOString());
+    inv.intersect(approval.expiresAt); // The staff approval expires; the account's recorded end date does not bind.
     inv.command = commandInput('publishExistingMembershipBinding', commands.pub);
     inv.activation = { approval, phase: selector.phase };
     const work = async tx => {

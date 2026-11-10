@@ -65,9 +65,9 @@ test.each(['missing', 'wrong-module', 'expired', 'ambiguous', 'service-disabled'
     if (kind === 'service-disabled') h.state.flags.enabled['service:fractional_advisory'] = false;
     await expect(h.execute()).rejects.toMatchObject({ code: 'evidence_access_denied' }); expect(h.read).not.toHaveBeenCalled();
 });
-test.each(['read', 'audit'])('authority expiry after %s withholds metadata and prevents commit', async phase => {
-    const h = await harness(), expire = () => h.clock.set(h.state.membershipState.memberships[0].validUntil);
-    h[phase === 'read' ? 'afterRead' : 'afterAudit'] = expire;
+test.each(['read', 'audit'])('membership suspension after %s withholds metadata and prevents commit', async phase => {
+    const h = await harness(), suspend = () => { h.state.membershipState.memberships[0].status = 'suspended'; };
+    h[phase === 'read' ? 'afterRead' : 'afterAudit'] = suspend;
     await expect(h.execute()).rejects.toMatchObject({ code: 'evidence_access_denied' }); expect(h.trace).not.toContain('commit');
 });
 test('an audit failure withholds a successful metadata lookup', async () => {

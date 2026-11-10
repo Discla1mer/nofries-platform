@@ -336,7 +336,7 @@ describe('read-only portfolio request authority', () => {
     });
     test('retains target expiry checks after final COMMIT settles', async () => {
         const cutoff = '2026-09-07T09:00:01.000Z';
-        const f = portfolioHarness({ grantEndsAt: cutoff }), portfolio = await f.bindPortfolio();
+        const f = portfolioHarness({ sessionEndsAt: cutoff }), portfolio = await f.bindPortfolio();
         await portfolio.listBindings({ afterBindingId: null, limit: 1 });
         await readTarget(f, portfolio, f.binding.bindingId);
         f.state.queueHook = event => { if (event.phase === 'after' && event.sql === 'COMMIT') f.state.at = cutoff; };
@@ -345,7 +345,7 @@ describe('read-only portfolio request authority', () => {
     });
     test.each(['target', 'deadline'])('rechecks %s expiry in the caller continuation after finish resolves', async boundary => {
         const cutoff = '2026-09-07T09:00:01.000Z';
-        const f = portfolioHarness(boundary === 'target' ? { grantEndsAt: cutoff } : {}), portfolio = await f.bindPortfolio();
+        const f = portfolioHarness(boundary === 'target' ? { sessionEndsAt: cutoff } : {}), portfolio = await f.bindPortfolio();
         await portfolio.listBindings({ afterBindingId: null, limit: 1 });
         await readTarget(f, portfolio, f.binding.bindingId);
         await portfolio.finish();
@@ -775,10 +775,9 @@ describe('Dashboard final observed authority and remaining SQL lifetime', () => 
     }
     function fixtureFor(kind) {
         return harness(kind === 'session/capture' ? { sessionEndsAt: CUTOFF }
-            : kind === 'binding/member' ? { membershipEndsAt: CUTOFF }
-                : kind === 'admission' ? { admissionEndsAt: CUTOFF }
-                    : kind === 'product/framework' ? { grantEndsAt: CUTOFF }
-                        : kind === 'advisor assignment' ? { role: 'fractional_advisor', service: true, assignmentEndsAt: CUTOFF }
+            // Account-level windows (binding, membership, admission, product) no
+            // longer end; the session, advisor grants, quota policy and deadline do.
+            : kind === 'advisor assignment' ? { role: 'fractional_advisor', service: true, assignmentEndsAt: CUTOFF }
                             : kind === 'advisor service' ? { role: 'fractional_advisor', service: true, serviceEndsAt: CUTOFF } : {});
     }
     async function execute(f, binding, work = async () => true) {
@@ -793,7 +792,7 @@ describe('Dashboard final observed authority and remaining SQL lifetime', () => 
         expect(trace.slice(-2).map(e => e.sql)).toEqual(['SET LOCAL statement_timeout = 0', 'ROLLBACK']);
         expect(f.state.borrows).toBe(f.state.released);
     }
-    test.each(['session/capture', 'binding/member', 'admission', 'product/framework', 'deadline'])
+    test.each(['session/capture', 'deadline'])
     ('asynchronous quota read cannot outlive %s authority or request budget', async kind => {
         const f = fixtureFor(kind), binding = await f.bind(), boundary = f.state.trace.length;
         const started = deferred(), hold = deferred();
@@ -843,7 +842,7 @@ describe('Dashboard final observed authority and remaining SQL lifetime', () => 
             expect(f.state.trace).toHaveLength(settled);
         } finally { jest.useRealTimers(); }
     });
-    test.each(['session/capture', 'binding/member', 'admission', 'product/framework', 'advisor assignment', 'advisor service', 'quota'])
+    test.each(['session/capture', 'advisor assignment', 'advisor service', 'quota'])
     ('the first sample after actual final predicates rechecks %s', async kind => {
         const f = fixtureFor(kind), binding = await f.bind();
         if (kind === 'quota') f.options.resolveSubmissionQuota.mockImplementation(createNcscAdapters({ now: () => f.state.at }, { validUntil: CUTOFF }).resolveSubmissionQuota);
@@ -853,6 +852,17 @@ describe('Dashboard final observed authority and remaining SQL lifetime', () => 
         mockAfterAccess = () => { if (!armed) { armed++; f.state.at = CUTOFF; } };
         await expectFailure(() => execute(f, binding, work), NcscAssessmentError, 'ncsc_access_denied', 403);
         expect(armed).toBe(1); noCommit(f, boundary);
+    });
+    test.each(['binding/member', 'admission', 'product/framework'])
+    ('a recorded %s end passing during the request does not deny: accounts do not expire', async kind => {
+        const f = harness(kind === 'binding/member' ? { membershipEndsAt: CUTOFF } : kind === 'admission' ? { admissionEndsAt: CUTOFF }
+            : { grantEndsAt: CUTOFF }), binding = await f.bind();
+        let armed = 0; mockAfterAccess = () => { if (!armed) { armed++; f.state.at = CUTOFF; } };
+        expect(await execute(f, binding, async () => 'still-valid-after-recorded-end')).toBe('still-valid-after-recorded-end');
+        expect(armed).toBe(1);
+        // A later request, wholly after the recorded end, binds and works as well.
+        expect(await execute(f, await f.bind(), async () => 'valid-later')).toBe('valid-later');
+        expect(f.state.borrows).toBe(f.state.released);
     });
     test.each(['authority', 'deadline'])('pre-COMMIT %s failure retains its original known-rollback classification', async kind => {
         const f = fixtureFor('session/capture'), binding = await f.bind(), boundary = f.state.trace.length; let armed = 0;
@@ -1199,8 +1209,7 @@ describe('Dashboard host fixed operation and temporal projection', () => {
         expect(f.state.borrows).toBe(f.state.released);
     });
     test('HN-G11 event-proved recovery retains a later genuine authority denial', async () => {
-        const f = harness(); let lost = false, decisions = 0, recoveryStart;
-        f.snapshot.entitlementState.grants.find(grant => grant.grantId === 'synthetic-product').validUntil = HOST_END;
+        const f = harness({ sessionEndsAt: HOST_END }); let lost = false, decisions = 0, recoveryStart;
         f.state.hook = event => {
             if (event.phase !== 'after' || event.sql !== 'COMMIT' || lost || !f.state.auditRows.size) return;
             lost = true; recoveryStart = f.state.trace.length;
@@ -1266,9 +1275,9 @@ describe('Dashboard host fixed operation and temporal projection', () => {
         expect(f.options.resolveSubmissionQuota).not.toHaveBeenCalled();
         return { f, result, first };
     }
-    test('HG01 product expiry after genuine final decision refuses at sealed tail', async () => {
-        const { f, result } = await sealedScenario('product');
-        expect(result.error).toBeInstanceOf(DashboardPersistenceError); expect(result.error.code).toBe('dashboard_unavailable'); expectHostSettled(f, false);
+    test('HG01 a product passing its recorded end after the genuine final decision stays allowed', async () => {
+        // Accounts do not expire: with no successor the same product, and so the same display vector, still applies.
+        const { f, result } = await sealedScenario('product'); expect(result.error).toBeUndefined(); expect(result.value.status).toBe(200); expectHostSettled(f, true);
     });
     test('HG02 retained future product cannot turn a sealed denied buffer into success', async () => {
         const { f, result, first } = await sealedScenario('future'); expect(first.outcome).toBe('denied');
@@ -1323,7 +1332,7 @@ describe('request-bound evidence read settlement', () => {
         const boundary = f.state.trace.length;
         await expectFailure(() => execute(f, binding, async () => {
             if (kind === 'module') f.snapshot.flags.enabled.evidence = false;
-            if (kind === 'product') f.snapshot.entitlementState.grants.find(g => g.grantId === 'synthetic-product').validUntil = NOW;
+            if (kind === 'product') f.snapshot.entitlementState.grants.find(g => g.grantId === 'synthetic-product').status = 'revoked';
             if (kind === 'advisor') f.snapshot.advisorAssignments[0].permissions = ['assessment.read'];
             return 'must-not-disclose';
         }), ErrorType(), 'evidence_access_denied', 403);
@@ -1332,9 +1341,9 @@ describe('request-bound evidence read settlement', () => {
         expect(trace.filter(e => e.sql === 'ROLLBACK')).toHaveLength(1);
         expect(f.state.borrows).toBe(f.state.released);
     });
-    test.each(['membership', 'product', 'advisor'])('acknowledged COMMIT crossing %s expiry withholds buffered metadata', async kind => {
-        const options = kind === 'membership' ? { membershipEndsAt: CUTOFF } : kind === 'product'
-            ? { grantEndsAt: CUTOFF } : { role: 'fractional_advisor', service: true, assignmentEndsAt: CUTOFF };
+    test.each(['session', 'advisor'])('acknowledged COMMIT crossing %s expiry withholds buffered metadata', async kind => {
+        const options = kind === 'session' ? { sessionEndsAt: CUTOFF }
+            : { role: 'fractional_advisor', service: true, assignmentEndsAt: CUTOFF };
         const f = evidenceHarness(options), binding = await f.bind(), boundary = f.state.trace.length;
         f.state.hook = e => { if (e.phase === 'after' && e.sql === 'COMMIT') f.state.at = CUTOFF; };
         await expectFailure(() => execute(f, binding), ErrorType(), 'evidence_access_denied', 403);
@@ -1344,7 +1353,7 @@ describe('request-bound evidence read settlement', () => {
         expect(f.state.borrows).toBe(f.state.released);
     });
     test('pre-COMMIT expiry rolls back and retains the typed evidence refusal', async () => {
-        const f = evidenceHarness({ grantEndsAt: CUTOFF }), binding = await f.bind(), boundary = f.state.trace.length;
+        const f = evidenceHarness({ sessionEndsAt: CUTOFF }), binding = await f.bind(), boundary = f.state.trace.length;
         mockAfterWork = () => { f.state.at = CUTOFF; };
         await expectFailure(() => execute(f, binding), ErrorType(), 'evidence_access_denied', 403);
         const trace = f.state.trace.slice(boundary);
@@ -1642,7 +1651,7 @@ describe('explicit request-bound improvement operations', () => {
         expect(trace.filter(e => e.sql === 'ROLLBACK')).toHaveLength(1);
     });
     test.each(cases)('%s withholds disclosure after acknowledged COMMIT crosses access expiry', async (operation, Type, prefix) => {
-        const f = improvementHarness({ grantEndsAt: CUTOFF }), binding = await f.bind(), context = await f.context(binding);
+        const f = improvementHarness({ sessionEndsAt: CUTOFF }), binding = await f.bind(), context = await f.context(binding);
         const boundary = f.state.trace.length;
         f.state.hook = event => { if (event.phase === 'after' && event.sql === 'COMMIT') f.state.at = CUTOFF; };
         await expectFailure(() => execute(f, binding, context, operation), Type, prefix + '_access_denied', 403);
@@ -1838,18 +1847,18 @@ describe('mounted Improvement Plan readiness projection', () => {
         expect(decisions).toBe(2); expectHostSettled(f, false);
         expect([...f.state.auditRows.values()][0].payload.outcome).toBe('succeeded');
     });
-    test('product expiry after the final decision prevents COMMIT of a ready projection', async () => {
-        const f = configured({ grantEndsAt: HOST_END }); let decisions = 0;
+    test('session expiry after the final decision prevents COMMIT of a ready projection', async () => {
+        const f = configured({ sessionEndsAt: HOST_END }); let decisions = 0;
         mockAfterHostDecision = () => { if (++decisions === 2) f.state.at = HOST_END; };
-        await expectFailure(() => hostRead(f, 'modules/improvement_plan'), DashboardPersistenceError, 'unavailable', 503);
+        await expectFailure(() => hostRead(f, 'modules/improvement_plan'), DashboardPersistenceError, 'access_denied', 403);
         expect(decisions).toBe(2); expectHostSettled(f, false);
     });
-    test('product expiry after acknowledged COMMIT withholds ready display without claiming rollback', async () => {
-        const f = configured({ grantEndsAt: HOST_END });
+    test('session expiry after acknowledged COMMIT withholds ready display without claiming rollback', async () => {
+        const f = configured({ sessionEndsAt: HOST_END });
         f.state.hook = event => {
             if (event.phase === 'after' && event.sql === 'COMMIT' && f.state.auditRows.size) f.state.at = HOST_END;
         };
-        await expectFailure(() => hostRead(f, 'modules/improvement_plan'), DashboardPersistenceError, 'unavailable', 503);
+        await expectFailure(() => hostRead(f, 'modules/improvement_plan'), DashboardPersistenceError, 'access_denied', 403);
         expectHostSettled(f, true); expect(f.state.auditRows.size).toBe(1);
     });
     test('combined opt-ins preserve the independently qualified NCSC metadata behavior', async () => {

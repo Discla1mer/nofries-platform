@@ -880,8 +880,8 @@ function sessionAt(seed, at, active) {
 
 function sessionBinding(binding, bindingId, identity, at) {
     if (binding.bindingId !== bindingId || !same(binding.identity, identity) ||
-        binding.status !== 'active' || binding.validFrom > at || binding.validUntil <= at ||
-        binding.updatedAt > at) denied();
+        binding.status !== 'active' || binding.validFrom > at ||
+        binding.updatedAt > at) denied(); // Accounts do not expire: validUntil is recorded, not enforced.
 }
 
 function sessionInitial(command, facts, kind, status) {

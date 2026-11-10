@@ -655,12 +655,11 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             expect(await h.audits()).toEqual([]); expect(await businessRows(example)).toEqual(before);
         });
 
-        test('expiry at genuine successful COMMIT withholds the list while retaining its already committed audit', async () => {
+        test('a recorded membership end passing at genuine successful COMMIT still returns the list with its committed audit', async () => {
             const { example } = await generated(), before = await businessRows(example);
             const h = await sourceHarness(example, { afterCommit() { clock.set(example.state.membershipState.memberships[0].validUntil); } });
             const outcome = await capture(h.list());
-            expect(outcome.value).toBeUndefined();
-            expect(outcome.error).toMatchObject({ code: 'improvement_list_access_denied', statusCode: 403 });
+            expect(outcome.error).toBeUndefined(); expect(outcome.value).toBeDefined(); // Accounts do not expire.
             expect(h.boundaries).toEqual(['BEGIN', 'COMMIT']);
             expect(h.transactions).toHaveLength(1); expect(h.auditTransactions).toEqual(h.transactions);
             expect(await h.audits()).toEqual([expect.objectContaining({ transaction_id: h.transactions[0],

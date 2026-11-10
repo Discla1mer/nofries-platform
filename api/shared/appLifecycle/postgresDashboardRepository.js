@@ -216,7 +216,8 @@ function createPostgresDashboardRepository(options) {
             policy.limit !== 'assessment_runs' || policy.amount < 1 ||
             !(policy.validFrom <= selection.at && selection.at < policy.validUntil) ||
             product.grantId !== policy.productGrantId || product.agreementRef !== policy.agreementRef ||
-            !(product.validFrom <= selection.at && selection.at < product.validUntil)) ncscFail();
+            // Accounts do not expire: the product's recorded end is not enforced.
+            product.validFrom > selection.at) ncscFail();
         return freeze(policy);
     }
     async function selectQuota(snapshot, context, command, decision, version, at) {
@@ -365,7 +366,7 @@ function createPostgresDashboardRepository(options) {
             const finalAt = now();
             const finalDecision = ncscAccess(snapshot, context, 'assessment.write', finalAt);
             if (quota && (finalDecision.product.grantId !== quota.policy.productGrantId ||
-                !(quota.productGrant.validFrom <= finalAt && finalAt < quota.productGrant.validUntil) ||
+                quota.productGrant.validFrom > finalAt ||
                 !(quota.policy.validFrom <= finalAt && finalAt < quota.policy.validUntil))) ncscFail('ncsc_access_denied', 403);
             return freeze(receiptValue.result);
         });

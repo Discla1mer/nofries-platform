@@ -597,7 +597,8 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             expect((await assessmentRows(example.scope)).dashboard_ncsc_assessment_receipts).toHaveLength(1);
         });
 
-        test('samples trusted time after lock waits and rolls back expiry after awaited writes', async () => {
+        test('a product passing its recorded end during a lock wait or awaited writes is not denied', async () => {
+            // Accounts do not expire: both crossings used to refuse with ncsc_access_denied.
             const expires = '2026-09-07T09:01:00.000Z';
             const example = await seed({ grantEndsAt: expires });
             let pending;
@@ -605,19 +606,18 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 pending = capture(repository.executeNcscAssessment(example.context, createCommand()));
                 await waitForBlockedTenantQuery(); clock.set(expires); await blocker.query('COMMIT');
             });
-            expect((await pending).error.code).toBe('ncsc_access_denied');
-            clock.set(NOW); await ready(example);
-            const before = await assessmentRows(example.scope);
+            expect((await pending).error).toBeUndefined();
+            await repository.executeNcscAssessment(example.context, saveCommand());
             const expiring = interceptQuery(async (sql, params, query) => {
                 const result = await query();
                 if (sql.startsWith('INSERT INTO nofries.dashboard_ncsc_assessment_receipts')) clock.set(expires);
                 return result;
             });
-            await expect(makeRepository(expiring).executeNcscAssessment(example.context, submitCommand())).rejects.toMatchObject({ code: 'ncsc_access_denied' });
-            expect(await assessmentRows(example.scope)).toEqual(before);
+            expect((await makeRepository(expiring).executeNcscAssessment(example.context, submitCommand())).assessment.status).toBe('submitted');
+            expect((await usageOf(example.scope)).counters.assessment_runs).toBe(1);
         });
 
-        test('authorization ends at the final check; expiry during later COMMIT does not rewrite a committed response', async () => {
+        test('a recorded product end passing during COMMIT neither rewrites the committed response nor blocks its replay', async () => {
             const expires = '2026-09-07T09:01:00.000Z', example = await seed({ grantEndsAt: expires }); await ready(example);
             const expiresAtCommit = { withTenantTransaction: (tenantId, work) => database.withTenantTransaction(tenantId, async tx => {
                 const result = await work(tx); clock.set(expires); return result;
@@ -625,7 +625,8 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             const result = await makeRepository(expiresAtCommit).executeNcscAssessment(example.context, submitCommand());
             expect(result.assessment.status).toBe('submitted');
             expect((await usageOf(example.scope)).counters.assessment_runs).toBe(1);
-            await expect(repository.executeNcscAssessment(example.context, submitCommand())).rejects.toMatchObject({ code: 'ncsc_access_denied' });
+            expect((await repository.executeNcscAssessment(example.context, submitCommand())).assessment.status).toBe('submitted');
+            expect((await usageOf(example.scope)).counters.assessment_runs).toBe(1); // Replay is not charged again.
         });
 
         test('a first submission cannot charge an expired grant when a future zero-quota grant activates during receipt I/O', async () => {
@@ -707,12 +708,12 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             expect(await assessmentRows(example.scope)).toEqual(before);
         });
 
-        test('a read whose awaited audit sink crosses expiry returns access denied without an assessment body', async () => {
+        test('a read whose awaited audit sink crosses the recorded product end still returns its assessment', async () => {
             const expires = '2026-09-07T09:01:00.000Z', example = await seed({ grantEndsAt: expires }); await ready(example);
             const before = await assessmentRows(example.scope);
             const expiringAudit = createNcscAdapters(clock, { writeEvent: async () => { await Promise.resolve(); clock.set(expires); } });
-            await expect(makeRepository(database, expiringAudit).readNcscAssessment(example.context, { assessmentId: 'assessment-a' }))
-                .rejects.toMatchObject({ code: 'ncsc_access_denied', statusCode: 403 });
+            const read = await makeRepository(database, expiringAudit).readNcscAssessment(example.context, { assessmentId: 'assessment-a' });
+            expect(read.assessment.assessmentId).toBe('assessment-a'); // Accounts do not expire.
             expect(await assessmentRows(example.scope)).toEqual(before);
         });
 

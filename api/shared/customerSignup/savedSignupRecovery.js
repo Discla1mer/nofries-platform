@@ -35,7 +35,7 @@ function recoveryAuthorization(raw, context, at) {
     if (invitation.status !== 'invited' || invitation.acceptance !== null ||
         invitation.tokenDigest !== current.invitationDigest || invitation.expectedEmail !== current.email ||
         invitation.createdAt > at || invitation.expiresAt <= at ||
-        value.expiresAt > Math.min(invitation.expiresAt, current.expiresAt) ||
+        value.expiresAt > invitation.expiresAt ||
         REFERENCE_KEYS.filter(key => key !== 'subjectKey').some(key => invitation[key] !== current[key])) fail();
     return value;
 }
