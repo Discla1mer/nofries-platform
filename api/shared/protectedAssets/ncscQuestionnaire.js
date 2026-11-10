@@ -961,7 +961,7 @@
             if (results.substantiated === '0.0%' && results.tested === '0.0%') {
                 metric('Supporting evidence', 'None recorded', 'No supporting evidence has been recorded for this submission, so these results reflect your answers only. Confidence is not assessed.');
             } else metric('Supporting evidence', results.substantiated, 'Current substantiated evidence coverage. Tested coverage: ' + results.tested + '. Confidence is not assessed. Self-attested answers alone do not demonstrate effectiveness.');
-            panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: No comparison available; changes require comparable assessment versions and scope.'));
+            panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
             panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Pending N/A claims: ' + results.pending + '.'));
             panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. N/A stays in the denominator unless formally approved; N/A approval is not available in this journey. This is a No Fries calculation, not an NCSC score.'));
             panel.append(node('h3', '', 'Explore NCSC functions and assessment topics'));
