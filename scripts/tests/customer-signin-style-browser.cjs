@@ -59,7 +59,10 @@ const cases = [
     { name: 'resume-acceptance', state: { status: 'resume_acceptance' }, heading: 'Complete account setup' },
     { name: 'pending-preparation', hosted: true, state: { status: 'pending_preparation' }, heading: 'Your organisation is being prepared' },
     { name: 'pending-admission', state: { status: 'pending_admission' }, heading: 'Account setup received' },
-    { name: 'unavailable', hosted: true, status: 503, state: { status: 'unavailable' }, heading: 'Signup is unavailable' },
+    // An explicit server verdict is "Signup is unavailable"; a failed first
+    // read (503) is the distinct sign-in error with an in-place Try again.
+    { name: 'unavailable', hosted: true, state: { status: 'unavailable' }, heading: 'Signup is unavailable' },
+    { name: 'signin-unconfirmed', hosted: true, status: 503, state: { status: 'unavailable' }, heading: 'We could not open your account' },
     { name: 'unavailable-document', path: '/unavailable', heading: 'Signup is unavailable', unavailable: true },
     { name: 'signout-uncertain', path: '/signout-uncertain', heading: 'Sign-out was not confirmed', logout: true }
 ];
@@ -211,7 +214,7 @@ async function buildLogoutFailureFixture() {
 
 async function recoveryHierarchy(page, audit, name) {
     const choose = page.locator('a[href="/api/external-customer-auth/login?account=choose"]:visible');
-    if (['create-expired', 'resume-setup', 'signin-required', 'unavailable'].includes(current.name)) {
+    if (['create-expired', 'resume-setup', 'signin-required', 'unavailable', 'signin-unconfirmed'].includes(current.name)) {
         assert.equal(await choose.count(), 1, name + ': another-account action is duplicated or missing');
     }
     if (['setup-details', 'saved-reservation', 'continue-manually'].includes(current.name)) {
@@ -220,7 +223,7 @@ async function recoveryHierarchy(page, audit, name) {
         assert.equal(await form.count(), 1); assert.equal(await form.getAttribute('method'), 'post');
         assert.ok(await form.getByRole('button', { name: 'Sign out and change account', exact: true }).isVisible());
     }
-    if (['resume-setup', 'unavailable'].includes(current.name)) {
+    if (['resume-setup', 'unavailable', 'signin-unconfirmed'].includes(current.name)) {
         const primary = audit.actions.filter(action => action.background[3] === 1 && action.background[0] >= 200 &&
             action.background[1] >= 150 && action.background[2] <= 60);
         assert.equal(primary.length, 1, name + ': recovery must have one yellow primary action');
@@ -233,6 +236,11 @@ async function recoveryHierarchy(page, audit, name) {
             assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).count(), 0,
                 name + ': unconfirmed signup must not invite another submission');
         } else {
+            if (current.name === 'signin-unconfirmed') {
+                assert.equal(primary[0].name, 'Try again', name + ': a failed first read offers retry as its primary action');
+                assert.equal(await page.getByText('Error code: NF-SIGNIN-UNCONFIRMED', { exact: true }).count(), 1);
+                assert.equal(await page.getByText('Error code: NF-SIGNUP-UNCONFIRMED', { exact: true }).count(), 0);
+            }
             const secondary = audit.actions.find(action => action.name === 'Sign in again');
             assert.ok(secondary && secondary.background[3] === 0 && secondary.borderStyle !== 'none' && secondary.borderContrast >= 3,
                 name + ': sign-in recovery needs a readable outlined secondary action');
@@ -260,7 +268,7 @@ async function reportLinkCheck(page, name) {
     const visible = page.getByRole('link', { name: /^Report / });
     assert.equal(await visible.count(), 1, name + ': report access is duplicated or missing');
     const href = await visible.getAttribute('href');
-    assert.equal(href, current.name === 'unavailable' ? fragments[2] : current.logout ? fragments[1] : fragments[0]);
+    assert.equal(href, ['unavailable', 'signin-unconfirmed'].includes(current.name) ? fragments[2] : current.logout ? fragments[1] : fragments[0]);
     // The composer is a separate pending feature. Never click its link here.
     return { href, visible: 1, target: '_blank', dependency: 'Report composer pending; navigation was not exercised.' };
 }
@@ -430,7 +438,7 @@ async function main() {
         // Root-font enlargement models 200% text resizing independently of
         // viewport reflow. Check both emitted and state-rendered error headings.
         for (const width of [1440, 768, 390, 320]) for (const scenario of cases.filter(item =>
-            ['unavailable', 'unavailable-document'].includes(item.name))) renderCases.push({ width, scenario, textScale: 2 });
+            ['unavailable', 'signin-unconfirmed', 'unavailable-document'].includes(item.name))) renderCases.push({ width, scenario, textScale: 2 });
         for (const width of [1440, 320]) for (const scenario of cases.filter(item =>
             ['login', 'pending-preparation'].includes(item.name))) renderCases.push({ width, scenario, textScale: 2 });
         for (const { width, scenario, textScale } of renderCases) {

@@ -135,15 +135,17 @@ async function geometry(page, name) {
             status = 503; state = { status: 'unavailable' };
             const interruptedReadStart = requests.length;
             await page.goto(base + '/signup?provider=external');
-            await page.getByRole('heading', { name: 'Signup is unavailable', exact: true }).waitFor();
+            // A failed first read is a sign-in/access check failure, not the
+            // signup verdict: it offers an in-place Try again.
+            await page.getByRole('heading', { name: 'We could not open your account', exact: true }).waitFor();
             assert.equal(await page.getByRole('button', { name: 'Check setup status', exact: true }).count(), 0);
-            assert.equal(await page.getByText('Error code: NF-SIGNUP-UNCONFIRMED', { exact: true }).count(), 1);
-            assert.equal(await page.getByText('We could not confirm your account setup. Do not create another account or submit your details again.', { exact: true }).count(), 1);
+            assert.equal(await page.getByText('Error code: NF-SIGNIN-UNCONFIRMED', { exact: true }).count(), 1);
+            assert.equal(await page.getByText('Error code: NF-SIGNUP-UNCONFIRMED', { exact: true }).count(), 0);
+            assert.equal(await page.getByRole('link', { name: 'Sign in again', exact: true }).getAttribute('href'), '/api/external-customer-auth/login');
             assert.equal(requests.slice(interruptedReadStart).filter(request => request.pathname === '/api/external-customer-signup/state').length, 1);
             state = { status: 'resume_setup', email: 'synthetic@example.test', accountType: 'company', organisationName: 'Synthetic saved company' }; status = 200;
-            // A deliberate fresh navigation performs the existing authority
-            // read. The unavailable view has no in-place status retry action.
-            await page.reload();
+            // Try again performs one fresh authority read in place.
+            await page.getByRole('button', { name: 'Try again', exact: true }).click();
             await page.getByRole('button', { name: 'Resume workspace setup', exact: true }).waitFor();
             assert.equal(await page.locator('#signup h1').evaluate(el => el === document.activeElement), true);
             assert.equal(await page.locator('.signup-help').isVisible(), false);
@@ -151,8 +153,8 @@ async function geometry(page, name) {
             await geometry(page, 'signup-recovered-' + width);
             await page.reload();
             await page.getByRole('button', { name: 'Resume workspace setup', exact: true }).waitFor();
-            results.push({ width, unavailableHasFixedCode: true, unavailableHasNoStatusRetry: true,
-                freshNavigationRecovery: true, savedSetupReload: true });
+            results.push({ width, openingFailureHasSigninCode: true, openingFailureHasRetry: true,
+                retryRecovery: true, savedSetupReload: true });
             await context.close();
         }
         assert.deepEqual(violations, []); assert.deepEqual(errors, []); assert.deepEqual(hashes(), before);

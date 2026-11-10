@@ -127,8 +127,9 @@ async function run() {
             }
             await page.goto(base + route);
             await page.locator('.home-footer').waitFor(); await frames(page);
-            // Wait for actual unavailable/anonymous shell rendering without entering data.
-            if (route === '/signup') await page.getByRole('heading', { name: /Signup is unavailable|Sign in to get started|Sign in to continue/ }).first().waitFor();
+            // Wait for actual unavailable/anonymous shell rendering without entering data. A failed
+            // first state read now renders the sign-in error ("We could not open your account").
+            if (route === '/signup') await page.getByRole('heading', { name: /Signup is unavailable|We could not open your account|Sign in to get started|Sign in to continue/ }).first().waitFor();
             await stress(page, scenario.stress || '');
             const launcher = page.locator('[data-assistant-launcher]');
             const footerLinks = page.locator('body > .home-footer a');
