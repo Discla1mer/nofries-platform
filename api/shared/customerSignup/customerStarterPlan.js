@@ -27,7 +27,7 @@ const THREE_MONTH_PINS = Object.freeze({
         approvalRef: 'chatgpt-page:page_30c4fb5854a08191afa936c73b226f69:sequence21:7380e89b-bd54-42e9-bc63-e7e69f4b607f',
         termsVersion: 'nf-dashboard-2026-10-r3', termsDigest: '441ae6d803002238cb742349e0789617ba141c2e8cc9c83c524c83015c89bf87' }),
     [THREE_MONTH_PLAN_R3_ID]: Object.freeze({ source: trialR3Configured,
-        approvalRef: 'claude-session:session_01UZM29rJ7BmzeXbJH72MBhn:owner-approval-2026-11-09',
+        approvalRef: 'public-terms:nf-dashboard-2026-11-r4',
         termsVersion: 'nf-dashboard-2026-11-r4', termsDigest: '737a94879458d795e4a8b3296773e4b995e213d54e9f7d11d93a3c2b290a2703' })
 });
 // An additive schedule policy leaves every retained plan, agreement and offer

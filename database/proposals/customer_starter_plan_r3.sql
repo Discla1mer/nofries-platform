@@ -36,7 +36,7 @@ ALTER TABLE nofries.dashboard_starter_scopes ADD CONSTRAINT dashboard_starter_sc
         AND preparation#>>'{terms,termsVersion}'='nf-dashboard-2026-10-r3'
         AND preparation#>>'{terms,termsDigest}'='441ae6d803002238cb742349e0789617ba141c2e8cc9c83c524c83015c89bf87')
       OR (preparation#>>'{source,offerInput,planId}'='nf-starter-2026-11-r3'
-        AND preparation->>'planSha256'='39c0d8c71755ea813f75fdaf92e27a7326abd1a446be01e2627c295684b64fb3'
+        AND preparation->>'planSha256'='a43b3a4cbeff4cc8af382c2de8d412915885658781354e8280f1c435c266dab9'
         AND preparation#>>'{terms,termsVersion}'='nf-dashboard-2026-11-r4'
         AND preparation#>>'{terms,termsDigest}'='737a94879458d795e4a8b3296773e4b995e213d54e9f7d11d93a3c2b290a2703'))
 ) IS TRUE);
@@ -76,7 +76,7 @@ BEGIN
         stop_at := ((start_at AT TIME ZONE 'UTC') + interval '3 months') AT TIME ZONE 'UTC';
         expected_terms := 'nf-dashboard-2026-11-r4';
         expected_digest := '737a94879458d795e4a8b3296773e4b995e213d54e9f7d11d93a3c2b290a2703';
-        expected_plan_sha := '39c0d8c71755ea813f75fdaf92e27a7326abd1a446be01e2627c295684b64fb3';
+        expected_plan_sha := 'a43b3a4cbeff4cc8af382c2de8d412915885658781354e8280f1c435c266dab9';
         expected_limits := '{"assessment_runs":null,"memberships":1,"ai_requests":0,"evidence_bytes":0,"report_exports":0}'::jsonb;
       ELSE RAISE EXCEPTION 'starter_plan_unknown';
     END CASE;

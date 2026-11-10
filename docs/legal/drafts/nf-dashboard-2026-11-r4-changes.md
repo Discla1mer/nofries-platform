@@ -1,6 +1,6 @@
 # nf-dashboard-2026-11-r4: changes from r3
 
-**Approved by the owner on 9 November 2026. Not legal advice.** r2 and r3
+**Not legal advice.** Approval records are kept outside this repository. r2 and r3
 stay exactly as approved, so their pinned digests and every accepted
 agreement are unchanged. r4 applies only to schedules issued under the plan
 `nf-starter-2026-11-r3`, which pins its text by SHA-256
