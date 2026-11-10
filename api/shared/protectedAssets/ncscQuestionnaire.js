@@ -272,6 +272,68 @@
                 unknown: count(value.countsCompletion.unknown), domains: projectedDomains, inputs: inputs };
         } catch (_) { return null; }
     }
+    function localDate(value) {
+        return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
+    }
+    // Groups saved submitted answers into the "Fix these first" list. Pure:
+    // it reads the saved answers and catalogue guidance and calculates nothing.
+    const NEXT_STEP_ORDER = ['no', 'partial', 'unknown', 'not_applicable'];
+    function nextStepsModel(metadata, responses) {
+        const saved = new Map((responses || []).map(function (item) { return [item.itemId, item.optionId]; }));
+        const steps = [];
+        NEXT_STEP_ORDER.forEach(function (optionId) {
+            const option = metadata.responseOptions.find(function (item) { return item.id === optionId; });
+            metadata.questions.filter(function (question) { return saved.get(question.id) === optionId; }).forEach(function (question) {
+                const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
+                const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
+                steps.push({ itemId: question.id, optionId: optionId, title: (control ? control.title : question.prompt) + ' — ' + (option ? option.label : optionId), action: action });
+            });
+        });
+        return steps;
+    }
+    // Plain text for the "Summary to share with your IT provider" panel and its Copy button.
+    function providerSummaryText(input) {
+        return ['Cyber security assessment', 'Scope: ' + input.scope, 'Submitted: ' + localDate(input.submittedAt),
+            'Self-reported gaps; not a risk ranking or certification.']
+            .concat(input.steps.map(function (step) { return step.title + ': ' + step.action; })).join('\n');
+    }
+    // Print-friendly report content. Presentation only: every figure is a
+    // server-evaluated display string already validated by resultModel.
+    function printReportModel(input) {
+        const metadata = input.metadata, assessment = input.assessment, results = input.results;
+        const numbers = new Map(metadata.questions.map(function (question, index) { return [question.id, index + 1]; }));
+        const reference = new Map(results.inputs);
+        const details = [['Organisation', input.organisationId], ['Assessment reference', assessment.assessmentId]];
+        if (assessment.createdAt) details.push(['Assessment started', localDate(assessment.createdAt)]);
+        details.push(['Submitted', localDate(assessment.submission.submittedAt)], ['Submitted revision', String(assessment.submission.revision)],
+            ['Report prepared', localDate(input.preparedAt)]);
+        return {
+            title: 'Cyber security assessment report', subtitle: metadata.title, details: details,
+            scope: assessment.scopePopulation.description,
+            overall: [['Reported implementation', results.attainment],
+                ['Resolved answers', results.completed + ' of ' + results.total + ' (' + results.completion + ')'],
+                ['Supporting evidence (substantiated)', results.substantiated], ['Tested evidence', results.tested],
+                ['Unknown or unresolved answers', String(results.unknown)], ['Pending N/A claims', String(results.pending)]],
+            sections: results.domains.map(function (domain) {
+                return { title: domain.title, attainment: domain.attainment, resolved: domain.completed + ' of ' + domain.total,
+                    controls: domain.controls.map(function (control) { return { title: control.title, attainment: control.attainment }; }) };
+            }),
+            nextSteps: nextStepsModel(metadata, assessment.responses),
+            answers: results.domains.flatMap(function (domain) {
+                return domain.controls.flatMap(function (control) {
+                    return control.questions.map(function (question) {
+                        return { number: numbers.get(question.itemId), domain: domain.title, control: control.title, prompt: question.prompt,
+                            answer: question.answer, evidence: question.evidence, rationale: question.rationale };
+                    });
+                });
+            }).sort(function (a, b) { return a.number - b.number; }),
+            calculation: ['Score contract', 'Evaluator version', 'Response set SHA-256', 'Output SHA-256']
+                .filter(function (key) { return reference.has(key); }).map(function (key) { return [key, reference.get(key)]; }),
+            notes: ['These results describe the saved submission and its declared scope. They are self-reported gap indicators, not an audit or certification.',
+                'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. This is a No Fries calculation, not an NCSC score.',
+                'Risk priority is not calculated. Suggested actions follow framework order, not risk order.']
+        };
+    }
     function mount(root, options) {
         options = options || {};
         if (!root || !root.ownerDocument) throw new Error('ncsc_root_required');
@@ -535,6 +597,7 @@
         }
         function render() {
             if (!live()) return;
+            cleanupPrint();
             const focused = captureFocus(root);
             const scrollX = win && win.scrollX, scrollY = win && win.scrollY;
             // Retain the progress block's height while acknowledging Save. Otherwise
@@ -907,34 +970,32 @@
             anchor.remove();
             if (objectUrl && typeof winUrl.revokeObjectURL === 'function') winUrl.revokeObjectURL(objectUrl);
         }
-        function renderResultsExport(panel) {
+        function renderResultsExport(actions, announce) {
             // Only a submitted assessment the user is authorised to read has results,
             // and the export reuses the same session-bound read, so the button is
             // offered only when both the results and the export transport exist.
             if (!client || typeof client.exportResults !== 'function' || !acknowledged) return;
-            const row = node('p', 'ncsc-result-export');
-            const statusNote = node('span', 'dashboard-muted'); statusNote.setAttribute('role', 'status'); statusNote.setAttribute('aria-live', 'polite');
             const exportButton = button('Export results (CSV)', async function () {
                 const createdEpoch = epoch;
-                exportButton.disabled = true; statusNote.textContent = 'Preparing your results export…';
+                exportButton.disabled = true; announce('Preparing your results export…');
                 try {
                     const file = await client.exportResults(acknowledged.assessmentId);
                     if (!live(createdEpoch)) return;
                     downloadCsv(file.filename, file.text);
-                    statusNote.textContent = 'Results exported as ' + file.filename + '.';
+                    announce('Results exported as ' + file.filename + '.');
                 } catch (_) {
-                    if (live(createdEpoch)) statusNote.textContent = 'Results export is unavailable right now. Please try again.';
+                    if (live(createdEpoch)) announce('Results export is unavailable right now. Please try again.');
                 } finally {
                     if (live(createdEpoch)) exportButton.disabled = false;
                 }
-            }, 'dashboard-button');
-            row.append(exportButton, statusNote); panel.append(row);
+            }, 'dashboard-button dashboard-button-secondary');
+            exportButton.id = 'ncsc-export-csv'; actions.append(exportButton);
         }
         function renderResults(results) {
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
             content.append(panel);
-            renderNextSteps(panel);
+            renderNextSteps(panel, results);
             if (!results) {
                 panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'),
                     button('Retry loading results', async function () {
@@ -943,7 +1004,6 @@
                 return;
             }
             panel.append(node('p', 'dashboard-muted', 'These results describe the saved submission and its declared scope. They are gap indicators, not an audit or certification.'));
-            renderResultsExport(panel);
             const metrics = node('div', 'ncsc-result-metrics'); panel.append(metrics);
             function metric(title, value, explanation) {
                 const card = node('section', 'ncsc-result-metric'); card.append(node('h3', '', title), node('p', 'ncsc-result-value', value), node('p', '', explanation)); metrics.append(card);
@@ -972,27 +1032,125 @@
             provenance.append(node('p', '', 'Percentages are supplied by the deterministic server evaluator. This view does not recalculate them. Input fingerprints identify the saved calculation; they are not downloadable evidence.'));
             const list = node('dl'); results.inputs.forEach(function (row) { list.append(node('dt', '', row[0]), node('dd', '', row[1])); }); provenance.append(list); panel.append(provenance);
         }
-        function localDate(value) {
-            return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
-        }
-        function renderNextSteps(panel) {
+        function renderNextSteps(panel, results) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Fix these first'));
             section.append(node('p', '', 'Start with the gaps you reported, then check what you are unsure about with your IT provider. This list groups your answers; it is not a calculated risk ranking.'));
-            const list = node('ol'), summary = ['Cyber security assessment', 'Scope: ' + acknowledged.scopePopulation.description, 'Submitted: ' + localDate(acknowledged.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
-            ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
-                questions.filter(function (question) { return savedAnswer(question.id).optionId === optionId; }).forEach(function (question) {
-                    const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
-                    const label = optionById.get(optionId).label;
-                    const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
-                    const title = (control ? control.title : question.prompt) + ' — ' + label;
-                    const item = node('li'); item.append(node('strong', '', title), node('p', '', action)); list.append(item); summary.push(title + ': ' + action);
-                });
-            });
+            const list = node('ol'), steps = nextStepsModel(metadata, acknowledged.responses);
+            steps.forEach(function (step) { const item = node('li'); item.append(node('strong', '', step.title), node('p', '', step.action)); list.append(item); });
             section.append(list);
             if (!list.children.length) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
-            const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with your IT provider'));
+            panel.append(section);
+            renderShare(panel, providerSummaryText({ scope: acknowledged.scopePopulation.description, submittedAt: acknowledged.submission.submittedAt, steps: steps }), results);
+        }
+        // One group for every way to take results away: copy the summary,
+        // print or save a full report as PDF, and the CSV export. Print and
+        // CSV need validated results; the plain-text summary does not.
+        function renderShare(panel, summaryText, results) {
+            const section = node('section', 'ncsc-share'); section.setAttribute('aria-labelledby', 'ncsc-share-title');
+            const title = node('h3', '', 'Summary to share with your IT provider'); title.id = 'ncsc-share-title';
+            section.append(title, node('p', 'dashboard-muted', results
+                ? 'Copy a short summary into an email, print a full report (choose Save as PDF in the print dialog to keep a file), or export the results as a spreadsheet.'
+                : 'Copy a short summary into an email or document.'));
+            const actions = node('div', 'ncsc-share-actions'); actions.setAttribute('role', 'group'); actions.setAttribute('aria-label', 'Save or share these results');
+            const statusNote = node('p', 'ncsc-share-status'); statusNote.id = 'ncsc-share-status';
+            statusNote.setAttribute('role', 'status'); statusNote.setAttribute('aria-live', 'polite'); statusNote.setAttribute('aria-atomic', 'true');
+            function announce(text) { statusNote.textContent = ''; statusNote.textContent = text; }
+            const text = node('details', 'ncsc-share-text'); text.append(node('summary', '', 'Show the summary text'));
             const label = node('label', '', 'Copy this summary into an email or document'); label.htmlFor = 'ncsc-provider-summary';
-            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.join('\n'); handoff.append(label, input); section.append(handoff); panel.append(section);
+            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summaryText; text.append(label, input);
+            const copyButton = button('Copy summary', async function () {
+                const createdEpoch = epoch;
+                const copied = await copyText(summaryText);
+                if (!live(createdEpoch) || !root.contains(copyButton)) return;
+                if (copied) { announce('Copied. Paste the summary into an email or document.'); return; }
+                text.open = true; if (typeof text.setAttribute === 'function') text.setAttribute('open', '');
+                input.focus(); if (typeof input.select === 'function') input.select();
+                announce('Copying is not available here. The summary text is selected; press Ctrl+C, or Cmd+C on a Mac, to copy it.');
+            }, 'dashboard-button');
+            copyButton.id = 'ncsc-copy-summary'; actions.append(copyButton);
+            if (results) {
+                const printButton = button('Print or save as PDF', function () { printReport(results, announce); }, 'dashboard-button dashboard-button-secondary');
+                printButton.id = 'ncsc-print-report'; actions.append(printButton);
+                renderResultsExport(actions, announce);
+            }
+            section.append(actions, statusNote, text); panel.append(section);
+        }
+        async function copyText(value) {
+            const clipboard = win && win.navigator && win.navigator.clipboard;
+            if (clipboard && typeof clipboard.writeText === 'function') {
+                try { await clipboard.writeText(value); return true; } catch (_) { /* fall back below */ }
+            }
+            // Fallback for browsers without the async Clipboard API: copy from a
+            // temporary off-screen field, then return focus to the trigger.
+            if (typeof doc.execCommand !== 'function') return false;
+            const previous = doc.activeElement, buffer = node('textarea', 'ncsc-copy-buffer');
+            buffer.value = value; buffer.readOnly = true; buffer.setAttribute('aria-hidden', 'true'); buffer.tabIndex = -1;
+            const host = doc.body || root; host.append(buffer);
+            let copied = false;
+            try { buffer.focus(); if (typeof buffer.select === 'function') buffer.select(); copied = doc.execCommand('copy') === true; }
+            catch (_) { copied = false; }
+            finally { buffer.remove(); if (previous && typeof previous.focus === 'function') previous.focus(); }
+            return copied;
+        }
+        let printing = null;
+        function cleanupPrint() {
+            if (!printing) return;
+            const current = printing; printing = null;
+            current.report.remove(); current.host.classList.remove('ncsc-print-active');
+            if (win && typeof win.removeEventListener === 'function') win.removeEventListener('afterprint', cleanupPrint);
+        }
+        function printReport(results, announce) {
+            cleanupPrint();
+            if (!win || typeof win.print !== 'function') { announce('Printing is not available in this browser.'); return; }
+            const preparedAt = typeof options.now === 'function' ? options.now() : Date.now();
+            const report = renderPrintReport(printReportModel({ metadata: metadata, assessment: acknowledged, results: results,
+                organisationId: organisationId, preparedAt: preparedAt }));
+            // The report sits beside the application so print CSS can hide
+            // everything else; on screen it stays hidden.
+            const host = doc.body || root; host.classList.add('ncsc-print-active'); host.append(report);
+            printing = { host: host, report: report };
+            if (typeof win.addEventListener === 'function') win.addEventListener('afterprint', cleanupPrint);
+            try {
+                win.print();
+                announce('The print dialog opened with the full report. To keep a file, choose Save as PDF as the destination.');
+            } catch (_) { cleanupPrint(); announce('The report could not be printed. Please try again.'); }
+        }
+        function renderPrintReport(model) {
+            const report = node('article', 'ncsc-print-report'); report.setAttribute('aria-hidden', 'true');
+            function pairs(rows, cls) { const list = node('dl', cls); rows.forEach(function (row) { list.append(node('dt', '', row[0]), node('dd', '', row[1])); }); return list; }
+            function block(heading, cls) { const section = node('section', 'ncsc-print-section' + (cls ? ' ' + cls : '')); section.append(node('h2', '', heading)); report.append(section); return section; }
+            const header = node('header', 'ncsc-print-header'); header.append(node('h1', '', model.title), node('p', '', model.subtitle), pairs(model.details, 'ncsc-print-details'));
+            report.append(header);
+            block('Assessment scope').append(node('p', 'ncsc-preserve-text', model.scope));
+            block('Overall results').append(pairs(model.overall, 'ncsc-print-overall'));
+            const steps = block('Fix these first');
+            if (model.nextSteps.length) {
+                const list = node('ol'); model.nextSteps.forEach(function (step) { const item = node('li'); item.append(node('strong', '', step.title), node('p', '', step.action)); list.append(item); }); steps.append(list);
+            } else steps.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
+            const table = node('table', 'ncsc-print-scores'), head = node('thead'), headRow = node('tr'), body = node('tbody');
+            ['NCSC function or topic', 'Reported implementation', 'Resolved answers'].forEach(function (text) { const cell = node('th', '', text); cell.setAttribute('scope', 'col'); headRow.append(cell); });
+            head.append(headRow);
+            model.sections.forEach(function (section) {
+                const row = node('tr', 'ncsc-print-function'), name = node('th', '', section.title); name.setAttribute('scope', 'row');
+                row.append(name, node('td', '', section.attainment), node('td', '', section.resolved)); body.append(row);
+                section.controls.forEach(function (control) {
+                    const sub = node('tr', 'ncsc-print-topic'), topic = node('th', '', control.title); topic.setAttribute('scope', 'row');
+                    sub.append(topic, node('td', '', control.attainment), node('td', '', '')); body.append(sub);
+                });
+            });
+            table.append(head, body); block('Scores by function and topic').append(table);
+            const answers = block('Your answers', 'ncsc-print-answers'), list = node('ol', 'ncsc-print-answer-list');
+            model.answers.forEach(function (row) {
+                const item = node('li', 'ncsc-print-question');
+                item.append(node('p', 'dashboard-eyebrow', 'Question ' + row.number + ' · ' + row.domain + ' · ' + row.control), node('h3', '', row.prompt),
+                    node('p', '', 'Answer: ' + row.answer), node('p', '', 'Evidence: ' + row.evidence));
+                if (row.rationale) item.append(node('p', 'ncsc-preserve-text', 'Pending N/A rationale: ' + row.rationale));
+                list.append(item);
+            });
+            answers.append(list);
+            const about = block('About these results'); model.notes.forEach(function (text) { about.append(node('p', '', text)); });
+            if (model.calculation.length) about.append(pairs(model.calculation, 'ncsc-print-calculation'));
+            return report;
         }
         function renderQuestion() {
             if (!live() || !questionRegion || !acknowledged) return;
@@ -1470,6 +1628,7 @@
         function destroy() {
             if (disposed) return;
             disposed = true; epoch += 1; abortRequests();
+            cleanupPrint();
             syncUnloadWarning();
             if (leave) { leave.resolve(false); leave = null; }
             removeDialog(); dialog = null;
@@ -1481,5 +1640,6 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, resultModel: resultModel });
+    return Object.freeze({ mount: mount, resultModel: resultModel, nextStepsModel: nextStepsModel,
+        providerSummaryText: providerSummaryText, printReportModel: printReportModel });
 }));
