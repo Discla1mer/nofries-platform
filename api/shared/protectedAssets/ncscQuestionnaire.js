@@ -421,6 +421,23 @@
             if (text !== undefined && text !== null) result.textContent = String(text);
             return result;
         }
+        // Plain-English meanings of the words used in the progress line and the
+        // finish path. Terms already explained where they appear (Resolved,
+        // Unresolved, * for unsaved) are not repeated here.
+        let glossaryOpen = false;
+        function glossary() {
+            const section = node('details', 'ncsc-guidance ncsc-glossary'); section.id = 'ncsc-glossary'; section.open = glossaryOpen;
+            section.addEventListener('toggle', function () { glossaryOpen = section.open; });
+            section.append(node('summary', '', 'What these words mean'));
+            const list = node('dl');
+            [['To check later', 'Answers marked Unknown, or Not applicable waiting for review. They are still to confirm and do not count as in place. You can still submit with them.'],
+                ['Pending N/A', 'You answered Not applicable and explained why. N/A approval is not available in this journey, so the answer stays pending and the question still counts towards your total.'],
+                ['Saved and not saved yet', 'Saved answers are kept with this draft, so you can come back to them before you submit. Not saved yet means a change is only on this page so far.'],
+                ['Score range', 'After you submit, your result is shown as a range. The lower figure is what you reported as in place. The higher figure adds answers still to confirm.']
+            ].forEach(function (entry) { list.append(node('dt', '', entry[0]), node('dd', '', entry[1])); });
+            section.append(list);
+            return section;
+        }
         function button(label, action, cls) {
             const result = node('button', cls || 'dashboard-button', label); const createdEpoch = epoch;
             result.type = 'button'; result.addEventListener('click', function () { if (live(createdEpoch) && root.contains(result) && !result.disabled) action(); });
@@ -926,6 +943,7 @@
             if (pending) renderPending();
             if (reviewing) { renderReview(); return; }
             questionProgress = node('p', 'ncsc-draft-progress'); questionProgress.id = 'ncsc-draft-progress'; content.append(questionProgress);
+            if (!sealed) content.append(glossary());
             const indexLabel = node('label', '', 'Question'); indexLabel.setAttribute('for', 'ncsc-question-index');
             const index = node('select', 'ncsc-question-index'); index.id = 'ncsc-question-index';
             index.setAttribute('aria-describedby', 'ncsc-question-index-help');
@@ -979,7 +997,7 @@
             [(questions.length - unanswered) + ' of ' + questions.length + ' answered', unanswered + ' unanswered',
                 unexplained + ' N/A ' + (unexplained === 1 ? 'answer needs' : 'answers need') + ' an explanation',
                 unsaved + (unsaved === 1 ? ' answer is' : ' answers are') + ' not saved yet'].forEach(function (text) { counts.append(node('li', '', text)); });
-            panel.append(counts);
+            panel.append(counts, glossary());
             const blockers = [];
             if (unanswered) blockers.push('answer ' + unanswered + (unanswered === 1 ? ' question' : ' questions') + ' (Unknown is allowed)');
             if (unexplained) blockers.push('explain ' + unexplained + ' N/A ' + (unexplained === 1 ? 'answer' : 'answers'));
