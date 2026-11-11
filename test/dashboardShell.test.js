@@ -15,6 +15,18 @@ const keys = value => value.modules.map(item => item.key);
 const mount = (model = view(), options = {}) => { const dom = createDom(); return { ...dom, controller: shell.mount(dom.root, model, options) }; };
 const buttons = dom => dom.root.querySelectorAll('button');
 
+test('organisation hash delegates to the host while retaining the current view for its leave guard', () => {
+    let requests = 0;
+    const dom = mount(view(), { initialRoute: 'cyber-security', onOpenOrganisations() { requests++; } });
+    const before = dom.root.textContent;
+    dom.window.location.hash = '#organisations';
+    dom.window.dispatch('hashchange');
+    assert.equal(requests, 1);
+    assert.equal(dom.window.location.hash, '#cyber-security');
+    assert.equal(dom.root.textContent, before);
+    dom.controller.destroy();
+});
+
 test('registry preserves approved eight-module order and canonical mobile groups', () => {
     assert.deepEqual(registry.modules.map(item => item.key), ['overview', 'ai_governance', 'cyber_security', 'it_optimisation', 'improvement_plan', 'evidence', 'board_reports', 'services']);
     assert.deepEqual(registry.groups, ['Home', 'Assess', 'Plan', 'Proof', 'More']);

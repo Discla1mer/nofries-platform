@@ -461,6 +461,15 @@
         }
         function handleLocation(eventType) {
             if (!active()) return;
+            if (win.location.hash === '#organisations' && typeof options.onOpenOrganisations === 'function') {
+                // The organisation chooser belongs to the authenticated host,
+                // not the module registry. Restore this view while its normal
+                // unsaved-work guard decides whether navigation can proceed.
+                win.history.replaceState(managedHistory && committedEntry ? stateWith(committedEntry) : null,
+                    '', '#' + current.route);
+                options.onOpenOrganisations();
+                return;
+            }
             if (unmanagedBoundaryHash !== null && win.location.hash === unmanagedBoundaryHash) { unmanagedBoundaryHash = null; return; }
             unmanagedBoundaryHash = null;
             if (!managedHistory) { navigate(win.location.hash, false); main.querySelector('h1').focus(); return; }
