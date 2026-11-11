@@ -61,7 +61,7 @@
                 saved('submission.responseSetSha256'), saved(prefix + 'outputSha256'), catalogue('profileRef')]);
             if (topic === 'range') {
                 block('Reported implementation', 'The saved implementation range is ' + result.attainment +
-                    '. The endpoints are supplied by the saved server calculation. Unknown answers and not-applicable answers awaiting review stay unresolved and can widen the range; they do not confirm implementation.',
+                    '. The endpoints are supplied by the saved server calculation. Unknown answers and answers marked not applicable, to confirm, stay unresolved and can widen the range; they do not confirm implementation.',
                 [saved(prefix + 'attainment.lowerDisplay'), saved(prefix + 'attainment.upperDisplay'),
                     saved(prefix + 'attainment.lowerCreditUnits'), saved(prefix + 'attainment.upperCreditUnits'),
                     saved(prefix + 'attainment.denominatorWeight'), saved(prefix + 'countsCompletion.unknown'),
@@ -74,8 +74,8 @@
                     saved(prefix + 'evidence.testedCoverage.display'), catalogue('responseOptions')]);
             } else if (topic === 'unresolved') {
                 block('Unresolved answers', 'The saved result contains ' + result.unknown + ' unresolved answers, including ' + result.pending +
-                    ' not-applicable ' + (result.pending === 1 ? 'answer awaiting review' : 'answers awaiting review') +
-                    '. Not-applicable answers awaiting review stay in the calculation; they are not an approved exclusion.',
+                    (result.pending === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm' +
+                    '. Answers marked not applicable, to confirm, stay in the calculation; they are not an approved exclusion.',
                 [saved(prefix + 'countsCompletion.unknown'), saved(prefix + 'countsCompletion.claimedNotApplicableAtoms'),
                     saved(prefix + 'countsCompletion.approvedNotApplicableAtoms')]);
             } else {
