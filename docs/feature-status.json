@@ -31,6 +31,12 @@
       "status": "live"
     },
     {
+      "id": "top-three-gaps",
+      "name": "Your top three gaps, chosen by a fixed rule from saved answers",
+      "status": "live",
+      "knowledgeKey": "priorityGuidance"
+    },
+    {
       "id": "priority-ordering",
       "name": "Risk-based priority ordering of gaps",
       "status": "coming-next",

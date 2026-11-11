@@ -41,7 +41,7 @@ describe('Ask Fry answers basic assessment-help questions', () => {
         ['What does N/A mean?', 'assessment_answers', ['Not applicable (N/A)', 'stays unresolved']],
         ['How is my score calculated?', 'assessment_scoring', ['Yes earns 1, Partial 0.5 and No 0', 'widen the range']],
         ['Why is my score a range?', 'assessment_scoring', ['upper end counts them as 1']],
-        ['What should I fix first?', 'assessment_priority', ['cannot read your answers', 'Fix these first', 'not a calculated risk ranking']],
+        ['What should I fix first?', 'assessment_priority', ['cannot read your answers', 'Your top three gaps', 'No before Partial', 'not a calculated risk ranking']],
         ['Is my business compliant with NCSC?', 'assessment_compliance', ['can\'t establish compliance or certification']],
         ['Is this a certification?', 'assessment_compliance', ['can\'t establish compliance or certification']]
     ])('answers %s directly instead of the generic fallback', (question, topic, included) => {

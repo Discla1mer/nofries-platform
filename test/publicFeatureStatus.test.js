@@ -40,7 +40,7 @@ describe('public feature-status registry', () => {
             expect(item.name).toEqual(expect.any(String));
         }
         expect(registry.capabilities.filter(item => item.status === 'live').map(item => item.id)).toEqual([
-            'company-account', 'ncsc-assessment', 'ncsc-results', 'shareable-summary', 'change-over-time'
+            'company-account', 'ncsc-assessment', 'ncsc-results', 'shareable-summary', 'change-over-time', 'top-three-gaps'
         ]);
     });
 
@@ -56,6 +56,15 @@ describe('public feature-status registry', () => {
             expect(knowledge).toBeDefined();
             expect([item.id, LIVE_KNOWLEDGE.has(knowledge.availability)]).toEqual([item.id, item.status === 'live']);
         }
+    });
+
+    test('the assistant names the live top-gaps view as the saved results show it', () => {
+        const results = fs.readFileSync(path.join(root, 'api', 'shared', 'protectedAssets', 'organisationPicture.js'), 'utf8');
+        const summary = NOFRIES_PUBLIC_KNOWLEDGE.capabilities.priorityGuidance.summary;
+        expect(results).toContain("'Your top three gaps'");
+        expect(summary).toContain('Your top three gaps');
+        expect(summary).toContain('not a calculated risk ranking');
+        expect(summary).not.toMatch(/Fix these first/);
     });
 
     test('the home page does not present a non-live capability as available', () => {

@@ -253,8 +253,8 @@
       "turns": ["What does Protect and Recover include for managed IT?"],
       "expect": {
         "topic": "protection_recovery",
-        "replyMustInclude": ["Secure tier", "Managed tier up", "agreed business hours", "Extra business locations"],
-        "forbiddenReplyPatterns": ["guaranteed recovery", "24/7 user support", "automatically included", "zero data loss"]
+        "replyMustInclude": ["Secure tier", "Managed tier up", "add-on, quoted on request", "NZ business hours, Monday to Friday", "Extra business locations"],
+        "forbiddenReplyPatterns": ["guaranteed recovery", "24/7 user support", "automatically included", "zero data loss", "bolt-on", "agreed business hours"]
       }
     },
     {

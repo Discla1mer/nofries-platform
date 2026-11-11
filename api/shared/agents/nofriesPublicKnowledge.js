@@ -6,7 +6,7 @@ const { detectProspectPromptInjection } = require('./prospectInjectionGuard');
 // Change this version whenever the public facts or availability change.
 const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
     schemaVersion: 1,
-    knowledgeVersion: 'public-stack-2026-11-10-v1',
+    knowledgeVersion: 'public-stack-2026-11-12-v1',
     links: {
         home: 'https://nofries.nz/',
         dashboard: 'https://nofries.nz/dashboard',
@@ -80,7 +80,7 @@ const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
         },
         priorityGuidance: {
             availability: 'available',
-            summary: 'After you submit, your saved results include Fix these first: your own No answers, then Partial, then Unknown and N/A, each with a starting action. It groups your answers; it is not a calculated risk ranking. Start with the gaps you reported, then ask your IT provider to check anything you marked Unknown.'
+            summary: 'After you submit, your saved results show Your top three gaps at the top. A gap is a question you answered No or Partial. They are chosen by a fixed rule: No before Partial, then NCSC framework order. Each gap says why it matters and what to do next. Unknown and N/A answers are not counted as gaps, so confirm them with your IT provider. This is a fixed rule over your own answers, not a calculated risk ranking.'
         },
         assistanceLimits: {
             availability: 'public_help_only',
@@ -267,7 +267,11 @@ function managedItScopeSummary() {
 }
 
 function managedItOptionsSummary() {
-    return `Security hardening and security alert handling are part of the Secure tier, and Microsoft 365 backup is included from the Managed tier up — they come with the plan you choose, not as bolt-on extras. The genuine optional add-ons, priced on top of your per-user plan, are: ${MANAGED_IT_POLICY.optionalServices.join('; ')}. Support is during agreed business hours, and no recovery time or outcome is promised through this chat.`;
+    const options = MANAGED_IT_POLICY.optionalServices;
+    // The policy may already list the Essentials backup add-on; say it once.
+    const essentialsBackup = options.some(option => /backup/i.test(option))
+        ? '' : ' On Essentials, it is available as an add-on, quoted on request.';
+    return `Security hardening and security alert handling are part of the Secure tier. Microsoft 365 backup is included from the Managed tier up.${essentialsBackup} Optional add-ons, priced on top of your per-user plan: ${options.join('; ')}. Support is during NZ business hours, Monday to Friday. No recovery time or outcome is promised through this chat.`;
 }
 
 function publicReply(topic, text) {
