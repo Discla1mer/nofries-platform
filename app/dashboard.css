@@ -443,3 +443,32 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 @media (max-width: 30rem) {
     .nofries-dashboard .dashboard-mobile-nav .dashboard-task { flex-direction: column; justify-content: center; gap: .15rem; text-align: center; }
 }
+
+/* Visual polish for the signed-in workspace (layout and styling only; no text or behaviour changes). */
+.nofries-dashboard .dashboard-icon { display: none; }
+.nofries-dashboard .dashboard-rail .dashboard-module-link { position: relative; padding-inline: .85rem; }
+.nofries-dashboard .dashboard-rail .dashboard-module-link[aria-current="page"] { box-shadow: inset 3px 0 0 var(--dashboard-yellow); }
+.nofries-dashboard .dashboard-subscription { padding: 1rem .75rem; border: 1px solid var(--dashboard-line); border-radius: .75rem; background: var(--dashboard-paper); }
+.nofries-dashboard .dashboard-subscription strong { font-family: var(--font-serif, Georgia, serif); font-size: var(--dashboard-font-section); }
+.nofries-dashboard .dashboard-topbar { background: transparent; border-bottom: 0; padding-block: 1.5rem 0; }
+.nofries-dashboard .dashboard-topbar strong { color: var(--dashboard-muted); font-weight: var(--dashboard-weight-regular) !important; }
+.nofries-dashboard .dashboard-main { padding-top: 1rem; }
+.nofries-dashboard .dashboard-page-heading { padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--dashboard-line); }
+.nofries-dashboard .dashboard-page-heading h1 { display: inline-block; margin: 0 1rem .25rem 0; vertical-align: middle; font-size: clamp(1.75rem, 3vw, 2.5rem); letter-spacing: -.01em; }
+.nofries-dashboard .dashboard-page-heading h1 + .dashboard-badge { vertical-align: middle; }
+.nofries-dashboard .dashboard-page-heading > .dashboard-badge { border-color: transparent; background: var(--dashboard-navy); color: var(--dashboard-ink); border-radius: 999px; padding-inline: .8rem; }
+.nofries-dashboard .picture-heading { border-top: 0; padding-top: 0; }
+.nofries-dashboard .picture-heading h2 { font-size: clamp(1.25rem, 2vw, 1.5rem); }
+.nofries-dashboard :is(.picture-resume, .picture-metric, .picture-domains, .picture-follow-up, .picture-empty, .ncsc-assessment-card, .ncsc-result-metric, .picture-first-use) { border-radius: 1rem; box-shadow: 0 1px 2px rgb(23 20 15 / 6%), 0 8px 24px rgb(23 20 15 / 6%); }
+.nofries-dashboard .picture-resume { padding: clamp(1.25rem, 2.5vw, 2rem); background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-top: 4px solid var(--dashboard-yellow); }
+.nofries-dashboard .picture-resume .picture-large { font-family: var(--font-serif, Georgia, serif); font-size: clamp(1.35rem, 2.2vw, 1.75rem); }
+.nofries-dashboard .picture-toolbar { padding: .75rem 1rem; border: 1px solid var(--dashboard-line); border-radius: .75rem; background: var(--dashboard-surface); }
+.nofries-dashboard .picture-calculation { background: transparent; border-style: dashed; }
+.nofries-dashboard .dashboard-provenance { border-top: 1px solid var(--dashboard-line); }
+.nofries-dashboard .dashboard-button { border-radius: 999px; padding-inline: 1.25rem; box-shadow: 0 1px 0 rgb(23 20 15 / 18%); }
+.nofries-dashboard .dashboard-button-secondary { box-shadow: none; }
+body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .site-header .brand-logo { width: 36px; height: 36px; }
+body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .site-header .brand-copy strong { font-family: var(--font-serif, Georgia, serif); font-size: var(--dashboard-font-section); }
+body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] #dashboardChooser:not([open]) { justify-self: start; width: auto; max-width: 100%; border-radius: 999px; padding-inline: 1.25rem; }
+body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-layout { border-top: 1px solid var(--dashboard-line, #d3c9b7); }
+body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-release-footer { margin-top: 0; padding-block: 1.25rem; }
