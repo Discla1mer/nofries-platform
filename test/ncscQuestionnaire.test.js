@@ -1289,6 +1289,25 @@ describe('submitted assessment results', () => {
         expect(model.domains.flatMap(domain => domain.controls.flatMap(control => control.questions))).toHaveLength(14);
         expect(assessment).toEqual(before);
     });
+    // A-019: under half resolved, the range is not the headline; it stays below as detail.
+    test.each([[6, false], [7, true], [14, true]])('with %i of 14 resolved, the range leads only when enough answers are resolved', async (resolved, leads) => {
+        const h = await backend(); await h.execute(createCommand());
+        const rows = allResponses('unknown'); rows.slice(0, resolved).forEach(row => { row.optionId = 'yes'; });
+        await h.execute(saveCommand('assessment-a', 0, 'save-a', rows)); await h.execute(submitCommand());
+        const ui = await resumeUi(h);
+        try {
+            const card = ui.root.querySelector('.ncsc-results').querySelectorAll('.ncsc-result-metric')
+                .find(item => item.querySelector('h3').textContent === 'Reported implementation');
+            const model = resultModel((await h.client.read('assessment-a')).assessment, metadata(), h.organisationId);
+            const headline = card.querySelector('.ncsc-result-value').textContent;
+            if (leads) { expect(headline).toBe(model.attainment); expect(card.textContent).not.toContain('Not enough answers'); }
+            else {
+                expect(headline).toBe('Not enough answers to estimate yet');
+                expect(card.textContent).toContain('Only 6 of 14 answers are resolved (Yes, Partial or No). Confirm the Unknown answers first.');
+                expect(card.textContent).toContain('Range so far: ' + model.attainment + '.');
+            }
+        } finally { ui.controller.destroy(); }
+    });
     test.each([['outputSha256'], ['responseSetSha256']])('rejects a malformed %s even though provenance is not displayed', async field => {
         const { h, assessment } = await submitted();
         if (field === 'outputSha256') assessment.submission.evaluation.outputSha256 = 'not-a-digest';

@@ -13,10 +13,12 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const flush = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
 
 function mixed() {
-    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
-    const responses = allResponses().map((row, index) => ({ ...row,
+    return submittedWith(allResponses().map((row, index) => ({ ...row,
         optionId: index < 3 ? 'yes' : index < 10 ? 'partial' : index < 12 ? 'no' : index === 12 ? 'unknown' : 'not_applicable',
-        rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null }));
+        rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null })));
+}
+function submittedWith(responses) {
+    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
     let version = null;
     for (const command of [createCommand('assessment-mixed', 'create-mixed', 'Synthetic office and cloud scope.'),
         saveCommand('assessment-mixed', 0, 'save-mixed', responses), submitCommand('assessment-mixed', 1, 'submit-mixed')]) {
@@ -67,6 +69,7 @@ test('an explanation that cannot start leaves the saved results in place', async
 test('connected view preserves golden server range, uncertainty and completion without an always-empty evidence measure', async () => {
     const dom = setup(); await flush();
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    assert.equal(dom.root.querySelector('.picture-primary').querySelector('.picture-large').textContent, '46.4%–60.7%');
     assert.match(dom.root.textContent, /85\.7%/);
     assert.match(dom.root.textContent, /12 of 14/);
     assert.match(dom.root.textContent, /7 partial and 2 absent/);
@@ -214,6 +217,18 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
     assert.equal(follow.querySelectorAll('input').length, 0);
     assert.equal(follow.querySelectorAll('button').length, 0);
+    dom.controller.destroy();
+});
+
+// A-019: under half resolved, Overview does not lead with the range.
+test('Overview leads with not enough answers when fewer than half are resolved, keeping the range as detail', async () => {
+    const record = submittedWith(allResponses().map((row, index) => ({ ...row, optionId: index < 1 ? 'yes' : 'unknown' })));
+    const dom = setup({ records: [record] }); await flush();
+    const primary = dom.root.querySelector('.picture-primary');
+    assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
+    assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet');
+    assert.match(primary.textContent, /Only 1 of 14 answers are resolved \(Yes, Partial or No\)\. Confirm the Unknown answers first\./);
+    assert.match(primary.textContent, /Range so far: 7\.1%–100\.0%\./);
     dom.controller.destroy();
 });
 

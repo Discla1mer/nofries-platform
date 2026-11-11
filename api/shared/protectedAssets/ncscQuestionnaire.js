@@ -86,6 +86,13 @@
         }
     };
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+    // UX log A-019: when fewer than about half the answers are resolved (Yes,
+    // Partial or No), the range is too wide to tell anyone anything, so it is
+    // not used as the headline. Display only; scoring is unchanged.
+    const ESTIMATE_MIN_RESOLVED_SHARE = 0.5;
+    function enoughAnswersToEstimate(result) {
+        return !!result && result.total > 0 && result.completed / result.total >= ESTIMATE_MIN_RESOLVED_SHARE;
+    }
     function equal(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
     function profileMatches(value, expected) {
         if (!value || typeof value !== 'object' || Array.isArray(value) || Reflect.ownKeys(value).length !== PROFILE_FIELDS.length) return false;
@@ -1061,7 +1068,10 @@
             function metric(title, value, explanation) {
                 const card = node('section', 'ncsc-result-metric'); card.append(node('h3', '', title), node('p', 'ncsc-result-value', value), node('p', '', explanation)); metrics.append(card);
             }
-            metric('Reported implementation', results.attainment, 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
+            const rangeHelp = 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.';
+            if (enoughAnswersToEstimate(results)) metric('Reported implementation', results.attainment, rangeHelp);
+            else metric('Reported implementation', 'Not enough answers to estimate yet', 'Only ' + results.completed + ' of ' + results.total +
+                ' answers are resolved (Yes, Partial or No). Confirm the Unknown answers first. Range so far: ' + results.attainment + '. ' + rangeHelp);
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
             panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Marked not applicable, to confirm: ' + results.pending + '.'));
@@ -1674,5 +1684,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, copySummary: copySummary });
+    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));
