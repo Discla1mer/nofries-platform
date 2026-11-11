@@ -450,7 +450,21 @@
                 item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer), why, next);
                 list.append(item);
             });
-            section.append(list); return section;
+            section.append(list, helpPanel()); return section;
+        }
+        // Shown only when the existing public enquiry check says enquiries are
+        // open. The link is fixed: no answers, scores or names leave the page.
+        function helpPanel() {
+            const panel = node('div', 'picture-next-steps'), token = epoch; panel.hidden = true;
+            const link = node('a', 'dashboard-button', 'Get help closing these gaps'); link.href = '/contact.html';
+            panel.append(node('h4', '', 'Next step'), node('p', 'dashboard-muted', 'Talk to No Fries about these gaps. The contact form does not include your answers.'), link);
+            const win = doc.defaultView, check = win && win.enquiryAvailability;
+            if (typeof check === 'function') {
+                Promise.resolve().then(() => check.call(win)).then(state => {
+                    if (live(token) && state && state.available === true) panel.hidden = false;
+                }, () => {});
+            }
+            return panel;
         }
         function renderResult(result) {
             root.append(gapSection(result));

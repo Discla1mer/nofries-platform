@@ -1205,3 +1205,41 @@ test('top gap selection uses existing weights before answer and profile order, w
     assert.deepEqual(picture.topGaps(null, metadata), []);
     assert.deepEqual(picture.topGaps(result, metadata, 1).map(gap => gap.itemId), ['q2']);
 });
+
+describe('next step under the top gaps', () => {
+    async function withAvailability(availability) {
+        const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
+        const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures), dom = createDom();
+        if (availability !== undefined) dom.window.enquiryAvailability = availability;
+        const controller = picture.mount(dom.root, { metadata: fixtures.metadata, organisationId: seed.model.context.organisationId,
+            client: createClient({ metadata: fixtures.metadata, fetch: transport.fetch }), displayName: 'Synthetic organisation A' });
+        await flush();
+        const panel = dom.root.querySelector('.picture-top-gaps').querySelector('.picture-next-steps');
+        return { dom, controller, panel, link: panel.querySelector('a') };
+    }
+    test('shows a fixed contact link when enquiries are available', async () => {
+        const availability = jest.fn(async () => ({ available: true, promote: false }));
+        const { panel, link, controller } = await withAvailability(availability);
+        assert.equal(availability.mock.calls.length, 1); assert.equal(availability.mock.calls[0].length, 0);
+        assert.equal(panel.hidden, false);
+        assert.equal(link.textContent, 'Get help closing these gaps');
+        assert.equal(link.href, '/contact.html');
+        assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
+        controller.destroy();
+    });
+    test.each([
+        ['unavailable', async () => ({ available: false, promote: false })],
+        ['failing', async () => { throw new Error('synthetic'); }],
+        ['missing', undefined]
+    ])('stays hidden when the enquiry check is %s', async (_name, availability) => {
+        const { panel, controller } = await withAvailability(availability);
+        assert.equal(panel.hidden, true);
+        controller.destroy();
+    });
+    test('a late availability answer after teardown changes nothing', async () => {
+        let resolve; const availability = () => new Promise(done => { resolve = done; });
+        const { panel, controller } = await withAvailability(availability);
+        controller.destroy(); resolve({ available: true }); await flush();
+        assert.equal(panel.hidden, true);
+    });
+});

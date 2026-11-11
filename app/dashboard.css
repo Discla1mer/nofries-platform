@@ -164,6 +164,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-top-gap { margin: 1rem 0 0; overflow-wrap: anywhere; }
 .picture-top-gap h4 { margin-bottom: .25rem; }
 .picture-top-gap p { margin: .25rem 0; }
+.picture-next-steps { border-top: 1px solid var(--dashboard-line); margin-top: 1.25rem; padding-top: 1rem; }
+.picture-next-steps .dashboard-button { display: inline-block; max-width: 100%; text-align: center; text-decoration: none; }
 @media (max-width: 60rem) {
     .picture-metrics { grid-template-columns: minmax(0, 1fr); }
     .picture-metric h3 { min-height: 0; }
