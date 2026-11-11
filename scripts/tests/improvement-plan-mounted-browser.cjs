@@ -366,9 +366,9 @@ async function main() {
         await link.focus(); await page.keyboard.press('Enter');
     }
     async function reviewAndOpen(page) {
-        const review = page.getByRole('button', { name: 'Review supporting-evidence gaps', exact: true });
+        const review = page.getByRole('button', { name: /^Review \d+ implementation gaps?$/ });
         await review.focus(); await page.keyboard.press('Enter');
-        const category = page.locator('.picture-follow-up > details').filter({ has: page.locator('summary', { hasText: /^Supporting-evidence gaps/ }) });
+        const category = page.locator('.picture-follow-up > details').filter({ has: page.locator('summary', { hasText: /^Reported implementation gaps/ }) });
         assert.equal(await category.evaluate(node => node.open), true, 'The existing saved-gap category opens');
         assert.equal(await category.locator(':scope > summary').evaluate(node => node === document.activeElement), true,
             'Keyboard gap action focuses its existing category summary');
@@ -514,7 +514,7 @@ async function main() {
             run = await openPage(width, false, 'no-capability');
             try {
                 assert.equal(await run.page.getByRole('button', { name: 'Plan improvements for this assessment', exact: true }).count(), 0);
-                assert.equal(await run.page.getByRole('button', { name: 'Review supporting-evidence gaps', exact: true }).count(), 1,
+                assert.equal(await run.page.getByRole('button', { name: /^Review \d+ implementation gaps?$/ }).count(), 1,
                     'Saved gap review remains usable without the new action tables or Improvement capability');
                 assert.equal(run.fixture.requests.filter(row => row.path.startsWith('/api/dashboard/improvement/')).length, 0);
                 results.push({ width, case: 'no-capability', noPlanButton: true, savedGapsAvailable: true, improvementRequests: 0 });

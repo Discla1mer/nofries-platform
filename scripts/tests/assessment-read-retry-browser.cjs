@@ -173,8 +173,8 @@ async function requestState(page) {
             await status(page, /^Loading the selected assessment\.$/); await headingFocus(page, 'Second keyboard retry');
             await settle(page, 'success');
             await status(page, /^Saved revision /); await headingFocus(page, 'Successful recovery');
-            assert.equal(await page.locator('.ncsc-result-provenance dt').filter({ hasText: /^Assessment$/ })
-                .evaluate(node => node.nextElementSibling.textContent), selectedId);
+            assert.equal(await page.locator('.ncsc-results').count(), 1);
+            assert.equal(await page.locator('.ncsc-result-provenance').count(), 0, 'Calculation provenance is not shown to customers');
             assert.match(await page.locator('.ncsc-status').textContent(), new RegExp('Saved revision ' + selected.revision + '\\.'));
             assert.deepEqual(await requestState(page), { lists: [null, 'assessment-b'],
                 reads: [selectedId, selectedId, selectedId], aborted: [], writes: 0 });

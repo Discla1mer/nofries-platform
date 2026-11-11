@@ -9,10 +9,13 @@
     const PLACEHOLDER = '00000000-0000-4000-8000-000000000000';
     const LIMIT = 65536;
     const SAVE_CEILING = 127;
-    // Each save uses one of an assessment's revisions, so answers are never
-    // saved one at a time. Automatic saves wait for a pause in editing and
-    // stop early enough to leave revisions for Save progress and Submit.
-    const AUTOSAVE_IDLE_MS = 45000;
+    // Each save uses one of an assessment's revisions. Automatic saves wait
+    // for a short pause, so a burst of edits is one save, send pending answers
+    // at once when the page is hidden or left or review opens, and stop early
+    // enough to leave revisions for Save progress and Submit.
+    const AUTOSAVE_IDLE_MS = 1500;
+    // Browsers refuse keepalive requests whose bodies total more than 64 KiB.
+    const KEEPALIVE_LIMIT = 60000;
     const AUTOSAVE_RESERVE = 27;
     const ANSWER_GUIDANCE = {
         yes: 'All parts of this statement are in place across your declared scope.',
@@ -257,17 +260,15 @@
                             actions: question.guidance.startingActions.slice(), examples: question.guidance.evidenceExamples.slice() };
                     }) };
                 }) }));
-            const inputs = [ ['Organisation', text(provenance.organisationId)], ['Assessment', assessment.assessmentId],
-                ['Submitted revision', String(submission.revision)], ['Calculated at', text(provenance.scoreAsOf)],
-                ['Evaluator', text(provenance.evaluatorId)], ['Evaluator version', text(provenance.evaluatorVersion)],
-                ['Score contract', provenance.scoreContractVersion], ['Rounding rule', text(provenance.roundingRule)],
-                ...PROFILE_FIELDS.map(key => [key, text(provenance.profileRef[key])]),
-                ...['evaluatorSourceSha256', 'scopePopulationSha256', 'mappingSha256', 'weightSetSha256', 'scoredAtomSetSha256',
-                    'applicabilityBasisSha256', 'resolvedInputSha256'].map(key => [key, digest(provenance[key])]),
-                ['Mapping version', text(provenance.mappingVersion)], ['Weight set version', text(provenance.weightSetVersion)],
-                ['Evidence snapshot', text(provenance.evidenceSnapshot.id)], ['Evidence snapshot SHA-256', digest(provenance.evidenceSnapshot.sha256)],
-                ['Risk context snapshot', text(provenance.riskContextSnapshot.id)], ['Risk context SHA-256', digest(provenance.riskContextSnapshot.sha256)],
-                ['Response set SHA-256', digest(submission.responseSetSha256)], ['Output SHA-256', digest(value.outputSha256)] ];
+            // Provenance stays in the stored record and API. It is checked here but not shown to customers.
+            [provenance.organisationId, provenance.scoreAsOf, provenance.evaluatorId, provenance.evaluatorVersion,
+                provenance.roundingRule, ...PROFILE_FIELDS.map(key => provenance.profileRef[key]),
+                provenance.mappingVersion, provenance.weightSetVersion,
+                provenance.evidenceSnapshot.id, provenance.riskContextSnapshot.id].forEach(text);
+            [...['evaluatorSourceSha256', 'scopePopulationSha256', 'mappingSha256', 'weightSetSha256', 'scoredAtomSetSha256',
+                'applicabilityBasisSha256', 'resolvedInputSha256'].map(key => provenance[key]),
+                provenance.evidenceSnapshot.sha256, provenance.riskContextSnapshot.sha256,
+                submission.responseSetSha256, value.outputSha256].forEach(digest);
             return { attainment: range(value.attainment), substantiated: coverage(value.evidence.substantiatedCoverage),
                 denominatorWeight: value.attainment.denominatorWeight,
                 lowerCreditUnits: value.attainment.lowerCreditUnits, upperCreditUnits: value.attainment.upperCreditUnits,
@@ -275,7 +276,7 @@
                 completed: value.countsCompletion.completionNumerator, total: value.countsCompletion.completionDenominator,
                 partial: value.countsCompletion.partial, no: value.countsCompletion.no,
                 tested: coverage(value.evidence.testedCoverage), pending: count(value.countsCompletion.claimedNotApplicableAtoms),
-                unknown: count(value.countsCompletion.unknown), domains: projectedDomains, inputs: inputs };
+                unknown: count(value.countsCompletion.unknown), domains: projectedDomains };
         } catch (_) { return null; }
     }
     function mount(root, options) {
@@ -343,11 +344,14 @@
         let assistanceGeneration = 0;
         let unloadAttached = false;
         let workshopPanel;
-        // Review is a local presentation of the current draft. Entering,
-        // editing from or leaving it never sends a command.
+        // Review is a local presentation of the current draft. Entering it
+        // saves pending answers when automatic saving is on; editing from or
+        // leaving it never sends a command.
         let reviewing = false;
         let returnToReview = null;
         let autosaveTimer = null;
+        // A flush requested while a save is in flight runs as soon as it ends.
+        let flushQueued = false;
         const autosaveIdleMs = options.autosaveIdleMs === undefined ? AUTOSAVE_IDLE_MS : options.autosaveIdleMs;
         const autosaveEnabled = Number.isFinite(autosaveIdleMs) && autosaveIdleMs > 0;
         const controller = { requestLeave: requestLeave, destroy: destroy };
@@ -393,11 +397,11 @@
             if (assistanceRequest) { assistanceRequest.abort(); assistanceRequest = null; }
         }
         function abortRequests() { abortAssistance(); requests.forEach(function (request) { request.abort(); }); requests.clear(); }
-        async function call(method, args, expected) {
+        async function call(method, args, expected, keepalive) {
             const request = new AbortController(); requests.add(request);
             try {
                 const result = method === 'list' ? await client.list(Object.assign({}, args, { signal: request.signal }))
-                    : await client[method](args, { signal: request.signal });
+                    : await client[method](args, keepalive ? { signal: request.signal, keepalive: true } : { signal: request.signal });
                 return live(expected) ? result : null;
             } finally { requests.delete(request); }
         }
@@ -627,30 +631,39 @@
             updateStatus(); scheduleAutosave();
         }
         function cancelAutosave() { if (autosaveTimer !== null) { clearTimeout(autosaveTimer); autosaveTimer = null; } }
-        function scheduleAutosave() {
+        function scheduleAutosave(delay) {
             cancelAutosave();
             if (!autosaveEnabled || !live()) return;
-            autosaveTimer = setTimeout(function () { autosaveTimer = null; autosave(); }, autosaveIdleMs);
+            const flush = delay === 0;
+            autosaveTimer = setTimeout(function () { autosaveTimer = null; autosave(flush, flush); }, flush ? 0 : autosaveIdleMs);
             if (autosaveTimer && typeof autosaveTimer.unref === 'function') autosaveTimer.unref();
         }
         // Silent: an automatic save never shows validation messages, opens a
         // dialog or sends a draft the person could not save by hand.
-        function canAutosave() {
+        function canAutosave(flush) {
             if (!autosaveEnabled || !live() || !editable || !acknowledged || acknowledged.status === 'submitted' || view !== 'assessment' ||
-                busy || pending || conflict || !currentChecked || reviewing || leave || !dirtyEntries().length ||
+                busy || pending || conflict || !currentChecked || reviewing && !flush || leave || !dirtyEntries().length ||
                 SAVE_CEILING - acknowledged.revision <= AUTOSAVE_RESERVE) return false;
             return questions.every(function (question) {
                 const value = drafts.get(question.id).value, option = optionById.get(value.optionId);
                 return !option || option.applicable || !!value.rationale && validText(value.rationale.text);
             });
         }
-        function autosave() {
+        // One save runs at a time. A successful save schedules the next one
+        // for edits made meanwhile; see perform().
+        function autosave(flush, keepalive) {
             cancelAutosave();
-            if (!canAutosave()) return;
-            saveAll(false).then(function () { if (live() && dirtyEntries().length) scheduleAutosave(); }, function () {});
+            if (flush && busy && pending && pending.command.action === 'save') { flushQueued = true; return; }
+            if (!canAutosave(flush)) return;
+            flushQueued = false;
+            saveAll(false, keepalive).catch(function () {});
         }
-        function autosaveWhenHidden() { if (doc.visibilityState === 'hidden') autosave(); }
+        // The page may be discarded after either event, so the request is
+        // sent with keepalive and the same cookies and headers as any save.
+        function autosaveWhenHidden() { if (doc.visibilityState === 'hidden') autosave(true, true); }
+        function autosaveOnPageHide() { autosave(true, true); }
         if (autosaveEnabled && typeof doc.addEventListener === 'function') doc.addEventListener('visibilitychange', autosaveWhenHidden);
+        if (autosaveEnabled && win && typeof win.addEventListener === 'function') win.addEventListener('pagehide', autosaveOnPageHide);
         function returnToList() {
             abortRequests(); epoch += 1; loading = false;
             acknowledged = null; selected = null; drafts.clear(); assistanceNotes.clear(); reviewing = false; returnToReview = null;
@@ -854,7 +867,7 @@
                     }); content.append(unsent);
                 }
             }
-            else if (!editable) content.append(node('p', '', 'Read-only view. Editing is not enabled in this dashboard presentation.'));
+            else if (!editable) content.append(node('p', '', 'Read-only view.'));
             if (conflict) renderConflict();
             if (pending) renderPending();
             if (reviewing) { renderReview(); return; }
@@ -867,7 +880,7 @@
             index.value = String(activeQuestion);
             index.addEventListener('change', function () { const i = Number(index.value); if (live(renderedEpoch) && index.parentElement === content && Number.isInteger(i) && i >= 0 && i < questions.length) { activeQuestion = i; renderQuestion(); } });
             content.append(indexLabel, index);
-            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable ? ' Answers save automatically after a short pause.' : ''));
+            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable ? ' Answers save automatically a moment after each change.' : ''));
             indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
@@ -957,6 +970,7 @@
         }
         function openReview() {
             if (!live() || !editable || !acknowledged || acknowledged.status === 'submitted' || leave) return;
+            autosave(true);
             reviewing = true; returnToReview = null; errors = []; render();
             focusTarget(content.querySelector('[id="ncsc-review-title"]'));
         }
@@ -995,9 +1009,6 @@
             }
             metric('Reported implementation', results.attainment, 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
             metric('Resolved answers', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
-            if (results.substantiated === '0.0%' && results.tested === '0.0%') {
-                metric('Supporting evidence', 'None recorded', 'No supporting evidence has been recorded for this submission, so these results reflect your answers only. Confidence is not assessed.');
-            } else metric('Supporting evidence', results.substantiated, 'Current substantiated evidence coverage. Tested coverage: ' + results.tested + '. Confidence is not assessed. Self-attested answers alone do not demonstrate effectiveness.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
             panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Pending N/A claims: ' + results.pending + '.'));
             panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. N/A stays in the denominator unless formally approved; N/A approval is not available in this journey. This is a No Fries calculation, not an NCSC score.'));
@@ -1007,7 +1018,7 @@
                 domain.controls.forEach(function (control) {
                     const item = node('details', 'ncsc-result-control'); item.append(node('summary', '', control.title + ' — ' + control.attainment));
                     control.questions.forEach(function (question) {
-                        item.append(node('h4', '', question.prompt), node('p', '', 'Saved answer: ' + question.answer + '. Evidence: ' + question.evidence + '. Weight: ' + question.weight + '.'));
+                        item.append(node('h4', '', question.prompt), node('p', '', 'Saved answer: ' + question.answer + '. Weight: ' + question.weight + '.'));
                         if (question.rationale) item.append(node('p', 'ncsc-preserve-text', 'Pending N/A rationale: ' + question.rationale));
                         [['Suggested next actions', question.actions], ['Useful evidence', question.examples]].forEach(function (group) {
                             item.append(node('h4', '', group[0])); const list = node('ul'); group[1].forEach(function (text) { list.append(node('li', '', text)); }); item.append(list);
@@ -1015,9 +1026,6 @@
                     }); detail.append(item);
                 }); panel.append(detail);
             });
-            const provenance = node('details', 'ncsc-result-provenance'); provenance.append(node('summary', '', 'Calculation inputs and versions'));
-            provenance.append(node('p', '', 'Percentages are supplied by the deterministic server evaluator. This view does not recalculate them. Input fingerprints identify the saved calculation; they are not downloadable evidence.'));
-            const list = node('dl'); results.inputs.forEach(function (row) { list.append(node('dt', '', row[0]), node('dd', '', row[1])); }); provenance.append(list); panel.append(provenance);
         }
         function localDate(value) {
             return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
@@ -1127,7 +1135,7 @@
                     guidance.append(node('h3', '', pair[0])); const list = node('ul'); (pair[1] || []).forEach(function (text) { list.append(node('li', '', text)); }); guidance.append(list);
                 });
             }
-            guidance.append(node('p', 'dashboard-muted', 'Evidence examples are records you can consult to check your answer. Document upload is not enabled here.'));
+            guidance.append(node('p', 'dashboard-muted', 'Evidence examples are records you can consult to check your answer.'));
             if (Array.isArray(question.sources) && question.sources.length) {
                 guidance.append(node('h3', '', 'Why we ask'), node('p', 'dashboard-muted', metadata.sourceDisclosure));
                 const sources = node('ul');
@@ -1184,15 +1192,12 @@
             panel.append(node('p', '', question.guidance && question.guidance.summary || question.prompt));
             panel.append(node('p', 'dashboard-muted', 'Describe what actually happens, who manages it, and what information supports it. Unknown is a valid answer.' + (assisted ? ' AI suggestions need your review and do not verify evidence.' : '')));
             questionRegion.append(panel);
-            if (!assisted) {
-                panel.append(node('p', 'dashboard-muted', 'AI assistance and document interpretation are not enabled in this assessment. You can still use the guidance and answer manually.'));
-                return;
-            }
+            if (!assisted) return;
             const label = node('label', '', 'Describe your setup or paste relevant information');
             const notes = node('textarea', 'ncsc-textarea'); notes.id = 'ncsc-assistance-notes-' + question.id;
             notes.value = assistanceNotes.get(question.id) || '';
             notes.maxLength = 4000; label.setAttribute('for', notes.id);
-            panel.append(label, notes, node('p', 'dashboard-muted', 'Use only information approved for this assessment. Do not include passwords, tokens or personal information. Document upload is not enabled here.'));
+            panel.append(label, notes, node('p', 'dashboard-muted', 'Use only information approved for this assessment. Do not include passwords, tokens or personal information.'));
             panel.append(node('p', 'dashboard-muted', 'Notes stay only while this assessment is open. They are not saved with answers and will be cleared when you leave or refresh.'));
             const output = node('div'); output.setAttribute('role', 'status'); output.setAttribute('aria-live', 'polite');
             const panelLive = () => live() && canEdit() && questionRegion && questionRegion.contains(notes);
@@ -1341,7 +1346,7 @@
             if (batches.length > SAVE_CEILING - acknowledged.revision) throw new Error('save_capacity_exceeded');
             return batches;
         }
-        async function saveAll(drain) {
+        async function saveAll(drain, keepalive) {
             if (!live() || !editable || !acknowledged || acknowledged.status === 'submitted' || busy || pending || conflict || !currentChecked) return false;
             const expected = epoch;
             do {
@@ -1353,7 +1358,7 @@
                     if (!live(expected) || pending || conflict) return false;
                     try {
                         const command = client.normaliseCommand({ assessmentId: selected, action: 'save', idempotencyKey: newId(), expectedRevision: acknowledged.revision, payload: { responses: batch.map(function (item) { return item.value; }) } });
-                        if (!await perform(command, batch)) return false;
+                        if (!await perform(command, batch, false, keepalive && client.commandByteLength(command) <= KEEPALIVE_LIMIT)) return false;
                     } catch (error) { if (live(expected)) fixedFailure(error); return false; }
                 }
                 if (!live(expected)) return false;
@@ -1423,10 +1428,10 @@
                 await perform(command, []);
             } catch (error) { if (live(expected)) fixedFailure(error); }
         }
-        async function perform(command, captures, retry) {
+        async function perform(command, captures, retry, keepalive) {
             if (!live() || busy || pending && !retry) return false;
             const expected = epoch;
-            if (!retry) pending = { command: command, captures: captures, uncertain: false };
+            if (!retry) pending = { command: command, captures: captures, uncertain: false, keepalive: keepalive === true };
             const operation = pending; busy = true; statusText = '';
             const focusBeforeMutation = doc.activeElement;
             operation.restoreSave = focusBeforeMutation && (focusBeforeMutation.id === 'ncsc-save' || focusBeforeMutation.id === 'ncsc-save-status');
@@ -1437,7 +1442,7 @@
             } else render();
             let failed = false;
             try {
-                const result = await call(command.action, command, expected);
+                const result = await call(command.action, command, expected, operation.keepalive);
                 if (!result || !live(expected) || pending !== operation) return false;
                 const detail = cleanDetail(result.assessment, command.assessmentId);
                 if (command.action === 'create') {
@@ -1476,6 +1481,8 @@
                     const focusFailure = failed && (doc.activeElement === heading || doc.activeElement === status || doc.activeElement === saveStatus) && !leave && view !== 'denied';
                     const restoreSave = operation.restoreSave && doc.activeElement === saveStatus;
                     busy = false; render();
+                    if (!failed && command.action === 'save' && !pending && !conflict && dirtyEntries().length) scheduleAutosave(flushQueued ? 0 : undefined);
+                    else flushQueued = false;
                     if (restoreSave && !pending && !conflict) { const save = root.querySelector('[id="ncsc-save"]'); if (save && !save.disabled) save.focus({ preventScroll: true }); }
                     if (!failed && command.action === 'submit' && !pending && !conflict && acknowledged && acknowledged.status === 'submitted') {
                         // Confirm the submission where the person is looking, not only in an off-screen heading.
@@ -1598,6 +1605,7 @@
             if (disposed) return;
             disposed = true; epoch += 1; abortRequests(); cancelAutosave();
             if (autosaveEnabled && typeof doc.removeEventListener === 'function') doc.removeEventListener('visibilitychange', autosaveWhenHidden);
+            if (autosaveEnabled && win && typeof win.removeEventListener === 'function') win.removeEventListener('pagehide', autosaveOnPageHide);
             syncUnloadWarning();
             submitPrompt = false; submitLocked = false;
             if (leave) { leave.resolve(false); leave = null; }

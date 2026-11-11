@@ -32,6 +32,7 @@
             <a href="/roadmap.html">Roadmap</a>
             <a href="/contact.html">Contact</a>
             <a href="/login?intent=login">Log in</a>
+            <a href="#plans">Plans</a>
             <a href="#enquire">Discuss pricing</a>
         </nav>
     </header>
@@ -60,29 +61,82 @@
             </aside>
         </section>
 
+        <section class="managed-it-section managed-it-plans" id="plans" aria-labelledby="plans-title">
+            <div class="managed-it-section-heading">
+                <div><p class="eyebrow">Plans &amp; pricing</p><h2 id="plans-title">Three tiers. Pick your cover.</h2></div>
+                <p>Every tier is priced per user each month, excluding GST, and includes one main work computer per user.</p>
+            </div>
+            <ul class="managed-it-tiers" data-policy-section="tiers">
+                <li class="managed-it-tier" data-tier="essentials">
+                    <div class="managed-it-tier-head">
+                        <h3>Essentials</h3>
+                        <p class="managed-it-tier-tagline">Get visible &amp; supported</p>
+                        <p class="managed-it-tier-price"><span class="managed-it-tier-amount">NZ$59 + GST</span> <span class="managed-it-tier-basis">per user / month</span></p>
+                    </div>
+                    <ul class="managed-it-tier-features">
+                        <li>No Fries dashboard (users, devices, licences, security)</li>
+                        <li>AI-assisted email helpdesk with every change approved by me</li>
+                        <li>Microsoft 365 admin (new starters, leavers, passwords, licences)</li>
+                        <li>A monthly plain-English summary and to-do list</li>
+                    </ul>
+                    <button class="button button-secondary" type="button" data-assistant-open data-assistant-topic="managed-it" data-managed-it-tier="essentials">Enquire about Essentials <span aria-hidden="true">→</span></button>
+                </li>
+                <li class="managed-it-tier is-recommended" data-tier="managed">
+                    <div class="managed-it-tier-head">
+                        <p class="managed-it-tier-badge">Recommended</p>
+                        <h3>Managed</h3>
+                        <p class="managed-it-tier-tagline">We look after it for you</p>
+                        <p class="managed-it-tier-price"><span class="managed-it-tier-amount">NZ$99 + GST</span> <span class="managed-it-tier-basis">per user / month</span></p>
+                    </div>
+                    <p class="managed-it-tier-inherits">Everything in Essentials, plus:</p>
+                    <ul class="managed-it-tier-features">
+                        <li>Device updates and patching</li>
+                        <li>Microsoft 365 backup set up and checked</li>
+                        <li>Dealing with your other IT vendors</li>
+                        <li>A quarterly check-in with me</li>
+                    </ul>
+                    <button class="button" type="button" data-assistant-open data-assistant-topic="managed-it" data-managed-it-tier="managed">Enquire about Managed <span aria-hidden="true">→</span></button>
+                </li>
+                <li class="managed-it-tier" data-tier="secure">
+                    <div class="managed-it-tier-head">
+                        <h3>Secure</h3>
+                        <p class="managed-it-tier-tagline">Tightened &amp; watched</p>
+                        <p class="managed-it-tier-price"><span class="managed-it-tier-amount">NZ$139 + GST</span> <span class="managed-it-tier-basis">per user / month</span></p>
+                    </div>
+                    <p class="managed-it-tier-inherits">Everything in Managed, plus:</p>
+                    <ul class="managed-it-tier-features">
+                        <li>Security hardening (MFA, sign-in and device policies)</li>
+                        <li>Security alerts reviewed and acted on</li>
+                        <li>Staff phishing and scam awareness tips</li>
+                    </ul>
+                    <button class="button button-secondary" type="button" data-assistant-open data-assistant-topic="managed-it" data-managed-it-tier="secure">Enquire about Secure <span aria-hidden="true">→</span></button>
+                </li>
+            </ul>
+            <p class="managed-it-tier-note">Set-up from NZ$750 + GST. Extra computers NZ$20 + GST each per month, extra locations NZ$125 + GST each per month.</p>
+        </section>
+
         <section class="managed-it-section" id="included" aria-labelledby="included-title">
             <div class="managed-it-section-heading">
                 <div><p class="eyebrow">The standard service</p><h2 id="included-title">Support you can understand.</h2></div>
                 <p>The agreed scope sets out your people, computers, tools and service coverage.</p>
             </div>
             <ol class="managed-it-included" data-policy-section="included">
-                <li><span aria-hidden="true">01</span><div><h3>Day-to-day user support during agreed business hours</h3><p>Help with the everyday issues that get in the way of work.</p></div></li>
-                <li><span aria-hidden="true">02</span><div><h3>Phone, chat and email support</h3><p>Clear ways to ask for help and keep track of the outcome.</p></div></li>
-                <li><span aria-hidden="true">03</span><div><h3>Care for one main work computer per user</h3><p>Support for the main computers included in your agreed service.</p></div></li>
-                <li><span aria-hidden="true">04</span><div><h3>Administration of agreed business email and shared work tools</h3><p>Help with the business tools your service covers.</p></div></li>
-                <li><span aria-hidden="true">05</span><div><h3>Supplier follow-up for agreed services</h3><p>Follow up with the relevant suppliers for services in scope.</p></div></li>
-                <li><span aria-hidden="true">06</span><div><h3>Monthly service reporting and review</h3><p>Review the service coverage, work completed and next steps.</p></div></li>
+                <li><span aria-hidden="true">01</span><div><h3>Day-to-day support during agreed business hours</h3><p>Help with the everyday issues that get in the way of work.</p></div></li>
+                <li><span aria-hidden="true">02</span><div><h3>No Fries dashboard (users, devices, licences, security)</h3><p>See your people, devices, licences and security position in one place.</p></div></li>
+                <li><span aria-hidden="true">03</span><div><h3>AI-assisted email helpdesk with every change approved by me</h3><p>Ask by email; routine changes are handled with every change approved by me.</p></div></li>
+                <li><span aria-hidden="true">04</span><div><h3>Microsoft 365 admin (new starters, leavers, passwords, licences)</h3><p>New starters, leavers, passwords and licences kept in order.</p></div></li>
+                <li><span aria-hidden="true">05</span><div><h3>A monthly plain-English summary and to-do list</h3><p>A clear monthly summary of what happened and what to do next.</p></div></li>
             </ol>
         </section>
 
         <section class="managed-it-section managed-it-options" aria-labelledby="options-title">
             <div class="managed-it-section-heading">
-                <div><p class="eyebrow">Optional · selected separately</p><h2 id="options-title">Protect &amp; Recover.</h2></div>
-                <p>Discuss the protection and recovery support you need. These options are included only when selected in your agreed scope.</p>
+                <div><p class="eyebrow">Optional · priced per use</p><h2 id="options-title">Add-ons when you need them.</h2></div>
+                <p>These add-ons are priced on top of your per-user plan when your agreed scope needs them.</p>
             </div>
             <ul class="managed-it-option-list" data-policy-section="optional">
-                <li><h3>Threat protection and after-hours security help</h3><p>Agree the security support that fits your service.</p></li>
-                <li><h3>Backup of agreed work files</h3><p>Confirm which work files are covered before getting started.</p></li>
+                <li><h3>Extra work computers beyond the one included per user</h3><p>Each plan includes one main work computer per user; add more when you need them.</p></li>
+                <li><h3>Extra business locations</h3><p>Add another site to your agreed service.</p></li>
             </ul>
         </section>
 

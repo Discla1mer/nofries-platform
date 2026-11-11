@@ -31,6 +31,19 @@ test('connected picture preserves existing attention items and disposes before a
     assert.match(dom.root.textContent, /Next action/);
 });
 
+test('connected picture Overview omits the unused metric grid and the repeated navigation list', () => {
+    const picture = () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } });
+    for (const empty of [false, true]) {
+        const model = clone(view({ empty })); model.modules.find(item => item.key === 'cyber_security').state = 'ready';
+        const dom = mount(model, { mountPicture: picture });
+        assert.equal(dom.root.querySelector('.dashboard-overview-grid'), null);
+        assert.equal(dom.root.querySelector('.dashboard-metrics'), null);
+        assert.equal(dom.root.querySelector('.dashboard-availability'), null);
+        assert.doesNotMatch(dom.root.textContent, /Other dashboard areas and availability|The current picture|Build your first baseline/);
+        assert.equal(!!dom.root.querySelector('.dashboard-attention'), !empty);
+    }
+});
+
 test('server projection reuses product entitlement and permission policy without provider identifiers', () => {
     assert.equal(keys(view()).length, 8);
     const score = view({ tier: 'dashboard_score' });
@@ -257,7 +270,8 @@ test('service scope control opens information without a purchase/write channel',
 test('disabled services explain policy availability rather than implying provider setup is sufficient', () => {
     const dom = mount(view({ service: 'managed_endpoint', enabled: { 'service:managed_endpoint': false } }), { initialRoute: 'services' });
     buttons(dom).find(item => item.textContent === 'About availability').click();
-    assert.match(dom.root.textContent, /provider connection alone will not activate it/);
+    assert.match(dom.root.textContent, /not available yet\. Contact No Fries if you need it\./);
+    assert.doesNotMatch(dom.root.textContent, /current build|provider connection alone/);
 });
 
 test('stale display is explicit and loading/denial clear old organisation content', () => {
@@ -680,7 +694,8 @@ test('first baseline has no action into planned or disabled assessment modules',
 test('Overview uses the main navigation without duplicate module call-to-action cards', () => {
     const dom = mount(view({ empty: true }));
     assert.equal(dom.root.querySelectorAll('.dashboard-module-card').length, 0);
-    assert.equal(dom.root.querySelector('.dashboard-availability').querySelectorAll('a').length, 0);
+    assert.equal(dom.root.querySelector('.dashboard-availability'), null);
+    assert.doesNotMatch(dom.root.textContent, /Other dashboard areas and availability/);
 });
 
 test('mobile Workspace opens the ready authorized Cyber module ahead of planned AI', () => {
@@ -697,7 +712,7 @@ test('disabled Board Reports keeps the disabled label even when Cyber picture is
     model.modules.find(item => item.key === 'board_reports').state = 'disabled';
     const options = { mountPicture: () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } }) };
     const overview = mount(model, options);
-    assert.doesNotMatch(overview.root.querySelector('.dashboard-availability').textContent, /Draft assessment snapshot/);
+    assert.doesNotMatch(overview.root.textContent, /Draft assessment snapshot/);
     const board = mount(model, { ...options, initialRoute: 'board-reports' });
     assert.doesNotMatch(board.root.textContent, /Draft assessment snapshot/);
     assert.match(board.root.textContent, /temporarily unavailable/);
