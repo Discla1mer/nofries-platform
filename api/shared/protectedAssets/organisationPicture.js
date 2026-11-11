@@ -258,7 +258,9 @@
             renderResult(result);
             if (explanation && typeof explanation.mount === 'function') {
                 const child = node('section', 'picture-explanation ncsc-results'); root.append(child);
-                explanationController = explanation.mount(child, { client, metadata, organisationId,
+                // The explanation is optional. If it cannot start, keep the
+                // results above it and say so plainly instead of blanking the page.
+                try { explanationController = explanation.mount(child, { client, metadata, organisationId,
                     resultModel: questionnaire.resultModel, assessment: {
                         assessmentId: detail.assessmentId, revision: detail.revision, revisionSha256: detail.revisionSha256,
                         status: detail.status, profileRef: detail.profileRef, updatedAt: detail.updatedAt
@@ -268,6 +270,10 @@
                         abort(); epoch++;
                         failure({ statusCode: 403 }, null); render();
                     } });
+                } catch (_error) {
+                    explanationController = null;
+                    child.replaceChildren(node('p', 'ncsc-warning', 'The explanation is unavailable right now. Your results above are unchanged.'));
+                }
             }
         }
         const newestFirst = (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId);

@@ -134,6 +134,13 @@
         let generation = 0, controller = null, destroyed = false, busy = false, message = '', clearanceFrame = null;
         let loadTimer = null, retry = false;
         function node(tag, text) { const item = document.createElement(tag); if (text !== undefined) item.textContent = text; return item; }
+        // The status region persists across renders so assistive technology
+        // announces loading, ready and failed states. Only head and tail are rebuilt.
+        const head = node('div'), live = node('div'), tail = node('div');
+        live.className = 'ncsc-explanation-status'; live.dataset.explanationStatus = 'true';
+        live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite'); live.setAttribute('aria-atomic', 'true');
+        function announce(text) { if (live.textContent !== text) live.textContent = text; }
+        function state() { return busy ? 'loading' : retry ? 'failed' : detail ? 'ready' : 'idle'; }
         function button(label, action, key) {
             const item = node('button', label); item.type = 'button'; item.className = 'dashboard-button';
             item.dataset.explanationControl = key;
@@ -200,26 +207,32 @@
         function render() {
             if (destroyed) return;
             const focus = focusedControl();
-            root.replaceChildren(); root.setAttribute('aria-label', 'Saved assessment explanation');
-            root.append(node('h3', 'Explain this saved result'), node('p', 'This explains the saved assessment you have open. It is separate from Fry product help, which cannot read this assessment. Choose a topic, then load the selected saved submission.'));
+            if (live.parentElement !== root) root.replaceChildren(head, live, tail);
+            head.replaceChildren(); tail.replaceChildren();
+            root.setAttribute('aria-label', 'Saved assessment explanation');
+            const current = state(); root.dataset.explanationState = current;
+            live.className = current === 'failed' ? 'ncsc-explanation-status ncsc-warning' : 'ncsc-explanation-status';
+            root.setAttribute('aria-busy', String(current === 'loading'));
+            announce(busy ? 'Loading the saved submission…' : message || (current === 'ready' ? 'The saved explanation has loaded.' : ''));
+            head.append(node('h3', 'Explain this saved result'), node('p', 'This explains the saved assessment you have open. It is separate from Fry product help, which cannot read this assessment. Choose a topic, then load the selected saved submission.'));
             const topics = node('div'); topics.className = 'ncsc-actions';
             Object.keys(TOPICS).forEach(function (key) {
                 const item = button(TOPICS[key], function () { if (busy || destroyed) return; topic = key; render(); }, 'topic-' + key);
                 item.setAttribute('aria-pressed', String(topic === key)); topics.append(item);
-            }); root.append(topics);
+            }); head.append(topics);
             if (!selected || selected.status !== 'submitted') {
-                root.append(node('p', message || 'A saved submitted result must be selected before an explanation can be loaded.')); restoreFocus(focus); return;
+                if (!message) head.append(node('p', 'A saved submitted result must be selected before an explanation can be loaded.'));
+                restoreFocus(focus); return;
             }
-            root.append(button(retry ? 'Retry saved explanation' : refreshSelection ? 'Refresh saved explanation' : detail ? 'Reload saved explanation' : 'Explain this saved result', load, 'load'));
+            head.append(button(retry ? 'Retry saved explanation' : refreshSelection ? 'Refresh saved explanation' : detail ? 'Reload saved explanation' : 'Explain this saved result', load, 'load'));
             const clearButton = button('Clear saved explanation', function () { if (destroyed) return; clear(); render(); }, 'clear');
-            clearButton.disabled = false; clearButton.setAttribute('aria-disabled', 'false'); root.append(clearButton);
-            if (busy || message) { const status = node('p', busy ? 'Loading the saved submission…' : message); status.setAttribute('role', 'status'); root.append(status); }
+            clearButton.disabled = false; clearButton.setAttribute('aria-disabled', 'false'); head.append(clearButton);
             if (!detail) { restoreFocus(focus); return; }
             const projected = explain(detail, { metadata: options.metadata, organisationId: options.organisationId, resultModel: options.resultModel, topic });
             if (projected.status === 'ready' && hostSelection &&
                 (selected.revision !== hostSelection.revision || selected.revisionSha256 !== hostSelection.revisionSha256)) {
                 const notice = node('p', 'Cyber baseline and this explanation show different saved versions. Use the baseline’s Refresh control to reload it.');
-                notice.className = 'ncsc-warning'; notice.dataset.explanationVersionNotice = 'true'; notice.setAttribute('role', 'status'); root.append(notice);
+                notice.className = 'ncsc-warning'; notice.dataset.explanationVersionNotice = 'true'; notice.setAttribute('role', 'status'); tail.append(notice);
             }
             const region = node('section'); region.setAttribute('aria-label', 'Saved explanation'); region.append(node('h4', projected.title));
             projected.blocks.forEach(function (block) {
@@ -235,7 +248,7 @@
                             ' · ' + citation.profileRef.catalogueSha256 + ' · metadata.' + citation.field));
                     }); sources.append(references); region.append(sources);
                 }
-            }); root.append(region); restoreFocus(focus);
+            }); tail.append(region); restoreFocus(focus);
         }
         async function load() {
             if (destroyed || busy || !selected || selected.status !== 'submitted') return;

@@ -195,6 +195,41 @@ describe('explicit saved explanation controller', () => {
             expect(view.root.textContent).not.toContain('took too long');
             expect(view.client.read).toHaveBeenCalledTimes(1);
         });
+        test('loading, failed and ready states are explicit and announced in one persistent live region', async () => {
+            const source = saved(), first = deferred(), second = deferred(); view = ui(source);
+            view.client.read.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+            const live = view.root.querySelector('[data-explanation-status]');
+            expect(live.getAttribute('aria-live')).toBe('polite'); expect(live.getAttribute('role')).toBe('status');
+            expect(view.root.dataset.explanationState).toBe('idle');
+            control(view, 'Explain this saved result').click();
+            expect(view.root.dataset.explanationState).toBe('loading');
+            expect(view.root.getAttribute('aria-busy')).toBe('true');
+            expect(live.textContent).toContain('Loading the saved submission');
+            first.reject(Object.assign(new Error('server'), { statusCode: 500 })); await jest.advanceTimersByTimeAsync(0);
+            expect(view.root.dataset.explanationState).toBe('failed');
+            expect(view.root.getAttribute('aria-busy')).toBe('false');
+            expect(view.root.querySelector('[data-explanation-status]')).toBe(live);
+            expect(live.textContent).toContain('The saved explanation is unavailable. Your saved answers are unchanged.');
+            expect(live.className).toContain('ncsc-warning');
+            expect(jest.getTimerCount()).toBe(0);
+            control(view, 'Retry saved explanation').click();
+            expect(view.root.dataset.explanationState).toBe('loading');
+            second.resolve({ schemaVersion: 1, assessment: clone(source.assessment) }); await jest.advanceTimersByTimeAsync(0);
+            expect(view.root.dataset.explanationState).toBe('ready');
+            expect(view.root.querySelector('[data-explanation-status]')).toBe(live);
+            expect(live.textContent).toBe('The saved explanation has loaded.');
+            expect(view.root.textContent).toContain('100.0%');
+            expect(view.client.read).toHaveBeenCalledTimes(2);
+        });
+        test('a timeout moves to the failed state with a retry control', async () => {
+            const source = saved(), pending = deferred(); view = ui(source);
+            view.client.read.mockReturnValueOnce(pending.promise);
+            control(view, 'Explain this saved result').click();
+            await jest.advanceTimersByTimeAsync(30000);
+            expect(view.root.dataset.explanationState).toBe('failed');
+            expect(view.root.querySelector('[data-explanation-status]').textContent).toContain('took too long');
+            expect(control(view, 'Retry saved explanation')).toBeDefined();
+        });
         test('successful reads clear their timeout and do not later abort', async () => {
             view = ui(saved()); control(view, 'Explain this saved result').click();
             const signal = view.client.read.mock.calls[0][1].signal;
