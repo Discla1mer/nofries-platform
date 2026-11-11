@@ -650,7 +650,7 @@ if (configuration.starterClients || configuration.externalStarterClients) app.al
         if (['starter_reauthentication_required', 'signup_identity_required'].includes(error?.code || error?.message)) {
             return res.status(401).set('Cache-Control', 'no-store').json({ code: 'starter_reauthentication_required' });
         }
-        const code = ['starter_client_limit', 'starter_details_locked'].includes(error?.code || error?.message)
+        const code = ['starter_client_limit', 'starter_details_locked', 'starter_client_discarded', 'starter_client_not_draft'].includes(error?.code || error?.message)
             ? error.code || error.message : 'starter_signup_unavailable';
         res.status(code === 'starter_signup_unavailable' ? 503 : 409).set('Cache-Control', 'no-store').json({ code });
     }

@@ -1317,6 +1317,37 @@ function registerRealPostgresTests() {
                 }
                 const full = await clientPost({ action: 'create', requestId: nextId(), organisationName: 'Fourth synthetic client', details });
                 expect(full.status).toBe(409); expect(full.body.code).toBe('starter_client_limit');
+                // #151 with migration 0019 and the default-off flag turned on: drafts
+                // can be discarded and a place is used only when terms are accepted.
+                h.env.NOFRIES_STARTER_CLIENT_DISCARD_ENABLED = 'true';
+                h.recomposeWithApplication(require('../../lib/productionApplication').createProductionApplication);
+                list = await request(h.app).get('/api/customer-signup/clients').set('Cookie', login.cookie);
+                expect(list.body.state.remaining).toBe(2);
+                const ready = list.body.state.clients.find(c => c.status === 'ready'), drafts = list.body.state.clients.filter(c => c.status !== 'ready');
+                expect(ready.discardable).toBe(false); expect(drafts.map(c => c.discardable)).toEqual([true, true]);
+                for (const draft of drafts) {
+                    const gone = await clientPost({ action: 'discard', requestId: draft.requestId });
+                    expect(gone.status).toBe(200); expect(gone.body.state.clients.map(c => c.requestId)).not.toContain(draft.requestId);
+                }
+                expect((await clientPost({ action: 'discard', requestId: drafts[0].requestId })).status).toBe(200);
+                for (const [body, code] of [[{ action: 'discard', requestId: ready.requestId }, 'starter_client_not_draft'],
+                    [{ action: 'resume', requestId: drafts[0].requestId }, 'starter_client_discarded']]) {
+                    const refused = await clientPost(body); expect(refused.status).toBe(409); expect(refused.body.code).toBe(code);
+                }
+                const offer = async name => { const id = nextId(), made = await clientPost({ action: 'create', requestId: id, organisationName: name, details });
+                    expect(made.body.state.status).toBe('terms'); return { id, terms: { accepted: true, ...Object.fromEntries(['termsVersion', 'termsDigest', 'scheduleId', 'scheduleDigest'].map(k => [k, made.body.state[k]])) } }; };
+                const accept = draft => clientPost({ action: 'accept', requestId: draft.id, terms: draft.terms });
+                const fourth = await offer('Fourth synthetic client'), fifth = await offer('Fifth synthetic client');
+                expect((await accept(fourth)).body.state.status).toBe('ready');
+                const sixth = await offer('Sixth synthetic client');
+                expect((await accept(fifth)).body.state.status).toBe('ready');
+                // A draft beyond the limit exists but cannot accept terms.
+                const over = await accept(sixth); expect(over.status).toBe(409); expect(over.body.code).toBe('starter_client_limit');
+                list = await request(h.app).get('/api/customer-signup/clients').set('Cookie', login.cookie);
+                expect(list.body.state.remaining).toBe(0); expect(list.body.state.clients.filter(c => c.status === 'ready')).toHaveLength(3);
+                expect((await clientPost({ action: 'create', requestId: nextId(), organisationName: 'Seventh synthetic client', details })).status).toBe(409);
+                expect((await clientPost({ action: 'discard', requestId: sixth.id })).status).toBe(200);
+                expect((await ownerPool.query('SELECT count(*)::int AS n FROM nofries.dashboard_starter_scopes WHERE ordinal>0 AND activation IS NOT NULL AND subject_key=$1', [current.subjectKey])).rows[0].n).toBe(3);
                 // The real membership state, not a BFF or immutable plan, governs
                 // further client operations after an owner revocation.
                 await createPostgresDatabase({ pool: ownerPool }).withTenantTransaction(current.tenantId, async tx => {
