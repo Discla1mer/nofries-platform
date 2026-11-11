@@ -3029,6 +3029,22 @@ describe('plan submission allowance', () => {
         } finally { ui.controller.destroy(); }
     });
 
+    test('a plan with no submissions still loads the list, disables Start and explains why in plain words', async () => {
+        const h = await backend({ allowance: { used: 0, limit: 0 } }); await h.execute(createCommand());
+        const ui = mountUi(h, { startNew: true });
+        try {
+            await until(() => savedActions(ui).length > 0);
+            const start = control(ui, 'Start an assessment'), note = allowanceNote(ui);
+            expect(start.disabled).toBe(true);
+            expect(start.getAttribute('aria-describedby')).toBe('ncsc-allowance');
+            expect(note.textContent).toBe('Your plan does not include assessment submissions. ' +
+                'You can still open and read your saved assessments. Contact No Fries about more submissions');
+            expect(note.textContent).not.toMatch(/0 of 0/);
+            expect(byId(ui, 'ncsc-scope')).toBeUndefined();
+            expect(h.calls.filter(row => row.init.method === 'POST')).toHaveLength(0);
+        } finally { ui.controller.destroy(); }
+    });
+
     test('a refused submit explains the used allowance, keeps the answers and names a next step', async () => {
         const h = await backend({ allowance: { used: 4, limit: 5 } });
         await h.execute(createCommand()); await h.execute(saveCommand());
@@ -3052,7 +3068,10 @@ describe('plan submission allowance', () => {
         const page = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
         expect((await list({ ...page, submissionAllowance: { used: 2, limit: 5 } })).submissionAllowance).toEqual({ used: 2, limit: 5 });
         expect((await list({ ...page, submissionAllowance: null })).submissionAllowance).toBeNull();
-        for (const bad of [{ used: -1, limit: 5 }, { used: 1, limit: 0 }, { used: '1', limit: 5 }, { used: 1 }, { used: 1, limit: 5, price: 0 }]) {
+        // A product grant may set assessment_runs to zero; the list must still load.
+        expect((await list({ ...page, submissionAllowance: { used: 0, limit: 0 } })).submissionAllowance).toEqual({ used: 0, limit: 0 });
+        for (const bad of [{ used: -1, limit: 5 }, { used: 1, limit: -1 }, { used: 1.5, limit: 5 }, { used: 1, limit: 2.5 },
+            { used: '1', limit: 5 }, { used: 1, limit: '5' }, { used: 1 }, { used: 1, limit: 5, price: 0 }]) {
             await expect(list({ ...page, submissionAllowance: bad })).rejects.toMatchObject({ code: 'ncsc_unavailable' });
         }
     });

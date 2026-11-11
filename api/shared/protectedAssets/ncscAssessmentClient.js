@@ -300,8 +300,9 @@
                 if (!Array.isArray(value.assessments) || value.assessments.length > selected.limit) invalid();
                 if (value.submissionAllowance !== undefined && value.submissionAllowance !== null) {
                     const allowance = record(value.submissionAllowance, ['used', 'limit']);
+                    // A product grant may set zero submissions; exhaustion is shown, not rejected.
                     integer(allowance.used, Number.MAX_SAFE_INTEGER);
-                    if (integer(allowance.limit, Number.MAX_SAFE_INTEGER) < 1) invalid();
+                    integer(allowance.limit, Number.MAX_SAFE_INTEGER);
                 }
                 let previous = selected.afterAssessmentId;
                 for (const item of value.assessments) {

@@ -670,6 +670,14 @@ describe('NCSC assessment durable facade contract', () => {
         await expectCode(h.repository.listNcscAssessments(foreign, { limit: 1, afterAssessmentId: null }), 'ncsc_access_denied');
     });
 
+    test('a product with no assessment submissions reports a zero allowance on the list', async () => {
+        const h = await setup({ capacity: 0 });
+        await h.create();
+        const page = await h.list();
+        expect(page.assessments.map(row => row.assessmentId)).toEqual(['assessment-a']);
+        expect(page.submissionAllowance).toEqual({ used: 0, limit: 0 });
+    });
+
     test('an asynchronous approved policy charges once and exact replay never reloads it', async () => {
         const h = await ready(), before = h.memory.snapshot(); let release, entered;
         const started = new Promise(resolve => { entered = resolve; });

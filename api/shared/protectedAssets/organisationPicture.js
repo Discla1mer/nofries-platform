@@ -160,8 +160,9 @@
                 // Plan usage in plain English, so the limit is known before starting work.
                 const exhausted = allowance.used >= allowance.limit;
                 const usage = node('p', exhausted ? 'ncsc-warning picture-allowance' : 'dashboard-muted picture-allowance',
-                    allowance.used + ' of ' + allowance.limit + ' assessment ' + (allowance.limit === 1 ? 'submission' : 'submissions') + ' used on your plan.' +
-                    (exhausted ? ' You can still read your saved assessments, but you cannot submit another assessment. ' : ''));
+                    (allowance.limit === 0 ? 'Your plan does not include assessment submissions. You can still read your saved assessments. '
+                        : allowance.used + ' of ' + allowance.limit + ' assessment ' + (allowance.limit === 1 ? 'submission' : 'submissions') + ' used on your plan.' +
+                        (exhausted ? ' You can still read your saved assessments, but you cannot submit another assessment. ' : '')));
                 if (exhausted) { const contact = node('a', '', 'Contact No Fries about more submissions'); contact.href = '/contact.html'; usage.append(contact); }
                 root.append(usage);
             }

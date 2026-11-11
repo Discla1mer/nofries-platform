@@ -479,6 +479,7 @@
         }
         function allowanceExhausted() { return !!allowance && allowance.used >= allowance.limit; }
         function allowanceUsage() {
+            if (allowance.limit === 0) return 'Your plan does not include assessment submissions.';
             return allowance.used + ' of ' + allowance.limit + ' assessment ' + (allowance.limit === 1 ? 'submission' : 'submissions') + ' used on your plan.';
         }
         // Plain-English plan usage, shown before anyone starts work it cannot submit.
@@ -486,7 +487,8 @@
             if (!allowance) return null;
             const exhausted = allowanceExhausted();
             const note = node('p', exhausted ? 'ncsc-warning ncsc-allowance' : 'dashboard-muted ncsc-allowance', allowanceUsage() +
-                (exhausted ? ' You can still open and read your saved assessments, but you cannot submit another assessment. ' : ''));
+                (!exhausted ? '' : allowance.limit === 0 ? ' You can still open and read your saved assessments. '
+                    : ' You can still open and read your saved assessments, but you cannot submit another assessment. '));
             note.id = 'ncsc-allowance';
             if (exhausted) { const contact = node('a', '', 'Contact No Fries about more submissions'); contact.href = '/contact.html'; note.append(contact); }
             return note;
@@ -494,7 +496,8 @@
         function quotaMessage() {
             // The server refused because the plan's submissions are used up; keep later views consistent with that.
             if (allowance) allowance = { used: Math.max(allowance.used, allowance.limit), limit: allowance.limit };
-            return (allowance ? 'This assessment was not submitted. All ' + allowance.limit + ' assessment submissions on your plan have been used (' + allowance.used + ' of ' + allowance.limit + ').'
+            return (allowance && allowance.limit === 0 ? 'This assessment was not submitted. Your plan does not include assessment submissions.'
+                : allowance ? 'This assessment was not submitted. All ' + allowance.limit + ' assessment submissions on your plan have been used (' + allowance.used + ' of ' + allowance.limit + ').'
                 : 'This assessment was not submitted. All assessment submissions on your plan have been used.') +
                 ' Your saved answers are kept and you can still read them. To ask about more submissions, contact No Fries.';
         }
@@ -824,7 +827,7 @@
         }
         async function createAssessment() {
             if (!editable || busy || pending || !live()) return false;
-            if (allowanceExhausted()) { statusText = allowanceUsage() + ' You cannot submit another assessment.'; updateStatus(); return false; }
+            if (allowanceExhausted()) { statusText = allowanceUsage() + (allowance.limit === 0 ? '' : ' You cannot submit another assessment.'); updateStatus(); return false; }
             if (!validText(declaration)) { errors = [{ id: 'scope', message: textError(declaration, true) }]; renderErrors(true); return false; }
             errors = []; renderErrors();
             try {
