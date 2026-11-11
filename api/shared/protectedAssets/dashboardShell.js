@@ -304,7 +304,8 @@
                 const notice = panel('This snapshot needs a refresh', 'These figures are historical. Reopen through the authenticated dashboard before relying on them.');
                 notice.classList.add('dashboard-warning'); main.append(notice);
             }
-            const grid = element('div', 'dashboard-overview-grid');
+            // The organisation picture replaces the metric cards; it shows only real attention items.
+            if (connectedPicture && !model.summary.attention.length) return;
             const attention = panel('Needs attention', 'Named owners. Clear next steps.');
             attention.classList.add('dashboard-attention');
             if (!model.summary.attention.length) {
@@ -329,6 +330,7 @@
                     const next = attention.querySelectorAll('[data-attention]')[3]; if (next) next.focus();
                 }, 'dashboard-button dashboard-view-all'));
             }
+            if (connectedPicture) { main.append(attention); return; }
             const posture = panel('The current picture', 'Separate measures, with their evidence.');
             const metrics = element('div', 'dashboard-metrics');
             Object.keys(metricLabels).forEach(function (kind) {
@@ -346,17 +348,8 @@
                     metrics.append(card);
                 });
             });
-            posture.append(metrics); grid.append(attention, posture);
-            if (!connectedPicture) main.append(grid);
-            else if (model.summary.attention.length) main.append(attention);
-            const modules = element('details', 'dashboard-panel dashboard-availability');
-            modules.append(element('summary', '', 'Other dashboard areas and availability'),
-                element('p', 'dashboard-muted', 'Use the dashboard navigation to open an area. Planned areas have no connected assessment data.'));
-            const list = element('ul');
-            available.filter(function (item) { return item.key !== 'overview'; }).forEach(function (item) {
-                list.append(element('li', '', item.label + ' · ' + moduleStates[stateFor(item.key)]));
-            });
-            modules.append(list); main.append(modules);
+            posture.append(metrics);
+            const grid = element('div', 'dashboard-overview-grid'); grid.append(attention, posture); main.append(grid);
         }
         function renderPicture() {
             const childRoot = element('div', 'dashboard-picture-workspace'); main.append(childRoot);
@@ -448,7 +441,7 @@
                 detail.append(element('p', '', service.state === 'not_included'
                     ? 'Next step: agree the organisation, coverage, deliverables, term and commercial scope with No Fries.'
                     : service.state === 'disabled'
-                    ? 'This included service is disabled in the current build. No Fries must confirm readiness before enabling it; a provider connection alone will not activate it.'
+                    ? 'This included service is not available yet. Contact No Fries if you need it.'
                     : 'Next step: verify the agreed assignment, coverage and any required provider connection before activation.'),
                     element('p', 'dashboard-muted', 'This is information only. No request, purchase, assignment or activation has been submitted.'));
                 const control = button(service.state === 'not_included' ? 'How to scope this service'

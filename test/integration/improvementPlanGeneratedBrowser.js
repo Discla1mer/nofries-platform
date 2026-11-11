@@ -205,8 +205,8 @@ module.exports = function registerGeneratedBrowser({ ncscHttpSetup, httpJson, te
                 'sha256-' + crypto.createHash('sha256').update(bundle).digest('base64'));
             await page.getByLabel('Saved assessment', { exact: true }).selectOption('assessment-a');
             await page.locator('.picture-source').filter({ hasText: 'submitted' }).waitFor();
-            await page.getByRole('button', { name: 'Review supporting-evidence gaps', exact: true }).click();
-            const category = page.locator('.picture-follow-up > details').filter({ has: page.locator('summary', { hasText: /^Supporting-evidence gaps/ }) });
+            await page.getByRole('button', { name: /^Review \d+ implementation gaps?$/ }).click();
+            const category = page.locator('.picture-follow-up > details').filter({ has: page.locator('summary', { hasText: /^Reported implementation gaps/ }) });
             assert.equal(await category.evaluate(node => node.open), true); assert.ok(await category.locator('article').count());
             await page.getByRole('button', { name: 'Plan improvements for this assessment', exact: true }).click();
             assert.equal(executions.length, 0, 'Review/navigation must not create a plan');

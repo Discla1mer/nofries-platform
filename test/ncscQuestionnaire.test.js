@@ -1159,15 +1159,16 @@ describe('question assistance source integration', () => {
     const suggestion = () => ({ questionId: metadata().questions[0].id, status: 'suggested_not_confirmed',
         explanation: '<b>Review this suggestion</b>', optionId: 'partial', rationale: null,
         followUp: ['Does this cover every system?'], citations: [{ sourceId: 'notes', quote: 'Some systems' }] });
-    test('all questions retain guidance with explicit disabled AI fallback', async () => {
+    test('all questions retain guidance without mentioning switched-off AI or upload', async () => {
         const h = await backend(), ui = await createInUi(h);
         for (let i = 0; i < metadata().questions.length; i++) {
             const selector = byId(ui, 'ncsc-question-index'); selector.value = String(i); event(selector, 'change');
             expect(ui.root.textContent).toContain('How to answer this question');
             expect(ui.root.textContent).not.toContain('Help me answer this question');
             expect(ui.root.textContent).not.toContain('AI suggestions need your review');
-            expect(ui.root.textContent).toContain('not enabled in this assessment');
-            expect(ui.root.textContent).not.toContain('AI suggestions need your review');
+            expect(ui.root.textContent).not.toContain('not enabled');
+            expect(ui.root.textContent).not.toContain('AI assistance');
+            expect(ui.root.textContent).not.toContain('Document upload');
         }
         ui.controller.destroy();
     });
@@ -1234,9 +1235,15 @@ describe('submitted assessment results', () => {
         ['unknown', '0.0%–100.0%', 14], ['not_applicable', '0.0%–100.0%', 14]])('projects actual server %s output without inventing evidence or risk', async (option, attainment, unknown) => {
         const { h, assessment } = await submitted(option), before = clone(assessment), model = resultModel(assessment, metadata(), h.organisationId);
         expect(model).toMatchObject({ attainment, unknown, substantiated: '0.0%', tested: '0.0%', pending: option === 'not_applicable' ? 14 : 0 });
-        expect(model.inputs).toContainEqual(['Output SHA-256', assessment.submission.evaluation.outputSha256]);
+        expect(model).not.toHaveProperty('inputs');
         expect(model.domains.flatMap(domain => domain.controls.flatMap(control => control.questions))).toHaveLength(14);
         expect(assessment).toEqual(before);
+    });
+    test.each([['outputSha256'], ['responseSetSha256']])('rejects a malformed %s even though provenance is not displayed', async field => {
+        const { h, assessment } = await submitted();
+        if (field === 'outputSha256') assessment.submission.evaluation.outputSha256 = 'not-a-digest';
+        else assessment.submission.responseSetSha256 = 'not-a-digest';
+        expect(resultModel(assessment, metadata(), h.organisationId)).toBeNull();
     });
     test('rejects coherently rescaled weights that contradict the accepted profile', async () => {
         expect(createAcceptedNcscFrameworkProfile().questions.every(question => question.weight === 1)).toBe(true);
@@ -1268,15 +1275,17 @@ describe('submitted assessment results', () => {
     test('new submission and reopening show separate measures and native drill-downs', async () => {
         const h = await backend(), ui = await createInUi(h);
         metadata().questions.forEach((_, index) => choose(ui, index, 'yes'));
-        submitUi(ui); await until(() => ui.root.textContent.includes('Calculation inputs and versions'));
+        submitUi(ui); await until(() => ui.root.querySelector('.ncsc-result-metric'));
         const panel = ui.root.querySelector('.ncsc-results');
         expect(panel.getAttribute('aria-label')).toBe('Assessment results');
         const metrics = panel.querySelectorAll('.ncsc-result-metric');
-        expect(metrics.map(card => card.querySelector('h3').textContent)).toEqual(['Reported implementation', 'Resolved answers', 'Supporting evidence']);
+        expect(metrics.map(card => card.querySelector('h3').textContent)).toEqual(['Reported implementation', 'Resolved answers']);
         expect(metrics[0].querySelector('.ncsc-result-value').textContent).toBe('100.0%');
-        expect(metrics[2].querySelector('.ncsc-result-value').textContent).toBe('None recorded');
-        expect(metrics[2].textContent).toContain('reflect your answers only');
-        expect(metrics[2].textContent).toContain('Confidence is not assessed.');
+        // Internal calculation provenance and the always-empty evidence measure stay out of customer results.
+        expect(panel.querySelector('.ncsc-result-provenance')).toBeNull();
+        for (const hidden of ['Calculation inputs and versions', 'SHA-256', 'Evaluator', 'Score contract', 'Supporting evidence', 'Evidence: Not provided']) {
+            expect(panel.textContent).not.toContain(hidden);
+        }
         expect(panel.textContent).toContain('Not calculated'); expect(panel.textContent).toContain('use Change over time on the Overview');
         expect(panel.querySelectorAll('.ncsc-result-control')).toHaveLength(metadata().controls.length);
         expect(panel.textContent).toContain('Suggested next actions'); expect(panel.textContent).toContain('Useful evidence');
@@ -1379,7 +1388,7 @@ describe('submitted assessment results', () => {
         const replacement = mountUi(replacementBackend, { dom: ui });
         await until(() => replacement.root.textContent.includes('No saved assessments yet.'));
         wait.resolve(); await pause(); await pause();
-        expect(replacement.root.textContent).not.toContain('Output SHA-256');
+        expect(replacement.root.textContent).not.toContain('Reported implementation');
         expect(replacement.root.querySelector('.ncsc-results')).toBeNull(); replacement.controller.destroy();
     });
 });
@@ -1408,7 +1417,7 @@ describe('questionnaire form accessibility', () => {
                 expect(guidance.textContent).toContain(question.guidance.summary);
                 [...question.guidance.evidenceExamples, ...question.guidance.startingActions].forEach(text => expect(guidance.textContent).toContain(text));
                 expect(guidance.textContent).toContain('records you can consult to check your answer');
-                expect(guidance.textContent).toContain('Document upload is not enabled here.');
+                expect(guidance.textContent).not.toContain('Document upload');
                 expect(fieldset.querySelectorAll('input')).toHaveLength(question.responseOptionIds.length);
                 expect(fieldset.querySelectorAll('input').every(input => input.checked === false)).toBe(true);
                 expect(ui.root.querySelectorAll('textarea')).toHaveLength(0);
@@ -1783,7 +1792,8 @@ describe('questionnaire public controls and retained mutation intent', () => {
         expect(version.envelope.submission.evaluation.countsCompletion.claimedNotApplicableAtoms).toBe(1);
         expect(control(ui, 'Review and submit')).toBeUndefined(); expect(ui.root.textContent).toMatch(/Submitted|submitted/);
         expect(ui.root.textContent).not.toMatch(/overall score|Issue report|Approve N\/A/);
-        expect(ui.root.textContent).toContain('Output SHA-256');
+        await until(() => ui.root.querySelector('.ncsc-result-metric'));
+        expect(ui.root.textContent).not.toContain('Output SHA-256');
         expect(ui.root.querySelectorAll('input').every(input => input.disabled)).toBe(true); ui.controller.destroy();
         const restored = await resumeUi(h); expect(control(restored, 'Save progress')).toBeUndefined(); restored.controller.destroy();
     });

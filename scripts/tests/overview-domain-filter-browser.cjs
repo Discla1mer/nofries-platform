@@ -30,7 +30,7 @@ for (const command of [createCommand('assessment-mixed', 'create-mixed', 'Synthe
     command.idempotencyKey, version, tenant.state.tenantAggregate, NOW);
 }
 const detail = projectNcscDetail(version);
-const categoryLabels = ['Unresolved answers', 'Reported implementation gaps', 'Supporting-evidence gaps'];
+const categoryLabels = ['Unresolved answers', 'Reported implementation gaps'];
 const optionGroups = [['unknown', 'not_applicable'], ['partial', 'no'], null];
 const domainByControl = new Map(metadata.controls.map(control => [control.id, control.domainId]));
 const expectedIds = (index, domainId) => metadata.questions.filter(question =>
