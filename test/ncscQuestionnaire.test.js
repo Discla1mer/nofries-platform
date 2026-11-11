@@ -282,11 +282,13 @@ function choose(ui, index, option, rationale) {
     input.checked = true; event(input, 'change');
     if (rationale !== undefined) enter(byId(ui, `ncsc-rationale-${id}`), rationale);
 }
+// Automatic saving is off unless a test asks for it, so timing on a loaded
+// machine cannot add saves to tests about other behaviour.
 function mountUi(h, settings = {}) {
     const renderer = require('../api/shared/protectedAssets/ncscQuestionnaire');
     const dom = settings.dom || interactiveDom(); let sequence = 0;
     const controller = renderer.mount(dom.root, { metadata: metadata(), client: settings.client || h.client, organisationId: h.organisationId,
-        presentationMode: 'editable', generation: {}, window: dom.window,
+        presentationMode: 'editable', generation: {}, window: dom.window, autosaveIdleMs: 0,
         createId: () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`, ...settings });
     return { ...dom, controller };
 }
@@ -903,7 +905,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
     });
 
     test('compact question selector preserves every full prompt, question order and unsaved answer status', async () => {
-        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        const h = await backend(), ui = await createInUi(h, { autosaveIdleMs: 60000 }), questions = metadata().questions;
         try {
             const picker = byId(ui, 'ncsc-question-index');
             expect(picker.children).toHaveLength(questions.length);
@@ -914,7 +916,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
                 expect(ui.root.querySelector('legend').textContent).toBe(question.prompt);
             });
             const help = byId(ui, picker.getAttribute('aria-describedby'));
-            expect(help.textContent).toBe('The full question is below. * marks unsaved changes. Answers save automatically after a short pause.');
+            expect(help.textContent).toBe('The full question is below. * marks unsaved changes. Answers save automatically a moment after each change.');
             choose(ui, 0, 'unknown'); choose(ui, 1, 'not_applicable', 'Synthetic pending claim');
             expect(picker.children[0].textContent).toBe('1 of ' + questions.length + ' · Unknown *');
             expect(picker.children[1].textContent).toBe('2 of ' + questions.length + ' · Pending N/A *');
@@ -2430,6 +2432,76 @@ describe('batched automatic save', () => {
     // Setting up 100 saved revisions through the real backend takes several
     // seconds on a loaded machine; the behaviour checked here is not timing.
     }, 30000);
+    // Live walkthrough: 11 answers, 12 s idle, browser closed, all 11 lost.
+    const lifecycleDom = () => {
+        const dom = interactiveDom(), listeners = {};
+        Object.assign(dom.document, { visibilityState: 'visible',
+            addEventListener: (name, fn) => (listeners[name] ||= new Set()).add(fn),
+            removeEventListener: (name, fn) => listeners[name]?.delete(fn),
+            dispatch: name => (listeners[name] || []).forEach(fn => fn()) });
+        return dom;
+    };
+    const saveCalls = h => h.calls.filter(call => call.url.endsWith('/save'));
+    test('by default a change saves within about 2 s of idle', async () => {
+        const h = await backend(), ui = await createInUi(h, { autosaveIdleMs: undefined }), before = h.records.length, started = Date.now();
+        try {
+            choose(ui, 0, 'yes');
+            expect(h.records).toHaveLength(before);
+            await until(() => h.records.length === before + 1);
+            expect(Date.now() - started).toBeLessThan(2500);
+            expect(h.records.at(-1).payload.responses).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+    test.each([
+        ['the page is hidden', ui => { ui.document.visibilityState = 'hidden'; ui.document.dispatch('visibilitychange'); }],
+        ['the page is left', ui => ui.window.dispatch('pagehide')]
+    ])('changed answers save at once with keepalive when %s', async (_name, leave) => {
+        const h = await backend(), ui = await createInUi(h, { dom: lifecycleDom(), autosaveIdleMs: 60000 }), before = h.records.length;
+        try {
+            choose(ui, 0, 'yes'); choose(ui, 1, 'no'); choose(ui, 2, 'partial');
+            leave(ui);
+            expect(saveCalls(h)).toHaveLength(1);
+            expect(saveCalls(h)[0].init).toMatchObject({ method: 'POST', credentials: 'same-origin', keepalive: true });
+            await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            expect(h.records).toHaveLength(before + 1);
+            expect(h.records.at(-1).payload.responses).toHaveLength(3);
+        } finally { ui.controller.destroy(); }
+    });
+    test('opening review saves changed answers', async () => {
+        const h = await backend(), ui = await createInUi(h, { autosaveIdleMs: 60000 }), before = h.records.length;
+        try {
+            choose(ui, 0, 'yes'); choose(ui, 1, 'no');
+            control(ui, 'Review and submit').click();
+            await until(() => h.records.length === before + 1);
+            expect(h.records.at(-1).payload.responses).toHaveLength(2);
+            expect(saveCalls(h).at(-1).init.keepalive).toBeUndefined();
+            expect(byId(ui, 'ncsc-review-title')).toBeTruthy();
+        } finally { ui.controller.destroy(); }
+    });
+    test('one save runs at a time; edits and a hide during it are saved next on the new revision', async () => {
+        const h = await backend(), gate = deferred(), dom = lifecycleDom();
+        const client = { ...h.client, save: async (command, settings) => { await gate.promise; return h.client.save(command, settings); } };
+        const ui = await createInUi(h, { dom, client, autosaveIdleMs: idle }), before = h.records.length;
+        try {
+            choose(ui, 0, 'yes'); await settle();
+            choose(ui, 1, 'no'); dom.document.visibilityState = 'hidden'; dom.document.dispatch('visibilitychange'); await settle();
+            expect(saveCalls(h)).toHaveLength(0);
+            gate.resolve();
+            await until(() => h.records.length === before + 2);
+            const [first, second] = h.records.slice(before);
+            expect(first.payload.responses.map(item => item.itemId)).toEqual([metadata().questions[0].id]);
+            expect(second.payload.responses.map(item => item.itemId)).toEqual([metadata().questions[1].id]);
+            expect(second.expectedRevision).toBe(first.expectedRevision + 1);
+            expect(saveCalls(h).at(-1).init.keepalive).toBe(true);
+            await settle(); expect(h.records).toHaveLength(before + 2);
+        } finally { ui.controller.destroy(); }
+    });
+    test('only save accepts keepalive, and it is a boolean', async () => {
+        const h = await backend();
+        await expect(h.client.create(createCommand(), { keepalive: true })).rejects.toBeTruthy();
+        await expect(h.client.save(saveCommand('assessment-a', 0, 'save-a', allResponses().slice(0, 1)), { keepalive: 'yes' })).rejects.toBeTruthy();
+        expect(h.fetch).not.toHaveBeenCalled();
+    });
     test('leaving the page cancels a waiting save, and zero switches it off', async () => {
         const h = await backend(), ui = await createInUi(h, { autosaveIdleMs: idle }), before = h.records.length;
         choose(ui, 0, 'yes'); ui.controller.destroy(); await settle();

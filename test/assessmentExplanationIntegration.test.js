@@ -238,7 +238,8 @@ test('a fresh tenant scope cannot read the previously selected assessment or rel
 test.each(['revision', 'hash'])('%s drift requires an explicit second read while preserving an ordinary unsaved draft', async kind => {
     const h = await backend(), dom = interactiveDom();
     const editor = questionnaire.mount(dom.root, { metadata, client: h.client, organisationId: h.organisationId,
-        initialAssessmentId: 'assessment-c', presentationMode: 'editable', generation: {}, window: dom.window });
+        // Automatic saving is off so the draft stays unsaved for this check.
+        initialAssessmentId: 'assessment-c', presentationMode: 'editable', generation: {}, window: dom.window, autosaveIdleMs: 0 });
     let ui;
     try {
         expect(h.client.update).toBeUndefined(); expect(h.client.history).toBeUndefined();
