@@ -488,6 +488,38 @@ describe('saved assessment list pagination and resume', () => {
         expect(h.records).toHaveLength(4); ui.controller.destroy();
     });
 
+    test('search matches displayed NZ dates and scope without requests or writes', async () => {
+        const h = await backend();
+        await h.execute(createCommand('assessment-office', 'seed-office', 'Wellington office and cloud services.'));
+        h.clock.advance(86400000);
+        await h.execute(createCommand('assessment-warehouse', 'seed-warehouse', 'Christchurch warehouse laptops.'));
+        h.clock.advance(86400000);
+        await h.execute(saveCommand('assessment-warehouse', 0, 'save-warehouse', allResponses().slice(0, 2)));
+        const ui = mountUi(h);
+        try {
+            await until(() => savedActions(ui).length === 2);
+            const search = byId(ui, 'ncsc-assessment-search');
+            const cards = ui.root.querySelectorAll('.ncsc-assessment-card');
+            const displayedDate = cards[1].querySelector('h3').textContent.replace('Assessment started ', '');
+            const lastSaved = cards[1].querySelector('.ncsc-assessment-date').textContent.replace('Last saved ', '');
+            search.focus();
+            for (const query of [' WAREHOUSE ', displayedDate, lastSaved]) {
+                enter(search, query);
+                expect(savedActions(ui).map(button => button.dataset.assessmentId)).toEqual(['assessment-warehouse']);
+                expect(ui.document.activeElement).toBe(search);
+            }
+            const filter = byId(ui, 'ncsc-assessment-status');
+            filter.value = 'submitted'; event(filter, 'change');
+            expect(savedActions(ui)).toHaveLength(0);
+            control(ui, 'Clear filters').click();
+            expect(savedActions(ui)).toHaveLength(2);
+            expect(search.value).toBe(''); expect(ui.document.activeElement).toBe(search);
+            expect(h.calls).toHaveLength(1);
+            expect(h.calls[0].init.method).toBe('GET');
+            expect(h.records).toHaveLength(3);
+        } finally { ui.controller.destroy(); }
+    });
+
     test('submitted filter with no submitted records names that empty state', async () => {
         const h = await backend();
         await h.execute(createCommand('assessment-draft', 'seed-draft'));
