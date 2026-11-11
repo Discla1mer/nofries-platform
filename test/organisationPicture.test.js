@@ -161,6 +161,22 @@ test('same-day choices remain unambiguous without changing exact selected IDs or
     dom.controller.destroy();
 });
 
+test('a long scope is shortened in the selector so status and date stay visible, with the full label as a tooltip', async () => {
+    const record = clone(buildFixtures().tenants[0].assessments[0]);
+    const long = 'Synthetic head office, two retail sites,\n  the warehouse laptops and every cloud service we pay for each month';
+    record.scopePopulation.description = long;
+    const dom = setup({ records: [record] }); await flush();
+    const picker = dom.root.querySelector('.picture-toolbar').querySelector('select');
+    const option = picker.querySelector('option');
+    const flat = long.replace(/\s+/g, ' ');
+    assert.ok(option.textContent.startsWith(flat.slice(0, 59).trimEnd() + '… · In progress · '));
+    assert.ok(option.textContent.endsWith(' NZ time'));
+    assert.equal(option.title, flat + option.textContent.slice(option.textContent.indexOf(' · In progress · ')));
+    assert.equal(picker.title, option.title);
+    assert.ok(dom.root.textContent.includes(long));
+    dom.controller.destroy();
+});
+
 test('a single saved choice omits its technical ID while the draft source disclosure preserves it', async () => {
     const record = buildFixtures().tenants[0].assessments[0];
     const dom = setup({ records: [record] }); await flush();
