@@ -1224,3 +1224,67 @@ test('top gap selection uses existing weights before answer and profile order, w
     assert.deepEqual(picture.topGaps(null, metadata), []);
     assert.deepEqual(picture.topGaps(result, metadata, 1).map(gap => gap.itemId), ['q2']);
 });
+
+describe('next step under the top gaps', () => {
+    const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+    async function withEnquiry(fetch) {
+        const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
+        const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures), dom = createDom();
+        if (fetch !== undefined) { dom.window.fetch = fetch; dom.window.AbortController = AbortController; }
+        const controller = picture.mount(dom.root, { metadata: fixtures.metadata, organisationId: seed.model.context.organisationId,
+            client: createClient({ metadata: fixtures.metadata, fetch: transport.fetch }), displayName: 'Synthetic organisation A' });
+        await flush();
+        const panel = dom.root.querySelector('.picture-top-gaps').querySelector('.picture-next-steps');
+        return { dom, controller, panel, link: panel.querySelector('a') };
+    }
+    test('shows a fixed contact link when enquiries are available', async () => {
+        const fetch = jest.fn(async () => reply(200, { available: true, promote: false }));
+        const { panel, link, controller } = await withEnquiry(fetch);
+        assert.equal(panel.hidden, false);
+        assert.equal(link.textContent, 'Get help closing these gaps');
+        assert.equal(link.href, '/contact.html');
+        assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
+        controller.destroy();
+    });
+    test('reads availability with a bare same-origin GET and sends nothing about the assessment', async () => {
+        const fetch = jest.fn(async () => reply(200, { available: true }));
+        const { controller } = await withEnquiry(fetch);
+        assert.equal(fetch.mock.calls.length, 1);
+        const [url, init] = fetch.mock.calls[0];
+        assert.equal(url, '/api/enquiry');
+        assert.equal(init.method, 'GET'); assert.equal(init.body, undefined);
+        assert.equal(init.credentials, 'same-origin'); assert.equal(init.cache, 'no-store');
+        assert.equal(JSON.stringify(init.headers), JSON.stringify({ Accept: 'application/json' }));
+        assert.ok(init.signal);
+        controller.destroy();
+    });
+    test.each([
+        ['unavailable', async () => reply(200, { available: false, promote: false })],
+        ['not OK', async () => reply(503, { available: true })],
+        ['an error', async () => { throw new Error('synthetic'); }],
+        ['missing', undefined]
+    ])('stays hidden when the enquiry status is %s', async (_name, fetch) => {
+        const { panel, controller } = await withEnquiry(fetch);
+        assert.equal(panel.hidden, true);
+        controller.destroy();
+    });
+    test('stays hidden and aborts when the status read takes longer than 5 seconds', async () => {
+        let signal;
+        const fetch = jest.fn((_url, init) => { signal = init.signal; return new Promise(() => {}); });
+        jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
+        try {
+            const { panel, controller } = await withEnquiry(fetch);
+            await jest.advanceTimersByTimeAsync(4999);
+            assert.equal(signal.aborted, false);
+            await jest.advanceTimersByTimeAsync(1); await flush();
+            assert.equal(signal.aborted, true); assert.equal(panel.hidden, true);
+            controller.destroy();
+        } finally { jest.useRealTimers(); }
+    });
+    test('a late availability answer after teardown changes nothing', async () => {
+        let resolve; const fetch = () => new Promise(done => { resolve = done; });
+        const { panel, controller } = await withEnquiry(fetch);
+        controller.destroy(); resolve(reply(200, { available: true })); await flush();
+        assert.equal(panel.hidden, true);
+    });
+});
