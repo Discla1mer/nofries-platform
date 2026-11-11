@@ -183,11 +183,13 @@ function apply(state, actions, command, revision, previousAt) {
 
 function assigned(action) { return action.ownerSubjectKey !== null || Object.hasOwn(action, 'ownerLabel'); }
 // One line, control characters collapsed as enquiry.js singleLine does, 1-80
-// characters and never an email address.
+// characters, never an email address, and never a reserved owner filter value.
+const RESERVED_OWNER_LABELS = new Set(['all', 'unassigned']);
 function ownerLabel(value) {
     if (typeof value !== 'string') fail('owner_label_invalid');
     const label = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!label || label.length > 80 || label.includes('@')) fail('owner_label_invalid');
+    if (!label || label.length > 80 || label.includes('@') ||
+        RESERVED_OWNER_LABELS.has(label.toLowerCase())) fail('owner_label_invalid');
     return label;
 }
 function assertBinding(state, command) {

@@ -290,6 +290,7 @@ describe('improvement plan source domain', () => {
     });
 
     test.each([['', 'empty'], [' \n\t ', 'blank'], ['x'.repeat(81), 'long'], ['ops@example.invalid', 'email'],
+        ['all', 'reserved filter'], [' Unassigned ', 'reserved filter, any case'],
         [42, 'number'], [null, 'null']])('rejects ownerLabel %j (%s)', value => {
         expectCode(() => step(plan(), 'assign', { ownerLabel: value, dueDate: '2026-10-01' }), 'owner_label_invalid');
     });
