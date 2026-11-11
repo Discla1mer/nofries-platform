@@ -577,7 +577,7 @@ describe('shared customer lifecycle and prospect agent', () => {
         });
         const created = await service.createInternalPilotCustomer(operator, {
             displayName: 'No Fries Headquarters',
-            primaryContactName: 'Joel Harvey',
+            primaryContactName: 'Test Owner',
             primaryEmail: 'joel@nofries.nz',
             expectedUsers: 1,
             expectedEndpoints: 2,

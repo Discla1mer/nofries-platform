@@ -79,7 +79,7 @@ function protocol(overrides = {}) {
                     tenantId: TENANT_ID,
                     localAccountId: SUBJECT_ID,
                     username: 'Joel@example.com',
-                    name: 'Joel Harvey'
+                    name: 'Test Owner'
                 },
                 idTokenClaims: Object.assign({
                     aud: CLIENT_ID,
@@ -87,7 +87,7 @@ function protocol(overrides = {}) {
                     tid: TENANT_ID,
                     oid: SUBJECT_ID,
                     preferred_username: 'Joel@example.com',
-                    name: 'Joel Harvey',
+                    name: 'Test Owner',
                     nonce: calls.urlRequest && calls.urlRequest.nonce,
                     exp: Math.floor(NOW / 1000) + 3600
                 }, overrides.claims || {})
@@ -264,7 +264,7 @@ describe('opaque same-domain Entra browser authentication', () => {
         expect(JSON.stringify(sessionRecord)).not.toContain('server-id-token');
         await expect(harness.service.readSession(requestCookie(completed.cookie))).resolves.toEqual({
             email: 'joel@example.com',
-            name: 'Joel Harvey',
+            name: 'Test Owner',
             provider: 'entra-bff',
             principalId: SUBJECT_ID,
             tenantId: TENANT_ID,
@@ -791,7 +791,7 @@ describe('browser auth Azure Functions', () => {
                 expiresAt: '2026-08-23T05:00:00.000Z',
                 identity: {
                     email: 'joel@example.com',
-                    name: 'Joel Harvey',
+                    name: 'Test Owner',
                     tenantId: TENANT_ID,
                     principalId: SUBJECT_ID,
                     accessToken: 'must-not-return'
@@ -808,7 +808,7 @@ describe('browser auth Azure Functions', () => {
             authenticated: true,
             user: {
                 email: 'joel@example.com',
-                name: 'Joel Harvey',
+                name: 'Test Owner',
                 tenantId: TENANT_ID,
                 principalId: SUBJECT_ID
             },
