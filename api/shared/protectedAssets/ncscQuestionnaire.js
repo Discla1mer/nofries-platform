@@ -118,6 +118,34 @@
     function answer(response) {
         return { itemId: response.itemId, optionId: response.optionId, rationale: response.rationale === null ? null : { text: response.rationale.text } };
     }
+    function localDate(value) {
+        return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
+    }
+    // Plain-text summary of a submitted assessment for an IT provider. The
+    // results view and the Overview share it, so both copy the same text.
+    // Grouped by answer (No, Partial, Unknown, Not applicable), not by risk.
+    function providerSummary(assessment, metadata) {
+        const labels = new Map(metadata.responseOptions.map(function (item) { return [item.id, item.label]; }));
+        const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
+        const items = [];
+        ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
+            metadata.questions.filter(function (question) { return optionOf(question.id) === optionId; }).forEach(function (question) {
+                const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
+                const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
+                items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionId), action: action });
+            });
+        });
+        const lines = ['Cyber security assessment', 'Scope: ' + assessment.scopePopulation.description, 'Submitted: ' + localDate(assessment.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
+        return { items: items, text: lines.concat(items.map(function (item) { return item.title + ': ' + item.action; })).join('\n') };
+    }
+    // Copies with the clipboard when the browser allows it; otherwise selects
+    // the read-only text so the person can copy it themselves.
+    function copySummary(win, input, status) {
+        const clipboard = win && win.navigator && win.navigator.clipboard;
+        const fallback = function () { input.focus(); if (typeof input.select === 'function') input.select(); status.textContent = 'Summary selected. Press Ctrl+C or Cmd+C to copy it.'; };
+        if (!clipboard || typeof clipboard.writeText !== 'function') { fallback(); return; }
+        Promise.resolve(clipboard.writeText(input.value)).then(function () { status.textContent = 'Summary copied.'; }, fallback);
+    }
     // Presentation only: never calculate or repair a server score in the browser.
     // A malformed result does not invalidate an acknowledged write or its answers.
     function resultModel(assessment, metadata, organisationId) {
@@ -1030,9 +1058,6 @@
                 }); panel.append(detail);
             });
         }
-        function localDate(value) {
-            return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
-        }
         function renderNextSteps(panel) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Suggested follow-ups'));
             const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(savedAnswer(question.id).optionId); }).length; };
@@ -1041,15 +1066,9 @@
             // One plain verdict before any percentages. The list follows answer groups, not risk.
             if (toFix || toCheck) section.append(node('p', 'ncsc-verdict', 'You have ' + plural(toFix, 'gap', 'gaps') + ' to fix and ' + plural(toCheck, 'answer', 'answers') + ' to check.'));
             if (toCheck) section.append(node('p', 'dashboard-muted', 'No IT provider? Ask whoever looks after your computers and accounts, or a local IT support business, to check these with you.'));
-            const list = node('ol'), summary = ['Cyber security assessment', 'Scope: ' + acknowledged.scopePopulation.description, 'Submitted: ' + localDate(acknowledged.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
-            ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
-                questions.filter(function (question) { return savedAnswer(question.id).optionId === optionId; }).forEach(function (question) {
-                    const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
-                    const label = optionById.get(optionId).label;
-                    const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
-                    const title = (control ? control.title : question.prompt) + ' — ' + label;
-                    const item = node('li'); item.append(node('strong', '', title), node('p', '', action)); list.append(item); summary.push(title + ': ' + action);
-                });
+            const list = node('ol'), summary = providerSummary(acknowledged, metadata);
+            summary.items.forEach(function (entry) {
+                const item = node('li'); item.append(node('strong', '', entry.title), node('p', '', entry.action)); list.append(item);
             });
             const followUpCount = list.children.length;
             if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + '. Grouped by your answer (No, then Partial, then Unknown, then Not applicable). Not ranked by risk or urgency.'));
@@ -1066,14 +1085,9 @@
             if (!followUpCount) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
             const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with your IT provider'));
             const label = node('label', '', 'Copy this summary into an email or document'); label.htmlFor = 'ncsc-provider-summary';
-            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.join('\n'); handoff.append(label, input);
+            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.text; handoff.append(label, input);
             const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
-            const copy = button('Copy summary', function () {
-                const clipboard = win && win.navigator && win.navigator.clipboard;
-                const fallback = function () { input.focus(); if (typeof input.select === 'function') input.select(); copied.textContent = 'Summary selected. Press Ctrl+C or Cmd+C to copy it.'; };
-                if (!clipboard || typeof clipboard.writeText !== 'function') { fallback(); return; }
-                Promise.resolve(clipboard.writeText(input.value)).then(function () { copied.textContent = 'Summary copied.'; }, fallback);
-            }, 'dashboard-button dashboard-button-secondary');
+            const copy = button('Copy summary', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary');
             handoff.append(copy);
             if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
             handoff.append(copied); section.append(handoff); panel.append(section);
@@ -1631,5 +1645,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, resultModel: resultModel });
+    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, copySummary: copySummary });
 }));
