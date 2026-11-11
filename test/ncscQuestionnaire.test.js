@@ -30,13 +30,16 @@ async function backend(options = {}) {
     const fixture = ncscFixture(options), clock = createClock(), context = await createContext(fixture.scope, clock);
     const versions = new Map(), receipts = new Map(), calls = [], records = [];
     let denied = false;
+    // Optional plan allowance, enforced at submit like the SQL repository's product counter.
+    const allowance = options.allowance ? { ...options.allowance } : null;
     const requireAccess = () => { if (denied) throw new NcscAssessmentError('ncsc_access_denied', 403); };
     const repository = {
         async listNcscAssessments(_context, page) {
             requireAccess(); const ids = [...versions.keys()].sort().filter(id => !page.afterAssessmentId || id > page.afterAssessmentId);
             const selected = ids.slice(0, page.limit);
             return { schemaVersion: 1, assessments: selected.map(id => projectNcscSummary(versions.get(id))),
-                nextAfterAssessmentId: ids.length > selected.length ? selected.at(-1) : null };
+                nextAfterAssessmentId: ids.length > selected.length ? selected.at(-1) : null,
+                ...(allowance ? { submissionAllowance: { ...allowance } } : {}) };
         },
         async readNcscAssessment(_context, selector) {
             requireAccess(); const value = versions.get(selector.assessmentId);
@@ -49,6 +52,10 @@ async function backend(options = {}) {
             if (receipt) {
                 if (receipt.digest !== digest) throw new NcscAssessmentError('ncsc_idempotency_conflict', 409);
                 return clone(receipt.value);
+            }
+            if (allowance && command.action === 'submit') {
+                if (allowance.used >= allowance.limit) throw new NcscAssessmentError('ncsc_quota_exceeded', 409);
+                allowance.used += 1;
             }
             const value = makeVersion(intent, command.idempotencyKey, versions.get(command.assessmentId) || null,
                 fixture.state.tenantAggregate, clock.now());
@@ -3059,5 +3066,95 @@ describe('reconciled persona journey', () => {
             control(ui, 'Copy summary').click(); await until(() => ui.root.textContent.includes('Summary selected.'));
             expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-provider-summary'));
         } finally { ui.controller.destroy(); }
+    });
+});
+
+describe('plan submission allowance', () => {
+    const allowanceNote = ui => byId(ui, 'ncsc-allowance');
+
+    test('the list and the new-assessment step show plain-English usage before work starts', async () => {
+        const h = await backend({ allowance: { used: 3, limit: 5 } }), ui = mountUi(h);
+        try {
+            await until(() => allowanceNote(ui));
+            expect(allowanceNote(ui).textContent).toBe('3 of 5 assessment submissions used on your plan.');
+            expect(control(ui, 'Start an assessment').disabled).toBeFalsy();
+            control(ui, 'Start an assessment').click();
+            expect(allowanceNote(ui).textContent).toBe('3 of 5 assessment submissions used on your plan.');
+            expect(control(ui, 'Create assessment').disabled).toBeFalsy();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a used-up allowance disables Start with an explanation and a contact path, and writes nothing', async () => {
+        const h = await backend({ allowance: { used: 5, limit: 5 } }); await h.execute(createCommand());
+        const ui = mountUi(h);
+        try {
+            await until(() => savedActions(ui).length > 0);
+            const start = control(ui, 'Start an assessment'), note = allowanceNote(ui);
+            expect(start.disabled).toBe(true);
+            expect(start.getAttribute('aria-describedby')).toBe('ncsc-allowance');
+            expect(note.textContent).toMatch(/^5 of 5 assessment submissions used on your plan\. .*you cannot submit another assessment/);
+            const link = note.querySelector('a');
+            expect(link.href).toBe('/contact.html'); expect(link.textContent).toBe('Contact No Fries about more submissions');
+            expect(note.textContent).not.toMatch(/\$|NZD|price|upgrade/i);
+            start.click();
+            expect(byId(ui, 'ncsc-scope')).toBeUndefined();
+            expect(h.calls.filter(row => row.init.method === 'POST')).toHaveLength(0);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('the first-use shortcut does not open the new-assessment step when nothing more can be submitted', async () => {
+        const h = await backend({ allowance: { used: 1, limit: 1 } }), ui = mountUi(h, { startNew: true });
+        try {
+            await until(() => allowanceNote(ui));
+            expect(byId(ui, 'ncsc-scope')).toBeUndefined();
+            expect(allowanceNote(ui).textContent).toMatch(/^1 of 1 assessment submission used on your plan\./);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a plan with no submissions still loads the list, disables Start and explains why in plain words', async () => {
+        const h = await backend({ allowance: { used: 0, limit: 0 } }); await h.execute(createCommand());
+        const ui = mountUi(h, { startNew: true });
+        try {
+            await until(() => savedActions(ui).length > 0);
+            const start = control(ui, 'Start an assessment'), note = allowanceNote(ui);
+            expect(start.disabled).toBe(true);
+            expect(start.getAttribute('aria-describedby')).toBe('ncsc-allowance');
+            expect(note.textContent).toBe('Your plan does not include assessment submissions. ' +
+                'You can still open and read your saved assessments. Contact No Fries about more submissions');
+            expect(note.textContent).not.toMatch(/0 of 0/);
+            expect(byId(ui, 'ncsc-scope')).toBeUndefined();
+            expect(h.calls.filter(row => row.init.method === 'POST')).toHaveLength(0);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a refused submit explains the used allowance, keeps the answers and names a next step', async () => {
+        const h = await backend({ allowance: { used: 4, limit: 5 } });
+        await h.execute(createCommand()); await h.execute(saveCommand());
+        const ui = await resumeUi(h);
+        try {
+            // Another submission uses the last unit after this page loaded its list.
+            await h.execute(createCommand('assessment-b', 'create-b')); await h.execute(saveCommand('assessment-b', 0, 'save-b'));
+            await h.execute(submitCommand('assessment-b', 1, 'submit-b'));
+            submitUi(ui);
+            await until(() => /was not submitted/.test(ui.root.querySelector('.ncsc-status').textContent));
+            const message = ui.root.querySelector('.ncsc-status').textContent;
+            expect(message).toBe('This assessment was not submitted. All 5 assessment submissions on your plan have been used (5 of 5). ' +
+                'Your saved answers are kept and you can still read them. To ask about more submissions, contact No Fries.');
+            expect(message).not.toMatch(/current allowance/);
+            expect(h.versions.get('assessment-a').envelope.status).not.toBe('submitted');
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('the closed client accepts a well-formed allowance and rejects a malformed one', async () => {
+        const list = body => clientModule.createClient({ metadata: metadata(), fetch: async () => reply(body) }).list();
+        const page = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+        expect((await list({ ...page, submissionAllowance: { used: 2, limit: 5 } })).submissionAllowance).toEqual({ used: 2, limit: 5 });
+        expect((await list({ ...page, submissionAllowance: null })).submissionAllowance).toBeNull();
+        // A product grant may set assessment_runs to zero; the list must still load.
+        expect((await list({ ...page, submissionAllowance: { used: 0, limit: 0 } })).submissionAllowance).toEqual({ used: 0, limit: 0 });
+        for (const bad of [{ used: -1, limit: 5 }, { used: 1, limit: -1 }, { used: 1.5, limit: 5 }, { used: 1, limit: 2.5 },
+            { used: '1', limit: 5 }, { used: 1, limit: '5' }, { used: 1 }, { used: 1, limit: 5, price: 0 }]) {
+            await expect(list({ ...page, submissionAllowance: bad })).rejects.toMatchObject({ code: 'ncsc_unavailable' });
+        }
     });
 });

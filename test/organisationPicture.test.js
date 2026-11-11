@@ -1093,3 +1093,44 @@ test('with assessments still unloaded, the comparison is labelled as against the
         .map(item => item.textContent.slice(0, 11)), ['10 Nov 2026', '10 Oct 2026', '10 Sept 202']);
     dom.controller.destroy();
 });
+
+test('the Overview states plan submission usage in plain English, and a contact path once it is used up', async () => {
+    const record = mixed(), summary = clone(record);
+    delete summary.responses; delete summary.submission;
+    for (const [allowance, expected, exhausted] of [[{ used: 3, limit: 5 }, '3 of 5 assessment submissions used on your plan.', false],
+        [{ used: 5, limit: 5 }, '5 of 5 assessment submissions used on your plan.', true]]) {
+        const client = { list: async () => ({ assessments: [summary], nextAfterAssessmentId: null, submissionAllowance: allowance }),
+            read: async () => ({ assessment: clone(record) }) };
+        const dom = setup({ client }); await flush();
+        const usage = dom.root.querySelector('.picture-allowance');
+        assert.ok(usage); assert.ok(usage.textContent.startsWith(expected));
+        const link = usage.querySelector('a');
+        assert.equal(!!link, exhausted);
+        if (exhausted) { assert.equal(link.href, '/contact.html'); assert.match(usage.textContent, /cannot submit another assessment/); }
+        assert.doesNotMatch(usage.textContent, /\$|NZD|price|upgrade/i);
+        dom.controller.destroy();
+    }
+    const dom = setup(); await flush();
+    assert.equal(dom.root.querySelector('.picture-allowance'), null);
+});
+
+test('the Overview loads through the real client when the plan includes no assessment submissions', async () => {
+    const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]);
+    seed.assessments = [mixed()];
+    const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures);
+    // The server reports a zero-capacity product grant as { used: 0, limit: 0 } on the list.
+    const fetch = async (url, init) => {
+        const response = await transport.fetch(url, init), text = await response.text(), body = JSON.parse(text);
+        const patched = Object.hasOwn(body, 'nextAfterAssessmentId') ? JSON.stringify({ ...body, submissionAllowance: { used: 0, limit: 0 } }) : text;
+        return { ...response, text: async () => patched };
+    };
+    const dom = setup({ client: createClient({ metadata: fixtures.metadata, fetch }) }); await flush();
+    assert.doesNotMatch(dom.root.textContent, /unavailable/i);
+    assert.ok(dom.root.querySelector('select'));
+    const usage = dom.root.querySelector('.picture-allowance');
+    assert.ok(usage);
+    assert.equal(usage.textContent, 'Your plan does not include assessment submissions. ' +
+        'You can still read your saved assessments. Contact No Fries about more submissions');
+    assert.equal(usage.querySelector('a').href, '/contact.html');
+    dom.controller.destroy();
+});

@@ -656,6 +656,28 @@ describe('NCSC assessment durable facade contract', () => {
         expect(h.memory.rows(RECEIPT).filter(row => row.payload.action === 'submit')).toHaveLength(1);
     });
 
+    test('the list reports this organisation\'s submission allowance read-only, without charging or writing', async () => {
+        const memory = memoryDatabase(), h = await setup({ capacity: 2 }, memory),
+            other = await setup({ tenantId: 'tenant-other', organisationId: 'org-other', capacity: 5 }, memory);
+        await h.create(); await h.save();
+        expect((await h.list()).submissionAllowance).toEqual({ used: 0, limit: 2 });
+        await h.submit();
+        const before = h.memory.snapshot(), start = h.memory.queries.length;
+        expect((await h.list()).submissionAllowance).toEqual({ used: 1, limit: 2 });
+        onlyReadsSince(h, start); expect(h.memory.snapshot()).toEqual(before);
+        expect((await other.list()).submissionAllowance).toEqual({ used: 0, limit: 5 });
+        const foreign = await createContext({ ...h.fixture.scope, organisationId: 'foreign-org' }, h.clock);
+        await expectCode(h.repository.listNcscAssessments(foreign, { limit: 1, afterAssessmentId: null }), 'ncsc_access_denied');
+    });
+
+    test('a product with no assessment submissions reports a zero allowance on the list', async () => {
+        const h = await setup({ capacity: 0 });
+        await h.create();
+        const page = await h.list();
+        expect(page.assessments.map(row => row.assessmentId)).toEqual(['assessment-a']);
+        expect(page.submissionAllowance).toEqual({ used: 0, limit: 0 });
+    });
+
     test('an asynchronous approved policy charges once and exact replay never reloads it', async () => {
         const h = await ready(), before = h.memory.snapshot(); let release, entered;
         const started = new Promise(resolve => { entered = resolve; });

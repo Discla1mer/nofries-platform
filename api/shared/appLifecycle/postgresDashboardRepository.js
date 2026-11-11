@@ -288,13 +288,21 @@ function createPostgresDashboardRepository(options) {
         if (!prior || prior.revision !== before.revision || !ncscStore.same(resultVector,
             { ...oldVector, usage: oldVector.usage.map(row => row.grantId === policy.productGrantId ? { ...row, revision: after.revision } : row) })) ncscFail();
     }
+    // Read-only view of the submission counter this organisation's own product
+    // grant already enforces at submit. Null when the plan sets no finite limit.
+    function submissionAllowance(snapshot, decision) {
+        const limit = decision.product.limits.assessment_runs;
+        const usage = snapshot.usage.find(row => row.grantId === decision.product.grantId);
+        if (!Number.isSafeInteger(limit) || !usage || !Number.isSafeInteger(usage.counters.assessment_runs)) return null;
+        return { used: usage.counters.assessment_runs, limit };
+    }
     async function ncscRead(contextInput, input, listing) {
         try {
             const context = ncscReady(contextInput);
             const selected = listing ? normaliseNcscPage(input) : normaliseNcscSelector(input);
             return await database.withTenantTransaction(context.scope.tenantId, async tx => {
                 const snapshot = await ncscLoad(tx, context.scope, 'SHARE');
-                ncscAccess(snapshot, context, 'assessment.read', now());
+                const decision = ncscAccess(snapshot, context, 'assessment.read', now());
                 let result;
                 if (listing) {
                     const heads = await ncscStore.listHeads(tx, context.scope, selected);
@@ -311,7 +319,8 @@ function createPostgresDashboardRepository(options) {
                         versions += head.revision + 1;
                     }
                     result = { schemaVersion: 1, assessments,
-                        nextAfterAssessmentId: heads.length > assessments.length ? assessments.at(-1).assessmentId : null };
+                        nextAfterAssessmentId: heads.length > assessments.length ? assessments.at(-1).assessmentId : null,
+                        submissionAllowance: submissionAllowance(snapshot, decision) };
                 } else {
                     const scope = { ...context.scope, assessmentId: selected.assessmentId };
                     const head = await ncscStore.readHead(tx, scope);
