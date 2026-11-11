@@ -75,6 +75,21 @@ describe('effective managed IT policy', () => {
         });
     });
 
+    test('customer-facing policy text names no individual and offers on-site work by arrangement', () => {
+        const customerText = [
+            managedItPolicyPromptSummary(),
+            ...estimateManagedItPrice({}).assumptions || [],
+            ...estimateManagedItPrice({ users: { estimatedCount: 5 }, endpoints: { estimatedCount: 5 } }).assumptions
+        ].join('\n');
+        expect(customerText).not.toMatch(/\bJoel\b|\bfounder\b/i);
+        expect(customerText).not.toMatch(/agreed business hours/);
+        expect(MANAGED_IT_POLICY.exclusions.join(' ')).not.toMatch(/on-site/i);
+        expect(MANAGED_IT_POLICY.optionalServices).toEqual(expect.arrayContaining([
+            'On-site work by arrangement, quoted separately',
+            'Microsoft 365 backup on Essentials, available as an add-on, quoted on request'
+        ]));
+    });
+
     test('retains the established manual-review boundary for larger location counts', () => {
         const estimate = estimateManagedItPrice({
             users: { estimatedCount: 10 },

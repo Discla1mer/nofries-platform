@@ -49,8 +49,20 @@ testCase('scale add-ons stay aligned with the effective policy and read as price
 testCase('separately scoped extras retain every public policy exclusion', () => {
     assert.deepEqual(policyItems('excluded', false), MANAGED_IT_POLICY.exclusions);
     assert.match(text(html), /Available by arrangement Large projects/);
-    assert.match(text(html), /A No Fries technician can do on-site work by arrangement\./);
     assert.match(text(html), /Additional needs are scoped and priced before acceptance\./);
+});
+
+testCase('on-site work is offered by arrangement and is not listed as an exclusion', () => {
+    assert.ok(!MANAGED_IT_POLICY.exclusions.some(item => /on-site/i.test(item)));
+    assert.ok(!policyItems('excluded', false).some(item => /on-site/i.test(item)));
+    assert.ok(policyItems('optional', true).includes('On-site work by arrangement, quoted separately'));
+    assert.match(text(html), /A No Fries technician can come to your site when the work needs it\./);
+});
+
+testCase('the public page and policy name no individual person', () => {
+    assert.doesNotMatch(html, /\bJoel\b|\bfounder\b/i);
+    assert.doesNotMatch(JSON.stringify(MANAGED_IT_POLICY), /\bJoel\b|\bfounder\b/i);
+    assert.match(text(html), /AI-assisted email helpdesk, with a person approving every change before it is made/);
 });
 
 testCase('separate service-page links survive the dashboard-focused homepage and removed Luna promotion', () => {
@@ -92,6 +104,8 @@ testCase('hours, backup and on-site wording agree across the page', () => {
     const page = text(html);
     assert.match(page, /during NZ business hours, Monday to Friday\./);
     assert.match(page, /Microsoft 365 backup is included in Managed and Secure, and available as an add-on for Essentials\./);
+    assert.match(page, /Microsoft 365 backup is available as an add-on, quoted on request\./);
+    assert.doesNotMatch(page, /agreed business hours/);
     assert.doesNotMatch(page, /\bme\b/);
 });
 
