@@ -1185,6 +1185,7 @@ test('top three gaps put not-in-place answers first, then partial, in profile or
         const question = questions[[10, 11, 3][index]];
         assert.ok(item.text.includes('Why it matters:') && item.text.includes(question.guidance.summary));
         assert.ok(item.text.includes('What to do next:') && item.text.includes(question.smallBusiness.meaning));
+        assert.match(item.text, /You can start this with your team\.|Ask your IT provider to help with this\./);
     });
     assert.match(items[0].text, /Your answer: No/);
     assert.match(items[2].text, /Your answer: Partial/);

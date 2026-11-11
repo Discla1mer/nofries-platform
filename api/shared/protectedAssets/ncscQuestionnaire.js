@@ -1046,9 +1046,11 @@
                 questions.filter(function (question) { return savedAnswer(question.id).optionId === optionId; }).forEach(function (question) {
                     const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
                     const label = optionById.get(optionId).label;
-                    const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
+                    const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.meaning || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
                     const title = (control ? control.title : question.prompt) + ' — ' + label;
-                    const item = node('li'); item.append(node('strong', '', title), node('p', '', action)); list.append(item); summary.push(title + ': ' + action);
+                    const ownerStart = ['no', 'partial'].includes(optionId) && /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(question.id);
+                    const owner = ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.';
+                    const item = node('li'); item.append(node('strong', '', title), node('p', 'dashboard-muted', owner), node('p', '', action)); list.append(item); summary.push(title + ': ' + owner + ' ' + action);
                 });
             });
             const followUpCount = list.children.length;
