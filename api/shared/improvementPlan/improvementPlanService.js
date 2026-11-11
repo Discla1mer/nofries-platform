@@ -4,6 +4,7 @@
 const { requireTenantRequestContext } = require('../appLifecycle/tenantRequestContext');
 const { copy, fields, freeze } = require('../appLifecycle/dashboardRuntimeRecords');
 const { normaliseEvidenceSelector } = require('../evidenceLifecycle/evidenceDomain');
+const { normaliseOwnerLabel } = require('./improvementPlanDomain');
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
 const SUBJECT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -44,7 +45,11 @@ function normaliseImprovementCommand(input) {
             if (typeof source.assessmentRevisionSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(source.assessmentRevisionSha256)) fail();
         } else {
             identifier(row.actionId); revision(row.expectedRevision, 1023);
-            if (row.type === 'assign') {
+            if (row.type === 'assign' && row.payload && typeof row.payload === 'object' && Object.hasOwn(row.payload, 'ownerLabel')) {
+                // Normalise before the intent is hashed so replays compare stably.
+                const payload = fields(row.payload, ['ownerLabel', 'dueDate']);
+                payload.ownerLabel = normaliseOwnerLabel(payload.ownerLabel); date(payload.dueDate);
+            } else if (row.type === 'assign') {
                 const payload = fields(row.payload, ['ownerSubjectKey', 'dueDate']);
                 if (typeof payload.ownerSubjectKey !== 'string' || !SUBJECT.test(payload.ownerSubjectKey)) fail();
                 date(payload.dueDate);

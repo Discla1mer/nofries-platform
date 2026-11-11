@@ -269,6 +269,43 @@ describe('improvement plan source domain', () => {
         expect(getter).not.toHaveBeenCalled();
     });
 
+    test('an ownerLabel assign names someone outside the platform without an eligibility check', () => {
+        const noOwners = { ...context, eligibleOwnerSubjectKeys: [] };
+        let state = applyImprovementActionCommand(plan(), command(plan(), 'assign',
+            { ownerLabel: '  Ops\u0007 lead\n(IT)\t ', dueDate: '2026-10-01' }), noOwners);
+        expect(state.commands[0].payload).toEqual({ ownerLabel: 'Ops lead (IT)', dueDate: '2026-10-01' });
+        expect(first(state)).toMatchObject({ ownerSubjectKey: null, ownerLabel: 'Ops lead (IT)', dueDate: '2026-10-01' });
+        expect(getImprovementPlanView(state).counts.unassigned).toBe(13);
+        state = applyImprovementActionCommand(state, command(state, 'start', {}), noOwners);
+        state = applyImprovementActionCommand(state, command(state, 'complete',
+            { note: 'Synthetic change checked.', evidenceReference: 'evidence:synthetic-1' }), noOwners);
+        expect(first(state)).toMatchObject({ status: 'completed', ownerLabel: 'Ops lead (IT)' });
+        expect(getImprovementPlanView(clone(state))).toEqual(getImprovementPlanView(state));
+        const replayed = command(plan(), 'assign', { ownerLabel: 'Ops lead (IT)', dueDate: '2026-10-01' });
+        expect(applyImprovementActionCommand(state, replayed, noOwners)).toEqual(state);
+        const relabelled = step(step(plan(), 'assign', { ownerLabel: 'Finance', dueDate: '2026-10-02' }));
+        expect(first(relabelled)).not.toHaveProperty('ownerLabel');
+        expect(first(relabelled)).toMatchObject({ ownerSubjectKey: OWNER, dueDate: '2026-10-01' });
+        expectCode(() => step(plan(), 'start', {}), 'owner_ineligible');
+    });
+
+    test.each([['', 'empty'], [' \n\t ', 'blank'], ['x'.repeat(81), 'long'], ['ops@example.invalid', 'email'],
+        [42, 'number'], [null, 'null']])('rejects ownerLabel %j (%s)', value => {
+        expectCode(() => step(plan(), 'assign', { ownerLabel: value, dueDate: '2026-10-01' }), 'owner_label_invalid');
+    });
+
+    test('ownerLabel cannot be combined with ownerSubjectKey and accepts exactly 80 characters', () => {
+        expectCode(() => step(plan(), 'assign', { ownerLabel: 'Ops', ownerSubjectKey: OWNER, dueDate: '2026-10-01' }), 'fields_invalid');
+        expectCode(() => step(plan(), 'assign', { ownerLabel: 'Ops' }), 'fields_invalid');
+        expect(first(step(plan(), 'assign', { ownerLabel: 'x'.repeat(80), dueDate: '2026-10-01' })).ownerLabel).toBe('x'.repeat(80));
+    });
+
+    test('subject-key revisions replay to the same view with no ownerLabel field', () => {
+        const state = completed(), view = getImprovementPlanView(clone(state));
+        expect(view).toEqual(getImprovementPlanView(state));
+        view.actions.forEach(action => expect(action).not.toHaveProperty('ownerLabel'));
+    });
+
     test('a Unicode history append fails atomically before the replay byte envelope is exceeded', () => {
         const input = clone(fixture.input), wideScope = { ...scope,
             tenantId: 't'.repeat(120), organisationId: 'o'.repeat(120), planId: 'p'.repeat(120) };
