@@ -877,7 +877,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         ]));
         const ui = await resumeUi(h), picker = byId(ui, 'ncsc-question-index');
         expect(picker.value).toBe('2');
-        expect(ui.root.querySelector('legend').textContent).toBe(metadata().questions[2].prompt);
+        expect(ui.root.querySelector('legend').textContent).toBe(metadata().questions[2].smallBusiness.meaning);
         expect(picker.children[0].textContent).toContain('Unknown');
         expect(picker.children[1].textContent).toContain('Not applicable, to confirm');
         expect(picker.children[2].textContent).toContain('Unanswered');
@@ -920,7 +920,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
                 expect(picker.children[index].value).toBe(String(index));
                 expect(picker.children[index].textContent).toBe((index + 1) + ' of ' + questions.length + ' · Unanswered');
                 picker.value = String(index); event(picker, 'change');
-                expect(ui.root.querySelector('legend').textContent).toBe(question.prompt);
+                expect(ui.root.querySelector('legend').textContent).toBe(question.smallBusiness.meaning);
             });
             const help = byId(ui, picker.getAttribute('aria-describedby'));
             expect(help.textContent).toBe('The full question is below. * marks unsaved changes. Answers save automatically a moment after each change.');
@@ -1413,7 +1413,7 @@ describe('questionnaire form accessibility', () => {
             for (const [index, question] of metadata().questions.entries()) {
                 const picker = byId(ui, 'ncsc-question-index'); picker.value = String(index); event(picker, 'change');
                 const fieldset = ui.root.querySelector('fieldset'), hint = byId(ui, 'ncsc-input-guidance-' + question.id);
-                expect(fieldset.querySelector('legend').textContent).toBe(question.prompt);
+                expect(fieldset.querySelector('legend').textContent).toBe(question.smallBusiness.meaning);
                 expect(hint.parentElement).toBe(fieldset);
                 expect(hint.textContent.length).toBeGreaterThan(40);
                 expect(hint.textContent).not.toBe(question.prompt);
@@ -1686,7 +1686,7 @@ describe('questionnaire public controls and retained mutation intent', () => {
     test('create, N/A rationale, explicit clear, destroy/remount and resume use acknowledged API progress', async () => {
         const h = await backend(), ui = await createInUi(h), question = metadata().questions[0];
         expect(ui.root.textContent).toContain(question.prompt);
-        expect(ui.root.querySelector('fieldset').querySelector('legend').textContent).toBe(question.prompt);
+        expect(ui.root.querySelector('fieldset').querySelector('legend').textContent).toBe(question.smallBusiness.meaning);
         expect(ui.root.querySelectorAll('input').filter(input => input.type === 'radio').map(input => input.value)).toEqual(question.responseOptionIds);
         choose(ui, 0, 'not_applicable', '  Exact Māori claim\n界 \uD83D\uDE80  ');
         const rationale = byId(ui, `ncsc-rationale-${question.id}`); rationale.focus(); enter(rationale, rationale.value + '!');
@@ -2832,7 +2832,7 @@ describe('final submission review step', () => {
             control(ui, 'Review and submit').click();
             control(ui, 'Edit question 6').click();
             expect(byId(ui, 'ncsc-question-index').value).toBe('5');
-            expect(ui.document.activeElement.textContent).toBe(question.prompt);
+            expect(ui.document.activeElement.textContent).toBe(question.smallBusiness.meaning);
             const input = byId(ui, `ncsc-answer-${question.id}-unknown`); input.checked = true; event(input, 'change');
             control(ui, 'Return to review').click();
             expect(ui.document.activeElement).toBe(byId(ui, `ncsc-review-edit-${question.id}`));
