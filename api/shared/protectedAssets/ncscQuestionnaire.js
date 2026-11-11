@@ -693,6 +693,7 @@
             }
             const usage = allowanceNote(); if (usage) introduction.append(usage);
             content.append(introduction);
+            content.append(node('p', 'dashboard-muted', 'Most recently saved or submitted first. This order applies to the assessments loaded so far.'));
             if (!loading && listLoaded && !summaries.length) content.append(node('p', '', 'No saved assessments yet.'));
             const filters = node('div', 'ncsc-assessment-filters');
             const searchLabel = node('label', '', 'Find a saved assessment'); searchLabel.htmlFor = 'ncsc-assessment-search';
@@ -724,7 +725,9 @@
                 if (!live() || view !== 'list') return;
                 list.replaceChildren();
                 const query = listSearch.trim().toLowerCase();
-                summaries.forEach(function (item, index) {
+                summaries.slice().sort(function (left, right) {
+                    return right.updatedAt.localeCompare(left.updatedAt) || left.assessmentId.localeCompare(right.assessmentId);
+                }).forEach(function (item, index) {
                     const submitted = item.status === 'submitted';
                     if (listStatus === 'submitted' && !submitted || listStatus === 'unfinished' && submitted ||
                         query && ![item.assessmentId, item.createdAt, item.updatedAt].some(function (value) { return value.toLowerCase().includes(query); })) return;

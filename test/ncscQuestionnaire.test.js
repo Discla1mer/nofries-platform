@@ -325,6 +325,22 @@ async function resumeUi(h, options = {}) {
 }
 
 describe('saved assessment list pagination and resume', () => {
+    test('an older assessment saved again leads the loaded list without changing server pagination', async () => {
+        const h = await backend();
+        await h.execute(createCommand('assessment-z', 'create-a'));
+        h.clock.advance(1000);
+        await h.execute(createCommand('assessment-b', 'create-b'));
+        h.clock.advance(1000);
+        await h.execute(saveCommand('assessment-z', 0, 'save-a', allResponses().slice(0, 1)));
+        const ui = mountUi(h);
+        try {
+            await until(() => savedActions(ui).length === 2);
+            expect(savedActions(ui).map(button => button.dataset.assessmentId)).toEqual(['assessment-z', 'assessment-b']);
+            expect(ui.root.textContent).toContain('Most recently saved or submitted first');
+            expect(h.calls).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
     async function paginationFocusFixture(options = {}) {
         const h = await backend(), gate = deferred();
         for (const id of ['assessment-first', 'assessment-hidden', 'assessment-next']) {
