@@ -300,6 +300,9 @@
                 provenance.evidenceSnapshot.sha256, provenance.riskContextSnapshot.sha256,
                 submission.responseSetSha256, value.outputSha256].forEach(digest);
             return { attainment: range(value.attainment), substantiated: coverage(value.evidence.substantiatedCoverage),
+                // Validated by range(): the overall lower and upper figures, for leading with the lower one.
+                lowerDisplay: value.attainment.status === 'scored' ? value.attainment.lowerDisplay : null,
+                upperDisplay: value.attainment.status === 'scored' ? value.attainment.upperDisplay : null,
                 denominatorWeight: value.attainment.denominatorWeight,
                 lowerCreditUnits: value.attainment.lowerCreditUnits, upperCreditUnits: value.attainment.upperCreditUnits,
                 completion: value.countsCompletion.completionDisplay,
@@ -1063,6 +1066,7 @@
             }
             metric('Reported implementation', results.attainment, 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
+            leadWithLowerBound(metrics.querySelector('.ncsc-result-metric'), '.ncsc-result-value', results);
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
             panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Marked not applicable, to confirm: ' + results.pending + '.'));
             panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries calculation, not an NCSC score.'));
@@ -1080,6 +1084,14 @@
                     }); detail.append(item);
                 }); panel.append(detail);
             });
+        }
+        // Show the reported (lower) figure first; the upper figure follows in a plain sentence.
+        function leadWithLowerBound(card, valueSelector, model) {
+            const value = card && card.querySelector(valueSelector);
+            if (!value || !model.lowerDisplay || model.lowerDisplay === model.upperDisplay || value.textContent !== model.attainment) return;
+            value.textContent = model.lowerDisplay + ' in place';
+            const upTo = node('p', 'ncsc-result-upper', 'Up to ' + model.upperDisplay + ' if every answer still to confirm turns out to be in place.');
+            const children = Array.from(card.children); children.splice(children.indexOf(value) + 1, 0, upTo); card.replaceChildren.apply(card, children);
         }
         function renderNextSteps(panel) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Suggested follow-ups'));

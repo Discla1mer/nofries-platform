@@ -1353,12 +1353,16 @@ describe('submitted assessment results', () => {
             optionId: atom.response.optionId, rationale: atom.response.optionId === 'not_applicable' ? { text: rationale } : null }))));
         await h.execute(submitCommand()); const ui = await resumeUi(h);
         const panel = ui.root.querySelector('.ncsc-results');
-        expect(panel.textContent).toContain('46.4%–60.7%');
+        const reported = panel.querySelectorAll('.ncsc-result-metric').find(card => card.querySelector('h3').textContent === 'Reported implementation');
+        expect(reported.querySelector('.ncsc-result-value').textContent).toBe('46.4% in place');
+        expect(reported.querySelector('.ncsc-result-upper').textContent).toBe('Up to 60.7% if every answer still to confirm turns out to be in place.');
+        expect(reported.children.map(node => node.className)).toEqual(['', 'ncsc-result-value', 'ncsc-result-upper', '']);
         const resolved = panel.querySelectorAll('.ncsc-result-metric').find(card => card.querySelector('h3').textContent === 'Answers confirmed');
         expect(resolved.textContent).toContain('12 of 14'); expect(resolved.textContent).toContain('85.7%');
         const assessment = (await h.client.read('assessment-a')).assessment;
         const projected = resultModel(assessment, metadata(), h.organisationId);
-        expect(projected).toMatchObject({ denominatorWeight: 14, lowerCreditUnits: 13, upperCreditUnits: 17 });
+        expect(projected).toMatchObject({ denominatorWeight: 14, lowerCreditUnits: 13, upperCreditUnits: 17, attainment: '46.4%–60.7%',
+            lowerDisplay: '46.4%', upperDisplay: '60.7%' });
         projected.domains.forEach((domain, index) => {
             const evaluated = assessment.submission.evaluation.domains[index];
             expect(domain).toMatchObject({ lowerPercentTenths: evaluated.attainment.lowerPercentTenths,

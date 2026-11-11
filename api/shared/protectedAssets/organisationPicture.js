@@ -672,6 +672,15 @@
                 clearTimeout(timer); controller.abort();
             }
         }
+        // Lead with the reported (lower) figure and explain both figures in plain words.
+        function leadWithLowerBound(card, model) {
+            const value = card.querySelector('.picture-large');
+            if (!value || !model.lowerDisplay || model.lowerDisplay === model.upperDisplay || value.textContent !== model.attainment) return;
+            value.textContent = model.lowerDisplay + ' in place';
+            card.replaceChildren(card.querySelector('h3'), value,
+                node('p', 'picture-metric-upper', 'Up to ' + model.upperDisplay + ' if every answer still to confirm turns out to be in place.'),
+                node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. It is not a performance score.'));
+        }
         function renderResult(result) {
             root.append(gapSection(result));
             const metrics = node('div', 'picture-metrics');
@@ -686,6 +695,7 @@
             root.append(metrics, informationSection(result));
             const domains = node('section', 'picture-domains');
             domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm. The range is not a performance score.'));
+            leadWithLowerBound(implementationMetric, result);
             result.domains.forEach(domain => {
                 const row = node('div', 'picture-domain');
                 const label = node('strong', '', domain.title), value = node('span', '', domain.attainment);
