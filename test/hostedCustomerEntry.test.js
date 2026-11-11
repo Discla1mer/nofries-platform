@@ -322,14 +322,24 @@ function response(state, token) {
 const entryRuntime = kind => kind === 'hosted' ? builtRuntime : buildSignupDocument({ ...sources,
     customerLogin: true, customerTransport: 'external' }).runtime;
 test.each(['dynamic', 'hosted'].flatMap(kind => ['login', 'create'].map(intent => [kind, intent])))(
-    '%s public %s starts once after the initial fresh state without a second click', async (kind, intent) => {
+    '%s public %s keeps signup explanation visible and only auto-starts returning login', async (kind, intent) => {
         const fetch = jest.fn(async () => response({ status: 'create_account' }));
         const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=' + intent, fetch });
         try {
             await settle();
             expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/external-customer-signup/state']);
-            expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login' + (intent === 'create' ? '?intent=create' : '')]]);
-            expect(page.assign).not.toHaveBeenCalled();
+            if (intent === 'login') {
+                expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login']]);
+                expect(page.assign).not.toHaveBeenCalled();
+            } else {
+                expect(page.replace).not.toHaveBeenCalled();
+                expect(page.assign).not.toHaveBeenCalled();
+                expect(page.root.textContent).toContain('Microsoft’s secure sign-in page');
+                expect(page.root.textContent).toContain('Company to assess your own organisation');
+                page.root.querySelectorAll('button').find(node => node.textContent === 'Create account').click();
+                await settle();
+                expect(page.assign.mock.calls).toEqual([['/api/external-customer-auth/login?intent=create']]);
+            }
         } finally { page.close(); await settle(); }
     });
 
