@@ -474,7 +474,7 @@ describe('saved assessment list pagination and resume', () => {
         filter.value = 'unfinished'; event(filter, 'change');
         expect(savedActions(ui)).toHaveLength(0);
         expect(ui.root.querySelector('.ncsc-assessment-empty').hidden).toBe(false);
-        expect(ui.root.textContent).toContain('0 of 2 loaded assessments shown');
+        expect(ui.root.textContent).toContain('0 of 2 assessments');
         control(ui, 'Clear filters').click();
         expect(search.value).toBe(''); expect(filter.value).toBe('all');
         expect(ui.document.activeElement).toBe(search); expect(savedActions(ui)).toHaveLength(2);
@@ -496,10 +496,10 @@ describe('saved assessment list pagination and resume', () => {
         filter.value = 'submitted'; event(filter, 'change');
         expect(savedActions(ui)).toHaveLength(0);
         expect(ui.root.textContent).toContain('No submitted assessments yet. Results appear here once an assessment is submitted.');
-        expect(ui.root.textContent).not.toContain('No loaded assessments match your search and status.');
+        expect(ui.root.textContent).not.toContain('No assessments match your search and status.');
         filter.value = 'all'; event(filter, 'change');
         enter(byId(ui, 'ncsc-assessment-search'), 'missing-record');
-        expect(ui.root.textContent).toContain('No loaded assessments match your search and status.');
+        expect(ui.root.textContent).toContain('No assessments match your search and status.');
         expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
         ui.controller.destroy();
     });
@@ -513,12 +513,12 @@ describe('saved assessment list pagination and resume', () => {
         enter(byId(ui, 'ncsc-assessment-search'), 'assessment-next');
         const filter = byId(ui, 'ncsc-assessment-status'); filter.value = 'unfinished'; event(filter, 'change');
         expect(savedActions(ui)).toHaveLength(0);
-        expect(ui.root.textContent).toContain('Search and filters cover loaded assessments.');
+        expect(ui.root.textContent).toContain('Search applies to assessments shown so far.');
         control(ui, 'Load more assessments').click(); await until(() => savedActions(ui).length === 1);
         expect(byId(ui, 'ncsc-assessment-search').value).toBe('assessment-next');
         expect(byId(ui, 'ncsc-assessment-status').value).toBe('unfinished');
-        expect(ui.root.textContent).toContain('1 of 2 loaded assessments shown');
-        expect(ui.root.textContent).not.toContain('Search and filters cover loaded assessments.');
+        expect(ui.root.textContent).toContain('1 of 2 assessments');
+        expect(ui.root.textContent).not.toContain('Search applies to assessments shown so far.');
         expect(h.calls).toHaveLength(2);
         savedActions(ui)[0].click(); await until(() => Boolean(byId(ui, 'ncsc-question-index')));
         expect(h.calls.at(-1).url).toBe(PREFIX + '/assessment-next');
@@ -1288,7 +1288,7 @@ describe('submitted assessment results', () => {
         const panel = ui.root.querySelector('.ncsc-results');
         expect(panel.getAttribute('aria-label')).toBe('Assessment results');
         const metrics = panel.querySelectorAll('.ncsc-result-metric');
-        expect(metrics.map(card => card.querySelector('h3').textContent)).toEqual(['Reported implementation', 'Resolved answers']);
+        expect(metrics.map(card => card.querySelector('h3').textContent)).toEqual(['Reported implementation', 'Answers confirmed']);
         expect(metrics[0].querySelector('.ncsc-result-value').textContent).toBe('100.0%');
         // Internal calculation provenance and the always-empty evidence measure stay out of customer results.
         expect(panel.querySelector('.ncsc-result-provenance')).toBeNull();
@@ -1313,7 +1313,7 @@ describe('submitted assessment results', () => {
         await h.execute(submitCommand()); const ui = await resumeUi(h);
         const panel = ui.root.querySelector('.ncsc-results');
         expect(panel.textContent).toContain('46.4%–60.7%');
-        const resolved = panel.querySelectorAll('.ncsc-result-metric').find(card => card.querySelector('h3').textContent === 'Resolved answers');
+        const resolved = panel.querySelectorAll('.ncsc-result-metric').find(card => card.querySelector('h3').textContent === 'Answers confirmed');
         expect(resolved.textContent).toContain('12 of 14'); expect(resolved.textContent).toContain('85.7%');
         const assessment = (await h.client.read('assessment-a')).assessment;
         const projected = resultModel(assessment, metadata(), h.organisationId);
@@ -1324,7 +1324,7 @@ describe('submitted assessment results', () => {
                 upperPercentTenths: evaluated.attainment.upperPercentTenths, denominatorWeight: evaluated.attainment.denominatorWeight,
                 completed: evaluated.countsCompletion.completionNumerator, total: evaluated.countsCompletion.completionDenominator });
         });
-        expect(panel.textContent).toContain('Unknown or unresolved answers: 2. Pending N/A claims: 1.');
+        expect(panel.textContent).toContain('Unknown or unresolved answers: 2. Not-applicable answers awaiting review: 1.');
         expect(panel.textContent).toContain(rationale); expect(panel.querySelectorAll('img')).toHaveLength(0);
         expect(panel.querySelectorAll('script')).toHaveLength(0); ui.controller.destroy();
     });
@@ -3027,7 +3027,11 @@ describe('reconciled persona journey', () => {
         const read = jest.fn(async () => result), ui = await resumeUi(h, { client: { ...h.client, read } });
         try {
             expect(ui.root.querySelector('.ncsc-next-steps').querySelectorAll('li')).toHaveLength(14);
-            expect(ui.root.querySelector('.ncsc-verdict').textContent).toBe('You have 14 gaps to fix and 0 answers to check. Start with the first three below.');
+            expect(ui.root.querySelector('.ncsc-verdict').textContent).toBe('You have 14 gaps to fix and 0 answers to check.');
+            expect(ui.root.textContent).toContain('Suggested follow-ups: 14.');
+            const followUps = ui.root.querySelector('.ncsc-next-steps');
+            expect([...followUps.querySelectorAll('li')].filter(item => !item.hidden)).toHaveLength(3);
+            expect(control(ui, 'View all 14 follow-ups')).toBeDefined();
             expect(byId(ui, 'ncsc-provider-summary').value).toContain('Partial');
             const before = h.records.length; control(ui, 'Retry loading results').click(); await until(() => read.mock.calls.length === 2);
             expect(h.records).toHaveLength(before);

@@ -106,7 +106,7 @@ function estimateManagedItPrice(context = {}) {
         reviewReasons,
         assumptions: [
             'Remote user support during agreed business hours',
-            'AI-assisted email helpdesk with every change approved by me',
+            'AI-assisted email helpdesk, with every change approved by Joel, our founder',
             'Support for one main work computer per user',
             'Help with business email and shared work tools where agreed',
             'Microsoft 365 backup is included from the Managed tier',

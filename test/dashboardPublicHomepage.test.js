@@ -35,7 +35,7 @@ test('account creation and login have distinct entries and availability is expli
     assert.doesNotMatch(accountCard, /For your company or your clients\./);
     assert.doesNotMatch(html, /<ol\b[^>]*\bclass="gateway-steps"/);
     assert.deepEqual([...accountCard.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)]
-        .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]), [['/login?intent=create', 'Create account'], ['#dashboard-benefits', 'Explore the dashboard']]);
+        .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]), [['/login?intent=create', 'Create account'], ['#dashboard-benefits', 'How it works']]);
     assert.match(html, /class="homepage-login" href="\/login\?intent=login"/);
     assert.equal((html.match(/href="\/login\?intent=create"/g) || []).length, 1);
     assert.match(html, /id="dashboard-benefits"/);
@@ -76,7 +76,8 @@ test('the homepage keeps only one compact MSP section below its Dashboard entry'
     assert.equal(html.split('id="other-services"').length - 1, 1);
     const other = html.match(/<section class="gateway-other-services"[\s\S]*?<\/section>/)[0];
     assert.deepEqual([...other.matchAll(/href="([^"]+)"/g)].map(match => match[1]), ['/managed-it.html']);
-    assert.match(other, /Protection and backup are selected separately/);
+    assert.match(other, /Microsoft 365 backup is included from the Managed tier/);
+    assert.match(other, /Security hardening and alert review are included in Secure/);
     assert.ok(other.length < 650, 'secondary service information stays compact');
     assert.ok(html.indexOf('id="other-services"') > html.indexOf('Create account'));
     assert.match(html, /aria-label="Dashboard benefits"/);

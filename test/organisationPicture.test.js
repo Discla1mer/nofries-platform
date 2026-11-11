@@ -52,8 +52,8 @@ test('connected view preserves golden server range, uncertainty and completion w
     assert.match(dom.root.textContent, /12 of 14/);
     assert.match(dom.root.textContent, /7 partial and 2 absent/);
     assert.match(dom.root.textContent, /2 unknown or unresolved/);
-    assert.match(dom.root.textContent, /1 pending N\/A/);
-    assert.match(dom.root.textContent, /not achieved performance/);
+    assert.match(dom.root.textContent, /1 not-applicable answer awaiting review/);
+    assert.match(dom.root.textContent, /not a performance score/);
     assert.doesNotMatch(dom.root.textContent, /Supporting evidence|Tested or observed coverage|evidence upload/i);
     assert.equal(dom.root.querySelectorAll('meter').length, dom.fixtures.metadata.domains.length);
     assert.match(dom.root.textContent, /Risk priority: not calculated/);
@@ -189,7 +189,7 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     const ids = category => category.querySelectorAll('article').map(node => node.getAttribute('data-question-id'));
     assert.deepEqual(ids(categories[0]), expected(['unknown', 'not_applicable']));
     assert.deepEqual(ids(categories[1]), expected(['partial', 'no']));
-    assert.match(categories[0].textContent, /N\/A claims remain unresolved/);
+    assert.match(categories[0].textContent, /Not-applicable answers awaiting review stay unresolved/);
     assert.doesNotMatch(follow.textContent, /Supporting-evidence gaps|Supporting evidence:|upload/);
     assert.match(follow.textContent, /not a combined total or a risk ranking/);
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
@@ -703,7 +703,7 @@ test('metric review actions reveal all matching items and focus the correct nati
     for (const [index, categoryIndex] of [[0, 1], [1, 0]]) {
         const control = actions[index], category = categories[categoryIndex];
         assert.equal(control.parentElement.querySelector('h3').textContent,
-            ['Reported implementation', 'Resolved answers'][index]);
+            ['Reported implementation', 'Answers confirmed'][index]);
         assert.equal(control.tagName, 'BUTTON'); assert.equal(control.type, 'button');
         assert.equal(control.classList.contains('dashboard-button-secondary'), true);
         assert.equal(control.getAttribute('aria-controls'), category.id);

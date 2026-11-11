@@ -678,7 +678,7 @@ function mockReply(organisation, message, tier) {
     const pricingIntent = /\b(?:price|pricing|cost|quote|how much|monthly|per user|setup fee|set-up fee|onboarding fee)\b/.test(lower);
     let answer = '';
     if (/\b(?:what|which).*(?:include|cover|do you do)\b/.test(lower)) {
-        answer = `${MANAGED_IT_POLICY.customerFacingServiceName} starts with day-to-day support during agreed business hours, the No Fries dashboard, an AI-assisted email helpdesk with every change approved by me, Microsoft 365 admin and help with business email and shared work tools, plus a plain-English monthly summary and Proof every month. The Managed tier adds patching, Microsoft 365 backup and dealing with your other IT vendors, and the Secure tier adds security hardening and alerts.`;
+        answer = `${MANAGED_IT_POLICY.customerFacingServiceName} starts with day-to-day support during agreed business hours, the No Fries dashboard, an AI-assisted email helpdesk with every change approved by Joel, our founder, Microsoft 365 admin and help with business email and shared work tools, plus a plain-English monthly summary and Proof every month. The Managed tier adds patching, Microsoft 365 backup and dealing with your other IT vendors, and the Secure tier adds security hardening and alerts.`;
     } else if (pricingIntent) {
         const selectedTier = resolveSelectedTier(tier);
         const perUser = selectedTier ? selectedTier.perUserMonthly : MANAGED_IT_POLICY.pricing.perUserMonthly;

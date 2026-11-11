@@ -61,12 +61,12 @@
                 saved('submission.responseSetSha256'), saved(prefix + 'outputSha256'), catalogue('profileRef')]);
             if (topic === 'range') {
                 block('Reported implementation', 'The saved implementation range is ' + result.attainment +
-                    '. The endpoints are supplied by the saved server calculation. Unknown answers and pending N/A claims remain unresolved and can widen the range; they do not confirm implementation.',
+                    '. The endpoints are supplied by the saved server calculation. Unknown answers and not-applicable answers awaiting review stay unresolved and can widen the range; they do not confirm implementation.',
                 [saved(prefix + 'attainment.lowerDisplay'), saved(prefix + 'attainment.upperDisplay'),
                     saved(prefix + 'attainment.lowerCreditUnits'), saved(prefix + 'attainment.upperCreditUnits'),
                     saved(prefix + 'attainment.denominatorWeight'), saved(prefix + 'countsCompletion.unknown'),
                     saved(prefix + 'countsCompletion.claimedNotApplicableAtoms')]);
-                block('Resolved answers and supporting evidence', result.completed + ' of ' + result.total + ' answers are resolved (' + result.completion +
+                block('Answers confirmed and supporting evidence', result.completed + ' of ' + result.total + ' answers are confirmed (' + result.completion +
                     '). Resolved means Yes, Partial or No; it does not mean implemented. Saved substantiated evidence coverage: ' + result.substantiated +
                     '. Saved tested evidence coverage: ' + result.tested + '. Answers alone do not demonstrate effectiveness; this explanation verifies no evidence.',
                 [saved(prefix + 'countsCompletion.completionNumerator'), saved(prefix + 'countsCompletion.completionDenominator'),
@@ -74,7 +74,8 @@
                     saved(prefix + 'evidence.testedCoverage.display'), catalogue('responseOptions')]);
             } else if (topic === 'unresolved') {
                 block('Unresolved answers', 'The saved result contains ' + result.unknown + ' unresolved answers, including ' + result.pending +
-                    ' pending N/A claims. A pending N/A claim remains in the calculation; it is not an approved exclusion.',
+                    ' not-applicable ' + (result.pending === 1 ? 'answer awaiting review' : 'answers awaiting review') +
+                    '. Not-applicable answers awaiting review stay in the calculation; they are not an approved exclusion.',
                 [saved(prefix + 'countsCompletion.unknown'), saved(prefix + 'countsCompletion.claimedNotApplicableAtoms'),
                     saved(prefix + 'countsCompletion.approvedNotApplicableAtoms')]);
             } else {
@@ -197,7 +198,7 @@
             if (destroyed) return;
             const focus = focusedControl();
             root.replaceChildren(); root.setAttribute('aria-label', 'Saved assessment explanation');
-            root.append(node('h3', 'Ask Fry · Saved result'), node('p', 'Choose a topic, then load the selected saved submission. This uses saved assessment data and the accepted catalogue.'));
+            root.append(node('h3', 'Explain this saved result'), node('p', 'This explains the saved assessment you have open. It is separate from Fry product help, which cannot read this assessment. Choose a topic, then load the selected saved submission.'));
             const topics = node('div'); topics.className = 'ncsc-actions';
             Object.keys(TOPICS).forEach(function (key) {
                 const item = button(TOPICS[key], function () { if (busy || destroyed) return; topic = key; render(); }, 'topic-' + key);
