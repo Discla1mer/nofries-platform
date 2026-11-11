@@ -37,6 +37,57 @@ test('release identifiers are available in a collapsed site-version disclosure',
     }
 });
 
+test('how it works states the real question count, free starter access and live result features', () => {
+    const how = html.match(/<section class="homepage-how"[\s\S]*?<\/section>/)[0];
+    assert.match(how, /id="how-it-works" aria-labelledby="how-title"/);
+    // The count must match the questionnaire profile the dashboard serves.
+    const { createNcscQuestionnaireMetadata } = require('../api/shared/ncscQuestionnaireMetadata');
+    const questionCount = createNcscQuestionnaireMetadata().questions.length;
+    assert.equal(questionCount, 14);
+    assert.match(how, new RegExp(`From ${questionCount} questions`));
+    assert.match(how, new RegExp(`Answer ${questionCount} questions\\.`));
+    // Free wording mirrors the public terms; no price, duration or time estimate is invented.
+    assert.match(how, /Starter access is free and needs no card\. You see the access period and allowance before you accept\./);
+    assert.match(fs.readFileSync(path.join(root, 'terms.html'), 'utf8'), /Complimentary starter access costs nothing, needs no card/);
+    assert.doesNotMatch(how, /\$\d|NZ\$|\bminutes?\b|\bhours?\b|unlimited/i);
+    // Every result feature named here is rendered by the live results views.
+    const questionnaire = fs.readFileSync(path.join(root, 'api', 'shared', 'protectedAssets', 'ncscQuestionnaire.js'), 'utf8');
+    const picture = fs.readFileSync(path.join(root, 'api', 'shared', 'protectedAssets', 'organisationPicture.js'), 'utf8');
+    assert.match(how, /reported implementation range/);
+    assert.match(questionnaire, /metric\('Reported implementation'/);
+    assert.match(how, /grouped by your answer: No, then Partial, then Unknown, then Not applicable\. The list is not ranked by risk\./);
+    assert.match(questionnaire, /grouped by your answer \(No, then Partial, then Unknown, then Not applicable\)\. It is not ranked by risk/);
+    assert.match(how, /Copy or print a summary for your IT provider\./);
+    assert.match(questionnaire, /button\('Copy summary'/);
+    assert.match(questionnaire, /button\('Print these results'/);
+    assert.match(how, /compare it with your previous results/);
+    assert.match(picture, /'Compare with previous assessment'/);
+    // The demo stays unlinked until the owner decides to publish it.
+    assert.doesNotMatch(html, /href="\/try/);
+});
+
+test('the example results are labelled, internally consistent and not presented as a live result', () => {
+    const sample = html.match(/<figure class="homepage-sample"[\s\S]*?<\/figure>/)[0];
+    assert.match(sample, /<span class="preview-example">Example<\/span>/);
+    assert.match(sample, /<figcaption id="sample-caption">Example results from made-up answers, laid out like the results page\. Not a real organisation’s result\.<\/figcaption>/);
+    assert.match(sample, /Gap indicators, not an audit or certification\./);
+    assert.doesNotMatch(sample, /<h[1-6]\b/);
+    // 6 Yes, 3 Partial, 2 No, 3 Unknown, scored with the published No Fries formula.
+    const counts = { yes: 6, partial: 3, no: 2, unknown: 3 };
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    assert.equal(total, 14);
+    const lower = ((counts.yes + counts.partial / 2) / total * 100).toFixed(1);
+    const upper = ((counts.yes + counts.partial / 2 + counts.unknown) / total * 100).toFixed(1);
+    assert.ok(sample.includes(`<dd>${lower}%–${upper}%</dd>`));
+    assert.ok(sample.includes(`<dd>${counts.yes + counts.partial + counts.no} of ${total}</dd>`));
+    assert.match(sample, new RegExp(`You have ${counts.no + counts.partial} gaps to fix and ${counts.unknown} answers to check\\. Start with the first three below\\.`));
+    const gaps = [...sample.matchAll(/<li>([^<]+)<\/li>/g)].map(match => match[1].split(' — '));
+    assert.deepEqual(gaps.map(gap => gap[1]), ['No', 'No', 'Partial']);
+    const { createNcscQuestionnaireMetadata } = require('../api/shared/ncscQuestionnaireMetadata');
+    const titles = createNcscQuestionnaireMetadata().controls.map(control => control.title);
+    for (const [title] of gaps) assert.ok(titles.includes(title), `Unknown control title ${title}`);
+});
+
 test('account creation and login have distinct entries and availability is explicit', () => {
     assert.match(html, /id="dashboardSignIn" href="\/login" hidden>Sign up \/ Sign in/);
     assert.doesNotMatch(html, /id="organisation-form"/);
