@@ -578,6 +578,24 @@ function historyDom(options = {}) {
         historyState: () => ({ cursor, entries: clone(entries), calls: clone(calls), pendingMoves: [...pendingMoves] }) };
 }
 
+test('cancelled organisation navigation returns to the actual history cursor without duplicate identities', async () => {
+    const dom = historyDom(); let requests = 0;
+    const controller = shell.mount(dom.root, readyCyber(), { initialRoute: 'cyber-security',
+        mountCyber: () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } }),
+        onOpenOrganisations() { requests++; } });
+    dom.window.location.hash = '#organisations'; await tick(); await tick();
+    assert.equal(requests, 1);
+    assert.equal(dom.historyState().cursor, 0);
+    const ids = dom.historyState().entries.map(entry => entry.state.nofriesDashboard.entry);
+    assert.equal(new Set(ids).size, ids.length);
+    await controller.navigate('services');
+    dom.window.history.back(); await tick(); await tick();
+    assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
+    await controller.navigate('overview');
+    assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
+    controller.destroy();
+});
+
 for (const managed of [false, true]) test(`repeating the current Services route preserves Back and Forward (${managed ? 'managed' : 'unmanaged'} history)`, async () => {
     const dom = historyDom();
     const options = { initialRoute: 'overview' };

@@ -465,8 +465,22 @@
                 // The organisation chooser belongs to the authenticated host,
                 // not the module registry. Restore this view while its normal
                 // unsaved-work guard decides whether navigation can proceed.
-                win.history.replaceState(managedHistory && committedEntry ? stateWith(committedEntry) : null,
-                    '', '#' + current.route);
+                if (managedHistory && committedEntry) {
+                    let entry = readEntry();
+                    if (!entry && eventType === 'hashchange' && observedEntry) {
+                        entry = makeEntry(current.route, observedEntry.position + 1, win.location.hash);
+                        win.history.replaceState(stateWith(entry), '', win.location.hash);
+                    }
+                    if (entry) {
+                        observedEntry = entry;
+                        travelTo(committedEntry).then(function (arrived) {
+                            if (arrived && active()) options.onOpenOrganisations();
+                        });
+                        return;
+                    }
+                    managedHistory = false; observedEntry = null; committedEntry = null;
+                }
+                win.history.replaceState(null, '', '#' + current.route);
                 options.onOpenOrganisations();
                 return;
             }
