@@ -14,6 +14,11 @@ const SLOT_FIELDS = ['requestId', 'kind', 'organisationName', 'tenantId', 'organ
     'authorityId', 'membershipId', 'admissionOperationId'];
 const IDS = SLOT_FIELDS.filter(key => !['kind', 'organisationName'].includes(key));
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
+// Lifetime bound on client reservations held in one account record, discarded
+// drafts included (#151). It bounds storage only; migration 0019 counts the
+// client limit at activation, and reserveClient keeps the plan limit unless a
+// caller opts in to that rule.
+const CLIENT_RESERVATION_CEILING = 12;
 const clone = value => copy(value, 32768);
 const key = email => 'starter-accounts/' + crypto.createHash('sha256').update('nofries:starter-account:v1\0' + workEmail(email)).digest('hex');
 function name(value) {
@@ -49,7 +54,7 @@ function record(input) {
     if (value.schemaVersion !== 1 || value.planId !== plan.planId || value.planSha256 !== plan.sha256 ||
         value.email !== workEmail(value.email) || !['company', 'consultant'].includes(value.accountType) ||
         !/^[a-f0-9]{64}$/.test(value.setupSha256) || !Array.isArray(value.organisations)) fail('starter_record_invalid');
-    if (!value.organisations.length || value.organisations.length > 1 + (value.accountType === 'consultant' ? plan.consultantClientOrganisations : 0)) fail('starter_record_invalid');
+    if (!value.organisations.length || value.organisations.length > 1 + (value.accountType === 'consultant' ? CLIENT_RESERVATION_CEILING : 0)) fail('starter_record_invalid');
     const used = new Set([value.accountId]);
     for (const [index, raw] of value.organisations.entries()) {
         const slot = fields(raw, SLOT_FIELDS);
@@ -264,4 +269,4 @@ function createStarterAccountAllocator({ store, readActivation, captureOwner, no
     });
 }
 module.exports = { createStarterAccountAllocator, starterAccountRecord: record, starterClientRecord: clientRecord,
-    starterAccountKey: key, STARTER_SLOT_FIELDS: Object.freeze(SLOT_FIELDS) };
+    starterAccountKey: key, STARTER_SLOT_FIELDS: Object.freeze(SLOT_FIELDS), CLIENT_RESERVATION_CEILING };
