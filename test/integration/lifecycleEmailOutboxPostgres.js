@@ -16,9 +16,9 @@ const ENQUEUE = `INSERT INTO nofries.email_outbox
 module.exports = function registerLifecycleEmailOutboxTests() {
 (target ? describe : describe.skip)('lifecycle email outbox and preferences (migration 0021)', () => {
     const run = crypto.randomBytes(6).toString('hex');
-    const party = () => ({ tenantId: crypto.randomUUID(), organisationId: crypto.randomUUID(),
+    const party = (activated = true) => ({ activated, tenantId: crypto.randomUUID(), organisationId: crypto.randomUUID(),
         accountId: crypto.randomUUID(), subjectKey: `${crypto.randomUUID()}:${crypto.randomUUID()}` });
-    const a = party(), b = party();
+    const a = party(), b = party(), dormant = party(false);
     let pool;
 
     beforeAll(async () => {
@@ -26,20 +26,21 @@ module.exports = function registerLifecycleEmailOutboxTests() {
         if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('disposable_loopback_database_required');
         const { Pool } = require('pg');
         pool = new Pool({ connectionString: target, max: 3, application_name: `email-outbox-${run}` });
-        for (const p of [a, b]) {
+        for (const p of [a, b, dormant]) {
             await pool.query(`INSERT INTO nofries.dashboard_starter_accounts (account_id,email_sha256,subject_key,account_type)
                 VALUES ($1,$2,$3,'company')`, [p.accountId, crypto.randomBytes(32).toString('hex'), p.subjectKey]);
             const preparation = { planId: 'nf-starter-2026-09-r1', kind: 'own', subjectKey: p.subjectKey, accountType: 'company',
                 scope: { tenantId: p.tenantId, organisationId: p.organisationId } };
             await pool.query(`INSERT INTO nofries.dashboard_starter_scopes (tenant_id,organisation_id,account_id,account_type,subject_key,
-                ordinal,authority_id,binding_id,preparation) VALUES ($1,$2,$3,'company',$4,0,$5,$6,$7::jsonb)`,
-            [p.tenantId, p.organisationId, p.accountId, p.subjectKey, crypto.randomUUID(), crypto.randomUUID(), JSON.stringify(preparation)]);
+                ordinal,authority_id,binding_id,preparation,activation) VALUES ($1,$2,$3,'company',$4,0,$5,$6,$7::jsonb,$8::jsonb)`,
+            [p.tenantId, p.organisationId, p.accountId, p.subjectKey, crypto.randomUUID(), crypto.randomUUID(), JSON.stringify(preparation),
+                p.activated ? JSON.stringify({ synthetic: true }) : null]);
         }
     });
     afterAll(async () => {
         if (!pool) return;
         try {
-            const ids = [a.accountId, b.accountId];
+            const ids = [a.accountId, b.accountId, dormant.accountId];
             await pool.query('DELETE FROM nofries.email_outbox WHERE account_id = ANY($1::uuid[])', [ids]);
             await pool.query('DELETE FROM nofries.email_preferences WHERE account_id = ANY($1::uuid[])', [ids]);
             await pool.query('DELETE FROM nofries.dashboard_starter_scopes WHERE account_id = ANY($1::uuid[])', [ids]);
@@ -122,6 +123,8 @@ module.exports = function registerLifecycleEmailOutboxTests() {
         await expect(forged({ ...a, subjectKey: b.subjectKey }, a.accountId)).rejects.toMatchObject({ code: '42501' });
         await expect(forged({ ...a, organisationId: b.organisationId }, a.accountId)).rejects.toMatchObject({ code: '42501' });
         await expect(forged(a, a.accountId, b.organisationId)).rejects.toMatchObject({ code: '42501' });
+        // A scope that has not been activated cannot enqueue for itself either.
+        await expect(forged(dormant, dormant.accountId)).rejects.toMatchObject({ code: '42501' });
         expect((await pool.query('SELECT count(*)::int AS n FROM nofries.email_outbox WHERE account_id=$1 AND dedupe_key LIKE $2',
             [b.accountId, 'mixed-%'])).rows[0].n).toBe(0);
     });
@@ -139,17 +142,25 @@ module.exports = function registerLifecycleEmailOutboxTests() {
             (outbox_id,tenant_id,organisation_id,account_id,email_type,dedupe_key,template_version,status,sent_at)
             VALUES ($1,$2,$3,$4,'welcome','sent-direct','welcome-v1','sent',clock_timestamp())`,
             [crypto.randomUUID(), a.tenantId, a.organisationId, a.accountId]))).rejects.toMatchObject({ code: '42501' });
+        for (const [column, value] of [['created_at', '2020-01-01T00:00:00Z'], ['status', 'sent'], ['attempts', '0'], ['locked_until', null]]) {
+            await expect(runtime(a, c => c.query(`INSERT INTO nofries.email_outbox
+                (outbox_id,tenant_id,organisation_id,account_id,email_type,dedupe_key,template_version,${column})
+                VALUES ($1,$2,$3,$4,'welcome',$5,'welcome-v1',$6)`,
+                [crypto.randomUUID(), a.tenantId, a.organisationId, a.accountId, `col-${column}`, value]))).rejects.toMatchObject({ code: '42501' });
+        }
         await expect(runtime(a, c => c.query('DELETE FROM nofries.email_outbox WHERE outbox_id=$1', [id])))
             .rejects.toMatchObject({ code: '42501' });
         expect(await statusOf(id)).toBe('pending');
     });
 
-    test('the params CHECK rejects extra keys, wrong types and oversize objects', async () => {
+    test('the params CHECK rejects extra keys, free text, non-integer gap counts and oversize objects', async () => {
         for (const params of [{ assessmentId: 'x', email: 'someone@example.invalid' }, { name: 'x' }, { gapCount: '3' },
-            { assessmentId: 'x'.repeat(600) }, []]) {
+            { assessmentId: 'x'.repeat(600) }, [], { assessmentId: 'Hi Sam, your results are in' }, { assessmentId: 'a@b' },
+            { assessmentId: 7 }, { gapCount: 2.5 }, { gapCount: -1 }, { gapCount: 1001 }]) {
             await expect(enqueue(a, `bad-${crypto.randomUUID()}`, params)).rejects.toMatchObject({ code: '23514' });
         }
         expect((await enqueue(a, 'good-params', { assessmentId: 'assessment-2', gapCount: 4 })).rowCount).toBe(1);
+        expect((await enqueue(a, 'good-params-edge', { gapCount: 1000 })).rowCount).toBe(1);
     });
 
     test('the dispatcher cannot read any assessment table or other schema data', async () => {
@@ -191,13 +202,19 @@ module.exports = function registerLifecycleEmailOutboxTests() {
         } finally { one.release(); two.release(); }
     });
 
-    test('preferences are scoped to the signed-in subject; the dispatcher reads all', async () => {
+    test('preferences are scoped to the signed-in subject; the dispatcher reads all and writes none', async () => {
         await runtime(a, c => c.query("INSERT INTO nofries.email_preferences (account_id,email_type,unsubscribed_at,source) VALUES ($1,'nudge_unfinished',clock_timestamp(),'settings')", [a.accountId]));
         await expect(runtime(a, c => c.query("INSERT INTO nofries.email_preferences (account_id,email_type,source) VALUES ($1,'welcome','settings')", [b.accountId])))
             .rejects.toMatchObject({ code: '42501' });
         expect((await runtime(b, c => c.query('SELECT 1 FROM nofries.email_preferences WHERE account_id=$1', [a.accountId]))).rows).toEqual([]);
         expect((await runtime(b, c => c.query("UPDATE nofries.email_preferences SET unsubscribed_at=NULL WHERE account_id=$1", [a.accountId]))).rowCount).toBe(0);
-        await dispatcher(c => c.query("INSERT INTO nofries.email_preferences (account_id,email_type,unsubscribed_at,source) VALUES ($1,'welcome',clock_timestamp(),'link')", [b.accountId]));
+        await runtime(b, c => c.query("INSERT INTO nofries.email_preferences (account_id,email_type,unsubscribed_at,source) VALUES ($1,'welcome',clock_timestamp(),'link')", [b.accountId]));
+        await expect(dispatcher(c => c.query('UPDATE nofries.email_preferences SET unsubscribed_at=NULL WHERE account_id=$1', [b.accountId])))
+            .rejects.toMatchObject({ code: '42501' });
+        await expect(dispatcher(c => c.query("INSERT INTO nofries.email_preferences (account_id,email_type,source) VALUES ($1,'result_summary','link')", [b.accountId])))
+            .rejects.toMatchObject({ code: '42501' });
+        expect((await pool.query("SELECT unsubscribed_at IS NOT NULL AS out FROM nofries.email_preferences WHERE account_id=$1 AND email_type='welcome'", [b.accountId])).rows)
+            .toEqual([{ out: true }]);
         const seen = (await dispatcher(c => c.query('SELECT account_id FROM nofries.email_preferences WHERE account_id = ANY($1::uuid[]) ORDER BY email_type', [[a.accountId, b.accountId]]))).rows;
         expect(seen.map(r => r.account_id).sort()).toEqual([a.accountId, b.accountId].sort());
     });

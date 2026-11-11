@@ -10,8 +10,11 @@
 -- move a row from pending to cancelled, nothing else. Preferences are scoped to
 -- the signed-in subject's starter account. nofries_email_dispatcher is a new
 -- NOLOGIN capability with no members: it reads both tables across tenants and
--- updates delivery columns, and holds no other privilege in the schema. Nobody
--- is granted DELETE.
+-- updates outbox delivery columns, and holds no other privilege in the schema.
+-- It cannot write preferences, so it can never resubscribe anyone; link
+-- unsubscribes run as runtime under the account's subject. Nobody is granted
+-- DELETE. Runtime inserts only identity, type, template, params and not_before;
+-- every delivery column starts at its default.
 --
 -- Rollback (only while no application code depends on it): DROP TABLE
 -- nofries.email_outbox, nofries.email_preferences; DROP ROLE
@@ -43,12 +46,18 @@ CREATE TABLE nofries.email_outbox (
         AND organisation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$'
         AND dedupe_key ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$'
         AND template_version ~ '^[a-z0-9][a-z0-9._-]{0,39}$'),
-    -- Only assessmentId (string) and gapCount (number); never free text.
+    -- Only an identifier-shaped assessmentId and an integer gapCount 0-1000;
+    -- never free text. CASE keeps casts from raising instead of failing CHECK.
     CONSTRAINT email_outbox_params CHECK ((jsonb_typeof(params) = 'object'
         AND octet_length(params::text) <= 512
         AND params - ARRAY['assessmentId','gapCount'] = '{}'::jsonb
-        AND (NOT params ? 'assessmentId' OR jsonb_typeof(params->'assessmentId') = 'string')
-        AND (NOT params ? 'gapCount' OR jsonb_typeof(params->'gapCount') = 'number')) IS TRUE),
+        AND CASE WHEN NOT params ? 'assessmentId' THEN true
+            WHEN jsonb_typeof(params->'assessmentId') = 'string'
+            THEN params->>'assessmentId' ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$' ELSE false END
+        AND CASE WHEN NOT params ? 'gapCount' THEN true
+            WHEN jsonb_typeof(params->'gapCount') = 'number'
+            THEN (params->'gapCount')::numeric = floor((params->'gapCount')::numeric)
+                AND (params->'gapCount')::numeric BETWEEN 0 AND 1000 ELSE false END) IS TRUE),
     CHECK ((status = 'sent') = (sent_at IS NOT NULL))
 );
 CREATE INDEX email_outbox_due ON nofries.email_outbox (not_before) WHERE status = 'pending';
@@ -109,7 +118,7 @@ CREATE POLICY email_outbox_tenant ON nofries.email_outbox
     WITH CHECK (tenant_id = NULLIF(current_setting('nofries.tenant_id', true), ''));
 -- Restrictive: runtime enqueues only fresh pending rows and may only cancel one.
 -- The supplied ids are not trusted on their own: the account, tenant and
--- organisation must be one starter scope of the signed-in subject (0011).
+-- organisation must be one activated starter scope of the signed-in subject (0011).
 CREATE POLICY email_outbox_runtime_enqueue ON nofries.email_outbox
     AS RESTRICTIVE FOR INSERT TO nofries_runtime
     WITH CHECK (status = 'pending' AND attempts = 0 AND locked_until IS NULL AND sent_at IS NULL
@@ -119,7 +128,8 @@ CREATE POLICY email_outbox_runtime_enqueue ON nofries.email_outbox
             WHERE s.account_id = email_outbox.account_id
               AND s.tenant_id = email_outbox.tenant_id
               AND s.organisation_id = email_outbox.organisation_id
-              AND s.subject_key = NULLIF(current_setting('nofries.subject_key', true), '')));
+              AND s.subject_key = NULLIF(current_setting('nofries.subject_key', true), '')
+              AND s.activation IS NOT NULL));
 CREATE POLICY email_outbox_runtime_cancel ON nofries.email_outbox
     AS RESTRICTIVE FOR UPDATE TO nofries_runtime
     USING (status = 'pending')
@@ -128,7 +138,9 @@ CREATE POLICY email_outbox_dispatcher ON nofries.email_outbox
     FOR ALL TO nofries_email_dispatcher
     USING (true) WITH CHECK (true);
 REVOKE ALL ON nofries.email_outbox FROM PUBLIC, nofries_runtime, nofries_email_dispatcher;
-GRANT SELECT, INSERT ON nofries.email_outbox TO nofries_runtime;
+GRANT SELECT ON nofries.email_outbox TO nofries_runtime;
+GRANT INSERT (outbox_id, tenant_id, organisation_id, account_id, email_type, dedupe_key,
+    template_version, params, not_before) ON nofries.email_outbox TO nofries_runtime;
 GRANT UPDATE (status) ON nofries.email_outbox TO nofries_runtime;
 GRANT SELECT ON nofries.email_outbox TO nofries_email_dispatcher;
 GRANT UPDATE (status, attempts, not_before, locked_until, last_error_code, provider_message_id, sent_at)
@@ -145,10 +157,9 @@ CREATE POLICY email_preferences_subject ON nofries.email_preferences
         WHERE a.account_id = email_preferences.account_id
           AND a.subject_key = NULLIF(current_setting('nofries.subject_key', true), '')));
 CREATE POLICY email_preferences_dispatcher ON nofries.email_preferences
-    FOR ALL TO nofries_email_dispatcher
-    USING (true) WITH CHECK (true);
+    FOR SELECT TO nofries_email_dispatcher
+    USING (true);
 REVOKE ALL ON nofries.email_preferences FROM PUBLIC, nofries_runtime, nofries_email_dispatcher;
 GRANT SELECT, INSERT ON nofries.email_preferences TO nofries_runtime;
 GRANT UPDATE (unsubscribed_at, source) ON nofries.email_preferences TO nofries_runtime;
-GRANT SELECT, INSERT ON nofries.email_preferences TO nofries_email_dispatcher;
-GRANT UPDATE (unsubscribed_at, source) ON nofries.email_preferences TO nofries_email_dispatcher;
+GRANT SELECT ON nofries.email_preferences TO nofries_email_dispatcher;
