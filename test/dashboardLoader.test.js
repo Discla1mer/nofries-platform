@@ -885,6 +885,7 @@ describe('consultant client setup', () => {
         expect(h.document.getElementById('clientSetupControls').querySelector('form')).toBeNull();
         await h.reply(4, 200, fullClients());
         expect(h.document.getElementById('clientSetupControls').textContent).toContain('No client slots remain.');
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain('All client slots are in use, so this client was not set up.');
         expect(buttons(h).some(b => /Retry|Add client/.test(b.textContent))).toBe(false);
         h.window.dispatch('focus'); await flush();
         await h.reply(5, 200, consultant()); await h.reply(6, 200, listing([A])); await h.reply(7, 200, consultant());
@@ -955,7 +956,7 @@ describe('consultant client setup', () => {
     test('a discardable draft is discarded only after a confirm step, and the list is redrawn from the server', async () => {
         const h = await portfolio(); await h.reply(2, 200, drafts(true));
         const controls = h.document.getElementById('clientSetupControls');
-        expect(controls.textContent).toContain('2 client slots remain. A slot is used when a client’s terms are accepted. Drafts do not use one.');
+        expect(controls.textContent).toContain('2 client slots remain. A slot is used when a client’s terms are accepted. Drafts do not use one. You can add up to 12 client organisations in total, including discarded drafts.');
         expect(buttons(h).filter(b => label(b).startsWith('Discard draft')).map(label)).toEqual(['Discard draft: Draft client']);
         buttons(h).find(b => label(b) === 'Discard draft: Draft client').click(); await flush();
         expect(h.requests).toHaveLength(3);
@@ -992,6 +993,8 @@ describe('consultant client setup', () => {
         expect(h.requests[4].init.method).toBe('GET'); expect(h.requests[4].init).not.toHaveProperty('body');
         await h.reply(4, 200, drafts(false));
         expect(h.requests.filter(r => r.init.method === 'POST')).toHaveLength(1);
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain(code === 'starter_client_discarded'
+            ? 'This draft has been discarded.' : 'This organisation is not a draft, so it was not discarded.');
     });
     test('late definitive client rejection from an abandoned cycle cannot clear the current unresolved request', async () => {
         const { h, original } = await submittedClient();

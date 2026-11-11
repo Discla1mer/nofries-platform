@@ -568,6 +568,8 @@
             });
             return state.clients;
         }
+        const REFUSALS = { starter_client_limit: 'All client slots are in use, so this client was not set up. You can discard drafts you no longer need.',
+            starter_client_discarded: 'This draft has been discarded.', starter_client_not_draft: 'This organisation is not a draft, so it was not discarded.' };
         // Discard asks once more in the row itself before sending anything.
         function discardAction(row, client) {
             const discard = button('Discard draft', function () {
@@ -634,7 +636,7 @@
                 submitted = !!body;
                 const selectedCursor = cursor === undefined ? listCursor : cursor;
                 let result = await request(cycle, '/api/customer-signup/clients' +
-                    (!body && selectedCursor ? '?cursor=' + encodeURIComponent(selectedCursor) : ''), body, undefined, csrf);
+                    (!body && selectedCursor ? '?cursor=' + encodeURIComponent(selectedCursor) : ''), body, undefined, csrf), refusal = null;
                 if (!current(cycle)) return;
                 if (result.status === 409 && fields(result.value, ['code']) &&
                     ['starter_client_limit', 'starter_details_locked', 'starter_client_discarded', 'starter_client_not_draft'].includes(result.value.code)) {
@@ -643,6 +645,7 @@
                     pending = null; captureForm = null; cycle.clientDraft = null;
                     listCursor = null;
                     content.replaceChildren(); status.textContent = 'Client setup changed. Checking your current client organisations…';
+                    refusal = REFUSALS[result.value.code] || null;
                     result = await request(cycle, '/api/customer-signup/clients', undefined, undefined, csrf);
                 }
                 const response = envelope(result);
@@ -654,6 +657,7 @@
                     listCursor = selectedCursor;
                 }
                 csrf = response.csrfToken; render(response.state, body && body.requestId);
+                if (refusal) status.textContent = refusal;
                 if (!body && cursor !== undefined) {
                     const firstRow = Array.from(elements.choices.children).find(function (row) {
                         return row.classList.contains('client-workspace-row') && !row.hidden && row.querySelector('button');
@@ -762,7 +766,7 @@
                 elements.choices.querySelectorAll('.consultant-organisation-empty').forEach(function (row) { row.remove(); });
                 let incomplete = 0;
                 const slotRule = clients.some(function (client) { return Object.prototype.hasOwnProperty.call(client, 'discardable'); })
-                    ? ' A slot is used when a client’s terms are accepted. Drafts do not use one.' : '';
+                    ? ' A slot is used when a client’s terms are accepted. Drafts do not use one. You can add up to 12 client organisations in total, including discarded drafts.' : '';
                 clientNames.clear();
                 clients.forEach(function (client) {
                     clientNames.set(client.requestId, client.organisationName);
