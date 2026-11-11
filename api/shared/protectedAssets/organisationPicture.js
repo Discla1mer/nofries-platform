@@ -459,9 +459,9 @@
                 const card = node('section', primary ? 'picture-metric picture-primary' : 'picture-metric');
                 card.append(node('h3', '', label), node('strong', 'picture-large', value), node('p', '', copyText)); metrics.append(card); return card;
             }
-            const awaitingReview = result.pending + ' not-applicable ' + (result.pending === 1 ? 'answer awaiting review' : 'answers awaiting review');
+            const awaitingReview = result.pending + (result.pending === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm';
             const implementationMetric = metric('Reported implementation', result.attainment,
-                'The lower figure is what you reported as in place. The higher figure includes unknown answers and not-applicable answers awaiting review. It is not a performance score.', true);
+                'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm. It is not a performance score.', true);
             const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             root.append(metrics);
             const domains = node('section', 'picture-domains');
@@ -509,7 +509,7 @@
             const ordered = metadata.questions.map(question => indexed.get(question.id));
             const categories = [
                 ['Unresolved answers', ordered.filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId)),
-                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. Not-applicable answers awaiting review stay unresolved; approval is not available in this journey.'
+                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. Answers marked not applicable, to confirm, stay unresolved. Approval is not available yet.'
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
                 ['Reported implementation gaps', ordered.filter(question => ['partial', 'no'].includes(question.responseOptionId)),
                     result.partial || result.no ? result.partial + ' partial and ' + result.no + ' absent implementations: review the relevant questions before agreeing improvements.'
@@ -519,7 +519,7 @@
                 const category = node('details', 'ncsc-result-domain');
                 const summary = node('summary', '', label + ' · ' + (result.total === 0 ? 'Not assessed' : questions.length));
                 category.append(summary,
-                    node('p', 'dashboard-muted', result.total === 0 ? 'No applicable question denominator is available for this category.' : explanation));
+                    node('p', 'dashboard-muted', result.total === 0 ? 'No questions in this category count towards your result.' : explanation));
                 const items = questions.map(question => {
                     const item = node('article', 'ncsc-result-control'); item.setAttribute('data-question-id', question.itemId);
                     item.append(node('h4', '', question.prompt), node('p', '', 'Saved answer: ' + question.answer));
