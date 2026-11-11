@@ -14,6 +14,40 @@
     const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
     }).format(new Date(value)) + ' NZ time';
+    // "Your top three gaps": display-only over a result the validator already
+    // accepted. No re-scoring and no model call. Fixed rule:
+    //   1. A gap is a question saved as "no" (not in place) or "partial".
+    //      Unknown and not-applicable answers are unresolved, not gaps.
+    //   2. Higher existing profile weight first (the accepted profile weights
+    //      every question 1, so this does not reorder today).
+    //   3. "no" before "partial", matching the saved credit (0 before 1).
+    //   4. Then accepted profile question order.
+    const GAP_LIMIT = 3;
+    const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
+    const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
+    const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
+    const firstText = (...values) => values.find(value => typeof value === 'string' && value.trim()) || null;
+    function topGaps(result, metadata, limit = GAP_LIMIT) {
+        if (!result || !Array.isArray(result.domains) || !metadata || !Array.isArray(metadata.questions)) return [];
+        const rows = new Map();
+        result.domains.forEach(domain => (domain.controls || []).forEach(control =>
+            (control.questions || []).forEach(row => rows.set(row.itemId, row))));
+        const controls = new Map((metadata.controls || []).map(control => [control.id, control]));
+        return metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }))
+            .filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
+            .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
+                GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position)
+            .slice(0, limit)
+            .map(({ question, row }) => {
+                const control = controls.get(question.controlId), guidance = question.guidance || {};
+                const plain = question.smallBusiness || {};
+                const title = firstText(control && control.title, question.prompt);
+                return { itemId: question.id, title: title.split(' — ').pop(), answer: row.answer,
+                    responseOptionId: row.responseOptionId,
+                    why: firstText(guidance.summary) || GAP_WHY,
+                    next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
+            });
+    }
     function sameProfile(actual, expected) {
         return actual && expected && Object.keys(expected).every(key => actual[key] === expected[key]);
     }
@@ -396,7 +430,30 @@
                 'Showing ' + trend.order.length + ' of ' + trend.total + ' loaded submitted assessments, newest first.' + (after !== null ? ' Other saved assessments are not loaded yet and may be from any date. Load more to include them.' : '')));
             return heading;
         }
+        function gapSection(result) {
+            const gaps = topGaps(result, metadata), section = node('section', 'picture-top-gaps');
+            const heading = node('h3', '', gaps.length === GAP_LIMIT ? 'Your top three gaps' : 'Your top gaps');
+            heading.id = id + '-top-gaps'; section.setAttribute('aria-labelledby', heading.id); section.append(heading);
+            if (!gaps.length) {
+                section.append(node('p', '', 'You did not report any controls as not in place or partly in place.'));
+                if (result.unknown > 0) section.append(node('p', 'dashboard-muted', result.unknown + (result.unknown === 1 ? ' answer is' : ' answers are') +
+                    ' still unknown or to confirm. Confirm ' + (result.unknown === 1 ? 'it' : 'them') + ' to check for gaps.'));
+                return section;
+            }
+            section.append(node('p', 'dashboard-muted', 'Chosen by a fixed rule from your saved answers. Controls not in place come first, then partly in place, then in NCSC framework order.'));
+            const list = node('ol', 'picture-top-gaps-list');
+            gaps.forEach(gap => {
+                const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
+                const why = node('p'), next = node('p');
+                why.append(node('strong', '', 'Why it matters: '), node('span', '', gap.why));
+                next.append(node('strong', '', 'What to do next: '), node('span', '', gap.next));
+                item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer), why, next);
+                list.append(item);
+            });
+            section.append(list); return section;
+        }
         function renderResult(result) {
+            root.append(gapSection(result));
             const metrics = node('div', 'picture-metrics');
             function metric(label, value, copyText, primary) {
                 const card = node('section', primary ? 'picture-metric picture-primary' : 'picture-metric');
@@ -601,5 +658,5 @@
         } };
         mounted.set(root, controller); load(false); return controller;
     }
-    return Object.freeze({ mount });
+    return Object.freeze({ mount, topGaps });
 }));
