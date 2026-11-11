@@ -574,7 +574,10 @@
                 if (!available()) return;
                 const question = element('p', 'Discard this draft? It will be removed from your list. This cannot be undone.');
                 question.className = 'client-discard-confirm';
-                const yes = button('Yes, discard draft', function () { if (available()) run({ action: 'discard', requestId: client.requestId }); });
+                // Unsent details in an open form are guarded exactly as Resume and Cancel do.
+                const yes = button('Yes, discard draft', function () {
+                    if (available() && confirmClientDiscard(cycle)) run({ action: 'discard', requestId: client.requestId });
+                });
                 const keep = button('Keep draft', function () { question.remove(); yes.remove(); keep.remove(); discard.hidden = false; discard.focus(); });
                 yes.setAttribute('aria-label', 'Yes, discard draft: ' + client.organisationName);
                 discard.hidden = true; row.append(question, yes, keep); keep.focus();
