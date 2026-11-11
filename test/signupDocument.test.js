@@ -380,7 +380,7 @@ test.each(['company', 'consultant'])('delivered managed signup document posts %s
         addEventListener(name, fn) { listeners[name] = fn; } }, AbortController, URLSearchParams, TextDecoder, setTimeout, clearTimeout });
     const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(setImmediate); };
     await settle();
-    expect(dom.root.textContent).toContain('Set up your workspace');
+    expect(dom.root.textContent).toContain('Set up your organisation');
     const values = { organisationName: 'Synthetic company', name: 'Synthetic Person', role: 'Owner', address: 'Synthetic address', registrationId: '' };
     for (const field of dom.root.querySelectorAll('input')) {
         if (field.name === 'authorityConfirmed') field.checked = true;

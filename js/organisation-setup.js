@@ -179,7 +179,7 @@
         byId('organisation-continue').hidden = !continuing;
         byId('organisation-switch').hidden = ['start', 'sign_in'].includes(value.state);
         byId('organisation-title').textContent = choosing ? selectedType ? selectedType === 'consultant' ? 'Name your consultancy' : 'Name your organisation' : 'How will you use No Fries?' : value.state === 'awaiting_code' ? 'Check your inbox' : details ? 'Your account details' : continuing ? 'Welcome back to No Fries' : entryIntent === 'create' ? 'Create your account' : 'Sign up / Sign in';
-        byId('organisation-intro').textContent = legacySignIn ? 'Use the email address associated with your existing account.' : choosing ? selectedType ? 'Email verified. You chose ' + (selectedType === 'consultant' ? 'Consultant' : 'Company') + '. Add the name for this workspace.' : 'Email verified. Choose the account that fits you.' : details ? 'Add the person and business details for your dashboard agreement.' : continuing ? 'Your saved account is ready to continue.' : value.state === 'awaiting_code' ? 'Enter the 8 digits we emailed you to confirm this address.' : 'Enter your email to create an account or recover access.';
+        byId('organisation-intro').textContent = legacySignIn ? 'Use the email address associated with your existing account.' : choosing ? selectedType ? 'Email verified. You chose ' + (selectedType === 'consultant' ? 'Consultant' : 'Company') + '. Add the name for this organisation.' : 'Email verified. Choose the account that fits you.' : details ? 'Add the person and business details for your dashboard agreement.' : continuing ? 'Your saved account is ready to continue.' : value.state === 'awaiting_code' ? 'Enter the 8 digits we emailed you to confirm this address.' : 'Enter your email to create an account or recover access.';
         byId('organisation-name-label').textContent = selectedType === 'consultant' ? 'Your name or consultancy' : 'Organisation name';
         if (legacySignIn) {
             byId('organisation-verified-name').textContent = '';
@@ -188,7 +188,7 @@
             byId('organisation-email-hint').textContent = 'Check ' + (emailRecord?.email || value.emailHint) + ' for your code.';
             status.textContent = value.delivery === 'unconfirmed' ? 'Delivery could not be confirmed. If a code arrives, enter it here; otherwise request a new code.' : value.codeExpired ? messages.verification_code_expired : value.attemptsExhausted ? messages.verification_attempts_exhausted : 'Enter the code to verify your email.';
         } else if (value.state === 'verified') {
-            byId('organisation-verified-name').textContent = value.organisationName ? (selectedType === 'consultant' ? 'Consultant workspace: ' : 'Organisation: ') + value.organisationName : '';
+            byId('organisation-verified-name').textContent = value.organisationName ? (selectedType === 'consultant' ? 'Consultancy: ' : 'Organisation: ') + value.organisationName : '';
             status.textContent = choosing ? '' : details ? 'Your email is verified.' : verificationOnly ? 'Your email is verified and your organisation details are saved. Account access has not been activated.' : continuing ? 'Continue secure sign-in to open your existing account or finish activation. Your saved work is kept.' : value.nextStep === 'setup_review_required' ? 'Your details are saved. Invitation delivery could not be confirmed and needs review. Your signup has not been reset or resent.' : 'Your saved setup is waiting for activation. Your account and saved details are kept.';
         } else status.textContent = signInRecovery === 'expired'
             ? 'This sign-in attempt has expired or is no longer valid. Start secure sign-in again with the same email. Your saved work is kept.'
@@ -214,7 +214,7 @@
         if (value.nextStep === 'secure_sign_in') {
             byId('organisation-title').textContent = 'Continue secure sign-in';
             byId('organisation-intro').textContent = 'Create your password or sign in with your verified email.';
-            status.textContent = 'Your details are saved. Continue secure sign-in, then review your agreement before opening your workspace.';
+            status.textContent = 'Your details are saved. Continue secure sign-in, then review your agreement before opening your Dashboard.';
         }
         return stepChanged;
     }

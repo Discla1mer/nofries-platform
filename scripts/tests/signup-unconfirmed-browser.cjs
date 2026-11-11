@@ -202,7 +202,7 @@ async function run() {
                     if (hasMetadata) assert.ok(await card.getByText('Support reference: ' + reference, { exact: true }).isVisible());
                     else assert.equal(await card.getByText('Support reference: ' + reference, { exact: true }).count(), 0);
                     if (scenario.diagnostic === publicDiagnostic) {
-                        assert.ok(await card.getByText('Recorded step: Preparing your workspace.', { exact: true }).isVisible());
+                        assert.ok(await card.getByText('Recorded step: Preparing your organisation.', { exact: true }).isVisible());
                         assert.ok(await card.getByText('Reason: Setup information was unavailable for this step.', { exact: true }).isVisible());
                     } else {
                         assert.doesNotMatch(await card.innerText(), /Recorded step:|Reason:/);

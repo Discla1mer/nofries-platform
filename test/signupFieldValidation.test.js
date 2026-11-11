@@ -79,7 +79,7 @@ test.each(Object.keys(text).flatMap(name => ['   ', '\u00a0\u00a0'].map(value =>
             expect(f.fields()[name].validationMessage).toBe(messages[name]);
             expect(f.document.activeElement).toBe(f.fields()[name]);
             expect(f.root.querySelector('form')).toBe(form);
-            expect(f.root.querySelector('h1').textContent).toBe('Set up your workspace');
+            expect(f.root.querySelector('h1').textContent).toBe('Set up your organisation');
             expect(f.fields().authorityConfirmed.checked).toBe(true);
             expect(f.root.getAttribute('aria-busy')).toBe('false');
         } finally { f.close(); }

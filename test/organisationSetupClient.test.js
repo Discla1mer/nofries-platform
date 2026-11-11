@@ -392,11 +392,11 @@ test.each(['company', 'consultant'])('email comes before the new %s account choi
 test('reload uses the server-stored consultant choice and rejects unknown account types', async () => {
     const h = fixture();
     await h.reply(0, 200, { state: 'verified', accountType: 'consultant', organisationName: 'My workspace', accessGranted: false });
-    expect(h.nodes['verified-name'].textContent).toBe('Consultant workspace: My workspace');
+    expect(h.nodes['verified-name'].textContent).toBe('Consultancy: My workspace');
     h.nodes.refresh.click();
     await h.reply(1, 200, { state: 'verified', accountType: 'staff', organisationName: 'Other', accessGranted: false });
     expect(h.nodes.status.textContent).toContain('could not confirm your progress');
-    expect(h.nodes['verified-name'].textContent).toBe('Consultant workspace: My workspace');
+    expect(h.nodes['verified-name'].textContent).toBe('Consultancy: My workspace');
 });
 test('returning users proceed to the saved account without account choice or details', async () => {
     const h = fixture();
@@ -548,7 +548,7 @@ test('details are bound to the displayed request and discarded when another veri
     const nextId = '10000000-0000-4000-8000-000000000002';
     await h.reply(2, 200, { ...state, requestId: nextId, organisationName: 'New consultancy', accountType: 'consultant' });
     expect(h.nodes['representative-name'].value).toBe(''); expect(h.nodes['representative-authority'].checked).toBe(false);
-    expect(h.nodes['verified-name'].textContent).toBe('Consultant workspace: New consultancy');
+    expect(h.nodes['verified-name'].textContent).toBe('Consultancy: New consultancy');
     h.fillDetails(); h.submit('details-form');
     expect(h.requests[3].options.headers['X-NoFries-Setup-Request']).toBe(nextId);
     await h.reply(3, 200, { ...state, requestId: nextId, organisationName: 'New consultancy', accountType: 'consultant', nextStep: 'check_invitation' });

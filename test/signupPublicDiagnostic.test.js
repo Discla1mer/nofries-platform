@@ -118,7 +118,7 @@ test.each([503, 200])('original failed response%s carries one complete bounded p
     const client = clientFor(response), f = mount(client);
     try {
         await f.view.ready;
-        expect(f.root.textContent).toContain('Recorded step: Preparing your workspace.');
+        expect(f.root.textContent).toContain('Recorded step: Preparing your organisation.');
         expect(f.root.textContent).toContain('Reason: Setup information was unavailable for this step.');
         expect(f.root.textContent).toContain('Support reference: ' + REFERENCE);
         expect(f.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
@@ -131,8 +131,8 @@ test.each([503, 200])('original failed response%s carries one complete bounded p
 });
 
 test.each([
-    ['workspace_preparation', 'step_unconfirmed', 'Preparing your workspace.', 'No Fries could not confirm completion of this step.'],
-    ['workspace_details', 'setup_information_unavailable', 'Saving or reading your workspace details.', 'Setup information was unavailable for this step.'],
+    ['workspace_preparation', 'step_unconfirmed', 'Preparing your organisation.', 'No Fries could not confirm completion of this step.'],
+    ['workspace_details', 'setup_information_unavailable', 'Saving or reading your organisation details.', 'Setup information was unavailable for this step.'],
     ['signup_status', 'step_unconfirmed', 'Checking signup status.', 'No Fries could not confirm completion of this step.'],
     ['terms_review', 'terms_unavailable', 'Preparing your terms.', 'The terms could not be prepared for review.']
 ])('each public stage has fixed display text: %s/%s', async (stage, reason, stageText, reasonText) => {

@@ -109,7 +109,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 choose.className = 'text-link signup-secondary-action'; root.append(choose);
             }
         } else if (state.status === 'setup_details' && customerTransport && typeof client.completeSetup === 'function') {
-            heading.textContent = 'Set up your workspace';
+            heading.textContent = 'Set up your organisation';
             root.append(element('p', 'Signed in as ' + state.email));
             const form = element('form');
             const controls = {}, validateText = [];
@@ -151,7 +151,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             if (reservation) {
                 accountType.value = reservation.accountType; accountType.disabled = true;
                 controls.organisationName.value = reservation.organisationName; controls.organisationName.disabled = true;
-                root.append(element('p', 'Your account type and organisation are already saved. Complete the remaining details for this workspace.'));
+                root.append(element('p', 'Your account type and organisation are already saved. Complete the remaining details for this organisation.'));
             }
             if (restoreDraft && setupDraft) {
                 if (!reservation) accountType.value = setupDraft.accountType;
@@ -186,18 +186,18 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             root.append(form);
             setupSignOut();
         } else if (state.status === 'resume_setup' && customerTransport && typeof client.completeSetup === 'function') {
-            heading.textContent = 'Resume your workspace setup';
+            heading.textContent = 'Resume your organisation setup';
             root.append(element('p', 'Signed in as ' + state.email), element('p', state.organisationName),
                 element('p', 'Account type: ' + (state.accountType === 'consultant' ? 'Consultant' : 'Company')),
-                element('p', 'Your details are saved, but workspace setup did not finish. Resume using those saved details without entering them again.'),
-                button('Resume workspace setup', signal => client.completeSetup({ resume: true }, { signal })));
+                element('p', 'Your details are saved, but organisation setup did not finish. Resume using those saved details without entering them again.'),
+                button('Resume organisation setup', signal => client.completeSetup({ resume: true }, { signal })));
             // A fresh callback can already have non-provisional assurance
             // after a partial claim published authority. Keep the escape valid
             // for both parents without promising provisional-only logout.
             signInLinks();
         } else if (state.status === 'setup_read_only') {
-            heading.textContent = 'Workspace setup saved';
-            root.append(element('p', 'Your workspace setup is saved. Further setup steps are unavailable right now.'),
+            heading.textContent = 'Organisation setup saved';
+            root.append(element('p', 'Your organisation setup is saved. Further setup steps are unavailable right now.'),
                 element('p', 'Check setup status to read any recorded progress. This does not submit details, accept terms or complete setup.'),
                 button('Check setup status', signal => client.load({ signal })));
             const home = element('a', 'Back to home'); home.href = '/'; home.className = 'text-link signup-secondary-action'; root.append(home);
@@ -271,11 +271,11 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             root.append(link);
         } else if (state.status === 'pending_preparation') {
             heading.textContent = 'Your organisation is being prepared';
-            root.append(element('p', 'Your identity is verified. No Fries is preparing your approved organisation workspace before you review its terms. Your terms have not been accepted yet.'),
+            root.append(element('p', 'Your identity is verified. No Fries is preparing your approved organisation before you review its terms. Your terms have not been accepted yet.'),
                 button('Check setup status', signal => client.load({ signal })));
         } else if (state.status === 'pending_admission') {
             heading.textContent = 'Account setup received';
-            root.append(element('p', 'Your terms have been accepted. Workspace access is pending approval. You do not have dashboard access yet.'),
+            root.append(element('p', 'Your terms have been accepted. Dashboard access for your organisation is pending approval. You do not have dashboard access yet.'),
                 button('Check access status', signal => client.load({ signal })));
         } else {
             heading.textContent = 'Signup is unavailable';
@@ -307,7 +307,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         }
         catch (_) { /* Optional diagnostics never change the signup outcome. */ }
         const validReference = typeof reference === 'string' && reference.length === 19 && /^NF-[A-F0-9]{16}$/.test(reference);
-        const stages = { workspace_preparation: 'Preparing your workspace.', workspace_details: 'Saving or reading your workspace details.',
+        const stages = { workspace_preparation: 'Preparing your organisation.', workspace_details: 'Saving or reading your organisation details.',
             signup_status: 'Checking signup status.', terms_review: 'Preparing your terms.' };
         const reasons = { step_unconfirmed: 'No Fries could not confirm completion of this step.',
             setup_information_unavailable: 'Setup information was unavailable for this step.',

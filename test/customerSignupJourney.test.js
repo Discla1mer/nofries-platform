@@ -368,7 +368,7 @@ test('failed resume offers an unconfirmed code and manual sign-in without repeat
         f.view.dispose();
         fresh = mountSignupJourney(f.root, f.client, externalOptions); await fresh.ready;
         expect(f.client.load).toHaveBeenCalledTimes(2); expect(f.client.completeSetup).toHaveBeenCalledTimes(1);
-        expect(f.root.textContent).toContain('Resume your workspace setup');
+        expect(f.root.textContent).toContain('Resume your organisation setup');
     } finally { fresh?.dispose(); f.view.dispose(); }
 });
 
@@ -570,7 +570,7 @@ const readOnlySetup = { status: 'setup_read_only' };
 test.each([undefined, externalOptions])('saved read-only setup exposes only a status read and fixed home navigation (%j)', async options => {
     const f = setup(readOnlySetup, options); await f.view.ready;
     try {
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         expect(f.root.textContent).toContain('Further setup steps are unavailable right now.');
         expect(f.root.querySelector('form')).toBeNull(); expect(f.root.querySelector('input')).toBeNull();
         expect(f.root.querySelector('select')).toBeNull();
@@ -581,7 +581,7 @@ test.each([undefined, externalOptions])('saved read-only setup exposes only a st
         buttons[0].click(); await flush();
         expect(f.client.load).toHaveBeenCalledTimes(2);
         expect(f.client.load).toHaveBeenLastCalledWith({ signal: expect.any(AbortSignal) });
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         expect(f.document.activeElement.tagName).toBe('H1'); expect(f.root.getAttribute('aria-busy')).toBe('false');
         for (const name of ['createAccount', 'completeSetup', 'acceptTerms', 'resumeAcceptance']) expect(f.client[name]).not.toHaveBeenCalled();
     } finally { f.view.dispose(); }
@@ -613,7 +613,7 @@ test('read-only setup clears a cached details draft and stale form before an exp
         f.client.completeSetup.mockResolvedValueOnce(readOnlySetup);
         submitOld(); await flush();
         expect(f.client.completeSetup).toHaveBeenCalledTimes(1);
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         expect(f.root.querySelector('form')).toBeNull(); expect(f.root.textContent).not.toContain('Synthetic private');
         submitOld(); await flush(); expect(f.client.completeSetup).toHaveBeenCalledTimes(1);
         // A later explicit GET can observe ordinary editable historical state;
@@ -634,7 +634,7 @@ test('read-only setup replaces cached consent controls and prevents their later 
         const consent = f.root.querySelector('input'), accept = f.root.querySelector('button');
         consent.checked = true; for (const fn of consent.events.change) fn();
         f.client.acceptTerms.mockResolvedValueOnce(readOnlySetup); accept.click(); await flush();
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         expect(f.root.querySelector('input')).toBeNull(); expect(f.root.querySelector('form')).toBeNull();
         accept.disabled = false; accept.click(); await flush();
         expect(f.client.acceptTerms).toHaveBeenCalledTimes(1); expect(f.client.resumeAcceptance).not.toHaveBeenCalled();
@@ -649,9 +649,9 @@ test('actual signup transport displays saved read-only setup and rechecks it usi
     const f = setup(undefined, externalOptions, client);
     try {
         await f.view.ready;
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         f.root.querySelector('button').click(); await new Promise(setImmediate); await flush();
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         expect(fetch.mock.calls.map(([path, options]) => [path, options.method])).toEqual([
             ['/api/external-customer-signup/state', 'GET'], ['/api/external-customer-signup/state', 'GET']
         ]);

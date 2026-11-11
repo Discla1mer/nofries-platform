@@ -597,7 +597,7 @@ test.each(['company', 'consultant'].flatMap(accountType =>
                 ['GET', '/api/external-customer-signup/state']
             ]);
             if (outcome === 'failed submission') {
-                expect(page.root.textContent).toContain('Set up your workspace');
+                expect(page.root.textContent).toContain('Set up your organisation');
                 expect(page.root.querySelector('form')).not.toBe(form);
                 expect(page.root.querySelector('select').value).toBe(accountType);
                 expect(page.root.querySelector('select').disabled).toBe(true);
@@ -683,7 +683,7 @@ test('a real synthetic external callback opens its setup state through the actua
     const page = execute({ runtime: builtRuntime, search: new URL(login.response.headers.location, 'https://synthetic.invalid').search, fetch });
     await settle(page);
     expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/external-customer-signup/state']);
-    expect(page.root.textContent).toContain('Set up your workspace');
+    expect(page.root.textContent).toContain('Set up your organisation');
     expect(page.assign).not.toHaveBeenCalled(); expect(page.replace).not.toHaveBeenCalled();
     page.close();
 });
