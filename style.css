@@ -524,3 +524,19 @@ body.legal-page .public-panel li { max-width: 68ch; }
 .legal-contents { display: grid; gap: 4px; margin: 0; padding-left: 1.2em; }
 body.legal-page .public-panel ol:not(.legal-contents) { margin: 0; padding-left: 1.4em; }
 .legal-open { padding: clamp(16px, 3vw, 24px); border: 2px dashed var(--line-strong); border-radius: var(--radius); }
+
+/* Public information pages share the site's open header and footer treatment. */
+body.legal-page .public-header,
+body[data-page="contact"] .public-header {
+    padding: 16px 0; border: 0; border-bottom: 1px solid var(--line);
+    border-radius: 0; background: transparent; flex-wrap: wrap;
+}
+body.legal-page .public-footer,
+body[data-page="contact"] .public-footer { border-bottom: 0; border-top: 1px solid var(--line); }
+body.legal-page .public-header nav,
+body[data-page="contact"] .public-header nav { gap: 8px 16px; }
+body.legal-page .public-header nav a,
+body[data-page="contact"] .public-header nav a {
+    display: inline-flex; align-items: center; min-height: 44px; font-size: 1rem; font-weight: 600;
+}
+body.legal-page .public-panel h1 { font-size: clamp(2rem, 4vw, 3rem); line-height: 1.15; }
