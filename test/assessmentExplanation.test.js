@@ -203,11 +203,13 @@ describe('explicit saved explanation controller', () => {
             expect(view.root.dataset.explanationState).toBe('idle');
             control(view, 'Explain this saved result').click();
             expect(view.root.dataset.explanationState).toBe('loading');
-            expect(view.root.getAttribute('aria-busy')).toBe('true');
+            expect(view.root.getAttribute('aria-busy')).toBeNull();
+            for (let node = live; node; node = node.parentElement) expect(node.getAttribute('aria-busy')).not.toBe('true');
+            expect(view.root.children[2].getAttribute('aria-busy')).toBe('true');
             expect(live.textContent).toContain('Loading the saved submission');
             first.reject(Object.assign(new Error('server'), { statusCode: 500 })); await jest.advanceTimersByTimeAsync(0);
             expect(view.root.dataset.explanationState).toBe('failed');
-            expect(view.root.getAttribute('aria-busy')).toBe('false');
+            expect(view.root.children[2].getAttribute('aria-busy')).toBe('false');
             expect(view.root.querySelector('[data-explanation-status]')).toBe(live);
             expect(live.textContent).toContain('The saved explanation is unavailable. Your saved answers are unchanged.');
             expect(live.className).toContain('ncsc-warning');

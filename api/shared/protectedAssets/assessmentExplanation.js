@@ -212,7 +212,9 @@
             root.setAttribute('aria-label', 'Saved assessment explanation');
             const current = state(); root.dataset.explanationState = current;
             live.className = current === 'failed' ? 'ncsc-explanation-status ncsc-warning' : 'ncsc-explanation-status';
-            root.setAttribute('aria-busy', String(current === 'loading'));
+            // Busy marks only the explanation content. The status region must stay
+            // outside any busy subtree so the loading message is announced.
+            tail.setAttribute('aria-busy', String(current === 'loading'));
             announce(busy ? 'Loading the saved submission…' : message || (current === 'ready' ? 'The saved explanation has loaded.' : ''));
             head.append(node('h3', 'Explain this saved result'), node('p', 'This explains the saved assessment you have open. It is separate from Fry product help, which cannot read this assessment. Choose a topic, then load the selected saved submission.'));
             const topics = node('div'); topics.className = 'ncsc-actions';
