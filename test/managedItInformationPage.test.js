@@ -66,21 +66,14 @@ testCase('separate service-page links survive the dashboard-focused homepage and
     assert.doesNotMatch(html, /href="https:\/\/luna\.nofries\.nz\//);
 });
 
-testCase('the enquiry action reuses the click-only shared assistant and verified contact paths', () => {
-    const buttons = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
-    // Two "Ask about Managed IT" launchers plus one CTA per pricing tier.
-    assert.equal(buttons.length, 5);
-    const tierButtons = [];
-    for (const button of buttons) {
-        assert.match(button[1], /type="button"/);
-        assert.match(button[1], /\bdata-assistant-open\b/);
-        assert.match(button[1], /data-assistant-topic="managed-it"/);
-        assert.doesNotMatch(button[1], /data-message|onclick|formaction/);
-        const tier = button[1].match(/data-managed-it-tier="([^"]+)"/);
-        if (tier) tierButtons.push(tier[1]);
-        else assert.equal(text(button[2]), 'Ask about Managed IT →');
-    }
-    assert.deepEqual(tierButtons, ['essentials', 'managed', 'secure']);
+testCase('the enquiry actions link to the contact form and verified contact paths', () => {
+    assert.doesNotMatch(html, /<button\b|data-assistant-/);
+    const actions = [...html.matchAll(/<a class="button[^"]*" href="([^"]+)">([\s\S]*?)<\/a>/g)];
+    assert.deepEqual(actions.map(action => [action[1], text(action[2])]), [
+        ['/contact.html', 'Ask about Managed IT →'], ['/contact.html', 'Enquire about Essentials →'],
+        ['/contact.html', 'Enquire about Managed →'], ['/contact.html', 'Enquire about Secure →'],
+        ['/contact.html', 'Ask about Managed IT →']
+    ]);
     assert.match(existingScope, /href="mailto:hello@nofries\.nz"/);
     assert.match(html, /href="mailto:hello@nofries\.nz">Email hello@nofries\.nz/);
     assert.doesNotMatch(html, /href="\/(?:scoping|portal)"|Staff scoping workspace|Managed-service portal/);
@@ -125,7 +118,6 @@ testCase('the plans and pricing section renders the three tiers with GST-inclusi
     // Managed is the recommended tier and carries a visible badge.
     assert.match(html, /<li class="managed-it-tier is-recommended" data-tier="managed">/);
     assert.match(html, /class="managed-it-tier-badge">Recommended</);
-    assert.match(html, /data-managed-it-tier="managed"/);
     // Managed and Secure inherit from the tier below them.
     assert.match(plansText, /Everything in Essentials, plus:/);
     assert.match(plansText, /Everything in Managed, plus:/);

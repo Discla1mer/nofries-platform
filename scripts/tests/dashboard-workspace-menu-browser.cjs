@@ -27,8 +27,7 @@ const sha256 = value => createHash('sha256').update(value).digest('hex');
 const bundleFiles = ['dashboardRegistry.js', 'dashboardShell.js', 'ncscAssessmentClient.js', 'ncscQuestionnaire.js', 'assessmentExplanation.js', 'organisationPicture.js'];
 const sourceFiles = ['app/dashboard.css', 'app/dashboard.html', 'index.html', 'style.css', 'home.css',
     'js/dashboard-loader.js', 'lib/dashboardDocument.js', 'lib/gatewayDocument.js',
-    'js/home.js', 'js/organisation-setup.js', 'js/prospect-assistant.js',
-    'scripts/tests/dashboard-workspace-menu-browser.cjs', 'scripts/build-ncsc-questionnaire-preview.js',
+    'js/home.js', 'js/organisation-setup.js', 'scripts/tests/dashboard-workspace-menu-browser.cjs', 'scripts/build-ncsc-questionnaire-preview.js',
     ...bundleFiles.map(file => 'api/shared/protectedAssets/' + file)];
 const hashes = () => Object.fromEntries(sourceFiles.map(file => [file, sha256(read(file))]));
 const sourceHashesBefore = hashes();
@@ -51,7 +50,7 @@ const primaryKeys = ['overview', 'cyber_security', 'services'];
 const requests = [], blocked = [], errors = [], results = [], guards = [], screenshots = [], focusWitnesses = [], labelLegibility = [];
 let scenario = 'all', text200 = false, browser, activePage, failure = null;
 const assets = Object.fromEntries(['style.css', 'home.css', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png',
-    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js', 'js/enquiry-availability.js', 'js/enquiry-home.js', 'images/paper-texture.webp', 'images/nofries-mark-large.webp',
+    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/enquiry-availability.js', 'js/enquiry-home.js', 'images/paper-texture.webp', 'images/nofries-mark-large.webp',
     'assets/fonts/fraunces-latin-opsz-normal.woff2', 'assets/fonts/fraunces-latin-opsz-italic.woff2'].map(file => ['/' + file, file]));
 const server = http.createServer((request, response) => {
     const pathname = new URL(request.url, 'http://127.0.0.1').pathname;

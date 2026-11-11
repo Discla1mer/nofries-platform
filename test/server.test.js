@@ -162,12 +162,7 @@ function answer(value) {
 
 function privateDocumentInlineScripts(html) {
     const scripts = [...String(html).matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
-    expect(scripts).toHaveLength(3);
-    const external = scripts.filter(script => /\bsrc\s*=/.test(script[1]));
-    expect(external.map(script => script[1])).toEqual([
-        ' src="/js/prospect-assistant.js" defer', ' src="/js/shared-assistant.js" defer'
-    ]);
-    expect(external.every(script => script[2] === '')).toBe(true);
+    expect(scripts).toHaveLength(1);
     const inline = scripts.filter(script => !/\bsrc\s*=/.test(script[1]));
     expect(inline).toHaveLength(1);
     return inline;
@@ -361,7 +356,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         }
         expect(response.text).toContain('<p class="eyebrow">Optional support</p>');
         expect(response.text).toContain('id="other-services-title">Need a hand with the day-to-day?</h2>');
-        expect(response.text).toContain('Public help only. No access to your organisation, forms or assessments, and no account or assessment changes. Keep private information out.');
+        expect(response.text).not.toContain('Ask Fry');
         expect(response.text).not.toContain('Tell us about your people, devices and current set-up.');
         expect(response.text).not.toContain('one useful question at a time');
         expect(response.text).not.toContain('Plan your Lean Managed IT service.');
@@ -370,7 +365,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(response.text).not.toContain('id="managed-it-per-user-price"');
         expect(response.text).toContain('<title>No Fries | Dashboard. Managed IT.</title>');
         expect(response.text).not.toContain('Automatic updates and connected data feeds are planned');
-        expect(response.text).toContain('data-assistant-help-only="true"');
+        expect(response.text).not.toContain('data-shared-assistant');
         expect(response.text).not.toContain('NZ$119 + GST');
         expect(response.text).not.toContain('Initial set-up starts at NZ$750 + GST');
         expect(response.text).not.toContain('NZ$895');
@@ -384,7 +379,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(response.text).not.toContain('/operator');
         expect(response.text).not.toContain('Staff sign in');
         expect(response.text).toContain('/js/home.js');
-        expect(response.text).toContain('/js/prospect-assistant.js');
+        expect(response.text).not.toContain('/js/prospect-assistant.js');
         expect(response.text).not.toContain('Sales Discovery Workspace');
         expect(response.text).not.toContain('security.monitoring=absent');
         expect(response.text).not.toContain('lead-form.js');
@@ -1909,7 +1904,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(fs.existsSync(path.join(dist, 'js', 'scoping-copy.js'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'js', 'home.js'))).toBe(true);
         expect(fs.existsSync(path.join(dist, 'js', 'operator-loader.js'))).toBe(true);
-        expect(fs.existsSync(path.join(dist, 'js', 'prospect-assistant.js'))).toBe(true);
+        expect(fs.existsSync(path.join(dist, 'js', 'prospect-assistant.js'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'js', 'scope-access.js'))).toBe(true);
         expect(fs.existsSync(path.join(dist, 'app', 'mssp.js'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'js', 'paywall.js'))).toBe(false);
