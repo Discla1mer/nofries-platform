@@ -336,7 +336,7 @@ test.each(['dynamic', 'hosted'].flatMap(kind => ['login', 'create'].flatMap(inte
         const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=' + intent,
             fetch: jest.fn(async () => response({ status: 'continue_to_dashboard', accountType })) });
         try {
-            await settle(); expect(page.replace.mock.calls).toEqual([[accountType === 'consultant' ? '/dashboard#organisations' : '/dashboard']]);
+            await settle(); expect(page.replace.mock.calls).toEqual([['/dashboard']]);
             expect(page.assign).not.toHaveBeenCalled();
         } finally { page.close(); }
     });
