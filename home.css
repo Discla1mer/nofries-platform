@@ -898,8 +898,8 @@ body[data-page="product-roadmap"] .site-header nav { gap: 0 20px; }
 .signup-card .signup-consent { padding-block: 12px; font-size: .9rem; font-weight: 600; }
 .signup-card:has(.signup-legal) .signup-consent { border-top: 1px solid var(--line-strong); margin-top: 24px; }
 .signup-card .signup-status-help { margin: 18px 0 0; }
-.signup-help, .signup-report-help { margin: 20px 12px; color: var(--muted); font-size: .875rem; line-height: 1.6; text-align: center; }
-.signup-help a, .signup-report-help a { color: var(--green); text-decoration: underline; text-underline-offset: 3px; }
+.signup-help, .signup-recovery-help, .signup-report-help { margin: 20px 12px; color: var(--muted); font-size: .875rem; line-height: 1.6; text-align: center; }
+.signup-help a, .signup-recovery-help a, .signup-report-help a { color: var(--green); text-decoration: underline; text-underline-offset: 3px; }
 /* Keep one visible account-change action; the shell remains a fallback when
    the current view has no equivalent choice or provisional sign-out form. */
 .signup-card-wrap:has(.signup-card .signup-secondary-action[href="/api/external-customer-auth/login?account=choose"], .signup-card form[action="/api/external-customer-auth/logout"]) .signup-help { display: none; }
