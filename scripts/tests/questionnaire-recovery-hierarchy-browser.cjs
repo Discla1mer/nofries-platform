@@ -95,7 +95,6 @@ const server = http.createServer(async (request, response) => {
         else if (url.pathname === '/api/dashboard/modules/cyber_security') body = moduleView;
         else if (url.pathname === '/roadmap.html') { body = '<!doctype html><title>Synthetic destination</title>'; type = 'text/html'; }
         else if (['/js/home.js', '/js/organisation-setup.js'].includes(url.pathname)) { body = read(url.pathname.slice(1)); type = 'text/javascript'; }
-        else if (url.pathname === '/js/prospect-assistant.js') { body = pinned('js/prospect-assistant.js'); type = 'text/javascript'; }
         else if (assets[url.pathname]) [type, body] = assets[url.pathname];
         else { unexpected.push(request.method + ' ' + url.pathname); status = 404; body = {}; }
         response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });

@@ -24,17 +24,14 @@ const settle = async page => {
         await new Promise(setImmediate);
     }
 };
-let builtRuntime, builtHelpRuntime, builtConfig, builtLoginSource, builtLoginHtml;
+let builtRuntime, builtConfig, builtLoginSource, builtLoginHtml;
 beforeAll(() => {
     execFileSync(process.execPath, ['scripts/build-static.js'], { cwd: root, stdio: 'pipe' });
     const html = fs.readFileSync(path.join(root, 'dist/app/signup.html'), 'utf8');
     const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
-    expect(scripts.map(script => script[1])).toEqual(['', ' id="nofriesPublicHelpRuntime"']);
+    expect(scripts.map(script => script[1])).toEqual(['']);
     builtRuntime = scripts[0][2];
-    builtHelpRuntime = scripts[1][2];
     expect(builtRuntime).toBe(prepared.runtime);
-    expect(builtHelpRuntime).toBe(fs.readFileSync(path.join(root, 'js/prospect-assistant.js'), 'utf8') +
-        '\n;\n' + fs.readFileSync(path.join(root, 'js/shared-assistant.js'), 'utf8'));
     builtConfig = JSON.parse(fs.readFileSync(path.join(root, 'dist/staticwebapp.config.json')));
     builtLoginHtml = fs.readFileSync(path.join(root, 'dist/login.html'), 'utf8');
     builtLoginSource = fs.readFileSync(path.join(root, 'dist/js/organisation-setup.js'), 'utf8');
@@ -661,13 +658,12 @@ test.each([
     expect(replace).toHaveBeenCalledWith(destination); expect(fetch).not.toHaveBeenCalled();
 });
 
-test('the real static build authorizes only its hosted selector and exact public helper', () => {
+test('the real static build authorizes only its hosted selector', () => {
     const hash = crypto.createHash('sha256').update(builtRuntime).digest('base64');
-    const helperHash = crypto.createHash('sha256').update(builtHelpRuntime).digest('base64');
     const route = builtConfig.routes.find(item => item.route === '/signup');
     expect(route.headers['Content-Security-Policy'].split(';').map(value => value.trim())
         .filter(value => /^script-src(?:\s|$)/.test(value)))
-        .toEqual(["script-src 'sha256-" + hash + "' 'sha256-" + helperHash + "'"]);
+        .toEqual(["script-src 'sha256-" + hash + "'"]);
     expect(route.headers['Content-Security-Policy']).not.toContain('unsafe-inline');
     expect(fs.readFileSync(path.join(root, 'dist/staticwebapp.config.json')).length).toBeLessThanOrEqual(20000);
 });
