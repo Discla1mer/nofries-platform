@@ -486,7 +486,14 @@
         const projection = prefetchProjection ? middle[1] :
             requireSuccess(await request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation));
         if (!current(cycle)) return;
-        await assets(cycle);
+        // These generation-bound reads are independent. Wait for both before
+        // validating or mounting; the final session witness still gates display.
+        const prefetchCyber = Array.isArray(projection?.modules) && projection.modules.some(function (item) {
+            return item && item.key === 'cyber_security' && item.state === 'ready';
+        });
+        const prepared = await Promise.all([assets(cycle), prefetchCyber
+            ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess)
+            : Promise.resolve(null)]);
         if (!current(cycle)) return;
         const factory = window.NoFriesDashboard;
         if (!factory || typeof factory.validate !== 'function' || typeof factory.mount !== 'function') throw invalid();
@@ -494,7 +501,7 @@
         if (model.admissionGranted !== false || model.providerAccessGranted !== false) throw invalid();
         cycle.selectedOrganisationName = model.context.displayName;
         const cyberReady = model.modules.some(function (item) { return item.key === 'cyber_security' && item.state === 'ready'; });
-        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId) : null;
+        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1]) : null;
         const improvementReady = model.modules.some(function (item) { return item.key === 'improvement_plan' && item.state === 'ready'; });
         const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId) : null;
         const fresh = await readSession(cycle);
@@ -1097,8 +1104,8 @@
         show(cycle, 'queue');
         load(null, false);
     }
-    async function cyberOptions(cycle, snapshot, organisationId) {
-        const value = requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
+    async function cyberOptions(cycle, snapshot, organisationId, preparedValue) {
+        const value = preparedValue || requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
         if (!current(cycle)) throw invalid();
         const contract = cyberContract(value);
         if (value.context?.organisationId !== organisationId) throw invalid();
