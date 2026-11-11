@@ -6,6 +6,7 @@ const { buildSupportDocument } = require('./lib/supportDocument');
 const { buildPortalDocument } = require('./lib/portalDocument');
 const { buildDashboardDocument, withCustomerProvider } = require('./lib/dashboardDocument');
 const { buildGatewayDocument } = require('./lib/gatewayDocument');
+const { withFrontendReleaseInformation } = require('./lib/frontendReleaseInfo');
 const {
     checkRateLimit,
     getClientKeyFromHeaders,
@@ -1096,7 +1097,7 @@ function mountPublicAssets(application) {
     rootRoutes.forEach(([route, fileName]) => {
         application.get(route, (req, res) => {
             if (fileName.endsWith('.html')) {
-                return res.type('html').send(fs.readFileSync(path.join(__dirname, fileName), 'utf8'));
+                return res.type('html').send(withFrontendReleaseInformation(fs.readFileSync(path.join(__dirname, fileName), 'utf8')));
             }
             res.sendFile(path.join(__dirname, fileName));
         });

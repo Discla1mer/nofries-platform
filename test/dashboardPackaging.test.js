@@ -40,6 +40,7 @@ for (const builder of ['build-static.js', 'build-app-service.js']) {
             if (name === 'fs') return fakeFs;
             if (name === 'path' || name === 'crypto') return require(name);
             if (name === '../lib/publicAssets') return require('../lib/publicAssets');
+            if (name === '../lib/frontendReleaseInfo') return require('../lib/frontendReleaseInfo');
             if (name.endsWith('Document') || name === '../demo/try/document') return new Proxy({}, { get: () => () => ({ html: '<html></html>', contentSecurityPolicy: "default-src 'none'" }) });
             throw new Error('Unexpected build dependency: ' + name);
         }
