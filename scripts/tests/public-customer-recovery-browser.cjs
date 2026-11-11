@@ -86,7 +86,7 @@ async function main() {
             await page.route('**/*', route => route.request().url().startsWith(base + '/') ? route.continue()
                 : (blocked.push(route.request().url()), route.abort()));
             await page.goto(base + '/signup?provider=external');
-            await page.getByRole('heading', { name: 'Set up your workspace', exact: true }).waitFor();
+            await page.getByRole('heading', { name: 'Set up your organisation', exact: true }).waitFor();
             await page.locator('select[name=accountType]').selectOption('consultant');
             const fields = { organisationName: 'Synthetic consultancy', name: 'Synthetic owner', role: 'Director',
                 address: 'Synthetic address', registrationId: '9429000000000' };
@@ -110,7 +110,7 @@ async function main() {
             // Recovery now requires deliberate fresh navigation. Private
             // in-memory setup text and consent cannot survive that boundary.
             await page.reload();
-            await page.getByRole('heading', { name: 'Set up your workspace', exact: true }).waitFor();
+            await page.getByRole('heading', { name: 'Set up your organisation', exact: true }).waitFor();
             for (const name of Object.keys(fields)) assert.equal(await page.locator('input[name=' + name + ']').inputValue(), '');
             assert.equal(await page.locator('select[name=accountType]').inputValue(), 'company');
             assert.equal(await page.locator('input[name=authorityConfirmed]').isChecked(), false);

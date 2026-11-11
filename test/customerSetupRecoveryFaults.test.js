@@ -459,7 +459,7 @@ test.each([false, true])('the generated hosted=%s page loads partial progress re
     const { h, s } = await interrupted('archive'), before = retained(h, ''), captured = snapshot(h), writes = observeStorage(h);
     const page = generatedDocument(h, s.cookie, hosted);
     try {
-        await waitFor(() => page.root.querySelector('h1')?.textContent === 'Resume your workspace setup');
+        await waitFor(() => page.root.querySelector('h1')?.textContent === 'Resume your organisation setup');
         expect(snapshot(h)).toBe(captured); expect(writes).toEqual([]);
         expect(page.payloads).toEqual([]); expect(page.fetch.mock.calls).toHaveLength(1);
         expect(page.assign).not.toHaveBeenCalled(); expect(page.replace).not.toHaveBeenCalled();
@@ -467,7 +467,7 @@ test.each([false, true])('the generated hosted=%s page loads partial progress re
         expect(page.root.textContent).not.toContain(INPUT.details.name);
         expect(page.root.textContent).not.toContain(INPUT.details.address);
         expect(page.root.querySelectorAll('input')).toHaveLength(0);
-        const resume = page.root.querySelectorAll('button').find(button => button.textContent === 'Resume workspace setup');
+        const resume = page.root.querySelectorAll('button').find(button => button.textContent === 'Resume organisation setup');
         expect(resume).toBeDefined();
         for (let i = 0; i < 2; i++) for (const click of resume.events.click) click({ preventDefault() {} });
         await waitFor(() => page.root.querySelector('h1')?.textContent === 'Continuing account setup');

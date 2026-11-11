@@ -2146,7 +2146,7 @@ test('consultant completion opens the portfolio first, selects a client and retu
     const customer = state(A, GA, { purpose: 'customer', accountType: 'consultant' });
     await h.reply(0, 200, customer); await h.reply(1, 200, listing());
     expect(h.status).toBe('selection'); expect(h.elements.dashboardHeading.textContent).toBe('Your consultant account');
-    expect(h.elements.dashboardMessage.textContent).toBe('Choose an organisation workspace you can access.');
+    expect(h.elements.dashboardMessage.textContent).toBe('Choose an organisation you can access.');
     expect(h.elements.dashboardStatus.textContent).not.toContain('Account owner');
     expect(h.mounts).toHaveLength(0); expect(h.requests).toHaveLength(2);
     h.elements.dashboardChoices.children[1].click(); await flush();

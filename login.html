@@ -6,7 +6,7 @@
 <script src="/js/organisation-setup.js" defer></script></head>
 <body class="access-page login-page"><a class="skip-link" href="#create-organisation">Skip to sign in</a>
 <header class="site-header shell"><a class="brand" href="/" aria-label="No Fries Dashboard home"><img class="brand-logo" src="/images/nofrieslogo.png" width="44" height="44" alt=""><span class="brand-copy"><strong>No Fries</strong> <span>Dashboard</span></span></a><a class="text-link" href="/">Back to home</a></header>
-<main class="shell access-layout"><div class="access-intro signup-intro"><p class="eyebrow">Your No Fries workspace</p><h2>Start here.<br><span class="access-highlight">Return here.</span></h2><p>One place for your organisations, assessments and progress.</p><p class="field-help">Already have an account? Sign in to return to your saved work.</p></div>
+<main class="shell access-layout"><div class="access-intro signup-intro"><p class="eyebrow">Your No Fries Dashboard</p><h2>Start here.<br><span class="access-highlight">Return here.</span></h2><p>One place for your organisations, assessments and progress.</p><p class="field-help">Already have an account? Sign in to return to your saved work.</p></div>
 <section class="organisation-card signup-card" id="create-organisation" tabindex="-1" aria-labelledby="organisation-title">
                     <p class="eyebrow">Your account</p>
                     <h1 id="organisation-title" tabindex="-1">Sign up / Sign in</h1>
@@ -43,7 +43,7 @@
                         <input id="organisation-name" name="organisationName" autocomplete="organization" required aria-describedby="organisation-name-count">
                         <p id="organisation-name-error" class="signup-field-error" hidden></p>
                         <p id="organisation-name-count" class="field-help">0 of 120 characters</p>
-                        <p class="field-help">Check your account type and organisation name before continuing. These identify the workspace we will create.</p>
+                        <p class="field-help">Check your account type and organisation name before continuing. These identify the organisation we will set up.</p>
                         <button class="button" type="submit">Continue</button>
                     </form>
                     <form id="organisation-code-form" hidden novalidate>
@@ -75,7 +75,7 @@
                         <p id="representative-nzbn-help" class="field-help">Your New Zealand Business Number helps identify your business. Enter its 13 digits, or leave this empty.</p>
                         <label class="organisation-authority-check" for="representative-authority"><input id="representative-authority" name="authorityConfirmed" type="checkbox" required aria-describedby="representative-authority-help"> I am authorised to set up and administer this organisation’s account.</label>
                         <p id="representative-authority-error" class="signup-field-error" hidden></p>
-                        <p id="representative-authority-help" class="field-help">You need permission to administer this workspace. If you are unsure, ask the owner or an authorised manager before continuing. Accepting the agreement later also requires authority to bind the organisation.</p>
+                        <p id="representative-authority-help" class="field-help">You need permission to set up this organisation in No Fries. If you are unsure, ask the owner or an authorised manager before continuing. Accepting the agreement later also requires authority to bind the organisation.</p>
                         <p class="field-help">Please check these details before continuing. You will review and accept the dashboard terms after signing in.</p>
                         <button class="button" type="submit">Continue account setup <span aria-hidden="true">→</span></button>
                     </form>

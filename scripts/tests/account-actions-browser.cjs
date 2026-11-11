@@ -144,13 +144,13 @@ async function geometry(page, name) {
             // A deliberate fresh navigation performs the existing authority
             // read. The unavailable view has no in-place status retry action.
             await page.reload();
-            await page.getByRole('button', { name: 'Resume workspace setup', exact: true }).waitFor();
+            await page.getByRole('button', { name: 'Resume organisation setup', exact: true }).waitFor();
             assert.equal(await page.locator('#signup h1').evaluate(el => el === document.activeElement), true);
             assert.equal(await page.locator('.signup-help').isVisible(), false);
             assert.equal(requests.slice(interruptedReadStart).filter(request => request.pathname === '/api/external-customer-signup/state').length, 2);
             await geometry(page, 'signup-recovered-' + width);
             await page.reload();
-            await page.getByRole('button', { name: 'Resume workspace setup', exact: true }).waitFor();
+            await page.getByRole('button', { name: 'Resume organisation setup', exact: true }).waitFor();
             results.push({ width, unavailableHasFixedCode: true, unavailableHasNoStatusRetry: true,
                 freshNavigationRecovery: true, savedSetupReload: true });
             await context.close();

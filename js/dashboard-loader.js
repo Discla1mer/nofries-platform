@@ -221,9 +221,9 @@
             const owner = cycle.session.clientSetupAvailable === true;
             copy[0] = 'Your consultant account';
             copy[1] = owner ? 'Choose your own or a client organisation, or add an organisation.'
-                : 'Choose an organisation workspace you can access.';
+                : 'Choose an organisation you can access.';
             copy[2] = owner ? 'Account owner. Access is checked when you open an organisation.'
-                : 'Only organisation workspaces available to your account are listed.';
+                : 'Only organisations available to your account are listed.';
             if (cycle.session.clientSetupAvailable && !document.getElementById('clientSetupControls')) clientSetupControls(cycle);
         }
         elements.heading.textContent = copy[0];
@@ -863,7 +863,7 @@
     function consultantNavigation(cycle, state) {
         if (portfolioNavigation) portfolioNavigation.remove();
         const nav = document.createElement('nav'); nav.className = 'consultant-navigation';
-        nav.setAttribute('aria-label', 'Consultant workspace');
+        nav.setAttribute('aria-label', 'Consultant Dashboard');
         const items = [['Organisations', '#organisations', state === 'selection']];
         if (cycle.session.workQueueAvailable === true) items.push(['Work queue', '#work-queue', state === 'queue']);
         items.forEach(function (item) {
