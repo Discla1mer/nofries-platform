@@ -45,6 +45,25 @@ function followUp(dom) {
 }
 function metricReviews(dom) { return dom.root.querySelector('.picture-metrics').querySelectorAll('button'); }
 
+test('an explanation that cannot start leaves the saved results in place', async () => {
+    let isolated;
+    jest.isolateModules(() => {
+        jest.doMock('../api/shared/protectedAssets/assessmentExplanation', () => ({
+            explain() { return { status: 'unavailable' }; },
+            mount() { throw new Error('synthetic_mount_failure'); }
+        }));
+        isolated = require('../api/shared/protectedAssets/organisationPicture');
+    });
+    const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
+    const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures), dom = createDom();
+    isolated.mount(dom.root, { metadata: fixtures.metadata, organisationId: seed.model.context.organisationId,
+        client: createClient({ metadata: fixtures.metadata, fetch: transport.fetch }), displayName: 'Synthetic organisation A' });
+    await flush();
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    assert.match(dom.root.querySelector('.picture-explanation').textContent, /The explanation is unavailable right now\. Your results above are unchanged\./);
+    jest.dontMock('../api/shared/protectedAssets/assessmentExplanation');
+});
+
 test('connected view preserves golden server range, uncertainty and completion without an always-empty evidence measure', async () => {
     const dom = setup(); await flush();
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
@@ -1133,23 +1152,4 @@ test('the Overview loads through the real client when the plan includes no asses
         'You can still read your saved assessments. Contact No Fries about more submissions');
     assert.equal(usage.querySelector('a').href, '/contact.html');
     dom.controller.destroy();
-});
-
-test('an explanation that cannot start leaves the saved results in place', async () => {
-    let isolated;
-    jest.isolateModules(() => {
-        jest.doMock('../api/shared/protectedAssets/assessmentExplanation', () => ({
-            explain() { return { status: 'unavailable' }; },
-            mount() { throw new Error('synthetic_mount_failure'); }
-        }));
-        isolated = require('../api/shared/protectedAssets/organisationPicture');
-    });
-    const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
-    const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures), dom = createDom();
-    isolated.mount(dom.root, { metadata: fixtures.metadata, organisationId: seed.model.context.organisationId,
-        client: createClient({ metadata: fixtures.metadata, fetch: transport.fetch }), displayName: 'Synthetic organisation A' });
-    await flush();
-    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
-    assert.match(dom.root.querySelector('.picture-explanation').textContent, /The explanation is unavailable right now\. Your results above are unchanged\./);
-    jest.dontMock('../api/shared/protectedAssets/assessmentExplanation');
 });
