@@ -559,11 +559,28 @@
                         state.remaining > Number.MAX_SAFE_INTEGER - state.clients.length)) throw invalid();
             const ids = new Set();
             state.clients.forEach(function (client) {
-                if (!fields(client, ['requestId','organisationName','status']) || !UUID.test(client.requestId) || !validLabel(client.organisationName) ||
+                // discardable is sent only when the server can discard drafts (#151).
+                const discard = Object.prototype.hasOwnProperty.call(client, 'discardable');
+                if (!fields(client, ['requestId','organisationName','status'].concat(discard ? ['discardable'] : [])) || !UUID.test(client.requestId) ||
+                    !validLabel(client.organisationName) || discard && typeof client.discardable !== 'boolean' ||
                     !['ready','pending','details_required'].includes(client.status) || ids.has(client.requestId)) throw invalid();
                 ids.add(client.requestId);
             });
             return state.clients;
+        }
+        // Discard asks once more in the row itself before sending anything.
+        function discardAction(row, client) {
+            const discard = button('Discard draft', function () {
+                if (!available()) return;
+                const question = element('p', 'Discard this draft? It will be removed from your list. This cannot be undone.');
+                question.className = 'client-discard-confirm';
+                const yes = button('Yes, discard draft', function () { if (available()) run({ action: 'discard', requestId: client.requestId }); });
+                const keep = button('Keep draft', function () { question.remove(); yes.remove(); keep.remove(); discard.hidden = false; discard.focus(); });
+                yes.setAttribute('aria-label', 'Yes, discard draft: ' + client.organisationName);
+                discard.hidden = true; row.append(question, yes, keep); keep.focus();
+            });
+            discard.setAttribute('aria-label', 'Discard draft: ' + client.organisationName);
+            return discard;
         }
         function hideSavedActions() {
             elements.choices.querySelectorAll('.client-workspace-row').forEach(function (row) {
@@ -617,7 +634,7 @@
                     (!body && selectedCursor ? '?cursor=' + encodeURIComponent(selectedCursor) : ''), body, undefined, csrf);
                 if (!current(cycle)) return;
                 if (result.status === 409 && fields(result.value, ['code']) &&
-                    ['starter_client_limit', 'starter_details_locked'].includes(result.value.code)) {
+                    ['starter_client_limit', 'starter_details_locked', 'starter_client_discarded', 'starter_client_not_draft'].includes(result.value.code)) {
                     // These closed responses definitively reject this command.
                     // Reconcile with GET; never repeat it or restore its form.
                     pending = null; captureForm = null; cycle.clientDraft = null;
@@ -741,6 +758,8 @@
                 elements.choices.querySelectorAll('.client-workspace-row').forEach(function (row) { row.remove(); });
                 elements.choices.querySelectorAll('.consultant-organisation-empty').forEach(function (row) { row.remove(); });
                 let incomplete = 0;
+                const slotRule = clients.some(function (client) { return Object.prototype.hasOwnProperty.call(client, 'discardable'); })
+                    ? ' A slot is used when a client’s terms are accepted. Drafts do not use one.' : '';
                 clientNames.clear();
                 clients.forEach(function (client) {
                     clientNames.set(client.requestId, client.organisationName);
@@ -757,6 +776,7 @@
                         run({ action: 'resume', requestId: client.requestId });
                     });
                     if (action) { action.setAttribute('aria-label', (client.status === 'pending' ? 'Resume setup: ' : 'Resume details: ') + client.organisationName); row.append(action); }
+                    if (!readOnly && client.discardable === true) row.append(discardAction(row, client));
                     elements.choices.append(row);
                 });
                 if (!cycle.directoryRows?.length && !incomplete) {
@@ -768,10 +788,10 @@
                 if (readOnly) content.append(element('p', 'Your saved organisation setups have been kept. Further setup steps are currently unavailable.'));
                 else if (unlimitedList || state.remaining > 0) {
                     content.append(element('p', unlimitedList ? 'There is no product limit on the number of organisations you can manage. Each organisation needs its own authorised access and agreed scope.'
-                        : state.remaining + (state.remaining === 1 ? ' client slot remains.' : ' client slots remain.')));
+                        : state.remaining + (state.remaining === 1 ? ' client slot remains.' : ' client slots remain.') + slotRule));
                     const add = button('Add organisation', function () { if (available()) form(); });
                     add.classList.add('client-action-primary'); content.append(add);
-                } else content.append(element('p', 'No client slots remain.'));
+                } else content.append(element('p', 'No client slots remain.' + slotRule));
                 if (unlimitedList && state.nextCursor !== null) content.append(button('More saved setups', function () { run(undefined, state.nextCursor); }));
                 if (unlimitedList && listCursor !== null) content.append(button('First saved setups', function () { run(undefined, null); }));
                 // A routine focus/cache refresh retains inputs or the exact
