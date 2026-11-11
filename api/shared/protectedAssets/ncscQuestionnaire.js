@@ -354,7 +354,16 @@
         let flushQueued = false;
         const autosaveIdleMs = options.autosaveIdleMs === undefined ? AUTOSAVE_IDLE_MS : options.autosaveIdleMs;
         const autosaveEnabled = Number.isFinite(autosaveIdleMs) && autosaveIdleMs > 0;
-        const controller = { requestLeave: requestLeave, destroy: destroy };
+        let restoringQuestion = false;
+        const controller = { requestLeave: requestLeave, destroy: destroy, showQuestion: function (location) {
+            if (!location || !live() || !acknowledged || view !== 'assessment' || reviewing || pending || leave ||
+                location.assessmentId !== acknowledged.assessmentId || !Number.isInteger(location.questionIndex) ||
+                location.questionIndex < 0 || location.questionIndex >= questions.length) return false;
+            restoringQuestion = true;
+            try { activeQuestion = location.questionIndex; renderAssessmentQuestion(); }
+            finally { restoringQuestion = false; }
+            return true;
+        } };
         mounted.set(root, controller);
         root.replaceChildren(); root.classList.add('ncsc-questionnaire');
         const heading = node('h2', '', 'Cyber security assessment'); heading.id = 'ncsc-title';
@@ -680,6 +689,7 @@
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
         }
         function renderList() {
+            if (typeof options.onLocation === 'function') options.onLocation(null);
             const introduction = node('div', 'ncsc-assessment-intro');
             introduction.append(node('p', '', 'Pick up where you left off, or view the results of a submitted assessment. Only saved progress appears here.'));
             if (editable) {
@@ -820,6 +830,8 @@
                 if (!result) return;
                 acknowledged = cleanDetail(result.assessment, id); resetDrafts();
                 activeQuestion = acknowledged.status === 'submitted' ? 0 : Math.max(0, unansweredIndex(-1));
+                if (id === initialAssessmentId && Number.isInteger(options.initialQuestionIndex) &&
+                    options.initialQuestionIndex >= 0 && options.initialQuestionIndex < questions.length) activeQuestion = options.initialQuestionIndex;
             } catch (error) { if (live(expected)) fixedFailure(error); }
             finally { if (live(expected)) { loading = false; render(); } }
         }
@@ -1080,6 +1092,7 @@
         }
         function renderQuestion() {
             if (!live() || !questionRegion || !acknowledged) return;
+            if (!restoringQuestion && typeof options.onLocation === 'function') options.onLocation({ assessmentId: acknowledged.assessmentId, questionIndex: activeQuestion });
             abortAssistance();
             const focused = captureFocus(questionRegion);
             questionRegion.replaceChildren();

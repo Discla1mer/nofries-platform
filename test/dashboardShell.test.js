@@ -566,6 +566,37 @@ function historyDom(options = {}) {
         historyState: () => ({ cursor, entries: clone(entries), calls: clone(calls), pendingMoves: [...pendingMoves] }) };
 }
 
+test('question history moves within the mounted assessment and restores its pointer only for the same organisation', async () => {
+    const dom = historyDom();
+    let presentation, shown, leaves = 0, mounts = 0;
+    const adapter = (_root, input) => {
+        presentation = input; mounts++;
+        return { destroy() {}, requestLeave(commit) { leaves++; commit(); return Promise.resolve(true); },
+            showQuestion(location) { if (location.assessmentId !== 'saved-assessment') return false; shown = location.questionIndex; return true; } };
+    };
+    const model = readyCyber();
+    const controller = shell.mount(dom.root, model, { window: dom.window, initialRoute: 'cyber-security', mountCyber: adapter });
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 0 });
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 1 });
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 2 });
+    const count = dom.window.history.length;
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 2 });
+    assert.equal(dom.window.history.length, count);
+    dom.window.history.back(); await tick();
+    assert.equal(shown, 1); assert.equal(leaves, 0); assert.equal(mounts, 1);
+    dom.window.history.forward(); await tick(); assert.equal(shown, 2);
+    controller.destroy();
+    const resumed = shell.mount(dom.root, model, { window: dom.window, initialRoute: 'cyber-security', mountCyber: adapter });
+    assert.equal(presentation.initialAssessmentId, 'saved-assessment'); assert.equal(presentation.initialQuestionIndex, 2);
+    dom.window.history.back(); await tick(); assert.equal(shown, 1);
+    dom.window.history.forward(); await tick(); assert.equal(shown, 2);
+    resumed.destroy();
+    const another = clone(model); another.context.organisationId = 'another-organisation';
+    const changed = shell.mount(dom.root, another, { window: dom.window, initialRoute: 'cyber-security', mountCyber: adapter });
+    assert.equal(presentation.initialAssessmentId, undefined);
+    changed.destroy();
+});
+
 for (const managed of [false, true]) test(`repeating the current Services route preserves Back and Forward (${managed ? 'managed' : 'unmanaged'} history)`, async () => {
     const dom = historyDom();
     const options = { initialRoute: 'overview' };

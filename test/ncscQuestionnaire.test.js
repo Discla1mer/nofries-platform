@@ -535,6 +535,29 @@ describe('saved assessment list pagination and resume', () => {
         ui.controller.destroy();
     });
 
+    test('history restores a question without saving or losing an unsaved answer', async () => {
+        const h = await backend(); await h.execute(createCommand());
+        const onLocation = jest.fn();
+        const ui = mountUi(h, { initialAssessmentId: 'assessment-a', initialQuestionIndex: 4, onLocation });
+        try {
+            await until(() => byId(ui, 'ncsc-question-index'));
+            expect(byId(ui, 'ncsc-question-index').value).toBe('4');
+            expect(onLocation).toHaveBeenLastCalledWith({ assessmentId: 'assessment-a', questionIndex: 4 });
+            choose(ui, 4, 'yes');
+            const calls = h.calls.length, notifications = onLocation.mock.calls.length;
+            expect(ui.controller.showQuestion({ assessmentId: 'assessment-a', questionIndex: 2 })).toBe(true);
+            expect(byId(ui, 'ncsc-question-index').value).toBe('2');
+            expect(ui.controller.showQuestion({ assessmentId: 'assessment-a', questionIndex: 4 })).toBe(true);
+            expect(byId(ui, 'ncsc-answer-' + metadata().questions[4].id + '-yes').checked).toBe(true);
+            expect(onLocation).toHaveBeenCalledTimes(notifications);
+            expect(h.calls).toHaveLength(calls);
+            for (const location of [null, { assessmentId: 'foreign', questionIndex: 0 },
+                { assessmentId: 'assessment-a', questionIndex: -1 }, { assessmentId: 'assessment-a', questionIndex: 14 }]) {
+                expect(ui.controller.showQuestion(location)).toBe(false);
+            }
+        } finally { ui.controller.destroy(); }
+    });
+
     test('an explicit saved target performs one fresh exact read without list/create/save/submit', async () => {
         const h = await backend();
         await h.execute(createCommand('assessment-target', 'seed-target', 'Synthetic exact target scope.'));
