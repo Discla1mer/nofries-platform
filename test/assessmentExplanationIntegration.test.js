@@ -162,7 +162,7 @@ test.each([{}, { role: 'fractional_advisor', service: true }])('Overview explici
         expect(h.adapters.events).toHaveLength(initialAudits + 1);
         expect(h.adapters.events.at(-1)).toMatchObject({ action: 'assessment.read', module: 'cyber_security', result: 'succeeded' });
         click(ui, 'Unresolved answers');
-        expect(section.textContent).toContain('2 unresolved answers, including 1 pending N/A claims');
+        expect(section.textContent).toContain('2 unresolved answers, including 1 not-applicable answer awaiting review');
         expect(section.textContent).toContain('responses[itemId=');
         expect(section.textContent).toContain('.rationale.text');
         expect(section.textContent).toContain('<img src=x onerror=alert(1)> Synthetic pending claim.');

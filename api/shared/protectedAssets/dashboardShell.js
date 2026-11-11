@@ -17,7 +17,7 @@
     const mounted = new WeakMap();
     const START_NEW_ASSESSMENT = Object.freeze({ startNew: true });
     let mountSequence = 0;
-    const moduleStates = { ready: 'Included', planned: 'Included · workspace coming next', disabled: 'Included · unavailable' };
+    const moduleStates = { ready: 'Included', planned: 'Coming next', disabled: 'Included · unavailable' };
     const serviceStates = { not_included: 'Available to scope', disabled: 'Included · unavailable', setup_required: 'Waiting for setup' };
     const metricLabels = { implementation: 'Implementation attainment', evidence: 'Evidence confidence', risk: 'Risk priority', trend: 'Trend' };
 
@@ -271,8 +271,9 @@
             main.replaceChildren();
             const head = element('header', 'dashboard-page-heading');
             const title = element('h1', '', current.label); title.tabIndex = -1;
-            head.append(element('p', 'dashboard-eyebrow', 'Your organisation / ' + current.label), title,
-                badge(moduleStates[stateFor(current.key)]));
+            head.append(element('p', 'dashboard-eyebrow', 'Your organisation / ' + current.label), title);
+            // Navigation already labels a planned module "Coming next". Do not repeat it in the page badge.
+            if (stateFor(current.key) !== 'planned') head.append(badge(moduleStates[stateFor(current.key)]));
             main.append(head);
             const siblings = primary.filter(function (item) { return item.group === current.group; });
             if (siblings.length > 1) {
@@ -421,9 +422,13 @@
             }
         }
         function renderModule() {
-            const section = panel('Your ' + current.label.toLowerCase() + ' workspace is coming next',
-                'This tool is included for your organisation and is not available yet.');
-            section.append(element('p', '', 'No assessment is started, evidence uploaded or report issued from this screen.'));
+            const plan = current.key === 'improvement_plan';
+            const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
+            const section = panel(plan
+                ? 'Track actions from a saved assessment here once this workspace is available.'
+                : 'This workspace is not open yet.',
+                cyber ? 'For now, review the gaps in your saved assessment.' : 'For now, use the parts of the dashboard that are available.');
+            if (cyber) section.append(button('Review saved assessment', function () { navigate(cyber.route, true); }));
             const home = available.find(function (item) { return item.key === 'overview'; });
             if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
             main.append(section);

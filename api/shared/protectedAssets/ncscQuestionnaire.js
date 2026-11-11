@@ -357,9 +357,10 @@
         const controller = { requestLeave: requestLeave, destroy: destroy };
         mounted.set(root, controller);
         root.replaceChildren(); root.classList.add('ncsc-questionnaire');
-        const heading = node('h2', '', metadata.title); heading.id = 'ncsc-title';
+        const heading = node('h2', '', 'Cyber security assessment'); heading.id = 'ncsc-title';
+        const alignment = node('p', 'dashboard-muted', 'A short check of your answers against NCSC guidelines. It is not a certification.');
         status = node('p', 'ncsc-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.setAttribute('aria-atomic', 'true');
-        root.append(heading, status);
+        root.append(heading, alignment, status);
 
         function live(expected) { return !disposed && mounted.get(root) === controller && (expected === undefined || expected === epoch); }
         function needsUnloadWarning() {
@@ -709,7 +710,7 @@
             const list = node('ul', 'ncsc-assessment-list');
             const count = node('p', 'dashboard-muted'); count.setAttribute('role', 'status'); count.setAttribute('aria-atomic', 'true');
             const note = node('p', 'dashboard-muted', nextAfter !== null
-                ? 'Search and filters cover loaded assessments. Load more to include more saved records.'
+                ? 'Search applies to assessments shown so far. Load more to include older saved assessments.'
                 : 'Search by the date created, date last saved, or assessment reference.');
             note.id = 'ncsc-assessment-filter-note';
             const empty = node('div', 'ncsc-assessment-empty');
@@ -750,8 +751,10 @@
                 const submittedLoaded = summaries.some(function (item) { return item.status === 'submitted'; });
                 emptyCopy.textContent = listStatus === 'submitted' && !submittedLoaded
                     ? 'No submitted assessments yet. Results appear here once an assessment is submitted.'
-                    : 'No loaded assessments match your search and status.';
-                count.textContent = matches + ' of ' + summaries.length + ' loaded assessments shown';
+                    : 'No assessments match your search and status.';
+                count.textContent = matches === summaries.length
+                    ? summaries.length + (summaries.length === 1 ? ' assessment' : ' assessments')
+                    : matches + ' of ' + summaries.length + ' assessments';
                 empty.hidden = matches !== 0 || !summaries.length;
             }
             search.addEventListener('input', function () { listSearch = search.value; updateList(); });
@@ -1008,9 +1011,9 @@
                 const card = node('section', 'ncsc-result-metric'); card.append(node('h3', '', title), node('p', 'ncsc-result-value', value), node('p', '', explanation)); metrics.append(card);
             }
             metric('Reported implementation', results.attainment, 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
-            metric('Resolved answers', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
+            metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
-            panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Pending N/A claims: ' + results.pending + '.'));
+            panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Not-applicable answers awaiting review: ' + results.pending + '.'));
             panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. N/A stays in the denominator unless formally approved; N/A approval is not available in this journey. This is a No Fries calculation, not an NCSC score.'));
             panel.append(node('h3', '', 'Explore NCSC functions and assessment topics'));
             results.domains.forEach(function (domain) {
@@ -1031,13 +1034,12 @@
             return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
         }
         function renderNextSteps(panel) {
-            const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Gaps to work through'));
+            const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Suggested follow-ups'));
             const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(savedAnswer(question.id).optionId); }).length; };
             const toFix = countOf(['no', 'partial']), toCheck = countOf(['unknown', 'not_applicable']);
             const plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
-            // One plain verdict before any percentages.
-            if (toFix || toCheck) section.append(node('p', 'ncsc-verdict', 'You have ' + plural(toFix, 'gap', 'gaps') + ' to fix and ' + plural(toCheck, 'answer', 'answers') + ' to check.' + (toFix + toCheck > 3 ? ' Start with the first three below.' : '')));
-            section.append(node('p', '', 'Start with the gaps you reported, then check what you are unsure about with your IT provider. The list is grouped by your answer (No, then Partial, then Unknown, then Not applicable). It is not ranked by risk or urgency.'));
+            // One plain verdict before any percentages. The list follows answer groups, not risk.
+            if (toFix || toCheck) section.append(node('p', 'ncsc-verdict', 'You have ' + plural(toFix, 'gap', 'gaps') + ' to fix and ' + plural(toCheck, 'answer', 'answers') + ' to check.'));
             if (toCheck) section.append(node('p', 'dashboard-muted', 'No IT provider? Ask whoever looks after your computers and accounts, or a local IT support business, to check these with you.'));
             const list = node('ol'), summary = ['Cyber security assessment', 'Scope: ' + acknowledged.scopePopulation.description, 'Submitted: ' + localDate(acknowledged.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
             ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
@@ -1049,8 +1051,19 @@
                     const item = node('li'); item.append(node('strong', '', title), node('p', '', action)); list.append(item); summary.push(title + ': ' + action);
                 });
             });
+            const followUpCount = list.children.length;
+            if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + '. Grouped by your answer (No, then Partial, then Unknown, then Not applicable). Not ranked by risk or urgency.'));
+            if (followUpCount > 3) Array.prototype.forEach.call(list.children, function (item, index) { if (index >= 3) item.hidden = true; });
             section.append(list);
-            if (!list.children.length) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
+            if (followUpCount > 3) {
+                const items = Array.prototype.slice.call(list.children);
+                const more = button('View all ' + followUpCount + ' follow-ups', function () {
+                    items.forEach(function (item) { item.hidden = false; });
+                    more.remove();
+                }, 'dashboard-button dashboard-button-secondary');
+                section.append(more);
+            }
+            if (!followUpCount) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
             const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with your IT provider'));
             const label = node('label', '', 'Copy this summary into an email or document'); label.htmlFor = 'ncsc-provider-summary';
             const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.join('\n'); handoff.append(label, input);

@@ -402,12 +402,13 @@
                 const card = node('section', primary ? 'picture-metric picture-primary' : 'picture-metric');
                 card.append(node('h3', '', label), node('strong', 'picture-large', value), node('p', '', copyText)); metrics.append(card); return card;
             }
+            const awaitingReview = result.pending + ' not-applicable ' + (result.pending === 1 ? 'answer awaiting review' : 'answers awaiting review');
             const implementationMetric = metric('Reported implementation', result.attainment,
-                'Lower bound: reported implementation. Upper bound: uncertainty from unknown answers and pending N/A claims, not achieved performance.', true);
-            const completionMetric = metric('Resolved answers', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + result.pending + ' pending N/A claims. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
+                'The lower figure is what you reported as in place. The higher figure includes unknown answers and not-applicable answers awaiting review. It is not a performance score.', true);
+            const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             root.append(metrics);
             const domains = node('section', 'picture-domains');
-            domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show the reported lower bound; the striped extension shows uncertainty. The range is not achieved performance.'));
+            domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm. The range is not a performance score.'));
             result.domains.forEach(domain => {
                 const row = node('div', 'picture-domain');
                 const label = node('strong', '', domain.title), value = node('span', '', domain.attainment);
@@ -415,14 +416,14 @@
                 if (domain.lowerPercentTenths !== null) {
                     const meter = node('meter'); meter.min = 0; meter.max = 1000; meter.value = domain.lowerPercentTenths;
                     meter.setAttribute('aria-label', domain.title + ' reported implementation');
-                    meter.setAttribute('aria-valuetext', domain.attainment + '; bar shows lower bound');
+                    meter.setAttribute('aria-valuetext', domain.attainment + '; bar shows what you reported as in place');
                     const track = node('div', 'picture-domain-track');
                     track.style.setProperty('--picture-lower', domain.lowerPercentTenths / 10 + '%');
                     track.style.setProperty('--picture-upper', domain.upperPercentTenths / 10 + '%');
                     const uncertainty = node('span', 'picture-domain-uncertainty'); uncertainty.setAttribute('aria-hidden', 'true');
                     track.append(meter, uncertainty); row.append(track);
                 }
-                row.append(node('p', 'picture-domain-detail', domain.completed + ' / ' + domain.total + ' answers resolved · scoring weight ' + domain.denominatorWeight));
+                row.append(node('p', 'picture-domain-detail', domain.completed + ' of ' + domain.total + ' answers confirmed'));
                 domains.append(row);
             }); root.append(domains);
             root.append(trendSection(result));
@@ -451,7 +452,7 @@
             const ordered = metadata.questions.map(question => indexed.get(question.id));
             const categories = [
                 ['Unresolved answers', ordered.filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId)),
-                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. N/A claims remain unresolved; approval is not available in this journey.'
+                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. Not-applicable answers awaiting review stay unresolved; approval is not available in this journey.'
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
                 ['Reported implementation gaps', ordered.filter(question => ['partial', 'no'].includes(question.responseOptionId)),
                     result.partial || result.no ? result.partial + ' partial and ' + result.no + ' absent implementations: review the relevant questions before agreeing improvements.'

@@ -23,12 +23,12 @@ const MANAGED_IT_POLICY = deepFreeze({
                 id: 'essentials',
                 name: 'Essentials',
                 perUserMonthly: 59,
-                tagline: 'Get visible & supported',
+                tagline: 'Everyday support',
                 recommended: false,
                 inheritsFromTierId: null,
                 additionalFeatures: [
                     'No Fries dashboard (users, devices, licences, security)',
-                    'AI-assisted email helpdesk with every change approved by me',
+                    'AI-assisted email helpdesk, with every change approved by Joel, our founder',
                     'Microsoft 365 admin (new starters, leavers, passwords, licences)',
                     'A monthly plain-English summary and to-do list'
                 ]
@@ -37,21 +37,21 @@ const MANAGED_IT_POLICY = deepFreeze({
                 id: 'managed',
                 name: 'Managed',
                 perUserMonthly: 99,
-                tagline: 'We look after it for you',
+                tagline: 'Devices and Microsoft 365 backup',
                 recommended: true,
                 inheritsFromTierId: 'essentials',
                 additionalFeatures: [
                     'Device updates and patching',
                     'Microsoft 365 backup set up and checked',
                     'Dealing with your other IT vendors',
-                    'A quarterly check-in with me'
+                    'A quarterly check-in with Joel, our founder'
                 ]
             },
             {
                 id: 'secure',
                 name: 'Secure',
                 perUserMonthly: 139,
-                tagline: 'Tightened & watched',
+                tagline: 'Security hardening and alert review',
                 recommended: false,
                 inheritsFromTierId: 'managed',
                 additionalFeatures: [
@@ -65,7 +65,7 @@ const MANAGED_IT_POLICY = deepFreeze({
     includedServices: [
         'Day-to-day support during agreed business hours',
         'No Fries dashboard (users, devices, licences, security)',
-        'AI-assisted email helpdesk with every change approved by me',
+        'AI-assisted email helpdesk, with every change approved by Joel, our founder',
         'Microsoft 365 admin (new starters, leavers, passwords, licences)',
         'A monthly plain-English summary and to-do list'
     ],

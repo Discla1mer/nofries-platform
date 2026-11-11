@@ -66,7 +66,7 @@ describe('saved assessment explanation projection', () => {
     });
     test('unresolved includes pending N/A once and cites its saved rationale as untrusted text', () => {
         const source = saved('mixed'), result = project(source, 'unresolved');
-        expect(content(result)).toContain('2 unresolved answers, including 1 pending N/A claims');
+        expect(content(result)).toContain('2 unresolved answers, including 1 not-applicable answer awaiting review');
         const unresolved = source.assessment.responses.filter(row => ['unknown', 'not_applicable'].includes(row.optionId));
         const questionRefs = citations(result).filter(row => row.kind === 'saved' && row.questionId);
         expect(new Set(questionRefs.map(row => row.questionId))).toEqual(new Set(unresolved.map(row => row.itemId)));
