@@ -323,7 +323,7 @@
             if (value.schemaVersion !== 1) invalid();
             return freeze(value);
         }
-        async function request(url, kind, selected, signal, body) {
+        async function request(url, kind, selected, signal, body, keepalive) {
             const mutation = !['list', 'read'].includes(kind);
             const controller = new AbortController();
             let timer;
@@ -339,19 +339,19 @@
                 // Bound the complete response, including a stalled body stream.
                 // A timeout never proves a server mutation was cancelled.
                 timer = setTimeout(cancel, 12000);
-                return await Promise.race([receive(url, kind, selected, controller.signal, body), lifetime]);
+                return await Promise.race([receive(url, kind, selected, controller.signal, body, keepalive), lifetime]);
             } finally {
                 clearTimeout(timer);
                 if (signal && typeof signal.removeEventListener === 'function') signal.removeEventListener('abort', cancel);
             }
         }
-        async function receive(url, kind, selected, signal, body) {
+        async function receive(url, kind, selected, signal, body, keepalive) {
             const mutation = !['list', 'read'].includes(kind);
             let response, value;
             try {
                 response = await fetch(url, { method: mutation ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
                     redirect: 'error', headers: { Accept: 'application/json', ...(mutation ? { 'Content-Type': 'application/json' } : {}) },
-                    ...(signal === undefined ? {} : { signal }), ...(mutation ? { body } : {}) });
+                    ...(signal === undefined ? {} : { signal }), ...(mutation ? { body } : {}), ...(keepalive ? { keepalive: true } : {}) });
                 if (!response || response.redirected === true || response.type === 'opaqueredirect' || response.type === 'opaque' ||
                     !Number.isInteger(response.status)) invalid();
                 value = await readJson(response);
@@ -366,12 +366,14 @@
             catch { throw unavailable(mutation); }
         }
         async function mutate(kind, input, settings) {
-            const command = normaliseCommand(input), config = record(settings === undefined ? {} : settings, [], ['signal']);
-            if (command.action !== kind) invalid();
+            // Only a save may outlive the page: the browser then still sends it
+            // with the same cookies, headers and body as any other save.
+            const command = normaliseCommand(input), config = record(settings === undefined ? {} : settings, [], kind === 'save' ? ['signal', 'keepalive'] : ['signal']);
+            if (command.action !== kind || config.keepalive !== undefined && typeof config.keepalive !== 'boolean') invalid();
             const create = kind === 'create', url = create ? PREFIX : PREFIX + '/' + encodeURIComponent(command.assessmentId) + '/' + kind;
             const body = JSON.stringify({ ...(create ? { assessmentId: command.assessmentId } : {}), idempotencyKey: command.idempotencyKey,
                 expectedRevision: command.expectedRevision, payload: command.payload });
-            return request(url, kind, command, config.signal, body);
+            return request(url, kind, command, config.signal, body, config.keepalive === true);
         }
         return Object.freeze({ normaliseCommand, commandByteLength,
             async list(input) {
