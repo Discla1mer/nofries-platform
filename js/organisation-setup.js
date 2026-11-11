@@ -179,7 +179,7 @@
         byId('organisation-continue').hidden = !continuing;
         byId('organisation-switch').hidden = ['start', 'sign_in'].includes(value.state);
         byId('organisation-title').textContent = choosing ? selectedType ? selectedType === 'consultant' ? 'Name your consultancy' : 'Name your organisation' : 'How will you use No Fries?' : value.state === 'awaiting_code' ? 'Check your inbox' : details ? 'Your account details' : continuing ? 'Welcome back to No Fries' : entryIntent === 'create' ? 'Create your account' : 'Sign up / Sign in';
-        byId('organisation-intro').textContent = legacySignIn ? 'Use the email address associated with your existing account.' : choosing ? selectedType ? 'Email verified. You chose ' + (selectedType === 'consultant' ? 'Consultant' : 'Company') + '. Add the name for this organisation.' : 'Email verified. Choose the account that fits you.' : details ? 'Add the person and business details for your dashboard agreement.' : continuing ? 'Your saved account is ready to continue.' : value.state === 'awaiting_code' ? 'Enter the 8 digits we emailed you to confirm this address.' : 'Enter your email to create an account or recover access.';
+        byId('organisation-intro').textContent = legacySignIn ? 'Use the email address associated with your existing account.' : choosing ? selectedType ? 'Email verified. You chose ' + (selectedType === 'consultant' ? 'Consultant' : 'Company') + '. Add the name for this organisation.' : 'Email verified. Choose the account that fits you.' : details ? 'Add the person and business details for your dashboard agreement.' : continuing ? 'Your saved account is ready to continue.' : value.state === 'awaiting_code' ? 'Enter the 8 digits we emailed you to confirm this address.' : 'New here or coming back, start with your email.';
         byId('organisation-name-label').textContent = selectedType === 'consultant' ? 'Your name or consultancy' : 'Organisation name';
         if (legacySignIn) {
             byId('organisation-verified-name').textContent = '';
@@ -201,8 +201,10 @@
         returningLink.className = entryIntent === 'create' || value.state === 'awaiting_code' ? 'text-link' : 'button';
         byId('organisation-details-summary').textContent = details
             ? (selectedType === 'consultant' ? 'Consultant' : 'Company') + ' · ' + value.organisationName + (emailRecord ? ' · ' + emailRecord.email : '') : '';
-        const activeStep = ['start', 'awaiting_code'].includes(value.state) ? 'email' : choosing ? 'account' : 'continue';
-        for (const name of ['email', 'account', 'continue']) {
+        // Organisation setup happens after Microsoft sign-in, on the signup page.
+        const activeStep = value.state === 'start' ? 'email' : value.state === 'awaiting_code' ? 'code'
+            : choosing || details ? 'account' : 'signin';
+        for (const name of ['email', 'code', 'account', 'signin', 'organisation']) {
             const item = byId('organisation-step-' + name);
             if (name === activeStep) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
         }

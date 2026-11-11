@@ -14,6 +14,40 @@
     const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
     }).format(new Date(value)) + ' NZ time';
+    // "Your top three gaps": display-only over a result the validator already
+    // accepted. No re-scoring and no model call. Fixed rule:
+    //   1. A gap is a question saved as "no" (not in place) or "partial".
+    //      Unknown and not-applicable answers are unresolved, not gaps.
+    //   2. Higher existing profile weight first (the accepted profile weights
+    //      every question 1, so this does not reorder today).
+    //   3. "no" before "partial", matching the saved credit (0 before 1).
+    //   4. Then accepted profile question order.
+    const GAP_LIMIT = 3;
+    const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
+    const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
+    const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
+    const firstText = (...values) => values.find(value => typeof value === 'string' && value.trim()) || null;
+    function topGaps(result, metadata, limit = GAP_LIMIT) {
+        if (!result || !Array.isArray(result.domains) || !metadata || !Array.isArray(metadata.questions)) return [];
+        const rows = new Map();
+        result.domains.forEach(domain => (domain.controls || []).forEach(control =>
+            (control.questions || []).forEach(row => rows.set(row.itemId, row))));
+        const controls = new Map((metadata.controls || []).map(control => [control.id, control]));
+        return metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }))
+            .filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
+            .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
+                GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position)
+            .slice(0, limit)
+            .map(({ question, row }) => {
+                const control = controls.get(question.controlId), guidance = question.guidance || {};
+                const plain = question.smallBusiness || {};
+                const title = firstText(control && control.title, question.prompt);
+                return { itemId: question.id, title: title.split(' — ').pop(), answer: row.answer,
+                    responseOptionId: row.responseOptionId,
+                    why: firstText(guidance.summary) || GAP_WHY,
+                    next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
+            });
+    }
     function sameProfile(actual, expected) {
         return actual && expected && Object.keys(expected).every(key => actual[key] === expected[key]);
     }
@@ -258,7 +292,9 @@
             renderResult(result);
             if (explanation && typeof explanation.mount === 'function') {
                 const child = node('section', 'picture-explanation ncsc-results'); root.append(child);
-                explanationController = explanation.mount(child, { client, metadata, organisationId,
+                // The explanation is optional. If it cannot start, keep the
+                // results above it and say so plainly instead of blanking the page.
+                try { explanationController = explanation.mount(child, { client, metadata, organisationId,
                     resultModel: questionnaire.resultModel, assessment: {
                         assessmentId: detail.assessmentId, revision: detail.revision, revisionSha256: detail.revisionSha256,
                         status: detail.status, profileRef: detail.profileRef, updatedAt: detail.updatedAt
@@ -268,6 +304,10 @@
                         abort(); epoch++;
                         failure({ statusCode: 403 }, null); render();
                     } });
+                } catch (_error) {
+                    explanationController = null;
+                    child.replaceChildren(node('p', 'ncsc-warning', 'The explanation is unavailable right now. Your results above are unchanged.'));
+                }
             }
         }
         const newestFirst = (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId);
@@ -396,15 +436,38 @@
                 'Showing ' + trend.order.length + ' of ' + trend.total + ' loaded submitted assessments, newest first.' + (after !== null ? ' Other saved assessments are not loaded yet and may be from any date. Load more to include them.' : '')));
             return heading;
         }
+        function gapSection(result) {
+            const gaps = topGaps(result, metadata), section = node('section', 'picture-top-gaps');
+            const heading = node('h3', '', gaps.length === GAP_LIMIT ? 'Your top three gaps' : 'Your top gaps');
+            heading.id = id + '-top-gaps'; section.setAttribute('aria-labelledby', heading.id); section.append(heading);
+            if (!gaps.length) {
+                section.append(node('p', '', 'You did not report any controls as not in place or partly in place.'));
+                if (result.unknown > 0) section.append(node('p', 'dashboard-muted', result.unknown + (result.unknown === 1 ? ' answer is' : ' answers are') +
+                    ' still unknown or to confirm. Confirm ' + (result.unknown === 1 ? 'it' : 'them') + ' to check for gaps.'));
+                return section;
+            }
+            section.append(node('p', 'dashboard-muted', 'Chosen by a fixed rule from your saved answers. Controls not in place come first, then partly in place, then in NCSC framework order.'));
+            const list = node('ol', 'picture-top-gaps-list');
+            gaps.forEach(gap => {
+                const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
+                const why = node('p'), next = node('p');
+                why.append(node('strong', '', 'Why it matters: '), node('span', '', gap.why));
+                next.append(node('strong', '', 'What to do next: '), node('span', '', gap.next));
+                item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer), why, next);
+                list.append(item);
+            });
+            section.append(list); return section;
+        }
         function renderResult(result) {
+            root.append(gapSection(result));
             const metrics = node('div', 'picture-metrics');
             function metric(label, value, copyText, primary) {
                 const card = node('section', primary ? 'picture-metric picture-primary' : 'picture-metric');
                 card.append(node('h3', '', label), node('strong', 'picture-large', value), node('p', '', copyText)); metrics.append(card); return card;
             }
-            const awaitingReview = result.pending + ' not-applicable ' + (result.pending === 1 ? 'answer awaiting review' : 'answers awaiting review');
+            const awaitingReview = result.pending + (result.pending === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm';
             const implementationMetric = metric('Reported implementation', result.attainment,
-                'The lower figure is what you reported as in place. The higher figure includes unknown answers and not-applicable answers awaiting review. It is not a performance score.', true);
+                'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm. It is not a performance score.', true);
             const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             root.append(metrics);
             const domains = node('section', 'picture-domains');
@@ -452,7 +515,7 @@
             const ordered = metadata.questions.map(question => indexed.get(question.id));
             const categories = [
                 ['Unresolved answers', ordered.filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId)),
-                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. Not-applicable answers awaiting review stay unresolved; approval is not available in this journey.'
+                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. Answers marked not applicable, to confirm, stay unresolved. Approval is not available yet.'
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
                 ['Reported implementation gaps', ordered.filter(question => ['partial', 'no'].includes(question.responseOptionId)),
                     result.partial || result.no ? result.partial + ' partial and ' + result.no + ' absent implementations: review the relevant questions before agreeing improvements.'
@@ -462,7 +525,7 @@
                 const category = node('details', 'ncsc-result-domain');
                 const summary = node('summary', '', label + ' · ' + (result.total === 0 ? 'Not assessed' : questions.length));
                 category.append(summary,
-                    node('p', 'dashboard-muted', result.total === 0 ? 'No applicable question denominator is available for this category.' : explanation));
+                    node('p', 'dashboard-muted', result.total === 0 ? 'No questions in this category count towards your result.' : explanation));
                 const items = questions.map(question => {
                     const item = node('article', 'ncsc-result-control'); item.setAttribute('data-question-id', question.itemId);
                     item.append(node('h4', '', question.prompt), node('p', '', 'Saved answer: ' + question.answer));
@@ -601,5 +664,5 @@
         } };
         mounted.set(root, controller); load(false); return controller;
     }
-    return Object.freeze({ mount });
+    return Object.freeze({ mount, topGaps });
 }));

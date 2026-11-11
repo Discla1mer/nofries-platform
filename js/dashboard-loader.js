@@ -656,6 +656,7 @@
                         ? submitted ? 'Acceptance is not confirmed. Sign in again, then check the same saved client before accepting again.'
                             : 'This attempt has not submitted acceptance. Sign in again, then open the same saved client to check its status and continue.'
                         : 'Sign in again to confirm your identity before setting up clients. Open the saved client afterwards to check its recorded progress.';
+                    content.append(element('p', 'You will be asked to sign in again. Afterwards you come back to your organisations to resume this step.'));
                     const link = element('a', 'Sign in again to continue');
                     link.href = customerReauthentication; link.className = 'client-action client-action-primary'; content.append(link);
                     confirmation.focus();
@@ -747,14 +748,15 @@
                     incomplete += 1;
                     const row = element('div'); row.className = 'client-workspace-row';
                     row.dataset.requestId = client.requestId;
-                    row.append(element('h3', client.organisationName), element('p', client.status === 'details_required' ? 'Client details needed' : 'Setup saved · check terms and completion status'));
+                    row.append(element('h3', client.organisationName), element('p', 'Draft, not yet set up · ' +
+                        (client.status === 'details_required' ? 'client details needed' : 'check terms and completion status')));
                     let action;
-                    if (!readOnly && client.status === 'details_required') action = button('Continue details', function () { if (available()) form(client); });
-                    if (!readOnly && client.status === 'pending') action = button('Continue setup', function () {
+                    if (!readOnly && client.status === 'details_required') action = button('Resume', function () { if (available()) form(client); });
+                    if (!readOnly && client.status === 'pending') action = button('Resume', function () {
                         if (!available() || !confirmClientDiscard(cycle)) return;
                         run({ action: 'resume', requestId: client.requestId });
                     });
-                    if (action) { action.setAttribute('aria-label', (client.status === 'pending' ? 'Continue setup: ' : 'Continue details: ') + client.organisationName); row.append(action); }
+                    if (action) { action.setAttribute('aria-label', (client.status === 'pending' ? 'Resume setup: ' : 'Resume details: ') + client.organisationName); row.append(action); }
                     elements.choices.append(row);
                 });
                 if (!cycle.directoryRows?.length && !incomplete) {
