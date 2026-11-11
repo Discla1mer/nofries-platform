@@ -23,6 +23,7 @@
     //   3. "no" before "partial", matching the saved credit (0 before 1).
     //   4. Then accepted profile question order.
     const GAP_LIMIT = 3;
+    const ENQUIRY_TIMEOUT_MS = 5000;
     const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
     const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
     const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
@@ -452,19 +453,39 @@
             });
             section.append(list, helpPanel()); return section;
         }
-        // Shown only when the existing public enquiry check says enquiries are
+        // Shown only when the public enquiry status says enquiries are
         // open. The link is fixed: no answers, scores or names leave the page.
         function helpPanel() {
             const panel = node('div', 'picture-next-steps'), token = epoch; panel.hidden = true;
             const link = node('a', 'dashboard-button', 'Get help closing these gaps'); link.href = '/contact.html';
             panel.append(node('h4', '', 'Next step'), node('p', 'dashboard-muted', 'Talk to No Fries about these gaps. The contact form does not include your answers.'), link);
-            const win = doc.defaultView, check = win && win.enquiryAvailability;
-            if (typeof check === 'function') {
-                Promise.resolve().then(() => check.call(win)).then(state => {
-                    if (live(token) && state && state.available === true) panel.hidden = false;
-                }, () => {});
-            }
+            enquiryAvailable().then(available => { if (available && live(token)) panel.hidden = false; });
             return panel;
+        }
+        // Mirrors js/enquiry-availability.js: a bare read-only GET of the public
+        // enquiry status. Any error, non-OK reply or 5-second timeout is unavailable.
+        async function enquiryAvailable() {
+            const win = doc.defaultView;
+            if (!win || typeof win.fetch !== 'function' || typeof win.AbortController !== 'function') return false;
+            const controller = new win.AbortController();
+            let timer;
+            try {
+                const deadline = new Promise((_, reject) => {
+                    timer = setTimeout(() => { controller.abort(); reject(new Error('unavailable')); }, ENQUIRY_TIMEOUT_MS);
+                });
+                const read = (async () => {
+                    const response = await win.fetch('/api/enquiry', { method: 'GET', credentials: 'same-origin', cache: 'no-store',
+                        signal: controller.signal, headers: { Accept: 'application/json' } });
+                    if (!response || !response.ok) return false;
+                    const body = await response.json();
+                    return !!body && body.available === true;
+                })();
+                return await Promise.race([read, deadline]);
+            } catch (_) {
+                return false;
+            } finally {
+                clearTimeout(timer); controller.abort();
+            }
         }
         function renderResult(result) {
             root.append(gapSection(result));
