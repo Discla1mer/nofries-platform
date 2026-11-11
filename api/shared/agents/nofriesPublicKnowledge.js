@@ -267,7 +267,7 @@ function managedItScopeSummary() {
 }
 
 function managedItOptionsSummary() {
-    return `Protect & Recover options are selected and scoped separately: ${MANAGED_IT_POLICY.optionalServices.join('; ')}. Ordinary user support is during agreed business hours; after-hours security help is included only when selected. Recovery covers only agreed work files and scope; no recovery time or outcome is guaranteed by this chat.`;
+    return `Security hardening and security alert handling are part of the Secure tier, and Microsoft 365 backup is included from the Managed tier up — they come with the plan you choose, not as bolt-on extras. The genuine optional add-ons, priced on top of your per-user plan, are: ${MANAGED_IT_POLICY.optionalServices.join('; ')}. Support is during agreed business hours, and no recovery time or outcome is promised through this chat.`;
 }
 
 function publicReply(topic, text) {

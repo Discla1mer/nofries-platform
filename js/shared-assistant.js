@@ -126,7 +126,7 @@
                 return;
             }
             try {
-                const ready = await current.open();
+                const ready = await current.open(options.tier ? { tier: options.tier } : undefined);
                 const input = root.querySelector('#assistant-input');
                 if (ready && current.isReady() && dialog.open && document.activeElement === activeAtOpen &&
                     activeAtOpen === closeButton && input && !input.disabled) input.focus();
@@ -175,7 +175,7 @@
                 ? event.target.closest('[data-assistant-open]') : null;
             if (source && !source.disabled) {
                 event.preventDefault();
-                open({ opener: source, topic: source.dataset.assistantTopic });
+                open({ opener: source, topic: source.dataset.assistantTopic, tier: source.dataset.managedItTier });
                 startedOutside = false;
                 return;
             }
