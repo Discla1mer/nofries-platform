@@ -656,6 +656,14 @@
             cancelAutosave();
             if (flush && busy && pending && pending.command.action === 'save') { flushQueued = true; return; }
             if (!canAutosave(flush)) return;
+            // One automatic save may need several byte-bounded requests. Budget
+            // the whole draft before sending any batch, not just its first one.
+            try {
+                if (planBatches(dirtyEntries()).length > SAVE_CEILING - acknowledged.revision - AUTOSAVE_RESERVE) {
+                    statusText = 'Automatic saving is paused to keep room for your final changes. Use Save progress to save these answers.';
+                    updateStatus(); return;
+                }
+            } catch (error) { return; }
             flushQueued = false;
             saveAll(false, keepalive).catch(function () {});
         }
