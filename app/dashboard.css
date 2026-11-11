@@ -159,6 +159,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-trend-history li { margin: .4rem 0; }
 .organisation-picture > .dashboard-button { margin-top: 1rem; }
 .picture-status { color: var(--dashboard-muted); }
+.picture-top-gaps { background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 1.25rem 0; }
+.picture-top-gaps-list { padding-left: 1.3rem; margin: 0; }
+.picture-top-gap { margin: 1rem 0 0; overflow-wrap: anywhere; }
+.picture-top-gap h4 { margin-bottom: .25rem; }
+.picture-top-gap p { margin: .25rem 0; }
 @media (max-width: 60rem) {
     .picture-metrics { grid-template-columns: minmax(0, 1fr); }
     .picture-metric h3 { min-height: 0; }

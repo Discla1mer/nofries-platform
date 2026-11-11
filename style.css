@@ -515,3 +515,12 @@ body[data-page="public-error"] .public-panel .button { max-width: 100%; color: v
 .terms-glance { margin-block: 20px; padding: clamp(16px, 3vw, 24px); border: 2px solid var(--line); border-radius: var(--radius); }
 .terms-glance h2 { margin-top: 0; }
 .terms-glance ul { display: grid; gap: 6px; padding-left: 1.2em; }
+body.legal-page .public-panel > section { display: grid; gap: 10px; }
+body.legal-page .public-panel > section > h2 { margin-top: 12px; }
+body.legal-page .public-panel > section.terms-glance > h2,
+body.legal-page .public-panel > section.legal-open > h2 { margin-top: 0; }
+body.legal-page .public-panel p,
+body.legal-page .public-panel li { max-width: 68ch; }
+.legal-contents { display: grid; gap: 4px; margin: 0; padding-left: 1.2em; }
+body.legal-page .public-panel ol:not(.legal-contents) { margin: 0; padding-left: 1.4em; }
+.legal-open { padding: clamp(16px, 3vw, 24px); border: 2px dashed var(--line-strong); border-radius: var(--radius); }

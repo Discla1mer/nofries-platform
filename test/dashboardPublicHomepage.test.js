@@ -21,7 +21,7 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
     assert.match(html, /<h1 id="home-title" class="homepage-headline">Know where your business stands on cyber security in about 15 minutes\.<\/h1>/);
     assert.match(html, /A free check for New Zealand small businesses, based on NCSC guidance\./);
     assert.match(html, /Free to start · No card required/);
-    assert.equal((html.match(/Understand your IT and cyber security, see where the gaps are and decide what needs attention\./g) || []).length, 2);
+    assert.equal((html.match(/Understand your IT and cyber security and see where the gaps are\./g) || []).length, 2);
     assert.doesNotMatch(html, /in real time|continuous monitoring|automatically updated/i);
     assert.match(html, /An illustrative view of assessment topics, not a live result\./);
     assert.match(html, /Your results reflect the answers you provide\./);

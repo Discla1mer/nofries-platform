@@ -45,6 +45,25 @@ function followUp(dom) {
 }
 function metricReviews(dom) { return dom.root.querySelector('.picture-metrics').querySelectorAll('button'); }
 
+test('an explanation that cannot start leaves the saved results in place', async () => {
+    let isolated;
+    jest.isolateModules(() => {
+        jest.doMock('../api/shared/protectedAssets/assessmentExplanation', () => ({
+            explain() { return { status: 'unavailable' }; },
+            mount() { throw new Error('synthetic_mount_failure'); }
+        }));
+        isolated = require('../api/shared/protectedAssets/organisationPicture');
+    });
+    const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
+    const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures), dom = createDom();
+    isolated.mount(dom.root, { metadata: fixtures.metadata, organisationId: seed.model.context.organisationId,
+        client: createClient({ metadata: fixtures.metadata, fetch: transport.fetch }), displayName: 'Synthetic organisation A' });
+    await flush();
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    assert.match(dom.root.querySelector('.picture-explanation').textContent, /The explanation is unavailable right now\. Your results above are unchanged\./);
+    jest.dontMock('../api/shared/protectedAssets/assessmentExplanation');
+});
+
 test('connected view preserves golden server range, uncertainty and completion without an always-empty evidence measure', async () => {
     const dom = setup(); await flush();
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
@@ -52,7 +71,7 @@ test('connected view preserves golden server range, uncertainty and completion w
     assert.match(dom.root.textContent, /12 of 14/);
     assert.match(dom.root.textContent, /7 partial and 2 absent/);
     assert.match(dom.root.textContent, /2 unknown or unresolved/);
-    assert.match(dom.root.textContent, /1 not-applicable answer awaiting review/);
+    assert.match(dom.root.textContent, /1 answer marked not applicable, to confirm/);
     assert.match(dom.root.textContent, /not a performance score/);
     assert.doesNotMatch(dom.root.textContent, /Supporting evidence|Tested or observed coverage|evidence upload/i);
     assert.equal(dom.root.querySelectorAll('meter').length, dom.fixtures.metadata.domains.length);
@@ -61,7 +80,7 @@ test('connected view preserves golden server range, uncertainty and completion w
     assert.match(dom.root.textContent, /All 14 responses are saved/);
     assert.match(dom.root.textContent, /6.5–8.5 reported or possible credits ÷ 14/);
     assert.match(dom.root.textContent, /overall result weights questions, not the five function percentages/);
-    assert.match(dom.root.textContent, /approval is not available in this journey/);
+    assert.match(dom.root.textContent, /Approval is not available yet/);
     assert.equal(dom.root.querySelectorAll('.picture-domain-detail').length, 5);
 });
 
@@ -189,7 +208,7 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     const ids = category => category.querySelectorAll('article').map(node => node.getAttribute('data-question-id'));
     assert.deepEqual(ids(categories[0]), expected(['unknown', 'not_applicable']));
     assert.deepEqual(ids(categories[1]), expected(['partial', 'no']));
-    assert.match(categories[0].textContent, /Not-applicable answers awaiting review stay unresolved/);
+    assert.match(categories[0].textContent, /Answers marked not applicable, to confirm, stay unresolved/);
     assert.doesNotMatch(follow.textContent, /Supporting-evidence gaps|Supporting evidence:|upload/);
     assert.match(follow.textContent, /not a combined total or a risk ranking/);
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
@@ -1133,4 +1152,75 @@ test('the Overview loads through the real client when the plan includes no asses
         'You can still read your saved assessments. Contact No Fries about more submissions');
     assert.equal(usage.querySelector('a').href, '/contact.html');
     dom.controller.destroy();
+});
+
+function submittedWith(optionFor) {
+    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
+    const responses = allResponses().map((row, index) => {
+        const optionId = optionFor(index);
+        return { ...row, optionId, rationale: optionId === 'not_applicable' ? { text: 'Synthetic exclusion.' } : null };
+    });
+    let version = null;
+    for (const command of [createCommand('assessment-gaps', 'create-gaps', 'Synthetic office scope.'),
+        saveCommand('assessment-gaps', 0, 'save-gaps', responses), submitCommand('assessment-gaps', 1, 'submit-gaps')]) {
+        version = makeVersion({ ...tenant.scope, actorSubjectKey: SUBJECT, assessmentId: command.assessmentId,
+            action: command.action, expectedRevision: command.expectedRevision, payload: command.payload },
+        command.idempotencyKey, version, tenant.state.tenantAggregate, NOW);
+    }
+    return projectNcscDetail(version);
+}
+function gapView(dom) {
+    const section = dom.root.querySelector('.picture-top-gaps');
+    return { section, heading: section.querySelector('h3').textContent,
+        items: section.querySelectorAll('li').map(item => ({ id: item.dataset.gapItem, title: item.querySelector('h4').textContent, text: item.textContent })) };
+}
+
+test('top three gaps put not-in-place answers first, then partial, in profile order, above the metrics', async () => {
+    const dom = setup(); await flush();
+    const { section, heading, items } = gapView(dom), questions = dom.fixtures.metadata.questions;
+    assert.equal(heading, 'Your top three gaps');
+    assert.deepEqual(items.map(item => item.id), [questions[10].id, questions[11].id, questions[3].id]);
+    assert.deepEqual(items.map(item => item.title), ['Provide and use a password manager', 'Sensitive-request verification check', 'Secure Configuration of Software']);
+    items.forEach((item, index) => {
+        const question = questions[[10, 11, 3][index]];
+        assert.ok(item.text.includes('Why it matters:') && item.text.includes(question.guidance.summary));
+        assert.ok(item.text.includes('What to do next:') && item.text.includes(question.smallBusiness.meaning));
+    });
+    assert.match(items[0].text, /Your answer: No/);
+    assert.match(items[2].text, /Your answer: Partial/);
+    const panel = dom.root.querySelector('.organisation-picture') || dom.root;
+    const order = panel.querySelectorAll('section').map(node => node.className);
+    assert.ok(order.indexOf('picture-top-gaps') < order.indexOf('picture-metric picture-primary'));
+    assert.equal(section.getAttribute('aria-labelledby'), section.querySelector('h3').id);
+    assert.doesNotMatch(section.textContent, /certif|complian/i);
+});
+
+test('top gaps show fewer than three when that is all there is', async () => {
+    const dom = setup({ records: [submittedWith(index => index === 5 ? 'partial' : index === 8 ? 'no' : 'yes')] }); await flush();
+    const { heading, items } = gapView(dom), questions = dom.fixtures.metadata.questions;
+    assert.equal(heading, 'Your top gaps');
+    assert.deepEqual(items.map(item => item.id), [questions[8].id, questions[5].id]);
+});
+
+test('top gaps say so plainly when there are none, and point to unknown answers', async () => {
+    const dom = setup({ records: [submittedWith(index => index === 2 ? 'unknown' : index === 4 ? 'not_applicable' : 'yes')] }); await flush();
+    const { section, heading, items } = gapView(dom);
+    assert.equal(heading, 'Your top gaps'); assert.equal(items.length, 0);
+    assert.match(section.textContent, /You did not report any controls as not in place or partly in place\./);
+    assert.match(section.textContent, /2 answers are still unknown or to confirm\. Confirm them to check for gaps\./);
+});
+
+test('top gap selection uses existing weights before answer and profile order, with careful fallbacks', () => {
+    const metadata = { controls: [{ id: 'c1', title: 'First' }, { id: 'c2', title: 'Second' }],
+        questions: [{ id: 'q1', controlId: 'c1', guidance: {} }, { id: 'q2', controlId: 'c2', guidance: { startingActions: ['Start here.'] } },
+            { id: 'q3', controlId: 'c2', prompt: 'Third prompt', guidance: {} }] };
+    const row = (itemId, responseOptionId, weight) => ({ itemId, responseOptionId, weight, answer: responseOptionId });
+    const result = { domains: [{ controls: [{ questions: [row('q1', 'no', 1), row('q2', 'partial', 2), row('q3', 'yes', 3)] }] }] };
+    const gaps = picture.topGaps(result, metadata);
+    assert.deepEqual(gaps.map(gap => gap.itemId), ['q2', 'q1']);
+    assert.equal(gaps[0].next, 'Start here.');
+    assert.equal(gaps[1].why, 'This control helps lower the chance or impact of a cyber incident for your business.');
+    assert.equal(gaps[1].next, 'Agree who will look at this control and when you will check it again.');
+    assert.deepEqual(picture.topGaps(null, metadata), []);
+    assert.deepEqual(picture.topGaps(result, metadata, 1).map(gap => gap.itemId), ['q2']);
 });

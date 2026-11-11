@@ -203,7 +203,7 @@ async function keyboardFocus(page, selector) {
             await checkGeometry(page, 'consultant-selected-' + width);
             await page.keyboard.press('Enter');
             await page.waitForFunction(() => document.body.dataset.dashboardState === 'selection');
-            await page.getByRole('button', { name: 'Continue setup: Synthetic pending client' }).waitFor();
+            await page.getByRole('button', { name: 'Resume setup: Synthetic pending client' }).waitFor();
             assert.equal(await page.locator('#dashboardChoices > .consultant-organisation-ready').count(), 2);
             assert.deepEqual(await page.locator('#dashboardChoices > .consultant-organisation-ready').evaluateAll(rows =>
                 rows.map(row => ({ label: row.getAttribute('aria-label'), badge: getComputedStyle(row, '::after').content }))), [
@@ -244,7 +244,7 @@ async function keyboardFocus(page, selector) {
             await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
             await search.fill('pending');
             assert.equal(await visibleRows.count(), 1);
-            await page.getByRole('button', { name: 'Continue setup: Synthetic pending client' }).click();
+            await page.getByRole('button', { name: 'Resume setup: Synthetic pending client' }).click();
             await page.getByRole('button', { name: 'Check and resume saved setup' }).waitFor();
             assert.equal(await page.locator('#dashboardChoices .client-workspace-row button').count(), 0,
                 'uncertain setup leaves only same-client recovery action');

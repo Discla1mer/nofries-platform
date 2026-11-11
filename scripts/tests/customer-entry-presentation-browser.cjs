@@ -170,7 +170,7 @@ async function main() {
                 'Legal review should use the wider reading layout');
             await page.screenshot({ path: path.join(artifacts, 'organisation-legal-' + suffix + '.png'), fullPage: true });
             mode = 'consultant'; await visit('/dashboard#organisations');
-            await page.getByRole('button', { name: 'Continue setup: Synthetic client', exact: true }).click();
+            await page.getByRole('button', { name: 'Resume setup: Synthetic client', exact: true }).click();
             await page.getByText('Review the schedule and terms for Synthetic client', { exact: true }).waitFor();
             await legalText(page, 'section.client-terms-section .client-signup-terms', 'details.client-terms-section .client-signup-terms');
             const details = page.locator('details.client-terms-section');

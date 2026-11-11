@@ -153,6 +153,18 @@ describe('contact form progressive enhancement', () => {
         expect(html).toMatch(/<noscript>[\s\S]*mailto:hello@nofries.nz[\s\S]*<\/noscript>/);
     });
 
+    test('the website honeypot stays submittable but hidden from assistive tech, keyboard and page text', () => {
+        const trap = html.match(/<div class="visually-hidden" aria-hidden="true" inert>\s*(<input\b[^>]*>)\s*<\/div>/);
+        expect(trap).not.toBeNull();
+        expect(trap[1]).toMatch(/name="website"/);
+        expect(trap[1]).toMatch(/tabindex="-1"/);
+        expect(trap[1]).toMatch(/autocomplete="off"/);
+        expect(trap[1]).not.toMatch(/\bdisabled\b/);
+        const visibleText = html.replace(/<(script|style)\b[\s\S]*?<\/\1>/g, ' ').replace(/<[^>]+>/g, ' ');
+        expect(visibleText).not.toMatch(/\bWebsite\b/);
+        expect(script).toContain("'website'");
+    });
+
     test('contact home link names the No Fries home page it opens and fields use cream paper', () => {
         expect(html).toMatch(/<a class="login-brand" href="\/" aria-label="No Fries home">/);
         expect(html).toMatch(/<strong>No Fries<\/strong><\/div>/);
