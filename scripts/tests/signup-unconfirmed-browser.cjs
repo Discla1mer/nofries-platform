@@ -3,6 +3,9 @@
 // Focused synthetic loopback acceptance. Uses installed Playwright/Chromium;
 // never signs in, submits details or contacts a provider/production service.
 // Run: node scripts/tests/signup-unconfirmed-browser.cjs
+// A first-load 503 or network failure is a sign-in/access check failure
+// (NF-SIGNIN-UNCONFIRMED, with Try again); only an explicit server
+// "unavailable" state is the signup verdict (NF-SIGNUP-UNCONFIRMED, no retry).
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -25,10 +28,16 @@ const documents = {
     hosted: buildHostedSignupDocument(sources)
 };
 const assets = new Set(['style.css', 'home.css', 'images/nofrieslogo.png',
+    'images/paper-texture.webp', 'assets/fonts/fraunces-latin-opsz-normal.woff2',
     'favicon.svg', 'favicon.ico', 'apple-touch-icon.png']);
+const contentType = file => file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml'
+    : file.endsWith('.webp') ? 'image/webp' : file.endsWith('.woff2') ? 'font/woff2' : 'image/png';
 const statePath = '/api/external-customer-signup/state';
 const code = 'Error code: NF-SIGNUP-UNCONFIRMED';
 const reason = 'We could not confirm your account setup. Do not create another account or submit your details again.';
+const signinCode = 'Error code: NF-SIGNIN-UNCONFIRMED';
+const signinHeading = 'We could not open your account';
+const signinReason = 'Try again now. If your account still does not open, sign in again with the same email and password.';
 const sentinel = 'SYNTHETIC_UNTRUSTED_PROVIDER_DETAIL';
 const reference = 'NF-0123456789ABCDEF';
 const publicDiagnostic = { stage: 'workspace_preparation', reason: 'setup_information_unavailable' };
@@ -72,7 +81,7 @@ const server = http.createServer((req, res) => {
     }
     if (assets.has(pathname.slice(1))) {
         const file = pathname.slice(1);
-        res.setHeader('Content-Type', file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'image/png');
+        res.setHeader('Content-Type', contentType(file));
         return res.end(fs.readFileSync(path.join(root, file)));
     }
     if (pathname === statePath) {
@@ -175,8 +184,12 @@ async function run() {
                     continue;
                 }
                 const pending = ['pending_preparation', 'pending_admission'].includes(scenario.state);
+                // A failed first read (503 or network) cannot say signup is
+                // unavailable: it is an account access check failure.
+                const accessFailure = !!(scenario.status || scenario.network);
                 const heading = scenario.state === 'pending_preparation' ? 'Your organisation is being prepared'
-                    : scenario.state === 'pending_admission' ? 'Account setup received' : 'Signup is unavailable';
+                    : scenario.state === 'pending_admission' ? 'Account setup received'
+                        : accessFailure ? signinHeading : 'Signup is unavailable';
                 await page.getByRole('heading', { name: heading, exact: true }).waitFor();
                 await page.waitForFunction(() => document.getElementById('signup').getAttribute('aria-busy') === 'false');
                 if (scenario.textScale === 2) await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
@@ -187,10 +200,20 @@ async function run() {
                     assert.doesNotMatch(await card.innerText(), /Recorded step:|Support reference:|Reason:|server diagnostic/);
                     assert.match(await card.innerText(), scenario.state === 'pending_preparation' ? /terms have not been accepted/ : /do not have dashboard access yet/);
                     assert.equal(await card.getByRole('button', { name: scenario.state === 'pending_preparation' ? 'Check setup status' : 'Check access status', exact: true }).count(), 1);
+                } else if (accessFailure) {
+                    assert.equal(await card.getByRole('button').count(), 1, scenario.name + ': one action');
+                    assert.ok(await card.getByRole('button', { name: 'Try again', exact: true }).isEnabled(), scenario.name + ': working retry');
+                    assert.ok(await card.getByText(signinReason, { exact: true }).isVisible());
+                    assert.ok(await card.getByText(signinCode, { exact: true }).isVisible());
+                    assert.equal(await card.getByText(code, { exact: true }).count(), 0, scenario.name + ': not the signup verdict');
+                    assert.doesNotMatch(await card.innerText(), /Signup is unavailable|NF-SIGNUP-UNCONFIRMED/);
                 } else {
                     assert.equal(await card.getByRole('button').count(), 0, 'unconfirmed state has no retry action');
                     assert.ok(await card.getByText(reason, { exact: true }).isVisible());
                     assert.ok(await card.getByText(code, { exact: true }).isVisible());
+                    assert.equal(await card.getByText(signinCode, { exact: true }).count(), 0, scenario.name + ': not the sign-in error');
+                }
+                if (!pending) {
                     assert.doesNotMatch(await card.innerText(), new RegExp(sentinel + '|unknown_public_|<img'));
                     const hasMetadata = !scenario.network && !scenario.noMetadata;
                     if (hasMetadata) assert.ok(await card.getByText('Support reference: ' + reference, { exact: true }).isVisible());
@@ -218,11 +241,29 @@ async function run() {
                 const focus = await keyboard(page, scenario.name);
                 cspViolations.push(...(await page.evaluate(() => window.syntheticCspViolations)).map(directive => ({ case: scenario.name, directive })));
                 await page.screenshot({ path: path.join(artifacts, scenario.name + '-' + visit + '.png'), fullPage: true });
-                results.push({ case: scenario.name, visit, width: scenario.width, textScale: scenario.textScale || 1, pending, focus });
+                let retried = false;
+                if (accessFailure) {
+                    // Try again re-reads state in place; a repeated failure keeps
+                    // the sign-in error and its retry rather than the signup verdict.
+                    const before = requests.filter(request => request.path === statePath).length + abortedStateRequests;
+                    await card.getByRole('button', { name: 'Try again', exact: true }).click();
+                    await page.waitForFunction(() => document.getElementById('signup').getAttribute('aria-busy') === 'false');
+                    await card.getByRole('button', { name: 'Try again', exact: true }).waitFor();
+                    assert.equal(requests.filter(request => request.path === statePath).length + abortedStateRequests, before + 1,
+                        scenario.name + ': Try again performs one state read');
+                    assert.equal(await card.getByRole('heading', { name: signinHeading, exact: true }).count(), 1);
+                    assert.ok(await card.getByRole('button', { name: 'Try again', exact: true }).isEnabled());
+                    assert.ok(await card.getByText(signinCode, { exact: true }).isVisible());
+                    assert.equal(await card.getByText(code, { exact: true }).count(), 0);
+                    retried = true;
+                }
+                results.push({ case: scenario.name, visit, width: scenario.width, textScale: scenario.textScale || 1, pending, retried, focus });
             }
             const observed = requests.slice(start);
             const visits = scenario.visits || 1;
-            assert.equal(observed.filter(request => request.path === statePath).length + abortedStateRequests, visits, scenario.name + ': one initial authority request per navigation');
+            const retries = scenario.status || scenario.network ? visits : 0;
+            assert.equal(observed.filter(request => request.path === statePath).length + abortedStateRequests, visits + retries,
+                scenario.name + ': one initial authority request per navigation, plus one per explicit Try again');
             assert.equal(observed.filter(request => request.path.startsWith('/api/') && request.path !== statePath).length, 0, scenario.name + ': no auth/setup/terms/assistant action');
             assert.ok(observed.every(request => request.method === 'GET'), scenario.name + ': no submission');
             if (scenario.state === 'continue_to_dashboard') results.push({ case: scenario.name, provenSyntheticCompletion: true, accountType: scenario.accountType });

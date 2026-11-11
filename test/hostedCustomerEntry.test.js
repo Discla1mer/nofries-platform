@@ -419,9 +419,12 @@ test.each(['dynamic', 'hosted'])('%s initial failure stays unconfirmed and fresh
     const fetch = jest.fn().mockResolvedValueOnce(new Response('{}', { status: 503, headers: { 'content-type': 'application/json' } }));
     const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=login', fetch }); let fresh;
     try {
-        await settle(); expect(page.root.textContent).toContain('Signup is unavailable');
-        expect(page.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
-        expect(page.root.querySelector('button')).toBeNull();
+        // A-001: an opening read failure is a sign-in check failure with a
+        // manual retry, never an automatic navigation or signup verdict.
+        await settle(); expect(page.root.textContent).toContain('We could not open your account');
+        expect(page.root.textContent).toContain('Error code: NF-SIGNIN-UNCONFIRMED');
+        expect(page.root.textContent).not.toContain('Signup is unavailable');
+        expect(page.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
         expect(fetch).toHaveBeenCalledTimes(1); expect(page.assign).not.toHaveBeenCalled(); expect(page.replace).not.toHaveBeenCalled();
         page.close(); fetch.mockResolvedValueOnce(response({ status: 'create_account' }));
         fresh = execute({ runtime: entryRuntime(kind), search: '?provider=external&signin=retry', fetch }); await settle();
@@ -435,7 +438,7 @@ test.each(['dynamic', 'hosted'])('%s initial failure stays unconfirmed and fresh
 test.each(['dynamic', 'hosted'])('%s unrecognized401 never triggers automatic login', async kind => {
     const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=login',
         fetch: jest.fn(async () => new Response(JSON.stringify({ code: 'unknown' }), { status: 401, headers: { 'content-type': 'application/json' } })) });
-    try { await settle(); expect(page.root.textContent).toContain('Signup is unavailable'); expect(page.replace).not.toHaveBeenCalled(); }
+    try { await settle(); expect(page.root.textContent).toContain('We could not open your account'); expect(page.replace).not.toHaveBeenCalled(); }
     finally { page.close(); }
 });
 
@@ -753,7 +756,8 @@ test.each(['dynamic', 'hosted'])('%s a fresh authentication-needed observation k
     const fetch = jest.fn().mockResolvedValueOnce(new Response('{}', { status: 503, headers: { 'content-type': 'application/json' } }));
     const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=login', fetch }); let fresh;
     try {
-        await settle(); expect(page.root.querySelector('button')).toBeNull(); expect(fetch).toHaveBeenCalledTimes(1);
+        await settle(); expect(page.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
+        expect(fetch).toHaveBeenCalledTimes(1);
         page.close();
         fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Signup is unavailable', code: 'signup_signin_required' }),
             { status: 401, headers: { 'content-type': 'application/json' } }));
