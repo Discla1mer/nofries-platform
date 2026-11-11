@@ -82,6 +82,28 @@
     // Retain one immutable command until an acknowledgement or definite denial.
     let unresolved = null;
     const commandContinuations = new WeakMap();
+    // Only the last opened organisation's binding ID is kept on this browser.
+    // It is a hint: a fresh directory read and the server selection check
+    // decide whether it can be reopened.
+    const LAST_ORGANISATION_KEY = 'nofries-dashboard-last-organisation';
+    let resumeOffered = false;
+    function lastOrganisationStore() {
+        try { return window.localStorage || null; } catch (_) { return null; }
+    }
+    function lastOrganisation() {
+        const store = lastOrganisationStore();
+        let value = null;
+        try { value = store ? store.getItem(LAST_ORGANISATION_KEY) : null; } catch (_) { return null; }
+        return typeof value === 'string' && UUID.test(value) ? value : null;
+    }
+    function saveLastOrganisation(bindingId) {
+        const store = lastOrganisationStore();
+        try { if (store && UUID.test(bindingId)) store.setItem(LAST_ORGANISATION_KEY, bindingId); } catch (_) { /* optional */ }
+    }
+    function forgetLastOrganisation() {
+        const store = lastOrganisationStore();
+        try { if (store) store.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
+    }
     if (hasDirectorySearch) {
         directorySearch.addEventListener('input', function () {
             if (!active || !current(active) || active.authorityPending || active.session?.accountType !== 'consultant') return;
@@ -502,6 +524,7 @@
         // uncertainty retains its exact identity and fields for explicit retry.
         if (result.status >= 400 && result.status < 500) {
             if (unresolved === pending) unresolved = null;
+            if (pending.kind === 'selection' && pending.body.bindingId === lastOrganisation()) forgetLastOrganisation();
             requireSuccess(result);
         }
         const value = requireSuccess(result);
@@ -511,10 +534,31 @@
                 typeof value.selectedBindingId === 'string' && UUID.test(value.selectedBindingId) && value.selectedBindingId === pending.body.bindingId;
         if (!valid || value.schemaVersion !== 1) throw invalid();
         if (unresolved === pending) unresolved = null;
-        if (pending.kind === 'logout') { window.location.assign(externalCustomer ? '/login?provider=external' : '/'); return; }
+        if (pending.kind === 'logout') { forgetLastOrganisation(); window.location.assign(externalCustomer ? '/login?provider=external' : '/'); return; }
         if (pending.kind === 'selection') cycle.openSelection = true;
         // Original receipts acknowledge commands; they never supply current authority.
         await reconcile(cycle, 0, false);
+    }
+    function resumeLastOrganisation(cycle, value) {
+        // Offer this once per page load, only on a plain /dashboard visit.
+        // Organisations, Return to organisations and Retry keep the chooser.
+        const offered = resumeOffered;
+        resumeOffered = true;
+        if (offered || value.purpose !== 'customer' || cycle.forcePortfolio || cycle.openSelection || unresolved ||
+            String(window.location.hash || '') !== '' || clientDraft(cycle)) return false;
+        const bindingId = lastOrganisation();
+        if (!bindingId || !(cycle.directoryRows || []).some(function (row) { return row.bindingId === bindingId; })) return false;
+        const next = begin();
+        try {
+            const pending = command('selection', { bindingId: bindingId, expectedGeneration: value.generation, operationId: secureId() });
+            execute(next, pending).catch(function (error) {
+                // A definite refusal (other than sign-in) shows the chooser instead.
+                if (!current(next) || !error || !(error.status >= 400 && error.status < 500) || error.status === 401) { failure(next, error); return; }
+                const chooser = begin();
+                reconcile(chooser, 0, false).catch(function (again) { failure(chooser, again); });
+            });
+        } catch (error) { failure(next, error); }
+        return true;
     }
     function reconcile(cycle, transitions, initializeAllowed) {
         // Initialisation can reconcile again within the same cycle. Track the
@@ -533,6 +577,7 @@
         const value = session(requireSuccess(result));
         if (cycle.workQueueTarget && value.selectedBindingId !== cycle.workQueueTarget.bindingId) throw invalid();
         remember(cycle, value);
+        if (cycle.openSelection && value.purpose === 'customer' && value.selectedBindingId) saveLastOrganisation(value.selectedBindingId);
         // Navigation records the chosen view, never authority. Keep it across
         // focus/pageshow rechecks after a consultant selects a client.
         if (cycle.openSelection && value.accountType === 'consultant' && !currentRoute()) {
@@ -554,7 +599,10 @@
             request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess)
         ]) : [await directory(cycle, value, [], null)];
         if (!current(cycle)) return;
-        if (value.selectedBindingId === null || value.accountType === 'consultant' && !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations')) { cycle.busy = false; show(cycle, 'selection'); return; }
+        if (value.selectedBindingId === null || value.accountType === 'consultant' && !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations')) {
+            if (resumeLastOrganisation(cycle, value)) return;
+            cycle.busy = false; show(cycle, 'selection'); return;
+        }
         // Navigation may change while directory reads are pending. Keep the
         // existing final route decision and fetch if it now opens an organisation.
         const projection = prefetchProjection ? middle[1] :

@@ -517,3 +517,57 @@ test('access revocation clears an unsent client draft without a discard prompt',
     expect(h.status).toBe('denied'); expect(h.document.getElementById('clientSetupControls')).toBeNull();
     expect(h.window.confirm).not.toHaveBeenCalled();
 });
+
+function memoryStorage(initial) {
+    const values = new Map(initial === undefined ? [] : [['nofries-dashboard-last-organisation', initial]]);
+    return { values, getItem: key => values.has(key) ? values.get(key) : null,
+        setItem: (key, value) => { values.set(key, String(value)); }, removeItem: key => { values.delete(key); } };
+}
+function lastOpened(h, store) { h.window.localStorage = store; return h; }
+
+test('the last opened organisation ID is remembered and reopened on the next plain visit through a fresh selection check', async () => {
+    const store = memoryStorage();
+    const first = lastOpened(harness(), store); await flush();
+    await first.reply(0, 200, state()); await first.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    first.elements.dashboardChoices.children[1].click(); await flush();
+    await first.reply(2, 200, { schemaVersion: 1, generation: GB, selectedBindingId: B });
+    await first.reply(3, 200, state(B, GB));
+    expect([...store.values.entries()]).toEqual([['nofries-dashboard-last-organisation', B]]);
+
+    const next = lastOpened(harness(''), store); await flush();
+    await next.reply(0, 200, state()); await next.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    expect(next.requests[2].url).toBe('/api/dashboard/selection');
+    expect(JSON.parse(next.requests[2].init.body)).toEqual({ bindingId: B, expectedGeneration: GA, operationId: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+    await next.reply(2, 200, { schemaVersion: 1, generation: GB, selectedBindingId: B });
+    expect(next.requests[3].url).toBe('/api/dashboard/session');
+});
+
+test('a remembered organisation is not reopened when unlisted, malformed or Organisations was asked for', async () => {
+    for (const [hash, stored, rows] of [['', B, [row(A, 'Own consultancy')]], ['', 'not-an-id', [row(A, 'Own consultancy')]],
+        ['#organisations', B, [row(A, 'Own consultancy'), row(B, 'Client')]]]) {
+        const h = lastOpened(harness(hash), memoryStorage(stored)); await flush();
+        await h.reply(0, 200, state()); await h.reply(1, 200, listing(rows));
+        expect(h.status).toBe('selection'); expect(h.requests).toHaveLength(2);
+    }
+});
+
+test('a refused reopen forgets the remembered organisation and shows the chooser', async () => {
+    const store = memoryStorage(B);
+    const h = lastOpened(harness(''), store); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    await h.reply(2, 403, { code: 'dashboard_binding_denied' });
+    expect(store.values.size).toBe(0);
+    expect(h.requests[3].url).toBe('/api/dashboard/session');
+    await h.reply(3, 200, state()); await h.reply(4, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    expect(h.status).toBe('selection'); expect(h.requests).toHaveLength(5);
+});
+
+test('signing out forgets the remembered organisation', async () => {
+    const store = memoryStorage(B);
+    const h = lastOpened(harness(), store); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    h.elements.dashboardSignOut.click(); await flush();
+    expect(h.requests[2].url).toBe('/api/dashboard/logout');
+    await h.reply(2, 200, { schemaVersion: 1, loggedOut: true });
+    expect(store.values.size).toBe(0);
+});
