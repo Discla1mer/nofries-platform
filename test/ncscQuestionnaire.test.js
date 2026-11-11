@@ -879,10 +879,10 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(picker.value).toBe('2');
         expect(ui.root.querySelector('legend').textContent).toBe(metadata().questions[2].prompt);
         expect(picker.children[0].textContent).toContain('Unknown');
-        expect(picker.children[1].textContent).toContain('Pending N/A');
+        expect(picker.children[1].textContent).toContain('Not applicable, to confirm');
         expect(picker.children[2].textContent).toContain('Unanswered');
         expect(picker.children[3].textContent).toContain('No');
-        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('3 of 14 answered · 11 to go · 2 to check later (Unknown or pending N/A) · all saved.');
+        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('3 of 14 answered · 11 to go · 2 to check later (unknown, or marked not applicable, to confirm) · all saved.');
         expect(h.records).toHaveLength(2); ui.controller.destroy();
     });
 
@@ -892,7 +892,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         if (submitted) await h.execute(submitCommand());
         const ui = await resumeUi(h);
         expect(byId(ui, 'ncsc-question-index').value).toBe('0');
-        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('14 of 14 answered · 14 to check later (Unknown or pending N/A) · ' + (submitted ? 'submitted' : 'all saved') + '.');
+        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('14 of 14 answered · 14 to check later (unknown, or marked not applicable, to confirm) · ' + (submitted ? 'submitted' : 'all saved') + '.');
         if (submitted) expect(control(ui, 'Next unanswered question')).toBeUndefined();
         else expect(control(ui, 'Next unanswered question').disabled).toBe(true);
         expect(ui.root.textContent).toContain('14 to check later'); ui.controller.destroy();
@@ -902,9 +902,9 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         const h = await backend(), ui = await createInUi(h);
         ['yes', 'partial', 'no', 'unknown', 'not_applicable'].forEach((option, index) =>
             choose(ui, index, option, option === 'not_applicable' ? 'Synthetic pending exclusion.' : undefined));
-        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('5 of 14 answered · 9 to go · 2 to check later (Unknown or pending N/A) · 5 not saved yet.');
+        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('5 of 14 answered · 9 to go · 2 to check later (unknown, or marked not applicable, to confirm) · 5 not saved yet.');
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
-        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('5 of 14 answered · 9 to go · 2 to check later (Unknown or pending N/A) · all saved.');
+        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('5 of 14 answered · 9 to go · 2 to check later (unknown, or marked not applicable, to confirm) · all saved.');
         expect(ui.root.textContent).toContain('Resolved means answered Yes, Partial or No; it does not mean implemented.');
         expect(metadata().questions.slice(0, 5).map(question => h.records.at(-1).payload.responses.find(row => row.itemId === question.id).optionId))
             .toEqual(['yes', 'partial', 'no', 'unknown', 'not_applicable']);
@@ -926,11 +926,11 @@ describe('questionnaire draft progress and unanswered navigation', () => {
             expect(help.textContent).toBe('The full question is below. * marks unsaved changes. Answers save automatically a moment after each change.');
             choose(ui, 0, 'unknown'); choose(ui, 1, 'not_applicable', 'Synthetic pending claim');
             expect(picker.children[0].textContent).toBe('1 of ' + questions.length + ' · Unknown *');
-            expect(picker.children[1].textContent).toBe('2 of ' + questions.length + ' · Pending N/A *');
+            expect(picker.children[1].textContent).toBe('2 of ' + questions.length + ' · Not applicable, to confirm *');
             control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
             const saved = byId(ui, 'ncsc-question-index');
             expect(saved.children[0].textContent).toBe('1 of ' + questions.length + ' · Unknown');
-            expect(saved.children[1].textContent).toBe('2 of ' + questions.length + ' · Pending N/A');
+            expect(saved.children[1].textContent).toBe('2 of ' + questions.length + ' · Not applicable, to confirm');
             expect(Object.fromEntries(h.records.at(-1).payload.responses.map(row => [row.itemId, row.optionId])))
                 .toEqual({ [questions[0].id]: 'unknown', [questions[1].id]: 'not_applicable' });
         } finally { ui.controller.destroy(); }
@@ -946,14 +946,14 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         rationale.focus(); rationale.setSelectionRange(3, 7); enter(rationale, 'Changed pending claim');
         expect(byId(ui, rationale.id)).toBe(rationale); expect(ui.document.activeElement).toBe(rationale);
         expect(rationale.selectionStart).toBe(3); expect(rationale.selectionEnd).toBe(7);
-        expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('2 of 14 answered · 12 to go · 2 to check later (Unknown or pending N/A) · 2 not saved yet');
-        expect(byId(ui, 'ncsc-question-index').children[1].textContent).toContain('Pending N/A *');
+        expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('2 of 14 answered · 12 to go · 2 to check later (unknown, or marked not applicable, to confirm) · 2 not saved yet');
+        expect(byId(ui, 'ncsc-question-index').children[1].textContent).toContain('Not applicable, to confirm *');
         control(ui, 'Clear answer').click();
-        expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('1 of 14 answered · 13 to go · 1 to check later (Unknown or pending N/A) · 1 not saved yet');
+        expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('1 of 14 answered · 13 to go · 1 to check later (unknown, or marked not applicable, to confirm) · 1 not saved yet');
         expect(ui.root.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
         expect(byId(ui, 'ncsc-question-index').children[1].textContent).not.toContain('*');
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
-        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · 1 to check later (Unknown or pending N/A) · all saved.');
+        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · 1 to check later (unknown, or marked not applicable, to confirm) · all saved.');
         const picker = byId(ui, 'ncsc-question-index'); picker.value = '0'; event(picker, 'change');
         control(ui, 'Clear answer').click();
         expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('0 of 14 answered · 14 to go · 1 not saved yet');
@@ -1051,7 +1051,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         const h = await backend(); await h.execute(createCommand());
         await h.execute(saveCommand('assessment-a', 0, 'read-only-progress', allResponses('unknown').slice(0, 1)));
         const ui = await resumeUi(h, { presentationMode: 'read-only' });
-        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · 1 to check later (Unknown or pending N/A) · saved.');
+        expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · 1 to check later (unknown, or marked not applicable, to confirm) · saved.');
         expect(control(ui, 'Save progress')).toBeUndefined();
         expect(ui.root.querySelectorAll('input').filter(input => input.type === 'radio').every(input => input.disabled)).toBe(true);
         control(ui, 'Next unanswered question').click(); expect(h.records).toHaveLength(2);
@@ -1324,7 +1324,7 @@ describe('submitted assessment results', () => {
                 upperPercentTenths: evaluated.attainment.upperPercentTenths, denominatorWeight: evaluated.attainment.denominatorWeight,
                 completed: evaluated.countsCompletion.completionNumerator, total: evaluated.countsCompletion.completionDenominator });
         });
-        expect(panel.textContent).toContain('Unknown or unresolved answers: 2. Not-applicable answers awaiting review: 1.');
+        expect(panel.textContent).toContain('Unknown or unresolved answers: 2. Marked not applicable, to confirm: 1.');
         expect(panel.textContent).toContain(rationale); expect(panel.querySelectorAll('img')).toHaveLength(0);
         expect(panel.querySelectorAll('script')).toHaveLength(0); ui.controller.destroy();
     });
@@ -1472,8 +1472,8 @@ describe('questionnaire form accessibility', () => {
         choose(ui, 0, 'not_applicable', 'Synthetic pending exclusion.');
         const help = byId(ui, `ncsc-rationale-help-${question.id}`);
         expect(byId(ui, `ncsc-rationale-${question.id}`).getAttribute('aria-describedby')).toBe(help.id);
-        expect(help.textContent).toContain('included in the score denominator');
-        expect(help.textContent).toContain('N/A approval is not available in this journey.');
+        expect(help.textContent).toContain('still counts towards your result until approved');
+        expect(help.textContent).toContain('Approval is not available yet.');
         expect(help.textContent).not.toContain('until reviewed');
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
@@ -1493,7 +1493,7 @@ describe('questionnaire form accessibility', () => {
             }
             expect(help.textContent).toContain('all outside your declared scope');
             expect(help.textContent).toContain('If you are unsure, choose Unknown.');
-            expect(help.textContent).toContain('included in the score denominator');
+            expect(help.textContent).toContain('still counts towards your result until approved');
             expect(h.records).toHaveLength(1);
             control(ui, 'Save progress').click();
             await until(() => ui.root.textContent.includes('Your progress is saved.'));
@@ -1515,7 +1515,7 @@ describe('questionnaire form accessibility', () => {
             expect(ui.root.textContent).toContain('Not handling payments is not enough');
             choose(ui, 0, 'not_applicable', 'Synthetic unrelated exclusion.');
             expect(ui.root.textContent).not.toContain('Not handling payments is not enough');
-            expect(byId(ui, `ncsc-rationale-help-${questions[0].id}`).textContent).toContain('N/A approval is not available in this journey.');
+            expect(byId(ui, `ncsc-rationale-help-${questions[0].id}`).textContent).toContain('Approval is not available yet.');
             expect(h.records).toHaveLength(2);
         } finally { ui.controller.destroy(); }
     });
@@ -1700,7 +1700,7 @@ describe('questionnaire public controls and retained mutation intent', () => {
         expect(byId(resumed, 'ncsc-question-index').value).toBe('1');
         const selector = byId(resumed, 'ncsc-question-index'); selector.value = '0'; event(selector, 'change');
         expect(byId(resumed, rationale.id).value).toBe(rationale.value);
-        expect(resumed.root.textContent).toMatch(/pending claim|pending N\/A/i);
+        expect(resumed.root.textContent).toMatch(/pending claim|not applicable, to confirm/i);
         control(resumed, 'Clear answer').click(); control(resumed, 'Save progress').click();
         await until(() => h.records.filter(row => row.action === 'save').length === 2);
         expect(h.records.at(-1).payload.responses).toEqual([{ itemId: question.id, optionId: null, rationale: null }]);
@@ -1981,8 +1981,8 @@ describe('questionnaire boundary and navigation regressions', () => {
             list: async () => ({ schemaVersion: 1, assessments: [summary], nextAfterAssessmentId: null }),
             read: async () => ({ schemaVersion: 1, assessment: detail }) } });
         submitUi(ui); await until(() => ui.root.textContent.includes('This assessment has reached its save limit.'));
-        expect(ui.root.textContent).toContain('Start a new assessment with shorter rationales.');
-        expect(ui.root.textContent).not.toContain('Shorten one or more rationales, save the corrected draft');
+        expect(ui.root.textContent).toContain('Start a new assessment with shorter explanations.');
+        expect(ui.root.textContent).not.toContain('Shorten one or more explanations, save your changes');
         expect(control(ui, 'Try the save again')).toBeUndefined(); control(ui, 'Back to questions').click();
         expect(byId(ui, `ncsc-answer-${metadata().questions[0].id}-yes`).checked).toBe(true);
         expect(submit).toHaveBeenCalledTimes(1); expect(submit.mock.calls[0][0].expectedRevision).toBe(127);
@@ -1996,7 +1996,7 @@ describe('questionnaire boundary and navigation regressions', () => {
         const save = jest.fn((...args) => h.client.save(...args)), ui = await resumeUi(h, { client: { ...h.client, save } });
         for (let index = 10; index < rows.length; index += 1) choose(ui, index, 'not_applicable', rows[index].rationale.text);
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('This assessment is too large for this operation.'));
-        expect(ui.root.textContent).toContain('Shorten one or more rationales, save the corrected draft, then try again.');
+        expect(ui.root.textContent).toContain('Shorten one or more explanations, save your changes, then try again.');
         expect(control(ui, 'Try the save again')).toBeUndefined(); expect(control(ui, 'Save progress').disabled).toBe(false);
         expect(h.records).toHaveLength(6); expect(save).toHaveBeenCalledTimes(1);
         const rejected = save.mock.calls[0][0];
@@ -2172,7 +2172,7 @@ describe('questionnaire boundary and navigation regressions', () => {
         const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand());
         const ui = await resumeUi(h); choose(ui, 0, 'not_applicable', 'Unsubmitted local claim');
         await h.execute(submitCommand('assessment-a', 1, 'other-session-submit'));
-        control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Unsubmitted local changes'));
+        control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Unsaved changes on this device'));
         expect(byId(ui, `ncsc-answer-${metadata().questions[0].id}-yes`).checked).toBe(true);
         expect(byId(ui, `ncsc-answer-${metadata().questions[0].id}-not_applicable`).checked).toBe(false);
         expect(ui.root.querySelectorAll('textarea').filter(input => !input.readOnly)).toHaveLength(0);
@@ -2418,7 +2418,7 @@ describe('batched automatic save', () => {
             await until(() => ui.root.textContent.includes('Your progress is saved.'));
             expect(h.records).toHaveLength(before + 1);
             expect(h.records.at(-1).payload.responses).toHaveLength(3);
-            expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('3 of 14 answered · 11 to go · 1 to check later (Unknown or pending N/A) · all saved.');
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('3 of 14 answered · 11 to go · 1 to check later (unknown, or marked not applicable, to confirm) · all saved.');
             await settle(); expect(h.records).toHaveLength(before + 1);
         } finally { ui.controller.destroy(); }
     });

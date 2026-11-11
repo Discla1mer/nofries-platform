@@ -451,7 +451,7 @@
                 const value = displayedAnswer(question), option = optionById.get(value.optionId);
                 if (value.optionId !== null) answered += 1;
                 if (['unknown', 'not_applicable'].includes(value.optionId)) unresolved += 1;
-                const label = value.optionId === 'not_applicable' ? 'Pending N/A' : option ? option.label : 'Unanswered';
+                const label = value.optionId === 'not_applicable' ? 'Not applicable, to confirm' : option ? option.label : 'Unanswered';
                 const unsaved = !sealed && !equal(value, savedAnswer(question.id)) ? ' *' : '';
                 questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
             });
@@ -459,7 +459,7 @@
             // One progress line. What is saved and what is still only in this
             // browser are stated together so the counts cannot disagree.
             questionProgress.textContent = answered + ' of ' + questions.length + ' answered' + (missing ? ' · ' + missing + ' to go' : '') +
-                (unresolved ? ' · ' + unresolved + ' to check later (Unknown or pending N/A)' : '') +
+                (unresolved ? ' · ' + unresolved + ' to check later (unknown, or marked not applicable, to confirm)' : '') +
                 (sealed ? ' · submitted' : !editable ? ' · saved' : dirty ? ' · ' + dirty + ' not saved yet' : ' · all saved') + '.';
             if (navigationSummary) navigationSummary.textContent = 'Question ' + (activeQuestion + 1) + ' of ' + questions.length + ' · ' + missing + ' unanswered';
             if (nextUnanswered) nextUnanswered.disabled = unansweredIndex(activeQuestion) === -1;
@@ -475,11 +475,11 @@
             statusText = view === 'assessment' && !acknowledged
                 ? 'The saved assessment could not be loaded. Retry this assessment or go back to the list.'
                 : error && error.code === 'ncsc_request_too_large'
-                ? 'This assessment is too large for this operation. Your saved answers and unsent text remain here. ' + (view === 'create' ? 'Shorten the scope description, then try again.' : acknowledged && acknowledged.revision >= SAVE_CEILING ? 'This assessment has reached its save limit. Start a new assessment with shorter rationales.' : 'Shorten one or more rationales, save the corrected draft, then try again.')
+                ? 'This assessment is too large for this operation. Your saved answers and unsaved changes on this device are still here. ' + (view === 'create' ? 'Shorten the scope description, then try again.' : acknowledged && acknowledged.revision >= SAVE_CEILING ? 'This assessment has reached its save limit. Start a new assessment with shorter explanations.' : 'Shorten one or more explanations, save your changes, then try again.')
                 : error && error.code === 'ncsc_submission_unavailable' ? 'Submission is not available yet. Your saved answers remain editable.'
                 : error && error.code === 'ncsc_quota_exceeded' ? quotaMessage()
                 : view === 'list' ? 'The assessment service is unavailable. Retry loading the list to check your saved work.'
-                : 'The assessment service is unavailable. Your unsent draft remains in this view.';
+                : 'The assessment service is unavailable. Your unsaved changes on this device are still here.';
             updateStatus();
         }
         function allowanceExhausted() { return !!allowance && allowance.used >= allowance.limit; }
@@ -861,8 +861,8 @@
                 sealedNote.id = 'ncsc-sealed'; content.append(sealedNote);
                 renderResults(acknowledged.submission.results);
                 if (dirtyEntries().length) {
-                    const unsent = node('details', 'ncsc-warning'); unsent.append(node('summary', '', 'Unsubmitted local changes (' + dirtyEntries().length + ')'));
-                    unsent.append(node('p', '', 'These retained local changes were not part of the submission. The question form shows the saved submission separately.'));
+                    const unsent = node('details', 'ncsc-warning'); unsent.append(node('summary', '', 'Unsaved changes on this device (' + dirtyEntries().length + ')'));
+                    unsent.append(node('p', '', 'These unsaved changes on this device were not part of the submission. The question form shows the saved submission separately.'));
                     dirtyEntries().forEach(function (entry) {
                         const option = optionById.get(entry.value.optionId);
                         unsent.append(node('h3', '', questionById.get(entry.value.itemId).prompt), node('p', '', option ? option.label : 'Answer cleared'));
@@ -906,7 +906,7 @@
                 controls.append(final);
             }
             content.append(controls);
-            content.append(node('p', 'dashboard-muted', 'Resolved means answered Yes, Partial or No; it does not mean implemented. Submission requires an answer to every question and a rationale for each N/A; Unknown and pending N/A are allowed. A submitted baseline is read-only and is not a certification.'));
+            content.append(node('p', 'dashboard-muted', 'Resolved means answered Yes, Partial or No; it does not mean implemented. To submit, answer every question and explain each not applicable answer. Unknown answers, and answers marked not applicable, to confirm, are allowed. A submitted baseline is read-only and is not a certification.'));
         }
         function reviewState() {
             return questions.map(function (question, index) {
@@ -934,7 +934,7 @@
             if (unexplained) blockers.push('explain ' + unexplained + ' N/A ' + (unexplained === 1 ? 'answer' : 'answers'));
             const readiness = node('p', blockers.length ? 'ncsc-review-blocked' : 'ncsc-review-ready', blockers.length
                 ? 'Before you can submit, ' + blockers.join(' and ') + '.'
-                : 'Every question has an answer and every N/A has an explanation. Unknown and pending N/A answers remain unresolved.');
+                : 'Every question has an answer and every not applicable answer has an explanation. Unknown answers, and answers marked not applicable, to confirm, stay unresolved.');
             readiness.id = 'ncsc-review-readiness'; panel.append(readiness);
             const scope = node('section', 'ncsc-review-scope'); scope.append(node('h4', '', 'Assessment scope'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description));
             panel.append(scope);
@@ -1013,8 +1013,8 @@
             metric('Reported implementation', results.attainment, 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
-            panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Not-applicable answers awaiting review: ' + results.pending + '.'));
-            panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. N/A stays in the denominator unless formally approved; N/A approval is not available in this journey. This is a No Fries calculation, not an NCSC score.'));
+            panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Marked not applicable, to confirm: ' + results.pending + '.'));
+            panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. Answers marked not applicable still count towards the total until they are approved. Approval is not available yet. This is a No Fries calculation, not an NCSC score.'));
             panel.append(node('h3', '', 'Explore NCSC functions and assessment topics'));
             results.domains.forEach(function (domain) {
                 const detail = node('details', 'ncsc-result-domain'); detail.append(node('summary', '', domain.title + ' — ' + domain.attainment));
@@ -1022,7 +1022,7 @@
                     const item = node('details', 'ncsc-result-control'); item.append(node('summary', '', control.title + ' — ' + control.attainment));
                     control.questions.forEach(function (question) {
                         item.append(node('h4', '', question.prompt), node('p', '', 'Saved answer: ' + question.answer + '. Weight: ' + question.weight + '.'));
-                        if (question.rationale) item.append(node('p', 'ncsc-preserve-text', 'Pending N/A rationale: ' + question.rationale));
+                        if (question.rationale) item.append(node('p', 'ncsc-preserve-text', 'Why it is marked not applicable: ' + question.rationale));
                         [['Suggested next actions', question.actions], ['Useful evidence', question.examples]].forEach(function (group) {
                             item.append(node('h4', '', group[0])); const list = node('ul'); group[1].forEach(function (text) { list.append(node('li', '', text)); }); item.append(list);
                         });
@@ -1121,12 +1121,12 @@
             questionRegion.append(fieldset);
             const selectedOption = optionById.get(entry.value.optionId);
             if (selectedOption && !selectedOption.applicable) {
-                const label = node('label', '', 'Rationale for pending N/A claim'); label.setAttribute('for', 'ncsc-rationale-' + question.id);
+                const label = node('label', '', 'Why this does not apply'); label.setAttribute('for', 'ncsc-rationale-' + question.id);
                 const rationale = node('textarea', 'ncsc-textarea'); rationale.id = 'ncsc-rationale-' + question.id; rationale.value = entry.value.rationale ? entry.value.rationale.text : '';
                 rationale.rows = 6; rationale.required = true; rationale.readOnly = !writable;
                 rationale.setAttribute('aria-describedby', 'ncsc-rationale-help-' + question.id);
                 const scopeHelp = writable && inputGuidance && inputGuidance.notApplicable ? inputGuidance.notApplicable + ' ' : '';
-                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. This remains unresolved and included in the score denominator unless formally approved. N/A approval is not available in this journey.'); help.id = 'ncsc-rationale-help-' + question.id;
+                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. It stays marked not applicable, to confirm, and still counts towards your result until approved. Approval is not available yet.'); help.id = 'ncsc-rationale-help-' + question.id;
                 rationale.addEventListener('input', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit()) return;
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });
@@ -1472,7 +1472,7 @@
                 pending = null; busy = false; errors = []; statusText = 'Saved revision ' + acknowledged.revision + '. ' + (dirtyEntries().length ? 'Newer edits are still unsaved.' : 'Your progress is saved.');
                 if (operation.uncertain) {
                     if (!await refreshCurrent(false, expected)) return false;
-                    statusText = conflict ? 'The current saved version differs from your draft. Choose how to continue.' : 'The operation is confirmed and the current saved version has been checked. Review any unsent changes before saving again.';
+                    statusText = conflict ? 'The current saved version differs from your draft. Choose how to continue.' : 'The operation is confirmed and the current saved version has been checked. Review any unsaved changes on this device before saving again.';
                 }
                 return !conflict;
             } catch (error) {
@@ -1482,7 +1482,7 @@
                 if (error && (error.statusCode === 403 || error.code === 'ncsc_access_denied')) { deny(); return false; }
                 const ambiguous = !error || error.ambiguous === true || error.statusCode === 503 || ![400, 403, 404, 405, 409, 413].includes(error.statusCode);
                 if (ambiguous) {
-                    operation.uncertain = true; statusText = 'This operation is unconfirmed. Retry the same operation to establish its result. Unsent changes remain here.';
+                    operation.uncertain = true; statusText = 'This operation is unconfirmed. Retry the same operation to establish its result. Your unsaved changes on this device are still here.';
                 } else {
                     pending = null;
                     if (error.statusCode === 409 && command.action !== 'create' && !['ncsc_quota_exceeded', 'ncsc_submission_unavailable'].includes(error.code)) await refreshCurrent(true, expected);
@@ -1564,7 +1564,7 @@
             removeDialog();
             dialog = node('dialog', 'ncsc-leave-dialog'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'ncsc-leave-title');
             const title = node('h3', '', 'Leave with unsaved changes?'); title.id = 'ncsc-leave-title';
-            dialog.append(title, node('p', '', 'Save your changes, discard only the unsent draft, or stay here.'));
+            dialog.append(title, node('p', '', 'Save your changes, discard your unsent changes, or stay here.'));
             const save = button('Save and leave', async function () {
                 const decision = leave; if (!decision) return;
                 save.disabled = true; discard.disabled = true;
@@ -1590,7 +1590,7 @@
                 finishLeave(false); statusText = 'This browser cannot open the leave dialog. Save your changes before navigating.'; updateStatus(); return;
             }
             try { dialog.showModal(); stay.focus(); }
-            catch (error) { finishLeave(false); statusText = 'The leave dialog could not open. Your draft remains here.'; updateStatus(); }
+            catch (error) { finishLeave(false); statusText = 'The leave dialog could not open. Your unsaved changes on this device are still here.'; updateStatus(); }
         }
         function removeDialog() {
             if (!dialog) return;
