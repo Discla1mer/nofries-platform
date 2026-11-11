@@ -52,7 +52,7 @@ describe('public third-party script boundary', () => {
         expect(privacy).toContain('Website visitor tracking');
         expect(privacy).toContain('does not load a third-party visitor-tracking script');
         expect(privacy).not.toContain('apollo.io');
-        expect(privacy).toContain('Website assistant and prospect discovery');
+        expect(privacy).toContain('<h2>Website assistant</h2>');
         expect(privacy).toContain('Simply loading the website does not create a prospect record');
     });
 
