@@ -54,6 +54,13 @@ test('combines real action projections with exact client/plan/action identities 
     expect(result.nextCursor).toBeNull(); expect(h.ports.finish).toHaveBeenCalledTimes(1);
 });
 
+test('a label-owned action with a due date is assigned in the queue and the label stays private', async () => {
+    const h = fixture([[plan('plan-a', [action('labelled', { ownerSubjectKey: null, ownerLabel: 'Ops lead', dueDate: '2026-10-22' })])]]);
+    const result = await read(h);
+    expect(result.rows[0]).toMatchObject({ assigned: true, dueDate: '2026-10-22' });
+    expect(JSON.stringify(result)).not.toMatch(/Ops lead|ownerLabel/);
+});
+
 test('finite traversal resumes within a retained plan and crosses plans/clients without duplicate actions', async () => {
     const h = fixture([[plan('plan-a', [action('a'), action('b'), action('c')]), plan('plan-b', [action('d')])],
         [], [plan('plan-a', [action('a'), action('b')])]]);
