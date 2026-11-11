@@ -62,7 +62,7 @@
                 saved('submission.responseSetSha256'), saved(prefix + 'outputSha256'), catalogue('profileRef')]);
             if (topic === 'range') {
                 block('Reported implementation', 'The saved implementation range is ' + result.attainment +
-                    '. The endpoints are supplied by the saved server calculation. Unknown answers and answers marked not applicable, to confirm, stay unresolved and can widen the range; they do not confirm implementation.',
+                    '. The endpoints are supplied by the saved server calculation. Unknown answers and answers marked not applicable are still to confirm and can widen the range; they do not confirm implementation.',
                 [saved(prefix + 'attainment.lowerDisplay'), saved(prefix + 'attainment.upperDisplay'),
                     saved(prefix + 'attainment.lowerCreditUnits'), saved(prefix + 'attainment.upperCreditUnits'),
                     saved(prefix + 'attainment.denominatorWeight'), saved(prefix + 'countsCompletion.unknown'),
