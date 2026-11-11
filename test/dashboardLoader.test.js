@@ -304,6 +304,9 @@ describe('consultant client setup', () => {
         clients: [{ requestId, organisationName: 'Saved client', status: 'pending' }] } });
     async function acceptingClient() {
         const h = await savedAcceptance(); await h.reply(3, 200, offeredTerms());
+        // Resuming an existing draft shows the steps but no new "Draft saved" announcement.
+        expect(h.document.getElementById('clientSetupControls').querySelector('.client-workspace-status').textContent).toBe('');
+        expect(h.document.getElementById('clientSetupControls').querySelector('.client-draft-steps')).not.toBeNull();
         h.document.getElementById('clientSetupControls').querySelector('input').checked = true;
         buttons(h).find(b => b.textContent === 'Accept and create client dashboard').click(); await flush();
         expect(h.requests[4].init.method).toBe('GET'); return h;
@@ -718,8 +721,19 @@ describe('consultant client setup', () => {
         expect(h.requests[4].init.body).toBe(original);
         await h.reply(4, 200, { csrfToken, state: { status: 'terms', termsText: 'Synthetic terms', scheduleText: 'Synthetic schedule',
             termsVersion: 'synthetic', termsDigest: GA, scheduleId: 'synthetic-schedule', scheduleDigest: GB } });
+        // O-002: the saved draft and the remaining steps are stated before the terms.
+        const setup = h.document.getElementById('clientSetupControls');
+        const status = setup.querySelector('.client-workspace-status');
+        expect(status.getAttribute('role')).toBe('status');
+        expect(status.textContent).toBe('Draft saved. Two steps left before this client dashboard is created.');
+        expect(setup.textContent).toContain('This client setup is saved as a draft. Acceptance has not been confirmed, so the client dashboard is not created yet.');
+        expect(setup.querySelector('.client-draft-steps').querySelectorAll('li').map(item => item.textContent)).toEqual([
+            'Read the client schedule and dashboard terms below.',
+            'Tick that you accept them, then choose Accept and create client dashboard. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.']);
+        expect(setup.textContent).toContain('If you leave now, the draft stays in your organisation list as “Setup saved”. Choose Continue setup to return to it.');
         const accept = buttons(h).find(b => b.textContent === 'Accept and create client dashboard');
         accept.click(); await flush(); expect(h.requests).toHaveLength(5);
+        expect(status.textContent).toBe('Read and accept the terms to continue.');
         h.document.getElementById('clientSetupControls').querySelector('input').checked = true;
         accept.click(); await flush(); await h.reply(5, 200, pendingClient(JSON.parse(original).requestId));
         expect(JSON.parse(h.requests[6].init.body)).toMatchObject({ action: 'accept', requestId: JSON.parse(original).requestId,
