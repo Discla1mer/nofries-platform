@@ -148,6 +148,21 @@
         if (!clipboard || typeof clipboard.writeText !== 'function') { fallback(); return; }
         Promise.resolve(clipboard.writeText(input.value)).then(function () { status.textContent = 'Summary copied.'; }, fallback);
     }
+    // The accepted NCSC profile's credit rule, in credit units (scale 2):
+    // Yes earns full credit, Partial half and No none. Answers still to
+    // confirm earn none at the lower end and full credit at the upper end.
+    // resultModel checks server results against it; the review step uses it
+    // only to preview a draft, never in place of a submitted score.
+    function creditUnits(semantic, weight) {
+        const lower = semantic === 'yes' ? weight * 2 : semantic === 'partial' ? weight : 0;
+        return { lower: lower, upper: semantic === 'unknown' ? weight * 2 : lower };
+    }
+    // The evaluator's decimal-half-up-one-place-v1 rounding, in tenths of a percent.
+    function percentTenths(numerator, denominator) {
+        const scaled = BigInt(numerator) * 1000n, whole = BigInt(denominator);
+        return Number(scaled / whole + (scaled % whole * 2n >= whole ? 1n : 0n));
+    }
+    function percentDisplay(tenths) { return (tenths / 10).toFixed(1) + '%'; }
     // Presentation only: never calculate or repair a server score in the browser.
     // A malformed result does not invalidate an acknowledged write or its answers.
     function resultModel(assessment, metadata, organisationId) {
@@ -235,9 +250,8 @@
                 // The pinned accepted NCSC profile assigns weight 1 to every question.
                 // Payload totals cannot authorise a different weight set.
                 requireValue(atom.weight === 1);
-                const lower = semantic === 'yes' ? atom.weight * 2 : semantic === 'partial' ? atom.weight : 0;
-                const upper = semantic === 'unknown' ? atom.weight * 2 : lower;
-                requireValue(atom.lowerCreditUnits === lower && atom.upperCreditUnits === upper);
+                const credit = creditUnits(semantic, atom.weight);
+                requireValue(atom.lowerCreditUnits === credit.lower && atom.upperCreditUnits === credit.upper);
             });
             function aggregateMatches(source, rows) {
                 const counts = source.countsCompletion, attainment = source.attainment, evidence = source.evidence;
@@ -987,6 +1001,7 @@
                 ? 'Before you can submit, ' + blockers.join(' and ') + '.'
                 : 'Every question has an answer and every not applicable answer has an explanation. Unknown answers, and answers marked not applicable, to confirm, stay unresolved.');
             readiness.id = 'ncsc-review-readiness'; panel.append(readiness);
+            renderReviewRange(panel, rows, unanswered);
             const scope = node('section', 'ncsc-review-scope'); scope.append(node('h4', '', 'Assessment scope'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description));
             panel.append(scope);
             const list = node('ol', 'ncsc-review-list');
@@ -1016,6 +1031,49 @@
             if (allowanceExhausted()) panel.append(allowanceNote());
             panel.append(consequence, controls);
             content.append(panel);
+        }
+        // Preview of the draft only. The accepted profile weights every
+        // question 1; the submitted score always comes from the server.
+        function projectRange(rows) {
+            let lower = 0, upper = 0;
+            rows.forEach(function (row) {
+                const credit = creditUnits(row.value.optionId === 'not_applicable' ? 'unknown' : row.value.optionId, 1);
+                lower += credit.lower; upper += credit.upper;
+            });
+            return { lower: percentTenths(lower, rows.length * 2), upper: percentTenths(upper, rows.length * 2) };
+        }
+        function renderReviewRange(panel, rows, unanswered) {
+            const pendingRows = rows.filter(function (row) { return row.value.optionId === 'not_applicable'; });
+            const section = node('section', 'ncsc-review-range'); section.id = 'ncsc-review-range';
+            section.setAttribute('aria-labelledby', 'ncsc-review-range-title');
+            const heading = node('h4', '', 'Projected score range'); heading.id = 'ncsc-review-range-title'; section.append(heading);
+            const count = pendingRows.length;
+            section.append(node('p', '', count + ' pending N/A ' + (count === 1 ? 'answer' : 'answers') + ' still to confirm.'));
+            if (unanswered) {
+                section.append(node('p', '', 'The projected range appears when every question has an answer.'));
+            } else {
+                const range = projectRange(rows);
+                const shown = range.lower === range.upper ? percentDisplay(range.lower) : percentDisplay(range.lower) + '–' + percentDisplay(range.upper);
+                const value = node('p', '', 'With your current answers, reported implementation would be ' + shown + '.'); value.id = 'ncsc-review-range-value';
+                section.append(value);
+                if (count) {
+                    const widened = percentTenths(count * creditUnits('unknown', 1).upper, rows.length * 2);
+                    section.append(node('p', '', 'Pending N/A answers count as still to confirm, not as in place: they add nothing to the lower figure and full credit to the upper figure. Yours widen the range by ' +
+                        (widened / 10).toFixed(1) + ' percentage points.'));
+                }
+            }
+            if (count) {
+                section.append(node('p', '', 'N/A stays in the score unless formally approved, and N/A approval is not available in this journey yet. If you can confirm what is in place for one of these questions, change its answer to Yes, Partial or No.'));
+                const list = node('ul', 'ncsc-review-pending-list');
+                pendingRows.forEach(function (row) {
+                    const change = button('Change question ' + (row.index + 1), function () { editFromReview(row.index); }, 'dashboard-text-button');
+                    change.id = 'ncsc-review-pending-edit-' + row.question.id;
+                    const item = node('li'); item.append(change); list.append(item);
+                });
+                section.append(list);
+            }
+            section.append(node('p', 'dashboard-muted', 'This is a preview of your draft. The results page shows the figures calculated from the submitted answers.'));
+            panel.append(section);
         }
         function focusTarget(target) {
             if (!target || !live()) return;

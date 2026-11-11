@@ -2857,6 +2857,59 @@ describe('final submission review step', () => {
         } finally { ui.controller.destroy(); }
     });
 
+    test('pending N/A answers are counted, explained and shown widening the projected range that the results page then reports', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        try {
+            const plan = ['yes', 'yes', 'yes', 'yes', 'yes', 'yes', 'partial', 'partial', 'no', 'unknown', 'not_applicable', 'not_applicable', 'yes', 'yes'];
+            expect(plan).toHaveLength(questions.length);
+            plan.forEach((option, index) => choose(ui, index, option, option === 'not_applicable' ? 'Synthetic out-of-scope reason.' : undefined));
+            const before = h.calls.length;
+            control(ui, 'Review and submit').click();
+            const range = byId(ui, 'ncsc-review-range');
+            expect(range.textContent).toContain('2 pending N/A answers still to confirm.');
+            // Yes 8, Partial 2, No 1, Unknown 1, pending N/A 2: lower 18/28, upper 24/28, 20/28 without the N/A widening.
+            expect(byId(ui, 'ncsc-review-range-value').textContent).toBe('With your current answers, reported implementation would be 64.3%–85.7%.');
+            expect(range.textContent).toContain('they add nothing to the lower figure and full credit to the upper figure. Yours widen the range by 14.3 percentage points.');
+            expect(range.textContent).toContain('N/A approval is not available in this journey yet');
+            expect(range.querySelectorAll('button').map(item => item.textContent)).toEqual(['Change question 11', 'Change question 12']);
+            expect(h.calls.length).toBe(before);
+            control(ui, 'Change question 12').click();
+            expect(ui.root.querySelector('.ncsc-review')).toBeNull();
+            expect(byId(ui, 'ncsc-question-index').value).toBe('11');
+            const input = byId(ui, `ncsc-answer-${questions[11].id}-no`); input.checked = true; event(input, 'change');
+            control(ui, 'Return to review').click();
+            expect(byId(ui, 'ncsc-review-range').textContent).toContain('1 pending N/A answer still to confirm.');
+            expect(byId(ui, 'ncsc-review-range-value').textContent).toBe('With your current answers, reported implementation would be 64.3%–78.6%.');
+            expect(byId(ui, 'ncsc-review-range').textContent).toContain('Yours widen the range by 7.1 percentage points.');
+            control(ui, 'Save and submit assessment').click(); confirmSubmit(ui);
+            await until(() => ui.root.querySelector('.ncsc-result-metric'));
+            // The server evaluator's submitted result matches the preview.
+            expect(ui.root.querySelector('.ncsc-result-value').textContent).toBe('64.3%–78.6%');
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('the projected range waits for every answer and omits N/A guidance when there is none', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h);
+        try {
+            control(ui, 'Review and submit').click();
+            const range = byId(ui, 'ncsc-review-range');
+            expect(range.textContent).toContain('1 pending N/A answer still to confirm.');
+            expect(range.textContent).toContain('The projected range appears when every question has an answer.');
+            expect(byId(ui, 'ncsc-review-range-value')).toBeUndefined();
+            expect(range.querySelectorAll('button').map(item => item.textContent)).toEqual(['Change question 3']);
+        } finally { ui.controller.destroy(); }
+        const complete = await backend(); await complete.execute(createCommand()); await complete.execute(saveCommand());
+        const clean = await resumeUi(complete);
+        try {
+            control(clean, 'Review and submit').click();
+            const range = byId(clean, 'ncsc-review-range');
+            expect(range.textContent).toContain('0 pending N/A answers still to confirm.');
+            expect(byId(clean, 'ncsc-review-range-value').textContent).toBe('With your current answers, reported implementation would be 100.0%.');
+            expect(range.textContent).not.toContain('N/A approval');
+            expect(range.querySelectorAll('button')).toHaveLength(0);
+        } finally { clean.controller.destroy(); }
+    });
+
     test('a cleared saved answer is shown as unanswered and not saved yet', async () => {
         const h = await sparseDraft(), ui = await resumeUi(h);
         try {
