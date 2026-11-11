@@ -121,7 +121,7 @@ function fits(metric) {
                 const guidanceText = await guidance.textContent();
                 assert.ok(guidanceText.includes(question.guidance.summary));
                 for (const text of [...question.guidance.evidenceExamples, ...question.guidance.startingActions]) assert.ok(guidanceText.includes(text));
-                assert.ok(guidanceText.includes('Document upload is not enabled here.'));
+                assert.ok(!guidanceText.includes('Document upload'));
                 assert.deepEqual(await page.locator('.ncsc-answer input:checked').evaluateAll(inputs => inputs.map(input => input.value)), selectedBefore,
                     'Reading examples cannot choose or change an answer');
                 if (index === 1) {

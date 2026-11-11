@@ -111,14 +111,14 @@
                 message = 'This organisation picture is unavailable. Reopen your authenticated dashboard.';
             } else message = 'The saved assessment could not be confirmed. Retry to load a fresh picture.';
         }
-        function sourceDetails(inputs) {
+        function sourceDetails() {
             const provenance = node('details', 'ncsc-result-provenance');
             provenance.append(node('summary', '', 'Source and calculation details'));
             const dl = node('dl');
             const facts = [['Organisation name', organisationName], ['Saved at', detail.updatedAt],
                 ['Saved status', detail.status], ['Saved revision', String(detail.revision)],
                 ['Framework', metadata.title], ['Profile version', metadata.profileRef.profileVersion],
-                ...(inputs || [['Organisation', organisationId], ['Assessment', detail.assessmentId]])];
+                ['Organisation', organisationId], ['Assessment', detail.assessmentId]];
             facts.forEach(pair => dl.append(node('dt', '', pair[0]), node('dd', '', pair[1])));
             provenance.append(dl,
                 node('p', '', 'Refresh reloads saved assessments. It does not check whether answers still reflect the organisation today.'),
@@ -395,7 +395,6 @@
             const implementationMetric = metric('Reported implementation', result.attainment,
                 'Lower bound: reported implementation. Upper bound: uncertainty from unknown answers and pending N/A claims, not achieved performance.', true);
             const completionMetric = metric('Resolved answers', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + result.pending + ' pending N/A claims. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
-            const evidenceMetric = metric('Supporting evidence', result.substantiated, 'Coverage recorded in this saved assessment. Tested or observed coverage: ' + result.tested + '. This assessment journey does not yet accept evidence uploads or reviews. Zero coverage means evidence has not been supplied here; confidence is not assessed.');
             root.append(metrics);
             const domains = node('section', 'picture-domains');
             domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show the reported lower bound; the striped extension shows uncertainty. The range is not achieved performance.'));
@@ -446,9 +445,7 @@
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
                 ['Reported implementation gaps', ordered.filter(question => ['partial', 'no'].includes(question.responseOptionId)),
                     result.partial || result.no ? result.partial + ' partial and ' + result.no + ' absent implementations: review the relevant questions before agreeing improvements.'
-                        : 'No saved answers report partial or absent implementation. This does not establish control effectiveness.'],
-                ['Supporting-evidence gaps', ordered.filter(question => question.evidenceState === 'not_provided'),
-                    'Supporting evidence has not been supplied in this assessment. Evidence upload and review are not available here; confidence is not assessed.']
+                        : 'No saved answers report partial or absent implementation. This does not establish control effectiveness.']
             ];
             const categoryViews = categories.map(([label, questions, explanation]) => {
                 const category = node('details', 'ncsc-result-domain');
@@ -457,8 +454,7 @@
                     node('p', 'dashboard-muted', result.total === 0 ? 'No applicable question denominator is available for this category.' : explanation));
                 const items = questions.map(question => {
                     const item = node('article', 'ncsc-result-control'); item.setAttribute('data-question-id', question.itemId);
-                    item.append(node('h4', '', question.prompt), node('p', '', 'Saved answer: ' + question.answer),
-                        node('p', '', 'Supporting evidence: ' + question.evidence));
+                    item.append(node('h4', '', question.prompt), node('p', '', 'Saved answer: ' + question.answer));
                     if (question.rationale) item.append(node('p', 'ncsc-preserve-text', question.rationale));
                     const guidance = node('details'); guidance.append(node('summary', '', 'Suggested next actions and useful evidence'));
                     const actions = node('ul'), evidence = node('ul');
@@ -512,14 +508,13 @@
                 'Review ' + unresolvedAnswers + (unresolvedAnswers === 1 ? ' unresolved answer' : ' unresolved answers'));
             else completionMetric.append(node('p', 'dashboard-muted', result.total === 0
                 ? 'Unresolved answers not assessed.' : 'No unresolved answers in this saved assessment.'));
-            addReview(evidenceMetric, categoryViews[2], 'supporting-evidence-gaps', 'Review supporting-evidence gaps');
             filter.addEventListener('change', () => {
                 if (!currentFilter()) return;
                 const domain = metadata.domains.find(value => value.id === filter.value);
                 if (filter.value && !domain) return;
                 renderFilter(domain);
             });
-            follow.append(node('p', 'dashboard-muted', 'A question can appear in more than one category. Counts are not a combined total or a risk ranking. Questions follow the profile order; no action is assigned or evidence uploaded here.'));
+            follow.append(node('p', 'dashboard-muted', 'A question can appear in more than one category. Counts are not a combined total or a risk ranking. Questions follow the profile order.'));
             root.append(follow);
             const limits = node('section', 'picture-limitations');
             limits.append(node('h3', '', 'How to read this picture'), node('p', '',
@@ -532,7 +527,7 @@
                 node('p', '', 'This saved result: ' + result.lowerCreditUnits / 2 + '–' + result.upperCreditUnits / 2 + ' reported or possible credits ÷ ' + result.denominatorWeight + ' included question weights × 100 = ' + result.attainment + '. Percentages are rounded to one decimal place.'),
                 node('p', '', 'The overall result weights questions, not the five function percentages. Functions contain different numbers of questions. This is a No Fries implementation measure based on selected NCSC guidance, not an NCSC score or certification. Evidence and confidence do not increase this implementation measure.'));
             root.append(calculation);
-            root.append(sourceDetails(result.inputs));
+            root.append(sourceDetails());
             const attribution = node('p', 'dashboard-muted', metadata.attribution);
             const licence = node('a', '', 'CC BY 4.0'); licence.href = 'https://creativecommons.org/licenses/by/4.0/';
             attribution.append(licence); root.append(attribution);

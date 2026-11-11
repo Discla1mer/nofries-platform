@@ -45,7 +45,7 @@ function followUp(dom) {
 }
 function metricReviews(dom) { return dom.root.querySelector('.picture-metrics').querySelectorAll('button'); }
 
-test('connected view preserves golden server range, uncertainty and distinct evidence/completion', async () => {
+test('connected view preserves golden server range, uncertainty and completion without an always-empty evidence measure', async () => {
     const dom = setup(); await flush();
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
     assert.match(dom.root.textContent, /85\.7%/);
@@ -54,24 +54,25 @@ test('connected view preserves golden server range, uncertainty and distinct evi
     assert.match(dom.root.textContent, /2 unknown or unresolved/);
     assert.match(dom.root.textContent, /1 pending N\/A/);
     assert.match(dom.root.textContent, /not achieved performance/);
-    assert.match(dom.root.textContent, /Tested or observed coverage: 0\.0%/);
+    assert.doesNotMatch(dom.root.textContent, /Supporting evidence|Tested or observed coverage|evidence upload/i);
     assert.equal(dom.root.querySelectorAll('meter').length, dom.fixtures.metadata.domains.length);
     assert.match(dom.root.textContent, /Risk priority: not calculated/);
-    assert.equal(dom.root.querySelectorAll('.picture-metric').length, 3);
+    assert.equal(dom.root.querySelectorAll('.picture-metric').length, 2);
     assert.match(dom.root.textContent, /All 14 responses are saved/);
     assert.match(dom.root.textContent, /6.5–8.5 reported or possible credits ÷ 14/);
     assert.match(dom.root.textContent, /overall result weights questions, not the five function percentages/);
-    assert.match(dom.root.textContent, /0.*evidence|evidence has not been supplied/);
     assert.match(dom.root.textContent, /approval is not available in this journey/);
     assert.equal(dom.root.querySelectorAll('.picture-domain-detail').length, 5);
 });
 
-test('saved Overview identifies source, scope, framework, revision and output digest', async () => {
+test('saved Overview identifies source, scope, framework and revision without internal calculation digests', async () => {
     const record = mixed(), dom = setup({ records: [record] }); await flush();
     for (const value of ['Cyber baseline', 'Synthetic organisation A', record.scopePopulation.description,
         dom.fixtures.metadata.title, dom.fixtures.metadata.profileRef.profileVersion,
-        'Saved revision', record.assessmentId, record.submission.evaluation.outputSha256, 'What to do next',
+        'Saved revision', record.assessmentId, 'What to do next',
         'CC BY 4.0']) assert.ok(dom.root.textContent.includes(value), value);
+    for (const hidden of [record.submission.evaluation.outputSha256, record.submission.responseSetSha256,
+        'SHA-256', 'evaluatorSourceSha256', 'Evaluator', 'Score contract']) assert.ok(!dom.root.textContent.includes(hidden), hidden);
     assert.equal(dom.root.querySelectorAll('input').length, 0);
     assert.doesNotMatch(dom.root.textContent, /board snapshot|draft presentation|PDF export|management review/i);
     assert.ok(!dom.root.querySelectorAll('button').some(b => /board|download|export|issue/i.test(b.textContent)));
@@ -82,7 +83,6 @@ test('freshness copy distinguishes the saved baseline from a live organisation c
     assert.match(dom.root.textContent, /saved assessment of the selected scope, not a live check of connected systems/);
     assert.match(dom.root.textContent, /Refresh reloads saved assessments/);
     assert.match(dom.root.textContent, /does not check whether answers still reflect the organisation today/);
-    assert.match(dom.root.textContent, /Coverage recorded in this saved assessment/);
     assert.doesNotMatch(dom.root.textContent, /Current substantiated coverage/);
     assert.match(dom.root.querySelector('.picture-source').textContent, /Submitted .*NZ time/);
     assert.doesNotMatch(dom.root.querySelector('.picture-source').textContent, /revision|T\d\d:/);
@@ -103,9 +103,11 @@ test('the primary saved summary is concise and exact source details remain acces
     assert.equal(provenance.querySelector('summary').textContent, 'Source and calculation details');
     assert.equal(provenance.getAttribute('open'), null);
     for (const value of [record.assessmentId, record.updatedAt, 'Synthetic organisation A',
-        dom.fixtures.metadata.title, dom.fixtures.metadata.profileRef.profileVersion,
-        record.submission.evaluation.outputSha256, record.submission.responseSetSha256]) {
+        dom.fixtures.metadata.title, dom.fixtures.metadata.profileRef.profileVersion]) {
         assert.ok(provenance.textContent.includes(value), value);
+    }
+    for (const hidden of [record.submission.evaluation.outputSha256, record.submission.responseSetSha256, 'SHA-256']) {
+        assert.ok(!provenance.textContent.includes(hidden), hidden);
     }
     assert.match(provenance.textContent, /does not check whether answers still reflect the organisation today/);
     assert.match(provenance.textContent, /Scores from different scopes are not combined/);
@@ -174,12 +176,12 @@ test('same-time assessments with different scopes have recognisable picker label
     dom.controller.destroy();
 });
 
-test('three follow-up categories preserve unknown/N/A, overlapping evidence gaps and profile-ordered saved detail', async () => {
+test('two follow-up categories preserve unknown/N/A and profile-ordered saved detail without an always-full evidence list', async () => {
     const record = mixed(), dom = setup({ records: [record] }); await flush();
     const follow = dom.root.querySelector('.picture-follow-up');
     const categories = follow.children.filter(node => node.tagName === 'DETAILS');
     assert.deepEqual(categories.map(node => node.querySelector('summary').textContent),
-        ['Unresolved answers · 2', 'Reported implementation gaps · 9', 'Supporting-evidence gaps · 14']);
+        ['Unresolved answers · 2', 'Reported implementation gaps · 9']);
     const expected = options => dom.fixtures.metadata.questions.filter(question => {
         const response = record.responses.find(response => response.itemId === question.id);
         return options.includes(response.optionId);
@@ -187,12 +189,10 @@ test('three follow-up categories preserve unknown/N/A, overlapping evidence gaps
     const ids = category => category.querySelectorAll('article').map(node => node.getAttribute('data-question-id'));
     assert.deepEqual(ids(categories[0]), expected(['unknown', 'not_applicable']));
     assert.deepEqual(ids(categories[1]), expected(['partial', 'no']));
-    assert.deepEqual(ids(categories[2]), dom.fixtures.metadata.questions.map(question => question.id));
-    assert.ok(ids(categories[0]).every(id => ids(categories[2]).includes(id)));
     assert.match(categories[0].textContent, /N\/A claims remain unresolved/);
-    assert.match(categories[2].textContent, /Evidence upload and review are not available/);
+    assert.doesNotMatch(follow.textContent, /Supporting-evidence gaps|Supporting evidence:|upload/);
     assert.match(follow.textContent, /not a combined total or a risk ranking/);
-    assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:|Supporting evidence:/.test(article.textContent)));
+    assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
     assert.equal(follow.querySelectorAll('input').length, 0);
     assert.equal(follow.querySelectorAll('button').length, 0);
     dom.controller.destroy();
@@ -204,15 +204,14 @@ test('zero reported gaps are explicit and do not imply substantiated evidence or
     const follow = dom.root.querySelector('.picture-follow-up');
     const categories = follow.children.filter(node => node.tagName === 'DETAILS');
     assert.deepEqual(categories.map(node => node.querySelector('summary').textContent),
-        ['Unresolved answers · 0', 'Reported implementation gaps · 0', 'Supporting-evidence gaps · 14']);
+        ['Unresolved answers · 0', 'Reported implementation gaps · 0']);
     assert.match(categories[1].textContent, /does not establish control effectiveness/);
-    assert.match(categories[2].textContent, /confidence is not assessed/);
     const metrics = dom.root.querySelector('.picture-metrics').children;
     assert.equal(metrics[0].querySelector('button'), null);
     assert.equal(metrics[1].querySelector('button'), null);
     assert.match(metrics[0].textContent, /No reported implementation gaps in this saved assessment/);
     assert.match(metrics[1].textContent, /No unresolved answers in this saved assessment/);
-    assert.deepEqual(metricReviews(dom).map(button => button.textContent), ['Review supporting-evidence gaps']);
+    assert.deepEqual(metricReviews(dom).map(button => button.textContent), []);
     dom.controller.destroy();
 });
 
@@ -236,7 +235,8 @@ test('follow-up guidance separates next actions from evidence without changing c
     }
     assert.equal(follow.querySelectorAll('button').length, 0);
     assert.equal(follow.querySelectorAll('input').length, 0);
-    assert.match(follow.textContent, /no action is assigned or evidence uploaded here/);
+    assert.match(follow.textContent, /Questions follow the profile order\./);
+    assert.doesNotMatch(follow.textContent, /uploaded here/);
     dom.controller.destroy();
 });
 
@@ -251,7 +251,7 @@ test('legacy Board options cannot expose another presentation mode or navigation
     assert.equal(dom.root.querySelector('.picture-follow-up-filter').querySelectorAll('select').length, 1);
     assert.equal(dom.root.querySelector('label').textContent, 'Saved assessment');
     assert.deepEqual(dom.root.querySelectorAll('button').map(button => button.textContent),
-        ['Refresh', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Review supporting-evidence gaps', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
+        ['Refresh', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
     assert.equal(opened, 0);
 });
 
@@ -556,7 +556,7 @@ test('a denied list retry clears saved results and remains inert after destructi
     assert.equal(lists, 3); assert.equal(reads, 1); assert.equal(dom.root.textContent, '');
 });
 
-test('follow-up domain filtering preserves saved scores, profile order, category overlap and keyboard focus without reads or writes', async () => {
+test('follow-up domain filtering preserves saved scores, profile order and keyboard focus without reads or writes', async () => {
     const record = mixed(), saved = clone(record); let lists = 0, reads = 0, writes = 0;
     const client = { list: async () => { lists++; return { assessments: [record], nextAfterAssessmentId: null }; },
         read: async () => { reads++; return { assessment: record }; },
@@ -579,7 +579,7 @@ test('follow-up domain filtering preserves saved scores, profile order, category
     const controls = new Map(dom.fixtures.metadata.controls.map(control => [control.id, control.domainId]));
     const questionDomains = new Map(dom.fixtures.metadata.questions.map(question => [question.id, controls.get(question.controlId)]));
     categories.forEach(category => { category.open = true; });
-    originals[2][0].querySelector('details').open = true;
+    originals[1][0].querySelector('details').open = true;
     filter.focus();
     for (const domain of dom.fixtures.metadata.domains) {
         change(filter, domain.id);
@@ -591,8 +591,6 @@ test('follow-up domain filtering preserves saved scores, profile order, category
             assert.deepEqual(ids, originals[index].map(article => article.getAttribute('data-question-id')).filter(id => questionDomains.get(id) === domain.id));
             assert.equal(category.querySelector('summary').textContent, originalSummaries[index].split(' · ')[0] + ' · ' + ids.length + ' of ' + articles.length + ' shown');
         });
-        const ids = category => category.querySelectorAll('article').filter(article => !article.hidden).map(article => article.getAttribute('data-question-id'));
-        assert.ok(ids(categories[0]).every(id => ids(categories[2]).includes(id)));
         assert.ok(status.textContent.includes(domain.title));
         assert.equal(dom.root.querySelector('.picture-metrics'), metrics); assert.equal(metrics.textContent, metricText);
         assert.deepEqual(dom.root.querySelectorAll('meter').map(meter => [meter.value, meter.getAttribute('aria-valuetext')]), meters);
@@ -600,7 +598,7 @@ test('follow-up domain filtering preserves saved scores, profile order, category
     change(filter, '');
     assert.deepEqual(categories.map(category => category.querySelector('summary').textContent), originalSummaries);
     assert.ok(follow.querySelectorAll('article').every(article => !article.hidden));
-    assert.equal(originals[2][0].querySelector('details').open, true);
+    assert.equal(originals[1][0].querySelector('details').open, true);
     assert.equal(status.textContent, 'Showing all functions.');
     assert.equal(lists, 1); assert.equal(reads, 1); assert.equal(writes, 0); assert.deepEqual(record, saved);
     dom.controller.destroy();
@@ -612,12 +610,11 @@ test('domain categories explicitly show no matches without presenting empty list
     change(filter, 'guide-govern');
     assert.equal(categories[0].querySelector('summary').textContent, 'Unresolved answers · 0 of 2 shown');
     assert.equal(categories[1].querySelector('summary').textContent, 'Reported implementation gaps · 0 of 9 shown');
-    assert.equal(categories[2].querySelector('summary').textContent, 'Supporting-evidence gaps · 2 of 14 shown');
-    for (const category of categories.slice(0, 2)) {
+    assert.equal(categories.length, 2);
+    for (const category of categories) {
         const empty = category.querySelector('.picture-follow-up-empty');
         assert.equal(empty.hidden, false); assert.match(empty.textContent, /No follow-up items in this function for this category/);
     }
-    assert.equal(categories[2].querySelector('.picture-follow-up-empty').hidden, true);
     assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 unknown or unresolved/);
     const before = follow.textContent, visibility = follow.querySelectorAll('article').map(article => article.hidden);
     change(filter, 'unrecognised-domain');
@@ -701,12 +698,12 @@ test('metric review actions reveal all matching items and focus the correct nati
     const questionIds = categories.map(category => category.querySelectorAll('article').map(article => article.getAttribute('data-question-id')));
     const actions = metricReviews(dom);
     assert.deepEqual(actions.map(control => control.textContent),
-        ['Review 9 implementation gaps', 'Review 2 unresolved answers', 'Review supporting-evidence gaps']);
+        ['Review 9 implementation gaps', 'Review 2 unresolved answers']);
     let changeEvents = 0; filter.addEventListener('change', () => changeEvents++);
-    for (const [index, categoryIndex] of [[0, 1], [1, 0], [2, 2]]) {
+    for (const [index, categoryIndex] of [[0, 1], [1, 0]]) {
         const control = actions[index], category = categories[categoryIndex];
         assert.equal(control.parentElement.querySelector('h3').textContent,
-            ['Reported implementation', 'Resolved answers', 'Supporting evidence'][index]);
+            ['Reported implementation', 'Resolved answers'][index]);
         assert.equal(control.tagName, 'BUTTON'); assert.equal(control.type, 'button');
         assert.equal(control.classList.contains('dashboard-button-secondary'), true);
         assert.equal(control.getAttribute('aria-controls'), category.id);
@@ -722,7 +719,7 @@ test('metric review actions reveal all matching items and focus the correct nati
             .map(article => article.getAttribute('data-question-id'))), questionIds);
         assert.ok(categories.every(item => item.querySelector('.picture-follow-up-empty').hidden));
         assert.deepEqual(categories.map(item => item.querySelector('summary').textContent),
-            ['Unresolved answers · 2', 'Reported implementation gaps · 9', 'Supporting-evidence gaps · 14']);
+            ['Unresolved answers · 2', 'Reported implementation gaps · 9']);
         assert.equal(dom.root.querySelector('.picture-metrics').textContent, metricText);
     }
     assert.equal(lists, 1); assert.equal(reads, 1); assert.equal(writes, 0); dom.controller.destroy();
@@ -800,7 +797,7 @@ test('planning stays absent without the host callback and cannot be enabled by l
     const dom = setup(); await flush(); assert.equal(planButton(dom), undefined);
     let opened = 0; dom.options.openImprovement = () => opened++;
     click(dom, 'Refresh'); await flush(); assert.equal(planButton(dom), undefined); assert.equal(opened, 0);
-    assert.ok(dom.root.querySelectorAll('button').some(button => button.textContent === 'Review supporting-evidence gaps'));
+    assert.ok(dom.root.querySelectorAll('button').some(button => button.textContent === 'Review 2 unresolved answers'));
     dom.controller.destroy();
 });
 
