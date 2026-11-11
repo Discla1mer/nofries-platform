@@ -170,6 +170,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-summary summary { cursor: pointer; font-weight: 700; }
 .picture-summary textarea { display: block; box-sizing: border-box; width: 100%; max-width: 100%; resize: vertical; min-height: 8rem; line-height: 1.5; margin: .5rem 0; }
 .picture-summary .dashboard-button { margin: 0 .5rem .5rem 0; }
+.picture-summary-print { display: none; margin: .5rem 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+@media print { .picture-summary textarea { display: none; } .picture-summary-print { display: block; } }
 @media (max-width: 60rem) {
     .picture-metrics { grid-template-columns: minmax(0, 1fr); }
     .picture-metric h3 { min-height: 0; }

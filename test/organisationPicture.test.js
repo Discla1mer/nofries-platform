@@ -1192,7 +1192,13 @@ test('top three gaps put not-in-place answers first, then partial, in profile or
     const order = panel.querySelectorAll('section').map(node => node.className);
     assert.ok(order.indexOf('picture-top-gaps') < order.indexOf('picture-metric picture-primary'));
     assert.equal(section.getAttribute('aria-labelledby'), section.querySelector('h3').id);
-    assert.doesNotMatch(section.textContent, /certif|complian/i);
+    // The print-only copy of the shared provider summary carries the results
+    // view's own disclaimer ("not a risk ranking or certification"), so check
+    // that text exactly and the rest of the section for any such claim.
+    const printed = section.querySelector('.picture-summary-print');
+    assert.match(printed.textContent, /\nSelf-reported gaps; not a risk ranking or certification\.\n/);
+    assert.equal(printed.textContent.match(/certif|complian/gi).length, 1);
+    assert.doesNotMatch(section.textContent.replace(printed.textContent, ''), /certif|complian/i);
 });
 
 test('top gaps show fewer than three when that is all there is', async () => {
@@ -1300,6 +1306,13 @@ describe('next step under the top gaps', () => {
         assert.match(input.value, /^Cyber security assessment\nScope: Synthetic office and cloud scope\./);
         assert.doesNotMatch(input.value, /Synthetic organisation A|shared-preview-organisation|46\.4%/);
         assert.equal(handoff.querySelectorAll('a').length, 0);
+        // The scrolling field is swapped for the full text on paper, so every follow-up prints.
+        const printed = handoff.querySelector('pre');
+        assert.equal(printed.className, 'picture-summary-print'); assert.equal(printed.textContent, input.value);
+        assert.equal(printed.getAttribute('aria-hidden'), 'true');
+        const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../app/dashboard.css'), 'utf8');
+        assert.match(css, /\.picture-summary-print \{ display: none;[^}]*white-space: pre-wrap;/);
+        assert.match(css, /@media print \{ \.picture-summary textarea \{ display: none; \} \.picture-summary-print \{ display: block; \} \}/);
         assert.equal(dom.window.print, undefined);
         assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary']);
         controller.destroy();

@@ -479,9 +479,11 @@
             const label = node('label', '', 'Copy this summary into an email or document');
             const input = node('textarea', 'ncsc-textarea'); input.id = id + '-summary'; label.htmlFor = input.id;
             input.readOnly = true; input.rows = 8; input.value = questionnaire.providerSummary(detail, metadata).text;
+            // The field scrolls on screen, so paper gets the full text instead.
+            const printed = node('pre', 'picture-summary-print', input.value); printed.setAttribute('aria-hidden', 'true');
             const status = node('p', 'dashboard-muted'); status.setAttribute('role', 'status');
             const copyButton = button('Copy summary', () => questionnaire.copySummary(win, input, status));
-            copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, copyButton);
+            copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());
                 printButton.classList.add('dashboard-button-secondary'); handoff.append(printButton);
