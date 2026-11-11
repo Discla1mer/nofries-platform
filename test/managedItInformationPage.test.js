@@ -48,7 +48,8 @@ testCase('scale add-ons stay aligned with the effective policy and read as price
 
 testCase('separately scoped extras retain every public policy exclusion', () => {
     assert.deepEqual(policyItems('excluded', false), MANAGED_IT_POLICY.exclusions);
-    assert.match(text(html), /Agreed separately Large projects/);
+    assert.match(text(html), /Available by arrangement Large projects/);
+    assert.match(text(html), /A No Fries technician can do on-site work by arrangement\./);
     assert.match(text(html), /Additional needs are scoped and priced before acceptance\./);
 });
 
@@ -57,7 +58,7 @@ testCase('separate service-page links survive the dashboard-focused homepage and
     for (const href of ['/roadmap.html', '/privacy.html', '/terms.html']) {
         assert.ok(home.includes(`href="${href}"`), `homepage footer lost ${href}`);
     }
-    for (const href of ['/', '/roadmap.html', '/contact.html', '/portal', '/privacy.html', '/terms.html']) {
+    for (const href of ['/', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html']) {
         assert.ok(html.includes(`href="${href}"`), `information page lost ${href}`);
     }
     assert.match(html, /href="\/managed-it\.html" aria-current="page"/);
@@ -82,9 +83,16 @@ testCase('the enquiry action reuses the click-only shared assistant and verified
     assert.deepEqual(tierButtons, ['essentials', 'managed', 'secure']);
     assert.match(existingScope, /href="mailto:hello@nofries\.nz"/);
     assert.match(html, /href="mailto:hello@nofries\.nz">Email hello@nofries\.nz/);
-    assert.match(html, /href="\/scoping">Staff scoping workspace <span aria-hidden="true">→<\/span><\/a>/);
+    assert.doesNotMatch(html, /href="\/(?:scoping|portal)"|Staff scoping workspace|Managed-service portal/);
     assert.match(text(html), /Ask about Managed IT or discuss your service needs\./);
     assert.match(text(html), /Indicative prices are confirmed with the service scope before acceptance\./);
+});
+
+testCase('hours, backup and on-site wording agree across the page', () => {
+    const page = text(html);
+    assert.match(page, /during NZ business hours, Monday to Friday\./);
+    assert.match(page, /Microsoft 365 backup is included in Managed and Secure, and available as an add-on for Essentials\./);
+    assert.doesNotMatch(page, /\bme\b/);
 });
 
 testCase('pricing navigation describes the enquiry destination without promising a price list', () => {
