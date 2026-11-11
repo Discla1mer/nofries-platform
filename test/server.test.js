@@ -1667,7 +1667,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             userCount: 50,
             managedEndpointCount: 50,
             locationCount: 2,
-            monthlyTotalExGst: 6125,
+            monthlyTotalExGst: 5075,
             confirmed: true
         });
 
@@ -1676,7 +1676,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(word.headers['content-type']).toContain('application/msword');
         expect(word.text).toContain('Fictional Logistics Ltd');
         expect(word.text).toContain('Managed endpoint security');
-        expect(word.text).toContain('NZ$6,125 + GST per month');
+        expect(word.text).toContain('NZ$5,075 + GST per month');
         expect(word.text).toContain('Based on 50 supported people, 50 managed computers and 2 supported locations.');
         expect(word.text).toContain('Initial set-up: NZ$750 + GST.');
         expect(word.text).toContain('Proposed term: 12 months.');
