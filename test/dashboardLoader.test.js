@@ -293,7 +293,7 @@ describe('consultant client setup', () => {
             { requestId: C, organisationName: 'Saved client', status: 'pending' },
             { requestId: B, organisationName: 'Other client', status: 'pending' }
         ] } });
-        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Continue setup: Saved client').click(); await flush();
+        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Resume setup: Saved client').click(); await flush();
         expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'resume', requestId: C });
         return h;
     }
@@ -411,7 +411,7 @@ describe('consultant client setup', () => {
         const ready=h.elements.dashboardChoices.children.find(node=>node.getAttribute('data-binding-id')===A);
         const rows=h.elements.dashboardChoices.querySelectorAll('.client-workspace-row');
         expect(rows).toHaveLength(2);expect(rows.flatMap(row=>row.querySelectorAll('button'))).toHaveLength(2);
-        buttons(h).find(button=>button.getAttribute('aria-label')==='Continue setup: Saved pending client').click();await flush();
+        buttons(h).find(button=>button.getAttribute('aria-label')==='Resume setup: Saved pending client').click();await flush();
         await h.reply(3,200,{csrfToken,state:{status:'setup_read_only'}});
         expect(h.elements.dashboardChoices.querySelectorAll('.client-workspace-row')).toHaveLength(2);
         expect(rows.flatMap(row=>row.querySelectorAll('button'))).toHaveLength(0);
@@ -462,7 +462,7 @@ describe('consultant client setup', () => {
     });
     test('saved actions beyond three rows use only their authoritative request IDs', async () => {
         const h = await portfolio(), value = clientQuota(5, 3); await h.reply(2, 200, value);
-        buttons(h).find(b => b.getAttribute('aria-label') === 'Continue setup: Synthetic quota client 5').click(); await flush();
+        buttons(h).find(b => b.getAttribute('aria-label') === 'Resume setup: Synthetic quota client 5').click(); await flush();
         expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'resume', requestId: value.state.clients[4].requestId });
         await h.reply(3, 200, { csrfToken, state: { status: 'resume_acceptance' } });
         expect(h.document.getElementById('clientSetupControls').textContent).toContain('Your terms acceptance is saved');
@@ -623,7 +623,7 @@ describe('consultant client setup', () => {
     });
     test('saved client acceptance requires explicit completion bound to the response despite another busy selection', async () => {
         const h = await savedAcceptance();
-        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Continue setup: Other client').click(); await flush();
+        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Resume setup: Other client').click(); await flush();
         buttons(h).find(b => b.textContent === 'Add organisation').click(); await flush();
         expect(h.requests).toHaveLength(4);
         expect(h.document.getElementById('clientSetupControls').querySelector('form')).toBeNull();
@@ -731,6 +731,20 @@ describe('consultant client setup', () => {
         const controls = h.document.getElementById('clientSetupControls');
         expect(controls.querySelector('a').href).toBe('/login?reauthenticate=1');
         expect(controls.textContent).toContain('Sign in again'); expect(buttons(h)).toHaveLength(0);
+        const warning = Array.from(controls.querySelectorAll('p')).find(p => p.textContent.startsWith('You will be asked to sign in again.'));
+        expect(warning.textContent).toBe('You will be asked to sign in again. Afterwards you come back to your organisations to resume this step.');
+    });
+    test('draft client organisations are labelled and offer Resume', async () => {
+        const h = await portfolio();
+        await h.reply(2, 200, { csrfToken, state: { status: 'clients', remaining: 1, clients: [
+            { requestId: C, organisationName: 'Saved client', status: 'pending' },
+            { requestId: B, organisationName: 'Details client', status: 'details_required' }
+        ] } });
+        const text = h.elements.dashboardChoices.textContent;
+        expect(text).toContain('Draft, not yet set up · check terms and completion status');
+        expect(text).toContain('Draft, not yet set up · client details needed');
+        const resume = buttons(h).filter(b => b.textContent === 'Resume').map(b => b.getAttribute('aria-label'));
+        expect(resume).toEqual(['Resume setup: Saved client', 'Resume details: Details client']);
     });
     test('external consent reauthentication keeps the selected provider', async () => {
         const h = await portfolio({ external: true });
@@ -833,7 +847,7 @@ describe('consultant client setup', () => {
         const h = harness({ hash: '#organisations', provider: undefined }); await flush();
         await h.reply(0, 200, consultant()); await h.reply(1, 200, listing([A], A));
         await h.reply(2, 200, pendingClient());
-        buttons(h).find(button => button.getAttribute('aria-label') === 'Continue setup: Saved client').click(); await flush();
+        buttons(h).find(button => button.getAttribute('aria-label') === 'Resume setup: Saved client').click(); await flush();
         const original = h.requests[3].init.body;
         h.click('dashboardMore'); await flush(); expect(h.requests).toHaveLength(4);
         await h.reply(3, 503, { code: 'starter_signup_unavailable' });
@@ -886,7 +900,7 @@ describe('consultant client setup', () => {
             clients: [{ requestId: C, organisationName: 'Saved client', status: 'pending' }] } });
         expect(h.document.getElementById('clientSetupControls').querySelector('form')).toBeNull();
         expect(buttons(h).some(b => /Retry/.test(b.textContent))).toBe(false);
-        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Continue setup: Saved client').click(); await flush();
+        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Resume setup: Saved client').click(); await flush();
         expect(JSON.parse(h.requests[5].init.body)).toEqual({ action: 'resume', requestId: C });
         expect(h.requests[5].init.headers['X-CSRF-Token']).toBe(freshCsrf);
         await h.reply(5, 200, { csrfToken: freshCsrf, state: { status: 'terms', termsText: 'Current terms', scheduleText: 'Current schedule',
