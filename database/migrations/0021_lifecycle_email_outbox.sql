@@ -108,10 +108,18 @@ CREATE POLICY email_outbox_tenant ON nofries.email_outbox
     USING (tenant_id = NULLIF(current_setting('nofries.tenant_id', true), ''))
     WITH CHECK (tenant_id = NULLIF(current_setting('nofries.tenant_id', true), ''));
 -- Restrictive: runtime enqueues only fresh pending rows and may only cancel one.
+-- The supplied ids are not trusted on their own: the account, tenant and
+-- organisation must be one starter scope of the signed-in subject (0011).
 CREATE POLICY email_outbox_runtime_enqueue ON nofries.email_outbox
     AS RESTRICTIVE FOR INSERT TO nofries_runtime
     WITH CHECK (status = 'pending' AND attempts = 0 AND locked_until IS NULL AND sent_at IS NULL
-        AND last_error_code IS NULL AND provider_message_id IS NULL);
+        AND last_error_code IS NULL AND provider_message_id IS NULL
+        AND organisation_id = NULLIF(current_setting('nofries.organisation_id', true), '')
+        AND EXISTS (SELECT 1 FROM nofries.dashboard_starter_scopes s
+            WHERE s.account_id = email_outbox.account_id
+              AND s.tenant_id = email_outbox.tenant_id
+              AND s.organisation_id = email_outbox.organisation_id
+              AND s.subject_key = NULLIF(current_setting('nofries.subject_key', true), '')));
 CREATE POLICY email_outbox_runtime_cancel ON nofries.email_outbox
     AS RESTRICTIVE FOR UPDATE TO nofries_runtime
     USING (status = 'pending')

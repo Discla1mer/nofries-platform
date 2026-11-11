@@ -16,9 +16,9 @@ const ENQUEUE = `INSERT INTO nofries.email_outbox
 module.exports = function registerLifecycleEmailOutboxTests() {
 (target ? describe : describe.skip)('lifecycle email outbox and preferences (migration 0021)', () => {
     const run = crypto.randomBytes(6).toString('hex');
-    const party = label => ({ tenantId: `email-${label}-${run}`, organisationId: `email-org-${label}-${run}`,
+    const party = () => ({ tenantId: crypto.randomUUID(), organisationId: crypto.randomUUID(),
         accountId: crypto.randomUUID(), subjectKey: `${crypto.randomUUID()}:${crypto.randomUUID()}` });
-    const a = party('a'), b = party('b');
+    const a = party(), b = party();
     let pool;
 
     beforeAll(async () => {
@@ -29,6 +29,11 @@ module.exports = function registerLifecycleEmailOutboxTests() {
         for (const p of [a, b]) {
             await pool.query(`INSERT INTO nofries.dashboard_starter_accounts (account_id,email_sha256,subject_key,account_type)
                 VALUES ($1,$2,$3,'company')`, [p.accountId, crypto.randomBytes(32).toString('hex'), p.subjectKey]);
+            const preparation = { planId: 'nf-starter-2026-09-r1', kind: 'own', subjectKey: p.subjectKey, accountType: 'company',
+                scope: { tenantId: p.tenantId, organisationId: p.organisationId } };
+            await pool.query(`INSERT INTO nofries.dashboard_starter_scopes (tenant_id,organisation_id,account_id,account_type,subject_key,
+                ordinal,authority_id,binding_id,preparation) VALUES ($1,$2,$3,'company',$4,0,$5,$6,$7::jsonb)`,
+            [p.tenantId, p.organisationId, p.accountId, p.subjectKey, crypto.randomUUID(), crypto.randomUUID(), JSON.stringify(preparation)]);
         }
     });
     afterAll(async () => {
@@ -37,6 +42,7 @@ module.exports = function registerLifecycleEmailOutboxTests() {
             const ids = [a.accountId, b.accountId];
             await pool.query('DELETE FROM nofries.email_outbox WHERE account_id = ANY($1::uuid[])', [ids]);
             await pool.query('DELETE FROM nofries.email_preferences WHERE account_id = ANY($1::uuid[])', [ids]);
+            await pool.query('DELETE FROM nofries.dashboard_starter_scopes WHERE account_id = ANY($1::uuid[])', [ids]);
             await pool.query('DELETE FROM nofries.dashboard_starter_accounts WHERE account_id = ANY($1::uuid[])', [ids]);
         } finally { await pool.end(); }
     });
@@ -107,6 +113,17 @@ module.exports = function registerLifecycleEmailOutboxTests() {
         expect(await statusOf(mine)).toBe('cancelled');
         // cancelled is terminal for runtime
         expect((await runtime(a, c => c.query("UPDATE nofries.email_outbox SET status='cancelled' WHERE outbox_id=$1", [mine]))).rowCount).toBe(0);
+    });
+
+    test('runtime cannot enqueue for an account outside its own subject, tenant and organisation scope', async () => {
+        const forged = (p, account, org = p.organisationId) => runtime(p, c => c.query(ENQUEUE,
+            [crypto.randomUUID(), p.tenantId, org, account, 'welcome', `mixed-${crypto.randomUUID()}`, '{}']));
+        await expect(forged(a, b.accountId)).rejects.toMatchObject({ code: '42501' });
+        await expect(forged({ ...a, subjectKey: b.subjectKey }, a.accountId)).rejects.toMatchObject({ code: '42501' });
+        await expect(forged({ ...a, organisationId: b.organisationId }, a.accountId)).rejects.toMatchObject({ code: '42501' });
+        await expect(forged(a, a.accountId, b.organisationId)).rejects.toMatchObject({ code: '42501' });
+        expect((await pool.query('SELECT count(*)::int AS n FROM nofries.email_outbox WHERE account_id=$1 AND dedupe_key LIKE $2',
+            [b.accountId, 'mixed-%'])).rows[0].n).toBe(0);
     });
 
     test('runtime cannot set sent or any delivery column, nor enqueue a non-pending row', async () => {
