@@ -75,6 +75,9 @@ test('planned and disabled modules stay secondary with truthful state labels, in
         assert.deepEqual(moduleKeys(primary(menu)), ['overview', 'services']);
         assert.match(linkFor(other(menu), 'cyber_security').textContent, /Cyber Security.*Unavailable/);
         assert.match(linkFor(other(menu), 'ai_governance').textContent, /AI Governance and Strategy.*Coming next/);
+        assert.doesNotMatch(linkFor(other(menu), 'ai_governance').textContent, /Included/);
+        assert.equal(model.modules.find(item => item.key === 'improvement_plan').state, 'planned');
+        assert.equal(linkFor(other(menu), 'improvement_plan').querySelector('.dashboard-menu-state').textContent, 'Included · coming next');
         assert.match(linkFor(other(menu), 'board_reports').textContent, /Board Reports.*Available/);
     }
     linkFor(menus(dom)[0], 'cyber_security').click();

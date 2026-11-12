@@ -1649,7 +1649,12 @@ describe('ready Cyber composition', () => {
             await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
             h.cyberProjection = { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' };
             await h.reply(3, 200, h.cyberProjection); await h.reply(4, 200, state());
-            await ncscReply(h, 5, 200, stored.list()); await ncscReply(h, 6, 200, stored.read('assessment-plan'));
+            // With improvement actions on, Overview also reads the plan index for its Actions card.
+            const atUrl = pattern => h.requests.findIndex(item => pattern.test(item.url));
+            const index = atUrl(/^\/api\/dashboard\/improvement\/plans\?limit=/), assessments = atUrl(/^\/api\/dashboard\/ncsc\/assessments/);
+            await h.reply(index, 200, { schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId, organisationId: model.context.organisationId },
+                asOf: NOW, plans: [], nextAfterPlanId: null });
+            await ncscReply(h, assessments, 200, stored.list()); await ncscReply(h, 7, 200, stored.read('assessment-plan'));
             const record = stored.read('assessment-plan').assessment;
             const itemId = h.elements.dashboardApp.querySelector('.picture-top-gap').dataset.gapItem;
             const planId = 'overview-plan-' + record.revisionSha256;
@@ -1680,21 +1685,21 @@ describe('ready Cyber composition', () => {
             const { record, planId, view } = await planReady(h, stored);
             control(h, 'Plan this').click(); await flush();
             expect(h.elements.dashboardApp.textContent).toContain('Opening plan…');
-            expect(h.requests[7].url).toBe('/api/dashboard/improvement/view?planId=' + planId);
-            expect(h.requests[7].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
-            await h.reply(7, 404, { code: 'improvement_not_found' });
-            expect(h.requests[8].url).toBe('/api/dashboard/improvement/execute');
-            expect(h.requests[8].init.method).toBe('POST');
-            expect(JSON.parse(h.requests[8].init.body)).toEqual({ planId, type: 'generate', operationId: 'overview-plan-generate-' + record.revisionSha256,
+            expect(h.requests[8].url).toBe('/api/dashboard/improvement/view?planId=' + planId);
+            expect(h.requests[8].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+            await h.reply(8, 404, { code: 'improvement_not_found' });
+            expect(h.requests[9].url).toBe('/api/dashboard/improvement/execute');
+            expect(h.requests[9].init.method).toBe('POST');
+            expect(JSON.parse(h.requests[9].init.body)).toEqual({ planId, type: 'generate', operationId: 'overview-plan-generate-' + record.revisionSha256,
                 expectedRevision: null, actionId: null, payload: { assessmentId: record.assessmentId,
                     assessmentRevision: record.revision, assessmentRevisionSha256: record.revisionSha256 } });
-            await h.reply(8, 200, { schemaVersion: 1, plan: { planId } });
-            expect(h.requests[9].url).toBe('/api/dashboard/improvement/view?planId=' + planId);
-            await h.reply(9, 200, view);
+            await h.reply(9, 200, { schemaVersion: 1, plan: { planId } });
+            expect(h.requests[10].url).toBe('/api/dashboard/improvement/view?planId=' + planId);
+            await h.reply(10, 200, view);
             expect(h.improvementMounts).toHaveLength(1);
             expect(h.improvementMounts[0].input.initialTarget).toEqual(target(planId));
             expect(h.window.location.hash).toBe('#improvement-plan');
-            expect(h.requests[10].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
+            expect(h.requests[11].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
             h.window.dispatch('pagehide');
         });
         test('Plan this and the older create button create the same revision-derived plan ID', async () => {
@@ -1702,18 +1707,18 @@ describe('ready Cyber composition', () => {
             const first = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
             const { record, planId } = await planReady(first, stored);
             control(first, 'Plan this').click(); await flush();
-            await first.reply(7, 404, { code: 'improvement_not_found' });
-            const fromGap = JSON.parse(first.requests[8].init.body);
+            await first.reply(8, 404, { code: 'improvement_not_found' });
+            const fromGap = JSON.parse(first.requests[9].init.body);
             first.window.dispatch('pagehide');
             const second = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
             const { model } = await planReady(second, stored);
             control(second, 'Plan improvements for this assessment').click(); await flush();
-            expect(second.requests[7].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
-            await second.reply(7, 200, { schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId,
+            expect(second.requests[8].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
+            await second.reply(8, 200, { schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId,
                 organisationId: model.context.organisationId }, asOf: NOW, plans: [], nextAfterPlanId: null });
             control(second, 'Create improvement plan for this assessment').click(); await flush();
-            expect(second.requests[8].url).toBe('/api/dashboard/improvement/execute');
-            const fromButton = JSON.parse(second.requests[8].init.body);
+            expect(second.requests[9].url).toBe('/api/dashboard/improvement/execute');
+            const fromButton = JSON.parse(second.requests[9].init.body);
             expect(fromButton.planId).toBe(planId); expect(fromGap.planId).toBe(planId);
             expect(fromButton.operationId).toBe(fromGap.operationId);
             expect(planId).toBe('overview-plan-' + record.revisionSha256);
@@ -1729,11 +1734,11 @@ describe('ready Cyber composition', () => {
             control(h, 'Plan this').click(); await flush();
             const picker = h.elements.dashboardApp.querySelector('.picture-toolbar').querySelector('select');
             picker.value = 'assessment-zeta'; for (const callback of picker.events.change) callback(); await flush();
-            expect(h.requests[8].url).toBe('/api/dashboard/ncsc/assessments/assessment-zeta');
-            await h.reply(7, status, status === 200 ? view : { code: 'improvement_not_found' });
-            await ncscReply(h, 8, 200, stored.read('assessment-zeta'));
+            expect(h.requests[9].url).toBe('/api/dashboard/ncsc/assessments/assessment-zeta');
+            await h.reply(8, status, status === 200 ? view : { code: 'improvement_not_found' });
+            await ncscReply(h, 9, 200, stored.read('assessment-zeta'));
             expect(h.requests.filter(item => item.init.method === 'POST')).toHaveLength(0);
-            expect(h.requests).toHaveLength(9);
+            expect(h.requests).toHaveLength(10);
             expect(h.improvementMounts).toHaveLength(0);
             expect(h.window.location.hash).toBe('#overview');
             expect(h.elements.dashboardApp.textContent).not.toContain('Couldn\'t open the plan');
@@ -1744,7 +1749,7 @@ describe('ready Cyber composition', () => {
             const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
             const { planId, view } = await planReady(h, stored);
             control(h, 'Plan this').click(); await flush();
-            await h.reply(7, 200, view);
+            await h.reply(8, 200, view);
             expect(h.requests.filter(item => item.init.method === 'POST')).toHaveLength(0);
             expect(h.improvementMounts).toHaveLength(1);
             expect(h.improvementMounts[0].input.initialTarget).toEqual(target(planId));
@@ -1755,8 +1760,8 @@ describe('ready Cyber composition', () => {
             const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
             const { view } = await planReady(h, stored);
             control(h, 'Plan this').click(); await flush();
-            await h.reply(7, first, second === 'mismatch' ? { ...view, source: { ...view.source, assessmentId: 'other' } } : { code: 'improvement_unavailable' });
-            if (first === 404) { expect(h.requests[8].init.method).toBe('POST'); await h.reply(8, second, { code: 'improvement_access_denied' }); }
+            await h.reply(8, first, second === 'mismatch' ? { ...view, source: { ...view.source, assessmentId: 'other' } } : { code: 'improvement_unavailable' });
+            if (first === 404) { expect(h.requests[9].init.method).toBe('POST'); await h.reply(9, second, { code: 'improvement_access_denied' }); }
             expect(h.improvementMounts).toHaveLength(0);
             expect(h.status).toBe('ready');
             expect(h.window.location.hash).toBe('#overview');
@@ -3400,5 +3405,68 @@ describe('Consultant paging view', () => {
         jest.advanceTimersByTime(2000); await flush(); await h.reply(first, 200, page(rows.slice(50)));
         expect(h.status).toBe('expired'); expect(readyRows(h)).toHaveLength(0);
         expect(h.document.activeElement === h.elements.dashboardHeading).toBe(true); expect(h.requests).toHaveLength(first + 1);
+    });
+});
+
+describe('Overview Actions card', () => {
+    async function ready(h, improvement = true) {
+        await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
+        const model = JSON.parse(JSON.stringify(projection()));
+        model.modules.find(item => item.key === 'cyber_security').state = 'ready';
+        if (improvement) model.modules.find(item => item.key === 'improvement_plan').state = 'ready';
+        await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
+        await h.reply(3, 200, { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt,
+            module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] },
+            services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' });
+        await h.reply(4, 200, state());
+        return model;
+    }
+    const at = (h, pattern) => h.requests.findIndex(item => pattern.test(item.url));
+    const card = h => h.elements.dashboardApp.querySelector('.picture-actions');
+    const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+    const plans = model => ({ schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId, organisationId: model.context.organisationId },
+        asOf: NOW, plans: [{ planId: 'plan-a', planRevision: 2 }], nextAfterPlanId: null });
+    const list = { schemaVersion: 1, asOf: NOW, actions: [
+        { actionId: 'a1', status: 'open', dueDate: '2026-09-01', isOverdue: true, ownerSubjectKey: null, ownerLabel: 'Synthetic owner',
+            rationale: { suggestedAction: 'Synthetic overdue action' } },
+        { actionId: 'a2', status: 'open', dueDate: '2026-09-10', isOverdue: false, ownerSubjectKey: null,
+            rationale: { suggestedAction: 'Synthetic upcoming action' } }] };
+    test('reads plans in parallel with the assessment list through the selected generation and renders the card', async () => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        const assessments = at(h, /^\/api\/dashboard\/ncsc\/assessments/), index = at(h, /^\/api\/dashboard\/improvement\/plans\?limit=5$/);
+        expect(assessments).toBeGreaterThan(4); expect(index).toBeGreaterThan(4);
+        expect(h.requests).toHaveLength(7);
+        expect(h.requests[index].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        await h.reply(index, 200, plans(model));
+        const read = at(h, /^\/api\/dashboard\/improvement\/list\?planId=plan-a$/);
+        expect(read).toBe(7); expect(h.requests[read].init.method).toBe('GET');
+        await h.reply(read, 200, list);
+        expect(card(h).textContent).toMatch(/Overdue \(1\).*Synthetic overdue action.*Owner: Synthetic owner.*Due in the next 14 days \(1\).*Synthetic upcoming action/s);
+        await h.reply(assessments, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
+        expect(card(h)).not.toBeNull();
+        expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
+        h.window.dispatch('pagehide');
+    });
+    test.each([[503, null], [403, null], [200, 503], [200, 403]])('plans %s / list %s leaves no card and Overview intact', async (first, second) => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        const index = at(h, /improvement\/plans/);
+        await h.reply(index, first, first === 200 ? plans(model) : { code: 'improvement_list_unavailable' });
+        if (second !== null) await h.reply(at(h, /improvement\/list/), second, { code: 'improvement_list_unavailable' });
+        await h.reply(at(h, /ncsc\/assessments/), 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(card(h)).toBeNull();
+        expect(h.status).toBe('ready');
+        expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
+        expect(h.mounts[0].destroy).not.toHaveBeenCalled();
+        h.window.dispatch('pagehide');
+    });
+    test('with improvement actions off, Overview makes no improvement reads and shows no card', async () => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }); await ready(h, false);
+        expect(h.requests).toHaveLength(6);
+        expect(h.requests.some(item => item.url.includes('/improvement/'))).toBe(false);
+        await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(card(h)).toBeNull();
+        expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
+        h.window.dispatch('pagehide');
     });
 });

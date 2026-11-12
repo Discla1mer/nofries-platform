@@ -14,6 +14,7 @@
     const publicGateway = gateway ? document.getElementById('gatewayPublic') : null;
 
     const REQUEST_MS = 12000;
+    const ACTION_PLAN_LIMIT = 5;
     const MAX_RECONCILIATIONS = 2;
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
     const DIGEST = /^[0-9a-f]{64}$/;
@@ -1199,10 +1200,29 @@
                     } } : {}),
                     ...(typeof presentation.openImprovement === 'function' ? { planGap: function (sourceAssessment, itemId, stillCurrent) {
                         return openGapPlan(cycle, snapshot, presentation, sourceAssessment, itemId, stillCurrent);
-                    } } : {}) });
+                    } } : {}),
+                    ...(typeof presentation.openImprovement === 'function' && cycle.improvement
+                        ? { readActions: function () { return improvementActions(cycle, snapshot); } } : {}) });
             };
         }
         return mountCyber;
+    }
+    // Overview's Actions card. Reads only the existing plan index and list
+    // routes; any failure leaves the card absent and the rest of Overview intact.
+    async function improvementActions(cycle, snapshot) {
+        const read = async function (path) {
+            if (!current(cycle) || cycle.authorityPending) throw invalid();
+            const value = requireSuccess(await request(cycle, path, undefined, snapshot.generation));
+            if (!current(cycle) || cycle.authorityPending) throw invalid();
+            return value;
+        };
+        const page = await read('/api/dashboard/improvement/plans?limit=' + ACTION_PLAN_LIMIT);
+        if (!page || !Array.isArray(page.plans) || page.plans.length > ACTION_PLAN_LIMIT) throw invalid();
+        const lists = await Promise.all(page.plans.map(function (plan) {
+            if (!plan || typeof plan.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(plan.planId)) throw invalid();
+            return read('/api/dashboard/improvement/list?planId=' + encodeURIComponent(plan.planId));
+        }));
+        return { lists: lists, more: page.nextAfterPlanId !== null };
     }
     function improvementOptions(cycle, snapshot, organisationId) {
         const factory = window.NoFriesImprovementActionPlanClient;
