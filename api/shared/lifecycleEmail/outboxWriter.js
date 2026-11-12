@@ -5,10 +5,9 @@
 // business write that caused it. Rows carry identifiers and at most two small
 // parameters; no address, name or free text is ever stored (migration 0021).
 const crypto = require('node:crypto');
+const { TEMPLATE_VERSIONS } = require('./templateVersions');
 
 const TYPES = Object.freeze(['welcome', 'result_summary', 'nudge_unfinished', 'reassess_reminder']);
-const TEMPLATE_VERSIONS = Object.freeze({ welcome: 'welcome-v1', result_summary: 'result-summary-v1',
-    nudge_unfinished: 'nudge-unfinished-v1', reassess_reminder: 'reassess-reminder-v1' });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PARAM_KEYS = ['assessmentId', 'gapCount'];

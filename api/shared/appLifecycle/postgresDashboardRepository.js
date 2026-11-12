@@ -353,7 +353,8 @@ function createPostgresDashboardRepository(options) {
         await outbox.cancelPending(tx, { ...scope, types: ['nudge_unfinished', 'reassess_reminder'] });
         await outbox.enqueue(tx, { ...scope, type: 'result_summary', dedupeKey: version.revisionSha256, notBefore: at,
             params: { assessmentId: e.assessmentId, gapCount: counts.no + counts.partial } });
-        await outbox.enqueue(tx, { ...scope, type: 'reassess_reminder', dedupeKey: e.assessmentId,
+        // Keyed by revision, never by assessment: a cancelled row keeps its key.
+        await outbox.enqueue(tx, { ...scope, type: 'reassess_reminder', dedupeKey: version.revisionSha256,
             notBefore: new Date(Date.parse(at) + 90 * 86400000).toISOString(), params: {} });
     }
     async function executeNcscAssessment(contextInput, input) {

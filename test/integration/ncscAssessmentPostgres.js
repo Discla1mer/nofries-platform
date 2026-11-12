@@ -872,7 +872,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 template_version, params, status, not_before FROM nofries.email_outbox WHERE account_id=$1 ORDER BY email_type, dedupe_key`,
             [accountId])).rows.map(row => ({ ...row, not_before: row.not_before.toISOString() }));
             const pendingNudge = (s, key) => ownerPool.query(`INSERT INTO nofries.email_outbox (outbox_id, tenant_id, organisation_id,
-                account_id, email_type, dedupe_key, template_version) VALUES ($1,$2,$3,$4,'nudge_unfinished',$5,'nudge-unfinished-v1')`,
+                account_id, email_type, dedupe_key, template_version) VALUES ($1,$2,$3,$4,'nudge_unfinished',$5,'nudge_unfinished-v1')`,
             [crypto.randomUUID(), s.scope.tenantId, s.scope.organisationId, accountId, key]);
             const gaps = () => allResponses().map((row, index) => index < 3 ? { ...row, optionId: 'no' } : row);
             async function starterTenant() {
@@ -887,6 +887,8 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 starter = example;
                 return starter;
             }
+            const headOf = async (s, id) => (await ownerPool.query('SELECT payload_sha256 FROM nofries.dashboard_ncsc_assessments WHERE tenant_id=$1 AND assessment_id=$2',
+                [s.scope.tenantId, id])).rows[0].payload_sha256;
             async function draft(s, id) {
                 const repo = makeRepository(subjectDatabase(s.scope));
                 await repo.executeNcscAssessment(s.context, createCommand(id, `create-${id}`));
@@ -910,9 +912,9 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 const counts = submitted.assessment.submission.evaluation.countsCompletion, gapCount = counts.no + counts.partial;
                 expect(gapCount).toBeGreaterThan(0);
                 const expected = [
-                    { ...s.scope, email_type: 'reassess_reminder', dedupe_key: 'email-a', template_version: 'reassess-reminder-v1',
+                    { ...s.scope, email_type: 'reassess_reminder', dedupe_key: head, template_version: 'reassess_reminder-v1',
                         params: {}, status: 'pending', not_before: '2026-12-06T09:00:00.000Z' },
-                    { ...s.scope, email_type: 'result_summary', dedupe_key: head, template_version: 'result-summary-v1',
+                    { ...s.scope, email_type: 'result_summary', dedupe_key: head, template_version: 'result_summary-v1',
                         params: { assessmentId: 'email-a', gapCount }, status: 'pending', not_before: NOW }]
                     .map(({ tenantId, organisationId, ...row }) => ({ tenant_id: tenantId, organisation_id: organisationId, ...row }));
                 expect(await outboxRows()).toEqual(expected);
@@ -924,11 +926,23 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 const s = await starterTenant(), repo = await draft(s, 'email-b');
                 await pendingNudge(s, 'nudge-1');
                 await repo.executeNcscAssessment(s.context, submitCommand('email-b', 1, 'submit-email-b'));
+                const a = await headOf(s, 'email-a'), b = await headOf(s, 'email-b');
                 const status = Object.fromEntries((await outboxRows()).map(row => [`${row.email_type}/${row.dedupe_key}`, row.status]));
-                expect(status).toMatchObject({ 'nudge_unfinished/nudge-1': 'cancelled', 'reassess_reminder/email-a': 'cancelled',
-                    'reassess_reminder/email-b': 'pending' });
+                expect(status).toMatchObject({ 'nudge_unfinished/nudge-1': 'cancelled', [`reassess_reminder/${a}`]: 'cancelled',
+                    [`reassess_reminder/${b}`]: 'pending' });
                 expect(Object.entries(status).filter(([key]) => key.startsWith('result_summary/')).map(([, value]) => value))
                     .toEqual(['pending', 'pending']);
+            });
+
+            test('resubmitting the same assessment still leaves a pending reminder for it', async () => {
+                const s = await starterTenant(), repo = await draft(s, 'email-d');
+                await repo.executeNcscAssessment(s.context, submitCommand('email-d', 1, 'submit-email-d'));
+                // An exact retry replays; a new submit of a sealed assessment is refused. Neither loses the reminder.
+                await repo.executeNcscAssessment(s.context, submitCommand('email-d', 1, 'submit-email-d'));
+                await expect(repo.executeNcscAssessment(s.context, submitCommand('email-d', 2, 'resubmit-email-d'))).rejects.toMatchObject({ statusCode: 409 });
+                const d = await headOf(s, 'email-d');
+                expect((await outboxRows()).filter(row => row.email_type === 'reassess_reminder' && row.status === 'pending')
+                    .map(row => row.dedupe_key)).toEqual([d]);
             });
 
             test('a submit that fails after enqueueing rolls back its outbox rows and cancellations', async () => {
@@ -938,7 +952,9 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 let inside = null;
                 const failing = makeRepository(subjectDatabase(s.scope, async (sql, params, run, tx) => {
                     if (sql.startsWith('INSERT INTO nofries.dashboard_ncsc_assessment_receipts')) {
-                        inside = (await tx.query("SELECT email_type, status FROM nofries.email_outbox WHERE dedupe_key IN ('email-c','nudge-2') ORDER BY email_type")).rows;
+                        inside = (await tx.query(`SELECT email_type, status FROM nofries.email_outbox WHERE dedupe_key = 'nudge-2'
+                            OR (email_type = 'reassess_reminder' AND status = 'pending')
+                            ORDER BY email_type`)).rows;
                         throw new Error('synthetic receipt failure');
                     }
                     return run();

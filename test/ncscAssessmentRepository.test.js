@@ -1037,7 +1037,7 @@ describe('lifecycle email enqueue at submit (#151)', () => {
         expect(enqueue.mock.calls.map(call => call[1])).toEqual([
             { ...scope, type: 'result_summary', dedupeKey: version.payload_sha256, notBefore: NOW,
                 params: { assessmentId: 'assessment-a', gapCount: counts.no + counts.partial } },
-            { ...scope, type: 'reassess_reminder', dedupeKey: 'assessment-a', notBefore: '2026-12-06T09:00:00.000Z', params: {} }]);
+            { ...scope, type: 'reassess_reminder', dedupeKey: version.payload_sha256, notBefore: '2026-12-06T09:00:00.000Z', params: {} }]);
         expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(enqueue.mock.invocationCallOrder[0]);
         // Only identifiers and an integer leave the submit; never free text.
         for (const [, row] of enqueue.mock.calls) {
