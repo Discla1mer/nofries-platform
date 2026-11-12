@@ -28,7 +28,7 @@ const MANAGED_IT_POLICY = deepFreeze({
                 inheritsFromTierId: null,
                 additionalFeatures: [
                     'No Fries dashboard (users, devices, licences, security)',
-                    'AI-assisted email helpdesk, with every change approved by Joel, our founder',
+                    'AI-assisted email helpdesk, with a person approving every change before it is made',
                     'Microsoft 365 admin (new starters, leavers, passwords, licences)',
                     'A monthly plain-English summary and to-do list'
                 ]
@@ -44,7 +44,7 @@ const MANAGED_IT_POLICY = deepFreeze({
                     'Device updates and patching',
                     'Microsoft 365 backup set up and checked',
                     'Dealing with your other IT vendors',
-                    'A quarterly check-in with Joel, our founder'
+                    'A quarterly check-in'
                 ]
             },
             {
@@ -63,19 +63,20 @@ const MANAGED_IT_POLICY = deepFreeze({
         ]
     },
     includedServices: [
-        'Day-to-day support during agreed business hours',
+        'Day-to-day support during NZ business hours, Monday to Friday',
         'No Fries dashboard (users, devices, licences, security)',
-        'AI-assisted email helpdesk, with every change approved by Joel, our founder',
+        'AI-assisted email helpdesk, with a person approving every change before it is made',
         'Microsoft 365 admin (new starters, leavers, passwords, licences)',
         'A monthly plain-English summary and to-do list'
     ],
     optionalServices: [
         'Extra work computers beyond the one included per user',
-        'Extra business locations'
+        'Extra business locations',
+        'Microsoft 365 backup on Essentials, available as an add-on, quoted on request',
+        'On-site work by arrangement, quoted separately'
     ],
     exclusions: [
         'Large projects',
-        'On-site work',
         'Hardware',
         'Supplier charges',
         'Extra phone usage'

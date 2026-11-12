@@ -40,6 +40,7 @@ for (const builder of ['build-static.js', 'build-app-service.js']) {
             if (name === 'fs') return fakeFs;
             if (name === 'path' || name === 'crypto') return require(name);
             if (name === '../lib/publicAssets') return require('../lib/publicAssets');
+            if (name === '../lib/frontendReleaseInfo') return require('../lib/frontendReleaseInfo');
             if (name.endsWith('Document') || name === '../demo/try/document') return new Proxy({}, { get: () => () => ({ html: '<html></html>', contentSecurityPolicy: "default-src 'none'" }) });
             throw new Error('Unexpected build dependency: ' + name);
         }
@@ -642,7 +643,7 @@ test('the public dashboard login redirects to the single customer entry while st
     assert.match(response.headers['cache-control'], /no-store/);
     const reset = await require('supertest')(require('../server.js')).get('/forgot-password');
     assert.equal(reset.status, 302);
-    assert.equal(reset.headers.location, '/login');
+    assert.equal(reset.headers.location, '/account-help.html');
     assert.match(reset.headers['cache-control'], /no-store/);
     assert.equal(reset.headers['x-robots-tag'], 'noindex, nofollow');
 }, 20000);

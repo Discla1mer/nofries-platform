@@ -678,14 +678,14 @@ function mockReply(organisation, message, tier) {
     const pricingIntent = /\b(?:price|pricing|cost|quote|how much|monthly|per user|setup fee|set-up fee|onboarding fee)\b/.test(lower);
     let answer = '';
     if (/\b(?:what|which).*(?:include|cover|do you do)\b/.test(lower)) {
-        answer = `${MANAGED_IT_POLICY.customerFacingServiceName} starts with day-to-day support during agreed business hours, the No Fries dashboard, an AI-assisted email helpdesk with every change approved by Joel, our founder, Microsoft 365 admin and help with business email and shared work tools, plus a plain-English monthly summary and Proof every month. The Managed tier adds patching, Microsoft 365 backup and dealing with your other IT vendors, and the Secure tier adds security hardening and alerts.`;
+        answer = `${MANAGED_IT_POLICY.customerFacingServiceName} starts with day-to-day support during NZ business hours, Monday to Friday, the No Fries dashboard, an AI-assisted email helpdesk with a person approving every change before it is made, Microsoft 365 admin and help with business email and shared work tools, plus a plain-English monthly summary and Proof every month. The Managed tier adds patching, Microsoft 365 backup and dealing with your other IT vendors, and the Secure tier adds security hardening and alerts.`;
     } else if (pricingIntent) {
         const selectedTier = resolveSelectedTier(tier);
         const perUser = selectedTier ? selectedTier.perUserMonthly : MANAGED_IT_POLICY.pricing.perUserMonthly;
         const planLabel = selectedTier ? ` ${selectedTier.name}` : '';
         answer = `${MANAGED_IT_POLICY.customerFacingServiceName}${planLabel} is NZ$${perUser} + GST per user each month and includes one main work computer per user. Initial set-up starts at NZ$${MANAGED_IT_POLICY.pricing.onboardingFrom} + GST. I can prepare an indicative total once we confirm the user and device counts.`;
     } else if (/\b(?:24\/7|after hours|overnight)\b/.test(lower)) {
-        answer = 'Requests can be logged at any time. Staffed user support is during agreed business hours, and after-hours security help is included only when selected.';
+        answer = 'Requests can be logged at any time. Staffed user support is during NZ business hours, Monday to Friday, and after-hours security help is included only when selected.';
     } else if (/\b(?:ai|agent)\b/.test(lower)) {
         answer = 'No Fries handles common low-risk requests through approved steps. Higher-risk or disruptive changes need human approval, and you receive a record of what was done.';
     } else {
