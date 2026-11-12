@@ -24,7 +24,7 @@ describe('App Service runtime package', () => {
         'lib/hostStartup.js',
         'lib/publicAssets.js',
         'app/mssp.html',
-        'js/prospect-assistant.js',
+        'js/home.js',
         'images/nofrieslogo.png',
         '.well-known/security.txt'
     ])('contains required runtime path %s', (relativePath) => {

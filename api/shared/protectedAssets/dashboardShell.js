@@ -57,7 +57,10 @@
         let navigation = null;
         const generation = Object.freeze({ mount: ++mountSequence });
         const previousTitle = doc ? doc.title : '';
-        const historySession = 'nofries-dashboard-' + generation.mount;
+        const previousHistory = win && win.history && win.history.state && win.history.state.nofriesDashboard;
+        const historySession = previousHistory && previousHistory.organisationId === model.context.organisationId &&
+            typeof previousHistory.session === 'string' && /^nofries-dashboard-[0-9]+$/.test(previousHistory.session)
+            ? previousHistory.session : 'nofries-dashboard-' + generation.mount;
         const historyEntries = new Map();
         let managedHistory = (typeof options.mountCyber === 'function' || typeof options.mountPicture === 'function' ||
             typeof options.mountImprovement === 'function') && win && win.history &&
@@ -69,6 +72,14 @@
         let eventQueued = false;
         let queuedEvent = null;
         let unmanagedBoundaryHash = null;
+        // A history pointer is a read hint, never authority or saved answers.
+        const restored = win && win.history && win.history.state && win.history.state.nofriesCyber;
+        let cyberLocation = restored && restored.organisationId === model.context.organisationId &&
+            validCyberLocation(restored.location) ? restored.location : null;
+        function validCyberLocation(value) {
+            return value && typeof value.assessmentId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(value.assessmentId) &&
+                Number.isInteger(value.questionIndex) && value.questionIndex >= 0 && value.questionIndex < 14;
+        }
 
         function element(tag, className, text) {
             const node = doc.createElement(tag);
@@ -167,7 +178,9 @@
         function stateWith(entry) {
             const prior = win.history.state;
             const next = prior && typeof prior === 'object' && !Array.isArray(prior) ? Object.assign({}, prior) : {};
-            next.nofriesDashboard = { session: historySession, entry: entry.id };
+            next.nofriesDashboard = { session: historySession, entry: entry.id, organisationId: model.context.organisationId,
+                route: entry.route, position: entry.position };
+            next.nofriesCyber = entry.location ? { organisationId: model.context.organisationId, location: entry.location } : null;
             return next;
         }
         function makeEntry(route, position, hash) {
@@ -176,13 +189,23 @@
         }
         function readEntry() {
             const token = win.history.state && win.history.state.nofriesDashboard;
-            if (!token || token.session !== historySession || typeof token.entry !== 'string') return null;
-            const entry = historyEntries.get(token.entry);
+            if (!token || token.session !== historySession || token.organisationId !== model.context.organisationId ||
+                typeof token.entry !== 'string' || !/^[1-9][0-9]{0,8}$/.test(token.entry)) return null;
+            let entry = historyEntries.get(token.entry);
+            if (!entry && Number.isInteger(token.position) && token.position >= 0 && token.position <= 1000000 &&
+                registry.resolveRoute(token.route, permitted) && win.location.hash === '#' + token.route) {
+                const pointer = win.history.state.nofriesCyber;
+                entry = { id: token.entry, route: token.route, position: token.position, hash: win.location.hash,
+                    location: token.route === 'cyber-security' && pointer && pointer.organisationId === model.context.organisationId &&
+                        validCyberLocation(pointer.location) ? pointer.location : null };
+                historyEntries.set(entry.id, entry); entrySequence = Math.max(entrySequence, Number(entry.id));
+            }
             return entry && entry.hash === win.location.hash ? entry : null;
         }
         function tagInitial() {
             if (!managedHistory) return;
-            committedEntry = makeEntry(current.route, 0, win.location.hash);
+            committedEntry = readEntry() || makeEntry(current.route, 0, win.location.hash);
+            if (current.key === 'cyber_security') committedEntry.location = cyberLocation;
             observedEntry = committedEntry;
             win.history.replaceState(stateWith(committedEntry), '', win.location.hash || '#' + current.route);
             committedEntry.hash = win.location.hash;
@@ -206,11 +229,11 @@
             win.history.go(entry.position - observedEntry.position);
             return promise;
         }
-        function commitNavigation(route, changeLocation, focus, initialAssessmentId, sourceAssessment) {
+        function commitNavigation(route, changeLocation, focus, initialAssessmentId, sourceAssessment, historyTarget) {
             if (!active()) return;
             const requested = registry.resolveRoute(route, permitted);
             const target = requested || first;
-            if (child && current.key === target.key) {
+            if (child && current.key === target.key && !historyTarget) {
                 if (focus) main.querySelector('h1').focus();
                 return;
             }
@@ -220,6 +243,8 @@
             status.hidden = !!requested || !route;
             status.textContent = requested || !route ? '' : 'We could not find that view, so we have taken you to ' + target.label + '.';
             if (changeLocation && !repeatedRoute) pushEntry(current.route);
+            if (historyTarget) cyberLocation = historyTarget.location || null;
+            else if (committedEntry || current.key !== 'cyber_security') cyberLocation = null;
             render(initialAssessmentId, sourceAssessment); updateNavigation();
             if (focus) main.querySelector('h1').focus();
         }
@@ -242,7 +267,7 @@
                     if (!await travelTo(transition.target) || !active() || navigation !== transition) return false;
                     committedEntry = transition.target;
                 }
-                commitNavigation(transition.route, !transition.target && changeLocation, true, transition.assessmentId, transition.sourceAssessment);
+                commitNavigation(transition.route, !transition.target && changeLocation, true, transition.assessmentId, transition.sourceAssessment, transition.target);
                 return true;
             }
             async function decide() {
@@ -398,11 +423,25 @@
             const childRoot = element('div', 'dashboard-cyber-workspace'); main.append(childRoot);
             try {
                 const presentation = { generation: generation };
+                if (initialAssessmentId === undefined && validCyberLocation(cyberLocation)) {
+                    presentation.initialAssessmentId = cyberLocation.assessmentId;
+                    presentation.initialQuestionIndex = cyberLocation.questionIndex;
+                }
                 if (initialAssessmentId === START_NEW_ASSESSMENT) presentation.startNew = true;
                 else if (initialAssessmentId !== undefined) presentation.initialAssessmentId = initialAssessmentId;
+                let mountedChild;
+                presentation.onLocation = function (location) {
+                    if (!active() || child !== mountedChild || !managedHistory || navigation || travelling || !committedEntry ||
+                        location !== null && !validCyberLocation(location)) return;
+                    const next = location ? { assessmentId: location.assessmentId, questionIndex: location.questionIndex } : null;
+                    if (JSON.stringify(committedEntry.location || null) === JSON.stringify(next)) return;
+                    pushEntry('cyber-security');
+                    committedEntry.location = next;
+                    win.history.replaceState(stateWith(committedEntry), '', committedEntry.hash);
+                };
                 const result = options.mountCyber(childRoot, presentation);
                 if (!result || typeof result.destroy !== 'function' || typeof result.requestLeave !== 'function') throw new Error('invalid_child');
-                child = result;
+                mountedChild = result; child = result;
             } catch (error) {
                 childRoot.replaceChildren();
                 childRoot.append(element('p', '', 'The Cyber workspace could not load. Reopen it through your authenticated dashboard.'));
@@ -461,6 +500,29 @@
         }
         function handleLocation(eventType) {
             if (!active()) return;
+            if (win.location.hash === '#organisations' && typeof options.onOpenOrganisations === 'function') {
+                // The organisation chooser belongs to the authenticated host,
+                // not the module registry. Restore this view while its normal
+                // unsaved-work guard decides whether navigation can proceed.
+                if (managedHistory && committedEntry) {
+                    let entry = readEntry();
+                    if (!entry && eventType === 'hashchange' && observedEntry) {
+                        entry = makeEntry(current.route, observedEntry.position + 1, win.location.hash);
+                        win.history.replaceState(stateWith(entry), '', win.location.hash);
+                    }
+                    if (entry) {
+                        observedEntry = entry;
+                        travelTo(committedEntry).then(function (arrived) {
+                            if (arrived && active()) options.onOpenOrganisations();
+                        });
+                        return;
+                    }
+                    managedHistory = false; observedEntry = null; committedEntry = null;
+                }
+                win.history.replaceState(null, '', '#' + current.route);
+                options.onOpenOrganisations();
+                return;
+            }
             if (unmanagedBoundaryHash !== null && win.location.hash === unmanagedBoundaryHash) { unmanagedBoundaryHash = null; return; }
             unmanagedBoundaryHash = null;
             if (!managedHistory) { navigate(win.location.hash, false); main.querySelector('h1').focus(); return; }
@@ -494,6 +556,11 @@
                 return;
             }
             if (committedEntry && entry.id === committedEntry.id) return;
+            if (current.key === 'cyber_security' && entry.route === 'cyber-security' && validCyberLocation(entry.location) &&
+                child && typeof child.showQuestion === 'function' && child.showQuestion(entry.location)) {
+                committedEntry = entry;
+                return;
+            }
             navigate(entry.route, false, entry);
         }
         function locationChanged(event) {

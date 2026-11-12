@@ -81,3 +81,15 @@ test('independent client reservations compile beyond the old count without growi
     assert.equal(new Set(clients.map(p => p.slot.bindingId)).size, 6);
     assert.equal(JSON.stringify(account), before); assert.equal(account.organisations.length, 1);
 });
+test('a retained client preparation may use ordinals up to 12, never beyond (#151)', async () => {
+    const f = await fixture(), id = crypto.randomUUID;
+    const account = { ...f.account, accountType: 'consultant', activation: { subjectKey: f.source.subjectKey,
+        receiptId: id(), activatedAt: AT, validUntil: accountWindow(AT).validUntil } };
+    const slots = Array.from({ length: 12 }, (_, n) => Object.fromEntries(Object.keys(account.organisations[0]).map(k => [k,
+        k === 'kind' ? 'client' : k === 'organisationName' ? 'Synthetic client ' + n : id()])));
+    const wide = { ...account, organisations: [account.organisations[0], ...slots] }, slot = slots[11];
+    const p = compileStarterProvisioning({ account: wide, requestId: slot.requestId, source: { ...f.source, offerInput: { ...f.source.offerInput,
+        accountType: 'consultant', ...Object.fromEntries(['tenantId', 'organisationId', 'organisationName', 'grantId', 'scheduleId', 'kind'].map(k => [k, slot[k]])) } } });
+    assert.equal(p.ordinal, 12); assert.deepEqual(retainedStarterPreparation(p), p);
+    assert.throws(() => retainedStarterPreparation({ ...p, ordinal: 13 }), /starter_provisioning_invalid/);
+});

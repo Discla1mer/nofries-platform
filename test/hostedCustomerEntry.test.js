@@ -24,17 +24,14 @@ const settle = async page => {
         await new Promise(setImmediate);
     }
 };
-let builtRuntime, builtHelpRuntime, builtConfig, builtLoginSource, builtLoginHtml;
+let builtRuntime, builtConfig, builtLoginSource, builtLoginHtml;
 beforeAll(() => {
     execFileSync(process.execPath, ['scripts/build-static.js'], { cwd: root, stdio: 'pipe' });
     const html = fs.readFileSync(path.join(root, 'dist/app/signup.html'), 'utf8');
     const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
-    expect(scripts.map(script => script[1])).toEqual(['', ' id="nofriesPublicHelpRuntime"']);
+    expect(scripts.map(script => script[1])).toEqual(['']);
     builtRuntime = scripts[0][2];
-    builtHelpRuntime = scripts[1][2];
     expect(builtRuntime).toBe(prepared.runtime);
-    expect(builtHelpRuntime).toBe(fs.readFileSync(path.join(root, 'js/prospect-assistant.js'), 'utf8') +
-        '\n;\n' + fs.readFileSync(path.join(root, 'js/shared-assistant.js'), 'utf8'));
     builtConfig = JSON.parse(fs.readFileSync(path.join(root, 'dist/staticwebapp.config.json')));
     builtLoginHtml = fs.readFileSync(path.join(root, 'dist/login.html'), 'utf8');
     builtLoginSource = fs.readFileSync(path.join(root, 'dist/js/organisation-setup.js'), 'utf8');
@@ -322,14 +319,24 @@ function response(state, token) {
 const entryRuntime = kind => kind === 'hosted' ? builtRuntime : buildSignupDocument({ ...sources,
     customerLogin: true, customerTransport: 'external' }).runtime;
 test.each(['dynamic', 'hosted'].flatMap(kind => ['login', 'create'].map(intent => [kind, intent])))(
-    '%s public %s starts once after the initial fresh state without a second click', async (kind, intent) => {
+    '%s public %s keeps signup explanation visible and only auto-starts returning login', async (kind, intent) => {
         const fetch = jest.fn(async () => response({ status: 'create_account' }));
         const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=' + intent, fetch });
         try {
             await settle();
             expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/external-customer-signup/state']);
-            expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login' + (intent === 'create' ? '?intent=create' : '')]]);
-            expect(page.assign).not.toHaveBeenCalled();
+            if (intent === 'login') {
+                expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login']]);
+                expect(page.assign).not.toHaveBeenCalled();
+            } else {
+                expect(page.replace).not.toHaveBeenCalled();
+                expect(page.assign).not.toHaveBeenCalled();
+                expect(page.root.textContent).toContain('Microsoft’s secure sign-in page');
+                expect(page.root.textContent).toContain('Company to assess your own organisation');
+                page.root.querySelectorAll('button').find(node => node.textContent === 'Create account').click();
+                await settle();
+                expect(page.assign.mock.calls).toEqual([['/api/external-customer-auth/login?intent=create']]);
+            }
         } finally { page.close(); await settle(); }
     });
 
@@ -339,7 +346,7 @@ test.each(['dynamic', 'hosted'].flatMap(kind => ['login', 'create'].flatMap(inte
         const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=' + intent,
             fetch: jest.fn(async () => response({ status: 'continue_to_dashboard', accountType })) });
         try {
-            await settle(); expect(page.replace.mock.calls).toEqual([[accountType === 'consultant' ? '/dashboard#organisations' : '/dashboard']]);
+            await settle(); expect(page.replace.mock.calls).toEqual([['/dashboard']]);
             expect(page.assign).not.toHaveBeenCalled();
         } finally { page.close(); }
     });
@@ -661,13 +668,12 @@ test.each([
     expect(replace).toHaveBeenCalledWith(destination); expect(fetch).not.toHaveBeenCalled();
 });
 
-test('the real static build authorizes only its hosted selector and exact public helper', () => {
+test('the real static build authorizes only its hosted selector', () => {
     const hash = crypto.createHash('sha256').update(builtRuntime).digest('base64');
-    const helperHash = crypto.createHash('sha256').update(builtHelpRuntime).digest('base64');
     const route = builtConfig.routes.find(item => item.route === '/signup');
     expect(route.headers['Content-Security-Policy'].split(';').map(value => value.trim())
         .filter(value => /^script-src(?:\s|$)/.test(value)))
-        .toEqual(["script-src 'sha256-" + hash + "' 'sha256-" + helperHash + "'"]);
+        .toEqual(["script-src 'sha256-" + hash + "'"]);
     expect(route.headers['Content-Security-Policy']).not.toContain('unsafe-inline');
     expect(fs.readFileSync(path.join(root, 'dist/staticwebapp.config.json')).length).toBeLessThanOrEqual(20000);
 });

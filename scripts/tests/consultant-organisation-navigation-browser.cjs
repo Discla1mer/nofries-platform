@@ -29,8 +29,7 @@ const bundleFiles = ['dashboardRegistry.js', 'dashboardShell.js', 'ncscAssessmen
     'ncscQuestionnaire.js', 'organisationPicture.js'];
 const sourceFiles = ['js/dashboard-loader.js', 'app/dashboard.html', 'index.html', 'home.css', 'style.css',
     'app/dashboard.css', 'lib/dashboardDocument.js', 'lib/gatewayDocument.js', 'test/fixtures/dashboardFixture.js',
-    'js/home.js', 'js/organisation-setup.js', 'js/prospect-assistant.js',
-    'api/shared/appLifecycle/dashboardProjection.js',
+    'js/home.js', 'js/organisation-setup.js', 'api/shared/appLifecycle/dashboardProjection.js',
     ...bundleFiles.map(file => 'api/shared/protectedAssets/' + file),
     'scripts/tests/consultant-organisation-navigation-browser.cjs'];
 const hashes = () => Object.fromEntries(sourceFiles.map(file => [file, hash(read(file))]));
@@ -56,7 +55,7 @@ const staticAssets = { '/style.css': ['text/css', read('style.css')], '/home.css
     '/favicon.svg': ['image/svg+xml', read('favicon.svg')],
     '/favicon.ico': ['image/x-icon', read('favicon.ico')],
     '/apple-touch-icon.png': ['image/png', read('apple-touch-icon.png')],
-    ...Object.fromEntries(['home.js', 'organisation-setup.js', 'prospect-assistant.js']
+    ...Object.fromEntries(['home.js', 'organisation-setup.js']
         .map(file => ['/js/' + file, ['text/javascript', read('js/' + file)]])),
     '/images/nofrieslogo.png': ['image/png', read('images/nofrieslogo.png')] };
 const requests = [], blocked = [], errors = [], results = [];

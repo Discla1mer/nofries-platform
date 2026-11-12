@@ -1,14 +1,13 @@
 const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
+const { withFrontendReleaseInformation } = require('../lib/frontendReleaseInfo');
 const { buildScopingDocument } = require('../lib/scopingDocument');
 const { buildSupportDocument } = require('../lib/supportDocument');
 const { buildPortalDocument } = require('../lib/portalDocument');
 const { buildDashboardDocument } = require('../lib/dashboardDocument');
 const { buildGatewayDocument } = require('../lib/gatewayDocument');
 const { buildHostedSignupDocument } = require('../lib/signupDocument');
-const { withSharedAssistantDocument, publicAssistantPage } = require('../lib/withSharedAssistantDocument');
-const { withHashBoundSharedAssistantDocument } = require('../lib/withHashBoundSharedAssistantDocument');
 const {
     PUBLIC_ROOT_FILES,
     PUBLIC_SCRIPT_FILES
@@ -73,10 +72,9 @@ fs.writeFileSync(path.join(distDir, 'index.html'), gatewayDocument.html);
 // Fictional sales demo (#29): an unlisted, noindex link with no assistant or network access.
 const tryDemoDocument = require('../demo/try/document').buildTryDemoDocument();
 fs.writeFileSync(path.join(distDir, 'app', 'try.html'), tryDemoDocument.html);
-for (const fileName of [...PUBLIC_ROOT_FILES.filter(file => file.endsWith('.html')),
-    'app/mssp.html', 'app/support.html', 'app/portal.html', 'app/dashboard.html', 'app/operator.html']) {
+for (const fileName of PUBLIC_ROOT_FILES.filter(file => file.endsWith('.html'))) {
     const documentPath = path.join(distDir, fileName);
-    fs.writeFileSync(documentPath, withSharedAssistantDocument(fs.readFileSync(documentPath, 'utf8'), publicAssistantPage(fileName)));
+    fs.writeFileSync(documentPath, withFrontendReleaseInformation(fs.readFileSync(documentPath, 'utf8')));
 }
 
 copyIfExists(staticWebAppConfig, path.join(distDir, 'staticwebapp.config.json'));
@@ -175,14 +173,10 @@ function writeDashboardDocument() {
 }
 
 function writeSignupDocument() {
-    // Signup's hash-only policy and its helper bundle must be composed together.
-    const result = withHashBoundSharedAssistantDocument(buildHostedSignupDocument({
+    const result = buildHostedSignupDocument({
         clientSource: fs.readFileSync(path.join(rootDir, 'api/shared/customerSignup/signupClient.js'), 'utf8'),
         journeySource: fs.readFileSync(path.join(rootDir, 'api/shared/customerSignup/signupJourney.js'), 'utf8'),
         customerLogin: true
-    }), {
-        prospectSource: fs.readFileSync(path.join(rootDir, 'js/prospect-assistant.js'), 'utf8'),
-        sharedSource: fs.readFileSync(path.join(rootDir, 'js/shared-assistant.js'), 'utf8')
     });
     const shellPath = path.join(distDir, 'app', 'signup.html');
     fs.mkdirSync(path.dirname(shellPath), { recursive: true });
