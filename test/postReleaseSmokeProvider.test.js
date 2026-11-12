@@ -2,15 +2,13 @@
 const fs = require('node:fs');
 const { READ_ONLY_CHECKS, READ_ONLY_PATHS, runSmoke, formatReport } = require('../scripts/post-release-smoke');
 const { buildSignupDocument, buildHostedSignupDocument, buildSignupUnavailableDocument } = require('../lib/signupDocument');
-const { withHashBoundSharedAssistantDocument } = require('../lib/withHashBoundSharedAssistantDocument');
 const read = path => fs.readFileSync(require.resolve(path), 'utf8');
 const sources = { clientSource: read('../api/shared/customerSignup/signupClient.js'),
     journeySource: read('../api/shared/customerSignup/signupJourney.js') };
 const legacy = buildSignupDocument({ ...sources, customerLogin: true }).html;
 const external = buildSignupDocument({ ...sources, customerLogin: true, customerTransport: 'external' }).html;
-// Use the real static builder's document + assistant composition, not a hand-written detector fixture.
-const hosted = withHashBoundSharedAssistantDocument(buildHostedSignupDocument(sources), {
-    prospectSource: read('../js/prospect-assistant.js'), sharedSource: read('../js/shared-assistant.js') }).html;
+// Use the real static builder's document, not a hand-written detector fixture.
+const hosted = buildHostedSignupDocument(sources).html;
 const signup = READ_ONLY_CHECKS.find(check => check.name === 'signup starts at create_account');
 const state = status => ({ status, text: JSON.stringify({ state: { status: 'create_account' } }) });
 const check = (html, legacyStatus, externalStatus) => signup.check([{ status: 200, text: html }, state(legacyStatus), state(externalStatus)]);
