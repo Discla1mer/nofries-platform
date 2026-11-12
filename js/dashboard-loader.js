@@ -17,6 +17,7 @@
     // Fast 5xx and network failures on the opening session reads. Timeouts
     // already waited REQUEST_MS, so they are not tried again here.
     const SESSION_RETRY_MS = [1000, 2000, 4000];
+    const ACTION_PLAN_LIMIT = 5;
     const MAX_RECONCILIATIONS = 2;
     const ADD_ORG_RETURN = 'nofries-return-add-organisation';
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -1300,10 +1301,32 @@
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
                         return presentation.openImprovement(sourceAssessment);
-                    } } : {}) });
+                    } } : {}),
+                    ...(typeof presentation.openImprovement === 'function' ? { planGap: function (sourceAssessment, itemId, stillCurrent) {
+                        return openGapPlan(cycle, snapshot, presentation, sourceAssessment, itemId, stillCurrent);
+                    } } : {}),
+                    ...(typeof presentation.openImprovement === 'function' && cycle.improvement
+                        ? { readActions: function () { return improvementActions(cycle, snapshot); } } : {}) });
             };
         }
         return mountCyber;
+    }
+    // Overview's Actions card. Reads only the existing plan index and list
+    // routes; any failure leaves the card absent and the rest of Overview intact.
+    async function improvementActions(cycle, snapshot) {
+        const read = async function (path) {
+            if (!current(cycle) || cycle.authorityPending) throw invalid();
+            const value = requireSuccess(await request(cycle, path, undefined, snapshot.generation));
+            if (!current(cycle) || cycle.authorityPending) throw invalid();
+            return value;
+        };
+        const page = await read('/api/dashboard/improvement/plans?limit=' + ACTION_PLAN_LIMIT);
+        if (!page || !Array.isArray(page.plans) || page.plans.length > ACTION_PLAN_LIMIT) throw invalid();
+        const lists = await Promise.all(page.plans.map(function (plan) {
+            if (!plan || typeof plan.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(plan.planId)) throw invalid();
+            return read('/api/dashboard/improvement/list?planId=' + encodeURIComponent(plan.planId));
+        }));
+        return { lists: lists, more: page.nextAfterPlanId !== null };
     }
     function improvementOptions(cycle, snapshot, organisationId) {
         const factory = window.NoFriesImprovementActionPlanClient;
@@ -1333,6 +1356,52 @@
             cycle.workQueueTarget = null;
             return result;
         };
+    }
+    // Overview "Plan this": open the improvement editor at one gap's action.
+    // The plan and generate operation IDs derive from the submitted revision
+    // digest, so a repeat or concurrent create replays through the existing
+    // generate idempotency instead of making a second plan for that revision.
+    async function openGapPlan(cycle, snapshot, presentation, source, itemId, stillCurrent) {
+        const live = function () { return current(cycle) && !cycle.authorityPending; };
+        // The Overview selection can change while this runs. Stop silently,
+        // before creating or opening, once the clicked selection is stale.
+        const selected = function () { return live() && typeof stillCurrent === 'function' && stillCurrent() === true; };
+        if (!selected() || !source || typeof itemId !== 'string' || typeof source.revisionSha256 !== 'string' ||
+            !/^[a-f0-9]{64}$/.test(source.revisionSha256)) return false;
+        const planId = 'overview-plan-' + source.revisionSha256;
+        async function send(path, body) {
+            const result = await request(cycle, path, body, snapshot.generation);
+            if (!live()) throw invalid();
+            if (result.status === 401) { const error = invalid(); error.status = 401; failure(cycle, error); throw error; }
+            return result;
+        }
+        function view() { return send('/api/dashboard/improvement/view?planId=' + encodeURIComponent(planId)); }
+        let target = null, opened = false;
+        try {
+            let result = await view();
+            if (result.status === 404) {
+                if (!selected()) return false;
+                const created = await send('/api/dashboard/improvement/execute', { planId: planId, type: 'generate',
+                    operationId: 'overview-plan-generate-' + source.revisionSha256, expectedRevision: null, actionId: null,
+                    payload: { assessmentId: source.assessmentId, assessmentRevision: source.revision,
+                        assessmentRevisionSha256: source.revisionSha256 } });
+                // 409 can mean another session created it meanwhile: read it again.
+                if (created.status !== 200 && created.status !== 409) return false;
+                result = await view();
+            }
+            const value = result.value;
+            if (result.status !== 200 || !value || !value.scope || value.scope.planId !== planId || !value.source ||
+                value.source.assessmentId !== source.assessmentId || value.source.evaluationOutputSha256 !== source.outputSha256 ||
+                !Number.isSafeInteger(value.planRevision) || !Array.isArray(value.actions)) return false;
+            const action = value.actions.find(function (row) { return row && row.itemId === itemId; });
+            if (!action || typeof action.actionId !== 'string' || !selected()) return false;
+            target = Object.freeze({ bindingId: snapshot.selectedBindingId, planId: planId, actionId: action.actionId,
+                planRevision: value.planRevision });
+            cycle.workQueueTarget = target;
+            opened = await presentation.openImprovement(source) === true;
+        } catch (_) { opened = false; }
+        if (!opened && target && cycle.workQueueTarget === target) cycle.workQueueTarget = null;
+        return opened;
     }
     function cyberContract(value) {
         if (!fields(value, ['schemaVersion', 'context', 'generatedAt', 'module', 'summary', 'services',

@@ -876,6 +876,72 @@ test('denial and detached result controls cannot open a plan or change follow-up
     }
 });
 
+// "Plan this" on each top gap, present only when the host enables improvement actions.
+function gapPlanButtons(dom) { return dom.root.querySelectorAll('button').filter(button => button.textContent === 'Plan this'); }
+function gapPlanStatus(dom, index) { return dom.root.querySelectorAll('.picture-top-gap')[index].querySelector('.picture-gap-plan-status'); }
+
+test('Plan this appears on each top gap only when the host enables improvement actions', async () => {
+    const off = setup({ options: { openImprovement: () => true } }); await flush();
+    assert.equal(gapPlanButtons(off).length, 0); off.controller.destroy();
+    const dom = setup({ options: { planGap: async () => true } }); await flush();
+    const buttons = gapPlanButtons(dom), items = dom.root.querySelectorAll('.picture-top-gap');
+    assert.equal(buttons.length, 3);
+    buttons.forEach((button, index) => {
+        assert.equal(button.tagName, 'BUTTON'); assert.equal(button.type, 'button');
+        assert.ok(button.classList.contains('picture-gap-plan')); assert.equal(button.parentElement, items[index]);
+        assert.equal(button.getAttribute('aria-label'), 'Plan this: ' + items[index].querySelector('h4').textContent);
+        assert.equal(gapPlanStatus(dom, index).hidden, true);
+    });
+    dom.controller.destroy();
+});
+
+test('Plan this sends the exact submitted selection and the gap item, and shows progress once', async () => {
+    const record = mixed(), calls = []; let finish;
+    const client = { list: async () => ({ assessments: [record], nextAfterAssessmentId: null }), read: async () => ({ assessment: record }) };
+    const dom = setup({ client, options: { planGap: (selection, itemId, stillCurrent) => { calls.push([selection, itemId]);
+        assert.equal(stillCurrent(), true); return new Promise(done => { finish = done; }); } } });
+    await flush();
+    const items = dom.root.querySelectorAll('.picture-top-gap'), buttons = gapPlanButtons(dom);
+    buttons[1].click(); await flush();
+    assert.deepEqual(calls, [[expectedImprovementSelection(record), items[1].dataset.gapItem]]);
+    assert.equal(gapPlanStatus(dom, 1).textContent, 'Opening plan…'); assert.equal(gapPlanStatus(dom, 1).getAttribute('role'), 'status');
+    assert.equal(buttons[1].disabled, true);
+    buttons[1].click(); buttons[0].click(); await flush(); assert.equal(calls.length, 1);
+    finish(true); await flush();
+    assert.equal(gapPlanStatus(dom, 1).hidden, true); assert.equal(buttons[1].disabled, false);
+    dom.controller.destroy();
+});
+
+test('Plan this goes stale silently when the selection changes while it is pending', async () => {
+    const first = mixed(), second = buildFixtures().tenants[0].assessments.find(record => record.status === 'submitted');
+    let finish, stillCurrent;
+    const client = { list: async () => ({ assessments: [first, second], nextAfterAssessmentId: null }),
+        read: async id => ({ assessment: id === first.assessmentId ? first : second }) };
+    const dom = setup({ client, options: { initialAssessmentId: first.assessmentId,
+        planGap: (_selection, _itemId, current) => { stillCurrent = current; return new Promise(done => { finish = done; }); } } });
+    await flush(); gapPlanButtons(dom)[0].click(); await flush(); assert.equal(stillCurrent(), true);
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), second.assessmentId); await flush();
+    assert.equal(stillCurrent(), false);
+    finish(false); await flush();
+    assert.doesNotMatch(dom.root.textContent, /Couldn't open the plan|Opening plan/);
+    dom.controller.destroy();
+});
+
+test('a Plan this failure says so, keeps Overview working and can be retried', async () => {
+    for (const outcome of [false, 'reject']) {
+        let attempts = 0;
+        const dom = setup({ options: { planGap: async () => { attempts++; if (outcome === 'reject') throw new Error('synthetic'); return false; } } });
+        await flush();
+        const button = gapPlanButtons(dom)[0]; button.click(); await flush();
+        assert.equal(gapPlanStatus(dom, 0).textContent, 'Couldn\'t open the plan. Try again.');
+        assert.equal(gapPlanStatus(dom, 0).hidden, false); assert.equal(button.disabled, false);
+        assert.match(dom.root.textContent, /Your top three gaps/); assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+        assert.equal(gapPlanButtons(dom).length, 3);
+        button.click(); await flush(); assert.equal(attempts, 2);
+        dom.controller.destroy();
+    }
+});
+
 // Change over time: submitted results of the same profile, compared on request.
 function submittedAt(assessmentId, at, responses, scope = 'Synthetic office and cloud scope.') {
     const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
@@ -1347,4 +1413,98 @@ describe('next step under the top gaps', () => {
         controller.destroy(); resolve(reply(200, { available: true })); await flush();
         assert.equal(help.hidden, true);
     });
+});
+
+// Overview "Actions" card (I4): display-only over improvement/list responses.
+const ACTIONS_AS_OF = '2026-11-12T03:00:00.000Z';
+const SUBJECT_KEY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+function planAction(actionId, status, dueDate, extra = {}) {
+    return { actionId, status, dueDate, ownerSubjectKey: null, ...extra,
+        isOverdue: status !== 'completed' && dueDate !== null && dueDate < ACTIONS_AS_OF.slice(0, 10),
+        rationale: { suggestedAction: 'Synthetic action ' + actionId } };
+}
+const planList = actions => ({ schemaVersion: 1, asOf: ACTIONS_AS_OF, actions });
+function actionsCard(settings = {}) {
+    const opened = [], reads = [];
+    const readActions = settings.readActions || (() => { reads.push(1); return Promise.resolve(settings.value); });
+    const dom = setup({ ...settings, options: { openImprovement: value => opened.push(value), readActions, ...settings.options } });
+    return { ...dom, opened, reads };
+}
+
+test('Actions card shows overdue and next-14-day counts with up to three titles and label owners only', async () => {
+    const value = { more: false, lists: [planList([
+        planAction('o1', 'open', '2026-11-01', { ownerLabel: 'Aroha (office manager)' }),
+        planAction('o2', 'blocked', '2026-11-02', { ownerSubjectKey: SUBJECT_KEY }),
+        planAction('o3', 'in_progress', '2026-11-03'), planAction('o4', 'open', '2026-11-04'),
+        planAction('done', 'completed', '2026-10-01'), planAction('none', 'open', null)
+    ]), planList([
+        planAction('s1', 'open', '2026-11-12'), planAction('s2', 'open', '2026-11-26', { ownerLabel: '<b>Kiri</b>' }),
+        planAction('late', 'open', '2026-11-27')
+    ])] };
+    value.lists[0].actions[2].rationale.suggestedAction = '<img src=x onerror=alert(1)>';
+    const dom = actionsCard({ value }); await flush();
+    const card = dom.root.querySelector('.picture-actions');
+    assert.ok(card); assert.equal(dom.root.children[0], card);
+    assert.equal(card.getAttribute('aria-labelledby'), card.querySelector('h3').id);
+    assert.equal(card.querySelector('h3').textContent, 'Actions');
+    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Overdue (4)', 'Due in the next 14 days (2)']);
+    const [overdue, soon] = card.querySelectorAll('ul');
+    assert.deepEqual(overdue.querySelectorAll('.picture-action-title').map(node => node.textContent),
+        ['Synthetic action o1', 'Synthetic action o2', '<img src=x onerror=alert(1)>']);
+    assert.equal(card.querySelector('img'), null);
+    assert.deepEqual(soon.querySelectorAll('.picture-action-title').map(node => node.textContent), ['Synthetic action s1', 'Synthetic action s2']);
+    assert.match(overdue.textContent, /Due 1 Nov 2026 · Owner: Aroha \(office manager\)/);
+    assert.match(soon.textContent, /Owner: <b>Kiri<\/b>/);
+    assert.doesNotMatch(card.textContent, /aaaaaaaa|bbbbbbbb|Synthetic action (o4|done|none|late)/);
+    const link = card.querySelector('.picture-actions-plan');
+    assert.equal(link.textContent, 'View the full plan'); assert.equal(link.href, '#improvement-plan');
+    link.click(); assert.deepEqual(dom.opened, [undefined]);
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    click(dom, 'Refresh'); await flush();
+    assert.equal(dom.root.querySelectorAll('.picture-actions').length, 1);
+    dom.controller.destroy();
+});
+
+test('Actions card empty state links to the top three gaps panel', async () => {
+    const dom = actionsCard({ value: { more: false, lists: [] } }); await flush();
+    const card = dom.root.querySelector('.picture-actions');
+    assert.equal(card.querySelector('.picture-actions-empty').textContent.replace(/\s+/g, ' ').trim(),
+        'No actions yet. Start with your top three gaps.');
+    assert.equal(card.querySelector('h4'), null);
+    const link = card.querySelector('a'), heading = dom.root.querySelector('.picture-top-gaps').querySelector('h3');
+    assert.equal(link.href, '#' + heading.id);
+    link.click();
+    assert.equal(dom.document.activeElement, heading); assert.equal(heading.tabIndex, -1);
+    dom.controller.destroy();
+});
+
+test('the Actions read starts beside the assessment read and does not wait for it', async () => {
+    const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
+    const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures);
+    const inner = createClient({ metadata: fixtures.metadata, fetch: transport.fetch });
+    let release; const gate = new Promise(resolve => { release = resolve; });
+    const client = { list: async input => { await gate; return inner.list(input); }, read: (...args) => inner.read(...args) };
+    const dom = actionsCard({ client, value: { more: true, lists: [planList([planAction('o1', 'open', '2026-11-01')])] } });
+    await flush();
+    assert.equal(dom.reads.length, 1);
+    assert.match(dom.root.querySelector('.picture-actions').textContent, /Overdue \(1\).*Counts cover the first five saved plans/s);
+    release(); await flush();
+    assert.equal(dom.root.querySelectorAll('.picture-actions').length, 1);
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    dom.controller.destroy();
+});
+
+test('a failed, invalid or unavailable Actions read leaves no card and the rest of Overview intact', async () => {
+    const invalid = { more: false, lists: [planList([{ ...planAction('o1', 'open', '2026-11-01'), rationale: null }])] };
+    for (const settings of [{ readActions: () => Promise.reject(new Error('synthetic')) },
+        { readActions: () => { throw new Error('synthetic'); } }, { value: invalid }, { value: null }]) {
+        const dom = actionsCard(settings); await flush();
+        assert.equal(dom.root.querySelector('.picture-actions'), null);
+        assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+        dom.controller.destroy();
+    }
+    let called = 0;
+    const dom = setup({ options: { readActions: () => { called++; return Promise.resolve({ more: false, lists: [] }); } } }); await flush();
+    assert.equal(called, 0); assert.equal(dom.root.querySelector('.picture-actions'), null);
+    dom.controller.destroy();
 });

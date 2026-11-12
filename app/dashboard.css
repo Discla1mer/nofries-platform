@@ -159,11 +159,19 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-trend-history li { margin: .4rem 0; }
 .organisation-picture > .dashboard-button { margin-top: 1rem; }
 .picture-status { color: var(--dashboard-muted); }
+.picture-actions { background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 0 0 1.25rem; overflow-wrap: anywhere; }
+.picture-actions h3 { margin-top: 0; }
+.picture-actions h4 { margin: 1rem 0 .4rem; }
+.picture-actions-list { padding-left: 1.3rem; margin: 0; }
+.picture-action { margin: .5rem 0; }
+.picture-action-title, .picture-action-meta { display: block; }
+.picture-actions-plan { display: inline-block; margin-top: 1rem; }
 .picture-top-gaps { background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 1.25rem 0; }
 .picture-top-gaps-list { padding-left: 1.3rem; margin: 0; }
 .picture-top-gap { margin: 1rem 0 0; overflow-wrap: anywhere; }
 .picture-top-gap h4 { margin-bottom: .25rem; }
 .picture-top-gap p { margin: .25rem 0; }
+.picture-top-gap .picture-gap-plan { min-height: 44px; min-width: 44px; max-width: 100%; margin-top: .5rem; }
 .picture-next-steps { border-top: 1px solid var(--dashboard-line); margin-top: 1.25rem; padding-top: 1rem; }
 .picture-next-steps .dashboard-button { display: inline-block; max-width: 100%; text-align: center; text-decoration: none; }
 .picture-summary { margin: .75rem 0; }
@@ -228,6 +236,8 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-questionnaire textarea { display: block; width: 100%; resize: vertical; min-height: 8rem; line-height: 1.5; margin: .5rem 0; }
 .ncsc-questionnaire select { display: block; width: 100%; min-height: 3rem; margin: .5rem 0 1.5rem; }
 .ncsc-questionnaire button:disabled { cursor: default; opacity: .55; }
+.improvement-action-form label { display: block; margin: .75rem 0; }
+.improvement-action-form input { display: block; width: 100%; max-width: 24rem; box-sizing: border-box; min-height: 2.75rem; margin-top: .5rem; padding: .5rem .75rem; }
 .ncsc-questionnaire [aria-invalid="true"] { border-color: #a3352a; outline-color: #a3352a; }
 .ncsc-questionnaire a, .ncsc-questionnaire button, .ncsc-questionnaire summary { overflow-wrap: anywhere; }
 .ncsc-questionnaire :focus-visible { outline: 3px solid var(--dashboard-focus, #17140f); outline-offset: 4px; }

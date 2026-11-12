@@ -129,6 +129,19 @@ test('native discovery accepts only explicit loopback test URLs', () => {
         expect(await countFor('2026-11-05', 'visit')).toEqual([10000000]);
     });
 
+    test('two endpoint posts through the runtime writer sum to 2 for the NZ day', async () => {
+        const { createFunnelCountWriter, handleFunnelCountRequest } = require('../api/shared/funnelCounts');
+        const record = createFunnelCountWriter({ pool: runtimePool });
+        const now = () => new Date('2026-11-06T11:30:00Z');
+        for (let i = 0; i < 2; i += 1) {
+            const result = await handleFunnelCountRequest({ method: 'POST', body: { event: 'result_viewed' },
+                headers: { 'sec-fetch-site': 'same-origin' } }, { env: { NOFRIES_FUNNEL_COUNTS_ENABLED: 'true' }, record, now });
+            expect(result.status).toBe(204);
+        }
+        expect(await countFor('2026-11-07', 'result_viewed')).toEqual([2]);
+        expect(await countFor('2026-11-06', 'result_viewed')).toEqual([]);
+    });
+
     test('migrating twice is clean and records 0022 once', async () => {
         const again = await applyMigrations({ pool: ownerPool });
         expect(again.applied).toEqual([]);
