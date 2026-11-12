@@ -853,7 +853,12 @@
         }
         function renderCreate() {
             const renderedEpoch = epoch;
-            content.append(node('p', '', 'Describe the organisation, systems and people covered, for example Whole organisation. This is your declaration, not verified inventory. It cannot be changed after creation. To assess a different scope later, start a new assessment.'));
+            content.append(node('p', '', 'Describe what this assessment covers. Use separate lines for people, devices, sites and services, and say what is excluded. This is your declaration, not verified inventory. It cannot be changed after creation. To correct a mistake later, start a new assessment with the corrected scope.'));
+            const scopeExamples = node('ul', 'ncsc-scope-examples');
+            ['People: all staff, including contractors.', 'Devices: company laptops and phones.',
+                'Sites and services: Auckland office, remote work and Microsoft 365.',
+                'Excluded: personal devices not used for work.'].forEach(function (text) { scopeExamples.append(node('li', '', text)); });
+            content.append(scopeExamples);
             const label = node('label', '', 'Assessment scope'); label.setAttribute('for', 'ncsc-scope');
             const input = node('textarea', 'ncsc-textarea'); input.id = 'ncsc-scope'; input.value = declaration; input.rows = 5; input.readOnly = busy || !!pending;
             input.setAttribute('aria-describedby', 'ncsc-scope-help'); input.required = true;
@@ -883,7 +888,8 @@
             const renderedEpoch = epoch;
             const sealed = acknowledged.status === 'submitted';
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
-            const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description)); content.append(declarationPanel);
+            const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description),
+                node('p', 'dashboard-muted', 'Answer every question for this scope. If it contains a mistake, go Back to assessments and start a new assessment with the corrected scope; this saved declaration stays with its original answers.')); content.append(declarationPanel);
             if (sealed) {
                 const sealedNote = node('p', 'ncsc-sealed', 'Submitted ' + localDate(acknowledged.submission.submittedAt) + '. Your results are below, followed by your read-only answers.');
                 sealedNote.id = 'ncsc-sealed'; content.append(sealedNote);
