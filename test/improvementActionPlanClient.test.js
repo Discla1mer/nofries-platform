@@ -229,11 +229,25 @@ test('explicit generation sends the exact submitted revision and independent IDs
         return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
     } });
     await h.controller.ready; expect(await h.controller.generate()).toBe(true);
-    expect(h.request.mock.calls[1]).toEqual(['/api/dashboard/improvement/execute', { planId: 'generated-1', type: 'generate',
-        operationId: 'generated-2', expectedRevision: null, actionId: null,
+    const planId = 'overview-plan-' + selected.revisionSha256;
+    expect(h.request.mock.calls[1]).toEqual(['/api/dashboard/improvement/execute', { planId, type: 'generate',
+        operationId: 'overview-plan-generate-' + selected.revisionSha256, expectedRevision: null, actionId: null,
         payload: { assessmentId: selected.assessmentId, assessmentRevision: selected.revision, assessmentRevisionSha256: selected.revisionSha256 } }]);
-    expect(h.request.mock.calls[2]).toEqual(['/api/dashboard/improvement/view?planId=generated-1']);
-    expect(h.root.textContent).toContain('Improvement action plan'); expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(h.request.mock.calls[2]).toEqual(['/api/dashboard/improvement/view?planId=' + planId]);
+    expect(h.root.textContent).toContain('Improvement action plan'); expect(h.options.newId).not.toHaveBeenCalled();
+});
+
+test('a generate conflict opens the plan already saved for this revision instead of making another', async () => {
+    const selected = source(), planId = 'overview-plan-' + selected.revisionSha256;
+    const h = harness({ options: { sourceAssessment: selected }, respond(path, body, state) {
+        if (path.includes('/plans?')) return { status: 200, value: page([]) };
+        if (path.endsWith('/execute')) { state.plans.set(planId, seed(planId)); return { status: 409, value: { code: 'improvement_operation_conflict' } }; }
+        return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
+    } });
+    await h.controller.ready; expect(await h.controller.generate()).toBe(true);
+    expect(h.request.mock.calls.filter(call => call[0].endsWith('/execute'))).toHaveLength(1);
+    expect(h.request.mock.calls[2]).toEqual(['/api/dashboard/improvement/view?planId=' + planId]);
+    expect(h.root.textContent).toContain('Improvement action plan');
 });
 
 test('uncertain writes retain their exact immutable command for explicit retry and hold shell leave', async () => {
@@ -250,9 +264,9 @@ test('uncertain writes retain their exact immutable command for explicit retry a
     await h.controller.ready; expect(await h.controller.generate()).toBe(false);
     expect(h.root.textContent).toContain('outcome is unconfirmed'); expect(h.root.textContent).not.toContain('PRIVATE');
     const leave = jest.fn(); expect(await h.controller.requestLeave(leave)).toBe(false); expect(leave).not.toHaveBeenCalled();
-    expect(await h.controller.generate()).toBe(false); expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(await h.controller.generate()).toBe(false); expect(h.options.newId).not.toHaveBeenCalled();
     expect(button(h, 'Retry pending improvement command')).toBeDefined();
-    expect(await h.controller.retry()).toBe(true); expect(attempts).toBe(2); expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(await h.controller.retry()).toBe(true); expect(attempts).toBe(2); expect(h.options.newId).not.toHaveBeenCalled();
     expect(await h.controller.requestLeave(leave)).toBe(true); expect(leave).toHaveBeenCalledTimes(1);
 });
 
@@ -276,7 +290,7 @@ test.each([408, 429])('an unexpected %i response after plan creation retains the
     expect(await h.controller.requestLeave(jest.fn())).toBe(false);
     expect(await h.controller.generate()).toBe(false);
     expect(await h.controller.retry()).toBe(true);
-    expect(attempts).toBe(2); expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(attempts).toBe(2); expect(h.options.newId).not.toHaveBeenCalled();
     expect(h.state.plans.size).toBe(2); // The fixture's existing plan plus the single created plan.
 });
 
@@ -399,7 +413,7 @@ test.each([503, 'malformed'])('unconfirmed %s acknowledgement retains the origin
     expect(await h.controller.requestLeave(jest.fn())).toBe(false);
     expect(await h.controller.refresh()).toBe(false); expect(h.request).toHaveBeenCalledTimes(count);
     expect(await h.controller.retry()).toBe(false); expect(h.request.mock.calls.at(-1)[1]).toBe(posted);
-    expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(h.options.newId).not.toHaveBeenCalled();
 });
 
 test('definite rejected generation releases its retry identity and shell leave without claiming a saved plan', async () => {

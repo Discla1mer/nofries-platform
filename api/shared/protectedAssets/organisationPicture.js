@@ -477,19 +477,22 @@
             const token = epoch, binding = sourceBinding();
             const status = node('p', 'picture-gap-plan-status'); status.setAttribute('role', 'status'); status.hidden = true;
             const action = button('Plan this', () => {
-                if (gapPlan && gapPlan.status === 'opening' || !currentSubmitted(token, binding, action)) return;
+                if (gapPlan && gapPlan.token === epoch && gapPlan.status === 'opening' || !currentSubmitted(token, binding, action)) return;
                 const selection = improvementSelection(); if (!selection) return;
-                const attempt = gapPlan = { binding, itemId: gap.itemId, status: 'opening', view: { action, status } };
+                const attempt = gapPlan = { token, binding, itemId: gap.itemId, status: 'opening', view: { action, status } };
                 paintGapPlan(attempt);
+                // A different selection, refresh or denial makes the attempt stale:
+                // the host stops before creating or opening, and nothing is shown.
+                const stillCurrent = () => gapPlan === attempt && live(token) && !denied;
                 const settle = opened => {
-                    if (gapPlan !== attempt || !live()) return;
+                    if (!stillCurrent()) { if (gapPlan === attempt) gapPlan = null; return; }
                     if (opened === true) gapPlan = null;
                     attempt.status = opened === true ? '' : 'failed'; paintGapPlan(attempt);
                 };
-                Promise.resolve().then(() => planGap(selection, gap.itemId)).then(settle, () => settle(false));
+                Promise.resolve().then(() => planGap(selection, gap.itemId, stillCurrent)).then(settle, () => settle(false));
             });
             action.classList.add('picture-gap-plan'); action.setAttribute('aria-label', 'Plan this: ' + gap.title);
-            if (gapPlan && gapPlan.binding === binding && gapPlan.itemId === gap.itemId) { gapPlan.view = { action, status }; paintGapPlan(gapPlan); }
+            if (gapPlan && gapPlan.token === token && gapPlan.binding === binding && gapPlan.itemId === gap.itemId) { gapPlan.view = { action, status }; paintGapPlan(gapPlan); }
             return [action, status];
         }
         // Copy or print reuses the results view's summary and copy behaviour.

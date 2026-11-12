@@ -1656,7 +1656,7 @@ describe('ready Cyber composition', () => {
             const view = { schemaVersion: 1, scope: { planId }, planRevision: 2,
                 source: { assessmentId: record.assessmentId, evaluationOutputSha256: record.submission.evaluation.outputSha256 },
                 actions: [{ actionId: 'action:other', itemId: 'other-item' }, { actionId: 'action:gap', itemId }] };
-            return { record, itemId, planId, view };
+            return { record, itemId, planId, view, model };
         }
         async function submitted() {
             const stored = await records();
@@ -1695,6 +1695,48 @@ describe('ready Cyber composition', () => {
             expect(h.improvementMounts[0].input.initialTarget).toEqual(target(planId));
             expect(h.window.location.hash).toBe('#improvement-plan');
             expect(h.requests[10].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
+            h.window.dispatch('pagehide');
+        });
+        test('Plan this and the older create button create the same revision-derived plan ID', async () => {
+            const stored = await submitted();
+            const first = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { record, planId } = await planReady(first, stored);
+            control(first, 'Plan this').click(); await flush();
+            await first.reply(7, 404, { code: 'improvement_not_found' });
+            const fromGap = JSON.parse(first.requests[8].init.body);
+            first.window.dispatch('pagehide');
+            const second = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { model } = await planReady(second, stored);
+            control(second, 'Plan improvements for this assessment').click(); await flush();
+            expect(second.requests[7].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
+            await second.reply(7, 200, { schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId,
+                organisationId: model.context.organisationId }, asOf: NOW, plans: [], nextAfterPlanId: null });
+            control(second, 'Create improvement plan for this assessment').click(); await flush();
+            expect(second.requests[8].url).toBe('/api/dashboard/improvement/execute');
+            const fromButton = JSON.parse(second.requests[8].init.body);
+            expect(fromButton.planId).toBe(planId); expect(fromGap.planId).toBe(planId);
+            expect(fromButton.operationId).toBe(fromGap.operationId);
+            expect(planId).toBe('overview-plan-' + record.revisionSha256);
+            second.window.dispatch('pagehide');
+        });
+        test.each([404, 200])('a selection change while Plan this is pending (%s) creates and opens nothing', async status => {
+            const stored = await submitted();
+            stored.execute(createCommand('assessment-zeta', 'create-zeta', 'Synthetic second scope.'));
+            stored.execute(saveCommand('assessment-zeta', 0, 'save-zeta', allResponses().map((row, index) => ({ ...row, optionId: index < 3 ? 'partial' : 'yes' }))));
+            stored.execute(submitCommand('assessment-zeta', 1, 'submit-zeta'));
+            const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { view } = await planReady(h, stored);
+            control(h, 'Plan this').click(); await flush();
+            const picker = h.elements.dashboardApp.querySelector('.picture-toolbar').querySelector('select');
+            picker.value = 'assessment-zeta'; for (const callback of picker.events.change) callback(); await flush();
+            expect(h.requests[8].url).toBe('/api/dashboard/ncsc/assessments/assessment-zeta');
+            await h.reply(7, status, status === 200 ? view : { code: 'improvement_not_found' });
+            await ncscReply(h, 8, 200, stored.read('assessment-zeta'));
+            expect(h.requests.filter(item => item.init.method === 'POST')).toHaveLength(0);
+            expect(h.requests).toHaveLength(9);
+            expect(h.improvementMounts).toHaveLength(0);
+            expect(h.window.location.hash).toBe('#overview');
+            expect(h.elements.dashboardApp.textContent).not.toContain('Couldn\'t open the plan');
             h.window.dispatch('pagehide');
         });
         test('opens an existing plan at that gap without creating another', async () => {

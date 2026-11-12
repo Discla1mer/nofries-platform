@@ -1197,8 +1197,8 @@
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
                         return presentation.openImprovement(sourceAssessment);
                     } } : {}),
-                    ...(typeof presentation.openImprovement === 'function' ? { planGap: function (sourceAssessment, itemId) {
-                        return openGapPlan(cycle, snapshot, presentation, sourceAssessment, itemId);
+                    ...(typeof presentation.openImprovement === 'function' ? { planGap: function (sourceAssessment, itemId, stillCurrent) {
+                        return openGapPlan(cycle, snapshot, presentation, sourceAssessment, itemId, stillCurrent);
                     } } : {}) });
             };
         }
@@ -1237,9 +1237,12 @@
     // The plan and generate operation IDs derive from the submitted revision
     // digest, so a repeat or concurrent create replays through the existing
     // generate idempotency instead of making a second plan for that revision.
-    async function openGapPlan(cycle, snapshot, presentation, source, itemId) {
+    async function openGapPlan(cycle, snapshot, presentation, source, itemId, stillCurrent) {
         const live = function () { return current(cycle) && !cycle.authorityPending; };
-        if (!live() || !source || typeof itemId !== 'string' || typeof source.revisionSha256 !== 'string' ||
+        // The Overview selection can change while this runs. Stop silently,
+        // before creating or opening, once the clicked selection is stale.
+        const selected = function () { return live() && typeof stillCurrent === 'function' && stillCurrent() === true; };
+        if (!selected() || !source || typeof itemId !== 'string' || typeof source.revisionSha256 !== 'string' ||
             !/^[a-f0-9]{64}$/.test(source.revisionSha256)) return false;
         const planId = 'overview-plan-' + source.revisionSha256;
         async function send(path, body) {
@@ -1253,6 +1256,7 @@
         try {
             let result = await view();
             if (result.status === 404) {
+                if (!selected()) return false;
                 const created = await send('/api/dashboard/improvement/execute', { planId: planId, type: 'generate',
                     operationId: 'overview-plan-generate-' + source.revisionSha256, expectedRevision: null, actionId: null,
                     payload: { assessmentId: source.assessmentId, assessmentRevision: source.revision,
@@ -1266,7 +1270,7 @@
                 value.source.assessmentId !== source.assessmentId || value.source.evaluationOutputSha256 !== source.outputSha256 ||
                 !Number.isSafeInteger(value.planRevision) || !Array.isArray(value.actions)) return false;
             const action = value.actions.find(function (row) { return row && row.itemId === itemId; });
-            if (!action || typeof action.actionId !== 'string') return false;
+            if (!action || typeof action.actionId !== 'string' || !selected()) return false;
             target = Object.freeze({ bindingId: snapshot.selectedBindingId, planId: planId, actionId: action.actionId,
                 planRevision: value.planRevision });
             cycle.workQueueTarget = target;

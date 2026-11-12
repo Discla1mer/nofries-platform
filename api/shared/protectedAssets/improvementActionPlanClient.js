@@ -467,6 +467,7 @@
                     // Unexpected intermediary responses do not establish that the
                     // write failed. Retain its identity, as for a lost response.
                     if ([400, 401, 403, 404, 405, 409, 413].includes(result.status)) pending = null;
+                    if (result.status === 409 && captured.type === 'generate') { generatedPlanId = captured.planId; busy = false; return readView(captured.planId); }
                     if (result.status === 409) {
                         staleDraft = draft !== null; editor = null;
                         message = draft ? 'Plan changed; cancel these changes and refresh.' : 'Plan changed. Refresh the saved plan before making another update.';
@@ -487,7 +488,10 @@
         function generate() {
             if (!active() || busy || pending || draft || !initialSource || scope === null) return Promise.resolve(false);
             try {
-                const planId = identifier(newId()), operationId = identifier(newId()); if (planId === operationId) invalid();
+                // Same revision-derived IDs as Overview's "Plan this": one plan per
+                // submitted revision, and a repeat create replays idempotently.
+                const planId = identifier('overview-plan-' + initialSource.revisionSha256);
+                const operationId = identifier('overview-plan-generate-' + initialSource.revisionSha256);
                 pending = command({ planId, type: 'generate', operationId, expectedRevision: null, actionId: null,
                     payload: { assessmentId: initialSource.assessmentId, assessmentRevision: initialSource.revision,
                         assessmentRevisionSha256: initialSource.revisionSha256 } });

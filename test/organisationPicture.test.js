@@ -898,7 +898,8 @@ test('Plan this appears on each top gap only when the host enables improvement a
 test('Plan this sends the exact submitted selection and the gap item, and shows progress once', async () => {
     const record = mixed(), calls = []; let finish;
     const client = { list: async () => ({ assessments: [record], nextAfterAssessmentId: null }), read: async () => ({ assessment: record }) };
-    const dom = setup({ client, options: { planGap: (selection, itemId) => { calls.push([selection, itemId]); return new Promise(done => { finish = done; }); } } });
+    const dom = setup({ client, options: { planGap: (selection, itemId, stillCurrent) => { calls.push([selection, itemId]);
+        assert.equal(stillCurrent(), true); return new Promise(done => { finish = done; }); } } });
     await flush();
     const items = dom.root.querySelectorAll('.picture-top-gap'), buttons = gapPlanButtons(dom);
     buttons[1].click(); await flush();
@@ -908,6 +909,21 @@ test('Plan this sends the exact submitted selection and the gap item, and shows 
     buttons[1].click(); buttons[0].click(); await flush(); assert.equal(calls.length, 1);
     finish(true); await flush();
     assert.equal(gapPlanStatus(dom, 1).hidden, true); assert.equal(buttons[1].disabled, false);
+    dom.controller.destroy();
+});
+
+test('Plan this goes stale silently when the selection changes while it is pending', async () => {
+    const first = mixed(), second = buildFixtures().tenants[0].assessments.find(record => record.status === 'submitted');
+    let finish, stillCurrent;
+    const client = { list: async () => ({ assessments: [first, second], nextAfterAssessmentId: null }),
+        read: async id => ({ assessment: id === first.assessmentId ? first : second }) };
+    const dom = setup({ client, options: { initialAssessmentId: first.assessmentId,
+        planGap: (_selection, _itemId, current) => { stillCurrent = current; return new Promise(done => { finish = done; }); } } });
+    await flush(); gapPlanButtons(dom)[0].click(); await flush(); assert.equal(stillCurrent(), true);
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), second.assessmentId); await flush();
+    assert.equal(stillCurrent(), false);
+    finish(false); await flush();
+    assert.doesNotMatch(dom.root.textContent, /Couldn't open the plan|Opening plan/);
     dom.controller.destroy();
 });
 
