@@ -197,3 +197,16 @@ test('reader cursor and final ownership checks reject changed or foreign pages w
     // Accounts do not expire: existing clients stay listable after the recorded period.
     assert.equal((await h.allocator.listClients({},{})).clients.length, 1);
 });
+test('a consultant record holds up to 12 client reservations; the allocator still stops at 3 (#151)', async () => {
+    const { CLIENT_RESERVATION_CEILING } = require('../api/shared/customerSignup/starterAccountAllocation');
+    const h = harness(), active = await h.active(), own = active.organisations[0];
+    const withClients = count => ({ ...active, organisations: [own, ...Array.from({ length: count }, (_, n) => Object.fromEntries(
+        Object.keys(own).map(k => [k, k === 'kind' ? 'client' : k === 'organisationName' ? 'Client ' + n : crypto.randomUUID()])))] });
+    assert.equal(CLIENT_RESERVATION_CEILING, 12);
+    assert.equal(starterAccountRecord(withClients(12)).organisations.length, 13);
+    assert.ok(Buffer.byteLength(JSON.stringify(withClients(12))) < 16384);
+    assert.throws(() => starterAccountRecord(withClients(13)), /starter_record_invalid/);
+    assert.throws(() => starterAccountRecord({ ...withClients(1), accountType: 'company' }), /starter_record_invalid/);
+    for (let n = 0; n < 3; n++) await h.allocator.reserveClient({}, h.client('Client ' + n));
+    await assert.rejects(h.allocator.reserveClient({}, h.client('Fourth client')), /starter_client_limit/);
+});
