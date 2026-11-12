@@ -149,7 +149,6 @@ describe('dynamic host route and disclosure boundary', () => {
         '/favicon.svg',
         '/images/nofrieslogo.png',
         '/js/home.js',
-        '/js/prospect-assistant.js',
         '/assets/mssp.css',
         '/assets/support.css',
         '/assets/operator.css',

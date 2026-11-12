@@ -26,8 +26,7 @@ const gateway = buildGatewayDocument({ customerLogin: true, template: read('inde
     protectedAppSource: bundleFiles.map(file => read('api/shared/protectedAssets/' + file + '.js')).join('\n') });
 const signup = buildHostedSignupDocument({ clientSource: read('api/shared/customerSignup/signupClient.js'),
     journeySource: read('api/shared/customerSignup/signupJourney.js') });
-const assets = ['style.css', 'home.css', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js',
-    'images/nofrieslogo.png', 'favicon.svg'];
+const assets = ['style.css', 'home.css', 'js/organisation-setup.js', 'js/home.js', 'images/nofrieslogo.png', 'favicon.svg'];
 const sources = [...changed, 'lib/signupDocument.js', 'lib/gatewayDocument.js', 'js/dashboard-loader.js',
     'api/shared/customerSignup/signupClient.js', 'scripts/tests/account-actions-browser.cjs'];
 const hashes = () => Object.fromEntries(sources.map(file => [file, createHash('sha256').update(read(file)).digest('hex')]));
