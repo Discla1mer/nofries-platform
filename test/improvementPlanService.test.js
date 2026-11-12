@@ -95,9 +95,13 @@ test('command and selector envelopes are closed at every nested boundary', () =>
         command('start', { ownerSubjectKey: OWNER }), command('block', { reason: 'Blocked.', admin: true }),
         command('complete', { note: 'Done.' }), command('reopen', { reason: 'Again.', at: NOW }),
         command('assign', { ownerSubjectKey: OWNER, dueDate: '2026-02-30' }),
-        command('assign', { ownerSubjectKey: 'untrusted-user', dueDate: '2026-10-01' })]) {
+        command('assign', { ownerSubjectKey: 'untrusted-user', dueDate: '2026-10-01' }),
+        command('assign', { ownerLabel: 'ops@example.invalid', dueDate: '2026-10-01' }),
+        command('assign', { ownerLabel: 'Ops', ownerSubjectKey: OWNER, dueDate: '2026-10-01' })]) {
         expectInputInvalid(() => normaliseImprovementCommand(input));
     }
+    expect(normaliseImprovementCommand(command('assign', { ownerLabel: ' Ops\nlead ', dueDate: '2026-10-01' })).payload)
+        .toEqual({ ownerLabel: 'Ops lead', dueDate: '2026-10-01' });
     for (const key of Object.keys(generate())) {
         const input = generate(); delete input[key];
         expectInputInvalid(() => normaliseImprovementCommand(input));

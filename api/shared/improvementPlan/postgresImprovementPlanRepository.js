@@ -114,9 +114,11 @@ function createPostgresImprovementPlanRepository(options) {
                     let state, domainCommand = null;
                     if (generate) state = store.seed(intent, at, evaluatorInput);
                     else {
-                        owner = command.type === 'assign' ? command.payload.ownerSubjectKey :
-                            retained.result.plan.actions.find(action => action.actionId === command.actionId)?.ownerSubjectKey;
-                        ownerRequired = ['assign', 'start', 'complete'].includes(command.type);
+                        const target = command.type === 'assign' ? command.payload :
+                            retained.result.plan.actions.find(action => action.actionId === command.actionId);
+                        owner = target?.ownerSubjectKey;
+                        // Free-text owner labels have no membership to check.
+                        ownerRequired = ['assign', 'start', 'complete'].includes(command.type) && !Object.hasOwn(target || {}, 'ownerLabel');
                         if (ownerRequired) resolveEligibleOwner(current, context, owner, at);
                         domainCommand = store.domainCommand(intent, at, retained.state.source.evaluationOutputSha256);
                         try {
@@ -133,7 +135,7 @@ function createPostgresImprovementPlanRepository(options) {
                     if (audit) await auditCommand(context, at, now);
                     const finalAt = now();
                     access(current, context, 'improvement.write', finalAt, generate);
-                    if (['assign', 'start', 'complete'].includes(command.type)) resolveEligibleOwner(current, context, owner, finalAt);
+                    if (ownerRequired) resolveEligibleOwner(current, context, owner, finalAt);
                     return record.result;
                 }, at => {
                     // A paired native host samples these source-specific facts

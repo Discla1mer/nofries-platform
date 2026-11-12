@@ -9,7 +9,7 @@ const read = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
 const hrefs = html => [...html.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]);
 const MAIN = ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/login?intent=login'];
 const FOOTER = ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html'];
-const PAGES = ['index.html', 'roadmap.html', 'pricing.html', 'managed-it.html', 'contact.html', 'privacy.html', 'terms.html', 'pilot-terms.html', '404.html', 'error.html'];
+const PAGES = ['index.html', 'roadmap.html', 'pricing.html', 'sample-result.html', 'managed-it.html', 'contact.html', 'privacy.html', 'terms.html', 'pilot-terms.html', '404.html', 'error.html'];
 
 test.each(PAGES)('%s uses the shared main and footer links', name => {
     const html = read(name);

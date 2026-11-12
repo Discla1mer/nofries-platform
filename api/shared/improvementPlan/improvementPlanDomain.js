@@ -62,7 +62,7 @@ function getImprovementPlanView(stateInput) {
         priority: { status: 'not_calculated', reason: 'priority_adapter_required' },
         actions: [...actions.values()], counts: {
             total: actions.size,
-            unassigned: [...actions.values()].filter(action => action.ownerSubjectKey === null).length,
+            unassigned: [...actions.values()].filter(action => !assigned(action)).length,
             completed: [...actions.values()].filter(action => action.status === 'completed').length
         } });
 }
@@ -83,10 +83,11 @@ function applyImprovementActionCommand(stateInput, commandInput, trustedContextI
         return freeze(state);
     }
     if (state.commands.length >= 1024) fail('history_limit', 409);
-    const owner = command.type === 'assign' ? command.payload.ownerSubjectKey :
-        actions.get(command.actionId)?.ownerSubjectKey;
-    if (['assign', 'start', 'complete'].includes(command.type) &&
-        !context.eligibleOwnerSubjectKeys.includes(owner)) fail('owner_ineligible', 409);
+    const target = command.type === 'assign' ? command.payload : actions.get(command.actionId);
+    // Free-text owner labels name a person outside the platform: no membership
+    // to check, and they grant nothing.
+    if (['assign', 'start', 'complete'].includes(command.type) && !Object.hasOwn(target || {}, 'ownerLabel') &&
+        !context.eligibleOwnerSubjectKeys.includes(target?.ownerSubjectKey)) fail('owner_ineligible', 409);
     apply(state, actions, command, state.commands.length,
         state.commands.length ? state.commands[state.commands.length - 1].at : state.createdAt);
     // Enforce the same plain-data byte envelope before returning a state that a
@@ -135,7 +136,9 @@ function commandValue(input) {
     SCOPE.forEach(key => id(row[key])); digest(row.evaluationOutputSha256);
     id(row.actionId); id(row.operationId); subject(row.actorSubjectKey); instant(row.at);
     if (!Number.isSafeInteger(row.expectedRevision) || row.expectedRevision < 0) fail('revision_invalid');
-    if (row.type === 'assign') {
+    if (row.type === 'assign' && row.payload && typeof row.payload === 'object' && Object.hasOwn(row.payload, 'ownerLabel')) {
+        fields(row.payload, ['ownerLabel', 'dueDate']); row.payload.ownerLabel = ownerLabel(row.payload.ownerLabel); date(row.payload.dueDate);
+    } else if (row.type === 'assign') {
         fields(row.payload, ['ownerSubjectKey', 'dueDate']); subject(row.payload.ownerSubjectKey); date(row.payload.dueDate);
     } else if (row.type === 'block') {
         fields(row.payload, ['reason']); note(row.payload.reason);
@@ -156,15 +159,19 @@ function apply(state, actions, command, revision, previousAt) {
     if (!action) fail('action_not_found', 404);
     if (command.type === 'assign') {
         if (action.status === 'completed') fail('transition_invalid', 409);
-        action.ownerSubjectKey = command.payload.ownerSubjectKey; action.dueDate = command.payload.dueDate;
+        // ownerLabel is only present once set, so pre-label revisions replay to
+        // byte-identical views and their retained result digests still match.
+        action.ownerSubjectKey = command.payload.ownerSubjectKey ?? null; delete action.ownerLabel;
+        if (Object.hasOwn(command.payload, 'ownerLabel')) action.ownerLabel = command.payload.ownerLabel;
+        action.dueDate = command.payload.dueDate;
     } else if (command.type === 'start') {
-        if (!['open', 'blocked'].includes(action.status) || !action.ownerSubjectKey || !action.dueDate) fail('transition_invalid', 409);
+        if (!['open', 'blocked'].includes(action.status) || !assigned(action) || !action.dueDate) fail('transition_invalid', 409);
         action.status = 'in_progress'; action.blockedReason = null;
     } else if (command.type === 'block') {
         if (action.status !== 'in_progress') fail('transition_invalid', 409);
         action.status = 'blocked'; action.blockedReason = command.payload.reason;
     } else if (command.type === 'complete') {
-        if (!['in_progress', 'blocked'].includes(action.status) || !action.ownerSubjectKey || !action.dueDate) fail('transition_invalid', 409);
+        if (!['in_progress', 'blocked'].includes(action.status) || !assigned(action) || !action.dueDate) fail('transition_invalid', 409);
         action.status = 'completed'; action.blockedReason = null;
         action.completion = { ...command.payload, completedAt: command.at, completedBy: command.actorSubjectKey,
             evidenceVerification: 'not_verified' };
@@ -174,6 +181,19 @@ function apply(state, actions, command, revision, previousAt) {
     }
 }
 
+function assigned(action) { return action.ownerSubjectKey !== null || Object.hasOwn(action, 'ownerLabel'); }
+// One line, NFKC-normalised, control, bidi and zero-width characters collapsed, 1-80
+// characters, never an email address, and never a reserved owner filter value.
+const RESERVED_OWNER_LABELS = new Set(['all', 'unassigned']);
+function ownerLabel(value) {
+    if (typeof value !== 'string') fail('owner_label_invalid');
+    const label = value.normalize('NFKC')
+        .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]+/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+    if (!label || label.length > 80 || label.includes('@') ||
+        RESERVED_OWNER_LABELS.has(label.toLowerCase())) fail('owner_label_invalid');
+    return label;
+}
 function assertBinding(state, command) {
     if (SCOPE.some(key => state[key] !== command[key]) ||
         state.source.evaluationOutputSha256 !== command.evaluationOutputSha256) fail('scope_mismatch', 404);
@@ -225,4 +245,4 @@ function freeze(value) {
     return value;
 }
 
-module.exports = { ImprovementPlanError, createImprovementPlan, getImprovementPlanView, applyImprovementActionCommand };
+module.exports = { ImprovementPlanError, createImprovementPlan, getImprovementPlanView, applyImprovementActionCommand, normaliseOwnerLabel: ownerLabel };

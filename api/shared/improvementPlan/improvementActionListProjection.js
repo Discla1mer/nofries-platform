@@ -1,7 +1,7 @@
 'use strict';
 
 const { copy, fields, freeze, instant, subject } = require('../appLifecycle/dashboardRuntimeRecords');
-const { getImprovementPlanView } = require('./improvementPlanDomain');
+const { getImprovementPlanView, normaliseOwnerLabel } = require('./improvementPlanDomain');
 const STATUSES = Object.freeze(['open', 'in_progress', 'blocked', 'completed']);
 const SCOPE = Object.freeze(['tenantId', 'organisationId', 'planId']);
 class ImprovementActionListError extends Error {
@@ -20,20 +20,26 @@ function optionsValue(input) {
         instant(options.asOf);
         const filters = fields(options.filters, ['status', 'owner', 'overdueOnly']);
         if (!['all', ...STATUSES].includes(filters.status) || typeof filters.overdueOnly !== 'boolean') throw new Error();
-        if (!['all', 'unassigned'].includes(filters.owner)) subject(filters.owner);
+        if (!['all', 'unassigned'].includes(filters.owner)) {
+            try { subject(filters.owner); } catch { if (normaliseOwnerLabel(filters.owner) !== filters.owner) throw new Error(); }
+        }
         return options;
     } catch { fail('improvement_list_input_invalid', 400); }
 }
 function eventDetails(command) {
     const payload = command.payload;
-    if (command.type === 'assign') return { ownerSubjectKey: payload.ownerSubjectKey, dueDate: payload.dueDate };
+    if (command.type === 'assign') return Object.hasOwn(payload, 'ownerLabel')
+        ? { ownerLabel: payload.ownerLabel, dueDate: payload.dueDate }
+        : { ownerSubjectKey: payload.ownerSubjectKey, dueDate: payload.dueDate };
     if (command.type === 'block' || command.type === 'reopen') return { reason: payload.reason };
     if (command.type === 'complete') return { note: payload.note, evidenceReference: payload.evidenceReference,
         evidenceVerification: 'not_verified', durableLinkStatus: 'not_established' };
     return {};
 }
+// ownerLabel appears only on label-owned rows, matching the domain view.
+const assigned = row => row.ownerSubjectKey !== null || Object.hasOwn(row, 'ownerLabel');
 function counts(rows) {
-    return { total: rows.length, unassigned: rows.filter(row => row.ownerSubjectKey === null).length,
+    return { total: rows.length, unassigned: rows.filter(row => !assigned(row)).length,
         overdue: rows.filter(row => row.isOverdue).length,
         byStatus: Object.fromEntries(STATUSES.map(status => [status, rows.filter(row => row.status === status).length])) };
 }
@@ -54,7 +60,9 @@ function projectImprovementActionList(stateInput, optionsInput) {
         at: command.at, type: command.type, details: eventDetails(command) }));
     const rows = view.actions.map(action => ({ actionId: action.actionId, itemId: action.itemId,
         controlId: action.controlId, domainId: action.domainId, status: action.status,
-        ownerSubjectKey: action.ownerSubjectKey, ownerEligibility: 'not_checked', dueDate: action.dueDate,
+        ownerSubjectKey: action.ownerSubjectKey,
+        ...(Object.hasOwn(action, 'ownerLabel') ? { ownerLabel: action.ownerLabel } : {}),
+        ownerEligibility: 'not_checked', dueDate: action.dueDate,
         isOverdue: action.status !== 'completed' && action.dueDate !== null && action.dueDate < day,
         blockedReason: action.blockedReason,
         rationale: { kind: action.kind, response: action.response, responseOrigin: action.responseOrigin,
@@ -72,7 +80,8 @@ function projectImprovementActionList(stateInput, optionsInput) {
     });
     const filters = options.filters;
     const visible = rows.filter(row => (filters.status === 'all' || row.status === filters.status) &&
-        (filters.owner === 'all' || (filters.owner === 'unassigned' ? row.ownerSubjectKey === null : row.ownerSubjectKey === filters.owner)) &&
+        (filters.owner === 'all' || (filters.owner === 'unassigned' ? !assigned(row)
+            : row.ownerSubjectKey === filters.owner || row.ownerLabel === filters.owner)) &&
         (!filters.overdueOnly || row.isOverdue));
     return freeze({ schemaVersion: 1, scope: options.scope, planRevision: view.revision,
         updatedAt: view.updatedAt, asOf: options.asOf, dueDateBasis: 'UTC_calendar_day',

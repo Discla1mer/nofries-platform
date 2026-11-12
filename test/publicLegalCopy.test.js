@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const read = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
 const ids = html => [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
-const PAGES = ['index.html', 'roadmap.html', 'pricing.html', 'managed-it.html', 'contact.html', 'privacy.html', 'terms.html', 'pilot-terms.html', '404.html', 'error.html', 'login.html', 'scope.html', 'report.html'];
+const PAGES = ['index.html', 'roadmap.html', 'pricing.html', 'sample-result.html', 'managed-it.html', 'contact.html', 'privacy.html', 'terms.html', 'pilot-terms.html', '404.html', 'error.html', 'login.html', 'scope.html', 'report.html'];
 
 test('customer terms stay separate from pilot terms and keep the operative limits', () => {
     const terms = read('terms.html');
