@@ -58,6 +58,7 @@ const { createEnquiryService } = require('./api/shared/enquiry');
 const { errorResult: enquiryErrorResult } = require('./api/enquiry');
 const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
+const { createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest } = require('./api/shared/funnelCounts');
 const { logSafeFailure: logStaffAuthFailure } = require('./api/shared/browserAuthDiagnostics');
 const { createAuthLoginFunction } = require('./api/authLogin');
 const { createAuthCallbackFunction } = require('./api/authCallback');
@@ -115,7 +116,7 @@ function createNoFriesApp(configuration = {}) {
         return Object.freeze({ request: invocation.request, signal: AbortSignal.any([signal, invocation.signal]) });
     };
     let dashboardAdminSignupListService = null, dashboardAdminAccountActions = null, dashboardAdminAccountLookup = null;
-    let dashboard = null, customerSignup = null, externalCustomerSignup = null, authEnvironment = null, retainedTrialRead = null, dashboardAdminService = null, dashboardAdminRequestBudgetMs = 10000;
+    let funnelPool = null, dashboard = null, customerSignup = null, externalCustomerSignup = null, authEnvironment = null, retainedTrialRead = null, dashboardAdminService = null, dashboardAdminRequestBudgetMs = 10000;
     try {
         if (!configuration || typeof configuration !== 'object' || isProxy(configuration)) throw new Error();
         const keys = Reflect.ownKeys(configuration);
@@ -139,6 +140,7 @@ function createNoFriesApp(configuration = {}) {
             if (!authKeys.includes('env')) throw new Error();
             authEnvironment = dashboardEnvironmentSnapshot(auth.env);
             snapshot.browserAuthOptions = Object.freeze({ ...auth, env: authEnvironment });
+            funnelPool = snapshot.pool || null;
             dashboard = createDashboardRuntimeHandlers(Object.freeze(snapshot));
         }
         if (keys.includes('dashboardAdmin') && configuration.dashboardAdmin !== null) {
@@ -613,6 +615,20 @@ for (const [prefix, setup, customerAuth, signup] of [
         originalUrl: req.originalUrl.replace(prefix, '/api/organisation-setup'), headers: req.headers, body: req.body,
         clientKey: getClientKeyFromHeaders(req.headers, req.ip) });
     entryResponse(result);
+}));
+// Flag off keeps the retired 410 before any body is read. Flag on accepts only
+// a 64-byte {event} POST and writes one aggregate daily count (issue #151).
+const recordFunnelCount = funnelPool ? createFunnelCountWriter({ pool: funnelPool }) : null;
+app.all('/api/telemetry', (req, res, next) => funnelCountsEnabled(apiEnvironment) ? next()
+    : sendResult(res, { status: 410, body: { error: 'Public acquisition telemetry is disabled', code: 'telemetry_disabled' } }),
+express.json({ limit: 64 }), asyncRoute(async (req, res) => {
+    const result = await handleFunnelCountRequest(req, { env: apiEnvironment, record: recordFunnelCount,
+        clientKey: req.ip || req.socket.remoteAddress, log: console });
+    if (result.status === 204) {
+        Object.entries(result.headers).forEach(([name, value]) => res.setHeader(name, value));
+        return res.status(204).end();
+    }
+    sendResult(res, result);
 }));
 app.use(express.json({ limit: '3mb' }));
 if (configuration.signupBootstrap) {
