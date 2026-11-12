@@ -1003,3 +1003,68 @@ describe('NCSC assessment durable facade contract', () => {
         expect((await h.list(1)).nextAfterAssessmentId).toBe('assessment-a');
     }, 90000);
 });
+
+describe('lifecycle email enqueue at submit (#151)', () => {
+    const outbox = require('../api/shared/lifecycleEmail/outboxWriter');
+    const ACCOUNT = '20000000-0000-4000-8000-000000000001';
+    const FLAG = 'NOFRIES_LIFECYCLE_EMAIL_ENQUEUE_ENABLED';
+    let enqueue, cancel;
+    beforeEach(() => {
+        enqueue = jest.spyOn(outbox, 'enqueue').mockResolvedValue(true);
+        cancel = jest.spyOn(outbox, 'cancelPending').mockResolvedValue(0);
+    });
+    afterEach(() => { delete process.env[FLAG]; jest.restoreAllMocks(); });
+    const starter = () => memoryDatabase({ dashboard_starter_scopes: [{ tenant_id: 'synthetic-ncsc-tenant',
+        organisation_id: 'shared-organisation', account_id: ACCOUNT, activation: { synthetic: true } }] });
+    const starterReads = h => h.memory.queries.filter(row => row.sql.includes('dashboard_starter_scopes'));
+
+    test.each([undefined, 'TRUE', '1', 'true '])('flag %p leaves submit with no outbox calls', async value => {
+        if (value !== undefined) process.env[FLAG] = value;
+        const h = await ready({}, starter());
+        await h.submit();
+        expect(enqueue).not.toHaveBeenCalled(); expect(cancel).not.toHaveBeenCalled();
+        expect(starterReads(h)).toEqual([]);
+    });
+
+    test('flag on queues the result summary now and a 90-day reminder, after cancelling pending nudges and reminders', async () => {
+        process.env[FLAG] = 'true';
+        const h = await ready({}, starter());
+        const submitted = await h.submit();
+        const version = h.memory.rows(VERSION).find(row => row.revision === submitted.assessment.revision);
+        const counts = submitted.assessment.submission.evaluation.countsCompletion;
+        const scope = { tenantId: 'synthetic-ncsc-tenant', organisationId: 'shared-organisation', accountId: ACCOUNT };
+        expect(cancel.mock.calls.map(call => call[1])).toEqual([{ ...scope, types: ['nudge_unfinished', 'reassess_reminder'] }]);
+        expect(enqueue.mock.calls.map(call => call[1])).toEqual([
+            { ...scope, type: 'result_summary', dedupeKey: version.payload_sha256, notBefore: NOW,
+                params: { assessmentId: 'assessment-a', gapCount: counts.no + counts.partial } },
+            { ...scope, type: 'reassess_reminder', dedupeKey: 'assessment-a', notBefore: '2026-12-06T09:00:00.000Z', params: {} }]);
+        expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(enqueue.mock.invocationCallOrder[0]);
+        // Only identifiers and an integer leave the submit; never free text.
+        for (const [, row] of enqueue.mock.calls) {
+            expect(Object.keys(row.params).every(key => ['assessmentId', 'gapCount'].includes(key))).toBe(true);
+            if ('gapCount' in row.params) expect(Number.isInteger(row.params.gapCount)).toBe(true);
+            expect(JSON.stringify(row)).not.toMatch(/Synthetic|@|\s/);
+        }
+        // An exact retry replays the receipt and queues nothing more.
+        expect(await h.submit()).toEqual(submitted);
+        expect(enqueue).toHaveBeenCalledTimes(2);
+    });
+
+    test('flag on queues nothing for a scope with no activated starter account of the signed-in subject', async () => {
+        process.env[FLAG] = 'true';
+        const h = await ready();
+        await h.submit();
+        expect(starterReads(h)).toHaveLength(1);
+        expect(enqueue).not.toHaveBeenCalled(); expect(cancel).not.toHaveBeenCalled();
+    });
+
+    test('a failed enqueue fails the submit and rolls back every assessment write', async () => {
+        process.env[FLAG] = 'true';
+        const h = await ready({}, starter());
+        enqueue.mockRejectedValueOnce(new outbox.OutboxWriteError());
+        const before = h.memory.snapshot();
+        await expectCode(h.submit(), 'ncsc_unavailable');
+        expect(h.memory.snapshot()).toEqual(before);
+        expect((await h.read()).assessment.status).toBe('in-progress');
+    });
+});

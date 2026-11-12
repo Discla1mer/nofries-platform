@@ -9,6 +9,7 @@ const { normaliseAdvisorAssignment, resolvePortalPermission } = require('./porta
 const { modules } = require('../protectedAssets/dashboardRegistry');
 const { resolveNcscAccess: ncscAccess, normalRole, selectAdvisor } = require('./dashboardResourceAuthority');
 const ncscStore = require('../assessmentLifecycle/postgresNcscAssessmentStore');
+const outbox = require('../lifecycleEmail/outboxWriter');
 const { MODULE_ID: NCSC_MODULE, ACCEPTED_PROFILE_REF } = require('../assessmentEngine/ncscAssessmentEvaluator');
 const { NcscAssessmentError, normaliseNcscCommand, normaliseNcscPage, normaliseNcscSelector,
     requireNcscContext } = require('../ncscAssessmentService');
@@ -35,6 +36,8 @@ function createPostgresDashboardRepository(options) {
             typeof setting.resolveSubmissionQuota !== 'function') fail('dependencies_invalid');
         ncsc = Object.freeze({ audit: Object.freeze(audit), resolveSubmissionQuota: setting.resolveSubmissionQuota });
     }
+    // Lifecycle email enqueue at submit (#151), sampled once per composition.
+    const lifecycleEmail = outbox.lifecycleEmailEnqueueEnabled();
 
     function now() { return instant(clock()); }
     const bootstrap = createBootstrapOperations({ clock, authoriseAdministration });
@@ -336,6 +339,23 @@ function createPostgresDashboardRepository(options) {
             });
         } catch (error) { throw ncscError(error); }
     }
+    // Runs on the submit transaction, so a failed enqueue fails the submit. RLS
+    // shows only the signed-in subject's starter scopes; a scope that is not an
+    // activated starter account of this subject has no recipient and queues nothing.
+    async function enqueueSubmitEmails(tx, version) {
+        const e = version.envelope;
+        const found = await tx.query('SELECT account_id FROM nofries.dashboard_starter_scopes WHERE tenant_id = $1 AND organisation_id = $2 AND activation IS NOT NULL',
+            [e.tenantId, e.organisationId]);
+        if (found.rows.length > 1) ncscFail();
+        if (!found.rows.length) return;
+        const scope = { tenantId: e.tenantId, organisationId: e.organisationId, accountId: found.rows[0].account_id };
+        const counts = e.submission.evaluation.countsCompletion, at = version.command.now;
+        await outbox.cancelPending(tx, { ...scope, types: ['nudge_unfinished', 'reassess_reminder'] });
+        await outbox.enqueue(tx, { ...scope, type: 'result_summary', dedupeKey: version.revisionSha256, notBefore: at,
+            params: { assessmentId: e.assessmentId, gapCount: counts.no + counts.partial } });
+        await outbox.enqueue(tx, { ...scope, type: 'reassess_reminder', dedupeKey: e.assessmentId,
+            notBefore: new Date(Date.parse(at) + 90 * 86400000).toISOString(), params: {} });
+    }
     async function executeNcscAssessment(contextInput, input) {
         let context, command, intent;
         try {
@@ -375,6 +395,7 @@ function createPostgresDashboardRepository(options) {
             await ncscStore.appendVersion(tx, version);
             await ncscStore.moveHead(tx, version);
             if (quota) await dataStorage.updateUsage(tx, quota.after);
+            if (lifecycleEmail && command.action === 'submit') await enqueueSubmitEmails(tx, version);
             await ncscStore.insertReceipt(tx, receiptValue);
             const finalAt = now();
             const finalDecision = ncscAccess(snapshot, context, 'assessment.write', finalAt);
