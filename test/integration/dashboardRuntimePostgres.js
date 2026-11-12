@@ -1317,6 +1317,55 @@ function registerRealPostgresTests() {
                 }
                 const full = await clientPost({ action: 'create', requestId: nextId(), organisationName: 'Fourth synthetic client', details });
                 expect(full.status).toBe(409); expect(full.body.code).toBe('starter_client_limit');
+                // #151 with migration 0019 and the default-off flag turned on: drafts
+                // can be discarded and a place is used only when terms are accepted.
+                h.env.NOFRIES_STARTER_CLIENT_DISCARD_ENABLED = 'true';
+                h.recomposeWithApplication(require('../../lib/productionApplication').createProductionApplication);
+                list = await request(h.app).get('/api/customer-signup/clients').set('Cookie', login.cookie);
+                expect(list.body.state.remaining).toBe(2);
+                const ready = list.body.state.clients.find(c => c.status === 'ready'), drafts = list.body.state.clients.filter(c => c.status !== 'ready');
+                expect(ready.discardable).toBe(false); expect(drafts.map(c => c.discardable)).toEqual([true, true]);
+                for (const draft of drafts) {
+                    const gone = await clientPost({ action: 'discard', requestId: draft.requestId });
+                    expect(gone.status).toBe(200); expect(gone.body.state.clients.map(c => c.requestId)).not.toContain(draft.requestId);
+                }
+                expect((await clientPost({ action: 'discard', requestId: drafts[0].requestId })).status).toBe(200);
+                for (const [body, code] of [[{ action: 'discard', requestId: ready.requestId }, 'starter_client_not_draft'],
+                    [{ action: 'resume', requestId: drafts[0].requestId }, 'starter_client_discarded']]) {
+                    const refused = await clientPost(body); expect(refused.status).toBe(409); expect(refused.body.code).toBe(code);
+                }
+                const offer = async name => { const id = nextId(), made = await clientPost({ action: 'create', requestId: id, organisationName: name, details });
+                    expect(made.body.state.status).toBe('terms'); return { id, terms: { accepted: true, ...Object.fromEntries(['termsVersion', 'termsDigest', 'scheduleId', 'scheduleDigest'].map(k => [k, made.body.state[k]])) } }; };
+                const accept = draft => clientPost({ action: 'accept', requestId: draft.id, terms: draft.terms });
+                const fourth = await offer('Fourth synthetic client');
+                expect((await accept(fourth)).body.state.status).toBe('ready');
+                const nameless = await clientPost({ action: 'discard', requestId: nextId() });  // Not this account's draft.
+                expect(nameless.status).toBe(409); expect(nameless.body.code).toBe('starter_client_not_draft');
+                // Two tabs accept the last place at once. One is set up. The other is refused
+                // definitively (409), or meets the existing retryable registration conflict (503)
+                // and is refused definitively when retried.
+                const fifth = await offer('Fifth synthetic client'), sixth = await offer('Sixth synthetic client');
+                const race = await Promise.all([accept(fifth), accept(sixth)]), won = race.findIndex(r => r.status === 200);
+                expect(race.filter(r => r.status === 200)).toHaveLength(1);
+                const lost = won === 0 ? sixth : fifth, first = race[1 - won];
+                const refusal = first.status === 409 ? first : await accept(lost);
+                expect(refusal.status).toBe(409); expect(refusal.body).toEqual({ code: 'starter_client_limit' });
+                const again = await clientPost({ action: 'resume', requestId: lost.id });
+                expect(again.status === 409 ? again.body : again.body.state.status).toEqual(again.status === 409 ? { code: 'starter_client_limit' } : 'terms');
+                list = await request(h.app).get('/api/customer-signup/clients').set('Cookie', login.cookie);
+                expect(list.body.state.remaining).toBe(0); expect(list.body.state.clients.filter(c => c.status === 'ready')).toHaveLength(3);
+                expect((await clientPost({ action: 'create', requestId: nextId(), organisationName: 'Seventh synthetic client', details })).status).toBe(409);
+                // A slot whose saved setup reads as reader-only (here: altered) is never discarded; restored, it can be.
+                const lostOrg = (await ownerPool.query("SELECT organisation_id FROM nofries.dashboard_starter_scopes WHERE preparation#>>'{slot,requestId}'=$1", [lost.id])).rows[0].organisation_id;
+                const contextKey = `customer-starter/contexts/${lostOrg}.json`, original = authorityContainer.records.get(contextKey), context = JSON.parse(original);
+                context.source.offerInput.consultantOrganisationPolicy = 'unlimited-v1';
+                authorityContainer.records.set(contextKey, Buffer.from(JSON.stringify(context)));
+                const readerOnly = await clientPost({ action: 'discard', requestId: lost.id });
+                expect(readerOnly.status === 200 ? readerOnly.body.state : readerOnly.status).toEqual(readerOnly.status === 200 ? { status: 'setup_read_only' } : 503);
+                expect((await ownerPool.query('SELECT discarded_at FROM nofries.dashboard_starter_scopes WHERE organisation_id=$1', [lostOrg])).rows[0].discarded_at).toBeNull();
+                authorityContainer.records.set(contextKey, original);
+                expect((await clientPost({ action: 'discard', requestId: lost.id })).status).toBe(200);
+                expect((await ownerPool.query('SELECT count(*)::int AS n FROM nofries.dashboard_starter_scopes WHERE ordinal>0 AND activation IS NOT NULL AND subject_key=$1', [current.subjectKey])).rows[0].n).toBe(3);
                 // The real membership state, not a BFF or immutable plan, governs
                 // further client operations after an owner revocation.
                 await createPostgresDatabase({ pool: ownerPool }).withTenantTransaction(current.tenantId, async tx => {

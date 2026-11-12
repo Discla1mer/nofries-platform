@@ -93,7 +93,9 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                     : entryIntent === 'login' ? 'Sign in with your existing email and password.'
                     : 'Create an account with your email and password, or sign in to your existing account.' : 'Continue secure sign-in with the email address you verified or that received your invitation.'));
             }
-            if (customerTransport) root.append(element('p', 'Have your inbox ready before continuing. Secure sign-in is time limited; you can return here and restart if it does not finish.'));
+            if (customerTransport) root.append(element('p', 'You will continue to Microsoft’s secure sign-in page. Have your inbox ready; you can return here and restart if sign-in does not finish.'));
+            if (customerTransport && entryIntent === 'create') root.append(element('p',
+                'After signing in, choose Company to assess your own organisation, or Consultant to work with client organisations. You will review the applicable terms during setup.'));
             // Browser cancellation backstop only. The server independently
             // enforces its five-minute, one-use authentication transaction.
             const entry = button(chooseAccount ? 'Sign in with another account' : signInRecovery === 'account' ? 'Try signing in again'

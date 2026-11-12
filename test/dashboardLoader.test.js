@@ -885,6 +885,7 @@ describe('consultant client setup', () => {
         expect(h.document.getElementById('clientSetupControls').querySelector('form')).toBeNull();
         await h.reply(4, 200, fullClients());
         expect(h.document.getElementById('clientSetupControls').textContent).toContain('No client slots remain.');
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain('All client slots are in use, so this client was not set up.');
         expect(buttons(h).some(b => /Retry|Add client/.test(b.textContent))).toBe(false);
         h.window.dispatch('focus'); await flush();
         await h.reply(5, 200, consultant()); await h.reply(6, 200, listing([A])); await h.reply(7, 200, consultant());
@@ -948,6 +949,53 @@ describe('consultant client setup', () => {
             buttons(h).find(b => b.textContent === 'Retry').click(); await flush();
             expect(h.requests[4].init.method).toBe('POST'); expect(h.requests[4].init.body).toBe(original);
         });
+    const drafts = (discardable, remaining = 2) => ({ csrfToken, state: { status: 'clients', remaining, clients: [
+        { requestId: C, organisationName: 'Draft client', status: 'pending', ...(discardable === undefined ? {} : { discardable }) },
+        { requestId: B, organisationName: 'Ready client', status: 'ready', ...(discardable === undefined ? {} : { discardable: false }) }] } });
+    const label = b => b.getAttribute('aria-label') || b.textContent;
+    test('a discardable draft is discarded only after a confirm step, and the list is redrawn from the server', async () => {
+        const h = await portfolio(); await h.reply(2, 200, drafts(true));
+        const controls = h.document.getElementById('clientSetupControls');
+        expect(controls.textContent).toContain('2 client slots remain. A slot is used when a client’s terms are accepted. Drafts do not use one. You can add up to 12 client organisations in total, including discarded drafts.');
+        expect(buttons(h).filter(b => label(b).startsWith('Discard draft')).map(label)).toEqual(['Discard draft: Draft client']);
+        buttons(h).find(b => label(b) === 'Discard draft: Draft client').click(); await flush();
+        expect(h.requests).toHaveLength(3);
+        const row = h.elements.dashboardChoices.querySelectorAll('.client-workspace-row')[0];
+        expect(row.textContent).toContain('Discard this draft? It will be removed from your list. This cannot be undone.');
+        buttons(h).find(b => b.textContent === 'Keep draft').click(); await flush();
+        expect(h.requests).toHaveLength(3); expect(row.textContent).not.toContain('Discard this draft?');
+        buttons(h).find(b => label(b) === 'Discard draft: Draft client').click(); await flush();
+        buttons(h).find(b => label(b) === 'Yes, discard draft: Draft client').click(); await flush();
+        expect(h.requests[3]).toMatchObject({ url: '/api/customer-signup/clients', init: { method: 'POST' } });
+        expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'discard', requestId: C });
+        await h.reply(3, 200, { csrfToken, state: { status: 'clients', remaining: 2, clients: [
+            { requestId: B, organisationName: 'Ready client', status: 'ready', discardable: false }] } });
+        expect(h.elements.dashboardChoices.querySelectorAll('.client-workspace-row')).toHaveLength(0);
+        expect(buttons(h).some(b => /Discard/.test(label(b)))).toBe(false);
+    });
+    test.each([undefined, false])('no discard action or slot rule is shown when discardable is %p', async discardable => {
+        const h = await portfolio(); await h.reply(2, 200, drafts(discardable, 0));
+        expect(buttons(h).some(b => /Discard/.test(label(b)))).toBe(false);
+        const text = h.document.getElementById('clientSetupControls').textContent;
+        expect(text).toContain('No client slots remain.');
+        if (discardable === undefined) expect(text).not.toContain('Drafts do not use one.');
+    });
+    test('a non-boolean discardable value is refused as an invalid client list', async () => {
+        const h = await portfolio(); await h.reply(2, 200, drafts('yes'));
+        expect(buttons(h).some(b => /Discard/.test(label(b)))).toBe(false);
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain('Retry to refresh the list.');
+    });
+    test.each(['starter_client_not_draft', 'starter_client_discarded'])('a %s refusal reloads the list without repeating the discard', async code => {
+        const h = await portfolio(); await h.reply(2, 200, drafts(true));
+        buttons(h).find(b => label(b) === 'Discard draft: Draft client').click(); await flush();
+        buttons(h).find(b => label(b) === 'Yes, discard draft: Draft client').click(); await flush();
+        await h.reply(3, 409, { code });
+        expect(h.requests[4].init.method).toBe('GET'); expect(h.requests[4].init).not.toHaveProperty('body');
+        await h.reply(4, 200, drafts(false));
+        expect(h.requests.filter(r => r.init.method === 'POST')).toHaveLength(1);
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain(code === 'starter_client_discarded'
+            ? 'This draft has been discarded.' : 'This organisation is not a draft, so it was not discarded.');
+    });
     test('late definitive client rejection from an abandoned cycle cannot clear the current unresolved request', async () => {
         const { h, original } = await submittedClient();
         h.window.dispatch('focus'); await flush(); await recheck(h, 4);
@@ -1460,7 +1508,7 @@ describe('dashboard asynchronous ownership and sign-out', () => {
         await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
         expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
         await h.reply(3, 404, { code: 'dashboard_not_found' });
-        expect(h.factory.validate).toHaveBeenCalledTimes(1); expect(h.mounts).toHaveLength(0); expect(h.status).toBe('unavailable');
+        expect(h.factory.validate).not.toHaveBeenCalled(); expect(h.mounts).toHaveLength(0); expect(h.status).toBe('unavailable');
     });
 
     test('preserves a genuine disabled Cyber projection while mounting its ready Overview', async () => {
@@ -1638,8 +1686,8 @@ describe('ready Cyber composition', () => {
     }
     const footerTargets = [
         [false, 0, '/roadmap.html'],
-        [true, 0, '/'], [true, 1, '/managed-it.html'], [true, 2, '/roadmap.html'],
-        [true, 3, '/contact.html'], [true, 4, '/privacy.html'], [true, 5, '/terms.html']
+        [true, 0, '/'], [true, 1, '/pricing.html'], [true, 2, '/managed-it.html'], [true, 3, '/roadmap.html'],
+        [true, 4, '/contact.html'], [true, 5, '/privacy.html'], [true, 6, '/terms.html']
     ];
     test.each(footerTargets)('footer gateway=%s link=%s preserves draft, focus and first destination %s', async (gateway, index, target) => {
         const h = harness({ gateway, cyber: true, hash: '#cyber-security' }); await ready(h);
@@ -2141,7 +2189,7 @@ describe('root dashboard gateway', () => {
     });
 });
 
-test('consultant completion opens the portfolio first, selects a client and returns to the portfolio', async () => {
+test.each(['button', 'hash'])('consultant completion opens the portfolio first, selects a client and returns via %s', async entry => {
     const h = harness({ hash: '#organisations' }); await flush();
     const customer = state(A, GA, { purpose: 'customer', accountType: 'consultant' });
     await h.reply(0, 200, customer); await h.reply(1, 200, listing());
@@ -2161,7 +2209,10 @@ test('consultant completion opens the portfolio first, selects a client and retu
     h.event('focus'); await flush(); await h.open(selected, 'Selected client', 7);
     expect(h.status).toBe('ready'); expect(h.elements.dashboardApp.textContent).toContain('Selected client');
     const back = h.elements.dashboardStatusPanel.children.find(node => node.id === 'consultantPortfolioControls');
-    expect(back.hidden).toBe(false); back.onclick(); await flush();
+    expect(back.hidden).toBe(false);
+    if (entry === 'button') back.onclick();
+    else h.mounts.at(-1).config.onOpenOrganisations();
+    await flush();
     await h.reply(11, 200, selected); await h.reply(12, 200, listing());
     expect(h.status).toBe('selection'); expect(h.elements.dashboardApp.hidden).toBe(true);
     expect(back.hidden).toBe(true); expect(h.window.location.hash).toBe('#organisations');
@@ -2216,6 +2267,37 @@ describe('unmounted authority refresh coalescing', () => {
             summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false,
             providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' };
     }
+    test.each(['metadata first', 'assets first', 'metadata denied'])('startup overlaps independent asset and metadata reads: %s', async order => {
+        const h = harness({ hash: '#cyber-security', cyber: true }); await flush();
+        const model = cyberProjection();
+        await h.reply(0, 200, state()); await h.reply(1, 200, listing()); await h.reply(2, 200, model);
+        // Neither asset has loaded, but metadata is already in flight.
+        expect(h.native).toHaveLength(2);
+        expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
+        expect(h.requests[3].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        expect(h.mounts).toHaveLength(0);
+        if (order === 'metadata denied') {
+            await h.reply(3, 403, { code: 'dashboard_access_denied' });
+            expect(h.status).toBe('denied'); expect(h.mounts).toHaveLength(0);
+            h.load(0); h.load(1); await flush(); expect(h.mounts).toHaveLength(0);
+            return;
+        }
+        if (order === 'metadata first') {
+            await h.reply(3, 200, moduleProjection(model));
+            expect(h.requests).toHaveLength(4); expect(h.mounts).toHaveLength(0);
+            h.load(0); h.load(1); await flush();
+        } else {
+            h.load(0); h.load(1); await flush();
+            expect(h.requests).toHaveLength(4); expect(h.mounts).toHaveLength(0);
+            await h.reply(3, 200, moduleProjection(model));
+        }
+        expect(h.requests[4].url).toBe('/api/dashboard/session');
+        expect(h.mounts).toHaveLength(0);
+        await h.reply(4, 200, state());
+        expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
+        expect(h.requests.filter(item => item.url === '/api/dashboard/modules/cyber_security')).toHaveLength(1);
+    });
+
     async function finish(h, first, asset, model) {
         await h.reply(first, 200, state()); await h.reply(first + 1, 200, listing());
         await h.reply(first + 2, 200, model);

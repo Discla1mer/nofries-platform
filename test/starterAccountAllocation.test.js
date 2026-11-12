@@ -197,3 +197,35 @@ test('reader cursor and final ownership checks reject changed or foreign pages w
     // Accounts do not expire: existing clients stay listable after the recorded period.
     assert.equal((await h.allocator.listClients({},{})).clients.length, 1);
 });
+test('a consultant record holds up to 12 client reservations; the allocator still stops at 3 (#151)', async () => {
+    const { CLIENT_RESERVATION_CEILING } = require('../api/shared/customerSignup/starterAccountAllocation');
+    const h = harness(), active = await h.active(), own = active.organisations[0];
+    const withClients = count => ({ ...active, organisations: [own, ...Array.from({ length: count }, (_, n) => Object.fromEntries(
+        Object.keys(own).map(k => [k, k === 'kind' ? 'client' : k === 'organisationName' ? 'Client ' + n : crypto.randomUUID()])))] });
+    assert.equal(CLIENT_RESERVATION_CEILING, 12);
+    assert.equal(starterAccountRecord(withClients(12)).organisations.length, 13);
+    assert.ok(Buffer.byteLength(JSON.stringify(withClients(12))) < 16384);
+    assert.throws(() => starterAccountRecord(withClients(13)), /starter_record_invalid/);
+    assert.throws(() => starterAccountRecord({ ...withClients(1), accountType: 'company' }), /starter_record_invalid/);
+    for (let n = 0; n < 3; n++) await h.allocator.reserveClient({}, h.client('Client ' + n));
+    await assert.rejects(h.allocator.reserveClient({}, h.client('Fourth client')), /starter_client_limit/);
+});
+test('with client use from migration 0019, only activated clients use a place, within the 12 reservation ceiling (#151)', async () => {
+    let use = null; const seen = [];
+    const h = harness(); await h.active();
+    const allocator = createStarterAccountAllocator({ ...h.options, clientUse: async account => { seen.push(account.organisations.length); return use; } });
+    // Old schema or flag off: null keeps the earlier rule.
+    for (let n = 0; n < 3; n++) await allocator.reserveClient({}, h.client('Client ' + n));
+    await assert.rejects(allocator.reserveClient({}, h.client('Old rule')), /starter_client_limit/);
+    use = { activated: 3 };
+    await assert.rejects(allocator.reserveClient({}, h.client('Three activated')), /starter_client_limit/);
+    use = { activated: 2 };
+    for (let n = 3; n < 12; n++) await allocator.reserveClient({}, h.client('Client ' + n));
+    assert.equal([...h.records.values()][0].record.organisations.length, 13);
+    await assert.rejects(allocator.reserveClient({}, h.client('Past the ceiling')), /starter_client_limit/);
+    assert.ok(seen.length >= 12);
+    for (const bad of [{ activated: -1 }, { activated: '1' }, {}]) {
+        use = bad; await assert.rejects(allocator.reserveClient({}, h.client('Bad use')), /starter_record_invalid/);
+    }
+    assert.throws(() => createStarterAccountAllocator({ ...h.options, clientUse: 'yes' }), /starter_configuration_invalid/);
+});
