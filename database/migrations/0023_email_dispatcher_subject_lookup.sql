@@ -1,5 +1,4 @@
--- Owner decision, 12 November 2026 (issue #151, lifecycle email slice E4):
--- the dispatcher resolves a recipient at send time as account_id -> subject_key
+-- Lifecycle email slice E4 (Refs #151): the dispatcher resolves a recipient at send time as account_id -> subject_key
 -- -> the existing customer-subjects authority record. The outbox stores no
 -- address, and starter accounts store only an email hash, so the dispatcher
 -- needs to read exactly two columns of nofries.dashboard_starter_accounts.
