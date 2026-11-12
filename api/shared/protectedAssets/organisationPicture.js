@@ -49,6 +49,38 @@
                     next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
             });
     }
+    // "Actions" card: display-only over improvement/list responses the host
+    // already read. Overdue uses the server's isOverdue; due-soon uses the same
+    // UTC calendar day basis. Owner names come only from ownerLabel.
+    const ACTION_LIMIT = 3, DUE_SOON_DAYS = 14;
+    const DAY = /^\d{4}-\d\d-\d\d$/;
+    function actionSummary(input) {
+        if (!input || !Array.isArray(input.lists) || typeof input.more !== 'boolean') return null;
+        let today = null; const rows = [];
+        for (const list of input.lists) {
+            if (!list || typeof list.asOf !== 'string' || !DAY.test(list.asOf.slice(0, 10)) || !Array.isArray(list.actions)) return null;
+            if (today === null || list.asOf.slice(0, 10) < today) today = list.asOf.slice(0, 10);
+            for (const action of list.actions) {
+                if (!action || typeof action.actionId !== 'string' || typeof action.status !== 'string' ||
+                    typeof action.isOverdue !== 'boolean' || action.isOverdue && action.dueDate === null || action.dueDate !== null && !(typeof action.dueDate === 'string' && DAY.test(action.dueDate)) ||
+                    !action.rationale || typeof action.rationale.suggestedAction !== 'string' || !action.rationale.suggestedAction.trim() ||
+                    Object.hasOwn(action, 'ownerLabel') && typeof action.ownerLabel !== 'string') return null;
+                rows.push(action);
+            }
+        }
+        const horizon = today && new Date(Date.parse(today + 'T00:00:00.000Z') + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
+        const byDue = (a, b) => a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.actionId < b.actionId ? -1 : a.actionId > b.actionId ? 1 : 0;
+        const item = action => ({ title: action.rationale.suggestedAction, dueDate: action.dueDate,
+            owner: Object.hasOwn(action, 'ownerLabel') && action.ownerLabel.trim() ? action.ownerLabel : null });
+        const overdue = rows.filter(action => action.isOverdue).sort(byDue);
+        const dueSoon = rows.filter(action => !action.isOverdue && action.status !== 'completed' && action.dueDate !== null &&
+            action.dueDate >= today && action.dueDate <= horizon).sort(byDue);
+        return { total: rows.length, more: input.more,
+            overdue: { count: overdue.length, items: overdue.slice(0, ACTION_LIMIT).map(item) },
+            dueSoon: { count: dueSoon.length, items: dueSoon.slice(0, ACTION_LIMIT).map(item) } };
+    }
+    const displayDay = value => new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeZone: 'UTC' })
+        .format(new Date(value + 'T00:00:00.000Z'));
     function sameProfile(actual, expected) {
         return actual && expected && Object.keys(expected).every(key => actual[key] === expected[key]);
     }
@@ -65,6 +97,8 @@
         const doc = root.ownerDocument, client = options.client, metadata = copy(options.metadata);
         const organisationId = options.organisationId, organisationName = options.displayName || organisationId;
         const openImprovement = typeof options.openImprovement === 'function' ? options.openImprovement : null;
+        const readActions = openImprovement && typeof options.readActions === 'function' ? options.readActions : null;
+        let actions = null;
         const id = 'picture-assessment-' + (++sequence);
         const initialAssessmentId = typeof options.initialAssessmentId === 'string' ? options.initialAssessmentId : null;
         let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null, allowance = null;
@@ -177,7 +211,49 @@
                 node('p', 'dashboard-muted', 'Saved progress is not a score. Submit this assessment when it is ready; unknown answers remain visible as uncertainty.'));
             root.append(draft);
         }
-        function render() {
+        function render() { paint(); placeActions(); }
+        // Optional and isolated: a failed or invalid read leaves no card and
+        // never changes the assessment picture below it.
+        function placeActions() {
+            const previous = root.querySelector('.picture-actions'); if (previous) previous.remove();
+            if (!live() || denied || !actions) return;
+            const card = node('section', 'picture-actions'), heading = node('h3', '', 'Actions');
+            heading.id = id + '-actions'; card.setAttribute('aria-labelledby', heading.id); card.append(heading);
+            const gaps = root.querySelector('.picture-top-gaps');
+            if (!actions.total) {
+                const empty = node('p', 'picture-actions-empty', 'No actions yet. ');
+                if (gaps) {
+                    const link = node('a', '', 'Start with your top three gaps.'); link.href = '#' + id + '-top-gaps';
+                    link.addEventListener('click', event => {
+                        event.preventDefault();
+                        const target = root.querySelector('.picture-top-gaps'), title = target && target.querySelector('h3');
+                        if (!live() || !title) return;
+                        if (typeof title.scrollIntoView === 'function') title.scrollIntoView({ block: 'start' });
+                        title.focus();
+                    });
+                    empty.append(link);
+                } else empty.append(node('span', '', 'Start with your top three gaps.'));
+                card.append(empty); root.prepend(card); return;
+            }
+            [['Overdue', actions.overdue], ['Due in the next 14 days', actions.dueSoon]].forEach(([label, group]) => {
+                card.append(node('h4', '', label + ' (' + group.count + ')'));
+                if (!group.items.length) return;
+                const list = node('ul', 'picture-actions-list');
+                group.items.forEach(entry => {
+                    const row = node('li', 'picture-action');
+                    row.append(node('span', 'picture-action-title', entry.title),
+                        node('span', 'picture-action-meta dashboard-muted', 'Due ' + displayDay(entry.dueDate) +
+                            (entry.owner ? ' · Owner: ' + entry.owner : '')));
+                    list.append(row);
+                });
+                card.append(list);
+            });
+            if (actions.more) card.append(node('p', 'dashboard-muted', 'Counts cover the first five saved plans.'));
+            const full = node('a', 'picture-actions-plan', 'View the full plan'); full.href = '#improvement-plan';
+            full.addEventListener('click', event => { event.preventDefault(); if (live() && !denied) openImprovement(); });
+            card.append(full); root.prepend(card);
+        }
+        function paint() {
             if (!live()) return;
             clearExplanation();
             root.replaceChildren(); root.classList.add('organisation-picture');
@@ -440,7 +516,7 @@
         function gapSection(result) {
             const gaps = topGaps(result, metadata), section = node('section', 'picture-top-gaps');
             const heading = node('h3', '', gaps.length === GAP_LIMIT ? 'Your top three gaps' : 'Your top gaps');
-            heading.id = id + '-top-gaps'; section.setAttribute('aria-labelledby', heading.id); section.append(heading);
+            heading.id = id + '-top-gaps'; heading.tabIndex = -1; section.setAttribute('aria-labelledby', heading.id); section.append(heading);
             if (!gaps.length) {
                 section.append(node('p', '', 'You did not report any controls as not in place or partly in place.'));
                 if (result.unknown > 0) section.append(node('p', 'dashboard-muted', result.unknown + (result.unknown === 1 ? ' answer is' : ' answers are') +
@@ -721,7 +797,14 @@
             if (disposed) return; disposed = true; epoch++; abort(); rows = []; detail = null; selected = ''; retry = null;
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
         } };
-        mounted.set(root, controller); load(false); return controller;
+        mounted.set(root, controller); load(false);
+        if (readActions) {
+            // Started beside the assessment reads, never after them.
+            Promise.resolve().then(readActions).then(value => {
+                if (!live()) return; actions = actionSummary(value); placeActions();
+            }, () => {});
+        }
+        return controller;
     }
-    return Object.freeze({ mount, topGaps });
+    return Object.freeze({ mount, topGaps, actionSummary });
 }));
