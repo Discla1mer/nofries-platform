@@ -72,6 +72,7 @@ require('./integration/evidencePostgres')();
 require('./integration/evidenceMetadataPostgres')();
 require('./integration/starterClientPeriodPostgres')();
 require('./integration/starterClientDiscardPostgres')();
+require('./integration/lifecycleEmailOutboxPostgres')();
 // restrictedMaintenancePostgres: private controller integration suite remains private.
 // databasePublicHardeningPostgres: private controller integration suite remains private.
 
