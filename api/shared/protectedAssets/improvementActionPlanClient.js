@@ -11,8 +11,14 @@
     const SUBJECT = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
     const PROFILE = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
     const ACTION_COMMANDS = ['assign', 'start', 'block', 'complete', 'reopen'];
-    const ACTION_LABELS = { assign: 'Assign to me', start: 'Start action', block: 'Block action', complete: 'Complete action', reopen: 'Reopen action' };
-    const SAVE_LABELS = { assign: 'Save assignment', start: 'Start action', block: 'Record block', complete: 'Record completion', reopen: 'Reopen action' };
+    // assignNamed is a second way to send the existing assign command.
+    const ACTION_BUTTONS = ['assignNamed', 'assign', 'start', 'block', 'complete', 'reopen'];
+    const ACTION_LABELS = { assignNamed: 'Set owner and due date', assign: 'Assign to me', start: 'Start action', block: 'Block action',
+        complete: 'Complete action', reopen: 'Reopen action' };
+    const SAVE_LABELS = { assignNamed: 'Save owner and due date', assign: 'Save assignment', start: 'Start action', block: 'Record block',
+        complete: 'Record completion', reopen: 'Reopen action' };
+    const OWNER_LABEL_HELP = 'Enter the owner’s name in 1 to 80 characters. Use a name rather than an email address, ' +
+        'and not the words “all” or “unassigned”.';
     function invalid() { throw new Error('improvement_client_invalid'); }
     function fields(value, names) {
         if (!value || typeof value !== 'object' || Array.isArray(value) || isProxy(value) ||
@@ -42,8 +48,14 @@
             !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) invalid();
     }
     function date(value) { if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\d$/.test(value)) invalid(); timestamp(value + 'T00:00:00.000Z'); }
+    function ownerLabel(value) {
+        if (!view || typeof view.normaliseOwnerLabel !== 'function') invalid();
+        try { return view.normaliseOwnerLabel(value); } catch (_) { return invalid(); }
+    }
+    const labelled = value => !!value && typeof value === 'object' && Object.hasOwn(value, 'ownerLabel');
     function actionField(name, value) {
         if (name === 'dueDate') return date(value);
+        if (name === 'ownerLabel') return ownerLabel(value);
         if (!['reason', 'note', 'evidenceReference'].includes(name)) invalid();
         text(value, name === 'evidenceReference' ? 180 : 1000); unicode(value);
         if (name === 'evidenceReference') {
@@ -101,7 +113,10 @@
             identifier(value.payload.assessmentId); number(value.payload.assessmentRevision, 128); digest(value.payload.assessmentRevisionSha256);
         } else {
             number(value.expectedRevision, 1023); identifier(value.actionId);
-            if (value.type === 'assign') {
+            if (value.type === 'assign' && labelled(value.payload)) {
+                fields(value.payload, ['ownerLabel', 'dueDate']);
+                if (ownerLabel(value.payload.ownerLabel) !== value.payload.ownerLabel) invalid(); actionField('dueDate', value.payload.dueDate);
+            } else if (value.type === 'assign') {
                 fields(value.payload, ['ownerSubjectKey', 'dueDate']);
                 if (typeof value.payload.ownerSubjectKey !== 'string' || !SUBJECT.test(value.payload.ownerSubjectKey)) invalid(); actionField('dueDate', value.payload.dueDate);
             } else if (value.type === 'start') fields(value.payload, []);
@@ -151,13 +166,14 @@
             selectedSource.className = 'ncsc-preserve-text'; toolbar.append(selectedSource, createControl);
         }
         toolbar.append(retryControl);
-        const editorPanel = node('section'), actionPicker = node('select'), actionSummary = node('p'), actionControls = node('div'), editorMessage = node('p');
+        const editorPanel = node('section'), actionPicker = node('select'), actionSummary = node('p'), actionState = node('p');
+        const actionControls = node('div'), editorMessage = node('p');
         editorPanel.className = 'dashboard-panel'; editorPanel.setAttribute('aria-label', 'Update an improvement action'); editorPanel.hidden = true;
         actionPicker.setAttribute('aria-label', 'Improvement action'); actionSummary.className = 'ncsc-preserve-text';
         actionControls.className = 'picture-toolbar'; editorMessage.setAttribute('role', 'status');
         const actionPickerRow = node('div'); actionPickerRow.className = 'picture-toolbar'; actionPickerRow.append(actionPicker);
-        editorPanel.append(node('h2', 'Update an improvement action'), actionPickerRow, actionSummary, actionControls, editorMessage);
-        const actionButtons = Object.fromEntries(ACTION_COMMANDS.map(type => {
+        editorPanel.append(node('h2', 'Update an improvement action'), actionPickerRow, actionSummary, actionState, actionControls, editorMessage);
+        const actionButtons = Object.fromEntries(ACTION_BUTTONS.map(type => {
             const control = button(ACTION_LABELS[type], function () { openDraft(type); }); control.hidden = true; control.disabled = true;
             actionControls.append(control); return [type, control];
         }));
@@ -192,9 +208,13 @@
             const detail = selectedDetail(), authority = selectedAuthority();
             actionSummary.textContent = draft ? draft.controlId + ' · ' + draft.work : detail ? detail.controlId + ' · ' + detail.rationale.suggestedAction : '';
             actionSummary.hidden = !draft && !permitted;
-            ACTION_COMMANDS.forEach(type => {
-                const control = actionButtons[type];
-                control.hidden = !!draft || !permitted || !authority || !authority.commands.includes(type);
+            actionState.textContent = detail ? 'Status: ' + detail.labels.status + '. Owner: ' + (labelled(detail) ? detail.ownerLabel :
+                detail.ownerSubjectKey === null ? 'not set' : 'a platform user') + '. Due date (UTC): ' + (detail.dueDate || 'not set') + '.' : '';
+            actionState.hidden = !!draft || !permitted || !detail;
+            ACTION_BUTTONS.forEach(type => {
+                const control = actionButtons[type], command = type === 'assignNamed' ? 'assign' : type;
+                control.hidden = !!draft || !permitted || !authority || !authority.commands.includes(command) ||
+                    type === 'assign' && editor.ownerChoices.length !== 1;
                 control.disabled = busy || !!pending;
             });
             editorMessage.textContent = staleDraft ? 'Plan changed; cancel these changes and refresh.' : !editor ?
@@ -207,14 +227,14 @@
                 draftForm.save.disabled = locked; draftForm.cancel.disabled = busy || !!pending;
             }
         }
-        function openDraft(type) {
+        function openDraft(choice) {
             if (!active() || busy || pending || draft || !editor || !editor.canWrite || !model) return false;
-            const detail = selectedDetail(), authority = selectedAuthority();
-            if (!detail || !authority || !authority.commands.includes(type) || type === 'assign' && editor.ownerChoices.length !== 1) return false;
-            draft = { type, actionId: detail.actionId, planId: selected, revision: selectedRevision, controlId: detail.controlId,
-                work: detail.rationale.suggestedAction, ownerSubjectKey: type === 'assign' ? editor.ownerChoices[0].subjectKey : null };
+            const detail = selectedDetail(), authority = selectedAuthority(), named = choice === 'assignNamed', type = named ? 'assign' : choice;
+            if (!detail || !authority || !authority.commands.includes(type) || choice === 'assign' && editor.ownerChoices.length !== 1) return false;
+            draft = { type, named, actionId: detail.actionId, planId: selected, revision: selectedRevision, controlId: detail.controlId,
+                work: detail.rationale.suggestedAction, ownerSubjectKey: choice === 'assign' ? editor.ownerChoices[0].subjectKey : null };
             staleDraft = false;
-            const form = node('form'); form.setAttribute('aria-label', 'Improvement action update'); form.className = 'ncsc-questionnaire';
+            const form = node('form'); form.setAttribute('aria-label', 'Improvement action update'); form.className = 'ncsc-questionnaire improvement-action-form';
             const inputs = {}, feedback = {};
             function input(name, label, kind, maximum, initial) {
                 const container = node('label', label), field = node(kind === 'textarea' ? 'textarea' : 'input');
@@ -225,15 +245,19 @@
                 if (maximum) field.maxLength = maximum; field.value = initial || '';
                 container.append(field, error); form.append(container); inputs[name] = field; feedback[name] = error;
             }
-            form.append(node('h3', ACTION_LABELS[type]));
-            if (type === 'assign') { form.append(node('p', 'Assign this action to your current eligible membership.')); input('dueDate', 'Due date (UTC)', 'date', null, detail.dueDate); }
+            form.append(node('h3', ACTION_LABELS[choice]));
+            if (named) {
+                form.append(node('p', 'Name the person responsible for this action. They do not need a No Fries account.'));
+                input('ownerLabel', 'Owner name', 'text', 80, labelled(detail) ? detail.ownerLabel : '');
+                inputs.ownerLabel.autocomplete = 'off'; input('dueDate', 'Due date (UTC)', 'date', null, detail.dueDate);
+            } else if (type === 'assign') { form.append(node('p', 'Assign this action to your current eligible membership.')); input('dueDate', 'Due date (UTC)', 'date', null, detail.dueDate); }
             else if (type === 'block') input('reason', 'Block reason', 'textarea', 1000);
             else if (type === 'reopen') input('reason', 'Reopen reason', 'textarea', 1000);
             else if (type === 'complete') {
                 input('note', 'Completion note', 'textarea', 1000); input('evidenceReference', 'Completion evidence reference (unverified)', 'text', 180);
                 form.append(node('p', 'The evidence reference is an unverified record ID. Workflow completion does not verify the control or change scores.'));
             } else form.append(node('p', 'Start the assigned action using this displayed plan revision.'));
-            const save = node('button', SAVE_LABELS[type]); save.type = 'submit'; save.className = 'dashboard-button';
+            const save = node('button', SAVE_LABELS[choice]); save.type = 'submit'; save.className = 'dashboard-button';
             const cancel = button('Cancel changes', cancelDraft); form.append(save, cancel);
             form.addEventListener('submit', function (event) { event.preventDefault(); submitDraft(); });
             draftForm = { element: form, inputs, feedback, save, cancel }; editorPanel.append(form); render();
@@ -252,7 +276,14 @@
             if (!editor || !editor.canWrite || !model || editor.planRevision !== selectedRevision || value.type === 'generate' ||
                 value.planId !== selected || value.expectedRevision !== selectedRevision ||
                 !editor.actions.some(row => row.actionId === value.actionId && row.commands.includes(value.type)) ||
-                value.type === 'assign' && !editor.ownerChoices.some(choice => choice.subjectKey === value.payload.ownerSubjectKey)) invalid();
+                value.type === 'assign' && !labelled(value.payload) &&
+                    !editor.ownerChoices.some(choice => choice.subjectKey === value.payload.ownerSubjectKey)) invalid();
+        }
+        function fieldError(key, text) {
+            const input = draftForm.inputs[key], feedback = draftForm.feedback[key];
+            message = text; feedback.textContent = text; feedback.hidden = false;
+            input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', feedback.getAttribute('id'));
+            render(); input.focus();
         }
         function submitDraft() {
             if (!active() || busy || pending || !draft || !draftForm || staleDraft || !editor) return Promise.resolve(false);
@@ -263,18 +294,16 @@
             for (const [key, input] of Object.entries(draftForm.inputs)) {
                 try { actionField(key, input.value); }
                 catch (_) {
-                    message = key === 'dueDate' ? 'Enter a valid due date in UTC (YYYY-MM-DD), then save again.' :
+                    fieldError(key, key === 'ownerLabel' ? OWNER_LABEL_HELP : key === 'dueDate' ? 'Enter a valid due date in UTC (YYYY-MM-DD), then save again.' :
                         key === 'evidenceReference' ? 'Enter an unverified record ID of up to 180 characters without surrounding spaces. URLs and file paths cannot be used.' :
                             'Enter a ' + (key === 'note' ? 'completion note' : draft.type === 'block' ? 'block reason' : 'reopen reason') +
-                            ' of up to 1000 characters using plain text, then save again.';
-                    const feedback = draftForm.feedback[key]; feedback.textContent = message; feedback.hidden = false;
-                    input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', feedback.getAttribute('id'));
-                    render(); input.focus(); return Promise.resolve(false);
+                            ' of up to 1000 characters using plain text, then save again.'); return Promise.resolve(false);
                 }
             }
             try {
                 const values = Object.fromEntries(Object.entries(draftForm.inputs).map(([key, input]) => [key, input.value]));
-                const payload = draft.type === 'assign' ? { ownerSubjectKey: draft.ownerSubjectKey, dueDate: values.dueDate } : values;
+                const payload = draft.named ? { ownerLabel: ownerLabel(values.ownerLabel), dueDate: values.dueDate } :
+                    draft.type === 'assign' ? { ownerSubjectKey: draft.ownerSubjectKey, dueDate: values.dueDate } : values;
                 const checked = command({ planId: draft.planId, type: draft.type, operationId: 'validate-action-details',
                     expectedRevision: draft.revision, actionId: draft.actionId, payload });
                 authorisedCommand(checked);
@@ -337,6 +366,9 @@
             if (value.nextAfterPlanId !== null && (value.plans.length !== PAGE_SIZE || identifier(value.nextAfterPlanId) !== previous)) invalid();
             return value;
         }
+        function errorCode(value) {
+            try { return fields(copy(value, 1024), ['code']).code; } catch (_) { return null; }
+        }
         function response(result) {
             fields(result, ['status', 'value']); number(result.status, 599); if (result.status < 100) invalid(); return result;
         }
@@ -357,8 +389,7 @@
                 fields(action, ['actionId', 'commands']); identifier(action.actionId);
                 if (!remaining.delete(action.actionId) || !Array.isArray(action.commands) || action.commands.length > ACTION_COMMANDS.length ||
                     new Set(action.commands).size !== action.commands.length || action.commands.some(type => !ACTION_COMMANDS.includes(type)) ||
-                    (!value.canWrite || value.planRevision === 1024) && action.commands.length ||
-                    action.commands.includes('assign') && value.ownerChoices.length !== 1) invalid();
+                    (!value.canWrite || value.planRevision === 1024) && action.commands.length) invalid();
             });
             if (remaining.size) invalid(); return value;
         }
@@ -467,6 +498,10 @@
                     // Unexpected intermediary responses do not establish that the
                     // write failed. Retain its identity, as for a lost response.
                     if ([400, 401, 403, 404, 405, 409, 413].includes(result.status)) pending = null;
+                    if (result.status === 400 && labelled(captured.payload) && draft && draftForm && draftForm.inputs.ownerLabel &&
+                        ['owner_label_invalid', 'improvement_input_invalid'].includes(errorCode(result.value))) {
+                        busy = false; fieldError('ownerLabel', OWNER_LABEL_HELP); return false;
+                    }
                     if (result.status === 409) {
                         staleDraft = draft !== null; editor = null;
                         message = draft ? 'Plan changed; cancel these changes and refresh.' : 'Plan changed. Refresh the saved plan before making another update.';

@@ -228,6 +228,8 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-questionnaire textarea { display: block; width: 100%; resize: vertical; min-height: 8rem; line-height: 1.5; margin: .5rem 0; }
 .ncsc-questionnaire select { display: block; width: 100%; min-height: 3rem; margin: .5rem 0 1.5rem; }
 .ncsc-questionnaire button:disabled { cursor: default; opacity: .55; }
+.improvement-action-form label { display: block; margin: .75rem 0; }
+.improvement-action-form input { display: block; width: 100%; max-width: 24rem; box-sizing: border-box; min-height: 2.75rem; margin-top: .5rem; padding: .5rem .75rem; }
 .ncsc-questionnaire [aria-invalid="true"] { border-color: #a3352a; outline-color: #a3352a; }
 .ncsc-questionnaire a, .ncsc-questionnaire button, .ncsc-questionnaire summary { overflow-wrap: anywhere; }
 .ncsc-questionnaire :focus-visible { outline: 3px solid var(--dashboard-focus, #17140f); outline-offset: 4px; }
