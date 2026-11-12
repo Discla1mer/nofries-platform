@@ -325,11 +325,29 @@ async function resumeUi(h, options = {}) {
 }
 
 describe('saved assessment list pagination and resume', () => {
+    test('an older assessment saved again leads the loaded list without changing server pagination', async () => {
+        const h = await backend();
+        await h.execute(createCommand('assessment-z', 'create-a'));
+        h.clock.advance(1000);
+        await h.execute(createCommand('assessment-b', 'create-b'));
+        h.clock.advance(1000);
+        await h.execute(saveCommand('assessment-z', 0, 'save-a', allResponses().slice(0, 1)));
+        const ui = mountUi(h);
+        try {
+            await until(() => savedActions(ui).length === 2);
+            expect(savedActions(ui).map(button => button.dataset.assessmentId)).toEqual(['assessment-z', 'assessment-b']);
+            expect(ui.root.textContent).toContain('Most recently saved or submitted first');
+            expect(h.calls).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
     async function paginationFocusFixture(options = {}) {
         const h = await backend(), gate = deferred();
         for (const id of ['assessment-first', 'assessment-hidden', 'assessment-next']) {
             await h.execute(createCommand(id, 'seed-' + id));
         }
+        h.clock.advance(1000);
+        await h.execute(saveCommand('assessment-next', 0, 'recent-next', allResponses().slice(0, 1)));
         let hold = true;
         const list = jest.fn(async input => {
             if (input.afterAssessmentId && hold) { hold = false; await gate.promise; }
@@ -354,7 +372,7 @@ describe('saved assessment list pagination and resume', () => {
             expect(byId(ui, 'ncsc-assessment-status').value).toBe('unfinished');
             expect(h.calls.map(call => call.url)).toEqual([PREFIX + '?limit=1', PREFIX + '?limit=2&afterAssessmentId=assessment-first']);
             expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
-            expect(h.records).toHaveLength(3);
+            expect(h.records).toHaveLength(4);
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
@@ -367,7 +385,7 @@ describe('saved assessment list pagination and resume', () => {
             expect(savedActions(ui)).toHaveLength(0);
             expect(ui.document.activeElement === byId(ui, 'ncsc-assessment-search')).toBe(true);
             expect(byId(ui, 'ncsc-assessment-search').value).toBe('absent-reference');
-            expect(h.records).toHaveLength(3);
+            expect(h.records).toHaveLength(4);
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
@@ -384,7 +402,7 @@ describe('saved assessment list pagination and resume', () => {
             await until(() => savedActions(ui).length === 3);
             expect(list.mock.calls.slice(1).map(([input]) => input.afterAssessmentId)).toEqual(['assessment-first', 'assessment-first']);
             expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
-            expect(h.records).toHaveLength(3);
+            expect(h.records).toHaveLength(4);
         } finally { ui.controller.destroy(); }
     });
 

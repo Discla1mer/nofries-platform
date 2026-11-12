@@ -721,6 +721,7 @@
             }
             const usage = allowanceNote(); if (usage) introduction.append(usage);
             content.append(introduction);
+            content.append(node('p', 'dashboard-muted', 'Most recently saved or submitted first. This order applies to the assessments loaded so far.'));
             if (!loading && listLoaded && !summaries.length) content.append(node('p', '', 'No saved assessments yet.'));
             const filters = node('div', 'ncsc-assessment-filters');
             const searchLabel = node('label', '', 'Find a saved assessment'); searchLabel.htmlFor = 'ncsc-assessment-search';
@@ -752,7 +753,9 @@
                 if (!live() || view !== 'list') return;
                 list.replaceChildren();
                 const query = listSearch.trim().toLowerCase();
-                summaries.forEach(function (item, index) {
+                summaries.slice().sort(function (left, right) {
+                    return right.updatedAt.localeCompare(left.updatedAt) || left.assessmentId.localeCompare(right.assessmentId);
+                }).forEach(function (item) {
                     const submitted = item.status === 'submitted';
                     if (listStatus === 'submitted' && !submitted || listStatus === 'unfinished' && submitted ||
                         query && ![item.assessmentId, item.createdAt, item.updatedAt].some(function (value) { return value.toLowerCase().includes(query); })) return;
@@ -766,11 +769,11 @@
                     const action = submitted ? 'View results' : editable ? 'Continue assessment' : 'View assessment';
                     const open = button(action, function () { requestLeave(function () { openAssessment(item.assessmentId); }); },
                         submitted || !editable ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button');
-                    open.id = 'ncsc-assessment-open-' + index; open.dataset.assessmentId = item.assessmentId;
+                    open.id = 'ncsc-assessment-open-' + item.assessmentId; open.dataset.assessmentId = item.assessmentId;
                     const reference = node('p', 'dashboard-muted ncsc-preserve-text', 'Last saved: ' + item.updatedAt.replace('T', ' ').replace('Z', ' UTC') + '\nAssessment reference: ' + item.assessmentId);
-                    reference.id = 'ncsc-assessment-reference-' + index; open.setAttribute('aria-describedby', reference.id);
+                    reference.id = 'ncsc-assessment-reference-' + item.assessmentId; open.setAttribute('aria-describedby', reference.id);
                     const details = node('details', 'ncsc-assessment-reference'), summary = node('summary', '', 'Saved record details');
-                    summary.id = 'ncsc-assessment-details-' + index; details.append(summary, reference);
+                    summary.id = 'ncsc-assessment-details-' + item.assessmentId; details.append(summary, reference);
                     if (item.scopePopulation) row.append(node('p', 'ncsc-assessment-scope ncsc-preserve-text', item.scopePopulation.description));
                     row.append(heading, saved, progress,
                         node('p', 'dashboard-muted ncsc-assessment-date', 'Last saved ' + localDate(item.updatedAt)), open, details); list.append(row);
