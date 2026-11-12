@@ -1508,7 +1508,7 @@ describe('dashboard asynchronous ownership and sign-out', () => {
         await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
         expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
         await h.reply(3, 404, { code: 'dashboard_not_found' });
-        expect(h.factory.validate).toHaveBeenCalledTimes(1); expect(h.mounts).toHaveLength(0); expect(h.status).toBe('unavailable');
+        expect(h.factory.validate).not.toHaveBeenCalled(); expect(h.mounts).toHaveLength(0); expect(h.status).toBe('unavailable');
     });
 
     test('preserves a genuine disabled Cyber projection while mounting its ready Overview', async () => {
@@ -2242,6 +2242,37 @@ describe('unmounted authority refresh coalescing', () => {
             summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false,
             providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' };
     }
+    test.each(['metadata first', 'assets first', 'metadata denied'])('startup overlaps independent asset and metadata reads: %s', async order => {
+        const h = harness({ hash: '#cyber-security', cyber: true }); await flush();
+        const model = cyberProjection();
+        await h.reply(0, 200, state()); await h.reply(1, 200, listing()); await h.reply(2, 200, model);
+        // Neither asset has loaded, but metadata is already in flight.
+        expect(h.native).toHaveLength(2);
+        expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
+        expect(h.requests[3].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        expect(h.mounts).toHaveLength(0);
+        if (order === 'metadata denied') {
+            await h.reply(3, 403, { code: 'dashboard_access_denied' });
+            expect(h.status).toBe('denied'); expect(h.mounts).toHaveLength(0);
+            h.load(0); h.load(1); await flush(); expect(h.mounts).toHaveLength(0);
+            return;
+        }
+        if (order === 'metadata first') {
+            await h.reply(3, 200, moduleProjection(model));
+            expect(h.requests).toHaveLength(4); expect(h.mounts).toHaveLength(0);
+            h.load(0); h.load(1); await flush();
+        } else {
+            h.load(0); h.load(1); await flush();
+            expect(h.requests).toHaveLength(4); expect(h.mounts).toHaveLength(0);
+            await h.reply(3, 200, moduleProjection(model));
+        }
+        expect(h.requests[4].url).toBe('/api/dashboard/session');
+        expect(h.mounts).toHaveLength(0);
+        await h.reply(4, 200, state());
+        expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
+        expect(h.requests.filter(item => item.url === '/api/dashboard/modules/cyber_security')).toHaveLength(1);
+    });
+
     async function finish(h, first, asset, model) {
         await h.reply(first, 200, state()); await h.reply(first + 1, 200, listing());
         await h.reply(first + 2, 200, model);
