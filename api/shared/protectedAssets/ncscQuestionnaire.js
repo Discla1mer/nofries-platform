@@ -118,6 +118,34 @@
     function answer(response) {
         return { itemId: response.itemId, optionId: response.optionId, rationale: response.rationale === null ? null : { text: response.rationale.text } };
     }
+    function localDate(value) {
+        return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
+    }
+    // Plain-text summary of a submitted assessment for an IT provider. The
+    // results view and the Overview share it, so both copy the same text.
+    // Grouped by answer (No, Partial, Unknown, Not applicable), not by risk.
+    function providerSummary(assessment, metadata) {
+        const labels = new Map(metadata.responseOptions.map(function (item) { return [item.id, item.label]; }));
+        const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
+        const items = [];
+        ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
+            metadata.questions.filter(function (question) { return optionOf(question.id) === optionId; }).forEach(function (question) {
+                const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
+                const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
+                items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionId), action: action });
+            });
+        });
+        const lines = ['Cyber security assessment', 'Scope: ' + assessment.scopePopulation.description, 'Submitted: ' + localDate(assessment.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
+        return { items: items, text: lines.concat(items.map(function (item) { return item.title + ': ' + item.action; })).join('\n') };
+    }
+    // Copies with the clipboard when the browser allows it; otherwise selects
+    // the read-only text so the person can copy it themselves.
+    function copySummary(win, input, status) {
+        const clipboard = win && win.navigator && win.navigator.clipboard;
+        const fallback = function () { input.focus(); if (typeof input.select === 'function') input.select(); status.textContent = 'Summary selected. Press Ctrl+C or Cmd+C to copy it.'; };
+        if (!clipboard || typeof clipboard.writeText !== 'function') { fallback(); return; }
+        Promise.resolve(clipboard.writeText(input.value)).then(function () { status.textContent = 'Summary copied.'; }, fallback);
+    }
     // Presentation only: never calculate or repair a server score in the browser.
     // A malformed result does not invalidate an acknowledged write or its answers.
     function resultModel(assessment, metadata, organisationId) {
@@ -703,6 +731,7 @@
             }
             const usage = allowanceNote(); if (usage) introduction.append(usage);
             content.append(introduction);
+            content.append(node('p', 'dashboard-muted', 'Most recently saved or submitted first. This order applies to the assessments loaded so far.'));
             if (!loading && listLoaded && !summaries.length) content.append(node('p', '', 'No saved assessments yet.'));
             const filters = node('div', 'ncsc-assessment-filters');
             const searchLabel = node('label', '', 'Find a saved assessment'); searchLabel.htmlFor = 'ncsc-assessment-search';
@@ -734,7 +763,9 @@
                 if (!live() || view !== 'list') return;
                 list.replaceChildren();
                 const query = listSearch.trim().toLowerCase();
-                summaries.forEach(function (item, index) {
+                summaries.slice().sort(function (left, right) {
+                    return right.updatedAt.localeCompare(left.updatedAt) || left.assessmentId.localeCompare(right.assessmentId);
+                }).forEach(function (item) {
                     const submitted = item.status === 'submitted';
                     if (listStatus === 'submitted' && !submitted || listStatus === 'unfinished' && submitted ||
                         query && ![item.assessmentId, item.createdAt, item.updatedAt].some(function (value) { return value.toLowerCase().includes(query); })) return;
@@ -748,11 +779,11 @@
                     const action = submitted ? 'View results' : editable ? 'Continue assessment' : 'View assessment';
                     const open = button(action, function () { requestLeave(function () { openAssessment(item.assessmentId); }); },
                         submitted || !editable ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button');
-                    open.id = 'ncsc-assessment-open-' + index; open.dataset.assessmentId = item.assessmentId;
+                    open.id = 'ncsc-assessment-open-' + item.assessmentId; open.dataset.assessmentId = item.assessmentId;
                     const reference = node('p', 'dashboard-muted ncsc-preserve-text', 'Last saved: ' + item.updatedAt.replace('T', ' ').replace('Z', ' UTC') + '\nAssessment reference: ' + item.assessmentId);
-                    reference.id = 'ncsc-assessment-reference-' + index; open.setAttribute('aria-describedby', reference.id);
+                    reference.id = 'ncsc-assessment-reference-' + item.assessmentId; open.setAttribute('aria-describedby', reference.id);
                     const details = node('details', 'ncsc-assessment-reference'), summary = node('summary', '', 'Saved record details');
-                    summary.id = 'ncsc-assessment-details-' + index; details.append(summary, reference);
+                    summary.id = 'ncsc-assessment-details-' + item.assessmentId; details.append(summary, reference);
                     if (item.scopePopulation) row.append(node('p', 'ncsc-assessment-scope ncsc-preserve-text', item.scopePopulation.description));
                     row.append(heading, saved, progress,
                         node('p', 'dashboard-muted ncsc-assessment-date', 'Last saved ' + localDate(item.updatedAt)), open, details); list.append(row);
@@ -837,7 +868,12 @@
         }
         function renderCreate() {
             const renderedEpoch = epoch;
-            content.append(node('p', '', 'Describe the organisation, systems and people covered, for example Whole organisation. This is your declaration, not verified inventory. It cannot be changed after creation. To assess a different scope later, start a new assessment.'));
+            content.append(node('p', '', 'Describe what this assessment covers. Use separate lines for people, devices, sites and services, and say what is excluded. This is your declaration, not verified inventory. It cannot be changed after creation. To correct a mistake later, start a new assessment with the corrected scope.'));
+            const scopeExamples = node('ul', 'ncsc-scope-examples');
+            ['People: all staff, including contractors.', 'Devices: company laptops and phones.',
+                'Sites and services: Auckland office, remote work and Microsoft 365.',
+                'Excluded: personal devices not used for work.'].forEach(function (text) { scopeExamples.append(node('li', '', text)); });
+            content.append(scopeExamples);
             const label = node('label', '', 'Assessment scope'); label.setAttribute('for', 'ncsc-scope');
             const input = node('textarea', 'ncsc-textarea'); input.id = 'ncsc-scope'; input.value = declaration; input.rows = 5; input.readOnly = busy || !!pending;
             input.setAttribute('aria-describedby', 'ncsc-scope-help'); input.required = true;
@@ -867,7 +903,8 @@
             const renderedEpoch = epoch;
             const sealed = acknowledged.status === 'submitted';
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
-            const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description)); content.append(declarationPanel);
+            const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description),
+                node('p', 'dashboard-muted', 'Answer every question for this scope. If it contains a mistake, go Back to assessments and start a new assessment with the corrected scope; this saved declaration stays with its original answers.')); content.append(declarationPanel);
             if (sealed) {
                 const sealedNote = node('p', 'ncsc-sealed', 'Submitted ' + localDate(acknowledged.submission.submittedAt) + '. Your results are below, followed by your read-only answers.');
                 sealedNote.id = 'ncsc-sealed'; content.append(sealedNote);
@@ -1042,9 +1079,6 @@
                 }); panel.append(detail);
             });
         }
-        function localDate(value) {
-            return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
-        }
         function renderNextSteps(panel) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Suggested follow-ups'));
             const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(savedAnswer(question.id).optionId); }).length; };
@@ -1053,15 +1087,9 @@
             // One plain verdict before any percentages. The list follows answer groups, not risk.
             if (toFix || toCheck) section.append(node('p', 'ncsc-verdict', 'You have ' + plural(toFix, 'gap', 'gaps') + ' to fix and ' + plural(toCheck, 'answer', 'answers') + ' to check.'));
             if (toCheck) section.append(node('p', 'dashboard-muted', 'No IT provider? Ask whoever looks after your computers and accounts, or a local IT support business, to check these with you.'));
-            const list = node('ol'), summary = ['Cyber security assessment', 'Scope: ' + acknowledged.scopePopulation.description, 'Submitted: ' + localDate(acknowledged.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
-            ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
-                questions.filter(function (question) { return savedAnswer(question.id).optionId === optionId; }).forEach(function (question) {
-                    const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
-                    const label = optionById.get(optionId).label;
-                    const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
-                    const title = (control ? control.title : question.prompt) + ' — ' + label;
-                    const item = node('li'); item.append(node('strong', '', title), node('p', '', action)); list.append(item); summary.push(title + ': ' + action);
-                });
+            const list = node('ol'), summary = providerSummary(acknowledged, metadata);
+            summary.items.forEach(function (entry) {
+                const item = node('li'); item.append(node('strong', '', entry.title), node('p', '', entry.action)); list.append(item);
             });
             const followUpCount = list.children.length;
             if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + '. Grouped by your answer (No, then Partial, then Unknown, then Not applicable). Not ranked by risk or urgency.'));
@@ -1078,14 +1106,9 @@
             if (!followUpCount) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
             const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with your IT provider'));
             const label = node('label', '', 'Copy this summary into an email or document'); label.htmlFor = 'ncsc-provider-summary';
-            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.join('\n'); handoff.append(label, input);
+            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.text; handoff.append(label, input);
             const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
-            const copy = button('Copy summary', function () {
-                const clipboard = win && win.navigator && win.navigator.clipboard;
-                const fallback = function () { input.focus(); if (typeof input.select === 'function') input.select(); copied.textContent = 'Summary selected. Press Ctrl+C or Cmd+C to copy it.'; };
-                if (!clipboard || typeof clipboard.writeText !== 'function') { fallback(); return; }
-                Promise.resolve(clipboard.writeText(input.value)).then(function () { copied.textContent = 'Summary copied.'; }, fallback);
-            }, 'dashboard-button dashboard-button-secondary');
+            const copy = button('Copy summary', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary');
             handoff.append(copy);
             if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
             handoff.append(copied); section.append(handoff); panel.append(section);
@@ -1102,15 +1125,20 @@
             const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
             const domain = metadata.domains.find(function (item) { return control && item.id === control.domainId; });
             questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
-            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', question.prompt));
+            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', question.smallBusiness ? question.smallBusiness.meaning : question.prompt));
             const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
-            const hint = node('p', 'ncsc-input-guidance', question.smallBusiness ? 'For a small business, this means… ' + question.smallBusiness.meaning : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
+            const hint = node('p', 'ncsc-input-guidance', question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
             hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
             if (question.smallBusiness) {
+                const wording = node('details'); wording.append(node('summary', '', 'Full framework question'), node('p', '', question.prompt));
+                fieldset.append(wording);
                 fieldset.append(node('p', 'ncsc-input-example', 'Example: ' + question.smallBusiness.example));
                 const parts = node('details'); parts.append(node('summary', '', 'What to check')); const checks = node('ul');
+                parts.open = acknowledged.status !== 'submitted';
                 question.smallBusiness.checks.forEach(function (text) { checks.append(node('li', '', text)); }); parts.append(checks); fieldset.append(parts);
+                parts.append(node('p', 'dashboard-muted', 'Use these checks to choose one overall answer. If only some parts are in place, choose Partial. These are guidance, not separately saved or scored answers.'));
             }
+            if (acknowledged.status === 'submitted') fieldset.append(node('p', 'dashboard-badge', 'Your answer: ' + (optionById.get(entry.value.optionId)?.label || 'Not answered')));
             if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
             const writable = canEdit();
             question.responseOptionIds.forEach(function (id) {
@@ -1644,5 +1672,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, resultModel: resultModel });
+    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, copySummary: copySummary });
 }));

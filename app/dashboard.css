@@ -166,6 +166,12 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-top-gap p { margin: .25rem 0; }
 .picture-next-steps { border-top: 1px solid var(--dashboard-line); margin-top: 1.25rem; padding-top: 1rem; }
 .picture-next-steps .dashboard-button { display: inline-block; max-width: 100%; text-align: center; text-decoration: none; }
+.picture-summary { margin: .75rem 0; }
+.picture-summary summary { cursor: pointer; font-weight: 700; }
+.picture-summary textarea { display: block; box-sizing: border-box; width: 100%; max-width: 100%; resize: vertical; min-height: 8rem; line-height: 1.5; margin: .5rem 0; }
+.picture-summary .dashboard-button { margin: 0 .5rem .5rem 0; }
+.picture-summary-print { display: none; margin: .5rem 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+@media print { .picture-summary textarea { display: none; } .picture-summary-print { display: block; } }
 @media (max-width: 60rem) {
     .picture-metrics { grid-template-columns: minmax(0, 1fr); }
     .picture-metric h3 { min-height: 0; }
@@ -457,7 +463,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .nofries-dashboard .dashboard-rail .dashboard-module-link[aria-current="page"] { box-shadow: inset 3px 0 0 var(--dashboard-yellow); }
 .nofries-dashboard .dashboard-subscription { padding: 1rem .75rem; border: 1px solid var(--dashboard-line); border-radius: .75rem; background: var(--dashboard-paper); }
 .nofries-dashboard .dashboard-subscription strong { font-family: var(--font-serif, Georgia, serif); font-size: var(--dashboard-font-section); }
-.nofries-dashboard .dashboard-topbar { background: transparent; border-bottom: 0; padding-block: 1.5rem 0; }
+.nofries-dashboard .dashboard-topbar { background: var(--dashboard-paper); border-bottom: 1px solid var(--dashboard-line); padding-block: .75rem; position: sticky; top: 0; z-index: 2; }
 .nofries-dashboard .dashboard-topbar strong { color: var(--dashboard-muted); font-weight: var(--dashboard-weight-regular) !important; }
 .nofries-dashboard .dashboard-main { padding-top: 1rem; }
 .nofries-dashboard .dashboard-page-heading { padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--dashboard-line); }
@@ -479,3 +485,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] #dashboardChooser:not([open]) { justify-self: start; width: auto; max-width: 100%; border-radius: 999px; padding-inline: 1.25rem; }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-layout { border-top: 1px solid var(--dashboard-line, #d3c9b7); }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-release-footer { margin-top: 0; padding-block: 1.25rem; }
+
+.nofries-dashboard :is(.ncsc-question, .ncsc-sealed, .dashboard-main h1) { scroll-margin-top: 10rem; }
+
+.nofries-dashboard .dashboard-topbar { max-height: 9rem; overflow: auto; }

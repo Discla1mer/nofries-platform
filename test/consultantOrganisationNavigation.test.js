@@ -450,6 +450,18 @@ test.each(['pending', 'details_required'])('switching to %s saved setup protects
     }
 });
 
+test('discarding another saved draft protects the unsent form until the consultant confirms', async () => {
+    const h = await addClientForm([{ ...client(B, 'Saved client', 'pending'), discardable: true }]); h.input('address').value = 'Synthetic address';
+    const row = h.elements.dashboardChoices.children[1], find = text => row.querySelectorAll('button').find(node => node.textContent === text);
+    find('Discard draft').click(); await flush();
+    find('Yes, discard draft').click(); await flush();
+    expect(h.window.confirm).toHaveBeenCalledWith('Discard unsaved organisation details?');
+    expect(h.requests.length).toBe(3); expect(h.section.querySelector('form') === h.form).toBe(true);
+    expect(h.input('address').value).toBe('Synthetic address');
+    h.window.confirm.mockReturnValue(true); find('Yes, discard draft').click(); await flush();
+    expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'discard', requestId: B });
+});
+
 test('the read-only saved organisation name alone does not make its details form dirty', async () => {
     const h = await addClientForm([client(B, 'Saved client', 'details_required')]);
     h.elements.dashboardChoices.children[1].querySelector('button').click();

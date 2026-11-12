@@ -29,11 +29,11 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
     assert.doesNotMatch(html, /Automatic updates and connected data feeds are planned\. Managed IT and advisory services are optional\./);
 });
 
-test('release identifiers stay out of the customer view', () => {
+test('release identifiers are available in a collapsed site-version disclosure', () => {
     for (const page of ['index.html', 'managed-it.html']) {
         const source = fs.readFileSync(path.join(root, page), 'utf8');
         assert.doesNotMatch(source, /About this site|<details class="site-details">/);
-        assert.match(source, /<div class="site-release" hidden><!-- FRONTEND_RELEASE_INFO --><\/div>/);
+        assert.match(source, /<details class="site-release" id="site-version"><summary>Site version<\/summary><!-- FRONTEND_RELEASE_INFO --><\/details>/);
     }
 });
 
@@ -73,10 +73,10 @@ test('public customer links exclude the separate staff entry', () => {
     assert.match(html, /href="\/terms\.html"/);
     const footer = html.match(/<footer\b[\s\S]*?<\/footer>/)[0];
     assert.deepEqual([...footer.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]),
-        ['/', '/managed-it.html', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html']);
+        ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html']);
     const mainNav = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
     assert.deepEqual([...mainNav.matchAll(/href="([^"]+)"/g)].map(match => match[1]),
-        ['/', '/managed-it.html', '/roadmap.html', '/contact.html', '/login?intent=login']);
+        ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/login?intent=login']);
 });
 
 test('the homepage keeps only one compact MSP section below its Dashboard entry', () => {

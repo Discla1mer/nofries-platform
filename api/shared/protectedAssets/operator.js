@@ -225,7 +225,7 @@
             name: 'customerName', type: 'text', value: 'No Fries Headquarters', maxlength: '180', required: 'required'
         });
         const contactName = el('input', {
-            name: 'contactName', type: 'text', value: state.user.name || 'Joel Harvey', maxlength: '180', required: 'required'
+            name: 'contactName', type: 'text', value: state.user.name || '', maxlength: '180', required: 'required'
         });
         const contactEmail = el('input', {
             name: 'contactEmail', type: 'email', value: state.user.email || '', maxlength: '254', required: 'required'

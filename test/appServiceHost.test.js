@@ -144,6 +144,7 @@ describe('dynamic host route and disclosure boundary', () => {
         '/privacy.html',
         '/terms.html',
         '/pilot-terms.html',
+        '/pricing.html',
         '/style.css',
         '/home.css',
         '/favicon.svg',
