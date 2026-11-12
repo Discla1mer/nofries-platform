@@ -1176,6 +1176,8 @@
             return questionnaire.mount(root, { window: window, metadata: value.metadata, client: client,
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
+                initialQuestionIndex: presentation && presentation.initialQuestionIndex,
+                onLocation: presentation && presentation.onLocation,
                 // Overview's first-use action opens the new-assessment step directly.
                 startNew: !!(presentation && presentation.startNew === true) });
         };
