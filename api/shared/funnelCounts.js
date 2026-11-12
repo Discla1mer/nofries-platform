@@ -23,10 +23,29 @@ const RATE_MAX = 90;
 const MAX_TELEMETRY_BUCKETS = 2000;
 const telemetryBuckets = new Map();
 
+function expandIpv6(address) {
+    const value = address.split('%')[0].toLowerCase();
+    if (!/^[0-9a-f:.]+$/.test(value) || (value.match(/::/g) || []).length > 1) return null;
+    const [head, tail = null] = value.split('::');
+    const left = head ? head.split(':') : [];
+    const right = tail === null ? [] : (tail ? tail.split(':') : []);
+    const parts = [...left, ...right];
+    if (parts.some(part => part.includes('.'))) {
+        const v4 = parts.pop().split('.').map(Number);
+        if (v4.length !== 4 || v4.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+        parts.push(((v4[0] << 8) | v4[1]).toString(16), ((v4[2] << 8) | v4[3]).toString(16));
+        if (tail === null) left.splice(0, left.length, ...parts); else right.splice(0, right.length, ...parts.slice(left.length));
+    }
+    const all = tail === null ? parts : [...left, ...Array(8 - left.length - right.length).fill('0'), ...right];
+    if (all.length !== 8 || all.some(part => !/^[0-9a-f]{1,4}$/.test(part))) return null;
+    return all.map(part => part.padStart(4, '0'));
+}
+
 function telemetryKey(clientKey) {
     const key = String(clientKey || 'unknown');
     if (!key.includes(':')) return key;
-    return key.split(':').slice(0, 4).join(':') + '::/64';
+    const hextets = expandIpv6(key);
+    return hextets ? hextets.slice(0, 4).join(':') + '::/64' : key;
 }
 
 function allowTelemetry(clientKey, nowMs = Date.now()) {

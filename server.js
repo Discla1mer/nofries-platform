@@ -1056,6 +1056,9 @@ function blockSuspiciousUserAgents(req, res, next) {
 }
 
 function rateLimitApiRequests(req, res, next) {
+    // Anonymous funnel counts use their own isolated limiter, so they never
+    // spend the shared write budget that signup and enquiries depend on.
+    if (req.path === '/telemetry') return next();
     const method = String(req.method || 'GET').toUpperCase();
     const bucket = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? 'apiWrite' : 'apiRead';
     const clientKey = getClientKeyFromHeaders(req.headers, req.ip || req.socket.remoteAddress);

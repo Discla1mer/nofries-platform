@@ -99,6 +99,18 @@ test('IPv6 clients share a bucket per /64', () => {
     expect(telemetryKey('2001:db8:1:2:aaaa::1')).toBe(telemetryKey('2001:db8:1:2:bbbb::9'));
     expect(telemetryKey('2001:db8:1:2::1')).not.toBe(telemetryKey('2001:db8:1:3::1'));
     expect(telemetryKey(IP)).toBe(IP);
+    expect(telemetryKey('2001:db8::aaaa:1')).toBe(telemetryKey('2001:db8::bbbb:1'));
+    expect(telemetryKey('2001:db8::1')).toBe('2001:0db8:0000:0000::/64');
+    expect(telemetryKey('2001:DB8:0:0:1::1')).toBe(telemetryKey('2001:db8::2'));
+    expect(telemetryKey('::ffff:203.0.113.7')).toBe(telemetryKey('::ffff:203.0.113.8'));
+});
+
+test('telemetry posts do not spend the shared API write budget', async () => {
+    process.env.NOFRIES_FUNNEL_COUNTS_ENABLED = 'true';
+    for (let i = 0; i < 95; i += 1) {
+        await request(app).post('/api/telemetry').set('sec-fetch-site', 'same-origin').set('x-forwarded-for', '198.51.100.9').send({ event: 'visit' });
+    }
+    expect(checkRateLimit('apiWrite', '198.51.100.9', {}).allowed).toBe(true);
 });
 
 test('a failed write logs fixed text only, with no IP, user agent or referrer', async () => {
