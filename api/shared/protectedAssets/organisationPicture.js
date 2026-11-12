@@ -537,6 +537,46 @@
             });
             section.append(list, helpPanel()); return section;
         }
+        // Information needs are saved answers, not unanswered questions or a
+        // risk ranking. Reuse the existing plan handoff without creating a plan.
+        function informationSection(result) {
+            const section = node('section', 'picture-information');
+            const heading = node('h3', '', 'Information to confirm');
+            heading.id = id + '-information'; section.setAttribute('aria-labelledby', heading.id);
+            section.append(heading);
+            const indexed = new Map(result.domains.flatMap(domain => domain.controls.flatMap(control =>
+                control.questions.map(question => [question.itemId, question]))));
+            const questions = metadata.questions.map(question => indexed.get(question.id))
+                .filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId));
+            const unknown = questions.filter(question => question.responseOptionId === 'unknown').length;
+            const pending = questions.length - unknown;
+            section.append(node('p', '', unknown + ' saved Unknown ' + (unknown === 1 ? 'answer' : 'answers') +
+                ' · ' + pending + ' saved Not applicable ' + (pending === 1 ? 'answer' : 'answers') + ' awaiting review.'),
+                node('p', 'dashboard-muted', 'These are saved answers to confirm, not unanswered questions or a risk score.'));
+            if (!questions.length) {
+                section.append(node('p', '', 'No information requests are suggested by these saved answers. This does not verify that controls are effective.'));
+                return section;
+            }
+            const list = node('ul', 'picture-information-list');
+            questions.forEach(question => {
+                const item = node('li');
+                item.append(node('h4', '', question.prompt), node('p', '', question.responseOptionId === 'unknown'
+                    ? 'Saved answer: Unknown. Find out what is in place.'
+                    : 'Saved answer: Not applicable, awaiting review. Confirm whether this applies to the assessment scope.'));
+                list.append(item);
+            });
+            section.append(list);
+            if (openImprovement && improvementSelection()) {
+                const token = epoch, binding = sourceBinding();
+                const action = button('Open plan for information requests', () => {
+                    if (!currentSubmitted(token, binding, action)) return;
+                    const selection = improvementSelection(); if (selection) openImprovement(selection);
+                });
+                section.append(node('p', 'dashboard-muted', 'Opening the plan creates or sends nothing. An authorised editor must choose Create improvement plan for this assessment to save requests. This may also create other recommended actions.'), action,
+                    node('p', 'dashboard-muted', 'Use the plan to agree who will find the information and when. Completing an action does not approve a Not applicable answer, verify a control or change assessment scores.'));
+            } else section.append(node('p', 'dashboard-muted', 'This view only lists information needs. Use the questions above to agree who will find the information and when to review it. No requests have been created or sent.'));
+            return section;
+        }
         // Copy or print reuses the results view's summary and copy behaviour.
         // The help link shows only when the public enquiry status says
         // enquiries are open. Nothing leaves the page: no share link is made.
@@ -604,7 +644,7 @@
             const implementationMetric = metric('Reported implementation', result.attainment,
                 'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm. It is not a performance score.', true);
             const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
-            root.append(metrics);
+            root.append(metrics, informationSection(result));
             const domains = node('section', 'picture-domains');
             domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm. The range is not a performance score.'));
             result.domains.forEach(domain => {
