@@ -885,6 +885,7 @@ describe('consultant client setup', () => {
         expect(h.document.getElementById('clientSetupControls').querySelector('form')).toBeNull();
         await h.reply(4, 200, fullClients());
         expect(h.document.getElementById('clientSetupControls').textContent).toContain('No client slots remain.');
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain('All client slots are in use, so this client was not set up.');
         expect(buttons(h).some(b => /Retry|Add client/.test(b.textContent))).toBe(false);
         h.window.dispatch('focus'); await flush();
         await h.reply(5, 200, consultant()); await h.reply(6, 200, listing([A])); await h.reply(7, 200, consultant());
@@ -948,6 +949,53 @@ describe('consultant client setup', () => {
             buttons(h).find(b => b.textContent === 'Retry').click(); await flush();
             expect(h.requests[4].init.method).toBe('POST'); expect(h.requests[4].init.body).toBe(original);
         });
+    const drafts = (discardable, remaining = 2) => ({ csrfToken, state: { status: 'clients', remaining, clients: [
+        { requestId: C, organisationName: 'Draft client', status: 'pending', ...(discardable === undefined ? {} : { discardable }) },
+        { requestId: B, organisationName: 'Ready client', status: 'ready', ...(discardable === undefined ? {} : { discardable: false }) }] } });
+    const label = b => b.getAttribute('aria-label') || b.textContent;
+    test('a discardable draft is discarded only after a confirm step, and the list is redrawn from the server', async () => {
+        const h = await portfolio(); await h.reply(2, 200, drafts(true));
+        const controls = h.document.getElementById('clientSetupControls');
+        expect(controls.textContent).toContain('2 client slots remain. A slot is used when a client’s terms are accepted. Drafts do not use one. You can add up to 12 client organisations in total, including discarded drafts.');
+        expect(buttons(h).filter(b => label(b).startsWith('Discard draft')).map(label)).toEqual(['Discard draft: Draft client']);
+        buttons(h).find(b => label(b) === 'Discard draft: Draft client').click(); await flush();
+        expect(h.requests).toHaveLength(3);
+        const row = h.elements.dashboardChoices.querySelectorAll('.client-workspace-row')[0];
+        expect(row.textContent).toContain('Discard this draft? It will be removed from your list. This cannot be undone.');
+        buttons(h).find(b => b.textContent === 'Keep draft').click(); await flush();
+        expect(h.requests).toHaveLength(3); expect(row.textContent).not.toContain('Discard this draft?');
+        buttons(h).find(b => label(b) === 'Discard draft: Draft client').click(); await flush();
+        buttons(h).find(b => label(b) === 'Yes, discard draft: Draft client').click(); await flush();
+        expect(h.requests[3]).toMatchObject({ url: '/api/customer-signup/clients', init: { method: 'POST' } });
+        expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'discard', requestId: C });
+        await h.reply(3, 200, { csrfToken, state: { status: 'clients', remaining: 2, clients: [
+            { requestId: B, organisationName: 'Ready client', status: 'ready', discardable: false }] } });
+        expect(h.elements.dashboardChoices.querySelectorAll('.client-workspace-row')).toHaveLength(0);
+        expect(buttons(h).some(b => /Discard/.test(label(b)))).toBe(false);
+    });
+    test.each([undefined, false])('no discard action or slot rule is shown when discardable is %p', async discardable => {
+        const h = await portfolio(); await h.reply(2, 200, drafts(discardable, 0));
+        expect(buttons(h).some(b => /Discard/.test(label(b)))).toBe(false);
+        const text = h.document.getElementById('clientSetupControls').textContent;
+        expect(text).toContain('No client slots remain.');
+        if (discardable === undefined) expect(text).not.toContain('Drafts do not use one.');
+    });
+    test('a non-boolean discardable value is refused as an invalid client list', async () => {
+        const h = await portfolio(); await h.reply(2, 200, drafts('yes'));
+        expect(buttons(h).some(b => /Discard/.test(label(b)))).toBe(false);
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain('Retry to refresh the list.');
+    });
+    test.each(['starter_client_not_draft', 'starter_client_discarded'])('a %s refusal reloads the list without repeating the discard', async code => {
+        const h = await portfolio(); await h.reply(2, 200, drafts(true));
+        buttons(h).find(b => label(b) === 'Discard draft: Draft client').click(); await flush();
+        buttons(h).find(b => label(b) === 'Yes, discard draft: Draft client').click(); await flush();
+        await h.reply(3, 409, { code });
+        expect(h.requests[4].init.method).toBe('GET'); expect(h.requests[4].init).not.toHaveProperty('body');
+        await h.reply(4, 200, drafts(false));
+        expect(h.requests.filter(r => r.init.method === 'POST')).toHaveLength(1);
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain(code === 'starter_client_discarded'
+            ? 'This draft has been discarded.' : 'This organisation is not a draft, so it was not discarded.');
+    });
     test('late definitive client rejection from an abandoned cycle cannot clear the current unresolved request', async () => {
         const { h, original } = await submittedClient();
         h.window.dispatch('focus'); await flush(); await recheck(h, 4);
