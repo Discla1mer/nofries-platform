@@ -15,7 +15,7 @@ const { fixture } = require('./fixtures/dashboardFixture');
 const { projectDashboard } = require('../api/shared/appLifecycle/dashboardProjection');
 const { normaliseNcscCommand, projectNcscDetail, projectNcscSummary } = require('../api/shared/ncscAssessmentService');
 const { makeVersion, stableIntent } = require('../api/shared/assessmentLifecycle/postgresNcscAssessmentStore');
-const { ncscFixture, createClock, createContext, createCommand, saveCommand, allResponses } = require('./fixtures/ncscAssessmentFixture');
+const { ncscFixture, createClock, createContext, createCommand, saveCommand, submitCommand, allResponses } = require('./fixtures/ncscAssessmentFixture');
 
 const SOURCE = fs.readFileSync(process.env.NOFRIES_DASHBOARD_LOADER_TEST_SOURCE ||
     path.join(__dirname, '../js/dashboard-loader.js'), 'utf8');
@@ -1724,6 +1724,27 @@ describe('ready Cyber composition', () => {
             read(id) { return { schemaVersion: 1, assessment: projectNcscDetail(versions.get(id)) }; }
         };
     }
+    test('the coming-next plan follows a later assessment page before saying there is no baseline', async () => {
+        const h = harness({ cyber: true, hash: '#improvement-plan' });
+        const stored = await records();
+        stored.execute(createCommand('assessment-a', 'create-a', 'Draft scope only.'));
+        stored.execute(createCommand('assessment-b', 'create-b', 'Submitted scope.'));
+        stored.execute(saveCommand('assessment-b', 0, 'save-b', allResponses('yes')));
+        stored.execute(submitCommand('assessment-b', 1, 'submit-b'));
+        const draft = projectNcscSummary(stored.versions.get('assessment-a'));
+        const submitted = projectNcscSummary(stored.versions.get('assessment-b'));
+        await ready(h);
+        expect(h.requests[5].url).toBe('/api/dashboard/ncsc/assessments?limit=50');
+        await ncscReply(h, 5, 200, { schemaVersion: 1, assessments: [draft], nextAfterAssessmentId: draft.assessmentId });
+        expect(h.requests[6].url).toBe('/api/dashboard/ncsc/assessments?limit=50&afterAssessmentId=' + draft.assessmentId);
+        await ncscReply(h, 6, 200, { schemaVersion: 1, assessments: [submitted], nextAfterAssessmentId: null });
+        expect(h.elements.dashboardApp.textContent).toContain('Review the gaps in your submitted assessment');
+        expect(h.elements.dashboardApp.textContent).not.toContain('There is no submitted assessment yet');
+        const review = h.elements.dashboardApp.querySelectorAll('button').find(button => button.textContent === 'Review gaps in your results');
+        expect(review).toBeDefined();
+        review.click();
+        expect(h.ncscMounts.at(-1)[1].initialAssessmentId).toBe('assessment-b');
+    });
     async function openedRecord(h, stored) {
         await ready(h); await ncscReply(h, 5, 200, stored.list());
         const row = h.elements.dashboardApp.querySelector('.ncsc-assessment-list').querySelector('button');

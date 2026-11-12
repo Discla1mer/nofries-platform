@@ -449,6 +449,22 @@ test('planned improvement plan links a submitted baseline to its results', async
     dom.controller.destroy();
 });
 
+test('an unfinished assessment scan does not claim that no baseline exists', async () => {
+    const model = readyCyber();
+    model.modules.find(item => item.key === 'improvement_plan').state = 'planned';
+    const dom = mount(model, {
+        readBaseline: async () => ({ submittedId: null, draftId: 'draft-assessment', complete: false }),
+        mountCyber: () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } })
+    });
+    await dom.controller.navigate('improvement-plan');
+    for (let step = 0; step < 5; step += 1) await Promise.resolve();
+    assert.match(dom.root.textContent, /could not check every saved assessment/);
+    assert.doesNotMatch(dom.root.textContent, /There is no submitted assessment yet/);
+    assert.doesNotMatch(dom.root.textContent, /You have a draft assessment/);
+    assert.ok([...buttons(dom)].some(item => item.textContent === 'Open Cyber Security'));
+    dom.controller.destroy();
+});
+
 for (const state of ['planned', 'disabled']) test(`Improvement ${state} cannot expose a picture callback or mount`, async () => {
     const model = readyCyber(); model.modules.find(item => item.key === 'improvement_plan').state = state;
     const picture = syntheticChild(), improvement = syntheticChild();

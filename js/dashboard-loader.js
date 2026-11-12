@@ -1254,15 +1254,36 @@
         };
         mountCyber.readBaseline = async function () {
             if (!current(cycle) || cycle.authorityPending) throw invalid();
-            const listed = await client.list({ limit: 50 });
-            if (!current(cycle) || cycle.authorityPending) throw invalid();
-            const rows = Array.isArray(listed.assessments) ? listed.assessments : [];
-            const newest = function (wanted) {
-                return rows.filter(function (row) { return wanted ? row.status === 'submitted' : row.status !== 'submitted'; })
-                    .sort(function (a, b) { return a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0; })[0] || null;
+            // The list is ordered by assessment id and a page can be shorter than
+            // the requested limit. Keep following the cursor before saying that
+            // no submitted baseline exists. Stop after a few pages and say the
+            // check is incomplete rather than inventing an empty result.
+            let after = null, submitted = null, draft = null, complete = false;
+            for (let page = 0; page < 4; page += 1) {
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                // A null prototype satisfies the assessment client's plain-object
+                // check in the browser and in the loader test realm.
+                const query = Object.create(null);
+                query.limit = 50;
+                if (after !== null) query.afterAssessmentId = after;
+                const listed = await client.list(query);
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                const rows = Array.isArray(listed.assessments) ? listed.assessments : [];
+                rows.forEach(function (row) {
+                    if (row.status === 'submitted') {
+                        if (!submitted || row.updatedAt > submitted.updatedAt) submitted = row;
+                    } else if (!draft || row.updatedAt > draft.updatedAt) draft = row;
+                });
+                const next = listed.nextAfterAssessmentId;
+                if (next === null) { complete = true; break; }
+                if (typeof next !== 'string' || next === after) throw invalid();
+                after = next;
+            }
+            return {
+                submittedId: submitted ? submitted.assessmentId : null,
+                draftId: complete && !submitted && draft ? draft.assessmentId : null,
+                complete: complete
             };
-            const submitted = newest(true), draft = newest(false);
-            return { submittedId: submitted ? submitted.assessmentId : null, draftId: draft ? draft.assessmentId : null };
         };
         const picture = window.NoFriesOrganisationPicture;
         let pictureSelection = null;

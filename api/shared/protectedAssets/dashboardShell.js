@@ -490,6 +490,10 @@
                         title.textContent = 'Review the gaps in your submitted assessment';
                         copy.textContent = 'Your improvement plan will be built from a submitted baseline. Open the results to see the gaps.';
                         section.append(button('Review gaps in your results', function () { navigate(cyber.route, true, undefined, baseline.submittedId); }));
+                    } else if (baseline && baseline.complete === false) {
+                        title.textContent = 'Your improvement plan appears after you submit your first assessment';
+                        copy.textContent = 'We could not check every saved assessment from here. Open Cyber Security to see a submitted result or continue a draft.';
+                        section.append(button('Open Cyber Security', function () { navigate(cyber.route, true); }));
                     } else if (baseline && baseline.draftId) {
                         title.textContent = 'Your improvement plan appears after you submit your first assessment';
                         copy.textContent = 'You have a draft assessment. Submit it to create your baseline. This page does not list gaps yet.';
