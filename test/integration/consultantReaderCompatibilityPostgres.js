@@ -208,7 +208,8 @@ function registerConsultantReaderCompatibility() {
                 '0009_signup_registrations.sql', '0010_signup_acceptance_schedule.sql',
                 '0011_starter_signup.sql', '0016_dashboard_improvement_plans.sql', '0017_starter_client_period.sql',
                 '0018_dashboard_admin_lookup_audit.sql', '0019_starter_client_discard.sql',
-                '0021_lifecycle_email_outbox.sql', '0022_funnel_daily_counts.sql'
+                '0021_lifecycle_email_outbox.sql', '0022_funnel_daily_counts.sql',
+                '0023_email_dispatcher_subject_lookup.sql'
             ]));
         });
         for (const stage of ['before_claim', 'incomplete_claim', 'committed_claim']) api.test(`${stage}: normal enabled reader exposes saved own details and never completes a new-policy lifecycle`, async () => atFixtureTime(async () => {
