@@ -35,13 +35,13 @@ function editorContext(state, planId = 'plan-a', canWrite = true) {
     return { schemaVersion: 1, scope: { ...SCOPE, planId }, planRevision: model.planRevision, asOf: AT, canWrite,
         ownerChoices: canWrite ? [{ subjectKey: ACTOR, label: 'Assign to me' }] : [],
         actions: model.actions.map(action => ({ actionId: action.actionId, commands: !canWrite ? [] : action.status === 'completed' ? ['reopen'] :
-            ['assign', ...['open', 'blocked'].includes(action.status) && action.ownerSubjectKey ? ['start'] : [],
+            ['assign', ...['open', 'blocked'].includes(action.status) && (action.ownerSubjectKey || action.ownerLabel) ? ['start'] : [],
                 ...action.status === 'in_progress' ? ['block'] : [],
-                ...['in_progress', 'blocked'].includes(action.status) && action.ownerSubjectKey ? ['complete'] : []] })) };
+                ...['in_progress', 'blocked'].includes(action.status) && (action.ownerSubjectKey || action.ownerLabel) ? ['complete'] : []] })) };
 }
 function append(state, type, payload, actionId = presentation(state).actions[0].actionId, operationId = 'seed-' + state.commands.length, expectedRevision = state.commands.length) {
     const owners = [...new Set([ACTOR, ...getImprovementPlanView(state).actions.map(action => action.ownerSubjectKey).filter(Boolean),
-        ...type === 'assign' ? [payload.ownerSubjectKey] : []])];
+        ...type === 'assign' && payload.ownerSubjectKey ? [payload.ownerSubjectKey] : []])];
     return applyImprovementActionCommand(state, { ...SCOPE, planId: state.planId, evaluationOutputSha256: state.source.evaluationOutputSha256,
         actionId, operationId, expectedRevision, actorSubjectKey: ACTOR, at: AT, type, payload },
     { ...SCOPE, actorSubjectKey: ACTOR, eligibleOwnerSubjectKeys: owners });
@@ -466,8 +466,51 @@ const OPERATIONS = [
     { type: 'complete', label: 'Complete action', state: started,
         values: { 'Completion note': 'Recorded workflow completion.', 'Completion evidence reference (unverified)': 'synthetic:evidence:completion' },
         payload: { note: 'Recorded workflow completion.', evidenceReference: 'synthetic:evidence:completion' } },
-    { type: 'reopen', label: 'Reopen action', state: completed, values: { 'Reopen reason': 'Follow-up work remains.' }, payload: { reason: 'Follow-up work remains.' } }
+    { type: 'reopen', label: 'Reopen action', state: completed, values: { 'Reopen reason': 'Follow-up work remains.' }, payload: { reason: 'Follow-up work remains.' } },
+    { type: 'assign', label: 'Set owner and due date', state: seed, values: { 'Owner name': '  Aroha   Ngata ', 'Due date (UTC)': '2026-10-02' },
+        payload: { ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' } }
 ];
+const OWNER_LABEL_HELP = 'Enter the owner’s name in 1 to 80 characters. Use a name rather than an email address, and not the words “all” or “unassigned”.';
+function labelOwned() { return append(seed(), 'assign', { ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' }); }
+
+test('a label-owned action shows its named owner and can be started without a platform owner', async () => {
+    const h = harness({ plan: labelOwned() }); expect(await h.controller.ready).toBe(true);
+    const actionId = chooseAction(h);
+    expect(h.root.textContent).toContain('Status: Open. Owner: Aroha Ngata. Due date (UTC): 2026-10-02.');
+    expect(h.root.textContent).toContain('Aroha Ngata (named owner)');
+    expect(button(h, 'Assign to me')).toBeDefined(); button(h, 'Set owner and due date').click();
+    expect(field(h, 'Owner name').value).toBe('Aroha Ngata'); expect(field(h, 'Owner name').maxLength).toBe(80);
+    expect(field(h, 'Owner name').parentElement.tagName).toBe('LABEL'); button(h, 'Cancel changes').click();
+    button(h, 'Start action').click(); await submitForm(h);
+    expect(h.request.mock.calls.filter(([path]) => path.endsWith('/execute'))[0][1]).toMatchObject({ type: 'start', actionId, payload: {} });
+    const action = getImprovementPlanView(h.state.plans.get('plan-a')).actions.find(row => row.actionId === actionId);
+    expect(action).toMatchObject({ status: 'in_progress', ownerSubjectKey: null, ownerLabel: 'Aroha Ngata' });
+});
+
+test.each(['', '   ', 'aroha@example.nz', 'Unassigned', 'ＡＬＬ', 'x'.repeat(81)])('owner name %j shows plain-English help without sending', async value => {
+    const h = harness(); expect(await h.controller.ready).toBe(true); chooseAction(h);
+    button(h, 'Set owner and due date').click();
+    const owner = fill(h, 'Owner name', value); fill(h, 'Due date (UTC)', '2026-10-02'); const count = h.request.mock.calls.length;
+    await submitForm(h);
+    expect(h.request).toHaveBeenCalledTimes(count); expect(h.options.newId).not.toHaveBeenCalled();
+    expect(h.document.activeElement).toBe(owner); expect(owner.getAttribute('aria-invalid')).toBe('true');
+    expect(owner.parentElement.querySelector('span').textContent).toBe(OWNER_LABEL_HELP);
+});
+
+test('a server owner_label_invalid keeps the draft and shows inline owner help', async () => {
+    const h = harness({ respond(path, body, state) {
+        if (path.endsWith('/execute')) return { status: 400, value: { code: 'owner_label_invalid' } };
+        if (path.includes('/plans?')) return { status: 200, value: page() };
+        return { status: 200, value: presentation(state.plans.get('plan-a')) };
+    } });
+    expect(await h.controller.ready).toBe(true); chooseAction(h); button(h, 'Set owner and due date').click();
+    const retained = form(h), owner = fill(h, 'Owner name', 'Aroha Ngata'); fill(h, 'Due date (UTC)', '2026-10-02');
+    await submitForm(h);
+    expect(h.request.mock.calls.filter(([path]) => path.endsWith('/execute'))[0][1].payload).toEqual({ ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' });
+    expect(form(h)).toBe(retained); expect(owner.disabled).toBe(false); expect(h.document.activeElement).toBe(owner);
+    expect(owner.getAttribute('aria-invalid')).toBe('true'); expect(owner.parentElement.querySelector('span').textContent).toBe(OWNER_LABEL_HELP);
+    expect(h.root.textContent).toContain('Improvement action plan'); expect(button(h, 'Retry pending improvement command')).toBeUndefined();
+});
 
 test.each(OPERATIONS)('actual $type form sends the retained command and refreshes its resulting view/editor', async operation => {
     const h = harness({ plan: operation.state() }); expect(await h.controller.ready).toBe(true);
