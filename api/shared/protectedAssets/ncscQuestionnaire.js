@@ -132,11 +132,13 @@
             metadata.questions.filter(function (question) { return optionOf(question.id) === optionId; }).forEach(function (question) {
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
                 const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
-                items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionId), action: action });
+                const ownerStart = ['no', 'partial'].includes(optionId) && /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(question.id);
+                items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionId), action: action,
+                    owner: ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.' });
             });
         });
         const lines = ['Cyber security assessment', 'Scope: ' + assessment.scopePopulation.description, 'Submitted: ' + localDate(assessment.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
-        return { items: items, text: lines.concat(items.map(function (item) { return item.title + ': ' + item.action; })).join('\n') };
+        return { items: items, text: lines.concat(items.map(function (item) { return item.title + ': ' + item.owner + ' ' + item.action; })).join('\n') };
     }
     // Copies with the clipboard when the browser allows it; otherwise selects
     // the read-only text so the person can copy it themselves.
@@ -1089,7 +1091,7 @@
             if (toCheck) section.append(node('p', 'dashboard-muted', 'No IT provider? Ask whoever looks after your computers and accounts, or a local IT support business, to check these with you.'));
             const list = node('ol'), summary = providerSummary(acknowledged, metadata);
             summary.items.forEach(function (entry) {
-                const item = node('li'); item.append(node('strong', '', entry.title), node('p', '', entry.action)); list.append(item);
+                const item = node('li'); item.append(node('strong', '', entry.title), node('p', 'dashboard-muted', entry.owner), node('p', '', entry.action)); list.append(item);
             });
             const followUpCount = list.children.length;
             if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + '. Grouped by your answer (No, then Partial, then Unknown, then Not applicable). Not ranked by risk or urgency.'));

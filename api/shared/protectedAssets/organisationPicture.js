@@ -454,7 +454,9 @@
                 const why = node('p'), next = node('p');
                 why.append(node('strong', '', 'Why it matters: '), node('span', '', gap.why));
                 next.append(node('strong', '', 'What to do next: '), node('span', '', gap.next));
-                item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer), why, next);
+                const ownerStart = /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(gap.itemId);
+                item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer),
+                    node('p', 'picture-gap-owner', ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.'), why, next);
                 list.append(item);
             });
             section.append(list, helpPanel()); return section;
