@@ -11,27 +11,21 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { chromium } = require('playwright');
 const { buildSignupDocument, buildHostedSignupDocument } = require('../../lib/signupDocument');
-const { withHashBoundSharedAssistantDocument } = require('../../lib/withHashBoundSharedAssistantDocument');
 
 const root = path.resolve(__dirname, '../..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const sourceFiles = ['api/shared/customerSignup/signupJourney.js', 'api/shared/customerSignup/signupClient.js',
-    'lib/signupDocument.js', 'lib/withHashBoundSharedAssistantDocument.js', 'lib/withSharedAssistantDocument.js',
-    'lib/sharedAssistantDocument.js', 'js/prospect-assistant.js', 'js/shared-assistant.js',
-    'style.css', 'home.css', 'shared-assistant.css', 'images/nofrieslogo.png', 'images/fry-chat.png',
-    'scripts/tests/signup-unconfirmed-browser.cjs'];
+    'lib/signupDocument.js', 'style.css', 'home.css', 'images/nofrieslogo.png', 'scripts/tests/signup-unconfirmed-browser.cjs'];
 const hashes = () => Object.fromEntries(sourceFiles.map(file => [file,
     createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')]));
 const sourceHashes = hashes();
 const sources = { clientSource: read(sourceFiles[1]), journeySource: read(sourceFiles[0]) };
-const wrap = document => withHashBoundSharedAssistantDocument(document,
-    { prospectSource: read('js/prospect-assistant.js'), sharedSource: read('js/shared-assistant.js') });
 const documents = {
-    dynamic: wrap(buildSignupDocument({ ...sources, customerLogin: true, customerTransport: 'external' })),
-    hosted: wrap(buildHostedSignupDocument(sources))
+    dynamic: buildSignupDocument({ ...sources, customerLogin: true, customerTransport: 'external' }),
+    hosted: buildHostedSignupDocument(sources)
 };
-const assets = new Set(['style.css', 'home.css', 'shared-assistant.css', 'images/nofrieslogo.png',
-    'images/fry-chat.png', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png']);
+const assets = new Set(['style.css', 'home.css', 'images/nofrieslogo.png',
+    'favicon.svg', 'favicon.ico', 'apple-touch-icon.png']);
 const statePath = '/api/external-customer-signup/state';
 const code = 'Error code: NF-SIGNUP-UNCONFIRMED';
 const reason = 'We could not confirm your account setup. Do not create another account or submit your details again.';

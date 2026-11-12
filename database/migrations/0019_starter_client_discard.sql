@@ -81,6 +81,7 @@ BEGIN
         IF current_setting('transaction_isolation') <> 'read committed' THEN
             RAISE EXCEPTION 'starter_activation_isolation_invalid';
         END IF;
+        -- Counts through starter_scopes_subject_read (all of the owner's scopes); a native test pins that policy.
         SELECT count(*) INTO used FROM nofries.dashboard_starter_scopes
             WHERE account_id = NEW.account_id AND ordinal > 0 AND activation IS NOT NULL AND discarded_at IS NULL;
         IF used >= 3 THEN RAISE EXCEPTION 'starter_client_limit'; END IF;

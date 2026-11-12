@@ -6,8 +6,6 @@ const { buildSupportDocument } = require('./lib/supportDocument');
 const { buildPortalDocument } = require('./lib/portalDocument');
 const { buildDashboardDocument, withCustomerProvider } = require('./lib/dashboardDocument');
 const { buildGatewayDocument } = require('./lib/gatewayDocument');
-const { withSharedAssistantDocument, publicAssistantPage } = require('./lib/withSharedAssistantDocument');
-const { withHashBoundSharedAssistantDocument } = require('./lib/withHashBoundSharedAssistantDocument');
 const {
     checkRateLimit,
     getClientKeyFromHeaders,
@@ -296,20 +294,16 @@ const gatewayInputs = {
 };
 const gatewayDocument = buildGatewayDocument(gatewayInputs);
 const externalGatewayDocument = buildGatewayDocument({ ...gatewayInputs, customerTransport: 'external' });
-const signupAssistantSources = Object.freeze({
-    prospectSource: fs.readFileSync(path.join(__dirname, 'js/prospect-assistant.js'), 'utf8'),
-    sharedSource: fs.readFileSync(path.join(__dirname, 'js/shared-assistant.js'), 'utf8')
-});
-const signupDocument = withHashBoundSharedAssistantDocument(buildSignupDocument({
+const signupDocument = buildSignupDocument({
     clientSource: fs.readFileSync(path.join(__dirname, 'api/shared/customerSignup/signupClient.js'), 'utf8'),
     journeySource: fs.readFileSync(path.join(__dirname, 'api/shared/customerSignup/signupJourney.js'), 'utf8'),
     customerLogin: !!dashboard?.authServices.customer
-}), signupAssistantSources);
-const externalSignupDocument = externalCustomerSignup ? withHashBoundSharedAssistantDocument(buildSignupDocument({
+});
+const externalSignupDocument = externalCustomerSignup ? buildSignupDocument({
     clientSource: fs.readFileSync(path.join(__dirname, 'api/shared/customerSignup/signupClient.js'), 'utf8'),
     journeySource: fs.readFileSync(path.join(__dirname, 'api/shared/customerSignup/signupJourney.js'), 'utf8'),
     customerLogin: true, customerTransport: 'external'
-}), signupAssistantSources) : null;
+}) : null;
 function signupSelection(req, res) {
     const cookie = req.headers.cookie || '';
     const legacy = /(?:^|;)\s*__Host-nofries-customer=/.test(cookie);
@@ -372,7 +366,7 @@ app.get('/login', (req, res) => {
         if (!configuration.externalOrganisationSetup) return sendSignupPage(res, selected);
         const html = withCustomerProvider(fs.readFileSync(path.join(__dirname, 'login.html'), 'utf8'), 'external')
             .replaceAll('href="/api/customer-auth/login"', 'href="/api/external-customer-auth/login"');
-        return res.type('html').send(withSharedAssistantDocument(html));
+        return res.type('html').send(html);
     }
     // Legacy deployments may allow customer sign-in while new email setup is
     // disabled. Reuse the authenticated signup-state document, whose explicit
@@ -382,7 +376,7 @@ app.get('/login', (req, res) => {
         res.setHeader('Content-Security-Policy', signupDocument.contentSecurityPolicy);
         return res.type('html').send(signupDocument.html);
     }
-    res.type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, 'login.html'), 'utf8')));
+    res.type('html').send(fs.readFileSync(path.join(__dirname, 'login.html'), 'utf8'));
 });
 for (const [key, route, clearTransactionCookie] of [
     ['customer', '/api/customer-auth', require('./api/shared/browserAuth').clearCustomerTransactionCookie],
@@ -887,21 +881,21 @@ app.get(['/scoping', '/scoping/'], (req, res) => {
     res.setHeader('Content-Security-Policy', scopingDocument.contentSecurityPolicy);
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.status(200).type('html').send(withSharedAssistantDocument(scopingDocument.html));
+    res.status(200).type('html').send(scopingDocument.html);
 });
 
 app.get(['/support', '/support/'], (req, res) => {
     res.setHeader('Content-Security-Policy', supportDocument.contentSecurityPolicy);
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.status(200).type('html').send(withSharedAssistantDocument(supportDocument.html));
+    res.status(200).type('html').send(supportDocument.html);
 });
 
 app.get(['/portal', '/portal/'], (req, res) => {
     res.setHeader('Content-Security-Policy', portalDocument.contentSecurityPolicy);
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.status(200).type('html').send(withSharedAssistantDocument(portalDocument.html));
+    res.status(200).type('html').send(portalDocument.html);
 });
 
 app.get(['/dashboard', '/dashboard/'], (req, res) => {
@@ -910,7 +904,7 @@ app.get(['/dashboard', '/dashboard/'], (req, res) => {
     const selected = signupSelection(req, res); if (!selected) return;
     const document = selected.external ? externalDashboardDocument : dashboardDocument;
     res.setHeader('Content-Security-Policy', document.contentSecurityPolicy);
-    res.status(200).type('html').send(withSharedAssistantDocument(document.html));
+    res.status(200).type('html').send(document.html);
 });
 
 app.get(['/signup', '/signup/'], (req, res) => {
@@ -922,7 +916,7 @@ app.get(['/signup', '/signup/'], (req, res) => {
 app.get(['/operator', '/operator/'], (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, 'app', 'operator.html'), 'utf8')));
+    res.type('html').send(fs.readFileSync(path.join(__dirname, 'app', 'operator.html'), 'utf8'));
 });
 
 app.get(['/forgot-password', '/forgot-password/'], (_req, res) => {
@@ -979,7 +973,7 @@ app.get('/', (req, res) => {
     const selected = signupSelection(req, res); if (!selected) return;
     const document = selected.external ? externalGatewayDocument : gatewayDocument;
     res.setHeader('Content-Security-Policy', document.contentSecurityPolicy);
-    res.status(200).type('html').send(withSharedAssistantDocument(document.html, 'home'));
+    res.status(200).type('html').send(document.html);
 });
 // Default-off fictional demo (#29). Only the local demo/try/serve.js sets tryDemo.
 if (configuration.tryDemo === true) {
@@ -994,7 +988,7 @@ if (configuration.tryDemo === true) {
 mountPublicAssets(app);
 
 app.use((req, res) => {
-    res.status(404).type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, '404.html'), 'utf8')));
+    res.status(404).type('html').send(fs.readFileSync(path.join(__dirname, '404.html'), 'utf8'));
 });
 
 app.use((error, req, res, next) => {
@@ -1007,7 +1001,7 @@ app.use((error, req, res, next) => {
         }
         return res.status(500).json({ error: 'No Fries could not complete that request' });
     }
-    return res.status(500).type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, 'error.html'), 'utf8')));
+    return res.status(500).type('html').send(fs.readFileSync(path.join(__dirname, 'error.html'), 'utf8'));
 });
 
 
@@ -1102,7 +1096,7 @@ function mountPublicAssets(application) {
     rootRoutes.forEach(([route, fileName]) => {
         application.get(route, (req, res) => {
             if (fileName.endsWith('.html')) {
-                return res.type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, fileName), 'utf8'), publicAssistantPage(fileName)));
+                return res.type('html').send(fs.readFileSync(path.join(__dirname, fileName), 'utf8'));
             }
             res.sendFile(path.join(__dirname, fileName));
         });

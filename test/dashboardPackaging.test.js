@@ -113,7 +113,6 @@ test('real static and App Service builds bind their distinct customer entry mode
         const serviceRoot = path.join(directory, 'app-service-dist');
         const read = (base, file) => fs.readFileSync(path.join(base, file), 'utf8');
         const { buildDashboardDocument } = require('../lib/dashboardDocument');
-        const { withSharedAssistantDocument } = require('../lib/withSharedAssistantDocument');
         const documentInputs = {
             customerLogin: true,
             template: read(serviceRoot, 'app/dashboard.html'),
@@ -124,7 +123,7 @@ test('real static and App Service builds bind their distinct customer entry mode
         };
         const expected = buildDashboardDocument({ ...documentInputs, customerTransport: 'auto' });
         const dynamic = buildDashboardDocument(documentInputs);
-        assert.equal(read(staticRoot, 'app/dashboard.html'), withSharedAssistantDocument(expected.html, 'dashboard'));
+        assert.equal(read(staticRoot, 'app/dashboard.html'), expected.html);
         const config = JSON.parse(read(staticRoot, 'staticwebapp.config.json'));
         for (const alias of ['/dashboard']) {
             const routes = config.routes.filter(route => route.route === alias);
@@ -174,7 +173,7 @@ test('real static and App Service builds bind their distinct customer entry mode
             assert.equal(response.headers['cache-control'], 'private, no-store, max-age=0');
             assert.equal(response.headers['x-content-type-options'], 'nosniff');
             assert.match(response.headers['x-robots-tag'], /noindex/);
-            assert.equal(response.text, withSharedAssistantDocument(dynamic.html, 'dashboard'));
+            assert.equal(response.text, dynamic.html);
         }
         for (const endpoint of ['/api/dashboard/session', '/api/dashboard/bootstrap', '/api/dashboard/app.js', '/api/dashboard/dashboard.css']) {
             const response = await request(app).get(endpoint);

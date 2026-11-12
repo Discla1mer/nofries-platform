@@ -94,7 +94,7 @@ describe('bundled service-plan API', () => {
                 expectedRevision: detail.body.revision,
                 counts: { users: 2, endpoints: 2, locations: 1 },
                 components,
-                owner: 'Joel Harvey',
+                owner: 'Test Owner',
                 consultantRationale: 'A single managed service fits the stated need.',
                 nextAction: 'Review the draft proposal.'
             });
@@ -192,7 +192,7 @@ describe('bundled service-plan API', () => {
                 counts: { users: 2, endpoints: 2, locations: 1 },
                 components,
                 tier,
-                owner: 'Joel Harvey',
+                owner: 'Test Owner',
                 consultantRationale: 'A single managed service fits the stated need.',
                 nextAction: 'Review the draft proposal.'
             });
@@ -275,7 +275,7 @@ describe('bundled service-plan API', () => {
                 counts: { users: 2, endpoints: 4, locations: 2 },
                 components,
                 tier: 'managed',
-                owner: 'Joel Harvey',
+                owner: 'Test Owner',
                 consultantRationale: 'A single managed service fits the stated need.',
                 nextAction: 'Review the draft proposal.'
             });

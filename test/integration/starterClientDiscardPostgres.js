@@ -28,8 +28,7 @@ test('migration 0019 adds one column grant, rewrites no rows and keeps every 001
     expect(migration).not.toMatch(/\b(UPDATE|DELETE\s+FROM|INSERT\s+INTO|TRUNCATE|REVOKE)\s+nofries\.|SECURITY\s+DEFINER|DISABLE\s+ROW|DROP\s+(TABLE|COLUMN|TRIGGER)/i);
     const after = guardOf(migration).split('\n'), before = guardOf(fs.readFileSync(path.join(MIGRATIONS, '0017_starter_client_period.sql'), 'utf8')).split('\n');
     expect(before.filter(line => !after.includes(line))).toEqual([expect.stringMatching(/^DECLARE /), expect.stringMatching(/subject_key = NEW\.subject_key FOR SHARE;$/)]);
-    expect(after).toEqual(expect.arrayContaining([expect.stringMatching(/subject_key = NEW\.subject_key FOR UPDATE;$/),
-        expect.stringMatching(/IF used >= 3 THEN RAISE EXCEPTION 'starter_client_limit'/)]));
+    expect(after).toEqual(expect.arrayContaining([expect.stringMatching(/subject_key = NEW\.subject_key FOR UPDATE;$/), expect.stringMatching(/IF used >= 3 THEN RAISE EXCEPTION 'starter_client_limit'/)]));
 });
 
 (target ? describe : describe.skip)('starter client discard and activation limit (migration 0019)', () => {
@@ -164,6 +163,8 @@ test('migration 0019 adds one column grant, rewrites no rows and keeps every 001
         expect(checks.find(r => r.conname === 'dashboard_starter_scopes_discard_draft').def).toMatch(/discarded_at IS NULL\) OR \(\(activation IS NULL\) AND \(ordinal > 0\)/);
         expect(checks.find(r => r.conname === 'dashboard_starter_scopes_account_id_ordinal_key').def).toBe('UNIQUE (account_id, ordinal)');
         expect(await rows(db, "SELECT relforcerowsecurity AS forced FROM pg_class WHERE oid='nofries.dashboard_starter_scopes'::regclass")).toEqual([{ forced: true }]);
+        // The guard's client count reads through this policy; narrowing it (e.g. to one tenant) would hide other activated clients.
+        expect(await rows(db, "SELECT qual FROM pg_policies WHERE schemaname='nofries' AND policyname='starter_scopes_subject_read'")).toEqual([{ qual: "(subject_key = NULLIF(current_setting('nofries.subject_key'::text, true), ''::text))" }]);
     });
 
     test('replaying the migration body changes nothing', async () => {
