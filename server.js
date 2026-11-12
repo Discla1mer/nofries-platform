@@ -6,6 +6,7 @@ const { buildSupportDocument } = require('./lib/supportDocument');
 const { buildPortalDocument } = require('./lib/portalDocument');
 const { buildDashboardDocument, withCustomerProvider } = require('./lib/dashboardDocument');
 const { buildGatewayDocument } = require('./lib/gatewayDocument');
+const { withFrontendReleaseInformation } = require('./lib/frontendReleaseInfo');
 const {
     checkRateLimit,
     getClientKeyFromHeaders,
@@ -644,7 +645,7 @@ if (configuration.starterClients || configuration.externalStarterClients) app.al
         if (['starter_reauthentication_required', 'signup_identity_required'].includes(error?.code || error?.message)) {
             return res.status(401).set('Cache-Control', 'no-store').json({ code: 'starter_reauthentication_required' });
         }
-        const code = ['starter_client_limit', 'starter_details_locked'].includes(error?.code || error?.message)
+        const code = ['starter_client_limit', 'starter_details_locked', 'starter_client_discarded', 'starter_client_not_draft'].includes(error?.code || error?.message)
             ? error.code || error.message : 'starter_signup_unavailable';
         res.status(code === 'starter_signup_unavailable' ? 503 : 409).set('Cache-Control', 'no-store').json({ code });
     }
@@ -922,8 +923,8 @@ app.get(['/operator', '/operator/'], (req, res) => {
 app.get(['/forgot-password', '/forgot-password/'], (_req, res) => {
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    // Password reset is handled by Microsoft on the existing sign-in flow.
-    res.redirect(302, '/login');
+    // Explain the provider-owned reset path without collecting credentials.
+    res.redirect(302, '/account-help.html');
 });
 
 app.get(['/service-desk', '/service-desk/'], (req, res) => {
@@ -1096,7 +1097,7 @@ function mountPublicAssets(application) {
     rootRoutes.forEach(([route, fileName]) => {
         application.get(route, (req, res) => {
             if (fileName.endsWith('.html')) {
-                return res.type('html').send(fs.readFileSync(path.join(__dirname, fileName), 'utf8'));
+                return res.type('html').send(withFrontendReleaseInformation(fs.readFileSync(path.join(__dirname, fileName), 'utf8')));
             }
             res.sendFile(path.join(__dirname, fileName));
         });

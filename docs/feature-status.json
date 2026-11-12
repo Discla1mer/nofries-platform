@@ -1,5 +1,5 @@
 {
-  "description": "What the public site may present as available. Only live capabilities may be described as available on index.html or in the Live section of roadmap.html. test/publicFeatureStatus.test.js enforces this.",
+  "description": "What the public site may present as available. Only live capabilities may be described as available on index.html, in the Live section of roadmap.html or in the free plan on pricing.html. test/publicFeatureStatus.test.js enforces this.",
   "statuses": ["live", "coming-next", "planned"],
   "capabilities": [
     {

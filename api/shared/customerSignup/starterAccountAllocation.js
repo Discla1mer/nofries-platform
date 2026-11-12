@@ -14,6 +14,11 @@ const SLOT_FIELDS = ['requestId', 'kind', 'organisationName', 'tenantId', 'organ
     'authorityId', 'membershipId', 'admissionOperationId'];
 const IDS = SLOT_FIELDS.filter(key => !['kind', 'organisationName'].includes(key));
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
+// Lifetime bound on client reservations held in one account record, discarded
+// drafts included (#151). It bounds storage only; migration 0019 counts the
+// client limit at activation, and reserveClient keeps the plan limit unless a
+// caller opts in to that rule.
+const CLIENT_RESERVATION_CEILING = 12;
 const clone = value => copy(value, 32768);
 const key = email => 'starter-accounts/' + crypto.createHash('sha256').update('nofries:starter-account:v1\0' + workEmail(email)).digest('hex');
 function name(value) {
@@ -49,7 +54,7 @@ function record(input) {
     if (value.schemaVersion !== 1 || value.planId !== plan.planId || value.planSha256 !== plan.sha256 ||
         value.email !== workEmail(value.email) || !['company', 'consultant'].includes(value.accountType) ||
         !/^[a-f0-9]{64}$/.test(value.setupSha256) || !Array.isArray(value.organisations)) fail('starter_record_invalid');
-    if (!value.organisations.length || value.organisations.length > 1 + (value.accountType === 'consultant' ? plan.consultantClientOrganisations : 0)) fail('starter_record_invalid');
+    if (!value.organisations.length || value.organisations.length > 1 + (value.accountType === 'consultant' ? CLIENT_RESERVATION_CEILING : 0)) fail('starter_record_invalid');
     const used = new Set([value.accountId]);
     for (const [index, raw] of value.organisations.entries()) {
         const slot = fields(raw, SLOT_FIELDS);
@@ -64,9 +69,10 @@ function record(input) {
     } else if (value.organisations.length !== 1) fail('starter_record_invalid');
     return freeze(value);
 }
-function createStarterAccountAllocator({ store, readActivation, captureOwner, now = Date.now, newId = crypto.randomUUID, planId = LEGACY_PLAN_ID }) {
+function createStarterAccountAllocator({ store, readActivation, captureOwner, clientUse = null, now = Date.now, newId = crypto.randomUUID, planId = LEGACY_PLAN_ID }) {
     if (!store || !['load', 'create', 'replace'].every(method => typeof store[method] === 'function') ||
-        typeof readActivation !== 'function' || typeof captureOwner !== 'function') fail('starter_configuration_invalid');
+        typeof readActivation !== 'function' || typeof captureOwner !== 'function' ||
+        clientUse !== null && typeof clientUse !== 'function') fail('starter_configuration_invalid');
     const plan = approvedStarterPlan(planId);
     const time = () => { const at = now(); if (!Number.isSafeInteger(at) || at < Date.parse(approvedStarterPlan().approvedAt)) fail('starter_clock_invalid'); return at; };
     function slot(requestId, kind, organisationName) {
@@ -116,6 +122,16 @@ function createStarterAccountAllocator({ store, readActivation, captureOwner, no
         const checked = clientRecord(account.accountId, found);
         if (checked.requestId !== requestId) fail('starter_record_invalid');
         return checked;
+    }
+    // clientUse (#151) answers null on the old rule: every reservation uses a
+    // place. Otherwise only activated clients use one (migration 0019 enforces
+    // that at activation), within the record's lifetime reservation ceiling.
+    async function placeTaken(account) {
+        const limit = approvedStarterPlan(account.planId).consultantClientOrganisations, reserved = account.organisations.length - 1;
+        const use = clientUse ? await clientUse(account) : null;
+        if (use === null || use === undefined) return reserved >= limit;
+        if (!Number.isSafeInteger(use.activated) || use.activated < 0) fail('starter_record_invalid');
+        return reserved >= CLIENT_RESERVATION_CEILING || use.activated >= limit;
     }
     function initialProof(proofInput) {
         const proof = verifiedSnapshot(proofInput, proofInput?.requestId), at = time();
@@ -240,7 +256,7 @@ function createStarterAccountAllocator({ store, readActivation, captureOwner, no
                     if (hash(await owner(request)) !== hash(actor)) fail('starter_owner_changed');
                     current(loaded.record, actor); return original;
                 }
-                if (loaded.record.organisations.length - 1 >= approvedStarterPlan(loaded.record.planId).consultantClientOrganisations) fail('starter_client_limit');
+                if (await placeTaken(loaded.record)) fail('starter_client_limit');
                 const next = record({ ...loaded.record, organisations: [...loaded.record.organisations,
                     slot(command.requestId, 'client', command.organisationName)] });
                 if (hash(await owner(request)) !== hash(actor)) fail('starter_owner_changed'); current(loaded.record, actor);
@@ -264,4 +280,4 @@ function createStarterAccountAllocator({ store, readActivation, captureOwner, no
     });
 }
 module.exports = { createStarterAccountAllocator, starterAccountRecord: record, starterClientRecord: clientRecord,
-    starterAccountKey: key, STARTER_SLOT_FIELDS: Object.freeze(SLOT_FIELDS) };
+    starterAccountKey: key, STARTER_SLOT_FIELDS: Object.freeze(SLOT_FIELDS), CLIENT_RESERVATION_CEILING };

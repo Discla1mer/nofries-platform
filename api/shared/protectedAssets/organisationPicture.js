@@ -461,14 +461,36 @@
             });
             section.append(list, helpPanel()); return section;
         }
-        // Shown only when the public enquiry status says enquiries are
-        // open. The link is fixed: no answers, scores or names leave the page.
+        // Copy or print reuses the results view's summary and copy behaviour.
+        // The help link shows only when the public enquiry status says
+        // enquiries are open. Nothing leaves the page: no share link is made.
         function helpPanel() {
-            const panel = node('div', 'picture-next-steps'), token = epoch; panel.hidden = true;
+            const panel = node('div', 'picture-next-steps'), token = epoch;
+            panel.append(node('h4', '', 'Next step'));
+            if (typeof questionnaire.providerSummary === 'function' && typeof questionnaire.copySummary === 'function') panel.append(summaryHandoff());
+            const help = node('div', 'picture-next-steps-help'); help.hidden = true;
             const link = node('a', 'dashboard-button', 'Get help closing these gaps'); link.href = '/contact.html';
-            panel.append(node('h4', '', 'Next step'), node('p', 'dashboard-muted', 'Talk to No Fries about these gaps. The contact form does not include your answers.'), link);
-            enquiryAvailable().then(available => { if (available && live(token)) panel.hidden = false; });
+            help.append(node('p', 'dashboard-muted', 'Talk to No Fries about these gaps. The contact form does not include your answers.'), link);
+            panel.append(help);
+            enquiryAvailable().then(available => { if (available && live(token)) help.hidden = false; });
             return panel;
+        }
+        function summaryHandoff() {
+            const win = doc.defaultView, handoff = node('details', 'picture-summary');
+            handoff.append(node('summary', '', 'Copy or print this summary'));
+            const label = node('label', '', 'Copy this summary into an email or document');
+            const input = node('textarea', 'ncsc-textarea'); input.id = id + '-summary'; label.htmlFor = input.id;
+            input.readOnly = true; input.rows = 8; input.value = questionnaire.providerSummary(detail, metadata).text;
+            // The field scrolls on screen, so paper gets the full text instead.
+            const printed = node('pre', 'picture-summary-print', input.value); printed.setAttribute('aria-hidden', 'true');
+            const status = node('p', 'dashboard-muted'); status.setAttribute('role', 'status');
+            const copyButton = button('Copy summary', () => questionnaire.copySummary(win, input, status));
+            copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
+            if (win && typeof win.print === 'function') {
+                const printButton = button('Print these results', () => win.print());
+                printButton.classList.add('dashboard-button-secondary'); handoff.append(printButton);
+            }
+            handoff.append(status); return handoff;
         }
         // Mirrors js/enquiry-availability.js: a bare read-only GET of the public
         // enquiry status. Any error, non-OK reply or 5-second timeout is unavailable.

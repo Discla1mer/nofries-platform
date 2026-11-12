@@ -1,6 +1,7 @@
 const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
+const { withFrontendReleaseInformation } = require('../lib/frontendReleaseInfo');
 const { buildScopingDocument } = require('../lib/scopingDocument');
 const { buildSupportDocument } = require('../lib/supportDocument');
 const { buildPortalDocument } = require('../lib/portalDocument');
@@ -71,6 +72,10 @@ fs.writeFileSync(path.join(distDir, 'index.html'), gatewayDocument.html);
 // Fictional sales demo (#29): an unlisted, noindex link with no assistant or network access.
 const tryDemoDocument = require('../demo/try/document').buildTryDemoDocument();
 fs.writeFileSync(path.join(distDir, 'app', 'try.html'), tryDemoDocument.html);
+for (const fileName of PUBLIC_ROOT_FILES.filter(file => file.endsWith('.html'))) {
+    const documentPath = path.join(distDir, fileName);
+    fs.writeFileSync(documentPath, withFrontendReleaseInformation(fs.readFileSync(documentPath, 'utf8')));
+}
 
 copyIfExists(staticWebAppConfig, path.join(distDir, 'staticwebapp.config.json'));
 writeScopingContentSecurityPolicy(scopingDocument.contentSecurityPolicy);
