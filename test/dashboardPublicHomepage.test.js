@@ -29,11 +29,11 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
     assert.doesNotMatch(html, /Automatic updates and connected data feeds are planned\. Managed IT and advisory services are optional\./);
 });
 
-test('release identifiers stay out of the customer view', () => {
+test('release identifiers are available in a collapsed site-version disclosure', () => {
     for (const page of ['index.html', 'managed-it.html']) {
         const source = fs.readFileSync(path.join(root, page), 'utf8');
         assert.doesNotMatch(source, /About this site|<details class="site-details">/);
-        assert.match(source, /<div class="site-release" hidden><!-- FRONTEND_RELEASE_INFO --><\/div>/);
+        assert.match(source, /<details class="site-release" id="site-version"><summary>Site version<\/summary><!-- FRONTEND_RELEASE_INFO --><\/details>/);
     }
 });
 
