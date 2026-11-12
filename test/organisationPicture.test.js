@@ -270,7 +270,7 @@ test('legacy Board options cannot expose another presentation mode or navigation
     assert.equal(dom.root.querySelector('.picture-follow-up-filter').querySelectorAll('select').length, 1);
     assert.equal(dom.root.querySelector('label').textContent, 'Saved assessment');
     assert.deepEqual(dom.root.querySelectorAll('button').map(button => button.textContent),
-        ['Refresh', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
+        ['Refresh', 'Copy summary', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
     assert.equal(opened, 0);
 });
 
@@ -1185,6 +1185,7 @@ test('top three gaps put not-in-place answers first, then partial, in profile or
         const question = questions[[10, 11, 3][index]];
         assert.ok(item.text.includes('Why it matters:') && item.text.includes(question.guidance.summary));
         assert.ok(item.text.includes('What to do next:') && item.text.includes(question.smallBusiness.meaning));
+        assert.match(item.text, /You can start this with your team\.|Ask your IT provider to help with this\./);
     });
     assert.match(items[0].text, /Your answer: No/);
     assert.match(items[2].text, /Your answer: Partial/);
@@ -1192,7 +1193,13 @@ test('top three gaps put not-in-place answers first, then partial, in profile or
     const order = panel.querySelectorAll('section').map(node => node.className);
     assert.ok(order.indexOf('picture-top-gaps') < order.indexOf('picture-metric picture-primary'));
     assert.equal(section.getAttribute('aria-labelledby'), section.querySelector('h3').id);
-    assert.doesNotMatch(section.textContent, /certif|complian/i);
+    // The print-only copy of the shared provider summary carries the results
+    // view's own disclaimer ("not a risk ranking or certification"), so check
+    // that text exactly and the rest of the section for any such claim.
+    const printed = section.querySelector('.picture-summary-print');
+    assert.match(printed.textContent, /\nSelf-reported gaps; not a risk ranking or certification\.\n/);
+    assert.equal(printed.textContent.match(/certif|complian/gi).length, 1);
+    assert.doesNotMatch(section.textContent.replace(printed.textContent, ''), /certif|complian/i);
 });
 
 test('top gaps show fewer than three when that is all there is', async () => {
@@ -1225,6 +1232,10 @@ test('top gap selection uses existing weights before answer and profile order, w
     assert.deepEqual(picture.topGaps(result, metadata, 1).map(gap => gap.itemId), ['q2']);
 });
 
+function summarySource() {
+    const fixtures = buildFixtures();
+    return { questionnaire: require('../api/shared/protectedAssets/ncscQuestionnaire'), record: mixed(), metadata: fixtures.metadata };
+}
 describe('next step under the top gaps', () => {
     const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
     async function withEnquiry(fetch) {
@@ -1235,12 +1246,12 @@ describe('next step under the top gaps', () => {
             client: createClient({ metadata: fixtures.metadata, fetch: transport.fetch }), displayName: 'Synthetic organisation A' });
         await flush();
         const panel = dom.root.querySelector('.picture-top-gaps').querySelector('.picture-next-steps');
-        return { dom, controller, panel, link: panel.querySelector('a') };
+        return { dom, controller, panel, help: panel.querySelector('.picture-next-steps-help'), link: panel.querySelector('a') };
     }
     test('shows a fixed contact link when enquiries are available', async () => {
         const fetch = jest.fn(async () => reply(200, { available: true, promote: false }));
-        const { panel, link, controller } = await withEnquiry(fetch);
-        assert.equal(panel.hidden, false);
+        const { panel, help, link, controller } = await withEnquiry(fetch);
+        assert.equal(panel.hidden, false); assert.equal(help.hidden, false);
         assert.equal(link.textContent, 'Get help closing these gaps');
         assert.equal(link.href, '/contact.html');
         assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
@@ -1263,28 +1274,77 @@ describe('next step under the top gaps', () => {
         ['not OK', async () => reply(503, { available: true })],
         ['an error', async () => { throw new Error('synthetic'); }],
         ['missing', undefined]
-    ])('stays hidden when the enquiry status is %s', async (_name, fetch) => {
-        const { panel, controller } = await withEnquiry(fetch);
-        assert.equal(panel.hidden, true);
+    ])('hides the help link when the enquiry status is %s', async (_name, fetch) => {
+        const { panel, help, controller } = await withEnquiry(fetch);
+        assert.equal(help.hidden, true);
+        assert.equal(panel.hidden, false);
+        assert.equal(panel.querySelector('summary').textContent, 'Copy or print this summary');
         controller.destroy();
     });
-    test('stays hidden and aborts when the status read takes longer than 5 seconds', async () => {
+    test('hides the help link and aborts when the status read takes longer than 5 seconds', async () => {
         let signal;
         const fetch = jest.fn((_url, init) => { signal = init.signal; return new Promise(() => {}); });
         jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
         try {
-            const { panel, controller } = await withEnquiry(fetch);
+            const { help, controller } = await withEnquiry(fetch);
             await jest.advanceTimersByTimeAsync(4999);
             assert.equal(signal.aborted, false);
             await jest.advanceTimersByTimeAsync(1); await flush();
-            assert.equal(signal.aborted, true); assert.equal(panel.hidden, true);
+            assert.equal(signal.aborted, true); assert.equal(help.hidden, true);
             controller.destroy();
         } finally { jest.useRealTimers(); }
     });
+    test('offers Copy or print this summary with the same text as the results view', async () => {
+        const fetch = jest.fn(async () => reply(200, { available: false }));
+        const { dom, panel, controller } = await withEnquiry(fetch);
+        const handoff = panel.querySelector('details');
+        assert.equal(handoff.className, 'picture-summary');
+        assert.equal(handoff.querySelector('summary').textContent, 'Copy or print this summary');
+        const input = handoff.querySelector('textarea'), label = handoff.querySelector('label');
+        assert.equal(label.htmlFor, input.id); assert.equal(input.readOnly, true);
+        const { questionnaire, record, metadata } = summarySource();
+        assert.equal(input.value, questionnaire.providerSummary(record, metadata).text);
+        assert.match(input.value, /^Cyber security assessment\nScope: Synthetic office and cloud scope\./);
+        assert.doesNotMatch(input.value, /Synthetic organisation A|shared-preview-organisation|46\.4%/);
+        assert.equal(handoff.querySelectorAll('a').length, 0);
+        // The scrolling field is swapped for the full text on paper, so every follow-up prints.
+        const printed = handoff.querySelector('pre');
+        assert.equal(printed.className, 'picture-summary-print'); assert.equal(printed.textContent, input.value);
+        assert.equal(printed.getAttribute('aria-hidden'), 'true');
+        const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../app/dashboard.css'), 'utf8');
+        assert.match(css, /\.picture-summary-print \{ display: none;[^}]*white-space: pre-wrap;/);
+        assert.match(css, /@media print \{ \.picture-summary textarea \{ display: none; \} \.picture-summary-print \{ display: block; \} \}/);
+        assert.equal(dom.window.print, undefined);
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary']);
+        controller.destroy();
+    });
+    test('copies with the shared clipboard behaviour, falls back to selecting, prints, and calls no new endpoint', async () => {
+        const writeText = jest.fn(async () => undefined), print = jest.fn();
+        const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
+        const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures), dom = createDom();
+        const fetch = jest.fn(async () => reply(200, { available: true }));
+        Object.assign(dom.window, { fetch, AbortController, print, navigator: { clipboard: { writeText } } });
+        const controller = picture.mount(dom.root, { metadata: fixtures.metadata, organisationId: seed.model.context.organisationId,
+            client: createClient({ metadata: fixtures.metadata, fetch: transport.fetch }), displayName: 'Synthetic organisation A' });
+        await flush();
+        const handoff = dom.root.querySelector('.picture-next-steps').querySelector('details');
+        const input = handoff.querySelector('textarea'), status = handoff.querySelector('[role="status"]');
+        const press = label => handoff.querySelectorAll('button').find(button => button.textContent === label).click();
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Print these results']);
+        press('Copy summary'); await flush();
+        expect(writeText).toHaveBeenCalledWith(input.value); assert.equal(status.textContent, 'Summary copied.');
+        writeText.mockRejectedValueOnce(new Error('denied'));
+        press('Copy summary'); await flush();
+        assert.equal(status.textContent, 'Summary selected. Press Ctrl+C or Cmd+C to copy it.');
+        assert.equal(dom.document.activeElement, input);
+        press('Print these results'); assert.equal(print.mock.calls.length, 1);
+        expect(fetch.mock.calls.map(call => call[0])).toEqual(['/api/enquiry']);
+        controller.destroy();
+    });
     test('a late availability answer after teardown changes nothing', async () => {
         let resolve; const fetch = () => new Promise(done => { resolve = done; });
-        const { panel, controller } = await withEnquiry(fetch);
+        const { help, controller } = await withEnquiry(fetch);
         controller.destroy(); resolve(reply(200, { available: true })); await flush();
-        assert.equal(panel.hidden, true);
+        assert.equal(help.hidden, true);
     });
 });

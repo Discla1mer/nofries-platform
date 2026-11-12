@@ -20,7 +20,7 @@ function environment(overrides = {}) {
 function identity(overrides = {}) {
     return Object.assign({
         email: 'joel@nofries.nz',
-        name: 'Joel Harvey',
+        name: 'Test Owner',
         provider: 'entra-bff',
         principalId: SUBJECT_ID,
         tenantId: TENANT_ID,

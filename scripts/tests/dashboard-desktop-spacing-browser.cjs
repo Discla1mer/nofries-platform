@@ -36,8 +36,7 @@ const baseline = process.env.NOFRIES_DESKTOP_BASELINE && JSON.parse(fs.readFileS
 const bundleFiles = ['dashboardRegistry.js', 'dashboardShell.js', 'ncscAssessmentClient.js', 'ncscQuestionnaire.js', 'assessmentExplanation.js', 'organisationPicture.js'];
 const sourceFiles = ['app/dashboard.css', 'app/dashboard.html', 'index.html', 'style.css', 'home.css',
     'js/dashboard-loader.js', 'lib/dashboardDocument.js', 'lib/gatewayDocument.js', 'lib/signupDocument.js',
-    'js/home.js', 'js/organisation-setup.js', 'js/prospect-assistant.js',
-    'api/shared/customerSignup/signupClient.js', 'api/shared/customerSignup/signupJourney.js',
+    'js/home.js', 'js/organisation-setup.js', 'api/shared/customerSignup/signupClient.js', 'api/shared/customerSignup/signupJourney.js',
     ...bundleFiles.map(file => 'api/shared/protectedAssets/' + file), 'scripts/tests/dashboard-desktop-spacing-browser.cjs'];
 const hashes = () => Object.fromEntries(sourceFiles.map(file => [file, sha256(read(file))]));
 const before = hashes();
@@ -100,7 +99,7 @@ const moduleModel = { schemaVersion: 1, context: model.context, generatedAt: mod
     module: model.modules.find(item => item.key === 'cyber_security'), summary: model.summary, services: model.services,
     admissionGranted: false, providerAccessGranted: false, metadata: fixtures.metadata, presentationMode: 'editable' };
 const assets = Object.fromEntries(['style.css', 'home.css', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png',
-    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js', 'js/enquiry-availability.js', 'js/enquiry-home.js', 'images/paper-texture.webp', 'images/nofries-mark-large.webp',
+    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/enquiry-availability.js', 'js/enquiry-home.js', 'images/paper-texture.webp', 'images/nofries-mark-large.webp',
     'assets/fonts/fraunces-latin-opsz-normal.woff2', 'assets/fonts/fraunces-latin-opsz-italic.woff2'].map(file => ['/' + file, file]));
 const requests = [], blocked = [], errors = [], knownBaselineGaps = [], results = [];
 let state = 'ready', selectionUnbrokenProbe = true, textScale = false;

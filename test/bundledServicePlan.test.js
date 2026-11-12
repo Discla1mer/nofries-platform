@@ -74,7 +74,7 @@ describe('bundled Lean Managed IT service plan', () => {
                 { serviceKey: 'ai-service-desk', status: 'included' },
                 { serviceKey: 'endpoint-backup', status: 'needs_confirmation' }
             ],
-            owner: 'Joel Harvey',
+            owner: 'Test Owner',
             consultantRationale: 'One accountable service is the clearest fit.',
             nextAction: 'Review the draft proposal with Joel.'
         }, access);
@@ -114,7 +114,7 @@ describe('bundled Lean Managed IT service plan', () => {
             serviceKey: 'managed-it-core',
             estimatedMonthlyRevenue: 198,
             estimatedOneOffRevenue: 750,
-            owner: 'Joel Harvey'
+            owner: 'Test Owner'
         });
         expect(payload.opportunities[0].includedComponents).toEqual([
             { serviceKey: 'ai-service-desk', serviceName: 'Phone, chat and email support' }
