@@ -20,11 +20,8 @@ describe('production support document build', () => {
         const allScripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
         const external = allScripts.filter(script => /\bsrc\s*=/i.test(script[1]));
         const scripts = allScripts.filter(script => !/\bsrc\s*=/i.test(script[1]));
-        expect(allScripts).toHaveLength(3);
-        expect(external.map(script => script[1].trim())).toEqual([
-            'src="/js/prospect-assistant.js" defer', 'src="/js/shared-assistant.js" defer'
-        ]);
-        for (const script of external) expect(script[2]).toBe('');
+        expect(allScripts).toHaveLength(1);
+        expect(external).toHaveLength(0);
 
         expect(scripts).toHaveLength(1);
         expect(scripts[0][1]).toMatch(/\bid=["']supportRuntime["']/i);

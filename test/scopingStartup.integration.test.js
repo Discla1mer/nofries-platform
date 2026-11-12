@@ -122,11 +122,8 @@ function readDist(relativePath) {
 function inlineScriptsWithPublicHelp(html) {
     const all = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
     const external = all.filter(script => /\bsrc\s*=/i.test(script[1]));
-    expect(all).toHaveLength(3);
-    expect(external.map(script => script[1].trim())).toEqual([
-        'src="/js/prospect-assistant.js" defer', 'src="/js/shared-assistant.js" defer'
-    ]);
-    for (const script of external) expect(script[2]).toBe('');
+    expect(all).toHaveLength(1);
+    expect(external).toHaveLength(0);
     return all.filter(script => !/\bsrc\s*=/i.test(script[1]));
 }
 
