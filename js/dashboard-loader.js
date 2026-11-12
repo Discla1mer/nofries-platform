@@ -33,6 +33,9 @@
     });
     const accountActions = document.getElementById('dashboardAccountActions');
     const accountToggle = document.getElementById('dashboardAccountToggle');
+    const accountSwitch = document.getElementById('dashboardSwitchAccount');
+    if (accountSwitch) accountSwitch.setAttribute('href', externalCustomer ? '/api/external-customer-auth/login?account=choose'
+        : customerProvider === 'legacy' ? '/api/customer-auth/login' : '/login');
     function setAccountMenuOpen(open) {
         if (accountToggle) accountToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         if (accountActions) accountActions.hidden = !open;
@@ -137,6 +140,8 @@
         if (portfolioButton) { portfolioButton.hidden = true; portfolioButton.onclick = null; }
         if (portfolioNavigation) { portfolioNavigation.remove(); portfolioNavigation = null; }
         if (accountMenu) { setAccountMenuOpen(false); accountMenu.hidden = true; }
+        if (accountToggle) accountToggle.textContent = 'Account';
+        if (accountSwitch) accountSwitch.hidden = true;
         delete elements.status.dataset.accessWarning;
         const activation = document.getElementById('customerActivationControls');
         if (activation) activation.remove();
@@ -234,6 +239,8 @@
         elements.signIn.hidden = !['unauthenticated', 'expired', 'denied'].includes(state);
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
+        if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
+        if (accountToggle) accountToggle.textContent = cycle.session?.accountLabel ? 'Account: ' + cycle.session.accountLabel : 'Account';
         if (accountMenu) {
             accountMenu.hidden = elements.signOut.hidden;
             if (accountMenu.hidden) setAccountMenuOpen(false);
@@ -263,10 +270,12 @@
     }
     function session(value) {
         if (!fields(value, ['schemaVersion', 'authenticated', 'purpose', 'expiresAt', 'generation', 'selectedBindingId',
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountLabel') ? ['accountLabel'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
+            Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
             value.schemaVersion !== 1 || value.authenticated !== true || !['operator_dashboard', 'customer'].includes(value.purpose) ||
             Object.prototype.hasOwnProperty.call(value, 'activationAvailable') && (value.activationAvailable !== true || value.purpose !== 'operator_dashboard') ||
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
@@ -279,10 +288,11 @@
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
-            ...(value.accountType ? { accountType: value.accountType } : {}) });
+            ...(value.accountType ? { accountType: value.accountType } : {}),
+            ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType', 'accountLabel']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -385,7 +395,7 @@
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;

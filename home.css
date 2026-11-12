@@ -943,7 +943,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
    duplicate consultant chooser while an organisation is open. */
 .dashboard-account-menu { position: relative; align-self: start; justify-self: end; min-width: 0; max-width: 100%; }
 .dashboard-account-menu[hidden], .dashboard-account-menu [hidden] { display: none !important; }
-.dashboard-account-menu > #dashboardAccountToggle { min-height: 44px; box-sizing: border-box; padding: .65rem .9rem; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--paper); font: inherit; font-size: .875rem; font-weight: 650; text-align: left; cursor: pointer; }
+.dashboard-account-menu > #dashboardAccountToggle { max-width: 100%; overflow-wrap: anywhere; min-height: 44px; box-sizing: border-box; padding: .65rem .9rem; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--paper); font: inherit; font-size: .875rem; font-weight: 650; text-align: left; cursor: pointer; }
 .dashboard-account-menu > #dashboardAccountToggle:focus-visible, .dashboard-account-actions > .button:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
 .dashboard-account-actions { display: flex; flex-direction: column; gap: .5rem; padding-top: .5rem; min-width: min(14rem, 100%); }
 .dashboard-account-actions > .button, .dashboard-account-actions > #dashboardSignOut { width: 100%; min-height: 44px; box-sizing: border-box; margin: 0; padding: .65rem .9rem; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--paper); box-shadow: none; font: inherit; font-size: .875rem; text-align: left; overflow-wrap: anywhere; }
