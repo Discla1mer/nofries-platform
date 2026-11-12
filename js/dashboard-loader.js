@@ -533,6 +533,7 @@
         cycle.improvement = !!improvement;
         cycle.displayContract = displayContract(model);
         controller = factory.mount(elements.app, model, { window: window, initialRoute: currentRoute(),
+            ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
@@ -884,6 +885,14 @@
         // its current turn; every response remains bound to this same cycle.
         Promise.resolve().then(function () { if (current(cycle)) run(); });
     }
+    function openOrganisations(cycle) {
+        if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved) return Promise.resolve(false);
+        return leave(cycle, function () {
+            window.history.replaceState(null, '', '#organisations');
+            const next = begin(); next.forcePortfolio = true;
+            reconcile(next, 0, false).catch(function (error) { failure(next, error); });
+        });
+    }
     function portfolioControls(cycle) {
         if (!portfolioButton) {
             portfolioButton = document.createElement('button');
@@ -896,12 +905,7 @@
         }
         portfolioButton.hidden = false;
         portfolioButton.onclick = function () {
-            if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved) return;
-            leave(cycle, function () {
-                window.history.replaceState(null, '', '#organisations');
-                const next = begin(); next.forcePortfolio = true;
-                reconcile(next, 0, false).catch(function (error) { failure(next, error); });
-            });
+            return openOrganisations(cycle);
         };
     }
     function consultantNavigation(cycle, state) {

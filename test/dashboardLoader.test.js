@@ -2189,7 +2189,7 @@ describe('root dashboard gateway', () => {
     });
 });
 
-test('consultant completion opens the portfolio first, selects a client and returns to the portfolio', async () => {
+test.each(['button', 'hash'])('consultant completion opens the portfolio first, selects a client and returns via %s', async entry => {
     const h = harness({ hash: '#organisations' }); await flush();
     const customer = state(A, GA, { purpose: 'customer', accountType: 'consultant' });
     await h.reply(0, 200, customer); await h.reply(1, 200, listing());
@@ -2209,7 +2209,10 @@ test('consultant completion opens the portfolio first, selects a client and retu
     h.event('focus'); await flush(); await h.open(selected, 'Selected client', 7);
     expect(h.status).toBe('ready'); expect(h.elements.dashboardApp.textContent).toContain('Selected client');
     const back = h.elements.dashboardStatusPanel.children.find(node => node.id === 'consultantPortfolioControls');
-    expect(back.hidden).toBe(false); back.onclick(); await flush();
+    expect(back.hidden).toBe(false);
+    if (entry === 'button') back.onclick();
+    else h.mounts.at(-1).config.onOpenOrganisations();
+    await flush();
     await h.reply(11, 200, selected); await h.reply(12, 200, listing());
     expect(h.status).toBe('selection'); expect(h.elements.dashboardApp.hidden).toBe(true);
     expect(back.hidden).toBe(true); expect(h.window.location.hash).toBe('#organisations');
