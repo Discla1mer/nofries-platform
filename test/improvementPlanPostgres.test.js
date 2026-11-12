@@ -235,6 +235,26 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
         expect((await ownerPool.query('SELECT * FROM nofries.dashboard_ncsc_assessment_revisions WHERE tenant_id=$1 ORDER BY revision', [example.scope.tenantId])).rows).toEqual(sourceBefore.rows);
     });
 
+    test('an ownerLabel assign round-trips without membership, passes the 0016 CHECK and replays the same receipt', async () => {
+        const { example, initial } = await generated();
+        const assign = command(initial.plan, 'assign', 'assign-label', { ownerLabel: ' IT\tcontractor ', dueDate: '2026-09-20' });
+        const assigned = await repository.executeImprovementPlan(example.context, assign);
+        expect(assigned.plan.actions[0]).toMatchObject({ ownerSubjectKey: null, ownerLabel: 'IT contractor', dueDate: '2026-09-20' });
+        const stored = (await rows(example))[1];
+        expect(stored.payload.intent.command.payload).toEqual({ ownerLabel: 'IT contractor', dueDate: '2026-09-20' });
+        expect(stored.payload.command.payload).toEqual({ ownerLabel: 'IT contractor', dueDate: '2026-09-20' });
+        clock.advance(1000);
+        const started = await repository.executeImprovementPlan(example.context, command(assigned.plan, 'start'));
+        const restarted = makeRepository({ database, clock: clock.now });
+        expect((await restarted.readImprovementPlan(example.context, { planId: initial.plan.planId })).plan).toEqual(started.plan);
+        expect(await restarted.executeImprovementPlan(example.context, assign)).toEqual(assigned);
+        await expect(restarted.executeImprovementPlan(example.context, { ...assign, payload: { ...assign.payload, ownerLabel: 'Other' } }))
+            .rejects.toMatchObject({ statusCode: 409 });
+        await expect(repository.executeImprovementPlan(example.context, command(started.plan, 'assign', 'assign-email',
+            { ownerLabel: 'it@example.invalid', dueDate: '2026-09-20' }))).rejects.toMatchObject({ statusCode: 400 });
+        expect(await rows(example)).toHaveLength(3);
+    });
+
     test('tenant collisions, missing selected membership and forged contexts do not disclose foreign action records', async () => {
         const a = await generated(), b = await generated();
         expect(a.initial.plan.planId).toBe(b.initial.plan.planId);

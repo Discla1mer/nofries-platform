@@ -2,6 +2,7 @@
 
 const { copy, fields, freeze, instant, subject } = require('../appLifecycle/dashboardRuntimeRecords');
 const { normaliseEvidenceSelector } = require('../evidenceLifecycle/evidenceDomain');
+const { normaliseOwnerLabel } = require('./improvementPlanDomain');
 const LABELS = freeze({
     status: { open: 'Open', in_progress: 'In progress', blocked: 'Blocked', completed: 'Completed' },
     kind: { implementation: 'Implementation gap', assessment: 'Assessment needed',
@@ -59,6 +60,10 @@ function evidenceReference(value) {
     normaliseEvidenceSelector({ tenantId: 'selector', organisationId: 'selector', artefactId: value });
     if (/^(?:[a-z][a-z0-9+.-]*:\/\/|(?:https?|ftp|file|data|javascript|vbscript):|[\\/]|\.{1,2}[\\/]|[a-z]:[\\/])/i.test(value)) fail();
 }
+function ownerLabel(value) { if (normaliseOwnerLabel(value) !== value) fail(); }
+const labelled = value => Object.hasOwn(value, 'ownerLabel');
+const assigned = action => action.ownerSubjectKey !== null || labelled(action);
+function ownerFilter(value) { try { subject(value); } catch { ownerLabel(value); } }
 function eventValue(event, model, revisions) {
     fields(event, ['revision', 'at', 'type', 'details']);
     integer(event.revision, model.planRevision);
@@ -67,7 +72,9 @@ function eventValue(event, model, revisions) {
     if (event.at < model.source.scoreAsOf || event.at > model.updatedAt) fail();
     const eventLabel = label('history', event.type), details = event.details;
     if (event.type === 'assign') {
-        fields(details, ['ownerSubjectKey', 'dueDate']); subject(details.ownerSubjectKey); date(details.dueDate);
+        if (labelled(details)) { fields(details, ['ownerLabel', 'dueDate']); ownerLabel(details.ownerLabel); }
+        else { fields(details, ['ownerSubjectKey', 'dueDate']); subject(details.ownerSubjectKey); }
+        date(details.dueDate);
     } else if (event.type === 'start') fields(details, []);
     else if (event.type === 'block' || event.type === 'reopen') {
         fields(details, ['reason']); text(details.reason);
@@ -79,12 +86,15 @@ function eventValue(event, model, revisions) {
     return { ...event, label: eventLabel };
 }
 function actionValue(action, model, revisions) {
-    fields(action, ['actionId', 'itemId', 'controlId', 'domainId', 'status', 'ownerSubjectKey', 'ownerEligibility',
-        'dueDate', 'isOverdue', 'blockedReason', 'rationale', 'completion', 'evidence', 'history']);
+    fields(action, ['actionId', 'itemId', 'controlId', 'domainId', 'status', 'ownerSubjectKey', ...(labelled(action) ? ['ownerLabel'] : []),
+        'ownerEligibility', 'dueDate', 'isOverdue', 'blockedReason', 'rationale', 'completion', 'evidence', 'history']);
     for (const key of ['actionId', 'itemId', 'controlId', 'domainId']) identifier(action[key]);
     const status = label('status', action.status);
     if (action.ownerEligibility !== 'not_checked' || typeof action.isOverdue !== 'boolean') fail();
-    if (action.ownerSubjectKey === null) {
+    if (labelled(action)) {
+        if (action.ownerSubjectKey !== null) fail();
+        ownerLabel(action.ownerLabel); date(action.dueDate);
+    } else if (action.ownerSubjectKey === null) {
         if (action.dueDate !== null) fail();
     } else { subject(action.ownerSubjectKey); date(action.dueDate); }
     if (action.status === 'blocked') text(action.blockedReason);
@@ -116,7 +126,7 @@ function actionValue(action, model, revisions) {
     return { ...action, history, labels: { status, kind: label('kind', rationale.kind),
         response: label('response', rationale.response), responseOrigin: label('responseOrigin', rationale.responseOrigin),
         evidenceState: label('evidenceState', evidence.assessmentState),
-        owner: action.ownerSubjectKey === null ? 'Unassigned' : 'Assigned (eligibility not checked)' } };
+        owner: assigned(action) ? 'Assigned (eligibility not checked)' : 'Unassigned' } };
 }
 
 // Pure trusted-host output formatting, not an authentication or authorization
@@ -139,7 +149,7 @@ function projectImprovementActionPlanPresentation(input) {
         if (model.priority.status !== 'not_calculated' || model.priority.reason !== 'priority_adapter_required') fail();
         fields(model.filters, ['status', 'owner', 'overdueOnly']);
         if (model.filters.status !== 'all') label('status', model.filters.status);
-        if (!['all', 'unassigned'].includes(model.filters.owner)) subject(model.filters.owner);
+        if (!['all', 'unassigned'].includes(model.filters.owner)) ownerFilter(model.filters.owner);
         if (typeof model.filters.overdueOnly !== 'boolean') fail();
         fields(model.counts, ['all', 'visible']); countSet(model.counts.all); countSet(model.counts.visible);
         for (const key of ['total', 'unassigned', 'overdue']) if (model.counts.visible[key] > model.counts.all[key]) fail();
@@ -150,12 +160,13 @@ function projectImprovementActionPlanPresentation(input) {
             const result = actionValue(action, model, revisions);
             if (ids.has(action.actionId)) fail(); ids.add(action.actionId);
             if (model.filters.status !== 'all' && action.status !== model.filters.status ||
-                model.filters.owner === 'unassigned' && action.ownerSubjectKey !== null ||
-                !['all', 'unassigned'].includes(model.filters.owner) && action.ownerSubjectKey !== model.filters.owner ||
+                model.filters.owner === 'unassigned' && assigned(action) ||
+                !['all', 'unassigned'].includes(model.filters.owner) && action.ownerSubjectKey !== model.filters.owner &&
+                    action.ownerLabel !== model.filters.owner ||
                 model.filters.overdueOnly && !action.isOverdue) fail();
             return result;
         });
-        if (revisions.size > 1024 || actions.filter(action => action.ownerSubjectKey === null).length !== model.counts.visible.unassigned ||
+        if (revisions.size > 1024 || actions.filter(action => !assigned(action)).length !== model.counts.visible.unassigned ||
             actions.filter(action => action.isOverdue).length !== model.counts.visible.overdue) fail();
         for (const key of Object.keys(LABELS.status)) {
             if (actions.filter(action => action.status === key).length !== model.counts.visible.byStatus[key]) fail();
