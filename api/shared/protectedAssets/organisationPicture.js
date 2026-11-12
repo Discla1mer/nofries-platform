@@ -65,12 +65,14 @@
         const doc = root.ownerDocument, client = options.client, metadata = copy(options.metadata);
         const organisationId = options.organisationId, organisationName = options.displayName || organisationId;
         const openImprovement = typeof options.openImprovement === 'function' ? options.openImprovement : null;
+        const planGap = typeof options.planGap === 'function' ? options.planGap : null;
         const id = 'picture-assessment-' + (++sequence);
         const initialAssessmentId = typeof options.initialAssessmentId === 'string' ? options.initialAssessmentId : null;
         let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null, allowance = null;
         let selected = initialAssessmentId || '', detail = null, loading = false, message = '', denied = false;
         let loaded = false, retry = null, explanationController = null;
         let trend = null;
+        let gapPlan = null;
         function live(token) { return !disposed && (token === undefined || token === epoch); }
         function node(tag, cls, text) {
             const value = doc.createElement(tag); if (cls) value.className = cls;
@@ -457,9 +459,38 @@
                 const ownerStart = /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(gap.itemId);
                 item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer),
                     node('p', 'picture-gap-owner', ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.'), why, next);
+                if (planGap && improvementSelection()) item.append(...gapPlanControls(gap));
                 list.append(item);
             });
             section.append(list, helpPanel()); return section;
+        }
+        // "Plan this" asks the host to open the improvement editor at this gap's
+        // action, creating the plan for this exact submitted revision only if
+        // none exists. One attempt at a time; a failure leaves Overview as it is.
+        const GAP_PLAN_TEXT = Object.freeze({ opening: 'Opening plan…', failed: 'Couldn\'t open the plan. Try again.' });
+        function paintGapPlan(attempt) {
+            const view = attempt.view; if (!view) return;
+            view.status.textContent = GAP_PLAN_TEXT[attempt.status] || ''; view.status.hidden = !GAP_PLAN_TEXT[attempt.status];
+            view.action.disabled = attempt.status === 'opening';
+        }
+        function gapPlanControls(gap) {
+            const token = epoch, binding = sourceBinding();
+            const status = node('p', 'picture-gap-plan-status'); status.setAttribute('role', 'status'); status.hidden = true;
+            const action = button('Plan this', () => {
+                if (gapPlan && gapPlan.status === 'opening' || !currentSubmitted(token, binding, action)) return;
+                const selection = improvementSelection(); if (!selection) return;
+                const attempt = gapPlan = { binding, itemId: gap.itemId, status: 'opening', view: { action, status } };
+                paintGapPlan(attempt);
+                const settle = opened => {
+                    if (gapPlan !== attempt || !live()) return;
+                    if (opened === true) gapPlan = null;
+                    attempt.status = opened === true ? '' : 'failed'; paintGapPlan(attempt);
+                };
+                Promise.resolve().then(() => planGap(selection, gap.itemId)).then(settle, () => settle(false));
+            });
+            action.classList.add('picture-gap-plan'); action.setAttribute('aria-label', 'Plan this: ' + gap.title);
+            if (gapPlan && gapPlan.binding === binding && gapPlan.itemId === gap.itemId) { gapPlan.view = { action, status }; paintGapPlan(gapPlan); }
+            return [action, status];
         }
         // Copy or print reuses the results view's summary and copy behaviour.
         // The help link shows only when the public enquiry status says
