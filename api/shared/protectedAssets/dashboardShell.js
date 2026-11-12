@@ -118,7 +118,9 @@
             closeOnEscape(other);
             secondary.forEach(function (item) {
                 const labels = { ready: 'Available', planned: 'Coming next', disabled: 'Unavailable' };
-                other.append(routeLink(item, null, labels[stateFor(item.key)]));
+                // D-010: the Improvement Plan is part of every plan, so say so while it is planned.
+                const state = stateFor(item.key);
+                other.append(routeLink(item, null, item.key === 'improvement_plan' && state === 'planned' ? 'Included · coming next' : labels[state]));
             });
             nav.append(other);
         }
