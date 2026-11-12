@@ -923,8 +923,8 @@ app.get(['/operator', '/operator/'], (req, res) => {
 app.get(['/forgot-password', '/forgot-password/'], (_req, res) => {
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    // Password reset is handled by Microsoft on the existing sign-in flow.
-    res.redirect(302, '/login');
+    // Explain the provider-owned reset path without collecting credentials.
+    res.redirect(302, '/account-help.html');
 });
 
 app.get(['/service-desk', '/service-desk/'], (req, res) => {

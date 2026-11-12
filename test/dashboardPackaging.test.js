@@ -643,7 +643,7 @@ test('the public dashboard login redirects to the single customer entry while st
     assert.match(response.headers['cache-control'], /no-store/);
     const reset = await require('supertest')(require('../server.js')).get('/forgot-password');
     assert.equal(reset.status, 302);
-    assert.equal(reset.headers.location, '/login');
+    assert.equal(reset.headers.location, '/account-help.html');
     assert.match(reset.headers['cache-control'], /no-store/);
     assert.equal(reset.headers['x-robots-tag'], 'noindex, nofollow');
 }, 20000);
