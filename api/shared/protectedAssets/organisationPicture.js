@@ -574,7 +574,7 @@
             const ordered = metadata.questions.map(question => indexed.get(question.id));
             const categories = [
                 ['Unresolved answers', ordered.filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId)),
-                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. Answers marked not applicable, to confirm, stay unresolved. Approval is not available yet.'
+                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. Not applicable answers count as not yet met until a reviewer confirms them. Reviews are coming soon.'
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
                 ['Reported implementation gaps', ordered.filter(question => ['partial', 'no'].includes(question.responseOptionId)),
                     result.partial || result.no ? result.partial + ' partial and ' + result.no + ' absent implementations: review the relevant questions before agreeing improvements.'

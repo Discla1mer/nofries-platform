@@ -405,6 +405,50 @@ test('Overview carries the exact selected source through the accepted Improvemen
     dom.controller.destroy(); assert.equal(improvement.destroys, 2);
 });
 
+test('planned improvement plan distinguishes a draft from a submitted baseline', async () => {
+    const model = readyCyber();
+    model.modules.find(item => item.key === 'improvement_plan').state = 'planned';
+    let opened;
+    const dom = mount(model, {
+        readBaseline: async () => ({ submittedId: null, draftId: 'draft-assessment' }),
+        mountCyber: (_root, presentation) => {
+            opened = presentation;
+            return { destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } };
+        }
+    });
+    await dom.controller.navigate('improvement-plan');
+    for (let step = 0; step < 5; step += 1) await Promise.resolve();
+    assert.match(dom.root.textContent, /appears after you submit your first assessment/);
+    assert.match(dom.root.textContent, /You have a draft assessment/);
+    const resume = [...buttons(dom)].find(item => item.textContent === 'Continue your draft');
+    assert.ok(resume);
+    resume.click();
+    assert.equal(opened.initialAssessmentId, 'draft-assessment');
+    assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
+    dom.controller.destroy();
+});
+
+test('planned improvement plan links a submitted baseline to its results', async () => {
+    const model = readyCyber();
+    model.modules.find(item => item.key === 'improvement_plan').state = 'planned';
+    let opened;
+    const dom = mount(model, {
+        readBaseline: async () => ({ submittedId: 'submitted-assessment', draftId: 'draft-assessment' }),
+        mountCyber: (_root, presentation) => {
+            opened = presentation;
+            return { destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } };
+        }
+    });
+    await dom.controller.navigate('improvement-plan');
+    for (let step = 0; step < 5; step += 1) await Promise.resolve();
+    assert.match(dom.root.textContent, /Review the gaps in your submitted assessment/);
+    const review = [...buttons(dom)].find(item => item.textContent === 'Review gaps in your results');
+    assert.ok(review);
+    review.click();
+    assert.equal(opened.initialAssessmentId, 'submitted-assessment');
+    dom.controller.destroy();
+});
+
 for (const state of ['planned', 'disabled']) test(`Improvement ${state} cannot expose a picture callback or mount`, async () => {
     const model = readyCyber(); model.modules.find(item => item.key === 'improvement_plan').state = state;
     const picture = syntheticChild(), improvement = syntheticChild();
@@ -782,7 +826,8 @@ test('disabled Board Reports keeps the disabled label even when Cyber picture is
 test('the plan label is not presented as a result', () => {
     const dom = mount();
     assert.match(dom.root.textContent, /Your plan/);
-    assert.match(dom.root.textContent, /name of your dashboard plan, not a result/);
+    assert.match(dom.root.textContent, /Plan: Govern/);
+    assert.match(dom.root.textContent, /not a security score/);
 });
 
 test('Escape closes the More tools menu and returns focus to its summary', () => {

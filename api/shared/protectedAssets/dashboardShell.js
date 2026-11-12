@@ -72,6 +72,7 @@
         let eventQueued = false;
         let queuedEvent = null;
         let unmanagedBoundaryHash = null;
+        let planBaselineToken = 0;
         // A history pointer is a read hint, never authority or saved answers.
         const restored = win && win.history && win.history.state && win.history.state.nofriesCyber;
         let cyberLocation = restored && restored.organisationId === model.context.organisationId &&
@@ -148,8 +149,8 @@
             const nav = element('nav'); nav.setAttribute('aria-label', 'Workspace');
             appendMenu(nav, false);
             const subscription = element('div', 'dashboard-subscription');
-            subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', model.subscription),
-                element('p', '', 'This is the name of your dashboard plan, not a result. Managed IT and advisory services are arranged separately.'));
+            subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', 'Plan: ' + model.subscription),
+                element('p', '', 'This is the name of your plan, not a security score. Managed IT and advisory services are arranged separately.'));
             rail.append(brand, context, nav, subscription);
             const workspace = element('div', 'dashboard-workspace');
             const top = element('header', 'dashboard-topbar');
@@ -292,6 +293,7 @@
             return promise;
         }
         function render(initialAssessmentId, sourceAssessment) {
+            planBaselineToken += 1;
             if (child) { child.destroy(); child = null; }
             main.replaceChildren();
             const head = element('header', 'dashboard-page-heading');
@@ -311,7 +313,7 @@
             else if (current.key === 'services') renderServices();
             else if (current.key === 'cyber_security' && stateFor(current.key) === 'ready' && typeof options.mountCyber === 'function') renderCyber(initialAssessmentId);
             else if (current.key === 'improvement_plan' && stateFor(current.key) === 'ready' && typeof options.mountImprovement === 'function') renderImprovement(sourceAssessment);
-            else renderModule();
+            else renderModule(planBaselineToken);
             const footer = element('footer', 'dashboard-provenance');
             // People read local time; keep the exact instant in the datetime attribute.
             let shown;
@@ -460,16 +462,54 @@
                 childRoot.append(element('p', '', 'The Improvement Plan could not load. Reopen it through your authenticated dashboard.'));
             }
         }
-        function renderModule() {
+        function renderModule(baselineToken) {
             const plan = current.key === 'improvement_plan';
             const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
-            const section = panel(plan
-                ? 'Track actions from a saved assessment here once this workspace is available.'
-                : 'This workspace is not open yet.',
-                cyber ? 'For now, review the gaps in your saved assessment.' : 'For now, use the parts of the dashboard that are available.');
-            if (cyber) section.append(button('Review saved assessment', function () { navigate(cyber.route, true); }));
             const home = available.find(function (item) { return item.key === 'overview'; });
-            if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
+            if (!plan) {
+                const section = panel('This workspace is not open yet.', 'For now, use the parts of the dashboard that are available.');
+                if (cyber) section.append(button('Review saved assessment', function () { navigate(cyber.route, true); }));
+                if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
+                main.append(section);
+                return;
+            }
+            const section = panel('Your improvement plan appears after you submit your first assessment.',
+                cyber && typeof options.readBaseline === 'function' ? 'Checking your saved assessments…'
+                    : cyber ? 'Submit an assessment in Cyber Security. This page does not list gaps until then.'
+                    : 'For now, use the parts of the dashboard that are available.');
+            function homeButton() {
+                if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
+            }
+            if (cyber && typeof options.readBaseline === 'function') {
+                const token = baselineToken;
+                Promise.resolve().then(function () { return options.readBaseline(); }).then(function (baseline) {
+                    if (!active() || token !== planBaselineToken || current.key !== 'improvement_plan') return;
+                    const title = section.querySelector('h2');
+                    const copy = section.querySelector('p');
+                    if (baseline && baseline.submittedId) {
+                        title.textContent = 'Review the gaps in your submitted assessment';
+                        copy.textContent = 'Your improvement plan will be built from a submitted baseline. Open the results to see the gaps.';
+                        section.append(button('Review gaps in your results', function () { navigate(cyber.route, true, undefined, baseline.submittedId); }));
+                    } else if (baseline && baseline.draftId) {
+                        title.textContent = 'Your improvement plan appears after you submit your first assessment';
+                        copy.textContent = 'You have a draft assessment. Submit it to create your baseline. This page does not list gaps yet.';
+                        section.append(button('Continue your draft', function () { navigate(cyber.route, true, undefined, baseline.draftId); }));
+                    } else {
+                        copy.textContent = 'There is no submitted assessment yet. Start one in Cyber Security, then come back here after you submit it.';
+                        section.append(button('Open assessment', function () { navigate(cyber.route, true); }));
+                    }
+                    homeButton();
+                }, function () {
+                    if (!active() || token !== planBaselineToken || current.key !== 'improvement_plan') return;
+                    const copy = section.querySelector('p');
+                    if (copy) copy.textContent = 'We could not check your saved assessments just now. Open Cyber Security to continue a draft or read a submitted result.';
+                    section.append(button('Open Cyber Security', function () { navigate(cyber.route, true); }));
+                    homeButton();
+                });
+            } else {
+                if (cyber) section.append(button('Open assessment', function () { navigate(cyber.route, true); }));
+                homeButton();
+            }
             main.append(section);
         }
         function renderServices() {

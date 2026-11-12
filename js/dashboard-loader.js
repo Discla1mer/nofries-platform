@@ -14,7 +14,11 @@
     const publicGateway = gateway ? document.getElementById('gatewayPublic') : null;
 
     const REQUEST_MS = 12000;
+    // Fast 5xx and network failures on the opening session reads. Timeouts
+    // already waited REQUEST_MS, so they are not tried again here.
+    const SESSION_RETRY_MS = [1000, 2000, 4000];
     const MAX_RECONCILIATIONS = 2;
+    const ADD_ORG_RETURN = 'nofries-return-add-organisation';
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
     const DIGEST = /^[0-9a-f]{64}$/;
     const ROUTES = ['overview', 'ai-governance', 'cyber-security', 'it-optimisation', 'improvement-plan', 'evidence', 'board-reports', 'services'];
@@ -197,14 +201,14 @@
     function show(cycle, state, focusHeading) {
         if (!current(cycle)) return;
         const copy = {
-            loading: ['Opening your dashboard', 'Checking your current access.', 'Please wait.'],
+            loading: ['Opening your dashboard', 'Checking your sign-in…', 'This usually takes a moment.'],
             selection: ['Choose an organisation', 'Select the organisation you want to view.', 'Your selection will be checked before the dashboard opens.'],
             ready: ['Your dashboard', 'Choose another organisation or sign out when finished.', 'Dashboard ready.'],
             queue: ['Work queue', 'Follow up on saved improvement actions across your organisations.', 'Each organisation is checked before its actions are shown.'],
-            unauthenticated: ['Sign in to your dashboard', 'Use the email address for your No Fries account.', 'You are not signed in.'],
-            expired: ['Your session has expired', 'Sign in again to continue.', 'Dashboard content has been cleared.'],
+            unauthenticated: ['Please sign in', 'Use the email address for your No Fries account.', 'You are not signed in.'],
+            expired: ['Please sign in again', 'Your sign-in has ended. Sign in to continue.', 'This is not a service outage.'],
             denied: ['Dashboard access is unavailable', 'Your current identity does not have the required access.', 'No dashboard content is displayed.'],
-            unavailable: ['The dashboard could not load', 'Please try again when the service is available.', 'The request could not be confirmed.'],
+            unavailable: ['No Fries is having a temporary problem', 'We could not open your dashboard just now. Try again in a moment. You do not need to sign in again.', 'This is a temporary service problem, not a lost sign-in.'],
             signout: ['Sign-out is not confirmed', 'The request may still complete. Retry to check sign-out.', 'Dashboard content has been cleared.']
         }[state];
         if (state === 'ready' && cycle.session?.purpose === 'customer') {
@@ -238,6 +242,8 @@
         elements.retry.hidden = !['unavailable', 'signout', 'denied'].includes(state);
         elements.retry.disabled = false;
         elements.signIn.hidden = !['unauthenticated', 'expired', 'denied'].includes(state);
+        if (!elements.signIn.dataset.restingLabel) elements.signIn.dataset.restingLabel = elements.signIn.textContent;
+        elements.signIn.textContent = state === 'expired' ? 'Sign in again' : elements.signIn.dataset.restingLabel;
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
         if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
@@ -389,7 +395,9 @@
             };
             const cancel = function () {
                 if (abort) abort.abort();
-                finish(reject, invalid(true));
+                const error = invalid(true);
+                error.timeout = true;
+                finish(reject, error);
             };
             const timer = window.setTimeout(cancel, REQUEST_MS);
             if (refresh) refresh.requests.add(cancel);
@@ -422,6 +430,59 @@
     function requireSuccess(result) {
         if (result.status !== 200) { const error = invalid(); error.status = result.status; throw error; }
         return result.value;
+    }
+    function transientSessionFailure(error) {
+        if (!error || unresolved || error.timeout || error.validation || error.expired) return false;
+        if (typeof error.status === 'number') return error.status >= 500;
+        return true;
+    }
+    function loadingStage(cycle, message, detail) {
+        if (!current(cycle) || document.body.dataset.dashboardState !== 'loading') return;
+        elements.heading.textContent = 'Opening your dashboard';
+        elements.message.textContent = message;
+        elements.status.textContent = detail;
+    }
+    function waitForRetry(cycle, ms) {
+        if (current(cycle) && document.body.dataset.dashboardState === 'loading') {
+            elements.heading.textContent = 'No Fries is having a temporary problem';
+            elements.message.textContent = 'We\'ll keep trying…';
+            elements.status.textContent = 'This is a temporary service problem. You do not need to sign in again.';
+        }
+        return new Promise(function (resolve) {
+            const timer = window.setTimeout(resolve, ms);
+            cycle.cleanup.push(function () { window.clearTimeout(timer); resolve(); });
+        });
+    }
+    // Opening read and the closing witness. A focus refresh uses readSession
+    // and keeps its own single-try behaviour.
+    async function sessionForReconcile(cycle, message, detail) {
+        for (let attempt = 0; ; attempt += 1) {
+            if (!current(cycle)) throw invalid();
+            loadingStage(cycle, attempt ? 'Checking your sign-in again…' : message, attempt ? 'We\'ll keep trying…' : detail);
+            let result;
+            try { result = await request(cycle, '/api/dashboard/session'); }
+            catch (error) {
+                if (!current(cycle) || !transientSessionFailure(error) || attempt >= SESSION_RETRY_MS.length) throw error;
+                await waitForRetry(cycle, SESSION_RETRY_MS[attempt]);
+                continue;
+            }
+            if (!current(cycle)) throw invalid();
+            if (result.status >= 500 && transientSessionFailure({ status: result.status }) && attempt < SESSION_RETRY_MS.length) {
+                await waitForRetry(cycle, SESSION_RETRY_MS[attempt]);
+                continue;
+            }
+            return result;
+        }
+    }
+    function rememberAddOrganisation() {
+        try { window.sessionStorage.setItem(ADD_ORG_RETURN, '1'); } catch (_) {}
+    }
+    function takeAddOrganisationReturn() {
+        try {
+            if (window.sessionStorage.getItem(ADD_ORG_RETURN) !== '1') return false;
+            window.sessionStorage.removeItem(ADD_ORG_RETURN);
+            return true;
+        } catch (_) { return false; }
     }
     async function readSession(cycle, refresh) {
         return session(requireSuccess(await request(cycle, '/api/dashboard/session', undefined, undefined, undefined, refresh)));
@@ -461,7 +522,7 @@
         return reconcileCurrent(cycle, transitions, initializeAllowed).finally(function () { cycle.reconciling -= 1; });
     }
     async function reconcileCurrent(cycle, transitions, initializeAllowed) {
-        const result = await request(cycle, '/api/dashboard/session');
+        const result = await sessionForReconcile(cycle, 'Checking your sign-in…', 'This usually takes a moment.');
         if (!current(cycle)) return;
         if (result.status === 409 && initializeAllowed && fields(result.value, ['code']) && result.value.code === 'dashboard_initialization_required') {
             const pending = command('initialize', { operationId: secureId() });
@@ -476,6 +537,7 @@
         if (cycle.openSelection && value.accountType === 'consultant' && !currentRoute()) {
             window.history.replaceState(null, '', lastOrganisationRoute);
         }
+        loadingStage(cycle, 'Loading your organisation…', 'Fetching what you can open.');
         const snapshot = Object.freeze({ generation: value.generation, selectedBindingId: value.selectedBindingId });
         if (value.accountType === 'consultant' && window.location.hash === '#work-queue' && !cycle.openSelection) {
             if (value.workQueueAvailable === true) { mountWorkQueue(cycle); return; }
@@ -502,6 +564,7 @@
         const prefetchCyber = Array.isArray(projection?.modules) && projection.modules.some(function (item) {
             return item && item.key === 'cyber_security' && item.state === 'ready';
         });
+        loadingStage(cycle, 'Preparing your dashboard…', 'Loading the pages you use.');
         const prepared = await Promise.all([assets(cycle), prefetchCyber
             ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess)
             : Promise.resolve(null)]);
@@ -515,7 +578,8 @@
         const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1]) : null;
         const improvementReady = model.modules.some(function (item) { return item.key === 'improvement_plan' && item.state === 'ready'; });
         const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId) : null;
-        const fresh = await readSession(cycle);
+        const witnessed = await sessionForReconcile(cycle, 'Confirming your access…', 'One last check before the page opens.');
+        const fresh = session(requireSuccess(witnessed));
         if (!current(cycle)) return;
         if (!sameSession(value, fresh)) {
             if (transitions >= MAX_RECONCILIATIONS) throw invalid();
@@ -538,6 +602,7 @@
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
+            ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}) });
         if (!controller || typeof controller.destroy !== 'function') throw invalid();
         elements.app.hidden = false;
@@ -694,14 +759,20 @@
                     filterDirectory(cycle);
                 }
                 if (error.status === 401) {
+                    const adding = !body || body.action === 'create';
                     const confirmation = element('h3', 'Confirm your sign-in to continue'); confirmation.tabIndex = -1; content.append(confirmation);
                     status.textContent = body?.action === 'accept'
                         ? submitted ? 'Acceptance is not confirmed. Sign in again, then check the same saved client before accepting again.'
                             : 'This attempt has not submitted acceptance. Sign in again, then open the same saved client to check its status and continue.'
+                        : adding ? 'Adding an organisation needs a fresh sign-in to protect your account.'
                         : 'Sign in again to confirm your identity before setting up clients. Open the saved client afterwards to check its recorded progress.';
-                    content.append(element('p', 'You will be asked to sign in again. Afterwards you come back to your organisations to resume this step.'));
+                    content.append(element('p', adding
+                        ? 'After you sign in, you come back to this step to add the organisation.'
+                        : 'You will be asked to sign in again. Afterwards you come back to your organisations to resume this step.'));
                     const link = element('a', 'Sign in again to continue');
-                    link.href = customerReauthentication; link.className = 'client-action client-action-primary'; content.append(link);
+                    link.href = customerReauthentication; link.className = 'client-action client-action-primary';
+                    if (adding) link.addEventListener('click', rememberAddOrganisation);
+                    content.append(link);
                     confirmation.focus();
                     return;
                 }
@@ -839,7 +910,7 @@
                     const existing = state.clients.find(function (client) { return client.requestId === draft.requestId; });
                     if (draft.existing ? existing?.status === 'details_required' && existing.organisationName === draft.values.organisationName
                         : !existing && (unlimitedList || state.remaining > 0)) form(existing, draft);
-                }
+                } else if (takeAddOrganisationReturn() && !readOnly && (unlimitedList || state.remaining > 0)) form();
             } else if (state?.status === 'setup_read_only' && fields(state, ['status'])) {
                 writesClosed = true; csrf = null; heading.textContent = 'Saved organisation setups';
                 pending = null; cycle.clientDraft = null;
@@ -1180,6 +1251,18 @@
                 onLocation: presentation && presentation.onLocation,
                 // Overview's first-use action opens the new-assessment step directly.
                 startNew: !!(presentation && presentation.startNew === true) });
+        };
+        mountCyber.readBaseline = async function () {
+            if (!current(cycle) || cycle.authorityPending) throw invalid();
+            const listed = await client.list({ limit: 50 });
+            if (!current(cycle) || cycle.authorityPending) throw invalid();
+            const rows = Array.isArray(listed.assessments) ? listed.assessments : [];
+            const newest = function (wanted) {
+                return rows.filter(function (row) { return wanted ? row.status === 'submitted' : row.status !== 'submitted'; })
+                    .sort(function (a, b) { return a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0; })[0] || null;
+            };
+            const submitted = newest(true), draft = newest(false);
+            return { submittedId: submitted ? submitted.assessmentId : null, draftId: draft ? draft.assessmentId : null };
         };
         const picture = window.NoFriesOrganisationPicture;
         let pictureSelection = null;
