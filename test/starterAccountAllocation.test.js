@@ -210,3 +210,22 @@ test('a consultant record holds up to 12 client reservations; the allocator stil
     for (let n = 0; n < 3; n++) await h.allocator.reserveClient({}, h.client('Client ' + n));
     await assert.rejects(h.allocator.reserveClient({}, h.client('Fourth client')), /starter_client_limit/);
 });
+test('with client use from migration 0019, only activated clients use a place, within the 12 reservation ceiling (#151)', async () => {
+    let use = null; const seen = [];
+    const h = harness(); await h.active();
+    const allocator = createStarterAccountAllocator({ ...h.options, clientUse: async account => { seen.push(account.organisations.length); return use; } });
+    // Old schema or flag off: null keeps the earlier rule.
+    for (let n = 0; n < 3; n++) await allocator.reserveClient({}, h.client('Client ' + n));
+    await assert.rejects(allocator.reserveClient({}, h.client('Old rule')), /starter_client_limit/);
+    use = { activated: 3 };
+    await assert.rejects(allocator.reserveClient({}, h.client('Three activated')), /starter_client_limit/);
+    use = { activated: 2 };
+    for (let n = 3; n < 12; n++) await allocator.reserveClient({}, h.client('Client ' + n));
+    assert.equal([...h.records.values()][0].record.organisations.length, 13);
+    await assert.rejects(allocator.reserveClient({}, h.client('Past the ceiling')), /starter_client_limit/);
+    assert.ok(seen.length >= 12);
+    for (const bad of [{ activated: -1 }, { activated: '1' }, {}]) {
+        use = bad; await assert.rejects(allocator.reserveClient({}, h.client('Bad use')), /starter_record_invalid/);
+    }
+    assert.throws(() => createStarterAccountAllocator({ ...h.options, clientUse: 'yes' }), /starter_configuration_invalid/);
+});

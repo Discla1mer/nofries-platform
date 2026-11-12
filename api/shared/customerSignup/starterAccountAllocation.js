@@ -69,9 +69,10 @@ function record(input) {
     } else if (value.organisations.length !== 1) fail('starter_record_invalid');
     return freeze(value);
 }
-function createStarterAccountAllocator({ store, readActivation, captureOwner, now = Date.now, newId = crypto.randomUUID, planId = LEGACY_PLAN_ID }) {
+function createStarterAccountAllocator({ store, readActivation, captureOwner, clientUse = null, now = Date.now, newId = crypto.randomUUID, planId = LEGACY_PLAN_ID }) {
     if (!store || !['load', 'create', 'replace'].every(method => typeof store[method] === 'function') ||
-        typeof readActivation !== 'function' || typeof captureOwner !== 'function') fail('starter_configuration_invalid');
+        typeof readActivation !== 'function' || typeof captureOwner !== 'function' ||
+        clientUse !== null && typeof clientUse !== 'function') fail('starter_configuration_invalid');
     const plan = approvedStarterPlan(planId);
     const time = () => { const at = now(); if (!Number.isSafeInteger(at) || at < Date.parse(approvedStarterPlan().approvedAt)) fail('starter_clock_invalid'); return at; };
     function slot(requestId, kind, organisationName) {
@@ -121,6 +122,16 @@ function createStarterAccountAllocator({ store, readActivation, captureOwner, no
         const checked = clientRecord(account.accountId, found);
         if (checked.requestId !== requestId) fail('starter_record_invalid');
         return checked;
+    }
+    // clientUse (#151) answers null on the old rule: every reservation uses a
+    // place. Otherwise only activated clients use one (migration 0019 enforces
+    // that at activation), within the record's lifetime reservation ceiling.
+    async function placeTaken(account) {
+        const limit = approvedStarterPlan(account.planId).consultantClientOrganisations, reserved = account.organisations.length - 1;
+        const use = clientUse ? await clientUse(account) : null;
+        if (use === null || use === undefined) return reserved >= limit;
+        if (!Number.isSafeInteger(use.activated) || use.activated < 0) fail('starter_record_invalid');
+        return reserved >= CLIENT_RESERVATION_CEILING || use.activated >= limit;
     }
     function initialProof(proofInput) {
         const proof = verifiedSnapshot(proofInput, proofInput?.requestId), at = time();
@@ -245,7 +256,7 @@ function createStarterAccountAllocator({ store, readActivation, captureOwner, no
                     if (hash(await owner(request)) !== hash(actor)) fail('starter_owner_changed');
                     current(loaded.record, actor); return original;
                 }
-                if (loaded.record.organisations.length - 1 >= approvedStarterPlan(loaded.record.planId).consultantClientOrganisations) fail('starter_client_limit');
+                if (await placeTaken(loaded.record)) fail('starter_client_limit');
                 const next = record({ ...loaded.record, organisations: [...loaded.record.organisations,
                     slot(command.requestId, 'client', command.organisationName)] });
                 if (hash(await owner(request)) !== hash(actor)) fail('starter_owner_changed'); current(loaded.record, actor);
