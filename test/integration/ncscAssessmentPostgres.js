@@ -872,7 +872,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 template_version, params, status, not_before FROM nofries.email_outbox WHERE account_id=$1 ORDER BY email_type, dedupe_key`,
             [accountId])).rows.map(row => ({ ...row, not_before: row.not_before.toISOString() }));
             const pendingNudge = (s, key) => ownerPool.query(`INSERT INTO nofries.email_outbox (outbox_id, tenant_id, organisation_id,
-                account_id, email_type, dedupe_key, template_version) VALUES ($1,$2,$3,$4,'nudge_unfinished',$5,'nudge_unfinished-v1')`,
+                account_id, email_type, dedupe_key, template_version) VALUES ($1,$2,$3,$4,'nudge_unfinished',$5,'nudge-unfinished-v1')`,
             [crypto.randomUUID(), s.scope.tenantId, s.scope.organisationId, accountId, key]);
             const gaps = () => allResponses().map((row, index) => index < 3 ? { ...row, optionId: 'no' } : row);
             async function starterTenant() {
@@ -912,9 +912,9 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 const counts = submitted.assessment.submission.evaluation.countsCompletion, gapCount = counts.no + counts.partial;
                 expect(gapCount).toBeGreaterThan(0);
                 const expected = [
-                    { ...s.scope, email_type: 'reassess_reminder', dedupe_key: head, template_version: 'reassess_reminder-v1',
+                    { ...s.scope, email_type: 'reassess_reminder', dedupe_key: head, template_version: 'reassess-reminder-v1',
                         params: {}, status: 'pending', not_before: '2026-12-06T09:00:00.000Z' },
-                    { ...s.scope, email_type: 'result_summary', dedupe_key: head, template_version: 'result_summary-v1',
+                    { ...s.scope, email_type: 'result_summary', dedupe_key: head, template_version: 'result-summary-v1',
                         params: { assessmentId: 'email-a', gapCount }, status: 'pending', not_before: NOW }]
                     .map(({ tenantId, organisationId, ...row }) => ({ tenant_id: tenantId, organisation_id: organisationId, ...row }));
                 expect(await outboxRows()).toEqual(expected);

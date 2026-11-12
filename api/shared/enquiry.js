@@ -5,6 +5,7 @@
 // submitted content is never interpreted as HTML by the receiving mail client.
 
 const { createEnquiryRateLimiter, isEnquiryRateLimitConfigured } = require('./enquiryRateLimit');
+const { createResendClient } = require('./lifecycleEmail/resendClient');
 
 const LIMITS = Object.freeze({ name: 120, email: 254, organisation: 160, message: 4000 });
 const MIN_MESSAGE = 10;
@@ -89,17 +90,12 @@ function createEnquiryService({ env = process.env, fetchImpl = (...args) => fetc
         ].join('\n');
         let response;
         try {
-            response = await fetchImpl('https://api.resend.com/emails', {
-                method: 'POST',
-                signal: AbortSignal.timeout(10000),
-                headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    from: config.from,
-                    to: [config.to],
-                    reply_to: enquiry.email,
-                    subject: `Website enquiry from ${enquiry.name.slice(0, 80)}`,
-                    text
-                })
+            response = await createResendClient({ apiKey: config.apiKey, fetchImpl }).send({
+                from: config.from,
+                to: config.to,
+                replyTo: enquiry.email,
+                subject: `Website enquiry from ${enquiry.name.slice(0, 80)}`,
+                text
             });
         } catch (_) {
             throw new EnquiryError('enquiry_send_failed', 502, 'Your enquiry could not be sent. Please email hello@nofries.nz.');

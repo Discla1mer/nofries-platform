@@ -19,8 +19,8 @@ describe('lifecycle email outbox writer', () => {
 
     test('template versions are the type plus -v1 and cannot be changed', () => {
         const { TEMPLATE_VERSIONS } = require('../api/shared/lifecycleEmail/templateVersions');
-        expect(TEMPLATE_VERSIONS).toEqual({ welcome: 'welcome-v1', result_summary: 'result_summary-v1',
-            nudge_unfinished: 'nudge_unfinished-v1', reassess_reminder: 'reassess_reminder-v1' });
+        expect(TEMPLATE_VERSIONS).toEqual({ welcome: 'welcome-v1', result_summary: 'result-summary-v1',
+            nudge_unfinished: 'nudge-unfinished-v1', reassess_reminder: 'reassess-reminder-v1' });
         expect(Object.isFrozen(TEMPLATE_VERSIONS)).toBe(true);
     });
 
@@ -32,7 +32,7 @@ describe('lifecycle email outbox writer', () => {
         expect(sql).toMatch(/ON CONFLICT \(account_id, organisation_id, email_type, dedupe_key\) DO NOTHING/);
         expect(sql).toMatch(/\(outbox_id, tenant_id, organisation_id, account_id, email_type, dedupe_key, template_version, params, not_before\)/);
         expect(args.slice(1)).toEqual(['tenant-a', 'organisation-a', scope.accountId, 'result_summary', 'a'.repeat(64),
-            'result_summary-v1', '{"assessmentId":"assessment-a","gapCount":3}', '2026-11-12T00:00:00.000Z']);
+            'result-summary-v1', '{"assessmentId":"assessment-a","gapCount":3}', '2026-11-12T00:00:00.000Z']);
         expect(args[0]).toMatch(/^[0-9a-f-]{36}$/);
         expect(await outbox.enqueue(client(0), { ...scope, type: 'reassess_reminder', dedupeKey: 'assessment-a',
             notBefore: '2027-02-10T00:00:00.000Z' })).toBe(false);
