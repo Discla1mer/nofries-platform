@@ -248,10 +248,7 @@ test('real static and App Service builders include identical reporting sources w
         execFileSync(process.execPath, ['scripts/build-app-service.js'], { cwd: directory, stdio: 'pipe' });
         for (const name of ['report.html', 'js/customer-report.js', 'customer-report.css']) {
             const source = fs.readFileSync(path.join(root, name));
-            const staticBytes = name === 'report.html'
-                ? Buffer.from(require('../lib/withSharedAssistantDocument').withSharedAssistantDocument(source.toString('utf8'), 'dashboard'))
-                : source;
-            expect(fs.readFileSync(path.join(directory, 'dist', name))).toEqual(staticBytes);
+            expect(fs.readFileSync(path.join(directory, 'dist', name))).toEqual(source);
             expect(fs.readFileSync(path.join(directory, 'app-service-dist', name))).toEqual(source);
         }
         const config = JSON.parse(fs.readFileSync(path.join(directory, 'dist/staticwebapp.config.json')));
