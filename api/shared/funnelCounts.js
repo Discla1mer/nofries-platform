@@ -4,7 +4,7 @@
 // event into nofries.funnel_daily_counts for the Pacific/Auckland day. Nothing
 // here reads, stores or logs an IP, user agent, referrer, URL or cookie; the
 // client key is used only as an in-memory rate-limit bucket.
-const { checkRateLimit, getClientKeyFromHeaders, rateLimitHeaders } = require('./abuseProtection');
+const { getClientKeyFromHeaders } = require('./abuseProtection');
 const { apiSecurityHeaders, assertSameOriginForMutation } = require('./securityHeaders');
 const { requestBodySize } = require('./requestLimits');
 
@@ -12,7 +12,43 @@ const FUNNEL_EVENTS = Object.freeze(['visit', 'signup_started', 'code_confirmed'
     'submitted', 'result_viewed', 'enquiry_sent']);
 const MAX_REQUEST_BYTES = 64;
 const UPSERT_SQL = `INSERT INTO nofries.funnel_daily_counts (day, event, count) VALUES ($1, $2, 1)
-    ON CONFLICT (day, event) DO UPDATE SET count = funnel_daily_counts.count + 1`;
+    ON CONFLICT (day, event) DO UPDATE SET count = funnel_daily_counts.count + 1
+    WHERE funnel_daily_counts.count < 10000000`;
+// Telemetry keeps its own small rate-limit store so this cheap anonymous
+// endpoint can never evict the shared enquiry and signup buckets. IPv6
+// clients are keyed on their /64 so rotating addresses inside one network
+// share a bucket.
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const RATE_MAX = 90;
+const MAX_TELEMETRY_BUCKETS = 2000;
+const telemetryBuckets = new Map();
+
+function telemetryKey(clientKey) {
+    const key = String(clientKey || 'unknown');
+    if (!key.includes(':')) return key;
+    return key.split(':').slice(0, 4).join(':') + '::/64';
+}
+
+function allowTelemetry(clientKey, nowMs = Date.now()) {
+    const key = telemetryKey(clientKey);
+    let bucket = telemetryBuckets.get(key);
+    if (!bucket || nowMs - bucket.start >= RATE_WINDOW_MS) {
+        telemetryBuckets.delete(key);
+        if (telemetryBuckets.size >= MAX_TELEMETRY_BUCKETS) {
+            for (const [oldKey, old] of telemetryBuckets) {
+                if (nowMs - old.start >= RATE_WINDOW_MS) telemetryBuckets.delete(oldKey);
+            }
+            if (telemetryBuckets.size >= MAX_TELEMETRY_BUCKETS) telemetryBuckets.delete(telemetryBuckets.keys().next().value);
+        }
+        bucket = { start: nowMs, count: 0 };
+        telemetryBuckets.set(key, bucket);
+    }
+    bucket.count += 1;
+    return bucket.count <= RATE_MAX;
+}
+
+function resetTelemetryRateLimitForTests() { telemetryBuckets.clear(); }
+
 const NZ_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland', year: 'numeric', month: '2-digit', day: '2-digit' });
 
 function funnelCountsEnabled(env = process.env) {
@@ -38,9 +74,6 @@ function createFunnelCountWriter({ pool }) {
                 try { await client.query('ROLLBACK'); } catch (_) { discard = true; }
                 throw error;
             }
-        } catch (error) {
-            discard = true;
-            throw error;
         } finally {
             client.release(discard);
         }
@@ -64,8 +97,9 @@ async function handleFunnelCountRequest(req, { env = process.env, record = null,
     } catch (error) {
         return result(403, { error: 'Request blocked', code: 'same_origin_required' });
     }
-    const limit = checkRateLimit('apiTelemetry', getClientKeyFromHeaders((req && req.headers) || {}, clientKey || 'unknown'), env);
-    if (!limit.allowed) return result(429, { error: 'Too many requests', code: 'rate_limited' }, rateLimitHeaders(limit));
+    if (!allowTelemetry(getClientKeyFromHeaders((req && req.headers) || {}, clientKey || 'unknown'))) {
+        return result(429, { error: 'Too many requests', code: 'rate_limited' }, { 'Retry-After': '600' });
+    }
     const event = readEvent(req && req.body);
     if (!event) return result(400, { error: 'Unknown event', code: 'invalid_event' });
     if (typeof record !== 'function') return result(503, { error: 'Funnel counts are unavailable', code: 'funnel_counts_unavailable' });
@@ -96,6 +130,8 @@ function result(status, body, extraHeaders = {}) {
 }
 
 module.exports = {
+    resetTelemetryRateLimitForTests,
+    telemetryKey,
     FUNNEL_EVENTS,
     MAX_REQUEST_BYTES,
     UPSERT_SQL,

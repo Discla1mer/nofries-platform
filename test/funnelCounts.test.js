@@ -1,9 +1,10 @@
 'use strict';
 
 const request = require('supertest');
-const { FUNNEL_EVENTS, aucklandDay, createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest, UPSERT_SQL } = require('../api/shared/funnelCounts');
+const { FUNNEL_EVENTS, aucklandDay, createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest, UPSERT_SQL,
+    resetTelemetryRateLimitForTests, telemetryKey } = require('../api/shared/funnelCounts');
 const { handlers } = require('../api/shared/apiRuntime');
-const { resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
+const { checkRateLimit, resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
 
 process.env.NOFRIES_REQUIRE_AUTH = 'false';
 delete process.env.NOFRIES_FUNNEL_COUNTS_ENABLED;
@@ -15,7 +16,7 @@ const UA = 'Mozilla/5.0 PrivateBrowser/9.9';
 const post = (body, extra = {}) => ({ method: 'POST', body, headers: { 'sec-fetch-site': 'same-origin',
     'x-forwarded-for': IP, 'user-agent': UA, referer: 'https://nofries.nz/private?x=1', ...extra } });
 
-beforeEach(() => resetAbuseProtectionForTests());
+beforeEach(() => { resetAbuseProtectionForTests(); resetTelemetryRateLimitForTests(); });
 afterEach(() => { delete process.env.NOFRIES_FUNNEL_COUNTS_ENABLED; });
 
 test('flag is on only for the exact string true', () => {
@@ -81,13 +82,23 @@ test('oversize body, non-POST and cross-site requests are rejected', async () =>
     expect(record).not.toHaveBeenCalled();
 });
 
-test('in-memory rate limit returns 429', async () => {
-    const env = { ...ON, NOFRIES_RATE_API_TELEMETRY_MAX: '2' };
+test('its own in-memory rate limit returns 429 after 90 posts per client', async () => {
     const record = jest.fn(async () => {});
-    expect((await handleFunnelCountRequest(post({ event: 'visit' }), { env, record })).status).toBe(204);
-    expect((await handleFunnelCountRequest(post({ event: 'visit' }), { env, record })).status).toBe(204);
-    expect((await handleFunnelCountRequest(post({ event: 'visit' }), { env, record })).status).toBe(429);
-    expect(record).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 90; i += 1) expect((await handleFunnelCountRequest(post({ event: 'visit' }), { env: ON, record })).status).toBe(204);
+    expect((await handleFunnelCountRequest(post({ event: 'visit' }), { env: ON, record })).status).toBe(429);
+    expect(record).toHaveBeenCalledTimes(90);
+});
+
+test('telemetry traffic never touches the shared enquiry and signup rate-limit buckets', async () => {
+    const record = jest.fn(async () => {});
+    for (let i = 0; i < 100; i += 1) await handleFunnelCountRequest(post({ event: 'visit' }), { env: ON, record });
+    expect(checkRateLimit('apiEnquiry', IP, {}).allowed).toBe(true);
+});
+
+test('IPv6 clients share a bucket per /64', () => {
+    expect(telemetryKey('2001:db8:1:2:aaaa::1')).toBe(telemetryKey('2001:db8:1:2:bbbb::9'));
+    expect(telemetryKey('2001:db8:1:2::1')).not.toBe(telemetryKey('2001:db8:1:3::1'));
+    expect(telemetryKey(IP)).toBe(IP);
 });
 
 test('a failed write logs fixed text only, with no IP, user agent or referrer', async () => {
@@ -147,4 +158,22 @@ describe('server route /api/telemetry', () => {
             expect(logged).not.toMatch(/203\.0\.113|PrivateBrowser/);
         } finally { spies.forEach(spy => spy.mockRestore()); }
     });
+});
+
+test('a failed upsert with a clean rollback keeps the pooled connection', async () => {
+    const client = { query: jest.fn(async sql => { if (String(sql).startsWith('INSERT')) throw new Error('check'); }), release: jest.fn() };
+    const record = createFunnelCountWriter({ pool: { connect: async () => client } });
+    await expect(record('visit', '2026-11-12')).rejects.toThrow('check');
+    expect(client.release).toHaveBeenCalledWith(false);
+});
+
+test('a failed rollback discards the pooled connection', async () => {
+    const client = { query: jest.fn(async sql => { if (sql !== 'BEGIN' && sql !== 'SET LOCAL ROLE nofries_runtime') throw new Error('broken'); }), release: jest.fn() };
+    const record = createFunnelCountWriter({ pool: { connect: async () => client } });
+    await expect(record('visit', '2026-11-12')).rejects.toThrow('broken');
+    expect(client.release).toHaveBeenCalledWith(true);
+});
+
+test('the upsert stops at the cap instead of erroring', () => {
+    expect(UPSERT_SQL).toMatch(/WHERE funnel_daily_counts\.count < 10000000/);
 });
