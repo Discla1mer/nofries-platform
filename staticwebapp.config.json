@@ -278,7 +278,7 @@
     },
     {
       "route": "/forgot-password",
-      "redirect": "/login"
+      "redirect": "/account-help.html"
     },
     {
       "route": "/service-desk",

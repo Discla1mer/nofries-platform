@@ -15,6 +15,18 @@ const keys = value => value.modules.map(item => item.key);
 const mount = (model = view(), options = {}) => { const dom = createDom(); return { ...dom, controller: shell.mount(dom.root, model, options) }; };
 const buttons = dom => dom.root.querySelectorAll('button');
 
+test('organisation hash delegates to the host while retaining the current view for its leave guard', () => {
+    let requests = 0;
+    const dom = mount(view(), { initialRoute: 'cyber-security', onOpenOrganisations() { requests++; } });
+    const before = dom.root.textContent;
+    dom.window.location.hash = '#organisations';
+    dom.window.dispatch('hashchange');
+    assert.equal(requests, 1);
+    assert.equal(dom.window.location.hash, '#cyber-security');
+    assert.equal(dom.root.textContent, before);
+    dom.controller.destroy();
+});
+
 test('registry preserves approved eight-module order and canonical mobile groups', () => {
     assert.deepEqual(registry.modules.map(item => item.key), ['overview', 'ai_governance', 'cyber_security', 'it_optimisation', 'improvement_plan', 'evidence', 'board_reports', 'services']);
     assert.deepEqual(registry.groups, ['Home', 'Assess', 'Plan', 'Proof', 'More']);
@@ -565,6 +577,55 @@ function historyDom(options = {}) {
     return { ...dom, flushGo: () => { if (pendingMoves.length) move(pendingMoves.shift()); },
         historyState: () => ({ cursor, entries: clone(entries), calls: clone(calls), pendingMoves: [...pendingMoves] }) };
 }
+
+test('question history moves within the mounted assessment and restores its pointer only for the same organisation', async () => {
+    const dom = historyDom();
+    let presentation, shown, leaves = 0, mounts = 0;
+    const adapter = (_root, input) => {
+        presentation = input; mounts++;
+        return { destroy() {}, requestLeave(commit) { leaves++; commit(); return Promise.resolve(true); },
+            showQuestion(location) { if (location.assessmentId !== 'saved-assessment') return false; shown = location.questionIndex; return true; } };
+    };
+    const model = readyCyber();
+    const controller = shell.mount(dom.root, model, { window: dom.window, initialRoute: 'cyber-security', mountCyber: adapter });
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 0 });
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 1 });
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 2 });
+    const count = dom.window.history.length;
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 2 });
+    assert.equal(dom.window.history.length, count);
+    dom.window.history.back(); await tick();
+    assert.equal(shown, 1); assert.equal(leaves, 0); assert.equal(mounts, 1);
+    dom.window.history.forward(); await tick(); assert.equal(shown, 2);
+    controller.destroy();
+    const resumed = shell.mount(dom.root, model, { window: dom.window, initialRoute: 'cyber-security', mountCyber: adapter });
+    assert.equal(presentation.initialAssessmentId, 'saved-assessment'); assert.equal(presentation.initialQuestionIndex, 2);
+    dom.window.history.back(); await tick(); assert.equal(shown, 1);
+    dom.window.history.forward(); await tick(); assert.equal(shown, 2);
+    resumed.destroy();
+    const another = clone(model); another.context.organisationId = 'another-organisation';
+    const changed = shell.mount(dom.root, another, { window: dom.window, initialRoute: 'cyber-security', mountCyber: adapter });
+    assert.equal(presentation.initialAssessmentId, undefined);
+    changed.destroy();
+});
+
+test('cancelled organisation navigation returns to the actual history cursor without duplicate identities', async () => {
+    const dom = historyDom(); let requests = 0;
+    const controller = shell.mount(dom.root, readyCyber(), { initialRoute: 'cyber-security',
+        mountCyber: () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } }),
+        onOpenOrganisations() { requests++; } });
+    dom.window.location.hash = '#organisations'; await tick(); await tick();
+    assert.equal(requests, 1);
+    assert.equal(dom.historyState().cursor, 0);
+    const ids = dom.historyState().entries.map(entry => entry.state.nofriesDashboard.entry);
+    assert.equal(new Set(ids).size, ids.length);
+    await controller.navigate('services');
+    dom.window.history.back(); await tick(); await tick();
+    assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
+    await controller.navigate('overview');
+    assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
+    controller.destroy();
+});
 
 for (const managed of [false, true]) test(`repeating the current Services route preserves Back and Forward (${managed ? 'managed' : 'unmanaged'} history)`, async () => {
     const dom = historyDom();

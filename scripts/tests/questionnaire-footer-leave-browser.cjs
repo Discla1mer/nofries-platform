@@ -16,7 +16,7 @@ const { buildFixtures } = require(path.join(root, 'scripts/build-ncsc-questionna
 const read = file => fs.readFileSync(path.join(root, file));
 const baseline = process.env.NOFRIES_FOOTER_BASELINE === '1';
 const bundle = ['dashboardRegistry.js', 'dashboardShell.js', 'ncscAssessmentClient.js', 'ncscQuestionnaire.js', 'assessmentExplanation.js', 'organisationPicture.js'];
-const sources = ['app/dashboard.html', 'index.html', 'js/dashboard-loader.js', 'app/dashboard.css', 'lib/dashboardDocument.js', 'lib/gatewayDocument.js', 'js/home.js', 'js/organisation-setup.js', 'js/prospect-assistant.js',
+const sources = ['app/dashboard.html', 'index.html', 'js/dashboard-loader.js', 'app/dashboard.css', 'lib/dashboardDocument.js', 'lib/gatewayDocument.js', 'js/home.js', 'js/organisation-setup.js',
     ...bundle.map(file => 'api/shared/protectedAssets/' + file)];
 const hashes = () => Object.fromEntries(sources.map(file => [file, createHash('sha256').update(read(file)).digest('hex')]));
 const before = hashes();
@@ -57,7 +57,7 @@ const server = http.createServer((request, response) => {
     else if (url.pathname === '/api/dashboard/modules/cyber_security') body = moduleView;
     else if (url.pathname === '/api/dashboard/ncsc/assessments') body = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
     else if (['/roadmap.html', '/privacy.html', '/terms.html'].includes(url.pathname)) { body = '<!doctype html><title>Synthetic destination</title>'; type = 'text/html'; }
-    else if (['/js/home.js', '/js/organisation-setup.js', '/js/prospect-assistant.js'].includes(url.pathname)) { body = read(url.pathname.slice(1)); type = 'text/javascript'; }
+    else if (['/js/home.js', '/js/organisation-setup.js'].includes(url.pathname)) { body = read(url.pathname.slice(1)); type = 'text/javascript'; }
     else if (assets[url.pathname]) [type, body] = assets[url.pathname];
     else { unexpected.push(request.method + ' ' + url.pathname); status = 404; body = {}; }
     response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });

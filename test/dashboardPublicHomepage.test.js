@@ -29,11 +29,11 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
     assert.doesNotMatch(html, /Automatic updates and connected data feeds are planned\. Managed IT and advisory services are optional\./);
 });
 
-test('release identifiers stay out of the customer view', () => {
+test('release identifiers are available in a collapsed site-version disclosure', () => {
     for (const page of ['index.html', 'managed-it.html']) {
         const source = fs.readFileSync(path.join(root, page), 'utf8');
         assert.doesNotMatch(source, /About this site|<details class="site-details">/);
-        assert.match(source, /<div class="site-release" hidden><!-- FRONTEND_RELEASE_INFO --><\/div>/);
+        assert.match(source, /<details class="site-release" id="site-version"><summary>Site version<\/summary><!-- FRONTEND_RELEASE_INFO --><\/details>/);
     }
 });
 
@@ -73,10 +73,10 @@ test('public customer links exclude the separate staff entry', () => {
     assert.match(html, /href="\/terms\.html"/);
     const footer = html.match(/<footer\b[\s\S]*?<\/footer>/)[0];
     assert.deepEqual([...footer.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]),
-        ['/', '/managed-it.html', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html']);
+        ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html']);
     const mainNav = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
     assert.deepEqual([...mainNav.matchAll(/href="([^"]+)"/g)].map(match => match[1]),
-        ['/', '/managed-it.html', '/roadmap.html', '/contact.html', '/login?intent=login']);
+        ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/login?intent=login']);
 });
 
 test('the homepage keeps only one compact MSP section below its Dashboard entry', () => {
@@ -103,9 +103,9 @@ test('service pricing remains server-owned rather than embedded in the homepage'
 
 test('gateway template includes only reviewed public scripts and a hash-bound loader marker', () => {
     const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
-    assert.equal(scripts.length, 5);
+    assert.equal(scripts.length, 4);
     assert.deepEqual(scripts.map(match => match[1].match(/src="([^"]+)"/)[1]),
-        ['/js/organisation-setup.js', '/js/home.js', '/js/enquiry-availability.js', '/js/enquiry-home.js', '/js/prospect-assistant.js']);
+        ['/js/organisation-setup.js', '/js/home.js', '/js/enquiry-availability.js', '/js/enquiry-home.js']);
     assert.ok(scripts.every(match => match[2].trim() === ''));
     assert.doesNotMatch(html, /\bon(?:click|load|error|submit)\s*=/i);
     assert.doesNotMatch(html, /(?:src|href)="(?:\/api\/dashboard\/(?:app\.js|bootstrap)|\/test\/fixtures\/)/);
