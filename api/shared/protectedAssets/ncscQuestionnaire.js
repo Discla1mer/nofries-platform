@@ -1103,15 +1103,20 @@
             const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
             const domain = metadata.domains.find(function (item) { return control && item.id === control.domainId; });
             questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
-            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', question.prompt));
+            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', question.smallBusiness ? question.smallBusiness.meaning : question.prompt));
             const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
-            const hint = node('p', 'ncsc-input-guidance', question.smallBusiness ? 'For a small business, this means… ' + question.smallBusiness.meaning : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
+            const hint = node('p', 'ncsc-input-guidance', question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
             hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
             if (question.smallBusiness) {
+                const wording = node('details'); wording.append(node('summary', '', 'Full framework question'), node('p', '', question.prompt));
+                fieldset.append(wording);
                 fieldset.append(node('p', 'ncsc-input-example', 'Example: ' + question.smallBusiness.example));
                 const parts = node('details'); parts.append(node('summary', '', 'What to check')); const checks = node('ul');
+                parts.open = acknowledged.status !== 'submitted';
                 question.smallBusiness.checks.forEach(function (text) { checks.append(node('li', '', text)); }); parts.append(checks); fieldset.append(parts);
+                parts.append(node('p', 'dashboard-muted', 'Use these checks to choose one overall answer. If only some parts are in place, choose Partial. These are guidance, not separately saved or scored answers.'));
             }
+            if (acknowledged.status === 'submitted') fieldset.append(node('p', 'dashboard-badge', 'Your answer: ' + (optionById.get(entry.value.optionId)?.label || 'Not answered')));
             if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
             const writable = canEdit();
             question.responseOptionIds.forEach(function (id) {
