@@ -79,7 +79,7 @@
   "scripts": {
     "test": "jest",
     "test:ci": "jest --runInBand",
-    "test:postgres": "jest --runInBand test/postgresMigration.test.js test/serviceDeskPostgresRepository.test.js test/lifecyclePostgresRepository.test.js test/postgresSignupRegistrationNative.test.js test/improvementPlanPostgres.test.js test/improvementEvidenceLinkPostgres.test.js",
+    "test:postgres": "jest --runInBand test/postgresMigration.test.js test/serviceDeskPostgresRepository.test.js test/lifecyclePostgresRepository.test.js test/postgresSignupRegistrationNative.test.js test/improvementPlanPostgres.test.js test/improvementEvidenceLinkPostgres.test.js test/funnelDailyCountsPostgres.test.js",
     "db:migrate": "node scripts/db-migrate.js",
     "eval:prospect": "node scripts/run-prospect-evals.js --runtime=mock",
     "eval:prospect:promptfoo": "promptfoo eval --config evals/prospect/promptfooconfig.yaml --no-cache --output eval-results/prospect-promptfoo.json",
