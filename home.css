@@ -1333,3 +1333,22 @@ body[data-dashboard-gateway="true"]:has(#gatewayPublic:not([hidden])) .site-head
 
 /* Keep signed-in dashboard footer text as readable as workspace helper text. */
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .home-footer { color: #40382e; font-size: 1rem; }
+
+/* Public reading scale: body 16px, navigation 16px, supporting text 14px.
+   Keep warm brand colours on a quiet surface behind small text. */
+body:is([data-page="dashboard-home"], [data-page="managed-it-information"], [data-page="product-roadmap"]) {
+    background-image: none;
+}
+body:is([data-page="dashboard-home"], [data-page="managed-it-information"], [data-page="product-roadmap"]) .site-header nav a {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 44px; min-width: 44px; padding: 8px 10px; font-size: 1rem;
+}
+body:is([data-page="dashboard-home"], [data-page="managed-it-information"], [data-page="product-roadmap"]) .site-header nav {
+    flex-wrap: wrap; gap: 4px 8px;
+}
+.homepage-reassurance, .homepage-assessment-note, .homepage-preview figcaption,
+.preview-topics > div, .preview-tag, .preview-example, .home-footer {
+    font-size: .875rem; color: var(--ink-soft); font-style: normal;
+}
+.homepage-benefit-grid p, #gatewayPublic .gateway-other-services p:not(.eyebrow) { font-size: 1rem; }
+.home-footer nav a { display: inline-flex; align-items: center; min-height: 44px; }
