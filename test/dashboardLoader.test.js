@@ -3276,3 +3276,66 @@ describe('Consultant paging view', () => {
         expect(h.document.activeElement === h.elements.dashboardHeading).toBe(true); expect(h.requests).toHaveLength(first + 1);
     });
 });
+
+describe('Overview Actions card', () => {
+    async function ready(h, improvement = true) {
+        await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
+        const model = JSON.parse(JSON.stringify(projection()));
+        model.modules.find(item => item.key === 'cyber_security').state = 'ready';
+        if (improvement) model.modules.find(item => item.key === 'improvement_plan').state = 'ready';
+        await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
+        await h.reply(3, 200, { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt,
+            module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] },
+            services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' });
+        await h.reply(4, 200, state());
+        return model;
+    }
+    const at = (h, pattern) => h.requests.findIndex(item => pattern.test(item.url));
+    const card = h => h.elements.dashboardApp.querySelector('.picture-actions');
+    const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+    const plans = model => ({ schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId, organisationId: model.context.organisationId },
+        asOf: NOW, plans: [{ planId: 'plan-a', planRevision: 2 }], nextAfterPlanId: null });
+    const list = { schemaVersion: 1, asOf: NOW, actions: [
+        { actionId: 'a1', status: 'open', dueDate: '2026-09-01', isOverdue: true, ownerSubjectKey: null, ownerLabel: 'Synthetic owner',
+            rationale: { suggestedAction: 'Synthetic overdue action' } },
+        { actionId: 'a2', status: 'open', dueDate: '2026-09-10', isOverdue: false, ownerSubjectKey: null,
+            rationale: { suggestedAction: 'Synthetic upcoming action' } }] };
+    test('reads plans in parallel with the assessment list through the selected generation and renders the card', async () => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        const assessments = at(h, /^\/api\/dashboard\/ncsc\/assessments/), index = at(h, /^\/api\/dashboard\/improvement\/plans\?limit=5$/);
+        expect(assessments).toBeGreaterThan(4); expect(index).toBeGreaterThan(4);
+        expect(h.requests).toHaveLength(7);
+        expect(h.requests[index].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        await h.reply(index, 200, plans(model));
+        const read = at(h, /^\/api\/dashboard\/improvement\/list\?planId=plan-a$/);
+        expect(read).toBe(7); expect(h.requests[read].init.method).toBe('GET');
+        await h.reply(read, 200, list);
+        expect(card(h).textContent).toMatch(/Overdue \(1\).*Synthetic overdue action.*Owner: Synthetic owner.*Due in the next 14 days \(1\).*Synthetic upcoming action/s);
+        await h.reply(assessments, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
+        expect(card(h)).not.toBeNull();
+        expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
+        h.window.dispatch('pagehide');
+    });
+    test.each([[503, null], [403, null], [200, 503], [200, 403]])('plans %s / list %s leaves no card and Overview intact', async (first, second) => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        const index = at(h, /improvement\/plans/);
+        await h.reply(index, first, first === 200 ? plans(model) : { code: 'improvement_list_unavailable' });
+        if (second !== null) await h.reply(at(h, /improvement\/list/), second, { code: 'improvement_list_unavailable' });
+        await h.reply(at(h, /ncsc\/assessments/), 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(card(h)).toBeNull();
+        expect(h.status).toBe('ready');
+        expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
+        expect(h.mounts[0].destroy).not.toHaveBeenCalled();
+        h.window.dispatch('pagehide');
+    });
+    test('with improvement actions off, Overview makes no improvement reads and shows no card', async () => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }); await ready(h, false);
+        expect(h.requests).toHaveLength(6);
+        expect(h.requests.some(item => item.url.includes('/improvement/'))).toBe(false);
+        await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(card(h)).toBeNull();
+        expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
+        h.window.dispatch('pagehide');
+    });
+});
