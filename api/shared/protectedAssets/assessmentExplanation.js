@@ -216,7 +216,7 @@
             // outside any busy subtree so the loading message is announced.
             tail.setAttribute('aria-busy', String(current === 'loading'));
             announce(busy ? 'Loading the saved submission…' : message || (current === 'ready' ? 'The saved explanation has loaded.' : ''));
-            head.append(node('h3', 'Explain this saved result'), node('p', 'This explains the saved assessment you have open. It is separate from Fry product help, which cannot read this assessment. Choose a topic, then load the selected saved submission.'));
+            head.append(node('h3', 'Explain this saved result'), node('p', 'This explains the saved assessment you have open. Choose a topic, then load the selected saved submission.'));
             const topics = node('div'); topics.className = 'ncsc-actions';
             Object.keys(TOPICS).forEach(function (key) {
                 const item = button(TOPICS[key], function () { if (busy || destroyed) return; topic = key; render(); }, 'topic-' + key);

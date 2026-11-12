@@ -77,6 +77,23 @@ describe('public feature-status registry', () => {
         }
     });
 
+    test('the pricing page does not present a non-live capability as available', () => {
+        const text = publicText(readPage('pricing.html'));
+        for (const item of notLive) {
+            for (const claim of item.availabilityClaims) {
+                expect([item.id, text.match(new RegExp(claim, 'i'))?.[0] || null]).toEqual([item.id, null]);
+            }
+        }
+    });
+
+    test('every item in the free plan names a live capability', () => {
+        const live = new Set(registry.capabilities.filter(item => item.status === 'live').map(item => item.id));
+        const free = sectionBody(readPage('pricing.html'), 'pricing-free');
+        const items = [...free.matchAll(/<li\b([^>]*)>/g)].map(match => match[1].match(/\bdata-feature="([^"]+)"/)?.[1] || null);
+        expect(items.length).toBeGreaterThan(0);
+        for (const id of items) expect([id, live.has(id)]).toEqual([id, true]);
+    });
+
     test('every roadmap title named in the registry appears on the roadmap', () => {
         const roadmap = readPage('roadmap.html');
         for (const item of registry.capabilities.filter(entry => entry.roadmapTitle)) {

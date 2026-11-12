@@ -33,6 +33,9 @@
     });
     const accountActions = document.getElementById('dashboardAccountActions');
     const accountToggle = document.getElementById('dashboardAccountToggle');
+    const accountSwitch = document.getElementById('dashboardSwitchAccount');
+    if (accountSwitch) accountSwitch.setAttribute('href', externalCustomer ? '/api/external-customer-auth/login?account=choose'
+        : customerProvider === 'legacy' ? '/api/customer-auth/login' : '/login');
     function setAccountMenuOpen(open) {
         if (accountToggle) accountToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         if (accountActions) accountActions.hidden = !open;
@@ -66,6 +69,7 @@
     let active = null;
     let controller = null;
     let portfolioButton = null;
+    let lastOrganisationRoute = '#overview';
     let portfolioNavigation = null;
     let hadSession = false;
     let linkExit = null;
@@ -137,6 +141,8 @@
         if (portfolioButton) { portfolioButton.hidden = true; portfolioButton.onclick = null; }
         if (portfolioNavigation) { portfolioNavigation.remove(); portfolioNavigation = null; }
         if (accountMenu) { setAccountMenuOpen(false); accountMenu.hidden = true; }
+        if (accountToggle) accountToggle.textContent = 'Account';
+        if (accountSwitch) accountSwitch.hidden = true;
         delete elements.status.dataset.accessWarning;
         const activation = document.getElementById('customerActivationControls');
         if (activation) activation.remove();
@@ -234,6 +240,8 @@
         elements.signIn.hidden = !['unauthenticated', 'expired', 'denied'].includes(state);
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
+        if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
+        if (accountToggle) accountToggle.textContent = cycle.session?.accountLabel ? 'Account: ' + cycle.session.accountLabel : 'Account';
         if (accountMenu) {
             accountMenu.hidden = elements.signOut.hidden;
             if (accountMenu.hidden) setAccountMenuOpen(false);
@@ -263,10 +271,12 @@
     }
     function session(value) {
         if (!fields(value, ['schemaVersion', 'authenticated', 'purpose', 'expiresAt', 'generation', 'selectedBindingId',
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountLabel') ? ['accountLabel'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
+            Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
             value.schemaVersion !== 1 || value.authenticated !== true || !['operator_dashboard', 'customer'].includes(value.purpose) ||
             Object.prototype.hasOwnProperty.call(value, 'activationAvailable') && (value.activationAvailable !== true || value.purpose !== 'operator_dashboard') ||
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
@@ -279,10 +289,11 @@
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
-            ...(value.accountType ? { accountType: value.accountType } : {}) });
+            ...(value.accountType ? { accountType: value.accountType } : {}),
+            ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType', 'accountLabel']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -385,7 +396,7 @@
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
@@ -463,7 +474,7 @@
         // Navigation records the chosen view, never authority. Keep it across
         // focus/pageshow rechecks after a consultant selects a client.
         if (cycle.openSelection && value.accountType === 'consultant' && !currentRoute()) {
-            window.history.replaceState(null, '', '#overview');
+            window.history.replaceState(null, '', lastOrganisationRoute);
         }
         const snapshot = Object.freeze({ generation: value.generation, selectedBindingId: value.selectedBindingId });
         if (value.accountType === 'consultant' && window.location.hash === '#work-queue' && !cycle.openSelection) {
@@ -472,7 +483,7 @@
             cycle.forcePortfolio = true;
         }
         const prefetchProjection = value.selectedBindingId !== null && !(value.accountType === 'consultant' &&
-            !cycle.openSelection && (cycle.forcePortfolio || !currentRoute()));
+            !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations'));
         // Both reads depend only on this fresh session. Reconciliation failure
         // disposes the cycle and cancels siblings; neither response admits the protected shell.
         const middle = prefetchProjection ? await Promise.all([
@@ -480,13 +491,20 @@
             request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess)
         ]) : [await directory(cycle, value, [], null)];
         if (!current(cycle)) return;
-        if (value.selectedBindingId === null || value.accountType === 'consultant' && !cycle.openSelection && (cycle.forcePortfolio || !currentRoute())) { cycle.busy = false; show(cycle, 'selection'); return; }
+        if (value.selectedBindingId === null || value.accountType === 'consultant' && !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations')) { cycle.busy = false; show(cycle, 'selection'); return; }
         // Navigation may change while directory reads are pending. Keep the
         // existing final route decision and fetch if it now opens an organisation.
         const projection = prefetchProjection ? middle[1] :
             requireSuccess(await request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation));
         if (!current(cycle)) return;
-        await assets(cycle);
+        // These generation-bound reads are independent. Wait for both before
+        // validating or mounting; the final session witness still gates display.
+        const prefetchCyber = Array.isArray(projection?.modules) && projection.modules.some(function (item) {
+            return item && item.key === 'cyber_security' && item.state === 'ready';
+        });
+        const prepared = await Promise.all([assets(cycle), prefetchCyber
+            ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess)
+            : Promise.resolve(null)]);
         if (!current(cycle)) return;
         const factory = window.NoFriesDashboard;
         if (!factory || typeof factory.validate !== 'function' || typeof factory.mount !== 'function') throw invalid();
@@ -494,7 +512,7 @@
         if (model.admissionGranted !== false || model.providerAccessGranted !== false) throw invalid();
         cycle.selectedOrganisationName = model.context.displayName;
         const cyberReady = model.modules.some(function (item) { return item.key === 'cyber_security' && item.state === 'ready'; });
-        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId) : null;
+        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1]) : null;
         const improvementReady = model.modules.some(function (item) { return item.key === 'improvement_plan' && item.state === 'ready'; });
         const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId) : null;
         const fresh = await readSession(cycle);
@@ -516,6 +534,7 @@
         cycle.improvement = !!improvement;
         cycle.displayContract = displayContract(model);
         controller = factory.mount(elements.app, model, { window: window, initialRoute: currentRoute(),
+            ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
@@ -559,11 +578,33 @@
                         state.remaining > Number.MAX_SAFE_INTEGER - state.clients.length)) throw invalid();
             const ids = new Set();
             state.clients.forEach(function (client) {
-                if (!fields(client, ['requestId','organisationName','status']) || !UUID.test(client.requestId) || !validLabel(client.organisationName) ||
+                // discardable is sent only when the server can discard drafts (#151).
+                const discard = Object.prototype.hasOwnProperty.call(client, 'discardable');
+                if (!fields(client, ['requestId','organisationName','status'].concat(discard ? ['discardable'] : [])) || !UUID.test(client.requestId) ||
+                    !validLabel(client.organisationName) || discard && typeof client.discardable !== 'boolean' ||
                     !['ready','pending','details_required'].includes(client.status) || ids.has(client.requestId)) throw invalid();
                 ids.add(client.requestId);
             });
             return state.clients;
+        }
+        const REFUSALS = { starter_client_limit: 'All client slots are in use, so this client was not set up. You can discard drafts you no longer need.',
+            starter_client_discarded: 'This draft has been discarded.', starter_client_not_draft: 'This organisation is not a draft, so it was not discarded.' };
+        // Discard asks once more in the row itself before sending anything.
+        function discardAction(row, client) {
+            const discard = button('Discard draft', function () {
+                if (!available()) return;
+                const question = element('p', 'Discard this draft? It will be removed from your list. This cannot be undone.');
+                question.className = 'client-discard-confirm';
+                // Unsent details in an open form are guarded exactly as Resume and Cancel do.
+                const yes = button('Yes, discard draft', function () {
+                    if (available() && confirmClientDiscard(cycle)) run({ action: 'discard', requestId: client.requestId });
+                });
+                const keep = button('Keep draft', function () { question.remove(); yes.remove(); keep.remove(); discard.hidden = false; discard.focus(); });
+                yes.setAttribute('aria-label', 'Yes, discard draft: ' + client.organisationName);
+                discard.hidden = true; row.append(question, yes, keep); keep.focus();
+            });
+            discard.setAttribute('aria-label', 'Discard draft: ' + client.organisationName);
+            return discard;
         }
         function hideSavedActions() {
             elements.choices.querySelectorAll('.client-workspace-row').forEach(function (row) {
@@ -614,15 +655,16 @@
                 submitted = !!body;
                 const selectedCursor = cursor === undefined ? listCursor : cursor;
                 let result = await request(cycle, '/api/customer-signup/clients' +
-                    (!body && selectedCursor ? '?cursor=' + encodeURIComponent(selectedCursor) : ''), body, undefined, csrf);
+                    (!body && selectedCursor ? '?cursor=' + encodeURIComponent(selectedCursor) : ''), body, undefined, csrf), refusal = null;
                 if (!current(cycle)) return;
                 if (result.status === 409 && fields(result.value, ['code']) &&
-                    ['starter_client_limit', 'starter_details_locked'].includes(result.value.code)) {
+                    ['starter_client_limit', 'starter_details_locked', 'starter_client_discarded', 'starter_client_not_draft'].includes(result.value.code)) {
                     // These closed responses definitively reject this command.
                     // Reconcile with GET; never repeat it or restore its form.
                     pending = null; captureForm = null; cycle.clientDraft = null;
                     listCursor = null;
                     content.replaceChildren(); status.textContent = 'Client setup changed. Checking your current client organisations…';
+                    refusal = REFUSALS[result.value.code] || null;
                     result = await request(cycle, '/api/customer-signup/clients', undefined, undefined, csrf);
                 }
                 const response = envelope(result);
@@ -634,6 +676,7 @@
                     listCursor = selectedCursor;
                 }
                 csrf = response.csrfToken; render(response.state, body && body.requestId);
+                if (refusal) status.textContent = refusal;
                 if (!body && cursor !== undefined) {
                     const firstRow = Array.from(elements.choices.children).find(function (row) {
                         return row.classList.contains('client-workspace-row') && !row.hidden && row.querySelector('button');
@@ -741,6 +784,8 @@
                 elements.choices.querySelectorAll('.client-workspace-row').forEach(function (row) { row.remove(); });
                 elements.choices.querySelectorAll('.consultant-organisation-empty').forEach(function (row) { row.remove(); });
                 let incomplete = 0;
+                const slotRule = clients.some(function (client) { return Object.prototype.hasOwnProperty.call(client, 'discardable'); })
+                    ? ' A slot is used when a client’s terms are accepted. Drafts do not use one. You can add up to 12 client organisations in total, including discarded drafts.' : '';
                 clientNames.clear();
                 clients.forEach(function (client) {
                     clientNames.set(client.requestId, client.organisationName);
@@ -757,6 +802,7 @@
                         run({ action: 'resume', requestId: client.requestId });
                     });
                     if (action) { action.setAttribute('aria-label', (client.status === 'pending' ? 'Resume setup: ' : 'Resume details: ') + client.organisationName); row.append(action); }
+                    if (!readOnly && client.discardable === true) row.append(discardAction(row, client));
                     elements.choices.append(row);
                 });
                 if (!cycle.directoryRows?.length && !incomplete) {
@@ -768,10 +814,10 @@
                 if (readOnly) content.append(element('p', 'Your saved organisation setups have been kept. Further setup steps are currently unavailable.'));
                 else if (unlimitedList || state.remaining > 0) {
                     content.append(element('p', unlimitedList ? 'There is no product limit on the number of organisations you can manage. Each organisation needs its own authorised access and agreed scope.'
-                        : state.remaining + (state.remaining === 1 ? ' client slot remains.' : ' client slots remain.')));
+                        : state.remaining + (state.remaining === 1 ? ' client slot remains.' : ' client slots remain.') + slotRule));
                     const add = button('Add organisation', function () { if (available()) form(); });
                     add.classList.add('client-action-primary'); content.append(add);
-                } else content.append(element('p', 'No client slots remain.'));
+                } else content.append(element('p', 'No client slots remain.' + slotRule));
                 if (unlimitedList && state.nextCursor !== null) content.append(button('More saved setups', function () { run(undefined, state.nextCursor); }));
                 if (unlimitedList && listCursor !== null) content.append(button('First saved setups', function () { run(undefined, null); }));
                 // A routine focus/cache refresh retains inputs or the exact
@@ -840,6 +886,15 @@
         // its current turn; every response remains bound to this same cycle.
         Promise.resolve().then(function () { if (current(cycle)) run(); });
     }
+    function openOrganisations(cycle) {
+        if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved) return Promise.resolve(false);
+        return leave(cycle, function () {
+            lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
+            window.history.replaceState(null, '', '#organisations');
+            const next = begin(); next.forcePortfolio = true;
+            reconcile(next, 0, false).catch(function (error) { failure(next, error); });
+        });
+    }
     function portfolioControls(cycle) {
         if (!portfolioButton) {
             portfolioButton = document.createElement('button');
@@ -852,12 +907,7 @@
         }
         portfolioButton.hidden = false;
         portfolioButton.onclick = function () {
-            if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved) return;
-            leave(cycle, function () {
-                window.history.replaceState(null, '', '#organisations');
-                const next = begin(); next.forcePortfolio = true;
-                reconcile(next, 0, false).catch(function (error) { failure(next, error); });
-            });
+            return openOrganisations(cycle);
         };
     }
     function consultantNavigation(cycle, state) {
@@ -872,6 +922,7 @@
             button.addEventListener('click', function () {
                 if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved || item[2]) return;
                 leave(cycle, function () {
+                    lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
                     window.history.replaceState(null, '', item[1]);
                     const next = begin(); next.forcePortfolio = true;
                     next.workQueueFilters = cycle.workQueueFilters;
@@ -1097,8 +1148,8 @@
         show(cycle, 'queue');
         load(null, false);
     }
-    async function cyberOptions(cycle, snapshot, organisationId) {
-        const value = requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
+    async function cyberOptions(cycle, snapshot, organisationId, preparedValue) {
+        const value = preparedValue || requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
         if (!current(cycle)) throw invalid();
         const contract = cyberContract(value);
         if (value.context?.organisationId !== organisationId) throw invalid();
@@ -1125,6 +1176,8 @@
             return questionnaire.mount(root, { window: window, metadata: value.metadata, client: client,
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
+                initialQuestionIndex: presentation && presentation.initialQuestionIndex,
+                onLocation: presentation && presentation.onLocation,
                 // Overview's first-use action opens the new-assessment step directly.
                 startNew: !!(presentation && presentation.startNew === true) });
         };
@@ -1280,7 +1333,9 @@
                 button.addEventListener('click', function () {
                     if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved || blockPendingClientNavigation(cycle)) return;
                     leave(cycle, function () {
+                        lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
                         const next = begin();
+                        elements.status.textContent = 'Opening ' + binding.organisationLabel + '…';
                         try {
                             const pending = command('selection', { bindingId: binding.bindingId, expectedGeneration: value.generation, operationId: secureId() });
                             execute(next, pending).catch(function (error) { failure(next, error); });
