@@ -4,6 +4,8 @@
 // and subject_key of starter accounts, across tenants, and nothing else. Runs on
 // the disposable CI database only; synthetic rows are removed by the owner.
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { applyMigrations } = require('../../scripts/db-migrate');
 
 const target = String(process.env.NOFRIES_TEST_DATABASE_URL || '').trim();
@@ -77,6 +79,25 @@ module.exports = function registerEmailDispatcherSubjectLookupTests() {
             { policyname: 'starter_accounts_email_dispatcher', permissive: 'PERMISSIVE', roles: ['nofries_email_dispatcher'], cmd: 'SELECT', qual: 'true' },
             { policyname: 'starter_accounts_subject', permissive: 'PERMISSIVE', roles: ['nofries_runtime'], cmd: 'ALL',
                 qual: "(subject_key = NULLIF(current_setting('nofries.subject_key'::text, true), ''::text))" }]);
+    });
+
+    test('refuses to widen a role that drifted from the 0021 baseline', async () => {
+        const sql = fs.readFileSync(path.join(__dirname, '../../database/migrations', MIGRATION), 'utf8');
+        const undo = `DROP POLICY starter_accounts_email_dispatcher ON nofries.dashboard_starter_accounts;
+            REVOKE SELECT (account_id, subject_key) ON nofries.dashboard_starter_accounts FROM nofries_email_dispatcher;`;
+        const client = await pool.connect();
+        try {
+            for (const [drift, expected] of [['', null],
+                ['GRANT SELECT (tenant_id) ON nofries.dashboard_starter_scopes TO nofries_email_dispatcher;', 'email_dispatcher_role_baseline_invalid'],
+                ['GRANT nofries_email_dispatcher TO nofries_runtime;', 'email_dispatcher_role_baseline_invalid']]) {
+                await client.query('BEGIN');
+                try {
+                    await client.query(undo + drift);
+                    if (expected) await expect(client.query(sql)).rejects.toMatchObject({ message: expected });
+                    else await client.query(sql);
+                } finally { await client.query('ROLLBACK'); }
+            }
+        } finally { client.release(); }
     });
 
     test('migrating twice is clean', async () => {
