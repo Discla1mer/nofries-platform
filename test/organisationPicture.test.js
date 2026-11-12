@@ -80,7 +80,7 @@ test('connected view preserves golden server range, uncertainty and completion w
     assert.match(dom.root.textContent, /All 14 responses are saved/);
     assert.match(dom.root.textContent, /6.5–8.5 reported or possible credits ÷ 14/);
     assert.match(dom.root.textContent, /overall result weights questions, not the five function percentages/);
-    assert.match(dom.root.textContent, /Approval is not available yet/);
+    assert.match(dom.root.textContent, /Reviews are coming soon/);
     assert.equal(dom.root.querySelectorAll('.picture-domain-detail').length, 5);
 });
 
@@ -208,7 +208,7 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     const ids = category => category.querySelectorAll('article').map(node => node.getAttribute('data-question-id'));
     assert.deepEqual(ids(categories[0]), expected(['unknown', 'not_applicable']));
     assert.deepEqual(ids(categories[1]), expected(['partial', 'no']));
-    assert.match(categories[0].textContent, /Answers marked not applicable, to confirm, stay unresolved/);
+    assert.match(categories[0].textContent, /Not applicable answers count as not yet met until a reviewer confirms them/);
     assert.doesNotMatch(follow.textContent, /Supporting-evidence gaps|Supporting evidence:|upload/);
     assert.match(follow.textContent, /not a combined total or a risk ranking/);
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));

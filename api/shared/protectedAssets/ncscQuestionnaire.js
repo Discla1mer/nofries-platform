@@ -22,7 +22,7 @@
         partial: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
         no: 'None of this is in place yet, including when work is only planned.',
         unknown: 'You do not have enough information to confirm what is in place.',
-        not_applicable: 'You believe this does not apply to your scope. Explain why. It counts as still to confirm, not as in place.'
+        not_applicable: 'You believe this does not apply to your scope. Explain why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'
     };
     // Display aids only. The accepted catalogue still owns each question and
     // answer meaning; these examples neither choose an answer nor prove it.
@@ -870,7 +870,7 @@
         }
         function renderCreate() {
             const renderedEpoch = epoch;
-            content.append(node('p', '', 'Describe what this assessment covers. Use separate lines for people, devices, sites and services, and say what is excluded. This is your declaration, not verified inventory. It cannot be changed after creation. To correct a mistake later, start a new assessment with the corrected scope.'));
+            content.append(node('p', '', 'Scope can\'t be changed after you start, so check it carefully. Describe what this assessment covers. Use separate lines for people, devices, sites and services, and say what is excluded. This is your declaration, not verified inventory. To correct a mistake later, start a new assessment with the corrected scope.'));
             const scopeExamples = node('ul', 'ncsc-scope-examples');
             ['People: all staff, including contractors.', 'Devices: company laptops and phones.',
                 'Sites and services: Auckland office, remote work and Microsoft 365.',
@@ -1065,7 +1065,7 @@
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
             panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Marked not applicable, to confirm: ' + results.pending + '.'));
-            panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. Answers marked not applicable still count towards the total until they are approved. Approval is not available yet. This is a No Fries calculation, not an NCSC score.'));
+            panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries calculation, not an NCSC score.'));
             panel.append(node('h3', '', 'Explore NCSC functions and assessment topics'));
             results.domains.forEach(function (domain) {
                 const detail = node('details', 'ncsc-result-domain'); detail.append(node('summary', '', domain.title + ' — ' + domain.attainment));
@@ -1169,7 +1169,7 @@
                 rationale.rows = 6; rationale.required = true; rationale.readOnly = !writable;
                 rationale.setAttribute('aria-describedby', 'ncsc-rationale-help-' + question.id);
                 const scopeHelp = writable && inputGuidance && inputGuidance.notApplicable ? inputGuidance.notApplicable + ' ' : '';
-                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. It stays marked not applicable, to confirm, and still counts towards your result until approved. Approval is not available yet.'); help.id = 'ncsc-rationale-help-' + question.id;
+                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'); help.id = 'ncsc-rationale-help-' + question.id;
                 rationale.addEventListener('input', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit()) return;
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });

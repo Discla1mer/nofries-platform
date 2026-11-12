@@ -39,6 +39,13 @@
         window.location.replace('/signup?provider=' + (externalCustomer ? 'external' : 'legacy') + intentSuffix); return;
     }
     const defaultEntry = providers.length === 0 && !externalCustomer;
+    if (defaultEntry && entryIntent === 'create') {
+        byId('organisation-title').textContent = 'Create your account';
+        byId('organisation-intro').textContent = 'Create an account with your email and password. You will continue to Microsoft’s secure sign-in, then choose Company or Consultant and set up your organisation.';
+    } else if (defaultEntry && entryIntent === 'login') {
+        byId('organisation-title').textContent = 'Log in to No Fries';
+        byId('organisation-intro').textContent = 'Sign in with your existing email and password. You will continue to Microsoft’s secure sign-in and return to your saved work.';
+    }
     const setupRoute = externalCustomer ? '/api/external-organisation-setup/' : '/api/organisation-setup/';
     const codeForm = byId('organisation-code-form'), profileForm = byId('organisation-profile-form');
     const detailsForm = byId('organisation-details-form'), status = byId('organisation-status');
@@ -178,6 +185,8 @@
         byId('organisation-verified-title').textContent = legacySignIn ? 'Continue to your account' : 'Email verified';
         byId('organisation-continue').hidden = !continuing;
         byId('organisation-switch').hidden = ['start', 'sign_in'].includes(value.state);
+        const steps = byId('organisation-steps');
+        if (steps) steps.hidden = false;
         byId('organisation-title').textContent = choosing ? selectedType ? selectedType === 'consultant' ? 'Name your consultancy' : 'Name your organisation' : 'How will you use No Fries?' : value.state === 'awaiting_code' ? 'Check your inbox' : details ? 'Your account details' : continuing ? 'Welcome back to No Fries' : entryIntent === 'create' ? 'Create your account' : 'Sign up / Sign in';
         byId('organisation-intro').textContent = legacySignIn ? 'Use the email address associated with your existing account.' : choosing ? selectedType ? 'Email verified. You chose ' + (selectedType === 'consultant' ? 'Consultant' : 'Company') + '. Add the name for this organisation.' : 'Email verified. Choose the account that fits you.' : details ? 'Add the person and business details for your dashboard agreement.' : continuing ? 'Your saved account is ready to continue.' : value.state === 'awaiting_code' ? 'Enter the 8 digits we emailed you to confirm this address.' : 'New here or coming back, start with your email.';
         byId('organisation-name-label').textContent = selectedType === 'consultant' ? 'Your name or consultancy' : 'Organisation name';
