@@ -140,7 +140,7 @@ test.each(['#invitation=invalid-private-value', '#invitation=' + 'x'.repeat(43)]
 
 test.each([
     [{ status: 'continue_to_dashboard', accountType: 'company' }, '/dashboard'],
-    [{ status: 'continue_to_dashboard', accountType: 'consultant' }, '/dashboard#organisations'],
+    [{ status: 'continue_to_dashboard', accountType: 'consultant' }, '/dashboard'],
     [{ status: 'continue_to_dashboard' }, '/dashboard'],
     [{ status: 'terms', ...terms }, null],
     [{ status: 'pending_admission' }, null],

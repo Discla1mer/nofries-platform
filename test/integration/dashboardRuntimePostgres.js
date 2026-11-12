@@ -1206,7 +1206,7 @@ function registerRealPostgresTests() {
                 const { servedDashboard } = require('../helpers/servedDashboard');
                 const rendered = await servedDashboard({ app: h.app, cookie: login.cookie,
                     now: new Date(h.state.now).toISOString(), origin: h.env.NOFRIES_PUBLIC_URL,
-                    ...(accountType === 'consultant' ? { chooseOrganisationLabel: directory.body.bindings[0].organisationLabel } : {}) });
+                    ...(accountType === 'consultant' ? { hash: '#organisations', chooseOrganisationLabel: directory.body.bindings[0].organisationLabel } : {}) });
                 expect({ state: rendered.state, hidden: rendered.hidden }).toEqual({ state: 'ready', hidden: false });
                 expect(rendered.trace).toEqual(expect.arrayContaining([
                     { url: '/api/dashboard/session', method: 'get', status: 409 },
@@ -1986,8 +1986,9 @@ function registerRealPostgresTests() {
             expect((await request(h.app).get('/api/dashboard/session').set('Cookie', login.cookie)).status).toBe(409);
             const landing = await servedDashboard({ app: h.app, cookie: login.cookie, now: f.state.now, origin: h.env.NOFRIES_PUBLIC_URL });
             if (accountType === 'consultant') {
-                expect(landing.state).toBe('selection'); expect(landing.hidden).toBe(true);
-                expect(landing.trace.some(item => item.url === '/api/dashboard/bootstrap')).toBe(false);
+                expect(landing.state).toBe('ready'); expect(landing.hidden).toBe(false);
+                expect(landing.trace.some(item => item.url === '/api/dashboard/bootstrap')).toBe(true);
+                expect(landing.trace.some(item => item.url === '/api/dashboard/selection')).toBe(false);
             }
             const rendered = accountType === 'consultant' ? await servedDashboard({ app: h.app, cookie: login.cookie,
                 now: f.state.now, origin: h.env.NOFRIES_PUBLIC_URL, hash: '#overview' }) : landing;

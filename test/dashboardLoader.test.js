@@ -2230,6 +2230,28 @@ test('company completion opens its organisation and an operator cannot claim a c
     expect(invalid.status).toBe('unavailable'); expect(invalid.requests).toHaveLength(1);
 });
 
+test.each(['return', 'navigation'])('a consultant resumes the selected organisation and keeps the module through %s', async path => {
+    const h = harness(); await flush();
+    const selected = state(A, GA, { purpose: 'customer', accountType: 'consultant' });
+    await h.open(selected, 'First client');
+    expect(h.status).toBe('ready');
+    h.window.location.hash = '#cyber-security';
+    const back = h.elements.dashboardStatusPanel.children.find(node => node.id === 'consultantPortfolioControls');
+    const first = h.requests.length;
+    if (path === 'return') back.onclick();
+    else h.elements.dashboardStatusPanel.querySelector('.consultant-navigation').querySelector('button').click();
+    await flush();
+    await h.reply(first, 200, selected); await h.reply(first + 1, 200, listing());
+    expect(h.status).toBe('selection');
+    h.elements.dashboardChoices.children[1].click(); await flush();
+    expect(h.elements.dashboardStatus.textContent).toContain('Opening ');
+    await h.reply(first + 2, 200, { schemaVersion: 1, generation: GB, selectedBindingId: B });
+    await h.open(state(B, GB, { purpose: 'customer', accountType: 'consultant' }), 'Second client', first + 3);
+    expect(h.status).toBe('ready');
+    expect(h.window.location.hash).toBe('#cyber-security');
+    expect(h.mounts.at(-1).config.initialRoute).toBe('#cyber-security');
+});
+
 
 describe('unmounted authority refresh coalescing', () => {
     const paths = ['/api/dashboard/session', '/api/dashboard/organisations?limit=50',

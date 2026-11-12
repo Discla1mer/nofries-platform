@@ -69,6 +69,7 @@
     let active = null;
     let controller = null;
     let portfolioButton = null;
+    let lastOrganisationRoute = '#overview';
     let portfolioNavigation = null;
     let hadSession = false;
     let linkExit = null;
@@ -473,7 +474,7 @@
         // Navigation records the chosen view, never authority. Keep it across
         // focus/pageshow rechecks after a consultant selects a client.
         if (cycle.openSelection && value.accountType === 'consultant' && !currentRoute()) {
-            window.history.replaceState(null, '', '#overview');
+            window.history.replaceState(null, '', lastOrganisationRoute);
         }
         const snapshot = Object.freeze({ generation: value.generation, selectedBindingId: value.selectedBindingId });
         if (value.accountType === 'consultant' && window.location.hash === '#work-queue' && !cycle.openSelection) {
@@ -482,7 +483,7 @@
             cycle.forcePortfolio = true;
         }
         const prefetchProjection = value.selectedBindingId !== null && !(value.accountType === 'consultant' &&
-            !cycle.openSelection && (cycle.forcePortfolio || !currentRoute()));
+            !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations'));
         // Both reads depend only on this fresh session. Reconciliation failure
         // disposes the cycle and cancels siblings; neither response admits the protected shell.
         const middle = prefetchProjection ? await Promise.all([
@@ -490,7 +491,7 @@
             request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess)
         ]) : [await directory(cycle, value, [], null)];
         if (!current(cycle)) return;
-        if (value.selectedBindingId === null || value.accountType === 'consultant' && !cycle.openSelection && (cycle.forcePortfolio || !currentRoute())) { cycle.busy = false; show(cycle, 'selection'); return; }
+        if (value.selectedBindingId === null || value.accountType === 'consultant' && !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations')) { cycle.busy = false; show(cycle, 'selection'); return; }
         // Navigation may change while directory reads are pending. Keep the
         // existing final route decision and fetch if it now opens an organisation.
         const projection = prefetchProjection ? middle[1] :
@@ -888,6 +889,7 @@
     function openOrganisations(cycle) {
         if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved) return Promise.resolve(false);
         return leave(cycle, function () {
+            lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
             window.history.replaceState(null, '', '#organisations');
             const next = begin(); next.forcePortfolio = true;
             reconcile(next, 0, false).catch(function (error) { failure(next, error); });
@@ -920,6 +922,7 @@
             button.addEventListener('click', function () {
                 if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved || item[2]) return;
                 leave(cycle, function () {
+                    lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
                     window.history.replaceState(null, '', item[1]);
                     const next = begin(); next.forcePortfolio = true;
                     next.workQueueFilters = cycle.workQueueFilters;
@@ -1328,7 +1331,9 @@
                 button.addEventListener('click', function () {
                     if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved || blockPendingClientNavigation(cycle)) return;
                     leave(cycle, function () {
+                        lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
                         const next = begin();
+                        elements.status.textContent = 'Opening ' + binding.organisationLabel + '…';
                         try {
                             const pending = command('selection', { bindingId: binding.bindingId, expectedGeneration: value.generation, operationId: secureId() });
                             execute(next, pending).catch(function (error) { failure(next, error); });
