@@ -92,5 +92,6 @@ test('tenant remount discards a delayed old review list', async () => {
         openImprovement: jest.fn(), readActions: async () => input([]) }); await flush();
     resolve(input([action('old-tenant-review', '2026-11-01')])); await flush();
     expect(dom.root.textContent).not.toContain('old-tenant-review');
-    expect(dom.root.textContent).toContain('No actions yet'); next.destroy();
+    // A new organisation's Overview now leads with "Start your cyber check" (#319).
+    expect(dom.root.textContent).toContain('Start your cyber check'); next.destroy();
 });
