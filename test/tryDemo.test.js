@@ -162,8 +162,13 @@ test('saved steps replay after reload; unreadable or stale logs start afresh; re
     store.append({ command: { a: 1 }, at: NOW });
     assert.deepEqual(store.read(), [{ command: { a: 1 }, at: NOW }]);
     store.clear(); assert.deepEqual(store.read(), []);
-    await assert.rejects(demo.pageFetch('https://example.invalid/'), TypeError);
-    assert.deepEqual(await (await demo.pageFetch('/api/enquiry')).json(), { available: true });
+    const logged = [], original = console.error;
+    console.error = (...args) => logged.push(args.join(' '));
+    try {
+        await assert.rejects(demo.pageFetch('https://example.invalid/'), TypeError);
+        assert.deepEqual(await (await demo.pageFetch('/api/enquiry')).json(), { available: true });
+    } finally { console.error = original; }
+    assert.deepEqual(logged, ['Try demo refused an unexpected request: https://example.invalid/'], 'only the unexpected URL is logged');
 });
 
 test('start mounts the real shell with the real Overview and Cyber Security workspaces; reset returns to Overview', async () => {

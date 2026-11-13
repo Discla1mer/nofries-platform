@@ -224,10 +224,15 @@
 
     // Overview asks the public enquiry status before showing "Get help closing
     // these gaps" (a link to /contact.html). Answer that here; refuse anything else.
+    // Any other URL is logged as a console error before it is refused, so the
+    // browser check's console guard fails on a request the demo did not expect.
     function pageFetch(url) {
         if (url === '/api/enquiry') {
+            // Demo stub, not live status: the demo always reports enquiries as
+            // available and never asks the real /api/enquiry endpoint.
             return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve({ available: true }); } });
         }
+        if (typeof console !== 'undefined' && console.error) console.error('Try demo refused an unexpected request: ' + String(url));
         return Promise.reject(new TypeError('The demo makes no network requests.'));
     }
 
