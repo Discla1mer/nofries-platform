@@ -1,6 +1,6 @@
 'use strict';
 
-const { mount, mountLoading } = require('../api/shared/protectedAssets/improvementActionPlanView');
+const { mount, mountLoading, actionTitle } = require('../api/shared/protectedAssets/improvementActionPlanView');
 const { projectImprovementActionPlanPresentation } = require('../api/shared/improvementPlan/improvementActionPlanPresentation');
 const { projectImprovementActionList } = require('../api/shared/improvementPlan/improvementActionListProjection');
 const { createImprovementPlan, applyImprovementActionCommand } = require('../api/shared/improvementPlan/improvementPlanDomain');
@@ -48,7 +48,7 @@ test('shows only five newest global revisions across actions, including equal ti
     expect(entries(dom)).toHaveLength(5);
     expected.forEach(({ action, event }, i) => {
         expect(entries(dom)[i].textContent).toContain('Plan revision ' + event.revision + ' · ' + AT + ' (UTC)');
-        expect(entries(dom)[i].textContent).toContain(action.controlId + ' · ' + action.labels.kind);
+        expect(entries(dom)[i].textContent).toContain(actionTitle(action) + ' · Plan revision');
         expect(entries(dom)[i].children[0].textContent).toContain(Array.from(action.rationale.suggestedAction).slice(0, 100).join(''));
     });
     expect(recent(dom).textContent).toContain('Latest 5 of 7 saved updates');
