@@ -169,7 +169,8 @@ function harness(options = {}) {
             } };
             if (options.cyber) {
                 window.NoFriesNcscAssessmentClient = { createClient: input => ncscClient.createClient({
-                    metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch }) };
+                    metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch,
+                    ...(input.onAccepted ? { onAccepted: input.onAccepted } : {}) }) };
                 window.NoFriesNcscQuestionnaire = { mount: (...args) => { ncscMounts.push(args); return questionnaire.mount(...args); } };
                 if (options.picture) window.NoFriesOrganisationPicture = require('../api/shared/protectedAssets/organisationPicture');
             }
@@ -250,6 +251,17 @@ describe('mounted retained Improvement Plan', () => {
         await h.reply(3, 200, state()); h.window.dispatch('pagehide'); await h.reply(4, 200, empty(model));
         expect(h.elements.dashboardApp.children).toHaveLength(0);
         expect(h.requests).toHaveLength(5);
+    });
+    test.each([['valid', true], ['invalid', false]])('a 200 plan index with a %s body moves the footer information time only when accepted', async (_, valid) => {
+        const h = harness({ improvement: true, hash: '#improvement-plan' }), model = await ready(h);
+        await h.reply(3, 200, state());
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:49:00.000Z'));
+        await h.reply(4, 200, valid ? empty(model) : { ...empty(model), schemaVersion: 2 });
+        await h.improvementMounts[0].controller.ready;
+        expect(stamp().dateTime).toBe(valid ? '2026-09-08T23:49:00.000Z' : before);
+        h.window.dispatch('pagehide');
     });
     test('an unready module never installs the controller or requests retained plan data', async () => {
         const h = harness({ improvement: true, hash: '#improvement-plan' }); await flush(); await h.open();
@@ -1661,6 +1673,28 @@ describe('ready Cyber composition', () => {
         h.window.dispatch('pagehide');
         expect(h.elements.dashboardApp.children).toHaveLength(0);
     });
+    test('a successful saved-assessment read moves the footer information time forward', async () => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:47:00.000Z'));
+        const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+        await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(before).not.toBe('2026-09-08T23:47:00.000Z');
+        expect(stamp().dateTime).toBe('2026-09-08T23:47:00.000Z');
+        expect(stamp().textContent).toContain('NZ time');
+        h.window.dispatch('pagehide');
+    });
+    test.each([['truncated', '{'], ['invalid', JSON.stringify({ schemaVersion: 2, assessments: [], nextAfterAssessmentId: null })]])
+    ('a 2xx saved-assessment read with a %s body leaves the footer information time unchanged', async (_, body) => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:48:00.000Z'));
+        await h.reply(5, 200, {}, { text: async () => body });
+        expect(stamp().dateTime).toBe(before);
+        h.window.dispatch('pagehide');
+    });
     test('Overview first-use action reaches the production questionnaire as a new-assessment start', async () => {
         const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
         const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
@@ -2712,6 +2746,18 @@ describe('concurrent mounted authority refresh', () => {
         expect(h.requests[final].url).toBe('/api/dashboard/session'); await h.reply(final, 200, state());
         expect(h.status).toBe('ready');
     }
+    test('a confirmed return-to-tab refresh moves the footer information time forward', async () => {
+        const h = await mounted(false);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:50:00.000Z'));
+        const first = await beginRefresh(h, false);
+        await h.reply(first + 2, 200, payload(h, 2)); await h.reply(first + 1, 200, payload(h, 1));
+        expect(stamp().dateTime).toBe(before);
+        await h.reply(first + 3, 200, state());
+        expect(h.status).toBe('ready');
+        expect(stamp().dateTime).toBe('2026-09-08T23:50:00.000Z');
+    });
     test.each([false, true])('parallel middle GETs accept reverse completion with Cyber=%s and retain the final witness fence', async cyber => {
         const h = await mounted(cyber), main = h.elements.dashboardApp.querySelector('main');
         const first = await beginRefresh(h, cyber), middleCount = cyber ? 3 : 2;
@@ -3626,6 +3672,17 @@ describe('Overview Actions card', () => {
         expect(h.status).toBe('ready');
         expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
         expect(h.mounts[0].destroy).not.toHaveBeenCalled();
+        h.window.dispatch('pagehide');
+    });
+    test.each([['valid', true], ['invalid', false]])('Actions card lists with a %s body move the footer information time only when accepted', async (_, valid) => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:51:00.000Z'));
+        await h.reply(at(h, /improvement\/plans/), 200, plans(model));
+        expect(stamp().dateTime).toBe(before);
+        await h.reply(at(h, /improvement\/list/), 200, valid ? list : { schemaVersion: 1, asOf: NOW });
+        expect(stamp().dateTime).toBe(valid ? '2026-09-08T23:51:00.000Z' : before);
         h.window.dispatch('pagehide');
     });
     test('with improvement actions off, Overview makes no improvement reads and shows no card', async () => {

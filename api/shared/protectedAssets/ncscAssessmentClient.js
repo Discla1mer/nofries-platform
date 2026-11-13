@@ -200,8 +200,10 @@
      * operation IDs, retries, storage, current tenant selection or UI readiness.
      */
     function createClient(adapters) {
-        const supplied = record(adapters, ['metadata', 'fetch']);
+        const supplied = record(adapters, ['metadata', 'fetch'], ['onAccepted']);
         if (typeof supplied.fetch !== 'function') invalid();
+        if (supplied.onAccepted !== undefined && typeof supplied.onAccepted !== 'function') invalid();
+        const onAccepted = supplied.onAccepted;
         const metadata = validateMetadata(supplied.metadata), fetch = supplied.fetch;
         const questions = new Map(metadata.questions.map(question => [question.id, question]));
         const options = new Map(metadata.responseOptions.map(option => [option.id, option]));
@@ -345,7 +347,11 @@
                 // Bound the complete response, including a stalled body stream.
                 // A timeout never proves a server mutation was cancelled.
                 timer = setTimeout(cancel, 12000);
-                return await Promise.race([receive(url, kind, selected, controller.signal, body, keepalive), lifetime]);
+                const result = await Promise.race([receive(url, kind, selected, controller.signal, body, keepalive), lifetime]);
+                // Reported only once the body has been read and validated within
+                // the time limit. A display hint; it cannot change the result.
+                if (onAccepted) { try { onAccepted(kind); } catch { /* Display only. */ } }
+                return result;
             } finally {
                 clearTimeout(timer);
                 if (signal && typeof signal.removeEventListener === 'function') signal.removeEventListener('abort', cancel);

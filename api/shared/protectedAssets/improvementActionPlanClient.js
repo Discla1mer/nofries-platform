@@ -164,10 +164,14 @@
     function mount(root, options) {
         if (!root || !root.ownerDocument || typeof root.replaceChildren !== 'function' || !options ||
             typeof options.request !== 'function' || typeof options.isCurrent !== 'function' || typeof options.newId !== 'function' ||
-            !view || typeof view.mount !== 'function' || typeof view.mountLoading !== 'function') invalid();
+            !view || typeof view.mount !== 'function' || typeof view.mountLoading !== 'function' ||
+            options.onAccepted !== undefined && typeof options.onAccepted !== 'function') invalid();
         const organisationId = identifier(options.organisationId), initialSource = source(options.sourceAssessment);
         let target = actionTarget(options.initialTarget);
         const request = options.request, isCurrent = options.isCurrent, newId = options.newId, doc = root.ownerDocument;
+        // Reported only after a response has passed this client's validation.
+        // A display hint for the host ("Information as at"); it grants nothing.
+        const accepted = () => { if (options.onAccepted) { try { options.onAccepted(); } catch (_) { /* Display only. */ } } };
         let controlTitles = null;
         try { controlTitles = titlesOption(options.controlTitles); } catch (_) { controlTitles = null; /* Codes remain the fallback names. */ }
         let currentOwner = null;
@@ -473,6 +477,7 @@
                 if (!active() || token !== serial) return false;
                 if (result.status !== 200) { unavailable(result.status, false, result.value); return false; }
                 const value = page(result.value, after); scope = value.scope; rows = value.plans; next = value.nextAfterPlanId; pageAsOf = value.asOf;
+                accepted();
                 message = rows.length ? 'Choose a saved plan or refresh the selected plan.' : 'No saved improvement plans are available for this organisation.';
                 if (!more) clearView();
                 if (!more && !rows.length && !target && readLatest) {
@@ -551,6 +556,7 @@
                 // The reused renderer withholds invalid presentations. An editor
                 // is offered only beside its successfully rendered plan panel.
                 if (!Array.from(content.querySelectorAll('section')).some(section => section.getAttribute('aria-label') === 'Improvement action plan')) invalid();
+                accepted();
                 model = value; message = 'Checking current action options…'; render();
                 const editorResult = response(await request('/api/dashboard/improvement/editor?planId=' + encodeURIComponent(planId)));
                 if (!active() || token !== serial) return false;
@@ -641,6 +647,7 @@
                     value.plan.tenantId !== scope.tenantId || value.plan.organisationId !== scope.organisationId ||
                     value.plan.revision !== (captured.expectedRevision === null ? 0 : captured.expectedRevision + 1)) invalid();
                 if (captured.type === 'generate') generatedPlanId = captured.planId;
+                accepted();
                 pending = null; removeDraft(); selected = captured.planId; selectedRevision = value.plan.revision; busy = false;
                 return readView(selected);
             } catch (_) { if (active() && token === serial) unavailable(null, pending !== null); return false; }

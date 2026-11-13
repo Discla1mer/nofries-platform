@@ -868,6 +868,26 @@ test('Escape closes the More tools menu and returns focus to its summary', () =>
     assert.equal(menu.open, false);
 });
 
+test('the footer information time moves forward only for a later valid read', () => {
+    const model = clone(view());
+    const dom = mount(model);
+    const stamp = () => dom.root.querySelector('.dashboard-provenance').querySelector('time');
+    assert.equal(stamp().dateTime, model.generatedAt);
+    const original = stamp().textContent;
+    const later = new Date(Date.parse(model.generatedAt) + 3 * 60000).toISOString();
+    dom.controller.informationRead(later);
+    assert.equal(stamp().dateTime, later);
+    assert.notEqual(stamp().textContent, original);
+    assert.match(stamp().textContent, /NZ time$/);
+    for (const ignored of [model.generatedAt, '2000-01-01T00:00:00.000Z', 'not a time', 5, null]) {
+        dom.controller.informationRead(ignored);
+        assert.equal(stamp().dateTime, later);
+    }
+    dom.controller.navigate('services');
+    assert.equal(stamp().dateTime, later);
+    dom.controller.destroy();
+});
+
 test('the dashboard footer disclosure and organisations pill follow the page grid with 44px tap targets', () => {
     const home = fs.readFileSync(path.join(__dirname, '../home.css'), 'utf8');
     const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
