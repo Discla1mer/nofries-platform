@@ -1526,7 +1526,7 @@ describe('dashboard asynchronous ownership and sign-out', () => {
         expect(h.status).toBe('loading');
         expect(h.elements.dashboardApp.children).toHaveLength(0);
         expect(h.document.activeElement).toBe(h.elements.dashboardHeading);
-        expect(h.elements.dashboardMessage.textContent).toBe('Checking your sign-in…');
+        expect(h.elements.dashboardMessage.textContent).toBe('Getting your dashboard ready. This can take up to 20 seconds.');
     });
 
     test('a reload does not move focus that was outside the dashboard', async () => {
