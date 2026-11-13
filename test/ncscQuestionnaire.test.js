@@ -1013,6 +1013,10 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
 
+    // The question text the page shows. Prefer the question form of the wording when the
+    // catalogue has one, so these focus tests follow the wording rather than pin it.
+    const plainQuestion = question => question.smallBusiness.question || question.smallBusiness.meaning;
+
     test('arrow keys move the question picker without loading questions; Enter or Go opens the choice and focuses its text', async () => {
         const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
         const keydown = (element, key) => { for (const handler of element.events.keydown || []) handler({ key, preventDefault() {} }); };
@@ -1020,14 +1024,14 @@ describe('questionnaire draft progress and unanswered navigation', () => {
             const picker = byId(ui, 'ncsc-question-index');
             // Arrow presses change the select value (and fire change in some browsers) but leave question 1 on screen.
             for (const value of ['1', '2', '3']) { keydown(picker, 'ArrowDown'); picker.value = value; event(picker, 'change'); }
-            expect(ui.root.querySelector('legend').textContent).toBe(questions[0].smallBusiness.meaning);
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[0]));
             keydown(picker, 'Enter');
-            expect(ui.root.querySelector('legend').textContent).toBe(questions[3].smallBusiness.meaning);
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[3]));
             expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
             const current = byId(ui, 'ncsc-question-index'); keydown(current, 'ArrowDown'); current.value = '6'; event(current, 'change');
-            expect(ui.root.querySelector('legend').textContent).toBe(questions[3].smallBusiness.meaning);
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[3]));
             control(ui, 'Go').click();
-            expect(ui.root.querySelector('legend').textContent).toBe(questions[6].smallBusiness.meaning);
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[6]));
             expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
             expect(h.records).toHaveLength(1);
         } finally { ui.controller.destroy(); }
@@ -1043,7 +1047,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
             expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
             gate.resolve(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
             const legend = byId(ui, 'ncsc-question-text');
-            expect(ui.document.activeElement).toBe(legend); expect(legend.textContent).toBe(metadata().questions[1].smallBusiness.meaning);
+            expect(ui.document.activeElement).toBe(legend); expect(legend.textContent).toBe(plainQuestion(metadata().questions[1]));
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
@@ -1060,9 +1064,9 @@ describe('questionnaire draft progress and unanswered navigation', () => {
             const current = byId(ui, 'ncsc-question-index');
             expect(current).not.toBe(picker);
             expect(current.value).toBe('4');
-            expect(ui.root.querySelector('legend').textContent).toBe(questions[0].smallBusiness.meaning);
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[0]));
             keydown(current, 'Enter');
-            expect(ui.root.querySelector('legend').textContent).toBe(questions[4].smallBusiness.meaning);
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[4]));
             expect(byId(ui, 'ncsc-question-index').value).toBe('4');
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
