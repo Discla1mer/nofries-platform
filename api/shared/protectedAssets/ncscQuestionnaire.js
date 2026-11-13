@@ -967,8 +967,13 @@
             }
             index.addEventListener('keydown', function (event) {
                 if (event.key === 'Enter') { keyedAt = 0; event.preventDefault(); openSelected(true); }
-                else if (event.key !== 'Tab' && event.key !== 'Escape') keyedAt = Date.now();
+                // Only keys that can move the selection hold back the change; a
+                // modifier such as Shift must not swallow a later pointer choice.
+                else if (/^(Arrow(Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/.test(event.key) || (event.key && event.key.length === 1)) keyedAt = Date.now();
             });
+            // A pointer choice always opens at once, even straight after a keystroke.
+            index.addEventListener('pointerdown', function () { keyedAt = 0; });
+            index.addEventListener('mousedown', function () { keyedAt = 0; });
             index.addEventListener('change', function () { if (Date.now() - keyedAt < 1000) { keyedAt = 0; return; } openSelected(false); });
             const go = button('Go', function () { openSelected(true); }, 'dashboard-button dashboard-button-secondary ncsc-question-go');
             go.id = 'ncsc-question-go'; go.setAttribute('aria-label', 'Go to the selected question');

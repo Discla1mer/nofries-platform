@@ -1051,6 +1051,20 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
+    test('a keystroke that cannot move the picker, or a pointer press, does not hold back a pointer choice', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        const fire = (element, type, value) => { for (const handler of element.events[type] || []) handler(value); };
+        try {
+            const picker = byId(ui, 'ncsc-question-index');
+            fire(picker, 'keydown', { key: 'Shift', preventDefault() {} }); picker.value = '2'; event(picker, 'change');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[2]));
+            const current = byId(ui, 'ncsc-question-index');
+            fire(current, 'keydown', { key: 'ArrowDown', preventDefault() {} }); fire(current, 'pointerdown', {});
+            current.value = '5'; event(current, 'change');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[5]));
+        } finally { ui.controller.destroy(); }
+    });
+
     test('a keyboard choice in the question picker survives an autosave that re-renders before Enter or Go', async () => {
         const h = await backend(), gate = deferred();
         const client = { ...h.client, save: async (command, settings) => { await gate.promise; return h.client.save(command, settings); } };
