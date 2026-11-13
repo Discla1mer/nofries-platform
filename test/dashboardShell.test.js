@@ -839,11 +839,20 @@ test('disabled Board Reports keeps the disabled label even when Cyber picture is
     assert.match(board.root.textContent, /temporarily unavailable/);
 });
 
-test('the plan label is not presented as a result', () => {
+test('the plan uses a customer-friendly name, not the stored code', () => {
     const dom = mount();
-    assert.match(dom.root.textContent, /Your plan/);
-    assert.match(dom.root.textContent, /Plan: Govern/);
-    assert.match(dom.root.textContent, /not a security score/);
+    const plan = dom.root.querySelector('.dashboard-subscription');
+    assert.match(plan.textContent, /Your plan/);
+    assert.match(plan.textContent, /Governance plan/);
+    assert.doesNotMatch(plan.textContent, /Plan: Govern|not a security score/);
+    const free = clone(view()); free.subscription = 'Score';
+    const freeDom = mount(free);
+    const freePlan = freeDom.root.querySelector('.dashboard-subscription');
+    assert.match(freePlan.textContent, /Free plan/);
+    assert.doesNotMatch(freePlan.textContent, /Score/);
+    const services = mount(free, { initialRoute: 'services' });
+    assert.match(services.root.querySelector('.dashboard-subscription-panel').textContent, /Your plan: Free plan/);
+    assert.doesNotMatch(services.root.querySelector('.dashboard-subscription-panel').textContent, /Score/);
 });
 
 test('Escape closes the More tools menu and returns focus to its summary', () => {
@@ -877,4 +886,19 @@ test('the footer information time moves forward only for a later valid read', ()
     dom.controller.navigate('services');
     assert.equal(stamp().dateTime, later);
     dom.controller.destroy();
+});
+
+test('the dashboard footer disclosure and organisations pill follow the page grid with 44px tap targets', () => {
+    const home = fs.readFileSync(path.join(__dirname, '../home.css'), 'utf8');
+    const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
+    // "About this site" uses the footer's width and margins, not x=0.
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details \{ width: min\(1180px, calc\(100% - 40px\)\); margin-inline: auto;/);
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details \{ width: min\(100% - 24px, 1180px\); \}/);
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details > summary \{[^}]*min-height: 44px;/);
+    // Full-width ready layouts keep the pill and footer on the header's gutter.
+    const wide = css.slice(css.indexOf('keep the organisations pill and the footer'));
+    assert.match(wide, /^[^]*?@media screen and \(min-width: 1220px\) \{[^]*?#dashboardChooser \{ margin-inline-start: 1rem; \}/);
+    assert.match(wide, /:is\(\.dashboard-release-footer, \.site-details\) \{ width: auto; margin-inline: 1rem; \}/);
+    const html = fs.readFileSync(path.join(__dirname, '../app/dashboard.html'), 'utf8');
+    assert.match(html, /<details class="site-details">\s*<summary>About this site<\/summary>/);
 });

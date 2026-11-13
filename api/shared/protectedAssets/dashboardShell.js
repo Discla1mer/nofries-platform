@@ -19,6 +19,8 @@
     let mountSequence = 0;
     const moduleStates = { ready: 'Included', planned: 'Coming next', disabled: 'Included · unavailable' };
     const serviceStates = { not_included: 'Available to scope', disabled: 'Included · unavailable', setup_required: 'Waiting for setup' };
+    // Customer-facing plan names. The projection keeps its stored codes.
+    const planNames = { Score: 'Free plan', Govern: 'Governance plan' };
     const metricLabels = { implementation: 'Implementation attainment', evidence: 'Evidence confidence', risk: 'Risk priority', trend: 'Trend' };
 
     // The shell performs no authorisation, storage or scoring. An explicitly
@@ -153,8 +155,8 @@
             const nav = element('nav'); nav.setAttribute('aria-label', 'Workspace');
             appendMenu(nav, false);
             const subscription = element('div', 'dashboard-subscription');
-            subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', 'Plan: ' + model.subscription),
-                element('p', '', 'This is the name of your plan, not a security score. Managed IT and advisory services are arranged separately.'));
+            subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', planNames[model.subscription]),
+                element('p', '', 'Managed IT and advisory services are arranged separately.'));
             rail.append(brand, context, nav, subscription);
             const workspace = element('div', 'dashboard-workspace');
             const top = element('header', 'dashboard-topbar');
@@ -533,7 +535,7 @@
         }
         function renderServices() {
             main.append(element('p', 'dashboard-intro', 'What is included, what needs setup and what can be scoped separately?'));
-            const subscription = panel('No Fries ' + model.subscription, 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
+            const subscription = panel('Your plan: ' + planNames[model.subscription], 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
             subscription.classList.add('dashboard-subscription-panel'); main.append(subscription);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {
