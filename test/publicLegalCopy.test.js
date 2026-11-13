@@ -18,7 +18,7 @@ test('customer terms stay separate from pilot terms and keep the operative limit
         'Fair Trading Act 1986', 'section 5D', 'sections 9, 12A and 13',
         'standard form small trade contracts', 'Contract and Commercial Law Act 2017',
         'Privacy Act 2020', 'earlier valid ISC grants', 'not an independent audit',
-        'no automatic paid conversion', 'give a new indemnity, warranty or personal guarantee',
+        'never turns into paid access automatically', 'Free dashboard; it doesn’t expire', 'give a new indemnity, warranty or personal guarantee',
         'Nothing in a dashboard assessment automatically sends a proposal or creates a CRM commitment'
     ]) expect(terms).toContain(text);
     expect(terms).toContain('href="/pilot-terms.html"');
