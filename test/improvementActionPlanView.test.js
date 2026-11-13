@@ -219,7 +219,17 @@ test('read-only next steps explain each current status without changing ownershi
     const blocked = card(dom, state.proposals[2].actionId), completed = card(dom, state.proposals[3].actionId);
     const reopened = card(dom, state.proposals[4].actionId), unassigned = card(dom, state.proposals[5].actionId);
     expect(cardFacts(assigned)).toMatchObject({ 'Next step': 'Confirm the owner and due date, then review the suggested work.',
-        'Owner': 'Assigned (eligibility not checked)', 'Due date': '1 Oct 2026' });
+        'Owner': 'Assigned to someone in your organisation', 'Due date': '1 Oct 2026' });
+    // Without the signed-in person, owners read in plain words. The raw owner
+    // reference stays only in the closed Action identifiers section.
+    const assignedFacts = facts(assigned.children.find(child => child.tagName === 'DL'));
+    expect(Object.values(assignedFacts).join(' ')).not.toMatch(/eligibility not checked/);
+    const ownerRef = model.actions.find(action => action.actionId === state.proposals[0].actionId).ownerSubjectKey;
+    expect(typeof ownerRef).toBe('string');
+    expect(Object.values(assignedFacts).join(' ')).not.toContain(ownerRef);
+    const assignEvent = history(assigned).querySelectorAll('li')[0].querySelector('dl');
+    expect(facts(assignEvent)).toMatchObject({ 'Owner': 'Assigned to someone in your organisation', 'Due date': '1 Oct 2026' });
+    expect(facts(assignEvent)).not.toHaveProperty('Owner ID (current eligibility not checked)');
     expect(cardFacts(active)['Next step']).toBe('Review progress with the action owner against the due date.');
     expect(cardFacts(blocked)).toMatchObject({ 'Next step': 'Review the block reason and agree how to move forward.', 'Block reason': REASON });
     expect(cardFacts(completed)['Next step']).toBe('Review the completion note and action history.');

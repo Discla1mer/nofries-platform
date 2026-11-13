@@ -145,7 +145,8 @@ async function main() {
             // does not pick a different action or invent a human owner name.
             for (const [index, action] of models.mixed.actions.entries()) {
                 assert.equal(await page.locator('article h3').nth(index).innerText(), actionTitle(action));
-                assert.equal(facts[index].Owner, action.labels.owner);
+                assert.equal(facts[index].Owner, action.ownerSubjectKey === null && !action.ownerLabel ? 'Unassigned' :
+                    action.ownerLabel ? action.ownerLabel + ' (named owner)' : 'Assigned to someone in your organisation');
                 assert.equal(facts[index]['Due date'], calendarDay(action.dueDate));
                 assert.equal(facts[index].Overdue, action.isOverdue ? 'Yes' : 'No');
                 assert.ok(facts[index]['Next step'], 'Every action has a plain-language next step');

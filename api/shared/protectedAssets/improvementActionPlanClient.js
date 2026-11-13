@@ -254,7 +254,8 @@
             actionSummary.textContent = draft ? draft.name + ': ' + draft.work : detail ? actionName(detail) + ': ' + detail.rationale.suggestedAction : '';
             actionSummary.hidden = !draft && !permitted;
             actionState.textContent = detail ? 'Status: ' + detail.labels.status + '. Owner: ' + (labelled(detail) ? detail.ownerLabel :
-                detail.ownerSubjectKey === null ? 'not set' : detail.ownerSubjectKey === currentOwner ? 'you' : 'someone else in your organisation') + '. Due date: ' + day(detail.dueDate) + '.' : '';
+                detail.ownerSubjectKey === null ? 'not set' : typeof currentOwner !== 'string' ? 'someone in your organisation' :
+                detail.ownerSubjectKey === currentOwner ? 'you' : 'someone else in your organisation') + '. Due date: ' + day(detail.dueDate) + '.' : '';
             actionState.hidden = !!draft || !permitted || !detail;
             ACTION_BUTTONS.forEach(type => {
                 const control = actionButtons[type], command = type === 'assignNamed' ? 'assign' : type;

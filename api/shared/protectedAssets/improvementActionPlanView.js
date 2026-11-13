@@ -212,7 +212,9 @@
     function ownerText(action, currentOwner) {
         if (labelled(action)) return action.ownerLabel + ' (named owner)';
         if (!assigned(action)) return 'Unassigned';
-        if (typeof currentOwner !== 'string') return action.labels.owner;
+        // Without the signed-in person, say plainly that someone is assigned;
+        // the raw owner reference stays in the closed Action identifiers.
+        if (typeof currentOwner !== 'string') return 'Assigned to someone in your organisation';
         return action.ownerSubjectKey === currentOwner ? 'You' : 'Someone else in your organisation';
     }
     function planSummary(actions) {
@@ -379,9 +381,9 @@
                     const entry = node('li'); entry.append(node('h4', '', event.label + ' · ' + nzDateTime(event.at)));
                     const details = node('dl');
                     if (event.type === 'assign' && labelled(event.details)) { fact(details, 'Owner name', event.details.ownerLabel); fact(details, 'Due date', calendarDay(event.details.dueDate)); }
-                    else if (event.type === 'assign' && typeof currentOwner === 'string') { fact(details, 'Owner', event.details.ownerSubjectKey === null ? 'Unassigned' :
+                    else if (event.type === 'assign') { fact(details, 'Owner', event.details.ownerSubjectKey === null ? 'Unassigned' :
+                        typeof currentOwner !== 'string' ? 'Assigned to someone in your organisation' :
                         event.details.ownerSubjectKey === currentOwner ? 'You' : 'Someone else in your organisation'); fact(details, 'Due date', calendarDay(event.details.dueDate)); }
-                    else if (event.type === 'assign') { fact(details, 'Owner ID (current eligibility not checked)', event.details.ownerSubjectKey === null ? 'Unassigned' : event.details.ownerSubjectKey); fact(details, 'Due date', calendarDay(event.details.dueDate)); }
                     if (event.type === 'block' || event.type === 'reopen') fact(details, 'Reason', event.details.reason);
                     if (event.type === 'complete') { fact(details, 'Completion note', event.details.note); fact(details, 'Evidence reference (unverified)', event.details.evidenceReference === null ? 'Not recorded' : event.details.evidenceReference); fact(details, 'Evidence status', 'Unverified; durable link not established.'); fact(details, 'Next review date', calendarDay(event.details.nextReviewDate)); }
                     entry.append(details); timeline.append(entry);
