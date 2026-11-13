@@ -5,7 +5,8 @@
 // authenticated host. Native details/summary owns keyboard behavior in browsers.
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { mount, mountLoading, nzDateTime, calendarDay } = require('../api/shared/protectedAssets/improvementActionPlanView');
+const view = require('../api/shared/protectedAssets/improvementActionPlanView');
+const { mount, mountLoading, nzDateTime, calendarDay } = view;
 const { projectImprovementActionPlanPresentation } = require('../api/shared/improvementPlan/improvementActionPlanPresentation');
 const { projectImprovementActionList } = require('../api/shared/improvementPlan/improvementActionListProjection');
 const { createImprovementPlan, applyImprovementActionCommand } = require('../api/shared/improvementPlan/improvementPlanDomain');
@@ -387,8 +388,8 @@ test('plan guidance points to the action editor only when the host supplies it',
 
 describe('plain action names, owners and plan summary', () => {
     test('gap actions carry each topic\'s concrete follow-up; owner and due date lead the facts (F1-R10)', () => {
-        const model = presentation(), followUps = Object.fromEntries(model.actions.map(action => [action.controlId, 'Do the work for ' + action.controlId + '.']));
-        const dom = createDom(); mount(dom.root, model, { controlFollowUps: followUps });
+        const model = presentation(), followUps = Object.fromEntries(model.actions.map(action => [action.itemId, 'Do the work for ' + action.itemId + '.']));
+        const dom = createDom(); mount(dom.root, model, { itemFollowUps: followUps });
         const gaps = model.actions.filter(action => action.rationale.kind === 'implementation');
         expect(gaps.length).toBeGreaterThan(1);
         model.actions.forEach(action => {
@@ -398,7 +399,7 @@ describe('plain action names, owners and plan summary', () => {
             expect(key.children.filter(child => child.tagName === 'DT').slice(0, 2).map(child => child.textContent)).toEqual(['Owner', 'Due date']);
             const details = cardFacts(element);
             if (action.rationale.kind === 'implementation') {
-                expect(work).toBe(followUps[action.controlId]);
+                expect(work).toBe(followUps[action.itemId]);
                 // The retained wording is kept, out of the way, rather than repeated on every card.
                 expect(details['Plan record wording']).toBe(action.rationale.suggestedAction);
             } else {
@@ -410,10 +411,19 @@ describe('plain action names, owners and plan summary', () => {
         expect(dom.root.textContent).toContain(model.notices.order);
     });
 
+    test('two gaps under one control each show their own question\'s follow-up', () => {
+        const [first, second] = presentation().actions.filter(action => action.rationale.kind === 'implementation')
+            .slice(0, 2).map(action => ({ ...action }));
+        second.controlId = first.controlId;
+        const followUps = { [first.itemId]: 'First question work.', [second.itemId]: 'Second question work.' };
+        expect(view.actionWork(first, followUps)).toBe('First question work.');
+        expect(view.actionWork(second, followUps)).toBe('Second question work.');
+    });
+
     test('missing or malformed follow-ups keep the retained wording', () => {
         const model = presentation();
-        for (const followUps of [undefined, { [model.actions[0].controlId]: '   ' }, { [model.actions[0].controlId]: 'x'.repeat(1001) }]) {
-            const dom = createDom(); mount(dom.root, model, followUps ? { controlFollowUps: followUps } : {});
+        for (const followUps of [undefined, { [model.actions[0].itemId]: '   ' }, { [model.actions[0].itemId]: 'x'.repeat(1001) }]) {
+            const dom = createDom(); mount(dom.root, model, followUps ? { itemFollowUps: followUps } : {});
             expect(cards(dom)[0].querySelector('.improvement-action-work').textContent).toBe(model.actions[0].rationale.suggestedAction);
         }
     });

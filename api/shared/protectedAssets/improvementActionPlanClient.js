@@ -174,13 +174,13 @@
         const accepted = () => { if (options.onAccepted) { try { options.onAccepted(); } catch (_) { /* Display only. */ } } };
         let controlTitles = null;
         try { controlTitles = titlesOption(options.controlTitles); } catch (_) { controlTitles = null; /* Codes remain the fallback names. */ }
-        let controlFollowUps = null;
-        try { controlFollowUps = titlesOption(options.controlFollowUps, 1000); } catch (_) { controlFollowUps = null; /* The retained wording remains. */ }
-        const actionWork = action => typeof view.actionWork === 'function' ? view.actionWork(action, controlFollowUps) : action.rationale.suggestedAction;
+        let itemFollowUps = null;
+        try { itemFollowUps = titlesOption(options.itemFollowUps, 1000); } catch (_) { itemFollowUps = null; /* The retained wording remains. */ }
+        const actionWork = action => typeof view.actionWork === 'function' ? view.actionWork(action, itemFollowUps) : action.rationale.suggestedAction;
         let currentOwner = null;
         const actionName = action => typeof view.actionTitle === 'function' ? view.actionTitle(action, controlTitles) : action.controlId + ' · ' + action.labels.kind;
         const viewOptions = () => ({ actionEditorAbove: true, ...(controlTitles ? { controlTitles } : {}),
-            ...(controlFollowUps ? { controlFollowUps } : {}), ...(currentOwner ? { currentOwner } : {}) });
+            ...(itemFollowUps ? { itemFollowUps } : {}), ...(currentOwner ? { currentOwner } : {}) });
         const readLatest = !initialSource && typeof options.latestSource === 'function' ? options.latestSource : null;
         let latest = null, pageAsOf = null;
         const day = value => typeof view.calendarDay === 'function' ? view.calendarDay(value) : value || 'Not set';

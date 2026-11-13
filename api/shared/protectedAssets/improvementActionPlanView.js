@@ -213,8 +213,8 @@
     // The retained rationale stays the record; this is display wording only.
     function actionWork(action, followUps) {
         const followUp = action.rationale.kind === 'implementation' && followUps && typeof followUps === 'object' &&
-            own(followUps, action.controlId) && typeof followUps[action.controlId] === 'string' &&
-            followUps[action.controlId].trim() && followUps[action.controlId].length <= 1000 ? followUps[action.controlId] : null;
+            own(followUps, action.itemId) && typeof followUps[action.itemId] === 'string' &&
+            followUps[action.itemId].trim() && followUps[action.itemId].length <= 1000 ? followUps[action.itemId] : null;
         return followUp || action.rationale.suggestedAction;
     }
     function ownerText(action, currentOwner) {
@@ -240,7 +240,7 @@
     // grants no access, reads no clock and performs no requests or commands.
     function mount(root, presentation, options) {
         const titles = options && options.controlTitles, currentOwner = options && options.currentOwner;
-        const followUps = options && options.controlFollowUps;
+        const followUps = options && options.itemFollowUps;
         if (!root || !root.ownerDocument || typeof root.replaceChildren !== 'function') throw new Error('improvement_view_root_required');
         if (mounted.has(root)) mounted.get(root).destroy();
         const doc = root.ownerDocument, actionCards = new Map();
