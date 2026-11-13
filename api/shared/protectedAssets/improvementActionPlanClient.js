@@ -552,10 +552,13 @@
         }
         async function refresh() {
             if (!active() || busy || pending || draft) return false;
-            const before = { count: rows.length, selected, revision: selectedRevision, latest: latest && latest.revisionSha256 };
+            // Compare every listed plan (id and revision), the paging cursor and
+            // the selected plan, so a change to any plan counts as an update.
+            const listed = () => JSON.stringify([rows.map(row => [row.planId, row.planRevision]), next]);
+            const before = { list: listed(), selected, revision: selectedRevision, latest: latest && latest.revisionSha256 };
             const result = await readPage(null, false);
             if (!result || !active() || busy || pending || draft || denied) return result;
-            const changed = rows.length !== before.count || before.selected !== null && selected === before.selected && selectedRevision !== before.revision ||
+            const changed = listed() !== before.list || selected !== before.selected || selectedRevision !== before.revision ||
                 !rows.length && (latest && latest.revisionSha256) !== before.latest;
             const checked = pageAsOf ? ' Checked at ' + nzTime(pageAsOf) + '.' : '';
             message = (changed ? 'Updated with the latest saved changes.' : 'Up to date. Nothing has changed since you last looked.') + checked +

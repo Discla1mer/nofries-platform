@@ -996,6 +996,18 @@ test('Refresh says the plan is up to date, or that it was updated', async () => 
     expect(h.root.textContent).toContain('Updated with the latest saved changes. Checked at 10:00 pm.');
 });
 
+test('Refresh reports an update when another listed plan changed, not only the selected one', async () => {
+    const h = harness(); await h.controller.ready;
+    h.state.plans.set('plan-b', seed('plan-b'));
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Updated with the latest saved changes.');
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Up to date. Nothing has changed since you last looked.');
+    h.state.plans.set('plan-b', append(h.state.plans.get('plan-b'), 'assign', { ownerSubjectKey: ACTOR, dueDate: '2026-10-03' }));
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Updated with the latest saved changes.');
+});
+
 describe('plain words in the plan controls', () => {
     test('opening from Overview shows the existing plan for that assessment and hides the create button', async () => {
         const selected = source(), planId = 'overview-plan-' + selected.revisionSha256;
