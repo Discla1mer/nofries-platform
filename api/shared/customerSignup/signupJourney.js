@@ -260,28 +260,52 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         } else if (state.status === 'terms' && validTerms(state)) {
             heading.textContent = 'Review your terms';
             root.append(element('p', 'Your email has been verified. Review the applicable organisation schedule and agreement before continuing.'));
-            if (Object.hasOwn(state, 'scheduleId')) {
-                const schedule = element('section');
-                schedule.setAttribute('aria-label', 'Organisation schedule');
-                const scheduleText = element('p', state.scheduleText); scheduleText.className = 'signup-legal-text';
-                schedule.append(element('h2', 'Organisation schedule'), scheduleText);
-                schedule.className = 'signup-legal signup-schedule';
-                const glance = scheduleSummary(state.scheduleText);
-                if (glance) root.append(glance);
-                root.append(schedule);
-            }
-            const terms = element('section');
-            terms.setAttribute('aria-label', 'Terms');
-            const termsText = element('p', state.termsText); termsText.className = 'signup-legal-text';
-            terms.append(element('h2', 'Dashboard agreement'), termsText);
-            terms.className = 'signup-legal signup-agreement';
-            root.append(terms);
+            const scheduled = Object.hasOwn(state, 'scheduleId');
+            // Summary and the accept control sit together at the top. The full
+            // texts follow in expanders; their wording is unchanged and hashed.
+            const glance = scheduled ? scheduleSummary(state.scheduleText) : null;
+            if (glance) root.append(glance);
+            const label = element('label'), consent = element('input');
+            label.className = 'organisation-authority-check signup-consent';
+            consent.type = 'checkbox';
+            consent.checked = false;
+            label.append(consent, element('span', scheduled
+                ? ' I accept this organisation schedule and agreement.' : ' I accept these terms.'));
+            const hint = element('p'); hint.className = 'signup-field-error signup-consent-hint'; hint.hidden = true;
+            hint.setAttribute('role', 'alert');
+            // Keep the button reachable by keyboard. Without the tick it explains
+            // what to do instead of doing nothing.
+            const submit = element('button', 'Accept and continue'), revision = viewRevision;
+            submit.type = 'button'; submit.className = 'button';
+            submit.addEventListener('click', () => {
+                if (submit.disabled || busy || revision !== viewRevision) return;
+                if (!consent.checked) {
+                    hint.textContent = 'Tick the box above first.'; hint.hidden = false;
+                    if (typeof consent.focus === 'function') consent.focus();
+                    return;
+                }
+                run(signal => client.acceptTerms({ termsVersion: state.termsVersion, termsDigest: state.termsDigest,
+                    ...(scheduled ? { scheduleId: state.scheduleId, scheduleDigest: state.scheduleDigest } : {}),
+                    accepted: true }, { signal }));
+            });
+            consent.addEventListener('change', () => { if (consent.checked) hint.hidden = true; });
+            root.append(label, submit, hint,
+                element('p', 'You can read the full ' + (scheduled ? 'schedule and agreement' : 'terms') + ' below before you accept.'));
+            const expander = (title, text, className, ariaLabel) => {
+                const details = element('details'), summary = element('summary', title), body = element('p', text);
+                body.className = 'signup-legal-text';
+                details.className = 'signup-legal ' + className; details.setAttribute('aria-label', ariaLabel);
+                details.append(summary, body);
+                return details;
+            };
+            if (scheduled) root.append(expander('Organisation schedule: read the full text', state.scheduleText, 'signup-schedule', 'Organisation schedule'));
+            root.append(expander('Dashboard agreement: read the full text', state.termsText, 'signup-agreement', 'Terms'));
+            const view = doc.defaultView;
             // Let the representative keep a copy of exactly what they are asked to accept.
             const saveCopy = element('button', 'Save a copy of these terms');
             saveCopy.type = 'button'; saveCopy.className = 'text-link signup-secondary-action';
             saveCopy.addEventListener('click', () => {
-                const view = doc.defaultView;
-                const parts = [Object.hasOwn(state, 'scheduleId') ? 'Organisation schedule\n\n' + state.scheduleText + '\n\n' : '',
+                const parts = [scheduled ? 'Organisation schedule\n\n' + state.scheduleText + '\n\n' : '',
                     'Dashboard agreement (' + state.termsVersion + ')\n\n' + state.termsText + '\n'];
                 if (!view || typeof view.Blob !== 'function' || !view.URL || typeof view.URL.createObjectURL !== 'function') return;
                 const url = view.URL.createObjectURL(new view.Blob(parts, { type: 'text/plain;charset=utf-8' }));
@@ -289,21 +313,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 root.append(link); link.click(); link.remove();
                 view.setTimeout(() => view.URL.revokeObjectURL(url), 1000);
             });
-            const label = element('label'), consent = element('input');
-            label.className = 'organisation-authority-check signup-consent';
-            consent.type = 'checkbox';
-            consent.checked = false;
-            label.append(consent, element('span', Object.hasOwn(state, 'scheduleId')
-                ? ' I accept this organisation schedule and agreement.' : ' I accept these terms.'));
-            const submit = button('Accept and continue', signal => {
-                if (!consent.checked) return Promise.resolve(state);
-                return client.acceptTerms({ termsVersion: state.termsVersion, termsDigest: state.termsDigest,
-                    ...(Object.hasOwn(state, 'scheduleId') ? { scheduleId: state.scheduleId, scheduleDigest: state.scheduleDigest } : {}),
-                    accepted: true }, { signal });
-            });
-            submit.disabled = true;
-            consent.addEventListener('change', () => { submit.disabled = !consent.checked || busy; });
-            root.append(label, submit, saveCopy);
+            root.append(saveCopy);
         } else if (state.status === 'resume_acceptance') {
             heading.textContent = 'Complete account setup';
             root.append(element('p', 'Your acceptance was recorded, but account setup did not finish. Resume the protected setup without accepting again.'),
@@ -469,10 +479,14 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             }
         }
     }
+    // Printing shows the full terms even when an expander is closed.
+    const printView = doc.defaultView, openForPrint = () => { for (const details of root.querySelectorAll('details')) details.open = true; };
+    if (printView && typeof printView.addEventListener === 'function') printView.addEventListener('beforeprint', openForPrint);
     const ready = run(signal => client.load({ signal }));
     return Object.freeze({ ready, dispose() {
         disposed = true; generation++;
         setupDraft = null;
+        if (printView && typeof printView.removeEventListener === 'function') printView.removeEventListener('beforeprint', openForPrint);
         if (cancelOperation) cancelOperation();
         cancelOperation = null;
         root.replaceChildren();
