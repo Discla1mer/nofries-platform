@@ -868,6 +868,17 @@ test('Escape closes the More tools menu and returns focus to its summary', () =>
     assert.equal(menu.open, false);
 });
 
+test('error summaries and scroll targets clear the sticky organisation bar', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
+    const bar = css.match(/\.nofries-dashboard \.dashboard-topbar \{ max-height: (\d+)rem;/);
+    assert.ok(bar, 'the sticky bar has a bounded height');
+    assert.match(css, /\.nofries-dashboard \.dashboard-topbar \{[^}]*position: sticky; top: 0;/);
+    const rule = css.match(/\.nofries-dashboard :is\(([^)]*)\) \{ scroll-margin-top: (\d+)rem; \}/);
+    assert.ok(rule);
+    for (const target of ['.ncsc-errors', '.picture-top-gaps h3', '.ncsc-question', '.dashboard-main h1']) assert.ok(rule[1].split(', ').includes(target), target);
+    assert.ok(Number(rule[2]) >= Number(bar[1]), 'scroll margin covers the tallest sticky bar');
+});
+
 test('the footer information time moves forward only for a later valid read', () => {
     const model = clone(view());
     const dom = mount(model);
