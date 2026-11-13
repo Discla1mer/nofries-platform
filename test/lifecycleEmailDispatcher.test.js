@@ -1,6 +1,8 @@
 'use strict';
 
 const { createLifecycleEmailDispatcher, startLifecycleEmailDispatcher, allowedTypes, sendableTypes, BACKOFF_MS, CLAIM_SQL } = require('../api/shared/lifecycleEmail/dispatcher');
+const { verifyUnsubscribeToken } = require('../api/shared/lifecycleEmail/unsubscribeToken');
+const { PATH: UNSUBSCRIBE_PATH } = require('../api/shared/lifecycleEmail/unsubscribeEndpoint');
 
 const ADDRESS = 'owner@example.invalid';
 const ON = Object.freeze({ NOFRIES_LIFECYCLE_EMAIL_SEND_ENABLED: 'true' });
@@ -9,12 +11,12 @@ const row = (over = {}) => ({ outbox_id: ID, account_id: ACCOUNT, email_type: 'w
     attempts: 1, prior_attempts: 0, lease: LEASE, ...over });
 
 function harness({ env = ON, rows = [row()], unsubscribed = [], response = { ok: true, status: 200, json: async () => ({ id: 'msg_1' }) },
-    resolveAddress = async () => ADDRESS, rowCount = 1 } = {}) {
+    resolveAddress = async () => ADDRESS, rowCount = 1, subjectKey = 'subject:key' } = {}) {
     const queries = [], logs = [], updates = [], claims = [];
     const client = { release: jest.fn(), async query(sql, params) {
         queries.push(sql);
         if (sql === CLAIM_SQL) { claims.push(params); return { rows: rows.splice(0) }; }
-        if (sql.includes('FROM nofries.dashboard_starter_accounts')) return { rows: [{ account_id: ACCOUNT, subject_key: 'subject:key', unsubscribed }] };
+        if (sql.includes('FROM nofries.dashboard_starter_accounts')) return { rows: [{ account_id: ACCOUNT, subject_key: subjectKey, unsubscribed }] };
         if (sql.startsWith('UPDATE nofries.email_outbox SET locked_until=NULL')) { updates.push({ sql, params }); return { rowCount, rows: [] }; }
         return { rows: [] };
     } };
@@ -38,6 +40,7 @@ describe('lifecycle email dispatcher', () => {
         expect(CLAIM_SQL).toContain('FOR UPDATE SKIP LOCKED'); expect(CLAIM_SQL).toContain('attempts=LEAST(o.attempts+1, 6)');
         expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ to: ADDRESS, idempotencyKey: ID,
             subject: 'Welcome to No Fries', text: expect.stringContaining('https://nofries.nz/dashboard') }));
+        expect(h.send.mock.calls[0][0]).not.toHaveProperty('headers');
         expect(h.updates).toEqual([{ sql: expect.stringContaining("status='sent'"), params: [ID, LEASE, 'msg_1'] }]);
         expect(h.logs).toEqual([{ outboxId: ID, type: 'welcome', status: 'sent', errorCode: null }]);
     });
@@ -96,10 +99,42 @@ describe('lifecycle email dispatcher', () => {
         expect(CLAIM_SQL).toContain('email_type = ANY($2::text[])'); expect(h.updates.map(u => u.sql).join()).not.toContain('suppressed');
     });
 
-    test('nudge and reassess types are never claimed until unsubscribe ships, even when allow-listed', async () => {
+    test('without the unsubscribe secret, nudge and reassess types are never claimed, even when allow-listed', async () => {
         expect(sendableTypes({})).toEqual(['welcome', 'result_summary']);
         const h = harness({ env: { ...ON, NOFRIES_LIFECYCLE_EMAIL_TYPES: 'nudge_unfinished,reassess_reminder' } });
         expect(await h.dispatcher.runOnce()).toEqual({ claimed: 0 }); expect(h.pool.connect).not.toHaveBeenCalled();
+    });
+
+    describe('with the unsubscribe secret', () => {
+        const SUBJECT = '22222222-2222-4222-8222-222222222222:33333333-3333-4333-8333-333333333333';
+        const SIGNED = { ...ON, NOFRIES_EMAIL_UNSUBSCRIBE_SECRET: 'unit-test-only-unsubscribe-secret-0123456789' };
+
+        test('every allowed type is sendable, including nudge and reassess', () => {
+            expect(sendableTypes(SIGNED)).toEqual(['welcome', 'result_summary', 'nudge_unfinished', 'reassess_reminder']);
+            expect(sendableTypes({ ...SIGNED, NOFRIES_EMAIL_UNSUBSCRIBE_SECRET: 'short' })).toEqual(['welcome', 'result_summary']);
+        });
+
+        test('sends a signed per-type link and the RFC 8058 one-click headers', async () => {
+            const h = harness({ env: SIGNED, subjectKey: SUBJECT,
+                rows: [row({ email_type: 'nudge_unfinished', template_version: 'nudge-unfinished-v1' })] });
+            expect(await h.dispatcher.runOnce()).toEqual({ claimed: 1 });
+            const message = h.send.mock.calls[0][0];
+            const url = new URL(message.headers['List-Unsubscribe'].slice(1, -1));
+            expect(message.headers).toEqual({ 'List-Unsubscribe': `<${url}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' });
+            expect(`${url.origin}${url.pathname}`).toBe(`https://nofries.nz${UNSUBSCRIBE_PATH}`);
+            expect(message.text).toContain(`unsubscribe: ${url}`);
+            expect(message.text).toContain('https://nofries.nz/dashboard');
+            expect(message.text).not.toContain(SUBJECT.split(':')[1]);
+            expect(verifyUnsubscribeToken(url.searchParams.get('t'), SIGNED))
+                .toEqual({ accountId: ACCOUNT, subjectKey: SUBJECT, emailType: 'nudge_unfinished' });
+            expect(h.logs).toEqual([{ outboxId: ID, type: 'nudge_unfinished', status: 'sent', errorCode: null }]);
+        });
+
+        test('a subject key that cannot be signed fails the row without sending', async () => {
+            const h = harness({ env: SIGNED }); await h.dispatcher.runOnce();
+            expect(h.send).not.toHaveBeenCalled();
+            expect(h.updates).toEqual([{ sql: expect.stringContaining("status='failed'"), params: [ID, LEASE, 'unsubscribe_link_invalid'] }]);
+        });
     });
 
     test('an unreadable, invalid or missing recipient record retries or fails without sending', async () => {

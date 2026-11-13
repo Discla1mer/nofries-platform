@@ -70,3 +70,15 @@ test('it ends with the sign-up and contact paths and claims only live capabiliti
         }
     }
 });
+
+test('NCSC is spelled out at first use and the example figure is explained from the answers', () => {
+    for (const page of [html, fs.readFileSync(path.join(root, 'index.html'), 'utf8')]) {
+        const body = text(page.match(/<body\b[\s\S]*<\/body>/)[0]);
+        expect(body.indexOf('NCSC')).toBe(body.indexOf('New Zealand’s National Cyber Security Centre (NCSC)') + 'New Zealand’s National Cyber Security Centre ('.length);
+    }
+    const { result } = sampleResult();
+    const counts = Object.values(ANSWERS).reduce((all, answer) => ({ ...all, [answer]: (all[answer] || 0) + 1 }), {});
+    expect(((counts.yes + counts.partial / 2) / result.total * 100).toFixed(1) + '%').toBe(result.attainment);
+    expect(text(html)).toContain(`Each Yes counts in full, each Partial counts as half and each No counts as zero, so ${counts.yes} Yes and ${counts.partial} Partial out of ${result.total} questions gives ${result.attainment}.`);
+    expect(text(html)).toContain('Guide and Govern is about leadership, priorities and everyday guidance');
+});

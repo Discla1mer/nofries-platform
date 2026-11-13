@@ -233,11 +233,11 @@ module.exports = function registerGeneratedBrowser({ ncscHttpSetup, httpJson, te
                 await settleResponses();
                 assert.equal(executions.length, count + 1); assert.equal(executions.at(-1).command.type, type);
             }
-            await open('assign'); await form().getByLabel('Due date (UTC)', { exact: true }).fill('2026-09-08');
+            await open('assign'); await form().getByLabel('Due date', { exact: true }).fill('2026-09-08');
             const cancelBefore = await retained();
             await form().getByRole('button', { name: 'Cancel changes', exact: true }).click();
             assert.deepEqual(await retained(), cancelBefore); assert.equal(executions.length, 1);
-            await open('assign'); await form().getByLabel('Due date (UTC)', { exact: true }).fill('2026-09-08'); await save('assign');
+            await open('assign'); await form().getByLabel('Due date', { exact: true }).fill('2026-09-08'); await save('assign');
             assert.equal(executions.at(-1).command.payload.ownerSubjectKey, subject(h.principal));
             await open('start'); await save('start');
             await open('block'); await form().getByLabel('Block reason', { exact: true }).fill('Synthetic generated-runtime dependency.'); await save('block');
@@ -278,7 +278,7 @@ module.exports = function registerGeneratedBrowser({ ncscHttpSetup, httpJson, te
             const replayBefore = await retained();
             const replay = await h.post('improvement/execute', generated.raw).set('Content-Type', 'application/json').set(GENERATION, h.generation);
             httpJson(replay, 200); assert.deepEqual(replay.body, generated.result); assert.deepEqual(await retained(), replayBefore);
-            await open('assign'); await form().getByLabel('Due date (UTC)', { exact: true }).fill('2026-09-09');
+            await open('assign'); await form().getByLabel('Due date', { exact: true }).fill('2026-09-09');
             const oldGeneration = h.generation; h.generation = await h.select(h.binding, oldGeneration);
             assert.notEqual(h.generation, oldGeneration); const denialBefore = await retained();
             await form().getByRole('button', { name: SAVE.assign, exact: true }).click();

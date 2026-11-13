@@ -5,7 +5,7 @@ const { createImprovementPlan, getImprovementPlanView, applyImprovementActionCom
 const { normaliseImprovementCommand } = require('../api/shared/improvementPlan/improvementPlanService');
 const { projectImprovementActionList } = require('../api/shared/improvementPlan/improvementActionListProjection');
 const { projectImprovementActionPlanPresentation } = require('../api/shared/improvementPlan/improvementActionPlanPresentation');
-const { mount } = require('../api/shared/protectedAssets/improvementActionPlanView');
+const { mount, calendarDay } = require('../api/shared/protectedAssets/improvementActionPlanView');
 const { acceptedRegistry: registry } = require('../api/shared/assessmentLifecycle/ncscAssessmentSubmission');
 const { serialiseAssessmentEvaluation } = require('../api/shared/assessmentEngine/assessmentEvaluator');
 const { createDom } = require('./fixtures/dashboardDom');
@@ -41,7 +41,7 @@ test('legacy completion keeps its pre-change receipt digest and no invented revi
         .toBe('cc98a9469ffbbf0052b948d55c5b916cacbd06508d717188b7b57ffdcdf14d81');
     expect(result.plan.actions[0].completion).not.toHaveProperty('nextReviewDate');
     expect(normaliseImprovementCommand(wire(running(), payload)).payload).toEqual(payload);
-    const dom = createDom(); mount(dom.root, model(state)); expect(dom.root.textContent).toContain('Next review date (UTC) Not set');
+    const dom = createDom(); mount(dom.root, model(state)); expect(dom.root.textContent).toContain('Next review date Not set');
 });
 
 test.each(['2026-09-14', '2026-12-01'])('retains %s through reload, history and replay without verification or score changes', nextReviewDate => {
@@ -57,7 +57,7 @@ test.each(['2026-09-14', '2026-12-01'])('retains %s through reload, history and 
     expect(action.history.at(-1).details.nextReviewDate).toBe(nextReviewDate);
     expect(action.evidence).toMatchObject({ scoreEffect: 'none', completionVerification: 'not_verified', downloadAllowed: false });
     const dom = createDom(); mount(dom.root, projected);
-    expect(dom.root.textContent).toContain('Next review date (UTC) ' + nextReviewDate);
+    expect(dom.root.textContent).toContain('Next review date ' + calendarDay(nextReviewDate));
     const reopened = model(step(state, 'reopen', { reason: 'Review found more work.' })).actions.find(a => a.actionId === cmd.actionId);
     expect(reopened.completion).toBeNull(); expect(reopened.history.at(-2).details.nextReviewDate).toBe(nextReviewDate);
     expect(() => applyImprovementActionCommand(state, { ...cmd, payload: { ...details, nextReviewDate: '2027-01-01' } }, context)).toThrow('operation_conflict');
