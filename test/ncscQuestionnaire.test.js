@@ -954,8 +954,8 @@ describe('questionnaire draft progress and unanswered navigation', () => {
             expect(glossary.tagName).toBe('DETAILS'); expect(Boolean(glossary.open)).toBe(false);
             expect(glossary.querySelector('summary').textContent).toBe('What these words mean');
             expect(glossary.querySelectorAll('dt').map(term => term.textContent))
-                .toEqual(['To check later', 'Pending N/A', 'Saved and not saved yet', 'Score range']);
-            expect(glossary.textContent).toContain('N/A approval is not available in this journey');
+                .toEqual(['To check later', 'Marked not applicable, to confirm', 'Saved and not saved yet', 'Score range']);
+            expect(glossary.textContent).toContain('count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.');
             expect(glossary.textContent).toContain('The lower figure is what you reported as in place.');
             expect(glossary.textContent).not.toMatch(/unresolved|denominator/i);
             glossary.open = true; event(glossary, 'toggle');

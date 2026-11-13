@@ -430,8 +430,8 @@
             section.addEventListener('toggle', function () { glossaryOpen = section.open; });
             section.append(node('summary', '', 'What these words mean'));
             const list = node('dl');
-            [['To check later', 'Answers marked Unknown, or Not applicable waiting for review. They are still to confirm and do not count as in place. You can still submit with them.'],
-                ['Pending N/A', 'You answered Not applicable and explained why. N/A approval is not available in this journey, so the answer stays pending and the question still counts towards your total.'],
+            [['To check later', 'Answers marked Unknown, or marked not applicable, to confirm. They are still to confirm and do not count as in place. You can still submit with them.'],
+                ['Marked not applicable, to confirm', 'You answered Not applicable and explained why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'],
                 ['Saved and not saved yet', 'Saved answers are kept with this draft, so you can come back to them before you submit. Not saved yet means a change is only on this page so far.'],
                 ['Score range', 'After you submit, your result is shown as a range. The lower figure is what you reported as in place. The higher figure adds answers still to confirm.']
             ].forEach(function (entry) { list.append(node('dt', '', entry[0]), node('dd', '', entry[1])); });
