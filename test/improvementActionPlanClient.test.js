@@ -1,7 +1,8 @@
 'use strict';
 
 const { mount } = require('../api/shared/protectedAssets/improvementActionPlanClient');
-const { calendarDay } = require('../api/shared/protectedAssets/improvementActionPlanView');
+const view = require('../api/shared/protectedAssets/improvementActionPlanView');
+const { calendarDay } = view;
 const { createDom } = require('./fixtures/dashboardDom');
 const { createImprovementPlan, getImprovementPlanView, applyImprovementActionCommand } = require('../api/shared/improvementPlan/improvementPlanDomain');
 const { projectImprovementActionList } = require('../api/shared/improvementPlan/improvementActionListProjection');
@@ -950,6 +951,33 @@ test('named-owner completion retains its owner and optional review date through 
     const completed = presentation(h.state.plans.get('plan-a')).actions.find(action => action.status === 'completed');
     expect(completed.ownerLabel).toBe('Synthetic action owner');
     expect(completed.completion.nextReviewDate).toBe('2026-12-01');
+});
+
+describe('plain action names and "You" as owner in the editor', () => {
+    test('action choices and cards use topic titles from the host', async () => {
+        const actions = presentation(seed()).actions, titles = Object.fromEntries(actions.map(action => [action.controlId, 'Title ' + action.controlId.slice(-5)]));
+        const h = harness({ options: { controlTitles: titles } }); await h.controller.ready;
+        const picker = h.root.querySelectorAll('select').find(node => node.getAttribute('aria-label') === 'Improvement action');
+        expect(picker.children.map(option => option.textContent)).toEqual(actions.map(action => view.actionTitle(action, titles)));
+        expect(picker.children.map(option => option.textContent).join(' ')).not.toMatch(/NF-NCSC/);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toBe(view.actionTitle(actions[0], titles));
+    });
+
+    test('malformed titles fall back to codes without breaking the plan', async () => {
+        const h = harness({ options: { controlTitles: { 'bad key with spaces': 'x' } } });
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toContain('NF-NCSC');
+    });
+
+    test('after Assign to me the owner reads "You", not a platform user', async () => {
+        const h = harness(); await h.controller.ready;
+        const actionId = chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date', '2026-10-02'); await submitForm(h);
+        expect(h.root.textContent).toContain('Owner: you.');
+        expect(h.root.textContent).not.toContain('a platform user');
+        const assignedCard = h.root.querySelectorAll('article').find(card => card.textContent.includes(actionId));
+        expect(assignedCard.textContent).toContain('Owner You');
+        expect(assignedCard.textContent).not.toContain('eligibility not checked)');
+    });
 });
 
 describe('empty Improvement Plan tab', () => {

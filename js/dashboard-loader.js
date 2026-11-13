@@ -1290,6 +1290,10 @@
                 complete: complete
             };
         };
+        // Plain topic titles let the Improvement Plan name actions in words.
+        mountCyber.controlTitles = Object.assign(Object.create(null), Object.fromEntries(value.metadata.controls.map(function (control) {
+            return [control.id, control.title];
+        })));
         // The Improvement Plan's empty state offers the latest submitted
         // assessment. This reads the same validated, bounded list as Overview.
         mountCyber.latestSubmitted = async function () {
@@ -1370,6 +1374,7 @@
                     ? { initialTarget: { planId: cycle.workQueueTarget.planId, actionId: cycle.workQueueTarget.actionId,
                         planRevision: cycle.workQueueTarget.planRevision } } : {}),
                 sourceAssessment: presentation && presentation.sourceAssessment,
+                ...(cyber && cyber.controlTitles ? { controlTitles: cyber.controlTitles } : {}),
                 ...(cyber && typeof cyber.latestSubmitted === 'function' ? { latestSource: cyber.latestSubmitted } : {}),
                 newId: secureId,
                 isCurrent: function () { return current(cycle) && !cycle.authorityPending; },
