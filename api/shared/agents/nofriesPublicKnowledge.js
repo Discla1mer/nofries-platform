@@ -47,9 +47,13 @@ const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
             availability: 'available',
             summary: 'After submitting an assessment, reopen its saved results from the assessment area or Overview. Reopened submitted results are read-only and describe the saved submission. Results are calculated from your submitted answers; reopening them does not rescore or change the answers. They are advisory, not an audit, independent assurance or certification.'
         },
+        improvementPlans: {
+            availability: 'available',
+            summary: 'In an authorised dashboard workspace, choose Plan this on a top gap in Overview, or open the improvement plan for a submitted assessment, to record actions with an owner, due date and status. Completing an action records progress; it does not verify that a control works or change your saved result.'
+        },
         futureDashboard: {
             availability: 'planned_or_not_enabled',
-            summary: 'Improvement plans, evidence and document uploads, board report exports, AI Governance, IT Optimisation, AI assessment suggestions or editing, automatic updates and connected data feeds are planned or not enabled. Navigation labels alone do not establish live availability.'
+            summary: 'Evidence and document uploads, board report exports, AI Governance, IT Optimisation, AI assessment suggestions or editing, automatic updates and connected data feeds are planned or not enabled. Navigation labels alone do not establish live availability.'
         },
         trialTerms: {
             availability: 'not_live',
@@ -180,7 +184,10 @@ function publicHelpReply(message) {
             ? ' For MFA, Partial fits when, for example, administrators must use MFA but some important services still accept a password alone.'
             : '';
         answer = `${capabilities.answerMeanings.summary}${mfa} For the result, Yes counts 1, Partial 0.5 and No 0; Unknown and N/A widen the range. Each question in the form also explains its answers.`;
-    } else if (/\b(?:improvement plans?|evidence|documents?|uploads?|board reports?|ai governance|it optimisation|ai suggestions?|ai editing|automatic updates?|connected (?:data )?feeds?|(?:edit(?:ing)?|change) (?:my |the )?(?:submitted|saved) (?:assessment )?(?:answers?|assessments?))\b/.test(text)) {
+    } else if (/\b(?:improvement plans?|action plans?|improvement actions?|plan this)\b/.test(text)) {
+        topic = 'improvement_plans';
+        answer = `${capabilities.improvementPlans.summary} Dashboard: ${links.dashboard} Roadmap: ${links.roadmap}`;
+    } else if (/\b(?:evidence|documents?|uploads?|board reports?|ai governance|it optimisation|ai suggestions?|ai editing|automatic updates?|connected (?:data )?feeds?|(?:edit(?:ing)?|change) (?:my |the )?(?:submitted|saved) (?:assessment )?(?:answers?|assessments?))\b/.test(text)) {
         topic = 'feature_availability';
         answer = `${capabilities.futureDashboard.summary} ${capabilities.savedResults.summary} Roadmap: ${links.roadmap}`;
     } else if (dashboard && service) {
