@@ -413,6 +413,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-rail .dashboard-module-link { scroll-margin-block: 8px; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-rail .dashboard-module-link > span { min-width: 0; }
 }
+/* Wide ready layouts are full width: keep the organisations pill and the footer on the header's 1rem gutter. */
+@media screen and (min-width: 1220px) {
+    body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] #dashboardChooser { margin-inline-start: 1rem; }
+    body[data-page="operator-dashboard"][data-dashboard-state="ready"] :is(.dashboard-release-footer, .site-details) { width: auto; margin-inline: 1rem; }
+}
 @media screen and (min-width: 1600px) {
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] { --dashboard-workspace-gutter: 32px; }
 }
@@ -507,3 +512,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .nofries-dashboard :is(.ncsc-question, .ncsc-sealed, .dashboard-main h1) { scroll-margin-top: 10rem; }
 
 .nofries-dashboard .dashboard-topbar { max-height: 9rem; overflow: auto; }
+/* Improvement Plan choices stay readable on 320px phones. */
+@media (max-width: 25rem) {
+    .nofries-dashboard .dashboard-improvement-workspace .picture-toolbar { padding: .6rem .5rem; }
+    .dashboard-improvement-workspace .picture-toolbar select { flex-basis: 100%; padding: .5rem .4rem; }
+}
