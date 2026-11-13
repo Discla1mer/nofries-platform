@@ -1635,14 +1635,18 @@ describe('questionnaire form accessibility', () => {
         expect(h.records).toHaveLength(0); ui.controller.destroy();
     });
 
-    test('D-004: a saved scope written on separate lines reads as a list', async () => {
+    test('D-004: a saved scope written on separate lines reads as a list on review; the saved declaration stays exact', async () => {
         const h = await backend(), ui = mountUi(h); await until(() => control(ui, 'Start an assessment'));
         control(ui, 'Start an assessment').click();
         const input = byId(ui, 'ncsc-scope');
         const text = 'Included: 12 staff and their laptops\nIncluded: Auckland office\nExcluded: warehouse systems';
         enter(input, text); control(ui, 'Create assessment').click(); await until(() => control(ui, 'Save progress'));
         expect(h.records[0].payload.scopePopulation.description).toBe(text);
-        expect(ui.root.querySelector('.ncsc-scope').querySelectorAll('li').map(item => item.textContent))
+        const declaration = ui.root.querySelector('.ncsc-scope');
+        expect(declaration.querySelectorAll('li')).toHaveLength(0);
+        expect(declaration.querySelectorAll('p').map(item => item.textContent)).toContain(text);
+        control(ui, 'Review and submit').click();
+        expect(ui.root.querySelector('.ncsc-review-scope').querySelectorAll('li').map(item => item.textContent))
             .toEqual(['Included: 12 staff and their laptops', 'Included: Auckland office', 'Excluded: warehouse systems']);
         ui.controller.destroy();
     });

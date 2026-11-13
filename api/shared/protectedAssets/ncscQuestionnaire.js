@@ -421,8 +421,9 @@
             if (text !== undefined && text !== null) result.textContent = String(text);
             return result;
         }
-        // D-004: a scope written one item per line is shown as a list. The
-        // saved declaration is unchanged and remains the compared value.
+        // D-004: a scope written one item per line is shown as a list on the
+        // review step. The saved-declaration panel deliberately keeps the exact
+        // saved text, and the saved declaration remains the compared value.
         function scopeText(description) {
             const lines = String(description).split(/\r?\n/).map(line => line.trim().replace(/^[-*\u2022]\s+/, '')).filter(Boolean);
             if (lines.length < 2) return node('p', 'ncsc-preserve-text', description);
@@ -914,7 +915,7 @@
             const renderedEpoch = epoch;
             const sealed = acknowledged.status === 'submitted';
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
-            const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), scopeText(acknowledged.scopePopulation.description),
+            const declarationPanel = node('details', 'ncsc-scope'); declarationPanel.append(node('summary', '', 'Assessment scope (saved declaration)'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description),
                 node('p', 'dashboard-muted', 'Answer every question for this scope. If it contains a mistake, go Back to assessments and start a new assessment with the corrected scope; this saved declaration stays with its original answers.')); content.append(declarationPanel);
             if (sealed) {
                 const sealedNote = node('p', 'ncsc-sealed', 'Submitted ' + localDate(acknowledged.submission.submittedAt) + '. Your results are below, followed by your read-only answers.');
