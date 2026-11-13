@@ -428,6 +428,11 @@
             }).catch(function (error) { finish(reject, error); });
         });
     }
+    // Move the dashboard's "Information as at" time forward after a
+    // successful read for the current cycle. Display only.
+    function informationRead(cycle) {
+        if (current(cycle) && controller && typeof controller.informationRead === 'function') controller.informationRead(new Date().toISOString());
+    }
     function requireSuccess(result) {
         if (result.status !== 200) { const error = invalid(); error.status = result.status; throw error; }
         return result.value;
@@ -1241,6 +1246,7 @@
             if (result && [401, 403].includes(result.status)) {
                 const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
             }
+            if (result && result.status >= 200 && result.status < 300) informationRead(cycle);
             return result;
         } });
         const mountCyber = function (root, presentation) {
@@ -1318,6 +1324,7 @@
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             const value = requireSuccess(await request(cycle, path, undefined, snapshot.generation));
             if (!current(cycle) || cycle.authorityPending) throw invalid();
+            informationRead(cycle);
             return value;
         };
         const page = await read('/api/dashboard/improvement/plans?limit=' + ACTION_PLAN_LIMIT);
@@ -1350,6 +1357,7 @@
                     if ([401, 403].includes(result.status)) {
                         const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
                     }
+                    if (result.status === 200) informationRead(cycle);
                     return result;
                 }
             });
@@ -1711,6 +1719,7 @@
             if (!sameSession(fresh, confirmed)) { restore(); return; }
             remember(cycle, confirmed);
             renderDirectory(cycle, confirmed, middle[0].rows, middle[0].nextAfterBindingId, middle[0].pageCount);
+            informationRead(cycle);
             elements.status.textContent = previousStatus;
             delete elements.status.dataset.accessWarning;
             elements.retry.hidden = true;

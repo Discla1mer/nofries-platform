@@ -858,3 +858,23 @@ test('Escape closes the More tools menu and returns focus to its summary', () =>
     for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
     assert.equal(menu.open, false);
 });
+
+test('the footer information time moves forward only for a later valid read', () => {
+    const model = clone(view());
+    const dom = mount(model);
+    const stamp = () => dom.root.querySelector('.dashboard-provenance').querySelector('time');
+    assert.equal(stamp().dateTime, model.generatedAt);
+    const original = stamp().textContent;
+    const later = new Date(Date.parse(model.generatedAt) + 3 * 60000).toISOString();
+    dom.controller.informationRead(later);
+    assert.equal(stamp().dateTime, later);
+    assert.notEqual(stamp().textContent, original);
+    assert.match(stamp().textContent, /NZ time$/);
+    for (const ignored of [model.generatedAt, '2000-01-01T00:00:00.000Z', 'not a time', 5, null]) {
+        dom.controller.informationRead(ignored);
+        assert.equal(stamp().dateTime, later);
+    }
+    dom.controller.navigate('services');
+    assert.equal(stamp().dateTime, later);
+    dom.controller.destroy();
+});

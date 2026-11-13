@@ -1643,6 +1643,18 @@ describe('ready Cyber composition', () => {
         h.window.dispatch('pagehide');
         expect(h.elements.dashboardApp.children).toHaveLength(0);
     });
+    test('a successful saved-assessment read moves the footer information time forward', async () => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:47:00.000Z'));
+        const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+        await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(before).not.toBe('2026-09-08T23:47:00.000Z');
+        expect(stamp().dateTime).toBe('2026-09-08T23:47:00.000Z');
+        expect(stamp().textContent).toContain('NZ time');
+        h.window.dispatch('pagehide');
+    });
     test('Overview first-use action reaches the production questionnaire as a new-assessment start', async () => {
         const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
         const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
@@ -2620,6 +2632,18 @@ describe('concurrent mounted authority refresh', () => {
         expect(h.requests[final].url).toBe('/api/dashboard/session'); await h.reply(final, 200, state());
         expect(h.status).toBe('ready');
     }
+    test('a confirmed return-to-tab refresh moves the footer information time forward', async () => {
+        const h = await mounted(false);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:50:00.000Z'));
+        const first = await beginRefresh(h, false);
+        await h.reply(first + 2, 200, payload(h, 2)); await h.reply(first + 1, 200, payload(h, 1));
+        expect(stamp().dateTime).toBe(before);
+        await h.reply(first + 3, 200, state());
+        expect(h.status).toBe('ready');
+        expect(stamp().dateTime).toBe('2026-09-08T23:50:00.000Z');
+    });
     test.each([false, true])('parallel middle GETs accept reverse completion with Cyber=%s and retain the final witness fence', async cyber => {
         const h = await mounted(cyber), main = h.elements.dashboardApp.querySelector('main');
         const first = await beginRefresh(h, cyber), middleCount = cyber ? 3 : 2;
