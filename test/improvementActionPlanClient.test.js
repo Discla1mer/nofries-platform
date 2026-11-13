@@ -286,12 +286,35 @@ test.each([408, 429])('an unexpected %i response after plan creation retains the
     } });
     await h.controller.ready;
     expect(await h.controller.generate()).toBe(false);
-    expect(h.root.textContent).toContain('outcome is unconfirmed');
+    expect(h.root.textContent).toContain(status === 429 ?
+        'Too many requests in a short time. Wait about a minute, then select Retry pending improvement command.' : 'outcome is unconfirmed');
     expect(await h.controller.requestLeave(jest.fn())).toBe(false);
     expect(await h.controller.generate()).toBe(false);
     expect(await h.controller.retry()).toBe(true);
     expect(attempts).toBe(2); expect(h.options.newId).not.toHaveBeenCalled();
     expect(h.state.plans.size).toBe(2); // The fixture's existing plan plus the single created plan.
+});
+
+test.each([
+    [{ error: 'Too many requests. Please try again later.', retryAfterSeconds: 95 }, 'Wait about 2 minutes, then select Refresh improvement plan.'],
+    [{ error: 'Too many requests. Please try again later.', retryAfterSeconds: 20 }, 'Wait about 20 seconds, then select Refresh improvement plan.'],
+    [{ code: 'intermediary_error' }, 'Wait about a minute, then select Refresh improvement plan.']
+])('a rate-limited read says how long to wait in plain words', async (value, wait) => {
+    const h = harness(); await h.controller.ready;
+    h.request.mockResolvedValueOnce({ status: 429, value });
+    expect(await h.controller.refresh()).toBe(false);
+    expect(h.root.textContent).toContain('Too many requests in a short time. ' + wait);
+    expect(h.root.textContent).not.toContain('Improvement Plan is unavailable');
+    h.request.mockClear();
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).not.toContain('Too many requests');
+});
+
+test('a rate-limited editor read keeps the plan visible and says how long to wait', async () => {
+    const h = harness({ editorRespond: () => ({ status: 429, value: { error: 'Too many requests. Please try again later.', retryAfterSeconds: 30 } }) });
+    expect(await h.controller.ready).toBe(false);
+    expect(h.root.textContent).toContain('Improvement action plan');
+    expect(h.root.textContent).toContain('Too many requests in a short time, so action options are not loaded. Wait about 30 seconds');
 });
 
 test.each([401, 403])('denial %i clears presentation and prevents further reads/writes in the old mount', async status => {

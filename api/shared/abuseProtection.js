@@ -1,9 +1,18 @@
+const { createHash } = require('node:crypto');
+
 const rateLimitBuckets = new Map();
 const MAX_RATE_LIMIT_BUCKETS = 6000;
 
 const defaultRateLimits = {
     apiRead: { windowMs: 15 * 60 * 1000, max: 240 },
     apiWrite: { windowMs: 10 * 60 * 1000, max: 90 },
+    // Signed-in dashboard traffic is counted per browser session, so people
+    // sharing an office address do not use up each other's allowance. The
+    // per-address ceiling still bounds anyone who rotates cookie values.
+    dashboardSessionRead: { windowMs: 15 * 60 * 1000, max: 600 },
+    dashboardSessionWrite: { windowMs: 10 * 60 * 1000, max: 120 },
+    dashboardAddressRead: { windowMs: 15 * 60 * 1000, max: 1800 },
+    dashboardAddressWrite: { windowMs: 10 * 60 * 1000, max: 360 },
     apiUpload: { windowMs: 15 * 60 * 1000, max: 12 },
     apiBilling: { windowMs: 10 * 60 * 1000, max: 12 },
     apiWebhook: { windowMs: 10 * 60 * 1000, max: 120 },
@@ -79,6 +88,9 @@ function checkRateLimit(bucketName, clientKey, env = process.env) {
     }
 
     recent.push(now);
+    // Re-insert so eviction under the bucket cap drops the least recently
+    // used keys first, never an address that is still sending requests.
+    rateLimitBuckets.delete(bucketKey);
     rateLimitBuckets.set(bucketKey, recent);
     cleanupBuckets(now);
 
@@ -87,6 +99,27 @@ function checkRateLimit(bucketName, clientKey, env = process.env) {
         limit: limit.max,
         remaining: Math.max(0, limit.max - recent.length)
     };
+}
+
+const DASHBOARD_SESSION_COOKIES = ['__Host-nofries-auth', '__Host-nofries-customer', '__Host-nofries-external-customer'];
+
+// Returns an opaque per-session key for dashboard requests that carry a
+// session cookie, or null. The key is a digest so no cookie value is retained.
+// It only selects a rate-limit bucket; the dashboard still authenticates.
+function getDashboardSessionKey(headers) {
+    const header = getHeader(headers, 'cookie');
+    const raw = Array.isArray(header) ? header.join(';') : String(header || '');
+    if (!raw || raw.length > 16384) return null;
+    const values = [];
+    raw.split(';').forEach((part) => {
+        const index = part.indexOf('=');
+        if (index < 0) return;
+        const name = part.slice(0, index).trim();
+        const value = part.slice(index + 1).trim();
+        if (DASHBOARD_SESSION_COOKIES.includes(name) && value.length >= 16 && value.length <= 4096) values.push(name + '=' + value);
+    });
+    if (!values.length) return null;
+    return createHash('sha256').update(values.sort().join(';')).digest('hex').slice(0, 32);
 }
 
 function rateLimitHeaders(result) {
@@ -158,6 +191,7 @@ function resetAbuseProtectionForTests() {
 
 module.exports = {
     checkRateLimit,
+    getDashboardSessionKey,
     getClientKeyFromHeaders,
     isBlockedUserAgent,
     rateLimitHeaders,

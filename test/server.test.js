@@ -2476,6 +2476,39 @@ describe('configured dashboard actual HTTP transport', () => {
         expect(result.text).not.toContain('PRIVATE_SYNTHETIC_SQL_UNAVAILABLE');
     });
 
+    test('signed-in dashboard reads are counted per session under a shared address ceiling', async () => {
+        const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_READ_MAX: '1', NOFRIES_RATE_DASHBOARD_SESSION_READ_MAX: '2',
+            NOFRIES_RATE_DASHBOARD_ADDRESS_READ_MAX: '6' } });
+        const read = cookie => h.send('get', '/api/dashboard/session').set('Cookie', cookie);
+        const first = '__Host-nofries-auth=' + 'a'.repeat(43), second = '__Host-nofries-customer=' + 'b'.repeat(43);
+        // Two people behind one office address each get their own allowance.
+        for (const cookie of [first, first, second, second]) expect((await read(cookie)).status).not.toBe(429);
+        const limited = await read(first);
+        expect(limited.status).toBe(429);
+        expect(limited.body).toEqual({ error: 'Too many requests. Please try again later.', retryAfterSeconds: expect.any(Number) });
+        // Rotating cookie values cannot pass the per-address ceiling.
+        expect((await read('__Host-nofries-auth=' + 'c'.repeat(43))).status).not.toBe(429);
+        expect((await read('__Host-nofries-auth=' + 'd'.repeat(43))).status).toBe(429);
+        // Requests without a session cookie keep the unchanged per-address limit.
+        expect((await h.send('get', '/api/dashboard/session')).status).not.toBe(429);
+        expect((await h.send('get', '/api/dashboard/session')).status).toBe(429);
+        expect((await h.send('get', '/api/dashboard/session').set('Cookie', 'other=' + 'e'.repeat(43))).status).toBe(429);
+    });
+
+    test('signed-in dashboard writes are counted per session and other API writes stay per address', async () => {
+        const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_WRITE_MAX: '1', NOFRIES_RATE_DASHBOARD_SESSION_WRITE_MAX: '1',
+            NOFRIES_RATE_DASHBOARD_ADDRESS_WRITE_MAX: '3' } });
+        const write = (target, cookie) => h.send('post', target).set('Cookie', cookie).send({});
+        const cookie = '__Host-nofries-auth=' + 'f'.repeat(43);
+        expect((await write('/api/dashboard/logout', cookie)).status).not.toBe(429);
+        expect((await write('/api/dashboard/logout', cookie)).status).toBe(429);
+        expect((await write('/api/dashboard/logout', '__Host-nofries-auth=' + 'g'.repeat(43))).status).not.toBe(429);
+        // Only /api/dashboard routes use the session allowance.
+        const logout = () => h.send('post', '/api/auth/logout').set('Cookie', cookie).set('Sec-Fetch-Site', 'same-origin').type('form').send({});
+        expect((await logout()).status).not.toBe(429);
+        expect((await logout()).status).toBe(429);
+    });
+
     test('common API rate rejection occurs before raw parsing and all dashboard authority work', async () => {
         const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_WRITE_MAX: '1' } });
         const first = await h.send('post', '/api/dashboard/logout').send({});
@@ -2483,7 +2516,8 @@ describe('configured dashboard actual HTTP transport', () => {
         h.resetObservations();
         const second = await h.send('post', '/api/dashboard/logout').set('Content-Type', 'text/plain').send('{');
         expect(second.status).toBe(429);
-        expect(second.body).toEqual({ error: 'Too many requests. Please try again later.' });
+        expect(second.body).toEqual({ error: 'Too many requests. Please try again later.', retryAfterSeconds: expect.any(Number) });
+        expect(second.headers['retry-after']).toBe(String(second.body.retryAfterSeconds));
         expect(h.configuration.clock).not.toHaveBeenCalled();
         h.expectNoAuthorityWork();
     });
