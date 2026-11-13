@@ -13,11 +13,11 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const flush = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
 
 function mixed() {
-    return submittedWith(allResponses().map((row, index) => ({ ...row,
+    return submittedWithResponses(allResponses().map((row, index) => ({ ...row,
         optionId: index < 3 ? 'yes' : index < 10 ? 'partial' : index < 12 ? 'no' : index === 12 ? 'unknown' : 'not_applicable',
         rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null })));
 }
-function submittedWith(responses) {
+function submittedWithResponses(responses) {
     const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
     let version = null;
     for (const command of [createCommand('assessment-mixed', 'create-mixed', 'Synthetic office and cloud scope.'),
@@ -222,7 +222,7 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
 
 // A-019: under half resolved, Overview does not lead with the range.
 test('Overview leads with not enough answers when fewer than half are resolved, keeping the range as detail', async () => {
-    const record = submittedWith(allResponses().map((row, index) => ({ ...row, optionId: index < 1 ? 'yes' : 'unknown' })));
+    const record = submittedWithResponses(allResponses().map((row, index) => ({ ...row, optionId: index < 1 ? 'yes' : 'unknown' })));
     const dom = setup({ records: [record] }); await flush();
     const primary = dom.root.querySelector('.picture-primary');
     assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
