@@ -85,6 +85,10 @@
             example: 'Guest Wi-Fi is separate, but everyday user devices can freely reach backup and administration systems. This matches Partial.'
         }
     };
+    // A small-business scope example. "Use this example" copies it into the box.
+    const SCOPE_EXAMPLE = ['People: the owner and two part-time staff.', 'Devices: the till, the office laptop and the owner\'s phone.',
+        'Places and online services: the café, email and the online booking system.', 'Not included: staff personal phones.'];
+    const SCOPE_DESCRIBED_BY = 'ncsc-scope-note ncsc-scope-help';
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
     function equal(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
     function profileMatches(value, expected) {
@@ -870,18 +874,32 @@
         }
         function renderCreate() {
             const renderedEpoch = epoch;
-            content.append(node('p', '', 'Scope can\'t be changed after you start, so check it carefully. Describe what this assessment covers. Use separate lines for people, devices, sites and services, and say what is excluded. This is your declaration, not verified inventory. To correct a mistake later, start a new assessment with the corrected scope.'));
+            content.append(node('p', '', 'Describe what this assessment covers: the people, devices, places and online services. Put each on its own line, and say what you are leaving out.'));
+            content.append(node('p', 'dashboard-muted', 'For example, for a small café:'));
             const scopeExamples = node('ul', 'ncsc-scope-examples');
-            ['People: all staff, including contractors.', 'Devices: company laptops and phones.',
-                'Sites and services: Auckland office, remote work and Microsoft 365.',
-                'Excluded: personal devices not used for work.'].forEach(function (text) { scopeExamples.append(node('li', '', text)); });
+            SCOPE_EXAMPLE.forEach(function (text) { scopeExamples.append(node('li', '', text)); });
             content.append(scopeExamples);
+            const useExample = button('Use this example', function () {
+                if (busy || pending) return;
+                // Fill an empty box; otherwise add the example below what is already written.
+                const text = SCOPE_EXAMPLE.join('\n'), current = input.value.replace(/\s+$/, '');
+                input.value = current ? current + '\n' + text : text; declaration = input.value; edited();
+                input.focus(); if (typeof input.setSelectionRange === 'function') input.setSelectionRange(input.value.length, input.value.length);
+            }, 'dashboard-button dashboard-button-secondary');
+            useExample.id = 'ncsc-scope-use-example'; useExample.setAttribute('aria-controls', 'ncsc-scope');
+            content.append(useExample);
             const label = node('label', '', 'Assessment scope'); label.setAttribute('for', 'ncsc-scope');
+            // Linked to the box so keyboard and screen reader users hear it when they reach the field.
+            const note = node('p', 'dashboard-muted', 'You can\'t edit the scope once the assessment starts. If it needs to change later, you can start a new assessment.'); note.id = 'ncsc-scope-note';
             const input = node('textarea', 'ncsc-textarea'); input.id = 'ncsc-scope'; input.value = declaration; input.rows = 5; input.readOnly = busy || !!pending;
-            input.setAttribute('aria-describedby', 'ncsc-scope-help'); input.required = true;
+            input.setAttribute('aria-describedby', SCOPE_DESCRIBED_BY); input.required = true;
             input.addEventListener('input', function () { if (live(renderedEpoch) && !busy && !pending) { declaration = input.value; edited(); } });
-            content.append(label, input, node('p', 'dashboard-muted', 'Describe the people, systems and locations covered, in up to 4,000 characters. For example: our Auckland office, staff laptops and Microsoft 365; excluding the warehouse systems.'));
-            content.children[content.children.length - 1].id = 'ncsc-scope-help';
+            input.addEventListener('keydown', function (event) {
+                if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || !live(renderedEpoch)) return;
+                event.preventDefault(); if (!start.disabled) createAssessment();
+            });
+            const help = node('p', 'dashboard-muted', 'Up to 4,000 characters. Press Ctrl+Enter, or Cmd+Enter on a Mac, to create the assessment.'); help.id = 'ncsc-scope-help';
+            content.append(label, note, input, help);
             const usage = allowanceNote(); if (usage) content.append(usage);
             controls = node('div', 'ncsc-actions');
             const start = button('Create assessment', createAssessment);
@@ -1382,8 +1400,8 @@
             if (view === 'create') {
                 const input = content.querySelector('textarea');
                 if (input) {
-                    if (errors.length) { input.setAttribute('aria-invalid', 'true'); errorBox.id = 'ncsc-scope-error'; input.setAttribute('aria-describedby', 'ncsc-scope-help ncsc-scope-error'); }
-                    else { input.removeAttribute('aria-invalid'); input.setAttribute('aria-describedby', 'ncsc-scope-help'); }
+                    if (errors.length) { input.setAttribute('aria-invalid', 'true'); errorBox.id = 'ncsc-scope-error'; input.setAttribute('aria-describedby', SCOPE_DESCRIBED_BY + ' ncsc-scope-error'); }
+                    else { input.removeAttribute('aria-invalid'); input.setAttribute('aria-describedby', SCOPE_DESCRIBED_BY); }
                 }
             }
             if (questionRegion && acknowledged) renderQuestion();
