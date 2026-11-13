@@ -103,7 +103,7 @@ test('freshness copy distinguishes the saved baseline from a live organisation c
     assert.match(dom.root.textContent, /Refresh reloads saved assessments/);
     assert.match(dom.root.textContent, /does not check whether answers still reflect the organisation today/);
     assert.doesNotMatch(dom.root.textContent, /Current substantiated coverage/);
-    assert.match(dom.root.querySelector('.picture-source').textContent, /Submitted .*NZ time/);
+    assert.match(dom.root.querySelector('.picture-source').textContent, /Answers submitted: .*NZ time/);
     assert.doesNotMatch(dom.root.querySelector('.picture-source').textContent, /revision|T\d\d:/);
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
     dom.controller.destroy();
@@ -115,8 +115,8 @@ test('the primary saved summary is concise and exact source details remain acces
     assert.equal(header.querySelector('h2').textContent, 'Cyber baseline');
     assert.equal(header.querySelector('.dashboard-eyebrow'), null);
     assert.equal(header.textContent.includes('Synthetic organisation A'), false);
-    assert.equal(dom.root.querySelector('.picture-source').textContent,
-        'Submitted ' + new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short',
+    assert.equal(dom.root.querySelector('.picture-source').querySelector('strong').textContent,
+        'Answers submitted: ' + new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short',
             timeZone: 'Pacific/Auckland' }).format(new Date(record.updatedAt)) + ' NZ time');
     const provenance = dom.root.querySelector('.ncsc-result-provenance');
     assert.equal(provenance.querySelector('summary').textContent, 'Source and calculation details');
@@ -270,7 +270,7 @@ test('legacy Board options cannot expose another presentation mode or navigation
     assert.equal(dom.root.querySelector('.picture-follow-up-filter').querySelectorAll('select').length, 1);
     assert.equal(dom.root.querySelector('label').textContent, 'Saved assessment');
     assert.deepEqual(dom.root.querySelectorAll('button').map(button => button.textContent),
-        ['Refresh', 'Copy summary', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
+        ['View baseline', 'Refresh', 'Copy summary', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
     assert.equal(opened, 0);
 });
 
@@ -1506,5 +1506,173 @@ test('a failed, invalid or unavailable Actions read leaves no card and the rest 
     let called = 0;
     const dom = setup({ options: { readActions: () => { called++; return Promise.resolve({ more: false, lists: [] }); } } }); await flush();
     assert.equal(called, 0); assert.equal(dom.root.querySelector('.picture-actions'), null);
+    dom.controller.destroy();
+});
+
+test('recent saved work exposes current drafts alongside immutable submitted baselines without scores for drafts', async () => {
+    const draft = clone(buildFixtures().tenants[0].assessments[0]);
+    draft.updatedAt = '2026-11-11T01:00:00.000Z';
+    const opened = [], dom = setup({ records: [mixed(), draft], options: { openCyber: id => opened.push(id) } });
+    await flush();
+    const activity = dom.root.querySelector('.picture-saved-work');
+    assert.match(activity.textContent, /Recent saved work/);
+    assert.match(activity.textContent, /not a complete change log/);
+    assert.equal(activity.querySelectorAll('li')[0].querySelector('strong').textContent, draft.scopePopulation.description);
+    assert.match(activity.textContent, /Saved work in progress/);
+    assert.match(activity.textContent, /Submitted baseline/);
+    click(dom, 'Continue updating'); assert.deepEqual(opened, [draft.assessmentId]);
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    assert.match(dom.root.querySelector('.picture-refresh-note').textContent, /Saved assessment data refreshed: .*NZ time/);
+    assert.match(dom.root.querySelector('.picture-source').textContent, /Source: self-reported assessment answers/);
+    const old = activity.querySelector('button'); dom.controller.destroy(); old.click();
+    assert.deepEqual(opened, [draft.assessmentId]);
+});
+
+test('return refresh adopts new saved work but preserves the selected baseline, server result and prior history', async () => {
+    const baseline = mixed(), draft = clone(buildFixtures().tenants[0].assessments[0]);
+    draft.updatedAt = '2026-11-11T01:00:00.000Z';
+    let records = [baseline], writes = 0;
+    const client = { list: async () => ({ assessments: clone(records), nextAfterAssessmentId: null }),
+        read: async id => ({ assessment: clone(records.find(row => row.assessmentId === id)) }),
+        save: () => writes++, submit: () => writes++ };
+    const dom = setup({ client, options: { openCyber() {} } }); await flush();
+    records = [draft, baseline]; await dom.controller.refreshSavedData();
+    assert.match(dom.root.querySelector('.picture-saved-work').textContent, /Continue updating/);
+    assert.equal(dom.root.querySelector('select').value, baseline.assessmentId);
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    assert.deepEqual(records[1], baseline); assert.equal(writes, 0);
+    dom.controller.destroy();
+});
+
+test('unchanged return refresh keeps the exact rendered view, open details and focus', async () => {
+    const dom = setup(); await flush();
+    const metrics = dom.root.querySelector('.picture-metrics'), disclosure = dom.root.querySelector('.picture-calculation');
+    disclosure.open = true; disclosure.querySelector('summary').focus();
+    const focused = dom.document.activeElement;
+    await dom.controller.refreshSavedData();
+    assert.equal(dom.root.querySelector('.picture-metrics'), metrics);
+    assert.equal(dom.root.querySelector('.picture-calculation'), disclosure);
+    assert.equal(disclosure.open, true); assert.equal(dom.document.activeElement, focused);
+    dom.controller.destroy();
+});
+
+test('refresh reads a changed draft without creating a result or submitting', async () => {
+    let draft = clone(buildFixtures().tenants[0].assessments[0]);
+    const client = { list: async () => ({ assessments: [clone(draft)], nextAfterAssessmentId: null }),
+        read: async () => ({ assessment: clone(draft) }) };
+    const dom = setup({ client }); await flush();
+    draft = clone(buildFixtures().tenants[0].assessments[1]); draft.assessmentId = 'assessment-a';
+    await dom.controller.refreshSavedData();
+    assert.match(dom.root.querySelector('.picture-resume').textContent, /14 \/ 14 responses saved/);
+    assert.equal(dom.root.querySelector('.picture-metrics'), null);
+    dom.controller.destroy();
+});
+
+for (const statusCode of [503, 403]) test(`failed return refresh (${statusCode}) hides stale activity and results`, async () => {
+    let fail = false;
+    const record = mixed(), client = { list: async () => {
+        if (fail) throw { statusCode }; return { assessments: [record], nextAfterAssessmentId: null };
+    }, read: async () => ({ assessment: record }) };
+    const dom = setup({ client }); await flush(); fail = true; await dom.controller.refreshSavedData();
+    assert.equal(dom.root.querySelector('.picture-saved-work'), null);
+    assert.equal(dom.root.querySelector('.picture-metrics'), null);
+    if (statusCode === 403) { assert.equal(dom.root.querySelector('select'), null); assert.equal(dom.root.querySelector('.picture-refresh-note'), null); }
+    else assert.match(dom.root.querySelector('.picture-refresh-note').textContent, /^Last successful saved assessment refresh:/);
+    assert.equal(dom.root.querySelector('.picture-source'), null);
+    if (statusCode !== 403) { assert.match(dom.root.textContent, /could not be confirmed/); fail = false; click(dom, 'Retry'); await flush(); assert.ok(dom.root.querySelector('.picture-metrics')); }
+    dom.controller.destroy();
+});
+
+test('return refresh coalesces and a destroyed view cannot be restored by a late read', async () => {
+    let resolve, calls = 0;
+    const record = mixed(), client = { list: async () => {
+        calls++; if (calls === 1) return { assessments: [record], nextAfterAssessmentId: null };
+        return new Promise(done => { resolve = done; });
+    }, read: async () => ({ assessment: record }) };
+    const dom = setup({ client }); await flush();
+    const first = dom.controller.refreshSavedData(); await dom.controller.refreshSavedData();
+    assert.equal(dom.root.querySelector('.picture-refresh-note').textContent, 'Checking for saved assessment changes…');
+    assert.equal(calls, 2); dom.controller.destroy();
+    resolve({ assessments: [record], nextAfterAssessmentId: null }); await first;
+    assert.equal(dom.root.children.length, 0);
+});
+
+test('return refresh rechecks the loaded pagination horizon rather than claiming the first page is complete', async () => {
+    const dom = setup({ records: buildFixtures().tenants[0].assessments }); await flush();
+    click(dom, 'Load more'); await flush();
+    const before = dom.root.querySelector('.picture-toolbar').querySelectorAll('option').map(row => row.value);
+    await dom.controller.refreshSavedData();
+    assert.deepEqual(dom.root.querySelector('.picture-toolbar').querySelectorAll('option').map(row => row.value), before);
+    assert.equal(before.length, 3); dom.controller.destroy();
+});
+
+test('successful return refresh recovers an empty dashboard after a failed check', async () => {
+    let fail = false;
+    const dom = setup({ client: { list: async () => {
+        if (fail) throw { statusCode: 503 }; return { assessments: [], nextAfterAssessmentId: null };
+    }, read: async () => { throw new Error('No read expected'); } } });
+    await flush(); fail = true; await dom.controller.refreshSavedData();
+    assert.match(dom.root.textContent, /could not be confirmed/);
+    fail = false; await dom.controller.refreshSavedData();
+    assert.doesNotMatch(dom.root.textContent, /could not be confirmed/);
+    assert.match(dom.root.textContent, /Build your first baseline/);
+    assert.equal(dom.root.querySelectorAll('button').some(button => button.textContent === 'Retry'), false);
+    dom.controller.destroy();
+});
+
+test('return refresh keeps focus on the same saved-work record when action labels repeat', async () => {
+    const records = clone(buildFixtures().tenants[0].assessments.slice(0, 2));
+    const dom = setup({ client: { list: async () => ({ assessments: clone(records), nextAfterAssessmentId: null }),
+        read: async id => ({ assessment: clone(records.find(row => row.assessmentId === id)) }) }, options: { openCyber() {} } });
+    await flush();
+    const actions = dom.root.querySelector('.picture-saved-work').querySelectorAll('button');
+    assert.equal(actions[0].textContent, actions[1].textContent);
+    const target = actions[1].dataset.savedWorkId; actions[1].focus();
+    records[0].updatedAt = '2026-11-11T01:00:00.000Z';
+    await dom.controller.refreshSavedData();
+    assert.equal(dom.document.activeElement.dataset.savedWorkId, target);
+    assert.ok(dom.root.contains(dom.document.activeElement)); dom.controller.destroy();
+});
+
+test('answer date and self-report source stay prominent and distinct from a successful refresh time', async () => {
+    const record = mixed(), dom = setup({ records: [record] }); await flush();
+    const source = dom.root.querySelector('.picture-source');
+    assert.match(source.textContent, /^Answers submitted: .*NZ time\s*Source: self-reported assessment answers\.$/);
+    assert.match(source.querySelector('strong').textContent, /2026/);
+    assert.ok(dom.root.children.indexOf(source) < dom.root.children.indexOf(dom.root.querySelector('.picture-saved-work')));
+    const savedText = source.textContent;
+    await dom.controller.refreshSavedData();
+    assert.equal(dom.root.querySelector('.picture-source').textContent, savedText);
+    const refresh = dom.root.querySelector('.picture-refresh-note').textContent;
+    assert.match(refresh, /^Saved assessment data refreshed: .*NZ time\./);
+    assert.match(refresh, /does not re-verify answers or monitor connected systems/);
+    dom.controller.destroy();
+});
+
+test('draft answers show a saved date rather than a submission or a verified source', async () => {
+    const dom = setup({ records: [buildFixtures().tenants[0].assessments[0]] }); await flush();
+    assert.match(dom.root.querySelector('.picture-source').textContent, /^Answers saved: .*NZ time\s*Source: self-reported assessment answers\.$/);
+    assert.doesNotMatch(dom.root.querySelector('.picture-source').textContent, /submitted|verified/i);
+    dom.controller.destroy();
+});
+
+
+test('return refresh preserves an unchanged Plan this attempt and retires it when saved work changes', async () => {
+    const baseline = mixed(), draft = clone(buildFixtures().tenants[0].assessments[0]);
+    let records = [baseline], finish, stillCurrent;
+    const client = { list: async () => ({ assessments: clone(records), nextAfterAssessmentId: null }),
+        read: async id => ({ assessment: clone(records.find(row => row.assessmentId === id)) }) };
+    const dom = setup({ client, options: { planGap: (_selection, _itemId, current) => {
+        stillCurrent = current; return new Promise(resolve => { finish = resolve; });
+    } } });
+    await flush(); gapPlanButtons(dom)[0].click(); await flush();
+    const original = gapPlanButtons(dom)[0];
+    await dom.controller.refreshSavedData();
+    assert.equal(stillCurrent(), true); assert.equal(gapPlanButtons(dom)[0], original);
+    assert.equal(original.disabled, true);
+    records = [baseline, draft]; await dom.controller.refreshSavedData();
+    assert.equal(stillCurrent(), false); assert.notEqual(gapPlanButtons(dom)[0], original);
+    finish(false); await flush();
+    assert.doesNotMatch(dom.root.textContent, /Couldn't open the plan|Opening plan/);
     dom.controller.destroy();
 });

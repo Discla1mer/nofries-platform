@@ -105,7 +105,7 @@
         let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null, allowance = null;
         let selected = initialAssessmentId || '', detail = null, loading = false, message = '', denied = false;
         let loaded = false, retry = null, explanationController = null;
-        let trend = null;
+        let trend = null, pagesLoaded = 0, checkedAt = null, refreshing = false;
         let gapPlan = null;
         function live(token) { return !disposed && (token === undefined || token === epoch); }
         function node(tag, cls, text) {
@@ -148,7 +148,7 @@
             const active = doc.activeElement;
             if (active === root.querySelector('select')) return { key: 'select', element: active };
             const control = Array.from(root.querySelectorAll('button')).find(value => value === active);
-            return control ? { key: control.textContent, element: control } : null;
+            return control ? { key: control.textContent, savedWorkId: control.dataset.savedWorkId || null, element: control } : null;
         }
         // True when the user moved focus away from `element` (to anything but the page body) during a read.
         function focusMoved(element) {
@@ -159,7 +159,8 @@
             // Do not steal focus if the user moved it elsewhere during the read.
             if (focusMoved(saved.element)) return;
             const control = saved.key === 'select' ? root.querySelector('select') :
-                Array.from(root.querySelectorAll('button')).find(value => value.textContent === saved.key) || root.querySelector('select');
+                Array.from(root.querySelectorAll('button')).find(value => value.textContent === saved.key &&
+                    (!saved.savedWorkId || value.dataset.savedWorkId === saved.savedWorkId)) || root.querySelector('select');
             if (control && !control.disabled) control.focus();
         }
         function clearExplanation() {
@@ -181,6 +182,39 @@
                 denied = true; rows = []; selected = ''; after = null; retry = null;
                 message = 'This organisation picture is unavailable. Reopen your authenticated dashboard.';
             } else message = 'The saved assessment could not be confirmed. Retry to load a fresh picture.';
+        }
+        function freshness() {
+            const note = root.querySelector('.picture-refresh-note');
+            if (note) note.textContent = refreshing ? 'Checking for saved assessment changes…' :
+                (checkedAt ? (message ? 'Last successful saved assessment refresh: ' : 'Saved assessment data refreshed: ') + displayDate(checkedAt) + '. ' : '') +
+                'Refresh retrieves saved assessment data; it does not re-verify answers or monitor connected systems.';
+        }
+        function savedWork() {
+            const section = node('section', 'picture-saved-work picture-empty');
+            section.append(node('h3', '', 'Recent saved work'), node('p', 'dashboard-muted',
+                'Latest save for each loaded assessment, newest first. This is not a complete change log.' +
+                (after !== null ? ' More assessments are available below.' : '')));
+            const list = node('ol', 'picture-trend-history'); list.setAttribute('role', 'list');
+            rows.slice().sort(newestFirst).slice(0, 3).forEach(row => {
+                const item = node('li', 'picture-resume-heading'), content = node('div');
+                const title = row.scopePopulation ? row.scopePopulation.description : 'Saved assessment';
+                content.append(node('strong', '', title), node('p', 'dashboard-muted',
+                    (row.status === 'submitted' ? 'Submitted baseline · ' : 'Saved work in progress · ') + displayDate(row.updatedAt)));
+                item.append(content);
+                const token = epoch;
+                const action = row.status === 'submitted' ? button('View baseline', () => {
+                    if (live(token) && !loading && root.contains(action)) read(row.assessmentId, 'user');
+                }) : typeof options.openCyber === 'function' ? button('Continue updating', () => {
+                    if (live(token) && !loading && root.contains(action)) options.openCyber(row.assessmentId);
+                }) : null;
+                if (action) {
+                    action.classList.add('dashboard-button-secondary'); action.dataset.savedWorkId = row.assessmentId;
+                    action.setAttribute('aria-label', action.textContent + ': ' + title);
+                    item.append(action);
+                }
+                list.append(item);
+            });
+            section.append(list); root.append(section);
         }
         function sourceDetails() {
             const provenance = node('details', 'ncsc-result-provenance');
@@ -269,6 +303,17 @@
             const status = node('p', 'picture-status', message || (loading ? 'Loading saved assessment…' : ''));
             status.setAttribute('role', 'status'); status.hidden = !message && !loading; root.append(status);
             if (denied) return;
+            if (detail) {
+                const facts = node('p', 'picture-source');
+                facts.append(node('strong', '', (detail.status === 'submitted' ? 'Answers submitted: ' : 'Answers saved: ') +
+                    displayDate(detail.updatedAt)), node('br'), node('span', '', 'Source: self-reported assessment answers.'));
+                root.append(facts);
+            }
+            if (checkedAt || !message) {
+                const note = node('p', 'picture-refresh-note dashboard-muted'); note.setAttribute('role', 'status');
+                root.append(note); freshness();
+            }
+            if (!loading && !message && rows.length) savedWork();
             if (allowance) {
                 // Plan usage in plain English, so the limit is known before starting work.
                 const exhausted = allowance.used >= allowance.limit;
@@ -348,9 +393,6 @@
             }
             if (message && !loading) root.append(button('Retry', () => { if (retry) retry(); }));
             if (!detail) return;
-            const facts = node('p', 'picture-source', (detail.status === 'submitted' ? 'Submitted ' : 'Saved ') +
-                displayDate(detail.updatedAt));
-            root.append(facts);
             if (detail.status !== 'submitted') {
                 root.append(sourceDetails()); return;
             }
@@ -778,7 +820,7 @@
         async function load(append) {
             if (!live() || denied || loading) return;
             const savedFocus = captureFocus();
-            abort(); const token = ++epoch; loading = true; message = ''; detail = null; retry = null; render();
+            abort(); refreshing = false; const token = ++epoch; loading = true; message = ''; detail = null; retry = null; render();
             try {
                 const response = await call('list', { limit: 50, afterAssessmentId: append ? after : null }, token);
                 if (!response) return;
@@ -787,7 +829,8 @@
                 const combined = new Map((append ? rows : []).map(row => [row.assessmentId, row]));
                 response.assessments.forEach(row => combined.set(row.assessmentId, copy(row)));
                 rows = Array.from(combined.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId));
-                after = response.nextAfterAssessmentId; loaded = true;
+                after = response.nextAfterAssessmentId; loaded = true; pagesLoaded = append ? pagesLoaded + 1 : 1;
+                if (!selected && !rows.length) checkedAt = new Date().toISOString();
                 allowance = response.submissionAllowance ? copy(response.submissionAllowance) : null;
                 // Keep a carried or manual selection across refresh. Otherwise prefer
                 // the latest submitted record on this page, then the latest unfinished one.
@@ -807,24 +850,74 @@
         }
         async function read(assessmentId, source) {
             if (!live() || denied || !rows.some(row => row.assessmentId === assessmentId) && assessmentId !== initialAssessmentId && assessmentId !== selected) return;
-            abort(); const token = ++epoch; const savedFocus = captureFocus(); selected = assessmentId; detail = null; message = ''; retry = null; loading = true; render();
+            abort(); refreshing = false; const token = ++epoch; const savedFocus = captureFocus(); selected = assessmentId; detail = null; message = ''; retry = null; loading = true; render();
             try {
                 const response = await call('read', assessmentId, token); if (!response) return;
                 const value = response.assessment;
                 if (!value || value.assessmentId !== assessmentId || value.moduleId !== metadata.moduleId ||
                     !sameProfile(value.profileRef, metadata.profileRef)) throw new Error('picture_response_invalid');
-                detail = copy(value);
+                detail = copy(value); checkedAt = new Date().toISOString();
                 // A selection carried across authorised views may be outside the
                 // first page. Fetch it again, never reuse cached scores or assume
                 // a saved identifier grants access to the record.
-                if (!rows.some(row => row.assessmentId === assessmentId)) rows.push({ assessmentId: value.assessmentId,
+                rows = rows.filter(row => row.assessmentId !== assessmentId);
+                rows.push({ assessmentId: value.assessmentId,
                     moduleId: value.moduleId, profileRef: copy(value.profileRef), status: value.status, updatedAt: value.updatedAt,
                     progress: value.progress ? copy(value.progress) : undefined, scopePopulation: copy(value.scopePopulation) });
+                rows.sort(newestFirst);
                 if (typeof options.onSelection === 'function') options.onSelection(value.assessmentId, source);
             } catch (error) { if (live(token)) failure(error, () => read(assessmentId)); }
             finally { if (live(token)) { loading = false; render(); restoreFocus(savedFocus); } }
         }
-        const controller = { requestLeave(commit) {
+        // Called only after the host's existing return-to-tab authority checks.
+        // All reads still use the current authorised client. Keep an unchanged
+        // view mounted so open disclosures, comparisons and keyboard focus survive.
+        async function refreshSavedData() {
+            if (!live() || denied || loading || refreshing) return;
+            const token = epoch, selection = selected, savedFocus = captureFocus();
+            refreshing = true; freshness();
+            try {
+                let cursor = null, response, freshRows = [];
+                for (let page = 0; page < Math.max(1, pagesLoaded); page++) {
+                    response = await call('list', { limit: 50, afterAssessmentId: cursor }, token);
+                    if (!live(token) || !response) return;
+                    if (!Array.isArray(response.assessments) || response.assessments.some(row =>
+                        row.moduleId !== metadata.moduleId || !sameProfile(row.profileRef, metadata.profileRef))) throw new Error('picture_response_invalid');
+                    freshRows.push(...copy(response.assessments)); cursor = response.nextAfterAssessmentId;
+                    if (cursor === null) break;
+                }
+                const nextSelected = selection || preferredAssessmentId(freshRows);
+                let value = null;
+                if (nextSelected) {
+                    const result = await call('read', nextSelected, token);
+                    if (!live(token) || !result) return;
+                    value = result.assessment;
+                    if (!value || value.assessmentId !== nextSelected || value.moduleId !== metadata.moduleId ||
+                        !sameProfile(value.profileRef, metadata.profileRef)) throw new Error('picture_response_invalid');
+                }
+                if (!live(token)) return;
+                // Compare only displayed list fields; full detail includes saved
+                // revisions and evaluator bindings. No client scoring is performed.
+                const visible = list => list.map(row => [row.assessmentId, row.status, row.updatedAt, row.scopePopulation, row.progress]).sort((a, b) => a[0].localeCompare(b[0]));
+                if (value) {
+                    freshRows = freshRows.filter(row => row.assessmentId !== value.assessmentId);
+                    freshRows.push(value);
+                }
+                const nextAllowance = response.submissionAllowance || null;
+                const changed = !!message || !loaded || JSON.stringify([visible(rows), detail, after, allowance]) !==
+                    JSON.stringify([visible(freshRows), value, cursor, nextAllowance]);
+                checkedAt = new Date().toISOString(); refreshing = false;
+                if (!changed) { freshness(); return; }
+                abort(); epoch++; rows = freshRows.sort(newestFirst); detail = copy(value); selected = nextSelected;
+                after = cursor; allowance = copy(nextAllowance); loaded = true; message = ''; retry = null;
+                render(); restoreFocus(savedFocus);
+            } catch (error) {
+                if (!live(token)) return;
+                abort(); epoch++; refreshing = false;
+                failure(error, () => load(false)); render(); restoreFocus(savedFocus);
+            } finally { if (live(token)) { refreshing = false; freshness(); } }
+        }
+        const controller = { refreshSavedData, requestLeave(commit) {
             if (!live()) return Promise.resolve(false);
             if (typeof commit === 'function') commit(); return Promise.resolve(true);
         }, destroy() {

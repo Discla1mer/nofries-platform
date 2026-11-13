@@ -165,8 +165,8 @@ async function prepare(page, view) {
         await activate(page, page.locator('.picture-follow-up > details > summary').first());
         await activate(page, page.locator('.picture-follow-up article details > summary').first());
     } else if (view === 'overview-draft') {
-        await page.locator('.picture-empty').waitFor();
-        assert.match(await page.locator('.picture-empty').textContent(), /Saved progress is not a score/);
+        await page.locator('.picture-resume').waitFor();
+        assert.match(await page.locator('.picture-resume').textContent(), /Saved progress is not a score/);
         assert.equal(await page.locator('.picture-metrics').count(), 0);
     } else if (view === 'questionnaire') {
         const index = page.getByLabel('Question', { exact: true }); await index.waitFor();
