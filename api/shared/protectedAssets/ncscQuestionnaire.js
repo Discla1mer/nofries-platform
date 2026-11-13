@@ -1069,7 +1069,10 @@
             function metric(title, value, explanation) {
                 const card = node('section', 'ncsc-result-metric'); card.append(node('h3', '', title), node('p', 'ncsc-result-value', value), node('p', '', explanation)); metrics.append(card);
             }
-            metric('Reported implementation', results.attainment, 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
+            // Describe only what is shown: a range has a lower and higher figure, a single figure does not.
+            metric('Reported implementation', results.attainment, results.lowerCreditUnits === results.upperCreditUnits
+                ? 'This is what you reported as in place. Every answer is Yes, Partial or No, so there is one figure.'
+                : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
             panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Marked not applicable, to confirm: ' + results.pending + '.'));

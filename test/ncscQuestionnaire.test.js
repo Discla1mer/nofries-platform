@@ -1331,6 +1331,9 @@ describe('submitted assessment results', () => {
         const metrics = panel.querySelectorAll('.ncsc-result-metric');
         expect(metrics.map(card => card.querySelector('h3').textContent)).toEqual(['Reported implementation', 'Answers confirmed']);
         expect(metrics[0].querySelector('.ncsc-result-value').textContent).toBe('100.0%');
+        // One figure is shown, so the caption does not talk about a lower and a higher figure.
+        expect(metrics[0].textContent).toContain('Every answer is Yes, Partial or No, so there is one figure.');
+        expect(metrics[0].textContent).not.toMatch(/lower figure|higher figure/);
         // Internal calculation provenance and the always-empty evidence measure stay out of customer results.
         expect(panel.querySelector('.ncsc-result-provenance')).toBeNull();
         for (const hidden of ['Calculation inputs and versions', 'SHA-256', 'Evaluator', 'Score contract', 'Supporting evidence', 'Evidence: Not provided']) {
@@ -1354,6 +1357,8 @@ describe('submitted assessment results', () => {
         await h.execute(submitCommand()); const ui = await resumeUi(h);
         const panel = ui.root.querySelector('.ncsc-results');
         expect(panel.textContent).toContain('46.4%–60.7%');
+        const reported = panel.querySelectorAll('.ncsc-result-metric').find(card => card.querySelector('h3').textContent === 'Reported implementation');
+        expect(reported.textContent).toContain('The lower figure is what you reported as in place. The higher figure adds answers still to confirm');
         const resolved = panel.querySelectorAll('.ncsc-result-metric').find(card => card.querySelector('h3').textContent === 'Answers confirmed');
         expect(resolved.textContent).toContain('12 of 14'); expect(resolved.textContent).toContain('85.7%');
         const assessment = (await h.client.read('assessment-a')).assessment;
