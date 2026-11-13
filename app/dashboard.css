@@ -104,9 +104,15 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-first-use-step h3 { margin-bottom: .35rem; }
 .picture-first-use-step p { margin-bottom: 0; }
 .picture-first-use-number { display: grid; flex: 0 0 2.5rem; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--dashboard-navy); color: var(--dashboard-ink); font-weight: var(--dashboard-weight-emphasis); }
-.picture-first-use-action { display: block; width: min(100%, 23rem); margin: 0 auto; font-family: var(--font-serif, Georgia, serif) !important; font-size: 1.25rem !important; }
+.picture-first-use-action { display: block; width: min(100%, 23rem); margin: 1.25rem 0 0; font-family: var(--font-serif, Georgia, serif) !important; font-size: 1.25rem !important; }
 @media (min-width: 60.01rem) { .picture-first-use-step:not(:last-child)::after { content: '→'; position: absolute; right: -.8rem; top: 50%; z-index: 1; transform: translateY(-50%); padding: .1rem; background: var(--dashboard-surface); color: var(--dashboard-ink); } }
 @media (max-width: 60rem) { .picture-first-use-steps { grid-template-columns: 1fr; } }
+/* Keep the first-use action high on small phones. */
+@media (max-width: 30rem) {
+    .picture-first-use-eyebrow { letter-spacing: .06em; }
+    .nofries-dashboard .picture-first-use h2 { font-size: 1.75rem; }
+    .picture-first-use-action { font-size: 1.1rem !important; }
+}
 
 .picture-heading { padding: 1.25rem 0 .5rem; border-top: 1px solid var(--dashboard-line); }
 .picture-heading > :last-child { margin-bottom: 0; }
@@ -159,6 +165,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-trend-history li { margin: .4rem 0; }
 .organisation-picture > .dashboard-button { margin-top: 1rem; }
 .picture-status { color: var(--dashboard-muted); }
+.picture-status-quiet { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .picture-actions { background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 0 0 1.25rem; overflow-wrap: anywhere; }
 .picture-actions h3 { margin-top: 0; }
 .picture-actions h4 { margin: 1rem 0 .4rem; }
@@ -240,6 +247,9 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-questionnaire textarea, .ncsc-questionnaire select { color: var(--dashboard-ink, #17140f); background: var(--dashboard-surface, #f6f2ea); border: 1px solid var(--dashboard-control-border, #7d7262); border-radius: .4rem; padding: .75rem; }
 .ncsc-questionnaire textarea { display: block; width: 100%; resize: vertical; min-height: 8rem; line-height: 1.5; margin: .5rem 0; }
 .ncsc-questionnaire select { display: block; width: 100%; min-height: 3rem; margin: .5rem 0 1.5rem; }
+.ncsc-question-picker { display: flex; align-items: center; gap: .65rem; margin: .5rem 0 1.5rem; }
+.ncsc-questionnaire .ncsc-question-picker select { flex: 1 1 auto; min-width: 0; margin: 0; }
+.ncsc-question-picker .ncsc-question-go { flex: 0 0 auto; }
 .ncsc-questionnaire button:disabled { cursor: default; opacity: .55; }
 .improvement-action-form label { display: block; margin: .75rem 0; }
 .improvement-action-form input { display: block; width: 100%; max-width: 24rem; box-sizing: border-box; min-height: 2.75rem; margin-top: .5rem; padding: .5rem .75rem; }
@@ -298,6 +308,8 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-navigation-actions button { white-space: normal; }
 .ncsc-actions, .ncsc-question-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }
 .ncsc-question-navigation { justify-content: space-between; }
+.ncsc-navigation-more { display: contents; }
+.ncsc-navigation-more-toggle { display: none; }
 .ncsc-warning, .ncsc-errors, .ncsc-sealed { padding: 1.15rem; margin: 1rem 0; border: 1px solid #c29221; border-left: 4px solid var(--dashboard-yellow); border-radius: .7rem; background: #f2e4bc; }
 .ncsc-warning button { margin: .3rem .6rem .3rem 0; }
 .ncsc-errors { border-color: #a3352a; background: #f6ddd6; }
@@ -327,11 +339,18 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-leave-dialog .dashboard-text-button { border-color: var(--dashboard-control-border, #7d7262); }
 .ncsc-leave-dialog .dashboard-text-button:hover { background: var(--dashboard-navy, #f2e4bc); }
 @media (max-width: 30rem) {
-    .ncsc-question-navigation { align-items: stretch; }
-    .ncsc-question-navigation button { flex: 1 1 100%; text-align: center; }
-    .ncsc-question-navigation span { flex: 1 1 100%; text-align: center; }
-    .ncsc-navigation-actions { width: 100%; }
-    .ncsc-navigation-actions button { width: 100%; }
+    /* A compact bar that stays at the bottom of the screen while the question is in view. */
+    .ncsc-question-navigation { position: sticky; bottom: 0; z-index: 2; gap: .4rem; margin: 1rem 0 0; padding: .5rem 0; align-items: stretch;
+        background: var(--dashboard-paper, #fffdf8); border-top: 1px solid var(--dashboard-line, #d3c9b7); }
+    .ncsc-question-navigation .ncsc-navigation-summary { flex: 1 1 100%; text-align: center; }
+    .ncsc-navigation-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr auto; gap: .4rem; }
+    /* Outranks the rounded dashboard button padding so the labels fit without breaking words. */
+    .ncsc-question-navigation .ncsc-navigation-actions button { width: 100%; min-width: 0; padding: .6rem .5rem; text-align: center; }
+    .ncsc-navigation-more-toggle { display: block; }
+    .ncsc-navigation-more { display: grid; grid-column: 1 / -1; gap: .4rem; }
+    .ncsc-navigation-more.ncsc-navigation-collapsed { display: none; }
+    /* Keep a focused control clear of the sticky bar. */
+    .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-bottom: 9rem; }
     .ncsc-actions > button { width: 100%; text-align: center; }
     .ncsc-review-item .dashboard-text-button { width: 100%; text-align: center; }
     .ncsc-review-counts { flex-direction: column; }
@@ -410,6 +429,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-rail .dashboard-module-link { scroll-margin-block: 8px; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-rail .dashboard-module-link > span { min-width: 0; }
 }
+/* Wide ready layouts are full width: keep the organisations pill and the footer on the header's 1rem gutter. */
+@media screen and (min-width: 1220px) {
+    body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] #dashboardChooser { margin-inline-start: 1rem; }
+    body[data-page="operator-dashboard"][data-dashboard-state="ready"] :is(.dashboard-release-footer, .site-details) { width: auto; margin-inline: 1rem; }
+}
 @media screen and (min-width: 1600px) {
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] { --dashboard-workspace-gutter: 32px; }
 }
@@ -430,6 +454,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) { container: dashboard-mobile / inline-size; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .dashboard-main { padding-block-end: 1.5rem; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .ncsc-questionnaire :is(a, button, input, textarea, select, summary) { scroll-margin-block: 8px; }
+    /* The rule above is more specific than the narrow-screen clearance for the sticky
+       question bar, so restate that clearance here for the ready dashboard. */
+    @media (max-width: 30rem) {
+        body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-block-end: 9rem; }
+    }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .dashboard-mobile-nav .dashboard-task { scroll-margin-block: 8px; }
     /* Keep the familiar fixed bar for tall, normal-text overview/task layouts.
        A mounted questionnaire stays in flow: native focus placement changes with
@@ -501,6 +530,12 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-layout { border-top: 1px solid var(--dashboard-line, #d3c9b7); }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-release-footer { margin-top: 0; padding-block: 1.25rem; }
 
-.nofries-dashboard :is(.ncsc-question, .ncsc-sealed, .dashboard-main h1) { scroll-margin-top: 10rem; }
+/* Scroll and focus targets clear the sticky organisation bar (at most 9rem tall). */
+.nofries-dashboard :is(.ncsc-question, .ncsc-sealed, .ncsc-errors, .picture-top-gaps h3, .dashboard-main h1) { scroll-margin-top: 10rem; }
 
 .nofries-dashboard .dashboard-topbar { max-height: 9rem; overflow: auto; }
+/* Improvement Plan choices stay readable on 320px phones. */
+@media (max-width: 25rem) {
+    .nofries-dashboard .dashboard-improvement-workspace .picture-toolbar { padding: .6rem .5rem; }
+    .dashboard-improvement-workspace .picture-toolbar select { flex-basis: 100%; padding: .5rem .4rem; }
+}
