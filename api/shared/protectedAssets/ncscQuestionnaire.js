@@ -17,6 +17,13 @@
     // Browsers refuse keepalive requests whose bodies total more than 64 KiB.
     const KEEPALIVE_LIMIT = 60000;
     const AUTOSAVE_RESERVE = 27;
+    // An automatic save whose outcome is unconfirmed (HTTP 503 or a network
+    // failure) resends the identical command, with the same idempotency key
+    // and expected revision, after each delay. The server returns the stored
+    // result for a key it has already applied, so a resend never writes twice
+    // and never uses another revision. After the last delay the person gets
+    // the manual "Try the save again" panel as before.
+    const AUTOSAVE_RETRY_DELAYS_MS = [1000, 3000];
     const ANSWER_GUIDANCE = {
         yes: 'All parts of this statement are in place across your declared scope.',
         partial: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
@@ -389,6 +396,9 @@
         let flushQueued = false;
         const autosaveIdleMs = options.autosaveIdleMs === undefined ? AUTOSAVE_IDLE_MS : options.autosaveIdleMs;
         const autosaveEnabled = Number.isFinite(autosaveIdleMs) && autosaveIdleMs > 0;
+        const autosaveRetryDelays = Array.isArray(options.autosaveRetryDelaysMs) && options.autosaveRetryDelaysMs.length <= 5 &&
+            options.autosaveRetryDelaysMs.every(function (value) { return Number.isFinite(value) && value >= 0 && value <= 30000; })
+            ? options.autosaveRetryDelaysMs.slice() : AUTOSAVE_RETRY_DELAYS_MS;
         let restoringQuestion = false;
         const controller = { requestLeave: requestLeave, destroy: destroy, showQuestion: function (location) {
             if (!location || !live() || !acknowledged || view !== 'assessment' || reviewing || pending || leave ||
@@ -722,7 +732,7 @@
             // Replace "Saving…" with the real state when this save cannot go.
             if (!canAutosave(flush)) { updateStatus(); return; }
             flushQueued = false;
-            saveAll(false, keepalive).catch(function () {});
+            saveAll(false, keepalive, true).catch(function () {});
         }
         // The page may be discarded after either event, so the request is
         // sent with keepalive and the same cookies and headers as any save.
@@ -1513,7 +1523,7 @@
             if (batches.length > SAVE_CEILING - acknowledged.revision) throw new Error('save_capacity_exceeded');
             return batches;
         }
-        async function saveAll(drain, keepalive) {
+        async function saveAll(drain, keepalive, automatic) {
             if (!live() || !editable || !acknowledged || acknowledged.status === 'submitted' || busy || pending || conflict || !currentChecked) return false;
             const expected = epoch;
             do {
@@ -1525,7 +1535,7 @@
                     if (!live(expected) || pending || conflict) return false;
                     try {
                         const command = client.normaliseCommand({ assessmentId: selected, action: 'save', idempotencyKey: newId(), expectedRevision: acknowledged.revision, payload: { responses: batch.map(function (item) { return item.value; }) } });
-                        if (!await perform(command, batch, false, keepalive && client.commandByteLength(command) <= KEEPALIVE_LIMIT)) return false;
+                        if (!await perform(command, batch, false, keepalive && client.commandByteLength(command) <= KEEPALIVE_LIMIT, automatic === true)) return false;
                     } catch (error) { if (live(expected)) fixedFailure(error); return false; }
                 }
                 if (!live(expected)) return false;
@@ -1595,7 +1605,22 @@
                 await perform(command, []);
             } catch (error) { if (live(expected)) fixedFailure(error); }
         }
-        async function perform(command, captures, retry, keepalive) {
+        // Resend an unconfirmed automatic save unchanged. Only 503 outcomes are
+        // retried: every other status is a definite answer from the server.
+        async function sendWithAutomaticRetry(command, expected, operation, automatic) {
+            const delays = automatic && command.action === 'save' ? autosaveRetryDelays : [];
+            for (let attempt = 0; ; attempt += 1) {
+                try { return await call(command.action, command, expected, operation.keepalive); }
+                catch (error) {
+                    if (attempt >= delays.length || !error || error.statusCode !== 503 || error.code === 'ncsc_access_denied' ||
+                        !live(expected) || pending !== operation) throw error;
+                    statusText = 'Saving is taking longer than usual. Trying again automatically.'; updateStatus();
+                    await new Promise(function (resolve) { const timer = setTimeout(resolve, delays[attempt]); if (timer && typeof timer.unref === 'function') timer.unref(); });
+                    if (!live(expected) || pending !== operation) throw error;
+                }
+            }
+        }
+        async function perform(command, captures, retry, keepalive, automatic) {
             if (!live() || busy || pending && !retry) return false;
             const expected = epoch;
             if (!retry) pending = { command: command, captures: captures, uncertain: false, keepalive: keepalive === true };
@@ -1609,7 +1634,7 @@
             } else render();
             let failed = false;
             try {
-                const result = await call(command.action, command, expected, operation.keepalive);
+                const result = await sendWithAutomaticRetry(command, expected, operation, automatic === true && !retry);
                 if (!result || !live(expected) || pending !== operation) return false;
                 const detail = cleanDetail(result.assessment, command.assessmentId);
                 if (command.action === 'create') {
