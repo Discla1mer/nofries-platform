@@ -112,6 +112,9 @@
             const value = doc.createElement(tag); if (cls) value.className = cls;
             if (text !== undefined) value.textContent = String(text); return value;
         }
+        // One live region for the whole view, kept across repaints so screen
+        // readers hear both "Loading…" and the end of loading.
+        const liveStatus = node('p', 'picture-status'); liveStatus.setAttribute('role', 'status');
         function button(label, action) {
             const control = node('button', 'dashboard-button', label); control.type = 'button';
             control.addEventListener('click', () => { if (live() && !denied) action(); }); return control;
@@ -258,16 +261,21 @@
         function paint() {
             if (!live()) return;
             clearExplanation();
-            root.replaceChildren(); root.classList.add('organisation-picture');
+            Array.from(root.children).forEach(child => { if (child !== liveStatus) child.remove(); });
+            root.classList.add('organisation-picture');
+            if (liveStatus.parentElement !== root) root.append(liveStatus);
             const isEmpty = !loading && !rows.length && loaded && !message && !selected && after === null;
             if (!isEmpty) {
                 const header = node('header', 'picture-heading');
                 header.append(node('h2', '', 'Cyber baseline'),
                     node('p', 'dashboard-muted', 'A saved assessment of the selected scope, not a live check of connected systems.'));
-                root.append(header);
+                root.prepend(header);
             }
-            const status = node('p', 'picture-status', message || (loading ? 'Loading saved assessment…' : ''));
-            status.setAttribute('role', 'status'); status.hidden = !message && !loading; root.append(status);
+            // After loading, the status stays in place but only for screen readers.
+            const done = detail ? 'Saved assessment loaded.' : isEmpty ? 'No saved assessments yet.' : loaded ? 'Saved assessments loaded.' : '';
+            const text = message || (loading ? 'Loading saved assessment…' : done);
+            if (liveStatus.textContent !== text) liveStatus.textContent = text;
+            liveStatus.className = message || loading ? 'picture-status' : 'picture-status picture-status-quiet';
             if (denied) return;
             if (allowance) {
                 // Plan usage in plain English, so the limit is known before starting work.

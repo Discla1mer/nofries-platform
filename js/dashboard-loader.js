@@ -194,6 +194,11 @@
         return !clientDraft(cycle)?.dirty || window.confirm('Discard unsaved organisation details?');
     }
     function begin(draft) {
+        // Content is about to be cleared. If the keyboard user was in it, keep
+        // focus on the loading heading instead of letting it fall to the page.
+        const focused = document.activeElement;
+        const keepFocus = !!focused && focused !== document.body && [elements.app, elements.chooser, elements.panel]
+            .some(function (region) { return region && typeof region.contains === 'function' && region.contains(focused); });
         dispose(active);
         linkExit = null;
         const cycle = { closed: false, cleanup: [], session: null, busy: true, clientDraft: draft || null, directoryPageCount: 0 };
@@ -201,6 +206,7 @@
         active = cycle;
         clearContent();
         show(cycle, 'loading');
+        if (keepFocus && !elements.panel.hidden) elements.heading.focus();
         return cycle;
     }
     function show(cycle, state, focusHeading) {
