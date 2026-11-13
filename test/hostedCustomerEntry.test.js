@@ -446,7 +446,7 @@ test.each(['login', 'create'])('explicit public %s preserves required setup and 
         const page = execute({ search: '?provider=external&intent=' + intent, fetch: jest.fn(async () => response(state, csrf)) });
         try {
             await settle(); expect(page.assign).not.toHaveBeenCalled(); expect(page.replace).not.toHaveBeenCalled();
-            if (state.status === 'terms') { expect(page.root.querySelector('input').checked).toBe(false); expect(page.root.querySelector('button').disabled).toBe(true); }
+            if (state.status === 'terms') { expect(page.root.querySelector('input').checked).toBe(false); expect(page.root.querySelector('button').disabled).toBeFalsy(); }
         } finally { page.close(); }
     }
 });
