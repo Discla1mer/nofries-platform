@@ -2936,6 +2936,24 @@ describe('final submission review step', () => {
             expect(h.records.slice(2).map(row => row.action)).toEqual(['save', 'submit']);
             expect(h.records[3].expectedRevision).toBe(h.records[2].expectedRevision + 1);
             expect(ui.root.querySelector('.ncsc-review')).toBeNull(); expect(control(ui, 'Review and submit')).toBeUndefined();
+            // Submitted: no save-progress wording, no instruction to choose, and the read-only answers start at question 1.
+            const statusText = ui.root.querySelector('.ncsc-status').textContent;
+            expect(statusText).toBe('Assessment submitted. Your answers are now read-only.');
+            expect(ui.root.textContent).not.toMatch(/Saved revision|Your progress is saved|Choose one answer/);
+            expect(byId(ui, 'ncsc-question-index').value).toBe('0');
+            const first = metadata().questions[0];
+            expect(byId(ui, `ncsc-input-guidance-${first.id}`).textContent).toBe('This is the answer you submitted. Submitted answers cannot be changed.');
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a submitted assessment reopens on question 1 without save wording, even from a remembered question', async () => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand()); await h.execute(submitCommand());
+        const ui = mountUi(h, { initialAssessmentId: 'assessment-a', initialQuestionIndex: 2 });
+        try {
+            await until(() => ui.root.querySelector('.ncsc-sealed'));
+            expect(byId(ui, 'ncsc-question-index').value).toBe('0');
+            expect(ui.root.querySelector('.ncsc-status').textContent).not.toMatch(/Saved revision/);
+            expect(ui.root.textContent).not.toMatch(/Choose one answer for your whole declared scope/);
         } finally { ui.controller.destroy(); }
     });
 
