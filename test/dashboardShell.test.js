@@ -867,3 +867,18 @@ test('Escape closes the More tools menu and returns focus to its summary', () =>
     for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
     assert.equal(menu.open, false);
 });
+
+test('the dashboard footer disclosure and organisations pill follow the page grid with 44px tap targets', () => {
+    const home = fs.readFileSync(path.join(__dirname, '../home.css'), 'utf8');
+    const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
+    // "About this site" uses the footer's width and margins, not x=0.
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details \{ width: min\(1180px, calc\(100% - 40px\)\); margin-inline: auto;/);
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details \{ width: min\(100% - 24px, 1180px\); \}/);
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details > summary \{[^}]*min-height: 44px;/);
+    // Full-width ready layouts keep the pill and footer on the header's gutter.
+    const wide = css.slice(css.indexOf('keep the organisations pill and the footer'));
+    assert.match(wide, /^[^]*?@media screen and \(min-width: 1220px\) \{[^]*?#dashboardChooser \{ margin-inline-start: 1rem; \}/);
+    assert.match(wide, /:is\(\.dashboard-release-footer, \.site-details\) \{ width: auto; margin-inline: 1rem; \}/);
+    const html = fs.readFileSync(path.join(__dirname, '../app/dashboard.html'), 'utf8');
+    assert.match(html, /<details class="site-details">\s*<summary>About this site<\/summary>/);
+});
