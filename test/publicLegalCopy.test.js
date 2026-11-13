@@ -58,6 +58,24 @@ test('the privacy notice keeps operative disclosures and states facts plainly', 
     expect(privacy).not.toContain('token count');
 });
 
+test('the privacy notice keeps staff and service-workspace detail collapsed below the customer notice', () => {
+    const privacy = read('privacy.html');
+    const staff = privacy.match(/<details class="legal-staff" id="staff-workspaces">([\s\S]*?)<\/details>/);
+    expect(staff).not.toBeNull();
+    expect(staff[0]).not.toMatch(/<details[^>]*\sopen\b/);
+    expect(staff[1]).toMatch(/^\s*<summary><h2>Staff and Managed IT service workspaces<\/h2><\/summary>/);
+    // Internal tooling and prospect retention live only inside the collapsed section.
+    for (const text of ['CRM handoff', 'Power Automate', 'raw prospect conversation messages', 'detailed AI observability events']) {
+        expect(staff[1]).toContain(text);
+        expect(privacy.replace(staff[0], '')).not.toContain(text);
+    }
+    // Every customer section comes first.
+    for (const id of ['who', 'storage', 'sharing', 'retention', 'requests']) {
+        expect(privacy.indexOf(`id="${id}"`)).toBeLessThan(privacy.indexOf('id="staff-workspaces"'));
+    }
+    expect(read('style.css')).toMatch(/body\.legal-page \.legal-staff > summary \{[^}]*min-height: 44px;/);
+});
+
 test('public Terms labels open the customer terms, and legal in-page links resolve', () => {
     for (const name of PAGES) {
         const html = read(name);
