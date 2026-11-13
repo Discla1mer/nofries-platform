@@ -1362,6 +1362,11 @@ body:is([data-page="dashboard-home"], [data-page="managed-it-information"], [dat
 }
 .homepage-benefit-grid p, #gatewayPublic .gateway-other-services p:not(.eyebrow) { font-size: 1rem; }
 .home-footer nav a { display: inline-flex; align-items: center; min-height: 44px; }
+/* Terms: full texts sit in expanders under the accept control. */
+details.signup-legal > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 700; }
+details.signup-legal[open] > summary { margin-bottom: 12px; }
+.signup-consent-hint:not([hidden]) { margin-top: 8px; }
+@media print { details.signup-legal > summary { display: none; } }
 
 /* Shared public header: every public page shows the brand on the left and the
    same links on the right, with Log in as a boxed link. The homepage gateway

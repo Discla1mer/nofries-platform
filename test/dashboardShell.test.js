@@ -51,7 +51,7 @@ test('connected picture Overview omits the unused metric grid and the repeated n
         assert.equal(dom.root.querySelector('.dashboard-overview-grid'), null);
         assert.equal(dom.root.querySelector('.dashboard-metrics'), null);
         assert.equal(dom.root.querySelector('.dashboard-availability'), null);
-        assert.doesNotMatch(dom.root.textContent, /Other dashboard areas and availability|The current picture|Build your first baseline/);
+        assert.doesNotMatch(dom.root.textContent, /Other dashboard areas and availability|The current picture|Start your cyber check|baseline/);
         assert.equal(!!dom.root.querySelector('.dashboard-attention'), !empty);
     }
 });
@@ -172,7 +172,7 @@ test('missing metrics are displayed as not assessed, never zero', () => {
     const dom = mount(view({ empty: true }));
     assert.equal(dom.root.querySelectorAll('.dashboard-metric-value').length, 4);
     assert.ok(dom.root.querySelectorAll('.dashboard-metric-value').every(item => item.textContent === 'Not assessed'));
-    assert.match(dom.root.textContent, /Build your first baseline/);
+    assert.match(dom.root.textContent, /Start your cyber check/);
 });
 
 test('Overview leads with attention and distinct versioned metrics', () => {
@@ -866,6 +866,17 @@ test('Escape closes the More tools menu and returns focus to its summary', () =>
     menu.open = false;
     for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
     assert.equal(menu.open, false);
+});
+
+test('error summaries and scroll targets clear the sticky organisation bar', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
+    const bar = css.match(/\.nofries-dashboard \.dashboard-topbar \{ max-height: (\d+)rem;/);
+    assert.ok(bar, 'the sticky bar has a bounded height');
+    assert.match(css, /\.nofries-dashboard \.dashboard-topbar \{[^}]*position: sticky; top: 0;/);
+    const rule = css.match(/\.nofries-dashboard :is\(([^)]*)\) \{ scroll-margin-top: (\d+)rem; \}/);
+    assert.ok(rule);
+    for (const target of ['.ncsc-errors', '.picture-top-gaps h3', '.ncsc-question', '.dashboard-main h1']) assert.ok(rule[1].split(', ').includes(target), target);
+    assert.ok(Number(rule[2]) >= Number(bar[1]), 'scroll margin covers the tallest sticky bar');
 });
 
 test('the footer information time moves forward only for a later valid read', () => {

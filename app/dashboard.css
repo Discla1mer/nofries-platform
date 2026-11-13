@@ -104,9 +104,15 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-first-use-step h3 { margin-bottom: .35rem; }
 .picture-first-use-step p { margin-bottom: 0; }
 .picture-first-use-number { display: grid; flex: 0 0 2.5rem; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--dashboard-navy); color: var(--dashboard-ink); font-weight: var(--dashboard-weight-emphasis); }
-.picture-first-use-action { display: block; width: min(100%, 23rem); margin: 0 auto; font-family: var(--font-serif, Georgia, serif) !important; font-size: 1.25rem !important; }
+.picture-first-use-action { display: block; width: min(100%, 23rem); margin: 1.25rem 0 0; font-family: var(--font-serif, Georgia, serif) !important; font-size: 1.25rem !important; }
 @media (min-width: 60.01rem) { .picture-first-use-step:not(:last-child)::after { content: '→'; position: absolute; right: -.8rem; top: 50%; z-index: 1; transform: translateY(-50%); padding: .1rem; background: var(--dashboard-surface); color: var(--dashboard-ink); } }
 @media (max-width: 60rem) { .picture-first-use-steps { grid-template-columns: 1fr; } }
+/* Keep the first-use action high on small phones. */
+@media (max-width: 30rem) {
+    .picture-first-use-eyebrow { letter-spacing: .06em; }
+    .nofries-dashboard .picture-first-use h2 { font-size: 1.75rem; }
+    .picture-first-use-action { font-size: 1.1rem !important; }
+}
 
 .picture-heading { padding: 1.25rem 0 .5rem; border-top: 1px solid var(--dashboard-line); }
 .picture-heading > :last-child { margin-bottom: 0; }
@@ -159,6 +165,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-trend-history li { margin: .4rem 0; }
 .organisation-picture > .dashboard-button { margin-top: 1rem; }
 .picture-status { color: var(--dashboard-muted); }
+.picture-status-quiet { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .picture-actions { background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 0 0 1.25rem; overflow-wrap: anywhere; }
 .picture-actions h3 { margin-top: 0; }
 .picture-actions h4 { margin: 1rem 0 .4rem; }
@@ -523,7 +530,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-layout { border-top: 1px solid var(--dashboard-line, #d3c9b7); }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-release-footer { margin-top: 0; padding-block: 1.25rem; }
 
-.nofries-dashboard :is(.ncsc-question, .ncsc-sealed, .dashboard-main h1) { scroll-margin-top: 10rem; }
+/* Scroll and focus targets clear the sticky organisation bar (at most 9rem tall). */
+.nofries-dashboard :is(.ncsc-question, .ncsc-sealed, .ncsc-errors, .picture-top-gaps h3, .dashboard-main h1) { scroll-margin-top: 10rem; }
 
 .nofries-dashboard .dashboard-topbar { max-height: 9rem; overflow: auto; }
 /* Improvement Plan choices stay readable on 320px phones. */

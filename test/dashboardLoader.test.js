@@ -31,7 +31,7 @@ const GB = 'b'.repeat(64);
 const GC = 'c'.repeat(64);
 const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dashboardMessage', 'dashboardStatus', 'dashboardRetry',
     'dashboardSignIn', 'dashboardSignOut', 'dashboardChooser', 'dashboardChoices', 'dashboardMore', 'dashboardApp',
-    'dashboardApplicationIntegrity', 'dashboardStyleIntegrity', 'dashboardSkipLink'];
+    'dashboardApplicationIntegrity', 'dashboardStyleIntegrity', 'dashboardSkipLink', 'dashboardCreateAccount', 'dashboardCreateAccountLink'];
 
 function state(selectedBindingId = A, generation = GA, extra = {}) {
     return { schemaVersion: 1, authenticated: true, purpose: 'operator_dashboard', expiresAt: '2026-09-09T00:30:00.000Z',
@@ -1530,6 +1530,24 @@ describe('dashboard asynchronous ownership and sign-out', () => {
         expect(h.document.head.children).toHaveLength(2);
     });
 
+    test('a reload that clears the focused dashboard keeps focus on the announced loading heading', async () => {
+        const h = harness(); await flush(); await h.open();
+        expect(fs.readFileSync(path.join(__dirname, '../app/dashboard.html'), 'utf8')).toMatch(/<p id="dashboardMessage" aria-live="polite">/);
+        h.elements.dashboardApp.querySelector('main').focus();
+        h.event('pageshow', { persisted: true }); await flush();
+        expect(h.status).toBe('loading');
+        expect(h.elements.dashboardApp.children).toHaveLength(0);
+        expect(h.document.activeElement).toBe(h.elements.dashboardHeading);
+        expect(h.elements.dashboardMessage.textContent).toBe('Getting your dashboard ready. This can take up to 20 seconds.');
+    });
+
+    test('a reload does not move focus that was outside the dashboard', async () => {
+        const h = harness(); await flush(); await h.open();
+        const outside = h.document.createElement('a'); h.document.body.append(outside); outside.focus();
+        h.event('pageshow', { persisted: true }); await flush();
+        expect(h.status).toBe('loading'); expect(h.document.activeElement).toBe(outside);
+    });
+
     test('a stale error and delayed focus revalidation cannot erase or focus over a current mount', async () => {
         const h = harness(); await flush(); await h.open();
         h.window.dispatch('focus'); await flush(); const old = h.requests[4];
@@ -1682,7 +1700,7 @@ describe('ready Cyber composition', () => {
         const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
         await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
         expect(h.ncscMounts).toHaveLength(0);
-        control(h, 'Open assessment').click(); await flush();
+        control(h, 'Start your cyber check').click(); await flush();
         expect(h.ncscMounts).toHaveLength(1);
         expect(h.ncscMounts[0][1]).toMatchObject({ startNew: true, initialAssessmentId: undefined,
             organisationId: h.cyberProjection.context.organisationId });
@@ -3692,6 +3710,17 @@ test.each([[{ external: true }, '#cyber-security', '#cyber-security'], [{ extern
     if (saved === undefined) expect(value).toBeUndefined();
     else { const parsed = JSON.parse(value); expect(Object.keys(parsed).sort()).toEqual(['at', 'route']); expect(parsed.route).toBe(saved); }
 });
+
+test.each([['external', '/login?provider=external&intent=create', false], ['staff', null, true]])(
+    'a signed-out %s visitor to /dashboard is offered account creation only on customer entry', async (provider, href, hidden) => {
+        // Round 2: typing /dashboard while signed out showed only "Please sign in".
+        const h = harness(provider === 'external' ? { external: true } : {}); await flush();
+        await h.reply(0, 401, { code: 'dashboard_session_required' });
+        expect(h.status).toBe('unauthenticated');
+        expect(h.elements.dashboardCreateAccount.hidden).toBe(hidden);
+        if (href) expect(h.elements.dashboardCreateAccountLink.href).toBe(href);
+        expect(ENTRY_HTML).toContain('New here? <a id="dashboardCreateAccountLink" href="/login?intent=create">Create an account</a>');
+    });
 
 test('dashboard startup shows one steady progress message instead of changing stages', () => {
     // Round 2: "Checking your sign-in…", "Preparing your dashboard…" and
