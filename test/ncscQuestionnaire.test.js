@@ -3395,3 +3395,112 @@ describe('plan submission allowance', () => {
         }
     });
 });
+
+describe('automatic save retry after an unconfirmed outcome', () => {
+    const unavailable = () => Object.assign(new Error('ncsc_unavailable'), { code: 'ncsc_unavailable', statusCode: 503, ambiguous: true });
+    const saves = h => h.records.filter(row => row.action === 'save');
+
+    test('a lost autosave response is resent unchanged and writes exactly once', async () => {
+        const h = await backend(); let lose = true;
+        const save = jest.fn(async (...args) => {
+            const result = await h.client.save(...args);
+            if (lose) { lose = false; throw unavailable(); }
+            return result;
+        });
+        const read = jest.fn((...args) => h.client.read(...args));
+        const ui = await createInUi(h, { client: { ...h.client, save, read }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [0, 0] });
+        try {
+            choose(ui, 0, 'yes');
+            await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[1][0]).toEqual(save.mock.calls[0][0]);
+            expect(saves(h)).toHaveLength(1); expect(h.versions.values().next().value.envelope.revision).toBe(1);
+            expect(control(ui, 'Try the save again')).toBeUndefined(); expect(ui.root.textContent).not.toMatch(/unconfirmed/);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a 503 before the server applies the save recovers on the next automatic attempt', async () => {
+        const h = await backend(); let failures = 1;
+        const save = jest.fn(async (...args) => { if (failures) { failures -= 1; throw unavailable(); } return h.client.save(...args); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [0, 0] });
+        try {
+            choose(ui, 0, 'yes');
+            await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[1][0]).toEqual(save.mock.calls[0][0]);
+            expect(saves(h)).toHaveLength(1); expect(control(ui, 'Try the save again')).toBeUndefined();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('automatic retries stop after the configured attempts and show the existing manual retry', async () => {
+        const h = await backend(); let failing = true;
+        const save = jest.fn(async (...args) => { if (failing) throw unavailable(); return h.client.save(...args); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [0, 0] });
+        try {
+            choose(ui, 0, 'yes');
+            await until(() => control(ui, 'Try the save again'));
+            expect(save).toHaveBeenCalledTimes(3);
+            const first = save.mock.calls[0][0];
+            save.mock.calls.forEach(call => expect(call[0]).toEqual(first));
+            expect(ui.root.textContent).toContain('We could not confirm the save');
+            expect(ui.root.textContent).toContain('This operation is unconfirmed. Retry the same operation to establish its result.');
+            expect(saves(h)).toHaveLength(0);
+            await new Promise(resolve => setTimeout(resolve, 60));
+            expect(save).toHaveBeenCalledTimes(3);
+            failing = false; control(ui, 'Try the save again').click();
+            await until(() => !control(ui, 'Try the save again') && saves(h).length === 1);
+            expect(save).toHaveBeenCalledTimes(4); expect(save.mock.calls[3][0]).toEqual(first);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('the waiting status is announced while an automatic retry is pending', async () => {
+        const h = await backend(); let failures = 1;
+        const save = jest.fn(async (...args) => { if (failures) { failures -= 1; throw unavailable(); } return h.client.save(...args); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [200] });
+        try {
+            choose(ui, 0, 'yes');
+            await until(() => save.mock.calls.length === 1 && ui.root.textContent.includes('Trying again automatically'));
+            const status = byId(ui, 'ncsc-save-status');
+            expect(status.getAttribute('aria-live')).toBe('polite');
+            expect(status.textContent).toBe('Saving is taking longer than usual. Trying again automatically.');
+            await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            expect(save).toHaveBeenCalledTimes(2); expect(saves(h)).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test.each([
+        ['revision conflict', () => Object.assign(new Error('c'), { code: 'ncsc_revision_conflict', statusCode: 409 })],
+        ['access denied', () => Object.assign(new Error('d'), { code: 'ncsc_access_denied', statusCode: 403 })],
+        ['too large', () => Object.assign(new Error('t'), { code: 'ncsc_request_too_large', statusCode: 413 })]
+    ])('a definite %s answer is never retried automatically', async (_name, failure) => {
+        const h = await backend();
+        const save = jest.fn(async () => { throw failure(); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [0, 0] });
+        try {
+            choose(ui, 0, 'yes');
+            await until(() => save.mock.calls.length === 1 && !ui.root.textContent.includes('Saving…'));
+            await new Promise(resolve => setTimeout(resolve, 60));
+            expect(save).toHaveBeenCalledTimes(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('Save progress pressed by hand keeps the single attempt and the manual retry', async () => {
+        const h = await backend();
+        const save = jest.fn(async () => { throw unavailable(); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveRetryDelaysMs: [0, 0] });
+        try {
+            choose(ui, 0, 'yes'); control(ui, 'Save progress').click();
+            await until(() => control(ui, 'Try the save again'));
+            expect(save).toHaveBeenCalledTimes(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('leaving the assessment during the retry delay sends nothing further', async () => {
+        const h = await backend();
+        const save = jest.fn(async () => { throw unavailable(); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [100, 100] });
+        choose(ui, 0, 'yes');
+        await until(() => save.mock.calls.length === 1 && ui.root.textContent.includes('Trying again automatically'));
+        ui.controller.destroy();
+        await new Promise(resolve => setTimeout(resolve, 300));
+        expect(save).toHaveBeenCalledTimes(1);
+    });
+});
