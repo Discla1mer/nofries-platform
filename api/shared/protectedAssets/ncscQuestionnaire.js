@@ -653,7 +653,8 @@
         function updateStatus() {
             syncUnloadWarning();
             if (!live() || !status) return;
-            const saved = acknowledged ? 'Saved revision ' + acknowledged.revision + '. ' : '';
+            // A submitted assessment is read-only; saving progress no longer applies.
+            const saved = acknowledged && acknowledged.status !== 'submitted' ? 'Saved revision ' + acknowledged.revision + '. ' : '';
             const dirty = dirtyEntries().length;
             // Keep draft feedback beside Save so changing status text cannot move its pointer target.
             status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
@@ -863,7 +864,7 @@
                 if (!result) return;
                 acknowledged = cleanDetail(result.assessment, id); resetDrafts();
                 activeQuestion = acknowledged.status === 'submitted' ? 0 : Math.max(0, unansweredIndex(-1));
-                if (id === initialAssessmentId && Number.isInteger(options.initialQuestionIndex) &&
+                if (id === initialAssessmentId && acknowledged.status !== 'submitted' && Number.isInteger(options.initialQuestionIndex) &&
                     options.initialQuestionIndex >= 0 && options.initialQuestionIndex < questions.length) activeQuestion = options.initialQuestionIndex;
             } catch (error) { if (live(expected)) fixedFailure(error); }
             finally { if (live(expected)) { loading = false; render(); } }
@@ -1129,7 +1130,9 @@
             questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
             const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', question.smallBusiness ? question.smallBusiness.meaning : question.prompt));
             const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
-            const hint = node('p', 'ncsc-input-guidance', question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
+            const sealed = acknowledged.status === 'submitted';
+            const hint = node('p', 'ncsc-input-guidance', sealed ? 'This is the answer you submitted. Submitted answers cannot be changed.'
+                : question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
             hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
             if (question.smallBusiness) {
                 const wording = node('details'); wording.append(node('summary', '', 'Full framework question'), node('p', '', question.prompt));
@@ -1512,7 +1515,11 @@
                         }
                     });
                 }
-                pending = null; busy = false; errors = []; statusText = 'Saved revision ' + acknowledged.revision + '. ' + (dirtyEntries().length ? 'Newer edits are still unsaved.' : 'Your progress is saved.');
+                pending = null; busy = false; errors = [];
+                statusText = acknowledged.status === 'submitted' ? 'Assessment submitted. Your answers are now read-only.'
+                    : 'Saved revision ' + acknowledged.revision + '. ' + (dirtyEntries().length ? 'Newer edits are still unsaved.' : 'Your progress is saved.');
+                // The read-only answers start from question 1, not the last question edited.
+                if (command.action === 'submit' && acknowledged.status === 'submitted') activeQuestion = 0;
                 if (operation.uncertain) {
                     if (!await refreshCurrent(false, expected)) return false;
                     statusText = conflict ? 'The current saved version differs from your draft. Choose how to continue.' : 'The operation is confirmed and the current saved version has been checked. Review any unsaved changes on this device before saving again.';
