@@ -501,6 +501,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-layout { border-top: 1px solid var(--dashboard-line, #d3c9b7); }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-release-footer { margin-top: 0; padding-block: 1.25rem; }
 
-.nofries-dashboard :is(.ncsc-question, .ncsc-sealed, .dashboard-main h1) { scroll-margin-top: 10rem; }
+/* Scroll and focus targets clear the sticky organisation bar (at most 9rem tall). */
+.nofries-dashboard :is(.ncsc-question, .ncsc-sealed, .ncsc-errors, .picture-top-gaps h3, .dashboard-main h1) { scroll-margin-top: 10rem; }
 
 .nofries-dashboard .dashboard-topbar { max-height: 9rem; overflow: auto; }
