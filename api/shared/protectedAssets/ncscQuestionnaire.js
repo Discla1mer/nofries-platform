@@ -1720,7 +1720,7 @@
             differences.forEach(function (item) {
                 const row = node('li');
                 const sameOption = item.mine.optionId === item.saved.optionId;
-                row.append(node('strong', '', 'Question ' + (item.index + 1) + ': ' + questions[item.index].prompt), node('br'),
+                row.append(node('strong', '', 'Question ' + (item.index + 1) + ': ' + plainQuestion(questions[item.index])), node('br'),
                     node('span', '', 'Your answer: ' + label(item.mine) + (sameOption ? ', with a different explanation' : '') + ' · Saved answer: ' + label(item.saved)));
                 list.append(row);
             });

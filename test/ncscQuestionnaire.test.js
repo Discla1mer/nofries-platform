@@ -2025,8 +2025,8 @@ describe('questionnaire public controls and retained mutation intent', () => {
         expect(panel.querySelector('h3').textContent).toBe('These answers were changed somewhere else');
         expect(panel.textContent).toContain('2 answers on this page differ from the newer saved answers:');
         expect(list.querySelectorAll('li').map(item => item.textContent.replace(/\s+/g, ' '))).toEqual([
-            'Question 1: ' + metadata().questions[0].prompt + ' Your answer: No · Saved answer: Partial',
-            'Question 3: ' + metadata().questions[2].prompt + ' Your answer: Not applicable, with a different explanation · Saved answer: Not applicable']);
+            'Question 1: ' + metadata().questions[0].smallBusiness.question + ' Your answer: No · Saved answer: Partial',
+            'Question 3: ' + metadata().questions[2].smallBusiness.question + ' Your answer: Not applicable, with a different explanation · Saved answer: Not applicable']);
         control(ui, 'Use saved answers').click();
         expect(ui.root.querySelector('.ncsc-conflict-differences')).toBeNull(); ui.controller.destroy();
     });
