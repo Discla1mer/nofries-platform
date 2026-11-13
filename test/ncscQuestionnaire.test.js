@@ -1100,6 +1100,93 @@ describe('questionnaire draft progress and unanswered navigation', () => {
     });
 });
 
+describe('saved-only draft observations', () => {
+    const panel = ui => ui.root.querySelector('.ncsc-draft-observations');
+    const groups = ui => panel(ui).querySelectorAll('.ncsc-draft-observation-group').map(group => group.querySelector('h3').textContent);
+
+    test('separates acknowledged gaps, Unknown, pending N/A and missing answers without scoring', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        expect(panel(ui).textContent).toContain('No saved answers yet');
+        for (const [i, option] of ['no', 'partial', 'unknown', 'not_applicable', 'yes'].entries()) choose(ui, i, option, option === 'not_applicable' ? 'Synthetic exclusion' : undefined);
+        expect(groups(ui)).toEqual(['Reported gaps · 0', 'Information to confirm · 0', 'Applicability to confirm · 0', 'Not answered in this save · 14']);
+        control(ui, 'Save progress').click(); await until(() => panel(ui).textContent.includes('5 of 14 responses saved'));
+        expect(groups(ui)).toEqual(['Reported gaps · 2', 'Information to confirm · 1', 'Applicability to confirm · 1', 'Not answered in this save · 9']);
+        expect(panel(ui).textContent).toContain('1 answered Yes (self-reported, not verified)');
+        expect(panel(ui).textContent).toContain('These exclusions are not approved');
+        expect(panel(ui).textContent).toContain('not a score, risk ranking or verified evidence');
+        expect(panel(ui).textContent).toContain('do not change any submitted baseline');
+        expect(panel(ui).textContent).toContain('Saved revision 1');
+        expect(panel(ui).textContent).not.toMatch(/\d+(?:\.\d+)?%|improved|declined|certified/i);
+        expect(panel(ui).querySelectorAll('meter')).toHaveLength(0);
+        ui.controller.destroy();
+    });
+
+    test('keeps saved observations unchanged after newer edits and an uncertain save', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        choose(ui, 0, 'no'); control(ui, 'Save progress').click(); await until(() => groups(ui)[0] === 'Reported gaps · 1');
+        const before = panel(ui).textContent;
+        choose(ui, 0, 'yes'); expect(panel(ui).textContent).toBe(before);
+        h.fetch.mockRejectedValueOnce(new Error('Synthetic network failure'));
+        control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('This operation is unconfirmed'));
+        expect(panel(ui).textContent).toBe(before);
+        expect(panel(ui).textContent).toContain('until a save is confirmed');
+        ui.controller.destroy();
+    });
+
+    test('opens the current question without saving and preserves disclosure and focus on confirmed save', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        panel(ui).open = true;
+        const jump = byId(ui, 'ncsc-draft-observation-' + metadata().questions[3].id);
+        const writes = h.records.length;
+        jump.click(); jump.click();
+        expect(byId(ui, 'ncsc-question-index').value).toBe('3');
+        expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
+        expect(h.records).toHaveLength(writes);
+        choose(ui, 3, 'unknown'); control(ui, 'Save progress').click();
+        await until(() => groups(ui)[1] === 'Information to confirm · 1');
+        expect(panel(ui).open).toBe(true);
+        expect(h.records).toHaveLength(writes + 1);
+        jump.click(); // Replaced controls are inert.
+        expect(h.records).toHaveLength(writes + 1);
+        ui.controller.destroy();
+    });
+
+    test('all Yes is explicitly self-reported rather than assurance; submission removes draft observations', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        metadata().questions.forEach((_question, index) => choose(ui, index, 'yes'));
+        control(ui, 'Save progress').click(); await until(() => panel(ui).textContent.includes('14 of 14 responses saved'));
+        expect(groups(ui)).toEqual(['Reported gaps · 0', 'Information to confirm · 0', 'Applicability to confirm · 0', 'Not answered in this save · 0']);
+        expect(panel(ui).textContent).toContain('A zero count is not assurance');
+        const baselineBefore = JSON.stringify([...h.versions.values()]);
+        control(ui, 'Review and submit').click(); expect(panel(ui)).toBeNull();
+        expect(JSON.stringify([...h.versions.values()])).toBe(baselineBefore);
+        control(ui, 'Back to questions').click(); expect(panel(ui)).not.toBeNull();
+        submitUi(ui); await until(() => ui.root.textContent.includes('Your results are below'));
+        expect(panel(ui)).toBeNull(); expect(ui.root.querySelector('.ncsc-results')).not.toBeNull();
+        ui.controller.destroy();
+    });
+
+    test('read-only saved work has the same observations but no save or submit controls', async () => {
+        const h = await backend(), first = await createInUi(h);
+        choose(first, 0, 'partial'); control(first, 'Save progress').click(); await until(() => groups(first)[0] === 'Reported gaps · 1');
+        first.controller.destroy();
+        const ui = await resumeUi(h, { presentationMode: 'read-only' });
+        expect(groups(ui)[0]).toBe('Reported gaps · 1');
+        expect(control(ui, 'Save progress')).toBeUndefined(); expect(control(ui, 'Review and submit')).toBeUndefined();
+        ui.controller.destroy();
+    });
+
+    test('access denial clears observations and makes retained controls inert', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        const old = byId(ui, 'ncsc-draft-observation-' + metadata().questions[1].id);
+        choose(ui, 0, 'no'); h.deny(); control(ui, 'Save progress').click();
+        await until(() => ui.root.textContent.includes('This assessment is not available'));
+        expect(panel(ui)).toBeNull(); const text = ui.root.textContent, writes = h.records.length;
+        old.click(); expect(ui.root.textContent).toBe(text); expect(h.records).toHaveLength(writes);
+        ui.controller.destroy();
+    });
+});
+
 describe('question assistance source integration', () => {
     test.each(['', 'Private draft notes'])('explains without transmitting notes or offering an answer: %s', async text => {
         const h = await backend(), assistance = { suggest: jest.fn(async request => ({ questionId: request.questionId,
