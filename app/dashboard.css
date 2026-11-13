@@ -334,7 +334,8 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
         background: var(--dashboard-paper, #fffdf8); border-top: 1px solid var(--dashboard-line, #d3c9b7); }
     .ncsc-question-navigation .ncsc-navigation-summary { flex: 1 1 100%; text-align: center; }
     .ncsc-navigation-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr auto; gap: .4rem; }
-    .ncsc-navigation-actions button { width: 100%; min-width: 0; padding: .6rem .5rem; text-align: center; }
+    /* Outranks the rounded dashboard button padding so the labels fit without breaking words. */
+    .ncsc-question-navigation .ncsc-navigation-actions button { width: 100%; min-width: 0; padding: .6rem .5rem; text-align: center; }
     .ncsc-navigation-more-toggle { display: block; }
     .ncsc-navigation-more { display: grid; grid-column: 1 / -1; gap: .4rem; }
     .ncsc-navigation-more.ncsc-navigation-collapsed { display: none; }
@@ -443,6 +444,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) { container: dashboard-mobile / inline-size; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .dashboard-main { padding-block-end: 1.5rem; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .ncsc-questionnaire :is(a, button, input, textarea, select, summary) { scroll-margin-block: 8px; }
+    /* The rule above is more specific than the narrow-screen clearance for the sticky
+       question bar, so restate that clearance here for the ready dashboard. */
+    @media (max-width: 30rem) {
+        body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-block-end: 9rem; }
+    }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .dashboard-mobile-nav .dashboard-task { scroll-margin-block: 8px; }
     /* Keep the familiar fixed bar for tall, normal-text overview/task layouts.
        A mounted questionnaire stays in flow: native focus placement changes with
