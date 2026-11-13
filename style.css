@@ -549,3 +549,10 @@ body:is(.legal-page, [data-page="contact"]) { background-image: none; }
 body[data-page="contact"] .public-panel { max-width: 48rem; margin-inline: auto; width: 100%; }
 body[data-page="contact"] .public-panel h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.15; }
 body[data-page="contact"] .contact-form { max-width: none; width: 100%; }
+
+/* Privacy: staff and service-workspace detail stays on the page, collapsed below the customer notice. */
+body.legal-page .legal-staff { margin-top: 24px; padding: clamp(14px, 3vw, 20px); border: 1px solid var(--line); border-radius: var(--radius); }
+body.legal-page .legal-staff > :not(summary) { margin-block: 10px 0; }
+body.legal-page .legal-staff > summary { min-height: 44px; padding-block: 8px; cursor: pointer; }
+body.legal-page .legal-staff > summary h2 { display: inline; margin: 0; font-size: 1.15rem; }
+body.legal-page .legal-staff > h3 { margin-top: 16px; font-size: 1rem; }
