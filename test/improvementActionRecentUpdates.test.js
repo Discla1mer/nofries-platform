@@ -1,6 +1,6 @@
 'use strict';
 
-const { mount, mountLoading } = require('../api/shared/protectedAssets/improvementActionPlanView');
+const { mount, mountLoading, actionTitle, nzDateTime } = require('../api/shared/protectedAssets/improvementActionPlanView');
 const { projectImprovementActionPlanPresentation } = require('../api/shared/improvementPlan/improvementActionPlanPresentation');
 const { projectImprovementActionList } = require('../api/shared/improvementPlan/improvementActionListProjection');
 const { createImprovementPlan, applyImprovementActionCommand } = require('../api/shared/improvementPlan/improvementPlanDomain');
@@ -47,17 +47,17 @@ test('shows only five newest global revisions across actions, including equal ti
         .sort((a, b) => b.event.revision - a.event.revision).slice(0, 5);
     expect(entries(dom)).toHaveLength(5);
     expected.forEach(({ action, event }, i) => {
-        expect(entries(dom)[i].textContent).toContain('Plan revision ' + event.revision + ' · ' + AT + ' (UTC)');
-        expect(entries(dom)[i].textContent).toContain(action.controlId + ' · ' + action.labels.kind);
+        expect(entries(dom)[i].textContent).toContain(actionTitle(action) + ' · ' + nzDateTime(event.at));
+        expect(entries(dom)[i].textContent).not.toContain('Plan revision');
         expect(entries(dom)[i].children[0].textContent).toContain(Array.from(action.rationale.suggestedAction).slice(0, 100).join(''));
     });
     expect(recent(dom).textContent).toContain('Latest 5 of 7 saved updates');
-    expect(recent(dom).textContent).toContain('Newest plan revision first.');
+    expect(recent(dom).textContent).toContain('Newest first.');
     expect(recent(dom).textContent).not.toContain(OWNER);
     expect(recent(dom).textContent).not.toContain('evidence:synthetic');
-    expect(recent(dom).textContent).toContain('Assignment updated · Due date (UTC): 2026-10-01');
+    expect(recent(dom).textContent).toContain('Assignment updated · Due date: 1 Oct 2026');
     expect(history(dom).map(section => section.querySelectorAll('h4').map(item => item.textContent)))
-        .toEqual(value.actions.map(action => action.history.map(event => 'Plan revision ' + event.revision + ' · ' + event.label)));
+        .toEqual(value.actions.map(action => action.history.map(event => event.label + ' · ' + nzDateTime(event.at))));
     expect({ state, value }).toEqual(before);
 });
 
@@ -77,11 +77,12 @@ test('completion and reopen are workflow events, with inert bounded previews and
 test.each([{ status: 'blocked' }, { status: 'open' }, { owner: 'unassigned' }, { overdueOnly: true }])
     ('summary includes only histories from the current filtered selection %j', filters => {
         const value = model(mixed(), filters), dom = render(value);
-        const expected = value.actions.flatMap(action => action.history).sort((a, b) => b.revision - a.revision).slice(0, 5);
+        const expected = value.actions.flatMap(action => action.history.map(event => ({ action, event })))
+            .sort((a, b) => b.event.revision - a.event.revision).slice(0, 5);
         expect(recent(dom).textContent).toContain('Only actions shown in this view are included; current filters apply.');
         expect(recent(dom).querySelectorAll('li')).toHaveLength(expected.length);
         recent(dom).querySelectorAll('li').forEach((entry, index) => expect(entry.children[1].textContent)
-            .toContain('Plan revision ' + expected[index].revision + ' · ' + expected[index].at + ' (UTC)'));
+            .toBe(actionTitle(expected[index].action) + ' · ' + nzDateTime(expected[index].event.at)));
     });
 
 test('valid untouched actions get a scoped empty message; empty selections never imply the whole plan has no updates', () => {
