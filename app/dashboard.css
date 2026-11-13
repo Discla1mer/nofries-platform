@@ -171,6 +171,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-top-gap { margin: 1rem 0 0; overflow-wrap: anywhere; }
 .picture-top-gap h4 { margin-bottom: .25rem; }
 .picture-top-gap p { margin: .25rem 0; }
+.picture-information { border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 1.25rem 0; overflow-wrap: anywhere; }
+.picture-information-list { padding-left: 1.3rem; }
+.picture-information-list li { margin: 1rem 0; }
+.picture-information-list h4, .picture-information-list p { margin: .25rem 0; }
+.picture-information .dashboard-button { min-height: 44px; min-width: 44px; max-width: 100%; white-space: normal; }
 .picture-top-gap .picture-gap-plan { min-height: 44px; min-width: 44px; max-width: 100%; margin-top: .5rem; }
 .picture-next-steps { border-top: 1px solid var(--dashboard-line); margin-top: 1.25rem; padding-top: 1rem; }
 .picture-next-steps .dashboard-button { display: inline-block; max-width: 100%; text-align: center; text-decoration: none; }
