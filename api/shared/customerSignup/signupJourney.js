@@ -114,7 +114,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             heading.textContent = 'Set up your organisation';
             root.append(element('p', 'Signed in as ' + state.email));
             const form = element('form');
-            const controls = {}, validateText = [];
+            const controls = {}, validateText = [], counters = [];
             const typeLabel = element('label', 'Account type'), accountType = element('select');
             accountType.name = 'accountType';
             for (const [value, title] of [['company', 'Company'], ['consultant', 'Consultant']]) {
@@ -139,6 +139,22 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 };
                 input.addEventListener('input', validate); validateText.push(validate);
                 label.append(input);
+                // The browser cuts text at the limit without saying so. Show a
+                // count as the limit gets close, and say plainly when it is hit.
+                if (name !== 'registrationId') {
+                    const count = element('span'); count.className = 'field-help signup-field-count';
+                    count.setAttribute('id', 'signup-' + name + '-count'); count.setAttribute('aria-live', 'polite');
+                    const update = () => {
+                        const used = String(input.value || '').length;
+                        count.hidden = used < maximum - 20;
+                        count.textContent = used >= maximum
+                            ? used + ' of ' + maximum + ' characters. This is the limit, so anything longer is cut off.'
+                            : used + ' of ' + maximum + ' characters.';
+                    };
+                    input.setAttribute('aria-describedby', 'signup-' + name + '-count');
+                    input.addEventListener('input', update); update(); counters.push(update);
+                    label.append(count);
+                }
                 if (name === 'registrationId') {
                     const help = element('span', 'Your New Zealand Business Number, if you have one.');
                     help.className = 'field-help'; help.setAttribute('id', 'signup-nzbn-help');
@@ -162,6 +178,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 }
                 setupDraft = null;
             }
+            for (const update of counters) update();
             const label = element('label'), authority = element('input');
             label.className = 'organisation-authority-check';
             authority.type = 'checkbox'; authority.required = true; authority.name = 'authorityConfirmed';
