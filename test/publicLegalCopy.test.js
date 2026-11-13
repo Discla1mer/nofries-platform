@@ -25,12 +25,13 @@ test('customer terms stay separate from pilot terms and keep the operative limit
     expect(terms).not.toContain('tenant-controlled endpoint');
     expect(pilot).toContain('configured tenant-controlled endpoint');
     expect(pilot).toContain('Nothing in a dashboard assessment automatically sends a proposal or creates a CRM commitment');
+    expect(terms).toContain('New Zealand law governs these terms and your agreement.');
     expect(pilot).toContain('New Zealand law governs these pilot workspace terms');
     expect(pilot).toContain('does not create a production service commitment');
     expect(pilot).toContain('staff sales scoping workspace');
 });
 
-test('the privacy notice keeps operative disclosures and marks unknown facts', () => {
+test('the privacy notice keeps operative disclosures and states facts plainly', () => {
     const privacy = read('privacy.html');
     for (const text of [
         'No Fries Limited', 'Privacy Act 2020', 'Information Privacy Principles', 'principle 12',
@@ -40,8 +41,17 @@ test('the privacy notice keeps operative disclosures and marks unknown facts', (
         'not to store response objects', 'fixed rules in the No Fries application',
         'cannot be read by website scripts', '90 days', '180 days', '365 days', '30 days',
         'no automatic deletion timer', 'Microsoft Entra', 'Resend', 'OpenAI', 'Power Automate',
-        'No public subscription billing is active', 'one-way keyed identifier', 'TODO:'
+        'No public subscription billing is active', 'one-way keyed identifier',
+        'Privacy questions and requests go to', 'For our postal address, email us',
+        'Your accepted agreement sets how long dashboard accounts, assessments and acceptance records are kept',
+        'may process information outside New Zealand'
     ]) expect(privacy).toContain(text);
+    // Customer pages state what is true, without public placeholders or a list of open gaps.
+    for (const html of [privacy, read('terms.html')]) {
+        expect(html).not.toContain('TODO');
+        expect(html).not.toMatch(/still need to confirm|open point|not (?:yet )?(?:stated|published) on this page yet/i);
+    }
+    expect(privacy).not.toContain('id="open-points"');
     expect(privacy).not.toContain('HttpOnly');
     expect(privacy).not.toContain('deterministic application logic');
     expect(privacy).not.toContain('structured tool calls');
