@@ -366,6 +366,7 @@
         let submitLocked = false;
         let questionRegion;
         let questionIndex;
+        let pendingPickerChoice = null;
         let questionProgress;
         let navigationSummary;
         let nextUnanswered;
@@ -640,6 +641,11 @@
             const savingFocus = focused && ['ncsc-save', 'ncsc-save-status'].includes(focused.id);
             const progressHeight = savingFocus && questionProgress && typeof questionProgress.getBoundingClientRect === 'function'
                 ? questionProgress.getBoundingClientRect().height : null;
+            // A keyboard choice in the question picker waits for Enter or Go. Keep it
+            // when a save re-renders the page so the choice is not lost.
+            const pickerChoice = questionIndex && acknowledged && questionIndex.value !== String(activeQuestion)
+                ? { assessmentId: acknowledged.assessmentId, value: questionIndex.value } : null;
+            pendingPickerChoice = pickerChoice;
             questionIndex = null; questionProgress = null; navigationSummary = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
             if (!acknowledged || acknowledged.status === 'submitted' || !editable) { reviewing = false; returnToReview = null; }
             // Keep the live region attached so asynchronous updates change an
@@ -947,7 +953,9 @@
             index.setAttribute('aria-describedby', 'ncsc-question-index-help');
             questionIndex = index;
             questions.forEach(function (_item, i) { const option = node('option', '', (i + 1) + ' of ' + questions.length); option.value = String(i); index.append(option); });
-            index.value = String(activeQuestion);
+            const keptChoice = pendingPickerChoice; pendingPickerChoice = null;
+            const keptIndex = keptChoice && keptChoice.assessmentId === acknowledged.assessmentId ? Number(keptChoice.value) : NaN;
+            index.value = String(Number.isInteger(keptIndex) && keptIndex >= 0 && keptIndex < questions.length ? keptIndex : activeQuestion);
             // A pointer choice opens the question at once. Arrow keys only move the
             // selection; Enter or Go opens it, so keyboard users do not load every
             // question on the way.

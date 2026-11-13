@@ -1047,6 +1047,26 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
+    test('a keyboard choice in the question picker survives an autosave that re-renders before Enter or Go', async () => {
+        const h = await backend(), gate = deferred();
+        const client = { ...h.client, save: async (command, settings) => { await gate.promise; return h.client.save(command, settings); } };
+        const ui = await createInUi(h, { client, autosaveIdleMs: 40 }), questions = metadata().questions;
+        const keydown = (element, key) => { for (const handler of element.events.keydown || []) handler({ key, preventDefault() {} }); };
+        try {
+            choose(ui, 0, 'yes'); await until(() => h.calls.length > 0 && ui.root.querySelector('.ncsc-status').textContent.startsWith('Saving'));
+            const picker = byId(ui, 'ncsc-question-index'); picker.focus();
+            keydown(picker, 'ArrowDown'); picker.value = '4'; event(picker, 'change');
+            gate.resolve(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            const current = byId(ui, 'ncsc-question-index');
+            expect(current).not.toBe(picker);
+            expect(current.value).toBe('4');
+            expect(ui.root.querySelector('legend').textContent).toBe(questions[0].smallBusiness.meaning);
+            keydown(current, 'Enter');
+            expect(ui.root.querySelector('legend').textContent).toBe(questions[4].smallBusiness.meaning);
+            expect(byId(ui, 'ncsc-question-index').value).toBe('4');
+        } finally { gate.resolve(); ui.controller.destroy(); }
+    });
+
     test('detached navigation and picker controls cannot change the current selection after a render', async () => {
         const h = await backend(), ui = await createInUi(h);
         const oldPicker = byId(ui, 'ncsc-question-index'), oldJump = control(ui, 'Next unanswered question');
