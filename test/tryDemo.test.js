@@ -165,8 +165,13 @@ test('saved steps replay after reload; unreadable or stale logs start afresh; re
     store.append({ command: { a: 1 }, at: NOW });
     assert.deepEqual(store.read(), [{ command: { a: 1 }, at: NOW }]);
     store.clear(); assert.deepEqual(store.read(), []);
-    await assert.rejects(demo.pageFetch('https://example.invalid/'), TypeError);
-    assert.deepEqual(await (await demo.pageFetch('/api/enquiry')).json(), { available: true });
+    const logged = [], original = console.error;
+    console.error = (...args) => logged.push(args.join(' '));
+    try {
+        await assert.rejects(demo.pageFetch('https://example.invalid/'), TypeError);
+        assert.deepEqual(await (await demo.pageFetch('/api/enquiry')).json(), { available: true });
+    } finally { console.error = original; }
+    assert.deepEqual(logged, ['Try demo refused an unexpected request: https://example.invalid/'], 'only the unexpected URL is logged');
 });
 
 test('start mounts the real shell with the real Overview and Cyber Security workspaces; reset returns to Overview', async () => {
@@ -190,5 +195,35 @@ test('start mounts the real shell with the real Overview and Cyber Security work
     assert.equal(storage.values.get('nofries.unrelated'), 'kept');
     assert.match(nodes['try-demo-status'].textContent, /^Demo reset\./);
     assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
-    assert.deepEqual([...storage.touched].sort(), [demo.STORAGE_KEY]);
+    assert.deepEqual([...storage.touched].sort(), [demo.LEGACY_STORAGE_KEY, demo.STORAGE_KEY].sort());
+});
+
+test('a malformed request body is a 400 ncsc_input_invalid problem and records nothing', async () => {
+    const storage = recordingStorage();
+    const backend = demo.createBackend(demo.createStore(storage), steppingClock());
+    for (const [url, body] of [['/api/dashboard/ncsc/assessments', '{not json'], ['/api/dashboard/ncsc/assessments', undefined],
+        ['/api/dashboard/ncsc/assessments', 'null'], ['/api/dashboard/ncsc/assessments/visitor-c/save', '[]']]) {
+        const response = await backend.fetch(url, { method: 'POST', body });
+        assert.equal(response.status, 400, String(body));
+        assert.deepEqual(JSON.parse(await response.text()), { code: 'ncsc_input_invalid' });
+    }
+    assert.equal(storage.values.has(demo.STORAGE_KEY), false);
+});
+
+test('start removes the legacy v1 key once, and reset removes it again with the current key', () => {
+    const dom = createDom();
+    const storage = recordingStorage({ [demo.LEGACY_STORAGE_KEY]: '{"answers":{}}', 'nofries.unrelated': 'kept' });
+    const nodes = { 'try-demo-dashboard': dom.root, 'try-demo-status': dom.document.createElement('p'), 'try-demo-reset': dom.document.createElement('button') };
+    dom.document.getElementById = id => nodes[id];
+    Object.assign(dom.window, { document: dom.document, localStorage: storage, NoFriesDashboard: shell, NoFriesNcscAssessmentClient: { createClient },
+        NoFriesNcscQuestionnaire: questionnaire });
+    dom.window.location.pathname = '/try';
+    demo.start(dom.window);
+    assert.equal(demo.LEGACY_STORAGE_KEY, 'nofries.tryDemo.v1');
+    assert.equal(storage.values.has(demo.LEGACY_STORAGE_KEY), false);
+    storage.setItem(demo.LEGACY_STORAGE_KEY, '{"answers":{}}'); storage.setItem(demo.STORAGE_KEY, JSON.stringify({ log: [] }));
+    nodes['try-demo-reset'].click();
+    assert.equal(storage.values.has(demo.LEGACY_STORAGE_KEY), false);
+    assert.equal(storage.values.has(demo.STORAGE_KEY), false);
+    assert.equal(storage.values.get('nofries.unrelated'), 'kept');
 });

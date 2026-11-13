@@ -17,6 +17,8 @@
     // Fictional demonstration only (#29). No real organisation, person or record.
     // Answers live in memory and in one browser-storage key; nothing is sent anywhere.
     const STORAGE_KEY = 'nofries.tryDemo.v2';
+    // Earlier releases kept answers under this key. Nothing reads it now; reset and start remove it.
+    const LEGACY_STORAGE_KEY = 'nofries.tryDemo.v1';
     const BUSINESS = 'Brightwater Joinery (fictional)';
     const ORGANISATION_ID = 'fictional-demo';
     const PREFIX = '/api/dashboard/ncsc/assessments';
@@ -141,7 +143,9 @@
                     nextAfterAssessmentId: available.length > page.length ? page[page.length - 1].assessmentId : null } } };
             }
             if (method !== 'POST' || (match[1] && !match[2])) return { response: problem(405, 'ncsc_method_not_allowed') };
-            const body = JSON.parse(options.body);
+            let body;
+            try { body = JSON.parse(options.body); } catch (_) { body = null; }
+            if (!body || typeof body !== 'object' || Array.isArray(body)) return { response: problem(400, 'ncsc_input_invalid') };
             const command = { assessmentId: match[1] || body.assessmentId, action: match[2] || 'create',
                 idempotencyKey: body.idempotencyKey, expectedRevision: body.expectedRevision, payload: body.payload };
             const at = clock();
@@ -179,7 +183,11 @@
                 memory = null;
                 try { storage.setItem(STORAGE_KEY, JSON.stringify({ log: log })); } catch (_) { memory = log; }
             },
-            clear: function () { memory = null; try { storage.removeItem(STORAGE_KEY); } catch (_) { /* nothing stored */ } }
+            clear: function () {
+                memory = null;
+                [STORAGE_KEY, LEGACY_STORAGE_KEY].forEach(function (key) { try { storage.removeItem(key); } catch (_) { /* nothing stored */ } });
+            },
+            clearLegacy: function () { try { storage.removeItem(LEGACY_STORAGE_KEY); } catch (_) { /* nothing stored */ } }
         };
     }
 
@@ -216,10 +224,15 @@
 
     // Overview asks the public enquiry status before showing "Get help closing
     // these gaps" (a link to /contact.html). Answer that here; refuse anything else.
+    // Any other URL is logged as a console error before it is refused, so the
+    // browser check's console guard fails on a request the demo did not expect.
     function pageFetch(url) {
         if (url === '/api/enquiry') {
+            // Demo stub, not live status: the demo always reports enquiries as
+            // available and never asks the real /api/enquiry endpoint.
             return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve({ available: true }); } });
         }
+        if (typeof console !== 'undefined' && console.error) console.error('Try demo refused an unexpected request: ' + String(url));
         return Promise.reject(new TypeError('The demo makes no network requests.'));
     }
 
@@ -250,6 +263,7 @@
         const status = doc.getElementById('try-demo-status');
         let storage = null; try { storage = win.localStorage; } catch (_) { storage = null; }
         const store = createStore(storage);
+        store.clearLegacy();
         const now = function () { return new Date().toISOString(); };
         win.fetch = pageFetch;
         function mountDashboard(route) {
@@ -266,7 +280,8 @@
         mountDashboard(null);
     }
 
-    return Object.freeze({ STORAGE_KEY: STORAGE_KEY, BUSINESS: BUSINESS, ORGANISATION_ID: ORGANISATION_ID, EARLIER_ID: EARLIER_ID,
+    return Object.freeze({ STORAGE_KEY: STORAGE_KEY, LEGACY_STORAGE_KEY: LEGACY_STORAGE_KEY, BUSINESS: BUSINESS, ORGANISATION_ID: ORGANISATION_ID,
+        EARLIER_ID: EARLIER_ID,
         projection: projection, createServer: createServer, createStore: createStore, createBackend: createBackend,
         pageFetch: pageFetch, mountOptions: mountOptions, start: start });
 }));
