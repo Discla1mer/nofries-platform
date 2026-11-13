@@ -1,6 +1,6 @@
 'use strict';
 
-const { mount, mountLoading, nzDateTime } = require('../api/shared/protectedAssets/improvementActionPlanView');
+const { mount, mountLoading, actionTitle, nzDateTime } = require('../api/shared/protectedAssets/improvementActionPlanView');
 const { projectImprovementActionPlanPresentation } = require('../api/shared/improvementPlan/improvementActionPlanPresentation');
 const { projectImprovementActionList } = require('../api/shared/improvementPlan/improvementActionListProjection');
 const { createImprovementPlan, applyImprovementActionCommand } = require('../api/shared/improvementPlan/improvementPlanDomain');
@@ -47,9 +47,8 @@ test('shows only five newest global revisions across actions, including equal ti
         .sort((a, b) => b.event.revision - a.event.revision).slice(0, 5);
     expect(entries(dom)).toHaveLength(5);
     expected.forEach(({ action, event }, i) => {
-        expect(entries(dom)[i].textContent).toContain(action.labels.kind + ' · ' + nzDateTime(event.at));
+        expect(entries(dom)[i].textContent).toContain(actionTitle(action) + ' · ' + nzDateTime(event.at));
         expect(entries(dom)[i].textContent).not.toContain('Plan revision');
-        expect(entries(dom)[i].textContent).toContain(action.controlId + ' · ' + action.labels.kind);
         expect(entries(dom)[i].children[0].textContent).toContain(Array.from(action.rationale.suggestedAction).slice(0, 100).join(''));
     });
     expect(recent(dom).textContent).toContain('Latest 5 of 7 saved updates');
@@ -83,7 +82,7 @@ test.each([{ status: 'blocked' }, { status: 'open' }, { owner: 'unassigned' }, {
         expect(recent(dom).textContent).toContain('Only actions shown in this view are included; current filters apply.');
         expect(recent(dom).querySelectorAll('li')).toHaveLength(expected.length);
         recent(dom).querySelectorAll('li').forEach((entry, index) => expect(entry.children[1].textContent)
-            .toBe(expected[index].action.controlId + ' · ' + expected[index].action.labels.kind + ' · ' + nzDateTime(expected[index].event.at)));
+            .toBe(actionTitle(expected[index].action) + ' · ' + nzDateTime(expected[index].event.at)));
     });
 
 test('valid untouched actions get a scoped empty message; empty selections never imply the whole plan has no updates', () => {

@@ -240,6 +240,9 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-questionnaire textarea, .ncsc-questionnaire select { color: var(--dashboard-ink, #17140f); background: var(--dashboard-surface, #f6f2ea); border: 1px solid var(--dashboard-control-border, #7d7262); border-radius: .4rem; padding: .75rem; }
 .ncsc-questionnaire textarea { display: block; width: 100%; resize: vertical; min-height: 8rem; line-height: 1.5; margin: .5rem 0; }
 .ncsc-questionnaire select { display: block; width: 100%; min-height: 3rem; margin: .5rem 0 1.5rem; }
+.ncsc-question-picker { display: flex; align-items: center; gap: .65rem; margin: .5rem 0 1.5rem; }
+.ncsc-questionnaire .ncsc-question-picker select { flex: 1 1 auto; min-width: 0; margin: 0; }
+.ncsc-question-picker .ncsc-question-go { flex: 0 0 auto; }
 .ncsc-questionnaire button:disabled { cursor: default; opacity: .55; }
 .improvement-action-form label { display: block; margin: .75rem 0; }
 .improvement-action-form input { display: block; width: 100%; max-width: 24rem; box-sizing: border-box; min-height: 2.75rem; margin-top: .5rem; padding: .5rem .75rem; }
