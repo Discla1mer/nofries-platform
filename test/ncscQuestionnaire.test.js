@@ -1593,6 +1593,42 @@ describe('questionnaire form accessibility', () => {
         } finally { ui.controller.destroy(); }
     });
 
+    test.each([['wide', false, true], ['narrow', true, false]])('on %s screens the choices follow the question and help is one disclosure (F1-R09)', async (_label, narrow, openByDefault) => {
+        const h = await backend(), dom = interactiveDom(); const queries = [];
+        dom.window.matchMedia = query => { queries.push(query); return { matches: narrow && query === '(max-width: 30rem)' }; };
+        const ui = await createInUi(h, { dom });
+        try {
+            const question = metadata().questions[0];
+            const fieldset = ui.root.querySelector('fieldset');
+            // Nothing but the short hint and the Unknown reassurance sits between the question and its choices.
+            const beforeChoices = fieldset.children.slice(0, fieldset.children.findIndex(child => child.className === 'ncsc-option'));
+            expect(beforeChoices.map(child => child.tagName.toLowerCase())).toEqual(['legend', 'p', 'p']);
+            expect(fieldset.querySelectorAll('details')).toHaveLength(0);
+            const help = byId(ui, 'ncsc-question-help-' + question.id);
+            expect(help.tagName.toLowerCase()).toBe('details');
+            expect(help.children[0].tagName.toLowerCase()).toBe('summary');
+            expect(help.children[0].textContent).toBe('Help with this question');
+            const region = ui.root.querySelector('.ncsc-question').children;
+            expect(region.indexOf(help)).toBeGreaterThan(region.indexOf(fieldset));
+            expect(Boolean(help.open)).toBe(openByDefault);
+            expect(queries).toContain('(max-width: 30rem)');
+            // No content is lost: the example, checks, framework wording and every answer meaning remain.
+            expect(help.textContent).toContain('Example: ' + question.smallBusiness.example);
+            question.smallBusiness.checks.forEach(text => expect(help.textContent).toContain(text));
+            expect(help.textContent).toContain(question.prompt);
+            expect(help.textContent).toContain('What the answers mean');
+            for (const id of question.responseOptionIds) {
+                const input = byId(ui, `ncsc-answer-${question.id}-${id}`), definition = byId(ui, input.getAttribute('aria-describedby'));
+                expect(definition.textContent.length).toBeGreaterThan(20);
+                expect(help.textContent).toContain(definition.textContent);
+            }
+            // The person's open or closed choice survives the re-render that answering causes.
+            help.open = !openByDefault; event(help, 'toggle');
+            choose(ui, 0, 'partial');
+            expect(Boolean(byId(ui, 'ncsc-question-help-' + question.id).open)).toBe(!openByDefault);
+        } finally { ui.controller.destroy(); }
+    });
+
     test('native answer labels explain current implementation and pending N/A without suggesting an available approval action', async () => {
         const h = await backend(), ui = await createInUi(h), question = metadata().questions[0];
         const explanations = {

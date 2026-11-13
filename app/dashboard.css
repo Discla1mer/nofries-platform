@@ -291,9 +291,13 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .ncsc-assessment-filters { grid-template-columns: minmax(0, 1fr); }
     .ncsc-assessment-card { padding: 1rem; }
 }
-.ncsc-scope, .ncsc-guidance, .ncsc-provenance { margin: 1rem 0; padding: 1rem; border: 1px solid var(--dashboard-line, #d3c9b7); border-radius: .5rem; background: var(--dashboard-surface, #f6f2ea); }
+.ncsc-scope, .ncsc-guidance, .ncsc-question-help, .ncsc-provenance { margin: 1rem 0; padding: 1rem; border: 1px solid var(--dashboard-line, #d3c9b7); border-radius: .5rem; background: var(--dashboard-surface, #f6f2ea); }
 .ncsc-questionnaire summary { cursor: pointer; min-height: 2.75rem; padding: .5rem 0; font-weight: var(--dashboard-weight-regular); }
-.ncsc-guidance p, .ncsc-provenance p, .ncsc-scope p { margin-top: .75rem; }
+.ncsc-guidance p, .ncsc-question-help p, .ncsc-provenance p, .ncsc-scope p { margin-top: .75rem; }
+.ncsc-question-help h3 { margin: 1rem 0 .4rem; font-size: var(--dashboard-font-body, 1rem); }
+.ncsc-question-help ul { margin: .4rem 0; padding-left: 1.25rem; }
+/* Wider screens show each answer's meaning under its choice instead. */
+@media (min-width: 30.01rem) { .ncsc-help-answers { display: none; } }
 .ncsc-preserve-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ncsc-answer { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
 .ncsc-answer legend { font-size: var(--dashboard-font-section); font-weight: var(--dashboard-weight-emphasis); line-height: 1.4; padding: 0 0 1rem; }
@@ -355,6 +359,11 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .ncsc-review-item .dashboard-text-button { width: 100%; text-align: center; }
     .ncsc-review-counts { flex-direction: column; }
     .ncsc-option { padding: .75rem; }
+    /* Choices stay compact; their meanings are under "Help with this question". */
+    .ncsc-option .ncsc-option-help, .ncsc-option .ncsc-option-break { display: none; }
+    .ncsc-question-help { padding: .25rem 1rem; }
+    .ncsc-answer legend { padding-bottom: .5rem; font-size: 1.125rem; line-height: 1.35; }
+    .ncsc-answer > p { margin: 0 0 .6rem; }
     .ncsc-leave-dialog { padding: 1rem; }
     .ncsc-leave-dialog[open] { grid-template-columns: minmax(0, 1fr); }
 }
@@ -532,6 +541,10 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 
 /* Scroll and focus targets clear the sticky organisation bar (at most 9rem tall). */
 .nofries-dashboard :is(.ncsc-question, .ncsc-sealed, .ncsc-errors, .picture-top-gaps h3, .dashboard-main h1) { scroll-margin-top: 10rem; }
+
+/* On phones the question's own text stays below the bar when the eyebrow is
+   partly covered, so the choices start higher on the screen. */
+@media (max-width: 30rem) { .nofries-dashboard .ncsc-questionnaire .ncsc-question { scroll-margin-top: 6rem; } }
 
 .nofries-dashboard .dashboard-topbar { max-height: 9rem; overflow: auto; }
 /* Improvement Plan choices stay readable on 320px phones. */
