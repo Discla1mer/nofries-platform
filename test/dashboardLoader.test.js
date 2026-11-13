@@ -31,7 +31,7 @@ const GB = 'b'.repeat(64);
 const GC = 'c'.repeat(64);
 const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dashboardMessage', 'dashboardStatus', 'dashboardRetry',
     'dashboardSignIn', 'dashboardSignOut', 'dashboardChooser', 'dashboardChoices', 'dashboardMore', 'dashboardApp',
-    'dashboardApplicationIntegrity', 'dashboardStyleIntegrity', 'dashboardSkipLink'];
+    'dashboardApplicationIntegrity', 'dashboardStyleIntegrity', 'dashboardSkipLink', 'dashboardCreateAccount', 'dashboardCreateAccountLink'];
 
 function state(selectedBindingId = A, generation = GA, extra = {}) {
     return { schemaVersion: 1, authenticated: true, purpose: 'operator_dashboard', expiresAt: '2026-09-09T00:30:00.000Z',
@@ -169,7 +169,8 @@ function harness(options = {}) {
             } };
             if (options.cyber) {
                 window.NoFriesNcscAssessmentClient = { createClient: input => ncscClient.createClient({
-                    metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch }) };
+                    metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch,
+                    ...(input.onAccepted ? { onAccepted: input.onAccepted } : {}) }) };
                 window.NoFriesNcscQuestionnaire = { mount: (...args) => { ncscMounts.push(args); return questionnaire.mount(...args); } };
                 if (options.picture) window.NoFriesOrganisationPicture = require('../api/shared/protectedAssets/organisationPicture');
             }
@@ -250,6 +251,17 @@ describe('mounted retained Improvement Plan', () => {
         await h.reply(3, 200, state()); h.window.dispatch('pagehide'); await h.reply(4, 200, empty(model));
         expect(h.elements.dashboardApp.children).toHaveLength(0);
         expect(h.requests).toHaveLength(5);
+    });
+    test.each([['valid', true], ['invalid', false]])('a 200 plan index with a %s body moves the footer information time only when accepted', async (_, valid) => {
+        const h = harness({ improvement: true, hash: '#improvement-plan' }), model = await ready(h);
+        await h.reply(3, 200, state());
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:49:00.000Z'));
+        await h.reply(4, 200, valid ? empty(model) : { ...empty(model), schemaVersion: 2 });
+        await h.improvementMounts[0].controller.ready;
+        expect(stamp().dateTime).toBe(valid ? '2026-09-08T23:49:00.000Z' : before);
+        h.window.dispatch('pagehide');
     });
     test('an unready module never installs the controller or requests retained plan data', async () => {
         const h = harness({ improvement: true, hash: '#improvement-plan' }); await flush(); await h.open();
@@ -1532,6 +1544,24 @@ describe('dashboard asynchronous ownership and sign-out', () => {
         expect(h.document.head.children).toHaveLength(2);
     });
 
+    test('a reload that clears the focused dashboard keeps focus on the announced loading heading', async () => {
+        const h = harness(); await flush(); await h.open();
+        expect(fs.readFileSync(path.join(__dirname, '../app/dashboard.html'), 'utf8')).toMatch(/<p id="dashboardMessage" aria-live="polite">/);
+        h.elements.dashboardApp.querySelector('main').focus();
+        h.event('pageshow', { persisted: true }); await flush();
+        expect(h.status).toBe('loading');
+        expect(h.elements.dashboardApp.children).toHaveLength(0);
+        expect(h.document.activeElement).toBe(h.elements.dashboardHeading);
+        expect(h.elements.dashboardMessage.textContent).toBe('Getting your dashboard ready. This can take up to 20 seconds.');
+    });
+
+    test('a reload does not move focus that was outside the dashboard', async () => {
+        const h = harness(); await flush(); await h.open();
+        const outside = h.document.createElement('a'); h.document.body.append(outside); outside.focus();
+        h.event('pageshow', { persisted: true }); await flush();
+        expect(h.status).toBe('loading'); expect(h.document.activeElement).toBe(outside);
+    });
+
     test('a stale error and delayed focus revalidation cannot erase or focus over a current mount', async () => {
         const h = harness(); await flush(); await h.open();
         h.window.dispatch('focus'); await flush(); const old = h.requests[4];
@@ -1657,12 +1687,34 @@ describe('ready Cyber composition', () => {
         h.window.dispatch('pagehide');
         expect(h.elements.dashboardApp.children).toHaveLength(0);
     });
+    test('a successful saved-assessment read moves the footer information time forward', async () => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:47:00.000Z'));
+        const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+        await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(before).not.toBe('2026-09-08T23:47:00.000Z');
+        expect(stamp().dateTime).toBe('2026-09-08T23:47:00.000Z');
+        expect(stamp().textContent).toContain('NZ time');
+        h.window.dispatch('pagehide');
+    });
+    test.each([['truncated', '{'], ['invalid', JSON.stringify({ schemaVersion: 2, assessments: [], nextAfterAssessmentId: null })]])
+    ('a 2xx saved-assessment read with a %s body leaves the footer information time unchanged', async (_, body) => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:48:00.000Z'));
+        await h.reply(5, 200, {}, { text: async () => body });
+        expect(stamp().dateTime).toBe(before);
+        h.window.dispatch('pagehide');
+    });
     test('Overview first-use action reaches the production questionnaire as a new-assessment start', async () => {
         const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
         const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
         await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
         expect(h.ncscMounts).toHaveLength(0);
-        control(h, 'Open assessment').click(); await flush();
+        control(h, 'Start your cyber check').click(); await flush();
         expect(h.ncscMounts).toHaveLength(1);
         expect(h.ncscMounts[0][1]).toMatchObject({ startNew: true, initialAssessmentId: undefined,
             organisationId: h.cyberProjection.context.organisationId });
@@ -1742,6 +1794,75 @@ describe('ready Cyber composition', () => {
             expect(control(h, 'Plan this')).toBeUndefined();
             h.window.dispatch('pagehide');
         });
+        async function emptyPlanTab() {
+            const h = harness({ cyber: true, improvement: true, hash: '#improvement-plan' });
+            await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
+            const model = JSON.parse(JSON.stringify(projection()));
+            ['cyber_security', 'improvement_plan'].forEach(key => { model.modules.find(item => item.key === key).state = 'ready'; });
+            await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
+            await h.reply(3, 200, { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'),
+                summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false,
+                metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' });
+            await h.reply(4, 200, state());
+            const atUrl = pattern => h.requests.findIndex(item => pattern.test(item.url));
+            await h.reply(atUrl(/^\/api\/dashboard\/improvement\/plans\?limit=/), 200, { schemaVersion: 1,
+                scope: { tenantId: fixture().scope.tenantId, organisationId: model.context.organisationId }, asOf: NOW, plans: [], nextAfterPlanId: null });
+            return { h, atUrl };
+        }
+        test('an empty Improvement Plan tab offers the latest submitted assessment from the validated list', async () => {
+            const stored = await submitted();
+            const { h, atUrl } = await emptyPlanTab();
+            const list = atUrl(/^\/api\/dashboard\/ncsc\/assessments\?limit=100$/);
+            expect(list).toBeGreaterThan(0);
+            expect(h.requests[list].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+            await ncscReply(h, list, 200, stored.list()); await flush();
+            expect(h.improvementMounts).toHaveLength(1);
+            expect(h.elements.dashboardApp.textContent).toContain('No improvement plan yet');
+            expect(h.elements.dashboardApp.textContent).toContain('Create a plan from your latest submitted assessment');
+            expect(control(h, 'Create improvement plan from latest assessment')).toBeDefined();
+            h.window.dispatch('pagehide');
+        });
+        test('the empty Improvement Plan tab reads every assessment page before choosing the latest submitted one', async () => {
+            const stored = await records();
+            const drafts = [1, 2, 3, 4, 5, 6].map(n => {
+                stored.execute(createCommand('assessment-a' + n, 'create-a' + n, 'Draft scope ' + n + '.'));
+                return projectNcscSummary(stored.versions.get('assessment-a' + n));
+            });
+            stored.execute(createCommand('assessment-b', 'create-b', 'Submitted scope.'));
+            stored.execute(saveCommand('assessment-b', 0, 'save-b', allResponses('yes')));
+            stored.execute(submitCommand('assessment-b', 1, 'submit-b'));
+            const submittedRow = projectNcscSummary(stored.versions.get('assessment-b'));
+            const { h, atUrl } = await emptyPlanTab();
+            let after = null;
+            for (const draft of drafts) {
+                const index = atUrl(new RegExp('^/api/dashboard/ncsc/assessments\\?limit=100' + (after ? '&afterAssessmentId=' + after : '') + '$'));
+                expect(index).toBeGreaterThan(0);
+                await ncscReply(h, index, 200, { schemaVersion: 1, assessments: [draft], nextAfterAssessmentId: draft.assessmentId });
+                after = draft.assessmentId;
+            }
+            const last = atUrl(new RegExp('^/api/dashboard/ncsc/assessments\\?limit=100&afterAssessmentId=' + after + '$'));
+            expect(last).toBeGreaterThan(0);
+            await ncscReply(h, last, 200, { schemaVersion: 1, assessments: [submittedRow], nextAfterAssessmentId: null }); await flush();
+            expect(h.elements.dashboardApp.textContent).toContain('Create a plan from your latest submitted assessment');
+            expect(h.elements.dashboardApp.textContent).not.toContain('Submit an assessment first');
+            expect(control(h, 'Create improvement plan from latest assessment')).toBeDefined();
+            h.window.dispatch('pagehide');
+        });
+        test('the empty Improvement Plan tab says it could not check when the assessment cursor does not advance', async () => {
+            const stored = await records();
+            stored.execute(createCommand('assessment-a', 'create-a', 'Draft scope only.'));
+            const draft = projectNcscSummary(stored.versions.get('assessment-a'));
+            const { h, atUrl } = await emptyPlanTab();
+            await ncscReply(h, atUrl(/^\/api\/dashboard\/ncsc\/assessments\?limit=100$/), 200,
+                { schemaVersion: 1, assessments: [draft], nextAfterAssessmentId: draft.assessmentId });
+            const again = atUrl(new RegExp('^/api/dashboard/ncsc/assessments\\?limit=100&afterAssessmentId=' + draft.assessmentId + '$'));
+            expect(again).toBeGreaterThan(0);
+            await ncscReply(h, again, 200, { schemaVersion: 1, assessments: [], nextAfterAssessmentId: draft.assessmentId }); await flush();
+            expect(h.elements.dashboardApp.textContent).toContain('We could not check your submitted assessments just now.');
+            expect(h.elements.dashboardApp.textContent).not.toContain('Submit an assessment first');
+            expect(control(h, 'Create improvement plan from latest assessment')).toBeUndefined();
+            h.window.dispatch('pagehide');
+        });
         test('creates the plan for the submitted revision, then opens the editor at that gap', async () => {
             const stored = await submitted();
             const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
@@ -1761,6 +1882,10 @@ describe('ready Cyber composition', () => {
             await h.reply(10, 200, view);
             expect(h.improvementMounts).toHaveLength(1);
             expect(h.improvementMounts[0].input.initialTarget).toEqual(target(planId));
+            // Plain topic titles come from the same validated Cyber metadata.
+            const titles = h.improvementMounts[0].input.controlTitles;
+            h.cyberProjection.metadata.controls.forEach(item => expect(titles[item.id]).toBe(item.title));
+            expect(Object.keys(titles)).toHaveLength(h.cyberProjection.metadata.controls.length);
             expect(h.window.location.hash).toBe('#improvement-plan');
             expect(h.requests[11].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
             h.window.dispatch('pagehide');
@@ -2151,8 +2276,9 @@ describe('ready Cyber composition', () => {
         const saved = stored.read('assessment-home');
         const h = harness({ cyber: true, hash: '#cyber-security' }); await openedRecord(h, stored);
         selectAnswer(h);
-        expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
-        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('1 not saved yet');
+        // Automatic saving is on here, so the short wait before it sends reads as saving.
+        expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toBe('Saving…');
+        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('· saving…');
         expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/\*$/);
         h.homeClick(); control(h, 'Discard unsent changes').click(); await flush();
         expect(h.requests.filter(request => request.init.method === 'POST')).toHaveLength(0);
@@ -2634,6 +2760,18 @@ describe('concurrent mounted authority refresh', () => {
         expect(h.requests[final].url).toBe('/api/dashboard/session'); await h.reply(final, 200, state());
         expect(h.status).toBe('ready');
     }
+    test('a confirmed return-to-tab refresh moves the footer information time forward', async () => {
+        const h = await mounted(false);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:50:00.000Z'));
+        const first = await beginRefresh(h, false);
+        await h.reply(first + 2, 200, payload(h, 2)); await h.reply(first + 1, 200, payload(h, 1));
+        expect(stamp().dateTime).toBe(before);
+        await h.reply(first + 3, 200, state());
+        expect(h.status).toBe('ready');
+        expect(stamp().dateTime).toBe('2026-09-08T23:50:00.000Z');
+    });
     test.each([false, true])('parallel middle GETs accept reverse completion with Cyber=%s and retain the final witness fence', async cyber => {
         const h = await mounted(cyber), main = h.elements.dashboardApp.querySelector('main');
         const first = await beginRefresh(h, cyber), middleCount = cyber ? 3 : 2;
@@ -3550,6 +3688,17 @@ describe('Overview Actions card', () => {
         expect(h.mounts[0].destroy).not.toHaveBeenCalled();
         h.window.dispatch('pagehide');
     });
+    test.each([['valid', true], ['invalid', false]])('Actions card lists with a %s body move the footer information time only when accepted', async (_, valid) => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:51:00.000Z'));
+        await h.reply(at(h, /improvement\/plans/), 200, plans(model));
+        expect(stamp().dateTime).toBe(before);
+        await h.reply(at(h, /improvement\/list/), 200, valid ? list : { schemaVersion: 1, asOf: NOW });
+        expect(stamp().dateTime).toBe(valid ? '2026-09-08T23:51:00.000Z' : before);
+        h.window.dispatch('pagehide');
+    });
     test('with improvement actions off, Overview makes no improvement reads and shows no card', async () => {
         const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }); await ready(h, false);
         expect(h.requests).toHaveLength(6);
@@ -3559,4 +3708,41 @@ describe('Overview Actions card', () => {
         expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
         h.window.dispatch('pagehide');
     });
+});
+
+test.each([[{ external: true }, '#cyber-security', '#cyber-security'], [{ external: true }, '#not-a-route', undefined],
+    [{}, '#cyber-security', undefined]])('a signed-out dashboard remembers only a listed customer page for sign-in (%j %s)', async (options, hash, saved) => {
+    // Round 2: after signing out and back in, Alex landed on Overview, not the assessment he left.
+    const storage = new Map();
+    const h = harness({ ...options, hash });
+    h.window.sessionStorage = { setItem: (key, value) => storage.set(key, value), getItem: key => storage.get(key) ?? null,
+        removeItem: key => storage.delete(key) };
+    await flush();
+    await h.reply(0, 401, { code: 'dashboard_session_required' });
+    expect(h.status).toBe('unauthenticated');
+    const value = storage.get('nofries-return-route');
+    if (saved === undefined) expect(value).toBeUndefined();
+    else { const parsed = JSON.parse(value); expect(Object.keys(parsed).sort()).toEqual(['at', 'route']); expect(parsed.route).toBe(saved); }
+});
+
+test.each([['external', '/login?provider=external&intent=create', false], ['staff', null, true]])(
+    'a signed-out %s visitor to /dashboard is offered account creation only on customer entry', async (provider, href, hidden) => {
+        // Round 2: typing /dashboard while signed out showed only "Please sign in".
+        const h = harness(provider === 'external' ? { external: true } : {}); await flush();
+        await h.reply(0, 401, { code: 'dashboard_session_required' });
+        expect(h.status).toBe('unauthenticated');
+        expect(h.elements.dashboardCreateAccount.hidden).toBe(hidden);
+        if (href) expect(h.elements.dashboardCreateAccountLink.href).toBe(href);
+        expect(ENTRY_HTML).toContain('New here? <a id="dashboardCreateAccountLink" href="/login?intent=create">Create an account</a>');
+    });
+
+test('dashboard startup shows one steady progress message instead of changing stages', () => {
+    // Round 2: "Checking your sign-in…", "Preparing your dashboard…" and
+    // "Confirming your access…" over 6 to 16 seconds read as separate waits.
+    for (const stage of ['Checking your sign-in…', 'Loading your organisation…', 'Preparing your dashboard…', 'Confirming your access…']) {
+        expect(SOURCE).not.toContain("'" + stage + "'");
+    }
+    expect(SOURCE).toContain("const OPENING_MESSAGE = 'Getting your dashboard ready. This can take up to 20 seconds.';");
+    expect(SOURCE.match(/loadingStage\(cycle, OPENING_MESSAGE, OPENING_DETAIL\)/g)).toHaveLength(2);
+    expect(SOURCE.match(/sessionForReconcile\(cycle, OPENING_MESSAGE, OPENING_DETAIL\)/g)).toHaveLength(2);
 });

@@ -18,8 +18,15 @@
     // already waited REQUEST_MS, so they are not tried again here.
     const SESSION_RETRY_MS = [1000, 2000, 4000];
     const ACTION_PLAN_LIMIT = 5;
+    // One steady message while the dashboard opens (round 2: three changing
+    // lines over 6 to 16 seconds read as separate waits). Retries still say so.
+    const OPENING_MESSAGE = 'Getting your dashboard ready. This can take up to 20 seconds.';
+    const OPENING_DETAIL = 'Please keep this page open.';
     const MAX_RECONCILIATIONS = 2;
     const ADD_ORG_RETURN = 'nofries-return-add-organisation';
+    // Customer sign-in returns through /signup, which reads this once. Only a
+    // listed dashboard fragment is stored; /signup checks it against its own list.
+    const SIGNIN_RETURN = 'nofries-return-route';
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
     const DIGEST = /^[0-9a-f]{64}$/;
     const ROUTES = ['overview', 'ai-governance', 'cyber-security', 'it-optimisation', 'improvement-plan', 'evidence', 'board-reports', 'services'];
@@ -135,7 +142,17 @@
     }
     elements.signIn.href = customerProvider === 'staff'
         ? '/api/auth/login?returnTo=' + encodeURIComponent('/dashboard' + currentRoute()) : customerEntry;
+    // A signed-out visitor may be new. Offer account creation beside sign-in.
+    const createAccount = document.getElementById('dashboardCreateAccount');
+    const createAccountLink = document.getElementById('dashboardCreateAccountLink');
+    if (createAccountLink) createAccountLink.href = customerEntry + (customerEntry.indexOf('?') === -1 ? '?' : '&') + 'intent=create';
 
+    function rememberReturnRoute() {
+        if (customerProvider === 'staff' || gateway) return;
+        const route = currentRoute();
+        if (!route) return;
+        try { window.sessionStorage.setItem(SIGNIN_RETURN, JSON.stringify({ route: route, at: Date.now() })); } catch (_) {}
+    }
     function current(cycle) { return active === cycle && !cycle.closed; }
     function dispose(cycle) {
         if (!cycle || cycle.closed) return;
@@ -190,6 +207,11 @@
         return !clientDraft(cycle)?.dirty || window.confirm('Discard unsaved organisation details?');
     }
     function begin(draft) {
+        // Content is about to be cleared. If the keyboard user was in it, keep
+        // focus on the loading heading instead of letting it fall to the page.
+        const focused = document.activeElement;
+        const keepFocus = !!focused && focused !== document.body && [elements.app, elements.chooser, elements.panel]
+            .some(function (region) { return region && typeof region.contains === 'function' && region.contains(focused); });
         dispose(active);
         linkExit = null;
         const cycle = { closed: false, cleanup: [], session: null, busy: true, clientDraft: draft || null, directoryPageCount: 0 };
@@ -197,12 +219,13 @@
         active = cycle;
         clearContent();
         show(cycle, 'loading');
+        if (keepFocus && !elements.panel.hidden) elements.heading.focus();
         return cycle;
     }
     function show(cycle, state, focusHeading) {
         if (!current(cycle)) return;
         const copy = {
-            loading: ['Opening your dashboard', 'Checking your sign-in…', 'This usually takes a moment.'],
+            loading: ['Opening your dashboard', OPENING_MESSAGE, OPENING_DETAIL],
             selection: ['Choose an organisation', 'Select the organisation you want to view.', 'Your selection will be checked before the dashboard opens.'],
             ready: ['Your dashboard', 'Choose another organisation or sign out when finished.', 'Dashboard ready.'],
             queue: ['Work queue', 'Follow up on saved improvement actions across your organisations.', 'Each organisation is checked before its actions are shown.'],
@@ -245,6 +268,8 @@
         elements.signIn.hidden = !['unauthenticated', 'expired', 'denied'].includes(state);
         if (!elements.signIn.dataset.restingLabel) elements.signIn.dataset.restingLabel = elements.signIn.textContent;
         elements.signIn.textContent = state === 'expired' ? 'Sign in again' : elements.signIn.dataset.restingLabel;
+        if (state === 'unauthenticated' || state === 'expired') rememberReturnRoute();
+        if (createAccount) createAccount.hidden = customerProvider === 'staff' || gateway || state !== 'unauthenticated';
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
         if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
@@ -428,6 +453,11 @@
             }).catch(function (error) { finish(reject, error); });
         });
     }
+    // Move the dashboard's "Information as at" time forward after a
+    // successful read for the current cycle. Display only.
+    function informationRead(cycle) {
+        if (current(cycle) && controller && typeof controller.informationRead === 'function') controller.informationRead(new Date().toISOString());
+    }
     function requireSuccess(result) {
         if (result.status !== 200) { const error = invalid(); error.status = result.status; throw error; }
         return result.value;
@@ -523,7 +553,7 @@
         return reconcileCurrent(cycle, transitions, initializeAllowed).finally(function () { cycle.reconciling -= 1; });
     }
     async function reconcileCurrent(cycle, transitions, initializeAllowed) {
-        const result = await sessionForReconcile(cycle, 'Checking your sign-in…', 'This usually takes a moment.');
+        const result = await sessionForReconcile(cycle, OPENING_MESSAGE, OPENING_DETAIL);
         if (!current(cycle)) return;
         if (result.status === 409 && initializeAllowed && fields(result.value, ['code']) && result.value.code === 'dashboard_initialization_required') {
             const pending = command('initialize', { operationId: secureId() });
@@ -538,7 +568,7 @@
         if (cycle.openSelection && value.accountType === 'consultant' && !currentRoute()) {
             window.history.replaceState(null, '', lastOrganisationRoute);
         }
-        loadingStage(cycle, 'Loading your organisation…', 'Fetching what you can open.');
+        loadingStage(cycle, OPENING_MESSAGE, OPENING_DETAIL);
         const snapshot = Object.freeze({ generation: value.generation, selectedBindingId: value.selectedBindingId });
         if (value.accountType === 'consultant' && window.location.hash === '#work-queue' && !cycle.openSelection) {
             if (value.workQueueAvailable === true) { mountWorkQueue(cycle); return; }
@@ -565,7 +595,7 @@
         const prefetchCyber = Array.isArray(projection?.modules) && projection.modules.some(function (item) {
             return item && item.key === 'cyber_security' && item.state === 'ready';
         });
-        loadingStage(cycle, 'Preparing your dashboard…', 'Loading the pages you use.');
+        loadingStage(cycle, OPENING_MESSAGE, OPENING_DETAIL);
         const prepared = await Promise.all([assets(cycle), prefetchCyber
             ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess)
             : Promise.resolve(null)]);
@@ -578,8 +608,8 @@
         const cyberReady = model.modules.some(function (item) { return item.key === 'cyber_security' && item.state === 'ready'; });
         const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1]) : null;
         const improvementReady = model.modules.some(function (item) { return item.key === 'improvement_plan' && item.state === 'ready'; });
-        const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId) : null;
-        const witnessed = await sessionForReconcile(cycle, 'Confirming your access…', 'One last check before the page opens.');
+        const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId, cyber) : null;
+        const witnessed = await sessionForReconcile(cycle, OPENING_MESSAGE, OPENING_DETAIL);
         const fresh = session(requireSuccess(witnessed));
         if (!current(cycle)) return;
         if (!sameSession(value, fresh)) {
@@ -1249,6 +1279,10 @@
                 const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
             }
             return result;
+        }, onAccepted: function () {
+            // Only after the client has read and validated the body: a 2xx
+            // whose body then stalls, is cut short or is invalid moves nothing.
+            informationRead(cycle);
         } });
         const mountCyber = function (root, presentation) {
             if (!current(cycle)) throw invalid();
@@ -1293,6 +1327,37 @@
                 complete: complete
             };
         };
+        // Plain topic titles let the Improvement Plan name actions in words.
+        mountCyber.controlTitles = Object.assign(Object.create(null), Object.fromEntries(value.metadata.controls.map(function (control) {
+            return [control.id, control.title];
+        })));
+        // The Improvement Plan's empty state offers the latest submitted
+        // assessment. This reads the same validated, bounded list as Overview.
+        mountCyber.latestSubmitted = async function () {
+            // Plain null-prototype records: both bounded clients accept them.
+            const plain = function (value) { return Object.assign(Object.create(null), value); };
+            // The list is ordered by assessment id, not by date, so the latest
+            // submitted one is only known once every page has been read. A very
+            // large safety bound stops a runaway cursor; reaching it means the
+            // answer is unknown (the plan tab says it could not check), never
+            // "none" and never an older assessment presented as the latest.
+            let after = null, latest = null, complete = false;
+            for (let pageCount = 0; pageCount < 100; pageCount++) {
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                const listed = await client.list(plain(after === null ? { limit: 100 } : { limit: 100, afterAssessmentId: after }));
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                listed.assessments.forEach(function (row) {
+                    if (row.status === 'submitted' && (!latest || row.updatedAt > latest.updatedAt)) latest = row;
+                });
+                const nextAfter = listed.nextAfterAssessmentId;
+                if (nextAfter === null) { complete = true; break; }
+                if (typeof nextAfter !== 'string' || nextAfter === after) throw invalid();
+                after = nextAfter;
+            }
+            if (!complete || !current(cycle) || cycle.authorityPending) throw invalid();
+            return latest && plain({ assessmentId: latest.assessmentId, revision: latest.revision, revisionSha256: latest.revisionSha256,
+                profileRef: plain(latest.profileRef), submittedAt: latest.updatedAt });
+        };
         const picture = window.NoFriesOrganisationPicture;
         let pictureSelection = null;
         if (picture && typeof picture.mount === 'function') {
@@ -1333,9 +1398,15 @@
             if (!plan || typeof plan.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(plan.planId)) throw invalid();
             return read('/api/dashboard/improvement/list?planId=' + encodeURIComponent(plan.planId));
         }));
-        return { lists: lists, more: page.nextAfterPlanId !== null };
+        const result = { lists: lists, more: page.nextAfterPlanId !== null };
+        // Advance "Information as at" only when the Actions card will accept
+        // every list it was given; an invalid list leaves the time unchanged.
+        const picture = window.NoFriesOrganisationPicture;
+        if (current(cycle) && !cycle.authorityPending && picture && typeof picture.actionSummary === 'function' &&
+            picture.actionSummary(result) !== null) informationRead(cycle);
+        return result;
     }
-    function improvementOptions(cycle, snapshot, organisationId) {
+    function improvementOptions(cycle, snapshot, organisationId, cyber) {
         const factory = window.NoFriesImprovementActionPlanClient;
         if (!factory || typeof factory.mount !== 'function') throw invalid();
         return function (root, presentation) {
@@ -1346,6 +1417,8 @@
                     ? { initialTarget: { planId: cycle.workQueueTarget.planId, actionId: cycle.workQueueTarget.actionId,
                         planRevision: cycle.workQueueTarget.planRevision } } : {}),
                 sourceAssessment: presentation && presentation.sourceAssessment,
+                ...(cyber && cyber.controlTitles ? { controlTitles: cyber.controlTitles } : {}),
+                ...(cyber && typeof cyber.latestSubmitted === 'function' ? { latestSource: cyber.latestSubmitted } : {}),
                 newId: secureId,
                 isCurrent: function () { return current(cycle) && !cycle.authorityPending; },
                 request: async function (path, body) {
@@ -1358,7 +1431,9 @@
                         const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
                     }
                     return result;
-                }
+                },
+                // Only after the plan client has validated the response.
+                onAccepted: function () { informationRead(cycle); }
             });
             cycle.workQueueTarget = null;
             return result;
@@ -1646,6 +1721,7 @@
     elements.signOut.addEventListener('click', function () {
         if (!active || active.busy || active.authorityPending || unresolved || blockPendingClientNavigation(active)) return;
         leave(active, function () {
+            rememberReturnRoute();
             const cycle = begin();
             const pending = command('logout', {});
             execute(cycle, pending).catch(function (error) { failure(cycle, error); });
@@ -1718,6 +1794,7 @@
             if (!sameSession(fresh, confirmed)) { restore(); return; }
             remember(cycle, confirmed);
             renderDirectory(cycle, confirmed, middle[0].rows, middle[0].nextAfterBindingId, middle[0].pageCount);
+            informationRead(cycle);
             elements.status.textContent = previousStatus;
             delete elements.status.dataset.accessWarning;
             elements.retry.hidden = true;
