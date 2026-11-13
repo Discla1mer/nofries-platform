@@ -142,18 +142,23 @@ test.each([false, true])('owned setup session can be removed %s after expiry, th
     for (const value of result.cookie) expect(value).toContain('Max-Age=0');
     expect(h.store.sessions.has(id(completed.cookie))).toBe(false); expect(h.store.transactions.has(id(pending.cookie))).toBe(false);
     expect(h.store.sessions.get(otherId)).toEqual(kept); expect(h.store.transactions.get(otherTx)).toEqual({ kind: 'synthetic-retained' });
-    await expect(h.service.logoutSetup({ cookieHeader: header })).rejects.toMatchObject({ code: 'browser_auth_account_change_pending' });
+    // The repeat finds the transaction gone, so it revokes it server-side and
+    // confirms again; nothing else is touched.
+    expect(await h.service.logoutSetup({ cookieHeader: header })).toEqual(result);
+    expect(h.store.fences.get(id(pending.cookie))).toMatchObject({ state: 'revoked' });
+    expect(h.store.sessions.get(otherId)).toEqual(kept); expect(h.store.transactions.get(otherTx)).toEqual({ kind: 'synthetic-retained' });
     expect(await h.service.logoutSetup({ cookieHeader: '' })).toEqual(result);
     await expect(h.callback(pending)).rejects.toMatchObject({ code: 'browser_auth_transaction_invalid' });
     expect(h.exchange).toHaveBeenCalledTimes(1); expect(h.admission.reserve).toHaveBeenCalledTimes(1);
 });
 
-test('missing session is idempotent without a transaction cookie; a missing named transaction is ambiguous', async () => {
+test('missing session is idempotent without a transaction cookie; a missing named transaction is revoked before confirming', async () => {
     const h = harness(), remove = jest.spyOn(h.store, 'deleteSession');
     await h.service.logoutSetup({ cookieHeader: '' });
     await h.service.logoutSetup({ cookieHeader: `${COOKIE}=${opaque(88)}` });
-    await expect(h.service.logoutSetup({ cookieHeader: `${COOKIE}=${opaque(88)}; ${TX_COOKIE}=${opaque(89)}` }))
-        .rejects.toMatchObject({ statusCode: 503, code: 'browser_auth_account_change_pending' });
+    expect((await h.service.logoutSetup({ cookieHeader: `${COOKIE}=${opaque(88)}; ${TX_COOKIE}=${opaque(89)}` })).cookie).toHaveLength(2);
+    // Any callback still holding that transaction can no longer issue a session.
+    expect(h.store.fences.get(opaque(89))).toEqual({ v: 1, kind: 'oidc_transaction_fence', state: 'revoked', ...binding });
     expect(remove).not.toHaveBeenCalled(); expect(h.store.sessions.size).toBe(0);
 });
 
@@ -200,13 +205,11 @@ test.each(['loadSession', 'cancelTransaction', 'deleteSession'])('storage failur
     await expect(h.service.logoutSetup({ cookieHeader: header })).rejects.toMatchObject({ code: 'browser_auth_store_unavailable' });
     if (method !== 'deleteSession') expect(h.store.transactions.has(id(pending.cookie))).toBe(true);
     expect(h.store.sessions.has(id(completed.cookie))).toBe(true);
-    if (method === 'deleteSession') {
-        await expect(h.service.logoutSetup({ cookieHeader: header })).rejects.toMatchObject({ code: 'browser_auth_account_change_pending' });
-        // The five-minute transaction cookie can naturally expire. With no
-        // transaction named, only the still-bound setup session is removed.
-        h.setNow(NOW + 300000);
-        expect((await h.service.logoutSetup({ cookieHeader: atom(completed.cookie) })).cookie).toHaveLength(2);
-    } else expect((await h.service.logoutSetup({ cookieHeader: header })).cookie).toHaveLength(2);
+    // A retry is confirmed. After deleteSession failed, the transaction is
+    // already gone, so the retry revokes it server-side before confirming.
+    expect((await h.service.logoutSetup({ cookieHeader: header })).cookie).toHaveLength(2);
+    if (method === 'deleteSession') expect(h.store.fences.get(id(pending.cookie))).toMatchObject({ state: 'revoked' });
+    await expect(h.callback(pending)).rejects.toMatchObject({ code: 'browser_auth_transaction_invalid' });
     expect(h.store.sessions.has(id(completed.cookie))).toBe(false);
 });
 
@@ -218,7 +221,7 @@ test('lost deletion acknowledgements remain errors, then a repeated cleanup obse
     expect((await h.service.logoutSetup({ cookieHeader: atom(completed.cookie) })).cookie).toHaveLength(2);
 });
 
-test('lost transaction-cancellation acknowledgement keeps the setup session; named missing retry remains ambiguous until cookie expiry', async () => {
+test('lost transaction-cancellation acknowledgement keeps the setup session; the named retry revokes the transaction and confirms', async () => {
     const h = harness(), completed = await h.login(), pending = await h.service.beginLogin();
     const cancel = h.store.cancelTransaction.bind(h.store), header = `${atom(completed.cookie)}; ${atom(pending.cookie)}`;
     jest.spyOn(h.store, 'cancelTransaction').mockImplementationOnce(async (...args) => {
@@ -226,14 +229,9 @@ test('lost transaction-cancellation acknowledgement keeps the setup session; nam
     });
     await expect(h.service.logoutSetup({ cookieHeader: header })).rejects.toMatchObject({ code: 'browser_auth_store_unavailable' });
     expect(h.store.transactions.has(id(pending.cookie))).toBe(false); expect(h.store.sessions.has(id(completed.cookie))).toBe(true);
-    // Still no acknowledgement, but the route may now drop the settled cookie
-    // so the browser's next attempt is not blocked until it expires.
-    await expect(h.service.logoutSetup({ cookieHeader: header }))
-        .rejects.toMatchObject({ code: 'browser_auth_account_change_pending', clearTransactionCookie: true });
-    expect(h.store.sessions.has(id(completed.cookie))).toBe(true);
-    h.setNow(NOW + 300000);
-    expect((await h.service.logoutSetup({ cookieHeader: atom(completed.cookie) })).cookie).toHaveLength(2);
+    expect((await h.service.logoutSetup({ cookieHeader: header })).cookie).toHaveLength(2);
     expect(h.store.sessions.has(id(completed.cookie))).toBe(false);
+    expect(h.store.fences.get(id(pending.cookie))).toMatchObject({ state: 'revoked' });
 });
 
 test.each([null, undefined])('unverified cancellation result %s cannot clear a session or claim success', async result => {
@@ -315,18 +313,40 @@ test('Azure deletion failure releases the lease and never becomes confirmed canc
     expect(f.releaseLease).toHaveBeenCalledTimes(1); expect(f.read()).not.toBeNull();
 });
 
-test('a callback consumed before cancellation cannot be represented as globally revoked', async () => {
-    const h = harness(), started = await h.service.beginLogin();
+test('a callback that settled before setup sign-out has exactly its own session deleted before confirming', async () => {
+    const h = harness(), other = await h.login(), started = await h.service.beginLogin();
     const completed = await h.callback(started);
     expect(h.store.transactions.has(id(started.cookie))).toBe(false);
-    await expect(h.service.logoutSetup({ cookieHeader: atom(started.cookie) }))
+    // The fence keeps that session only sealed under the transaction cookie.
+    expect(JSON.stringify(h.store.fences.get(id(started.cookie)))).not.toContain(id(completed.cookie));
+    expect((await h.service.logoutSetup({ cookieHeader: atom(started.cookie) })).cookie).toHaveLength(2);
+    // Only the session this transaction issued is removed; sign-out never
+    // discovers or deletes any other session.
+    expect(h.store.sessions.has(id(completed.cookie))).toBe(false);
+    expect(h.store.sessions.has(id(other.cookie))).toBe(true);
+    expect((await h.service.logoutSetup({ cookieHeader: atom(started.cookie) })).cookie).toHaveLength(2);
+});
+
+test('a sealed fence opened with another transaction cookie confirms nothing and deletes nothing', async () => {
+    const h = harness(), started = await h.service.beginLogin(), completed = await h.callback(started);
+    h.store.fences.set(opaque(120), { ...h.store.fences.get(id(started.cookie)) });
+    const remove = jest.spyOn(h.store, 'deleteSession');
+    await expect(h.service.logoutSetup({ cookieHeader: `${TX_COOKIE}=${opaque(120)}` }))
         .rejects.toMatchObject({ statusCode: 503, code: 'browser_auth_account_change_pending' });
-    // The already-issued session is not named by this request. The operation
-    // cancels current pending attempts only, never discovers/deletes all sessions.
+    expect(remove).not.toHaveBeenCalled(); expect(h.store.sessions.has(id(completed.cookie))).toBe(true);
+});
+
+test.each([
+    ['revoked by another realm', { v: 1, kind: 'oidc_transaction_fence', state: 'revoked', customerTransport: 'external', customerProviderKey: 'b'.repeat(64) }],
+    ['unknown state', { v: 1, kind: 'oidc_transaction_fence', state: 'other', ...binding }]
+])('a fence %s is not confirmation', async (_label, record) => {
+    const h = harness(), completed = await h.login(); h.store.fences.set(opaque(121), record);
+    await expect(h.service.logoutSetup({ cookieHeader: `${atom(completed.cookie)}; ${TX_COOKIE}=${opaque(121)}` }))
+        .rejects.toHaveProperty('statusCode');
     expect(h.store.sessions.has(id(completed.cookie))).toBe(true);
 });
 
-test('an already-consumed in-flight callback blocks setup logout without deleting the old session, then completes and clears its transaction cookie', async () => {
+test('setup sign-out during an in-flight callback, and its retry, are confirmed and the callback then issues no session', async () => {
     const h = harness(), original = await h.login(), pending = await h.service.beginLogin();
     let release, entered;
     const gate = new Promise(resolve => { release = resolve; }), reached = new Promise(resolve => { entered = resolve; });
@@ -334,15 +354,59 @@ test('an already-consumed in-flight callback blocks setup logout without deletin
     h.exchange.mockImplementationOnce(async input => { entered(); await gate; return exchange(input); });
     const completion = h.callback(pending); await reached;
     expect(h.store.transactions.has(id(pending.cookie))).toBe(false);
-    await expect(h.service.logoutSetup({ cookieHeader: `${atom(original.cookie)}; ${atom(pending.cookie)}` }))
-        .rejects.toMatchObject({ statusCode: 503, code: 'browser_auth_account_change_pending' });
-    expect(h.store.sessions.has(id(original.cookie))).toBe(true);
-    release(); const late = await completion;
-    expect(h.store.sessions.has(id(late.cookie))).toBe(true);
-    expect(id(late.cookie)).not.toBe(id(original.cookie));
+    // Codex's sequence: sign-out while the callback is redeeming the code,
+    // then a retry without the transaction cookie, then the callback resumes.
+    const first = await h.service.logoutSetup({ cookieHeader: `${atom(original.cookie)}; ${atom(pending.cookie)}` });
+    expect(first.cookie).toHaveLength(2); expect(h.store.sessions.has(id(original.cookie))).toBe(false);
+    expect(h.store.fences.get(id(pending.cookie))).toMatchObject({ state: 'revoked' });
+    expect((await h.service.logoutSetup({ cookieHeader: atom(original.cookie) })).cookie).toHaveLength(2);
+    const create = jest.spyOn(h.store, 'createSession'), remove = jest.spyOn(h.store, 'deleteSession');
+    release();
+    await expect(completion).rejects.toMatchObject({ statusCode: 401, code: 'browser_auth_transaction_invalid', clearTransactionCookie: true });
+    // The late callback's own record was removed before any cookie existed.
+    expect(create).toHaveBeenCalledTimes(1); expect(remove).toHaveBeenCalledWith(create.mock.calls[0][0]);
+    expect(h.store.sessions.size).toBe(0);
+});
+
+test('an in-flight callback that settles before setup sign-out has its new session deleted by that sign-out', async () => {
+    const h = harness(), original = await h.login(), pending = await h.service.beginLogin();
+    const late = await h.callback(pending);
     expect(late.cookies).toEqual([late.cookie, expect.stringContaining(TX_COOKIE + '=;'),
         expect.stringContaining('__Host-nofries-external-signed-out=;')]);
     expect(late.cookies[1]).toContain('Max-Age=0');
+    // The browser had not applied the callback's cookies yet when it signed out.
+    expect((await h.service.logoutSetup({ cookieHeader: `${atom(original.cookie)}; ${atom(pending.cookie)}` })).cookie).toHaveLength(2);
+    expect(h.store.sessions.size).toBe(0);
+});
+
+test.each([['throws', async () => { throw new Error('synthetic-private-error'); }], ['returns false', async () => false],
+    ['returns nothing', async () => undefined]])('a callback whose sign-out fence %s issues no session', async (_label, impl) => {
+    const h = harness(), pending = await h.service.beginLogin();
+    jest.spyOn(h.store, 'settleTransaction').mockImplementationOnce(impl);
+    await expect(h.callback(pending)).rejects.toHaveProperty('statusCode');
+    expect(h.store.sessions.size).toBe(0);
+});
+
+test('Azure sign-out fence: first writer wins, a revocation is idempotent and a settlement is read back sealed', async () => {
+    const records = new Map(), missing = () => Object.assign(new Error('absent'), { statusCode: 404 });
+    const store = new AzureBlobBrowserSessionStore({ containerClient: { getProperties: async () => ({}),
+        getBlockBlobClient: key => ({
+            async uploadData(bytes, options) {
+                expect(options.conditions.ifNoneMatch).toBe('*');
+                if (records.has(key)) throw Object.assign(new Error('exists'), { statusCode: 409 });
+                records.set(key, Buffer.from(bytes));
+            },
+            async download() { if (!records.has(key)) throw missing();
+                const bytes = records.get(key); return { readableStreamBody: { async *[Symbol.asyncIterator]() { yield bytes; } } }; }
+        }) } });
+    const sealed = 'A'.repeat(64);
+    expect(await store.revokeTransaction(opaque(130), binding)).toBeNull();
+    expect(await store.revokeTransaction(opaque(130), binding)).toBeNull();
+    expect(await store.settleTransaction(opaque(130), binding, sealed)).toBe(false);
+    expect(await store.settleTransaction(opaque(131), binding, sealed)).toBe(true);
+    expect(await store.revokeTransaction(opaque(131), binding)).toEqual({ sealed });
+    expect(await store.revokeTransaction(opaque(131), { ...binding, customerProviderKey: 'b'.repeat(64) })).toBe(false);
+    expect([...records.keys()].every(key => /^browser-auth\/fences\/[0-9a-f]{64}\.json$/.test(key))).toBe(true);
 });
 
 test('Azure simultaneous callback consume and cancellation have one winner; lease contention is not cancellation success', async () => {
