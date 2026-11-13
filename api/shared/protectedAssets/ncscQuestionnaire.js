@@ -494,15 +494,28 @@
                 const unsaved = !sealed && !equal(value, savedAnswer(question.id)) ? ' *' : '';
                 questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
             });
-            const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length;
+            const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length, saving = savingNow();
             // One progress line. What is saved and what is still only in this
             // browser are stated together so the counts cannot disagree.
             questionProgress.textContent = answered + ' of ' + questions.length + ' answered' + (missing ? ' · ' + missing + ' to go' : '') +
                 (unresolved ? ' · ' + unresolved + ' to check later (unknown, or marked not applicable, to confirm)' : '') +
-                (sealed ? ' · submitted' : !editable ? ' · saved' : dirty ? ' · ' + dirty + ' not saved yet' : ' · all saved') + '.';
+                (sealed ? ' · submitted' : !editable ? ' · saved' : saving ? ' · saving…' : dirty ? ' · ' + dirty + ' not saved yet' +
+                    (missingExplanation() ? ' (a not applicable answer needs an explanation)' : '') : ' · all saved') + '.';
             if (navigationSummary) navigationSummary.textContent = 'Question ' + (activeQuestion + 1) + ' of ' + questions.length + ' · ' + missing + ' unanswered';
             if (nextUnanswered) nextUnanswered.disabled = unansweredIndex(activeQuestion) === -1;
             if (nextUnresolved) nextUnresolved.disabled = unresolvedIndex(activeQuestion) === -1;
+        }
+        // True while a save is running, or an automatic save is waiting for
+        // the short pause and will be allowed to send this draft.
+        function savingNow() {
+            if (!acknowledged || acknowledged.status === 'submitted' || !editable || !dirtyEntries().length) return false;
+            return busy && !!pending && pending.command.action === 'save' || autosaveTimer !== null && canAutosave(false);
+        }
+        function missingExplanation() {
+            return questions.some(function (question) {
+                const value = drafts.get(question.id).value, option = optionById.get(value.optionId);
+                return !!option && !option.applicable && (!value.rationale || !validText(value.rationale.text));
+            });
         }
         function deny() {
             abortRequests(); epoch += 1; selected = null; acknowledged = null; drafts.clear(); assistanceNotes.clear(); summaries = [];
@@ -653,13 +666,14 @@
         function updateStatus() {
             syncUnloadWarning();
             if (!live() || !status) return;
-            const saved = acknowledged ? 'Saved revision ' + acknowledged.revision + '. ' : '';
+            // A submitted assessment is read-only; saving progress no longer applies.
+            const saved = acknowledged && acknowledged.status !== 'submitted' ? 'Saved revision ' + acknowledged.revision + '. ' : '';
             const dirty = dirtyEntries().length;
             // Keep draft feedback beside Save so changing status text cannot move its pointer target.
             status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
             status.textContent = statusText || (busy ? 'Saving your answers. ' + saved : loading ?
                 view === 'assessment' && !acknowledged ? 'Loading the selected assessment.' : 'Loading assessments.'
-                : saved + (dirty ? dirty + (dirty === 1 ? ' answer has' : ' answers have') + ' unsaved changes.' : ''));
+                : savingNow() ? 'Saving…' : saved + (dirty ? dirty + (dirty === 1 ? ' answer has' : ' answers have') + ' unsaved changes.' : ''));
             if (saveStatus && root.contains(saveStatus)) saveStatus.textContent = status.textContent;
             if (controls) controls.querySelectorAll('button').forEach(function (control) {
                 if (control.dataset.mutation === 'true') control.disabled = busy || !!pending || conflict || !currentChecked;
@@ -668,7 +682,7 @@
         }
         function edited() {
             if (!pending && !busy && !conflict) statusText = '';
-            updateStatus(); scheduleAutosave();
+            scheduleAutosave(); updateStatus();
         }
         function cancelAutosave() { if (autosaveTimer !== null) { clearTimeout(autosaveTimer); autosaveTimer = null; } }
         function scheduleAutosave(delay) {
@@ -677,6 +691,7 @@
             const flush = delay === 0;
             autosaveTimer = setTimeout(function () { autosaveTimer = null; autosave(flush, flush); }, flush ? 0 : autosaveIdleMs);
             if (autosaveTimer && typeof autosaveTimer.unref === 'function') autosaveTimer.unref();
+            updateStatus();
         }
         // Silent: an automatic save never shows validation messages, opens a
         // dialog or sends a draft the person could not save by hand.
@@ -694,7 +709,8 @@
         function autosave(flush, keepalive) {
             cancelAutosave();
             if (flush && busy && pending && pending.command.action === 'save') { flushQueued = true; return; }
-            if (!canAutosave(flush)) return;
+            // Replace "Saving…" with the real state when this save cannot go.
+            if (!canAutosave(flush)) { updateStatus(); return; }
             flushQueued = false;
             saveAll(false, keepalive).catch(function () {});
         }
@@ -863,7 +879,7 @@
                 if (!result) return;
                 acknowledged = cleanDetail(result.assessment, id); resetDrafts();
                 activeQuestion = acknowledged.status === 'submitted' ? 0 : Math.max(0, unansweredIndex(-1));
-                if (id === initialAssessmentId && Number.isInteger(options.initialQuestionIndex) &&
+                if (id === initialAssessmentId && acknowledged.status !== 'submitted' && Number.isInteger(options.initialQuestionIndex) &&
                     options.initialQuestionIndex >= 0 && options.initialQuestionIndex < questions.length) activeQuestion = options.initialQuestionIndex;
             } catch (error) { if (live(expected)) fixedFailure(error); }
             finally { if (live(expected)) { loading = false; render(); } }
@@ -963,6 +979,9 @@
         function confirmBreakdown(unknown, notApplicable) {
             return [unknown ? unknown + ' Unknown' : '', notApplicable ? notApplicable + ' not applicable' : ''].filter(Boolean).join(' and ');
         }
+        // The plain-language question people answer. The framework prompt is
+        // kept for reference but never replaces it where answers are shown.
+        function plainQuestion(question) { return question.smallBusiness ? question.smallBusiness.meaning : question.prompt; }
         function reviewState() {
             return questions.map(function (question, index) {
                 const value = drafts.get(question.id).value, saved = savedAnswer(question.id), option = optionById.get(value.optionId);
@@ -1003,7 +1022,12 @@
                 const item = node('li', 'ncsc-review-item' + (row.unsaved ? ' ncsc-review-unsaved' : '') + (!row.option || row.missingRationale ? ' ncsc-review-incomplete' : ''));
                 item.id = 'ncsc-review-item-' + row.question.id;
                 const control = metadata.controls.find(function (entry) { return entry.id === row.question.controlId; });
-                item.append(node('p', 'dashboard-eyebrow', 'Question ' + (row.index + 1) + (control ? ' · ' + control.title : '')), node('h4', '', row.question.prompt));
+                item.append(node('p', 'dashboard-eyebrow', 'Question ' + (row.index + 1) + (control ? ' · ' + control.title : '')), node('h4', '', plainQuestion(row.question)));
+                // The same plain question that was answered; the framework wording stays one click away.
+                if (row.question.smallBusiness) {
+                    const wording = node('details', 'ncsc-review-framework'); wording.append(node('summary', '', 'Full framework question'), node('p', '', row.question.prompt));
+                    item.append(wording);
+                }
                 const answerText = row.option ? (row.option.applicable ? row.option.label : 'N/A (pending claim)') : row.cleared ? 'Unanswered (answer cleared)' : 'Unanswered';
                 item.append(node('p', 'ncsc-review-answer', 'Answer: ' + answerText));
                 if (row.option && !row.option.applicable) {
@@ -1070,7 +1094,10 @@
             function metric(title, value, explanation) {
                 const card = node('section', 'ncsc-result-metric'); card.append(node('h3', '', title), node('p', 'ncsc-result-value', value), node('p', '', explanation)); metrics.append(card);
             }
-            metric('Reported implementation', results.attainment, 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
+            // Describe only what is shown: a range has a lower and higher figure, a single figure does not.
+            metric('Reported implementation', results.attainment, results.lowerCreditUnits === results.upperCreditUnits
+                ? 'This is what you reported as in place. Every answer is Yes, Partial or No, so there is one figure.'
+                : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
             // results.unknown already includes answers marked not applicable, so state one total.
@@ -1138,9 +1165,11 @@
             const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
             const domain = metadata.domains.find(function (item) { return control && item.id === control.domainId; });
             questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
-            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', question.smallBusiness ? question.smallBusiness.meaning : question.prompt));
+            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', plainQuestion(question)));
             const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
-            const hint = node('p', 'ncsc-input-guidance', question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
+            const sealed = acknowledged.status === 'submitted';
+            const hint = node('p', 'ncsc-input-guidance', sealed ? 'This is the answer you submitted. Submitted answers cannot be changed.'
+                : question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
             hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
             if (question.smallBusiness) {
                 const wording = node('details'); wording.append(node('summary', '', 'Full framework question'), node('p', '', question.prompt));
@@ -1178,15 +1207,22 @@
                 const label = node('label', '', 'Why this does not apply'); label.setAttribute('for', 'ncsc-rationale-' + question.id);
                 const rationale = node('textarea', 'ncsc-textarea'); rationale.id = 'ncsc-rationale-' + question.id; rationale.value = entry.value.rationale ? entry.value.rationale.text : '';
                 rationale.rows = 6; rationale.required = true; rationale.readOnly = !writable;
-                rationale.setAttribute('aria-describedby', 'ncsc-rationale-help-' + question.id);
+                // Say at once why the answer is not saved yet, instead of only when Save progress is pressed.
+                const needed = node('p', 'ncsc-rationale-needed', autosaveEnabled ? 'Add an explanation to save this answer.' : 'Add an explanation before you save this answer.');
+                needed.id = 'ncsc-rationale-needed-' + question.id;
+                const showNeeded = function () {
+                    needed.hidden = !writable || validText(rationale.value) || errors.some(function (item) { return item.id === question.id; });
+                    rationale.setAttribute('aria-describedby', (needed.hidden ? '' : needed.id + ' ') + 'ncsc-rationale-help-' + question.id);
+                };
+                showNeeded();
                 const scopeHelp = writable && inputGuidance && inputGuidance.notApplicable ? inputGuidance.notApplicable + ' ' : '';
                 const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'); help.id = 'ncsc-rationale-help-' + question.id;
                 rationale.addEventListener('input', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit()) return;
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });
-                    edited();
+                    showNeeded(); edited();
                 });
-                questionRegion.append(label, rationale, help);
+                questionRegion.append(label, needed, rationale, help);
             }
             if (writable) {
                 const clear = button('Clear answer', function () {
@@ -1523,7 +1559,11 @@
                         }
                     });
                 }
-                pending = null; busy = false; errors = []; statusText = 'Saved revision ' + acknowledged.revision + '. ' + (dirtyEntries().length ? 'Newer edits are still unsaved.' : 'Your progress is saved.');
+                pending = null; busy = false; errors = [];
+                statusText = acknowledged.status === 'submitted' ? 'Assessment submitted. Your answers are now read-only.'
+                    : 'Saved revision ' + acknowledged.revision + '. ' + (dirtyEntries().length ? 'Newer edits are still unsaved.' : 'Your progress is saved.');
+                // The read-only answers start from question 1, not the last question edited.
+                if (command.action === 'submit' && acknowledged.status === 'submitted') activeQuestion = 0;
                 if (operation.uncertain) {
                     if (!await refreshCurrent(false, expected)) return false;
                     statusText = conflict ? 'The current saved version differs from your draft. Choose how to continue.' : 'The operation is confirmed and the current saved version has been checked. Review any unsaved changes on this device before saving again.';
