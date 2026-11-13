@@ -695,3 +695,51 @@ test('setup text fields show a count near their limit and say when text is cut o
         expect(count.textContent).toBe('160 of 160 characters. This is the limit, so anything longer is cut off.');
     } finally { f.view.dispose(); }
 });
+
+describe('named progress while setup and acceptance run (F1 / D-013)', () => {
+    test('saving workspace details says so in a live status while the request runs', async () => {
+        const state = { status: 'setup_details', email: retained.email, reservation: { ...savedAccount } };
+        const f = setup(state, externalOptions); await f.view.ready;
+        let finish; f.client.completeSetup.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        try {
+            const form = f.root.querySelector('form');
+            const inputs = Object.fromEntries(form.querySelectorAll('input').map(input => [input.name, input]));
+            Object.assign(inputs.name, { value: 'Synthetic name' }); Object.assign(inputs.role, { value: 'Owner' });
+            Object.assign(inputs.address, { value: 'Synthetic address' }); Object.assign(inputs.registrationId, { value: '' });
+            inputs.authorityConfirmed.checked = true; form.reportValidity = () => true;
+            for (const submit of form.events.submit) submit({ preventDefault() {} });
+            await flush();
+            const progress = f.root.querySelector('.signup-progress');
+            expect(progress.getAttribute('role')).toBe('status');
+            expect(progress.textContent).toBe('Saving your details. This can take up to 20 seconds. Please keep this page open.');
+            expect(f.root.getAttribute('aria-busy')).toBe('true');
+            finish({ status: 'continue_authentication' }); await flush();
+            expect(f.root.textContent).not.toContain('Saving your details.');
+        } finally { f.view.dispose(); }
+    });
+
+    test('accepting terms names the acceptance and dashboard preparation', async () => {
+        const f = setup(TERMS); await f.view.ready;
+        let finish; f.client.acceptTerms.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        const box = f.root.querySelector('input'), submit = f.root.querySelector('button');
+        box.checked = true; for (const fn of box.events.change) fn();
+        submit.click(); await flush();
+        const progress = f.root.querySelector('.signup-progress');
+        expect(progress.getAttribute('role')).toBe('status');
+        expect(progress.textContent).toBe('Saving your acceptance and preparing your dashboard. This can take up to 20 seconds. Please keep this page open.');
+        finish({ status: 'continue_to_dashboard', accountType: 'company' }); await flush();
+        const opening = f.root.querySelector('.signup-progress');
+        expect(opening.getAttribute('role')).toBe('status');
+        expect(opening.textContent).toBe('Preparing your dashboard. Please keep this page open.');
+        expect(f.root.querySelector('a').getAttribute('href') || f.root.querySelector('a').href).toBe('/dashboard');
+        f.view.dispose();
+    });
+
+    test('other waits keep the general progress message', async () => {
+        const f = setup(); await f.view.ready;
+        let finish; f.client.createAccount.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        f.root.querySelector('button').click(); await flush();
+        expect(f.root.querySelector('.signup-progress').textContent).toBe('Working on it. This can take up to 20 seconds. Please keep this page open.');
+        finish(TERMS); await flush(); f.view.dispose();
+    });
+});

@@ -1161,11 +1161,10 @@ describe('internal dashboard loader protocol', () => {
     test('begins read-only and mounts only after bootstrap, both fixed native assets and a fresh session', async () => {
         const h = harness(); await flush();
         expect(h.requests.map(r => r.url)).toEqual(['/api/dashboard/session']);
-        await h.reply(0, 200, state());
-        await h.reply(1, 200, listing());
         expect(h.native).toHaveLength(0);
-        expect(h.requests[2].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
-        await h.reply(2, 200, projection());
+        await h.reply(0, 200, state());
+        // The fixed assets load beside the directory and projection reads once
+        // the session is confirmed (F1 / D-013); they still cannot mount anything.
         expect(h.native.map(n => n.src || n.href)).toEqual(['/api/dashboard/app.js', '/api/dashboard/dashboard.css']);
         for (const node of h.native) {
             expect(node.integrity).toMatch(/^sha256-[A-Za-z0-9+/]{43}=$/);
@@ -1173,6 +1172,11 @@ describe('internal dashboard loader protocol', () => {
         }
         h.load(0); await flush(); expect(h.mounts).toHaveLength(0);
         h.load(1); await flush(); expect(h.mounts).toHaveLength(0);
+        await h.reply(1, 200, listing());
+        expect(h.mounts).toHaveLength(0);
+        expect(h.requests[2].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        await h.reply(2, 200, projection());
+        expect(h.mounts).toHaveLength(0);
         await h.reply(3, 200, state());
         expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
         expect(h.mounts[0].model.admissionGranted).toBe(false);
@@ -2623,6 +2627,38 @@ describe('unmounted authority refresh coalescing', () => {
         await h.reply(4, 200, state());
         expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
         expect(h.requests.filter(item => item.url === '/api/dashboard/modules/cyber_security')).toHaveLength(1);
+    });
+
+    test('the Cyber Security read starts once the projection lists it ready, before the directory answers', async () => {
+        // F1 / D-013: the module read and the fixed assets no longer wait for the directory.
+        const h = harness({ hash: '#cyber-security', cyber: true }); await flush();
+        const model = cyberProjection();
+        await h.reply(0, 200, state());
+        expect(h.native.map(n => n.src || n.href)).toEqual(['/api/dashboard/app.js', '/api/dashboard/dashboard.css']);
+        expect(h.requests.map(item => item.url)).toEqual(paths.slice(0, 3));
+        await h.reply(2, 200, model);
+        expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
+        expect(h.requests[3].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        h.load(0); h.load(1); await h.reply(3, 200, moduleProjection(model));
+        expect(h.requests).toHaveLength(4); expect(h.mounts).toHaveLength(0);
+        await h.reply(1, 200, listing());
+        expect(h.requests[4].url).toBe('/api/dashboard/session'); expect(h.mounts).toHaveLength(0);
+        await h.reply(4, 200, state());
+        expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
+        expect(h.requests.filter(item => item.url === '/api/dashboard/modules/cyber_security')).toHaveLength(1);
+    });
+    test('a projection without a ready Cyber Security module sends no module read', async () => {
+        const h = harness({ hash: '#overview' }); await flush();
+        await h.reply(0, 200, state()); await h.reply(2, 200, projection()); await h.reply(1, 200, listing());
+        h.load(0); h.load(1); await flush();
+        expect(h.requests.map(item => item.url)).toEqual([...paths.slice(0, 3), '/api/dashboard/session']);
+        await h.reply(3, 200, state());
+        expect(h.status).toBe('ready');
+    });
+    test('a refused session loads no protected assets', async () => {
+        const h = harness(); await flush();
+        await h.reply(0, 401, { code: 'dashboard_session_required' });
+        expect(h.native).toHaveLength(0); expect(h.requests).toHaveLength(1);
     });
 
     async function finish(h, first, asset, model) {

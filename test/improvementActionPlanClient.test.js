@@ -1132,3 +1132,41 @@ describe('onAccepted reports only responses that pass validation', () => {
             onAccepted: 'yes' })).toThrow();
     });
 });
+
+test('after a plan is created its view and editor reads go out together, one round trip instead of two', async () => {
+    // F1 / D-013: create plan -> loaded action controls took 9 to 10 seconds over three sequential requests.
+    const selected = source(), planId = 'overview-plan-' + selected.revisionSha256, gates = [];
+    const h = harness({ options: { sourceAssessment: selected }, respond(path, body, state) {
+        if (path.includes('/plans?')) return { status: 200, value: page([]) };
+        if (path.endsWith('/execute')) { const plan = seed(body.planId); state.plans.set(body.planId, plan); return { status: 200, value: { schemaVersion: 1, plan: getImprovementPlanView(plan) } }; }
+        const gate = deferred(); gates.push(gate);
+        return gate.promise.then(() => ({ status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) }));
+    }, editorRespond(path, body, state) {
+        const gate = deferred(); gates.push(gate);
+        return gate.promise.then(() => ({ status: 200, value: editorContext(state, planId) }));
+    } });
+    await h.controller.ready;
+    const generated = h.controller.generate(); await settle();
+    expect(h.request.mock.calls.slice(2).map(call => call[0])).toEqual(['/api/dashboard/improvement/view?planId=' + planId,
+        '/api/dashboard/improvement/editor?planId=' + planId]);
+    expect(gates).toHaveLength(2);
+    gates[1].resolve(); await settle();
+    expect(h.root.textContent).not.toContain('Saved plan and current action options loaded.');
+    gates[0].resolve();
+    expect(await generated).toBe(true);
+    expect(h.root.textContent).toContain('Saved plan and current action options loaded.');
+    expect(h.request).toHaveBeenCalledTimes(4);
+});
+
+test('an editor answer is discarded when the plan view in the same round trip fails', async () => {
+    const h = harness({ respond(path, body, state) {
+        if (path.startsWith('/api/dashboard/improvement/plans?')) return { status: 200, value: page() };
+        if (path.startsWith('/api/dashboard/improvement/view?')) return { status: 503, value: { code: 'improvement_unavailable' } };
+        throw new Error('unexpected');
+    } });
+    expect(await h.controller.ready).toBe(false);
+    expect(h.request.mock.calls.map(call => call[0])).toEqual(['/api/dashboard/improvement/plans?limit=20',
+        '/api/dashboard/improvement/view?planId=plan-a', '/api/dashboard/improvement/editor?planId=plan-a']);
+    expect(h.root.querySelectorAll('form').filter(visible)).toHaveLength(0);
+    expect(h.root.textContent).not.toContain('Saved plan and current action options loaded.');
+});

@@ -546,6 +546,11 @@
         // Original receipts acknowledge commands; they never supply current authority.
         await reconcile(cycle, 0, false);
     }
+    function cyberListedReady(projection) {
+        return Array.isArray(projection?.modules) && projection.modules.some(function (item) {
+            return item && item.key === 'cyber_security' && item.state === 'ready';
+        });
+    }
     function reconcile(cycle, transitions, initializeAllowed) {
         // Initialisation can reconcile again within the same cycle. Track the
         // full chain so focus/restore cannot restart a pending authority check.
@@ -577,12 +582,24 @@
         }
         const prefetchProjection = value.selectedBindingId !== null && !(value.accountType === 'consultant' &&
             !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations'));
+        // The fixed protected assets depend only on this fresh session, so they
+        // load beside the directory and projection reads instead of one round
+        // trip later. The Cyber Security module read starts as soon as the
+        // projection lists that module as ready, without waiting for the
+        // directory. Nothing mounts before the closing session witness.
+        const early = prefetchProjection ? { assets: assets(cycle) } : null;
+        const listed = directory(cycle, value, [], null);
+        if (early) {
+            early.projection = request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess);
+            early.cyber = early.projection.then(function (projection) {
+                return current(cycle) && cyberListedReady(projection)
+                    ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess) : null;
+            });
+            [early.assets, early.projection, early.cyber, listed].forEach(function (work) { work.catch(function () {}); });
+        }
         // Both reads depend only on this fresh session. Reconciliation failure
         // disposes the cycle and cancels siblings; neither response admits the protected shell.
-        const middle = prefetchProjection ? await Promise.all([
-            directory(cycle, value, [], null),
-            request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess)
-        ]) : [await directory(cycle, value, [], null)];
+        const middle = early ? await Promise.all([listed, early.projection]) : [await listed];
         if (!current(cycle)) return;
         if (value.selectedBindingId === null || value.accountType === 'consultant' && !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations')) { cycle.busy = false; show(cycle, 'selection'); return; }
         // Navigation may change while directory reads are pending. Keep the
@@ -592,11 +609,9 @@
         if (!current(cycle)) return;
         // These generation-bound reads are independent. Wait for both before
         // validating or mounting; the final session witness still gates display.
-        const prefetchCyber = Array.isArray(projection?.modules) && projection.modules.some(function (item) {
-            return item && item.key === 'cyber_security' && item.state === 'ready';
-        });
+        const prefetchCyber = cyberListedReady(projection);
         loadingStage(cycle, OPENING_MESSAGE, OPENING_DETAIL);
-        const prepared = await Promise.all([assets(cycle), prefetchCyber
+        const prepared = await Promise.all([early ? early.assets : assets(cycle), early ? early.cyber : prefetchCyber
             ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess)
             : Promise.resolve(null)]);
         if (!current(cycle)) return;
