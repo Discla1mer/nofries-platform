@@ -17,6 +17,8 @@
     // Fictional demonstration only (#29). No real organisation, person or record.
     // Answers live in memory and in one browser-storage key; nothing is sent anywhere.
     const STORAGE_KEY = 'nofries.tryDemo.v2';
+    // Earlier releases kept answers under this key. Nothing reads it now; reset and start remove it.
+    const LEGACY_STORAGE_KEY = 'nofries.tryDemo.v1';
     const BUSINESS = 'Brightwater Joinery (fictional)';
     const ORGANISATION_ID = 'fictional-demo';
     const PREFIX = '/api/dashboard/ncsc/assessments';
@@ -141,7 +143,9 @@
                     nextAfterAssessmentId: available.length > page.length ? page[page.length - 1].assessmentId : null } } };
             }
             if (method !== 'POST' || (match[1] && !match[2])) return { response: problem(405, 'ncsc_method_not_allowed') };
-            const body = JSON.parse(options.body);
+            let body;
+            try { body = JSON.parse(options.body); } catch (_) { body = null; }
+            if (!body || typeof body !== 'object' || Array.isArray(body)) return { response: problem(400, 'ncsc_input_invalid') };
             const command = { assessmentId: match[1] || body.assessmentId, action: match[2] || 'create',
                 idempotencyKey: body.idempotencyKey, expectedRevision: body.expectedRevision, payload: body.payload };
             const at = clock();
@@ -179,7 +183,11 @@
                 memory = null;
                 try { storage.setItem(STORAGE_KEY, JSON.stringify({ log: log })); } catch (_) { memory = log; }
             },
-            clear: function () { memory = null; try { storage.removeItem(STORAGE_KEY); } catch (_) { /* nothing stored */ } }
+            clear: function () {
+                memory = null;
+                [STORAGE_KEY, LEGACY_STORAGE_KEY].forEach(function (key) { try { storage.removeItem(key); } catch (_) { /* nothing stored */ } });
+            },
+            clearLegacy: function () { try { storage.removeItem(LEGACY_STORAGE_KEY); } catch (_) { /* nothing stored */ } }
         };
     }
 
@@ -250,6 +258,7 @@
         const status = doc.getElementById('try-demo-status');
         let storage = null; try { storage = win.localStorage; } catch (_) { storage = null; }
         const store = createStore(storage);
+        store.clearLegacy();
         const now = function () { return new Date().toISOString(); };
         win.fetch = pageFetch;
         function mountDashboard(route) {
@@ -266,7 +275,8 @@
         mountDashboard(null);
     }
 
-    return Object.freeze({ STORAGE_KEY: STORAGE_KEY, BUSINESS: BUSINESS, ORGANISATION_ID: ORGANISATION_ID, EARLIER_ID: EARLIER_ID,
+    return Object.freeze({ STORAGE_KEY: STORAGE_KEY, LEGACY_STORAGE_KEY: LEGACY_STORAGE_KEY, BUSINESS: BUSINESS, ORGANISATION_ID: ORGANISATION_ID,
+        EARLIER_ID: EARLIER_ID,
         projection: projection, createServer: createServer, createStore: createStore, createBackend: createBackend,
         pageFetch: pageFetch, mountOptions: mountOptions, start: start });
 }));
