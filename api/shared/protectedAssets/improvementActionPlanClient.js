@@ -98,6 +98,27 @@
         PROFILE.forEach(key => key.endsWith('Sha256') ? digest(value.profileRef[key]) : text(value.profileRef[key], 200));
         return value;
     }
+    // The host's latest submitted assessment, offered when no plan exists yet.
+    // It carries no output digest; the server still binds the exact revision.
+    function latestSource(input) {
+        if (input === undefined || input === null) return null;
+        const value = fields(copy(input, 4096), ['assessmentId', 'revision', 'revisionSha256', 'profileRef', 'submittedAt']);
+        identifier(value.assessmentId); number(value.revision, 128); digest(value.revisionSha256); timestamp(value.submittedAt);
+        fields(value.profileRef, PROFILE);
+        PROFILE.forEach(key => key.endsWith('Sha256') ? digest(value.profileRef[key]) : text(value.profileRef[key], 200));
+        return value;
+    }
+    const NZ_ZONE = 'Pacific/Auckland';
+    function nzDateTime(value) {
+        try {
+            return new Intl.DateTimeFormat('en-NZ', { timeZone: NZ_ZONE, day: 'numeric', month: 'short', year: 'numeric',
+                hour: 'numeric', minute: '2-digit' }).format(new Date(value));
+        } catch (_) { return value.slice(0, 10); }
+    }
+    function nzTime(value) {
+        try { return new Intl.DateTimeFormat('en-NZ', { timeZone: NZ_ZONE, hour: 'numeric', minute: '2-digit' }).format(new Date(value)); }
+        catch (_) { return value.slice(11, 16) + ' UTC'; }
+    }
     function actionTarget(input) {
         if (input === undefined || input === null) return null;
         const value = fields(copy(input, 4096), ['planId', 'actionId', 'planRevision']);
@@ -143,6 +164,8 @@
         // Reported only after a response has passed this client's validation.
         // A display hint for the host ("Information as at"); it grants nothing.
         const accepted = () => { if (options.onAccepted) { try { options.onAccepted(); } catch (_) { /* Display only. */ } } };
+        const readLatest = !initialSource && typeof options.latestSource === 'function' ? options.latestSource : null;
+        let latest = null, pageAsOf = null;
         const day = value => typeof view.calendarDay === 'function' ? view.calendarDay(value) : value || 'Not set';
         const when = value => typeof view.nzDateTime === 'function' ? view.nzDateTime(value) : value;
         // Plain plan names, learned from each plan's validated view. Plans not
@@ -427,10 +450,16 @@
                 const result = response(await request('/api/dashboard/improvement/plans?limit=' + PAGE_SIZE + (after === null ? '' : '&afterPlanId=' + encodeURIComponent(after))));
                 if (!active() || token !== serial) return false;
                 if (result.status !== 200) { unavailable(result.status, false); return false; }
-                const value = page(result.value, after); scope = value.scope; rows = value.plans; next = value.nextAfterPlanId;
+                const value = page(result.value, after); scope = value.scope; rows = value.plans; next = value.nextAfterPlanId; pageAsOf = value.asOf;
                 accepted();
                 message = rows.length ? 'Choose a saved plan or refresh the selected plan.' : 'No saved improvement plans are available for this organisation.';
                 if (!more) clearView();
+                if (!more && !rows.length && !target && readLatest) {
+                    latest = null; message = 'Looking for your latest submitted assessment…'; render();
+                    try { latest = latestSource(await readLatest()); } catch (_) { latest = undefined; }
+                    if (!active() || token !== serial) return false;
+                    busy = false; renderEmpty(); render(); return true;
+                }
                 busy = false; render();
                 if (!more && target) return readView(target.planId, target);
                 if (!more && selected === null && sourcePlanId !== null && rows.some(row => row.planId === sourcePlanId)) return readView(sourcePlanId);
@@ -438,6 +467,27 @@
                 return true;
             } catch (_) { if (active() && token === serial) unavailable(null, false); return false; }
             finally { if (alive && token === serial) { busy = false; render(); } }
+        }
+        function renderEmpty() {
+            clearView();
+            const panel = node('section'); panel.className = 'dashboard-panel'; panel.setAttribute('aria-label', 'No improvement plan yet');
+            panel.append(node('h2', 'No improvement plan yet'));
+            if (latest) {
+                panel.append(node('p', 'Create a plan from your latest submitted assessment (submitted ' + nzDateTime(latest.submittedAt) + '). ' +
+                    'It lists the gaps to fix and the answers to check, so you can give each one an owner and a due date.'),
+                node('p', 'The plan uses your saved self-reported answers. Creating it does not change your results.'));
+                const create = button('Create improvement plan from latest assessment', generate);
+                create.disabled = busy || !!pending || scope === null; panel.append(create);
+                message = 'No improvement plan yet. You can create one from your latest submitted assessment.';
+            } else if (latest === null) {
+                panel.append(node('p', 'Submit an assessment first. Your improvement plan is built from its results.'));
+                message = 'No improvement plan yet. Submit an assessment to create one.';
+            } else {
+                panel.append(node('p', 'We could not check your submitted assessments just now. Select Refresh improvement plan to try again, ' +
+                    'or open Overview and choose Plan improvements for this assessment.'));
+                message = 'No improvement plan yet. Your submitted assessments could not be checked.';
+            }
+            content.replaceChildren(panel);
         }
         async function readView(planId, exactTarget) {
             if (!active() || busy || pending || draft || scope === null) return false;
@@ -467,8 +517,9 @@
                     text(action.controlId, 180); text(action.labels.kind, 180); text(action.rationale.suggestedAction, 1000);
                     if (action.dueDate !== null) date(action.dueDate);
                 });
-                if (generatedPlanId === planId && (!value.source || value.source.assessmentId !== initialSource.assessmentId ||
-                    value.source.evaluationOutputSha256 !== initialSource.outputSha256)) invalid();
+                const generatedFrom = initialSource || latest;
+                if (generatedPlanId === planId && (!value.source || !generatedFrom || value.source.assessmentId !== generatedFrom.assessmentId ||
+                    initialSource && value.source.evaluationOutputSha256 !== initialSource.outputSha256)) invalid();
                 if (exactTarget && !actionIds.has(exactTarget.actionId)) {
                     clearView(); selected = null; selectedRevision = null; selectedAction = null;
                     message = 'This action is no longer available in this plan. Return to the work queue or refresh to check again.'; render(); return false;
@@ -505,7 +556,21 @@
                 }
             }
         }
-        function refresh() { return readPage(null, false); }
+        async function refresh() {
+            if (!active() || busy || pending || draft) return false;
+            // Compare every listed plan (id and revision), the paging cursor and
+            // the selected plan, so a change to any plan counts as an update.
+            const listed = () => JSON.stringify([rows.map(row => [row.planId, row.planRevision]), next]);
+            const before = { list: listed(), selected, revision: selectedRevision, latest: latest && latest.revisionSha256 };
+            const result = await readPage(null, false);
+            if (!result || !active() || busy || pending || draft || denied) return result;
+            const changed = listed() !== before.list || selected !== before.selected || selectedRevision !== before.revision ||
+                !rows.length && (latest && latest.revisionSha256) !== before.latest;
+            const checked = pageAsOf ? ' Checked at ' + nzTime(pageAsOf) + '.' : '';
+            message = (changed ? 'Updated with the latest saved changes.' : 'Up to date. Nothing has changed since you last looked.') + checked +
+                (selected !== null && editor === null && model !== null ? ' ' + message : '');
+            render(); return result;
+        }
         function select(planId) {
             if (!active() || busy || pending || draft || !rows.some(row => row.planId === planId) && planId !== selected) return Promise.resolve(false);
             target = null;
@@ -553,15 +618,16 @@
             finally { if (alive && token === serial) { busy = false; render(); } }
         }
         function generate() {
-            if (!active() || busy || pending || draft || !initialSource || scope === null) return Promise.resolve(false);
+            const planSource = initialSource || latest;
+            if (!active() || busy || pending || draft || !planSource || scope === null) return Promise.resolve(false);
             try {
                 // Same revision-derived IDs as Overview's "Plan this": one plan per
                 // submitted revision, and a repeat create replays idempotently.
-                const planId = identifier('overview-plan-' + initialSource.revisionSha256);
-                const operationId = identifier('overview-plan-generate-' + initialSource.revisionSha256);
+                const planId = identifier('overview-plan-' + planSource.revisionSha256);
+                const operationId = identifier('overview-plan-generate-' + planSource.revisionSha256);
                 pending = command({ planId, type: 'generate', operationId, expectedRevision: null, actionId: null,
-                    payload: { assessmentId: initialSource.assessmentId, assessmentRevision: initialSource.revision,
-                        assessmentRevisionSha256: initialSource.revisionSha256 } });
+                    payload: { assessmentId: planSource.assessmentId, assessmentRevision: planSource.revision,
+                        assessmentRevisionSha256: planSource.revisionSha256 } });
                 target = null;
             } catch (_) { unavailable(null, false); return Promise.resolve(false); }
             return submit();
