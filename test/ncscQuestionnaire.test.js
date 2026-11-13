@@ -2837,7 +2837,14 @@ describe('final submission review step', () => {
             expect(ui.document.activeElement).toBe(title);
             expect(ui.root.querySelector('.ncsc-review').textContent).toContain('Synthetic office and cloud services.');
             expect(ui.root.querySelectorAll('.ncsc-review-item')).toHaveLength(questions.length);
-            questions.forEach((question, index) => expect(reviewItem(ui, index).textContent).toContain(question.prompt));
+            questions.forEach((question, index) => {
+                // The heading repeats the plain question that was answered; the framework wording is optional and collapsed.
+                expect(reviewItem(ui, index).querySelector('h4').textContent).toBe(question.smallBusiness.meaning);
+                const framework = reviewItem(ui, index).querySelector('details');
+                expect(framework.open).toBeFalsy();
+                expect(framework.querySelector('summary').textContent).toBe('Full framework question');
+                expect(framework.textContent).toContain(question.prompt);
+            });
             expect(reviewItem(ui, 0).textContent).toContain('Answer: Yes'); expect(reviewItem(ui, 0).textContent).not.toContain('Not saved yet');
             expect(reviewItem(ui, 1).textContent).toContain('Answer: Partial'); expect(reviewItem(ui, 1).textContent).toContain('Not saved yet');
             expect(reviewItem(ui, 2).textContent).toContain('N/A explanation: Saved synthetic N/A reason.');

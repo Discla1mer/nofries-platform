@@ -42,6 +42,21 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             element('p', 'These points summarise your organisation schedule below. The full schedule and agreement are what you accept.'));
         return section;
     }
+    // What testers met on the Microsoft-hosted pages, said before they get there.
+    function handoffGuide() {
+        const section = element('section'); section.className = 'signup-handoff';
+        section.setAttribute('aria-labelledby', 'signup-handoff-title');
+        const title = element('h2', 'What happens on the Microsoft pages'); title.setAttribute('id', 'signup-handoff-title');
+        const list = element('ul');
+        for (const line of [
+            'Microsoft runs the sign-up page for No Fries. Its address starts with nofriescustomers.ciamlogin.com.',
+            'Your code comes from “No Fries Customers (via Microsoft)”. It can take a few minutes. Check your junk or spam folder.',
+            'No code after 5 minutes? Use the resend option on the Microsoft page. Still nothing? Email hello@nofries.nz.',
+            'Microsoft then asks to share your name and email with No Fries. It says the app is “not published by Microsoft”. That is expected: No Fries made the app, and Microsoft runs the sign-in. Accept to continue.'
+        ]) list.append(element('li', line));
+        section.append(title, list);
+        return section;
+    }
     function button(label, action, timeoutMs = 30000, restoreDraft = false) {
         const node = element('button', label);
         const revision = viewRevision;
@@ -93,9 +108,6 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                     : entryIntent === 'login' ? 'Sign in with your existing email and password.'
                     : 'Create an account with your email and password, or sign in to your existing account.' : 'Continue secure sign-in with the email address you verified or that received your invitation.'));
             }
-            if (customerTransport) root.append(element('p', 'You will continue to Microsoft’s secure sign-in page. Have your inbox ready; you can return here and restart if sign-in does not finish.'));
-            if (customerTransport && entryIntent === 'create') root.append(element('p',
-                'After signing in, choose Company to assess your own organisation, or Consultant to work with client organisations. You will review the applicable terms during setup.'));
             // Browser cancellation backstop only. The server independently
             // enforces its five-minute, one-use authentication transaction.
             const entry = button(chooseAccount ? 'Sign in with another account' : signInRecovery === 'account' ? 'Try signing in again'
@@ -110,6 +122,12 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 choose.href = '/api/external-customer-auth/login?account=choose';
                 choose.className = 'text-link signup-secondary-action'; root.append(choose);
             }
+            // Explanations follow the action, so a small phone still shows the
+            // button without scrolling.
+            if (customerTransport) root.append(element('p', 'You will continue to Microsoft’s secure sign-in page. Have your inbox ready; you can return here and restart if sign-in does not finish.'));
+            if (customerTransport && !chooseAccount && !signInRecovery && entryIntent !== 'login') root.append(handoffGuide());
+            if (customerTransport && entryIntent === 'create') root.append(element('p',
+                'After signing in, choose Company to assess your own organisation, or Consultant to work with client organisations. You will review the applicable terms during setup.'));
         } else if (state.status === 'setup_details' && customerTransport && typeof client.completeSetup === 'function') {
             heading.textContent = 'Set up your organisation';
             root.append(element('p', 'Signed in as ' + state.email));
