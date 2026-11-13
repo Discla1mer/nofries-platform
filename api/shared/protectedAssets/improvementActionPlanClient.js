@@ -154,11 +154,11 @@
     }
 
     // Optional host catalogue titles (control ID → plain title). Bounded text only.
-    function titlesOption(input) {
+    function titlesOption(input, maximum) {
         if (input === undefined || input === null) return null;
         const value = copy(input, 65536);
         if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length > 500) invalid();
-        Object.keys(value).forEach(key => { identifier(key); text(value[key], 200); });
+        Object.keys(value).forEach(key => { identifier(key); text(value[key], maximum || 200); });
         return value;
     }
     function mount(root, options) {
@@ -174,9 +174,13 @@
         const accepted = () => { if (options.onAccepted) { try { options.onAccepted(); } catch (_) { /* Display only. */ } } };
         let controlTitles = null;
         try { controlTitles = titlesOption(options.controlTitles); } catch (_) { controlTitles = null; /* Codes remain the fallback names. */ }
+        let itemFollowUps = null;
+        try { itemFollowUps = titlesOption(options.itemFollowUps, 1000); } catch (_) { itemFollowUps = null; /* The retained wording remains. */ }
+        const actionWork = action => typeof view.actionWork === 'function' ? view.actionWork(action, itemFollowUps) : action.rationale.suggestedAction;
         let currentOwner = null;
         const actionName = action => typeof view.actionTitle === 'function' ? view.actionTitle(action, controlTitles) : action.controlId + ' · ' + action.labels.kind;
-        const viewOptions = () => ({ actionEditorAbove: true, ...(controlTitles ? { controlTitles } : {}), ...(currentOwner ? { currentOwner } : {}) });
+        const viewOptions = () => ({ actionEditorAbove: true, ...(controlTitles ? { controlTitles } : {}),
+            ...(itemFollowUps ? { itemFollowUps } : {}), ...(currentOwner ? { currentOwner } : {}) });
         const readLatest = !initialSource && typeof options.latestSource === 'function' ? options.latestSource : null;
         let latest = null, pageAsOf = null;
         const day = value => typeof view.calendarDay === 'function' ? view.calendarDay(value) : value || 'Not set';
@@ -255,7 +259,7 @@
                 actionPicker.value = selectedAction || ''; actionPicker.disabled = busy || !!pending;
             }
             const detail = selectedDetail(), authority = selectedAuthority();
-            actionSummary.textContent = draft ? draft.name + ': ' + draft.work : detail ? actionName(detail) + ': ' + detail.rationale.suggestedAction : '';
+            actionSummary.textContent = draft ? draft.name + ': ' + draft.work : detail ? actionName(detail) + ': ' + actionWork(detail) : '';
             actionSummary.hidden = !draft && !permitted;
             actionState.textContent = detail ? 'Status: ' + detail.labels.status + '. Owner: ' + (labelled(detail) ? detail.ownerLabel :
                 detail.ownerSubjectKey === null ? 'not set' : typeof currentOwner !== 'string' ? 'someone in your organisation' :
@@ -283,7 +287,7 @@
             const detail = selectedDetail(), authority = selectedAuthority(), named = choice === 'assignNamed', type = named ? 'assign' : choice;
             if (!detail || !authority || !authority.commands.includes(type) || choice === 'assign' && editor.ownerChoices.length !== 1) return false;
             draft = { type, named, actionId: detail.actionId, planId: selected, revision: selectedRevision, controlId: detail.controlId, name: actionName(detail),
-                work: detail.rationale.suggestedAction, ownerSubjectKey: choice === 'assign' ? editor.ownerChoices[0].subjectKey : null };
+                work: actionWork(detail), ownerSubjectKey: choice === 'assign' ? editor.ownerChoices[0].subjectKey : null };
             staleDraft = false;
             const form = node('form'); form.setAttribute('aria-label', 'Improvement action update'); form.className = 'ncsc-questionnaire improvement-action-form';
             const inputs = {}, feedback = {};

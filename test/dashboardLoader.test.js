@@ -1872,6 +1872,10 @@ describe('ready Cyber composition', () => {
             const titles = h.improvementMounts[0].input.controlTitles;
             h.cyberProjection.metadata.controls.forEach(item => expect(titles[item.id]).toBe(item.title));
             expect(Object.keys(titles)).toHaveLength(h.cyberProjection.metadata.controls.length);
+            // Each topic's concrete follow-up uses the results page wording (F1-R10).
+            const followUps = h.improvementMounts[0].input.itemFollowUps;
+            h.cyberProjection.metadata.questions.forEach(question => expect(followUps[question.id]).toBe(question.smallBusiness
+                ? question.smallBusiness.checks.join(' ') : question.guidance.startingActions[0]));
             expect(h.window.location.hash).toBe('#improvement-plan');
             expect(h.requests[11].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
             h.window.dispatch('pagehide');
