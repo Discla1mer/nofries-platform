@@ -1318,6 +1318,17 @@
             }); next.disabled = activeQuestion === questions.length - 1;
             navigationSummary = node('span', 'ncsc-navigation-summary');
             const navigationActions = node('div', 'ncsc-navigation-actions'); navigationActions.append(previous, next);
+            // On narrow screens the bar sticks to the bottom of the screen with
+            // Previous and Next; the two jump buttons sit behind More. Wider
+            // screens show all four and no More button. DOM order is the tab order.
+            const more = node('div', 'ncsc-navigation-more ncsc-navigation-collapsed'); more.id = 'ncsc-navigation-more';
+            const moreToggle = button('More', function () {
+                const expanded = moreToggle.getAttribute('aria-expanded') !== 'true';
+                moreToggle.setAttribute('aria-expanded', String(expanded));
+                more.classList[expanded ? 'remove' : 'add']('ncsc-navigation-collapsed');
+            }, 'dashboard-button dashboard-button-secondary ncsc-navigation-more-toggle');
+            moreToggle.id = 'ncsc-navigation-more-toggle'; moreToggle.setAttribute('aria-expanded', 'false'); moreToggle.setAttribute('aria-controls', more.id);
+            navigationActions.append(moreToggle, more);
             nextUnanswered = null;
             if (acknowledged.status !== 'submitted') {
                 const jump = button('Next unanswered question', function () {
@@ -1325,14 +1336,14 @@
                     const index = unansweredIndex(activeQuestion);
                     if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
                 }, 'dashboard-text-button');
-                nextUnanswered = jump; navigationActions.append(jump);
+                nextUnanswered = jump; more.append(jump);
             }
             const unresolved = button('Next unresolved question', function () {
                 if (!questionRegion.contains(unresolved)) return;
                 const index = unresolvedIndex(activeQuestion);
                 if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
             }, 'dashboard-text-button');
-            nextUnresolved = unresolved; navigationActions.append(unresolved);
+            nextUnresolved = unresolved; more.append(unresolved);
             nav.append(navigationSummary, navigationActions); questionRegion.append(nav); updateQuestionNavigation();
             questionRegion.append(node('p', 'dashboard-muted', 'Unresolved means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
             applyInlineErrors();

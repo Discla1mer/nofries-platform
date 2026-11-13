@@ -404,12 +404,24 @@
                 }
             } else { toolbar.remove(); editorPanel.remove(); }
         }
-        function unavailable(status, uncertain) {
+        function waitText(value) {
+            let seconds = null;
+            try { seconds = number(fields(copy(value, 1024), ['error', 'retryAfterSeconds']).retryAfterSeconds, 86400); }
+            catch (_) { seconds = null; }
+            if (!seconds) return 'a minute';
+            if (seconds < 60) return seconds + (seconds === 1 ? ' second' : ' seconds');
+            const minutes = Math.ceil(seconds / 60);
+            return minutes + (minutes === 1 ? ' minute' : ' minutes');
+        }
+        function unavailable(status, uncertain, value) {
             clearView();
             if (status === 401 || status === 403) {
                 denied = true; pending = null; rows = []; selected = null; selectedRevision = null; scope = null; removeDraft();
                 focusAfterRead = null;
                 message = 'Improvement Plan access is unavailable. Reopen the dashboard to check the current organisation and access.';
+            } else if (status === 429) {
+                message = 'Too many requests in a short time. Wait about ' + waitText(value) + ', then ' +
+                    (uncertain ? 'select Retry pending improvement command.' : 'select Refresh improvement plan.');
             } else message = uncertain ? 'The command outcome is unconfirmed. Retry the same pending command before leaving.' :
                 'Improvement Plan is unavailable. Refresh to try the current saved state again.';
             render();
@@ -463,7 +475,7 @@
             try {
                 const result = response(await request('/api/dashboard/improvement/plans?limit=' + PAGE_SIZE + (after === null ? '' : '&afterPlanId=' + encodeURIComponent(after))));
                 if (!active() || token !== serial) return false;
-                if (result.status !== 200) { unavailable(result.status, false); return false; }
+                if (result.status !== 200) { unavailable(result.status, false, result.value); return false; }
                 const value = page(result.value, after); scope = value.scope; rows = value.plans; next = value.nextAfterPlanId; pageAsOf = value.asOf;
                 accepted();
                 message = rows.length ? 'Choose a saved plan or refresh the selected plan.' : 'No saved improvement plans are available for this organisation.';
@@ -511,7 +523,7 @@
                 const result = response(await request('/api/dashboard/improvement/view?planId=' + encodeURIComponent(planId)));
                 if (!active() || token !== serial) return false;
                 if (result.status !== 200) {
-                    unavailable(result.status, false);
+                    unavailable(result.status, false, result.value);
                     if (exactTarget && result.status === 404) {
                         selected = null; selectedRevision = null; selectedAction = null;
                         message = 'This action is no longer available in this organisation. Return to the work queue or refresh to check again.'; render();
@@ -550,7 +562,13 @@
                 if (!active() || token !== serial) return false;
                 if (editorResult.status !== 200) {
                     if (editorResult.status === 401 || editorResult.status === 403) unavailable(editorResult.status, false);
-                    else { editor = null; message = 'The saved plan is visible, but current action options are unavailable. Refresh to try again.'; render(); }
+                    else {
+                        editor = null;
+                        message = editorResult.status === 429 ? 'The saved plan is visible. Too many requests in a short time, so action options are not loaded. Wait about ' +
+                            waitText(editorResult.value) + ', then select Refresh improvement plan.' :
+                            'The saved plan is visible, but current action options are unavailable. Refresh to try again.';
+                        render();
+                    }
                     return false;
                 }
                 editor = editorContext(editorResult.value, model);
@@ -622,7 +640,7 @@
                         message = draft ? 'Plan changed; cancel these changes and refresh.' : 'Plan changed. Refresh the saved plan before making another update.';
                         render(); return false;
                     }
-                    unavailable(result.status, pending !== null); return false;
+                    unavailable(result.status, pending !== null, result.value); return false;
                 }
                 const value = fields(copy(result.value, 8388608), ['schemaVersion', 'plan']);
                 if (value.schemaVersion !== 1 || !value.plan || value.plan.planId !== captured.planId ||

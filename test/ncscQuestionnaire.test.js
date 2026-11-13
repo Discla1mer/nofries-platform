@@ -1013,6 +1013,23 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
 
+    test('question navigation keeps Previous and Next first, with the jump buttons behind More in tab order', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        try {
+            const nav = ui.root.querySelector('.ncsc-question-navigation');
+            expect(nav.querySelectorAll('button').map(item => item.textContent))
+                .toEqual(['Previous question', 'Next question', 'More', 'Next unanswered question', 'Next unresolved question']);
+            const toggle = byId(ui, 'ncsc-navigation-more-toggle'), more = byId(ui, 'ncsc-navigation-more');
+            expect(toggle.getAttribute('aria-controls')).toBe(more.id); expect(toggle.getAttribute('aria-expanded')).toBe('false');
+            expect(more.classList.contains('ncsc-navigation-collapsed')).toBe(true);
+            toggle.click();
+            expect(toggle.getAttribute('aria-expanded')).toBe('true'); expect(more.classList.contains('ncsc-navigation-collapsed')).toBe(false);
+            control(ui, 'Next unanswered question').click();
+            expect(byId(ui, 'ncsc-question-index').value).toBe('1');
+            toggle.click(); expect(h.records).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
     // The question text the page shows. Prefer the question form of the wording when the
     // catalogue has one, so these focus tests follow the wording rather than pin it.
     const plainQuestion = question => question.smallBusiness.question || question.smallBusiness.meaning;
