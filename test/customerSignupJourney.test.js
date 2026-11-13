@@ -346,7 +346,7 @@ test('reserved account fields stay locked and submission uses their captured can
         expect(f.client.completeSetup).toHaveBeenCalledWith({ ...savedAccount,
             details: { name: 'Synthetic name', role: 'Owner', address: 'Synthetic address', registrationId: '9429000000000', authorityConfirmed: true } },
         { signal: expect.any(AbortSignal) });
-        expect(f.root.textContent).toContain('Continuing account setup');
+        expect(f.root.textContent).toContain('Finishing your sign-in');
     } finally { f.view.dispose(); }
 });
 
@@ -678,4 +678,20 @@ test('actual signup transport displays saved read-only setup and rechecks it usi
         expect(f.root.querySelector('form')).toBeNull(); expect(f.root.querySelector('input')).toBeNull();
         expect(createAccount).not.toHaveBeenCalled();
     } finally { f.view.dispose(); client.dispose(); }
+});
+
+test('setup text fields show a count near their limit and say when text is cut off', async () => {
+    // Round 2: "Your name" silently stopped at 160 characters.
+    const f = setup({ status: 'setup_details', email: 'person@example.test' }, { customerTransport: 'external' });
+    await f.view.ready;
+    try {
+        const input = f.root.querySelector('form').querySelectorAll('input').find(node => node.name === 'name');
+        const count = f.root.querySelector('[id="' + input.getAttribute('aria-describedby') + '"]');
+        expect(count.getAttribute('aria-live')).toBe('polite');
+        expect(count.hidden).toBe(true);
+        input.value = 'x'.repeat(140); for (const fn of input.events.input) fn();
+        expect(count.hidden).toBe(false); expect(count.textContent).toBe('140 of 160 characters.');
+        input.value = 'x'.repeat(160); for (const fn of input.events.input) fn();
+        expect(count.textContent).toBe('160 of 160 characters. This is the limit, so anything longer is cut off.');
+    } finally { f.view.dispose(); }
 });
