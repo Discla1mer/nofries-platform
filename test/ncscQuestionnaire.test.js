@@ -1365,7 +1365,9 @@ describe('submitted assessment results', () => {
                 upperPercentTenths: evaluated.attainment.upperPercentTenths, denominatorWeight: evaluated.attainment.denominatorWeight,
                 completed: evaluated.countsCompletion.completionNumerator, total: evaluated.countsCompletion.completionDenominator });
         });
-        expect(panel.textContent).toContain('Unknown or unresolved answers: 2. Marked not applicable, to confirm: 1.');
+        // One total that already includes the not applicable answer, so it cannot read as 3 separate items.
+        expect(panel.textContent).toContain('Answers still to confirm: 2 (1 Unknown and 1 not applicable).');
+        expect(panel.textContent).not.toMatch(/Marked not applicable, to confirm/);
         expect(panel.textContent).toContain(rationale); expect(panel.querySelectorAll('img')).toHaveLength(0);
         expect(panel.querySelectorAll('script')).toHaveLength(0); ui.controller.destroy();
     });
@@ -2939,11 +2941,28 @@ describe('final submission review step', () => {
         try {
             control(ui, 'Review and submit').click();
             expect(byId(ui, 'ncsc-review-readiness').textContent).toMatch(/^Every question has an answer/);
+            // A complete Yes draft has no N/A or Unknown answers, so neither is mentioned.
+            expect(byId(ui, 'ncsc-review-readiness').textContent).toBe('Every question has an answer.');
             const confirm = control(ui, 'Save and submit assessment'); confirm.click(); confirm.click(); confirm.click();
             const accept = ui.root.querySelector('.ncsc-submit-dialog').querySelectorAll('button').find(button => button.textContent === 'Submit');
             accept.click(); accept.click();
             await until(() => ui.root.querySelector('.ncsc-sealed'));
             expect(submit).toHaveBeenCalledTimes(1); expect(h.records.filter(row => row.action === 'submit')).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('ready review names the explanation and answers still to confirm only when there are some', async () => {
+        const h = await backend(); await h.execute(createCommand());
+        const rows = allResponses('yes'); rows[0] = { itemId: rows[0].itemId, optionId: 'unknown', rationale: null };
+        rows[1] = { itemId: rows[1].itemId, optionId: 'unknown', rationale: null };
+        rows[2] = { itemId: rows[2].itemId, optionId: 'not_applicable', rationale: { text: 'Synthetic N/A reason.' } };
+        await h.execute(saveCommand('assessment-a', 0, 'save-a', rows));
+        const ui = await resumeUi(h);
+        try {
+            control(ui, 'Review and submit').click();
+            expect(byId(ui, 'ncsc-review-readiness').textContent).toBe('Every question has an answer. Your not applicable answer has an explanation. ' +
+                '3 answers are still to confirm (2 Unknown and 1 not applicable). You can submit with them, but they do not count as in place.');
+            expect(posts(h)).toHaveLength(0);
         } finally { ui.controller.destroy(); }
     });
 
