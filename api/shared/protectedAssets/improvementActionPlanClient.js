@@ -54,7 +54,7 @@
     }
     const labelled = value => !!value && typeof value === 'object' && Object.hasOwn(value, 'ownerLabel');
     function actionField(name, value) {
-        if (name === 'dueDate') return date(value);
+        if (name === 'dueDate' || name === 'nextReviewDate') return date(value);
         if (name === 'ownerLabel') return ownerLabel(value);
         if (!['reason', 'note', 'evidenceReference'].includes(name)) invalid();
         text(value, name === 'evidenceReference' ? 180 : 1000); unicode(value);
@@ -124,7 +124,9 @@
                 actionField('reason', fields(value.payload, ['reason']).reason);
             }
             else if (value.type === 'complete') {
-                fields(value.payload, ['note', 'evidenceReference']); actionField('note', value.payload.note); actionField('evidenceReference', value.payload.evidenceReference);
+                fields(value.payload, ['note', 'evidenceReference', ...(Object.hasOwn(value.payload || {}, 'nextReviewDate') ? ['nextReviewDate'] : [])]);
+                actionField('note', value.payload.note); actionField('evidenceReference', value.payload.evidenceReference);
+                if (Object.hasOwn(value.payload, 'nextReviewDate')) actionField('nextReviewDate', value.payload.nextReviewDate);
             } else invalid();
         }
         return value;
@@ -255,6 +257,9 @@
             else if (type === 'reopen') input('reason', 'Reopen reason', 'textarea', 1000);
             else if (type === 'complete') {
                 input('note', 'Completion note', 'textarea', 1000); input('evidenceReference', 'Completion evidence reference (unverified)', 'text', 180);
+                input('nextReviewDate', 'Next review date (UTC, optional)', 'date'); inputs.nextReviewDate.required = false;
+                inputs.nextReviewDate.min = model.asOf.slice(0, 10);
+                form.append(node('p', 'Choose today or a future UTC date to review the completed work and evidence. This records a date, not a reminder or verification.'));
                 form.append(node('p', 'The evidence reference is an unverified record ID. Workflow completion does not verify the control or change scores.'));
             } else form.append(node('p', 'Start the assigned action using this displayed plan revision.'));
             const save = node('button', SAVE_LABELS[choice]); save.type = 'submit'; save.className = 'dashboard-button';
@@ -292,9 +297,13 @@
                 draftForm.feedback[key].textContent = ''; draftForm.feedback[key].hidden = true;
             });
             for (const [key, input] of Object.entries(draftForm.inputs)) {
-                try { actionField(key, input.value); }
+                try {
+                    if (key === 'nextReviewDate' && input.value === '') continue;
+                    actionField(key, input.value);
+                    if (key === 'nextReviewDate' && input.value < model.asOf.slice(0, 10)) invalid();
+                }
                 catch (_) {
-                    fieldError(key, key === 'ownerLabel' ? OWNER_LABEL_HELP : key === 'dueDate' ? 'Enter a valid due date in UTC (YYYY-MM-DD), then save again.' :
+                    fieldError(key, key === 'ownerLabel' ? OWNER_LABEL_HELP : key === 'nextReviewDate' ? 'Choose today or a future UTC review date (YYYY-MM-DD), or leave it empty.' : key === 'dueDate' ? 'Enter a valid due date in UTC (YYYY-MM-DD), then save again.' :
                         key === 'evidenceReference' ? 'Enter an unverified record ID of up to 180 characters without surrounding spaces. URLs and file paths cannot be used.' :
                             'Enter a ' + (key === 'note' ? 'completion note' : draft.type === 'block' ? 'block reason' : 'reopen reason') +
                             ' of up to 1000 characters using plain text, then save again.'); return Promise.resolve(false);
@@ -302,6 +311,7 @@
             }
             try {
                 const values = Object.fromEntries(Object.entries(draftForm.inputs).map(([key, input]) => [key, input.value]));
+                if (values.nextReviewDate === '') delete values.nextReviewDate;
                 const payload = draft.named ? { ownerLabel: ownerLabel(values.ownerLabel), dueDate: values.dueDate } :
                     draft.type === 'assign' ? { ownerSubjectKey: draft.ownerSubjectKey, dueDate: values.dueDate } : values;
                 const checked = command({ planId: draft.planId, type: draft.type, operationId: 'validate-action-details',

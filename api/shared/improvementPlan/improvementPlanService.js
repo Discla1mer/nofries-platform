@@ -56,7 +56,9 @@ function normaliseImprovementCommand(input) {
             } else if (row.type === 'start') fields(row.payload, []);
             else if (row.type === 'block' || row.type === 'reopen') note(fields(row.payload, ['reason']).reason);
             else if (row.type === 'complete') {
-                const payload = fields(row.payload, ['note', 'evidenceReference']); note(payload.note);
+                const payload = fields(row.payload, ['note', 'evidenceReference', ...(Object.hasOwn(row.payload || {}, 'nextReviewDate') ? ['nextReviewDate'] : [])]);
+                note(payload.note);
+                if (Object.hasOwn(payload, 'nextReviewDate')) date(payload.nextReviewDate);
                 normaliseEvidenceSelector({ tenantId: 'selector', organisationId: 'selector', artefactId: payload.evidenceReference });
                 if (/^(?:[a-z][a-z0-9+.-]*:\/\/|(?:https?|ftp|file|data|javascript|vbscript):|[\\/]|\.{1,2}[\\/]|[a-z]:[\\/])/i.test(payload.evidenceReference)) fail();
             } else fail();

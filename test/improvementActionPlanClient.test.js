@@ -861,3 +861,67 @@ test.each(['destroy', 'scope'])('late editor context after %s cannot enable a fo
     expect(h.root.textContent).toBe(''); expect(form(h)).toBeUndefined();
     expect(h.request.mock.calls.filter(([path]) => path.endsWith('/execute'))).toEqual([]);
 });
+
+test.each(['2026-10-01', '2026-12-01', ''])('completion form persists optional review date %p and reloads it', async nextReviewDate => {
+    const h = harness({ plan: started() }); await h.controller.ready;
+    button(h, 'Complete action').click();
+    expect(field(h, 'Next review date').required).toBe(false);
+    expect(h.root.textContent).toContain('not a reminder or verification');
+    fill(h, 'Completion note', 'Reviewed the completed work.'); fill(h, 'Completion evidence reference', 'evidence:review');
+    fill(h, 'Next review date', nextReviewDate); await submitForm(h);
+    const posted = h.request.mock.calls.find(([path]) => path.endsWith('/execute'))[1];
+    expect(posted.payload).toEqual({ note: 'Reviewed the completed work.', evidenceReference: 'evidence:review',
+        ...(nextReviewDate ? { nextReviewDate } : {}) });
+    expect(h.root.textContent).toContain('Next review date (UTC) ' + (nextReviewDate || 'Not set'));
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Next review date (UTC) ' + (nextReviewDate || 'Not set'));
+});
+
+test('past review date is focused without a write; cancel discards it', async () => {
+    const h = harness({ plan: started() }); await h.controller.ready; button(h, 'Complete action').click();
+    fill(h, 'Completion note', 'Completed.'); fill(h, 'Completion evidence reference', 'evidence:review');
+    const date = fill(h, 'Next review date', '2026-09-30'); await submitForm(h);
+    expect(date.getAttribute('aria-invalid')).toBe('true'); expect(h.document.activeElement).toBe(date);
+    expect(h.request.mock.calls.some(([path]) => path.endsWith('/execute'))).toBe(false);
+    button(h, 'Cancel changes').click(); button(h, 'Complete action').click();
+    expect(field(h, 'Next review date').value).toBe('');
+});
+
+test('uncertain completion retry keeps its exact review date and operation identity', async () => {
+    const h = harness({ plan: started() }); await h.controller.ready;
+    const respond = h.request.getMockImplementation(); let attempts = 0;
+    h.request.mockImplementation(async (path, body) => {
+        const result = await respond(path, body);
+        if (path.endsWith('/execute') && ++attempts === 1) throw new Error('Synthetic lost receipt');
+        return result;
+    });
+    button(h, 'Complete action').click(); fill(h, 'Completion note', 'Completed.');
+    fill(h, 'Completion evidence reference', 'evidence:review'); fill(h, 'Next review date', '2026-12-01');
+    await submitForm(h);
+    const posted = h.request.mock.calls.find(([path]) => path.endsWith('/execute'))[1];
+    expect(await h.controller.retry()).toBe(true);
+    const writes = h.request.mock.calls.filter(([path]) => path.endsWith('/execute'));
+    expect(writes).toHaveLength(2); expect(writes[1][1]).toBe(posted);
+    expect(h.options.newId).toHaveBeenCalledTimes(1); expect(h.state.plans.get('plan-a').commands).toHaveLength(3);
+    expect(h.root.textContent).toContain('Next review date (UTC) 2026-12-01');
+});
+
+
+test('named-owner completion retains its owner and optional review date through reload', async () => {
+    let plan = append(seed(), 'assign', { ownerLabel: 'Synthetic action owner', dueDate: '2026-10-03' });
+    plan = append(plan, 'start', {});
+    const h = harness({ plan }); await h.controller.ready;
+    button(h, 'Complete action').click();
+    fill(h, 'Completion note', 'Completed work to review.');
+    fill(h, 'Completion evidence reference', 'evidence:named-review');
+    fill(h, 'Next review date', '2026-12-01'); await submitForm(h);
+    expect(h.request.mock.calls.find(([path]) => path.endsWith('/execute'))[1].payload).toEqual({
+        note: 'Completed work to review.', evidenceReference: 'evidence:named-review', nextReviewDate: '2026-12-01' });
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Synthetic action owner');
+    expect(h.root.textContent).toContain('Next review date (UTC) 2026-12-01');
+    expect(h.root.textContent).not.toContain('Improvement action plan is unavailable.');
+    const completed = presentation(h.state.plans.get('plan-a')).actions.find(action => action.status === 'completed');
+    expect(completed.ownerLabel).toBe('Synthetic action owner');
+    expect(completed.completion.nextReviewDate).toBe('2026-12-01');
+});
