@@ -54,17 +54,24 @@
     // UTC calendar day basis. Owner names come only from ownerLabel.
     const ACTION_LIMIT = 3, DUE_SOON_DAYS = 14;
     const DAY = /^\d{4}-\d\d-\d\d$/;
+    function calendarDay(value) {
+        if (typeof value !== 'string' || !DAY.test(value)) return false;
+        const parsed = new Date(value + 'T00:00:00.000Z');
+        return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    }
     function actionSummary(input) {
         if (!input || !Array.isArray(input.lists) || typeof input.more !== 'boolean') return null;
         let today = null; const rows = [];
         for (const list of input.lists) {
-            if (!list || typeof list.asOf !== 'string' || !DAY.test(list.asOf.slice(0, 10)) || !Array.isArray(list.actions)) return null;
+            if (!list || typeof list.asOf !== 'string' || !calendarDay(list.asOf.slice(0, 10)) || !Array.isArray(list.actions)) return null;
             if (today === null || list.asOf.slice(0, 10) < today) today = list.asOf.slice(0, 10);
             for (const action of list.actions) {
                 if (!action || typeof action.actionId !== 'string' || typeof action.status !== 'string' ||
-                    typeof action.isOverdue !== 'boolean' || action.isOverdue && action.dueDate === null || action.dueDate !== null && !(typeof action.dueDate === 'string' && DAY.test(action.dueDate)) ||
+                    typeof action.isOverdue !== 'boolean' || action.isOverdue && action.dueDate === null || action.dueDate !== null && !calendarDay(action.dueDate) ||
                     !action.rationale || typeof action.rationale.suggestedAction !== 'string' || !action.rationale.suggestedAction.trim() ||
                     Object.hasOwn(action, 'ownerLabel') && typeof action.ownerLabel !== 'string') return null;
+                if (Object.hasOwn(action.completion || {}, 'nextReviewDate') &&
+                    (action.status !== 'completed' || !calendarDay(action.completion.nextReviewDate))) return null;
                 rows.push(action);
             }
         }
@@ -75,9 +82,20 @@
         const overdue = rows.filter(action => action.isOverdue).sort(byDue);
         const dueSoon = rows.filter(action => !action.isOverdue && action.status !== 'completed' && action.dueDate !== null &&
             action.dueDate >= today && action.dueDate <= horizon).sort(byDue);
+        // Use current completion only: a historical completion does not keep a
+        // reopened action on the review list. Never reopen or mark a review done.
+        const reviews = rows.filter(action => action.status === 'completed' && action.completion &&
+            Object.hasOwn(action.completion, 'nextReviewDate'))
+            .sort((a, b) => a.completion.nextReviewDate.localeCompare(b.completion.nextReviewDate) || a.actionId.localeCompare(b.actionId))
+            .map(action => ({ ...item(action), reviewDate: action.completion.nextReviewDate }));
+        const reviewsDue = reviews.filter(action => action.reviewDate <= today);
+        const reviewsSoon = reviews.filter(action => action.reviewDate > today && action.reviewDate <= horizon);
         return { total: rows.length, more: input.more,
             overdue: { count: overdue.length, items: overdue.slice(0, ACTION_LIMIT).map(item) },
-            dueSoon: { count: dueSoon.length, items: dueSoon.slice(0, ACTION_LIMIT).map(item) } };
+            dueSoon: { count: dueSoon.length, items: dueSoon.slice(0, ACTION_LIMIT).map(item) },
+            reviews: { total: reviews.length, asOfDay: today,
+                due: { count: reviewsDue.length, items: reviewsDue.slice(0, ACTION_LIMIT) },
+                soon: { count: reviewsSoon.length, items: reviewsSoon.slice(0, ACTION_LIMIT) } } };
     }
     const displayDay = value => new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeZone: 'UTC' })
         .format(new Date(value + 'T00:00:00.000Z'));
@@ -237,19 +255,24 @@
                 } else empty.append(node('span', '', 'Start with your top three gaps.'));
                 card.append(empty); root.prepend(card); return;
             }
-            [['Overdue', actions.overdue], ['Due in the next 14 days', actions.dueSoon]].forEach(([label, group]) => {
+            const groups = [['Overdue', actions.overdue], ['Due in the next 14 days', actions.dueSoon]];
+            if (actions.reviews.total) groups.push(['Reviews due', actions.reviews.due], ['Reviews in the next 14 days', actions.reviews.soon]);
+            groups.forEach(([label, group]) => {
                 card.append(node('h4', '', label + ' (' + group.count + ')'));
                 if (!group.items.length) return;
                 const list = node('ul', 'picture-actions-list');
                 group.items.forEach(entry => {
                     const row = node('li', 'picture-action');
                     row.append(node('span', 'picture-action-title', entry.title),
-                        node('span', 'picture-action-meta dashboard-muted', 'Due ' + displayDay(entry.dueDate) +
+                        node('span', 'picture-action-meta dashboard-muted', (entry.reviewDate ? 'Review ' + displayDay(entry.reviewDate) : 'Due ' + displayDay(entry.dueDate)) +
                             (entry.owner ? ' · Owner: ' + entry.owner : '')));
                     list.append(row);
                 });
                 card.append(list);
             });
+            if (actions.reviews.total) card.append(node('p', 'picture-review-note dashboard-muted',
+                'Review dates use saved action records, checked against ' + displayDay(actions.reviews.asOfDay) + ' (UTC). ' +
+                'A review date does not confirm a review took place, verify evidence or change a score.'));
             if (actions.more) card.append(node('p', 'dashboard-muted', 'Counts cover the first five saved plans.'));
             const full = node('a', 'picture-actions-plan', 'View the full plan'); full.href = '#improvement-plan';
             full.addEventListener('click', event => { event.preventDefault(); if (live() && !denied) openImprovement(); });
