@@ -1048,7 +1048,7 @@
             section.setAttribute('aria-labelledby', 'ncsc-review-range-title');
             const heading = node('h4', '', 'Projected score range'); heading.id = 'ncsc-review-range-title'; section.append(heading);
             const count = pendingRows.length;
-            section.append(node('p', '', count + ' pending N/A ' + (count === 1 ? 'answer' : 'answers') + ' still to confirm.'));
+            section.append(node('p', '', count + (count === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm.'));
             if (unanswered) {
                 section.append(node('p', '', 'The projected range appears when every question has an answer.'));
             } else {
@@ -1058,12 +1058,12 @@
                 section.append(value);
                 if (count) {
                     const widened = percentTenths(count * creditUnits('unknown', 1).upper, rows.length * 2);
-                    section.append(node('p', '', 'Pending N/A answers count as still to confirm, not as in place: they add nothing to the lower figure and full credit to the upper figure. Yours widen the range by ' +
+                    section.append(node('p', '', 'Answers marked not applicable, to confirm, are not counted as in place: they add nothing to the lower figure and full credit to the upper figure. Yours widen the range by ' +
                         (widened / 10).toFixed(1) + ' percentage points.'));
                 }
             }
             if (count) {
-                section.append(node('p', '', 'N/A stays in the score unless formally approved, and N/A approval is not available in this journey yet. If you can confirm what is in place for one of these questions, change its answer to Yes, Partial or No.'));
+                section.append(node('p', '', 'Answers marked not applicable still count towards your result until they are approved. Approval is not available yet. If you can confirm what is in place for one of these questions, change its answer to Yes, Partial or No.'));
                 const list = node('ul', 'ncsc-review-pending-list');
                 pendingRows.forEach(function (row) {
                     const change = button('Change question ' + (row.index + 1), function () { editFromReview(row.index); }, 'dashboard-text-button');
