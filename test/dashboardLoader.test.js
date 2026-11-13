@@ -3546,3 +3546,14 @@ describe('Overview Actions card', () => {
         h.window.dispatch('pagehide');
     });
 });
+
+test('dashboard startup shows one steady progress message instead of changing stages', () => {
+    // Round 2: "Checking your sign-in…", "Preparing your dashboard…" and
+    // "Confirming your access…" over 6 to 16 seconds read as separate waits.
+    for (const stage of ['Checking your sign-in…', 'Loading your organisation…', 'Preparing your dashboard…', 'Confirming your access…']) {
+        expect(SOURCE).not.toContain("'" + stage + "'");
+    }
+    expect(SOURCE).toContain("const OPENING_MESSAGE = 'Getting your dashboard ready. This can take up to 20 seconds.';");
+    expect(SOURCE.match(/loadingStage\(cycle, OPENING_MESSAGE, OPENING_DETAIL\)/g)).toHaveLength(2);
+    expect(SOURCE.match(/sessionForReconcile\(cycle, OPENING_MESSAGE, OPENING_DETAIL\)/g)).toHaveLength(2);
+});
