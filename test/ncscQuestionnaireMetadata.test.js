@@ -35,6 +35,8 @@ describe('questionnaire source display metadata', () => {
             expect(question.guidance).toEqual(source.guidance);
             expect(question.responseOptionIds).toEqual(source.responseOptionIds);
             expect(question.smallBusiness.meaning.length).toBeGreaterThan(30);
+            // The answer screen leads with a question, so nobody looks for a text box to "write down" something.
+            expect(question.smallBusiness.question).toMatch(/^(Have|Do|Does|Are|Is) [^?]+\?( [^?]+\.)?$/);
             expect(question.smallBusiness.example.length).toBeGreaterThan(30);
             expect(question.smallBusiness.checks).toHaveLength(3);
             expect(Object.isFrozen(question.smallBusiness)).toBe(true);
@@ -44,6 +46,8 @@ describe('questionnaire source display metadata', () => {
             .toMatch(/Test updates.*check they succeeded.*recovery plan.*unsupported systems/);
         expect(metadata.questions.find(question => question.id === 'NF-NCSC-MCSS-LP-01-Q1').smallBusiness.meaning)
             .toContain('start, change roles or leave');
+        expect(metadata.questions.find(question => question.id === 'NF-NCSC-MCSS-RM-01-Q1').smallBusiness.question)
+            .toBe('Have you written down the computer or online problems that could stop your business, who will deal with them and when you will check again?');
     });
 
     test('each question links exactly to its accepted sources with the recorded verification date', () => {
@@ -124,6 +128,8 @@ describe('closed browser client source metadata contract', () => {
 
     test.each([
         ['missing meaning', metadata => { delete metadata.questions[0].smallBusiness.meaning; }],
+        ['missing question', metadata => { delete metadata.questions[0].smallBusiness.question; }],
+        ['empty question', metadata => { metadata.questions[0].smallBusiness.question = ''; }],
         ['empty example', metadata => { metadata.questions[0].smallBusiness.example = ''; }],
         ['unexpected field', metadata => { metadata.questions[0].smallBusiness.html = '<script>'; }],
         ['empty checklist', metadata => { metadata.questions[0].smallBusiness.checks = []; }],

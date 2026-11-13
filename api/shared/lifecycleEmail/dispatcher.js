@@ -8,11 +8,13 @@
 // type, status and error code.
 const { renderTemplate } = require('./templates');
 const { createResendClient } = require('./resendClient');
+const { createUnsubscribeToken, unsubscribeConfigured } = require('./unsubscribeToken');
 
 const TYPES = Object.freeze(['welcome', 'result_summary', 'nudge_unfinished', 'reassess_reminder']);
 // The Unsolicited Electronic Messages Act 2007 requires a working unsubscribe
-// facility. Until the unsubscribe slice ships one, the non-transactional types
-// are never claimed, even when allow-listed, so their rows stay pending.
+// facility. Without NOFRIES_EMAIL_UNSUBSCRIBE_SECRET there are no signed links,
+// so the non-transactional types are never claimed, even when allow-listed, and
+// their rows stay pending.
 const AWAITING_UNSUBSCRIBE = Object.freeze(['nudge_unfinished', 'reassess_reminder']);
 const BATCH = 20;
 const INTERVAL_MS = 5 * 60 * 1000;
@@ -48,7 +50,17 @@ function allowedTypes(env) {
     const values = String(env.NOFRIES_LIFECYCLE_EMAIL_TYPES).split(',').map(value => value.trim());
     return values.every(value => TYPES.includes(value)) ? new Set(values) : new Set();
 }
-const sendableTypes = env => [...allowedTypes(env)].filter(type => !AWAITING_UNSUBSCRIBE.includes(type));
+const sendableTypes = env => [...allowedTypes(env)].filter(type => unsubscribeConfigured(env) || !AWAITING_UNSUBSCRIBE.includes(type));
+const UNSUBSCRIBE_PATH = '/api/emailPreferences';
+
+// A signed per-account, per-type link plus RFC 8058 one-click headers, or, with
+// no secret, the sign-in link and no headers (the behaviour before E6).
+function unsubscribeFor(env, publicOrigin, row) {
+    if (!unsubscribeConfigured(env)) return { url: `${publicOrigin}/dashboard`, headers: null };
+    const token = createUnsubscribeToken({ accountId: row.account_id, subjectKey: row.subjectKey, emailType: row.email_type }, env);
+    const url = `${publicOrigin}${UNSUBSCRIBE_PATH}?t=${encodeURIComponent(token)}`;
+    return { url, headers: { 'List-Unsubscribe': `<${url}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } };
+}
 
 async function asDispatcher(pool, work) {
     const client = await pool.connect();
@@ -82,18 +94,21 @@ function createLifecycleEmailDispatcher({ env = process.env, pool, resolveAddres
         if (row.prior_attempts >= MAX_ATTEMPTS) return finish(row, 'failed', { code: 'attempts_exhausted' });
         if (row.unsubscribed) return finish(row, 'suppressed', { code: 'unsubscribed' });
         if (!row.subjectKey) return finish(row, 'failed', { code: 'recipient_missing' });
-        let message;
+        let message, unsubscribe;
         const signInUrl = `${publicOrigin}/dashboard`;
-        // TODO(#151 unsubscribe slice): replace with the signed one-click unsubscribe link.
-        try { message = renderTemplate(row.email_type, row.template_version, { signInUrl, unsubscribeUrl: signInUrl }); }
+        try { unsubscribe = unsubscribeFor(env, publicOrigin, row); }
+        catch (_) { return finish(row, 'failed', { code: 'unsubscribe_link_invalid' }); }
+        try { message = renderTemplate(row.email_type, row.template_version, { signInUrl, unsubscribeUrl: unsubscribe.url }); }
         catch (_) { return finish(row, 'failed', { code: 'template_unknown' }); }
         let address;
         try { address = await resolveAddress(row.subjectKey); }
         catch (error) { return error?.statusCode === 401 ? finish(row, 'failed', { code: 'recipient_invalid' }) : retry(row, 'recipient_store_unavailable'); }
         if (!address) return finish(row, 'failed', { code: 'recipient_missing' });
         let response;
-        try { response = await send({ from, to: address, subject: message.subject, text: message.text, idempotencyKey: row.outbox_id }); }
-        catch (_) { return retry(row, 'network_error'); }
+        try {
+            response = await send({ from, to: address, subject: message.subject, text: message.text, idempotencyKey: row.outbox_id,
+                ...(unsubscribe.headers ? { headers: unsubscribe.headers } : {}) });
+        } catch (_) { return retry(row, 'network_error'); }
         if (response?.ok) {
             let id = null;
             try { id = (await response.json())?.id; } catch (_) { /* sent; the id is optional */ }
