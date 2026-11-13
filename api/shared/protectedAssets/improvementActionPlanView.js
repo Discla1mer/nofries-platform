@@ -52,11 +52,24 @@
     function subject(value) {
         if (value !== null && (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value))) invalid();
     }
+    // Mirrors the server's owner label rule: one NFKC line of 1-80 characters,
+    // no email address and never a reserved owner filter word.
+    function normaliseOwnerLabel(value) {
+        if (typeof value !== 'string') invalid();
+        const result = value.normalize('NFKC')
+            .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]+/g, ' ')
+            .replace(/\s+/g, ' ').trim();
+        if (!result || result.length > 80 || result.includes('@') || ['all', 'unassigned'].includes(result.toLowerCase())) invalid();
+        return result;
+    }
+    function ownerLabel(value) { if (normaliseOwnerLabel(value) !== value) invalid(); }
+    const labelled = value => own(value, 'ownerLabel');
+    const assigned = action => action.ownerSubjectKey !== null || labelled(action);
     function label(map, key, actual) { if (!own(map, key) || actual !== map[key]) invalid(); }
     function nextStep(action) {
         if (action.status === 'completed') return 'Review the completion note and action history.';
         if (action.status === 'blocked') return 'Review the block reason and agree how to move forward.';
-        if (action.ownerSubjectKey === null) return 'Agree an owner and due date before starting this action.';
+        if (!assigned(action)) return 'Agree an owner and due date before starting this action.';
         if (action.status === 'in_progress') return 'Review progress with the action owner against the due date.';
         return 'Confirm the owner and due date, then review the suggested work.';
     }
@@ -117,24 +130,27 @@
         fields(value.notices, Object.keys(notices)); Object.keys(notices).forEach(key => { if (value.notices[key] !== notices[key]) invalid(); });
         fields(value.filters, ['status', 'owner', 'overdueOnly']);
         if (value.filters.status !== 'all' && !own(statuses, value.filters.status) || typeof value.filters.overdueOnly !== 'boolean') invalid();
-        if (!['all', 'unassigned'].includes(value.filters.owner)) subject(value.filters.owner);
+        if (!['all', 'unassigned'].includes(value.filters.owner)) {
+            try { subject(value.filters.owner); } catch (_) { ownerLabel(value.filters.owner); }
+        }
         fields(value.counts, ['all', 'visible']); count(value.counts.all); count(value.counts.visible);
         if (!Array.isArray(value.actions) || value.actions.length > 4096 || value.counts.visible.total !== value.actions.length ||
             value.counts.all.total < value.counts.visible.total) invalid();
         const ids = new Set(), revisions = new Set(); let historyCount = 0;
         value.actions.forEach(action => {
-            fields(action, ['actionId', 'itemId', 'controlId', 'domainId', 'status', 'ownerSubjectKey', 'ownerEligibility', 'dueDate',
-                'isOverdue', 'blockedReason', 'rationale', 'completion', 'evidence', 'history', 'labels']);
+            fields(action, ['actionId', 'itemId', 'controlId', 'domainId', 'status', 'ownerSubjectKey', ...(labelled(action) ? ['ownerLabel'] : []),
+                'ownerEligibility', 'dueDate', 'isOverdue', 'blockedReason', 'rationale', 'completion', 'evidence', 'history', 'labels']);
             ['actionId', 'itemId', 'controlId', 'domainId'].forEach(key => text(action[key], 180));
             if (ids.has(action.actionId)) invalid(); ids.add(action.actionId);
             subject(action.ownerSubjectKey); date(action.dueDate);
+            if (labelled(action)) { ownerLabel(action.ownerLabel); if (action.ownerSubjectKey !== null || action.dueDate === null) invalid(); }
             if (action.ownerEligibility !== 'not_checked' || typeof action.isOverdue !== 'boolean') invalid();
             if (action.blockedReason !== null) text(action.blockedReason);
             fields(action.rationale, ['kind', 'response', 'responseOrigin', 'suggestedAction']); text(action.rationale.suggestedAction);
             fields(action.labels, ['status', 'kind', 'response', 'responseOrigin', 'evidenceState', 'owner']);
             label(statuses, action.status, action.labels.status); label(kinds, action.rationale.kind, action.labels.kind);
             label(responses, action.rationale.response, action.labels.response); label(origins, action.rationale.responseOrigin, action.labels.responseOrigin);
-            if (action.labels.owner !== (action.ownerSubjectKey === null ? 'Unassigned' : 'Assigned (eligibility not checked)')) invalid();
+            if (action.labels.owner !== (!assigned(action) ? 'Unassigned' : 'Assigned (eligibility not checked)')) invalid();
             if (action.completion !== null) { fields(action.completion, ['at', 'note']); instant(action.completion.at); text(action.completion.note); }
             if ((action.status === 'completed') !== (action.completion !== null) || (action.status === 'blocked') !== (action.blockedReason !== null)) invalid();
             fields(action.evidence, ['assessmentState', 'completionReference', 'completionVerification', 'durableLinkStatus', 'downloadAllowed', 'scoreEffect']);
@@ -148,7 +164,11 @@
                 fields(event, ['revision', 'at', 'type', 'details', 'label']);
                 number(event.revision, value.planRevision); instant(event.at); label(events, event.type, event.label);
                 if (event.revision <= previous || revisions.has(event.revision)) invalid(); previous = event.revision; revisions.add(event.revision);
-                if (event.type === 'assign') { fields(event.details, ['ownerSubjectKey', 'dueDate']); subject(event.details.ownerSubjectKey); date(event.details.dueDate); }
+                if (event.type === 'assign') {
+                    if (labelled(event.details)) { fields(event.details, ['ownerLabel', 'dueDate']); ownerLabel(event.details.ownerLabel); }
+                    else { fields(event.details, ['ownerSubjectKey', 'dueDate']); subject(event.details.ownerSubjectKey); }
+                    date(event.details.dueDate);
+                }
                 else if (event.type === 'block' || event.type === 'reopen') { fields(event.details, ['reason']); text(event.details.reason); }
                 else if (event.type === 'complete') {
                     fields(event.details, ['note', 'evidenceReference', 'evidenceVerification', 'durableLinkStatus']); text(event.details.note);
@@ -271,7 +291,7 @@
                 card.append(node('h3', '', action.controlId + ' · ' + action.labels.kind), node('span', 'dashboard-badge', action.labels.status),
                     node('p', 'ncsc-preserve-text', action.rationale.suggestedAction));
                 const facts = node('dl');
-                [['Next step', nextStep(action)], ['Owner', action.labels.owner],
+                [['Next step', nextStep(action)], ['Owner', labelled(action) ? action.ownerLabel + ' (named owner)' : action.labels.owner],
                     ['Due date (UTC calendar day)', action.dueDate === null ? 'Not set' : action.dueDate],
                     ['Overdue at supplied as-of date (UTC)', action.isOverdue ? 'Yes' : 'No'], ['Assessment response', action.labels.response],
                     ['Response origin', action.labels.responseOrigin], ['Assessment evidence', action.labels.evidenceState]].forEach(pair => fact(facts, pair[0], pair[1]));
@@ -299,7 +319,7 @@
                     .forEach(pair => fact(assessmentFacts, pair[0], pair[1]));
                 evidence.append(assessmentFacts); card.append(evidence);
                 const identifiers = disclosure('Action identifiers'), idFacts = node('dl');
-                [['Owner ID', action.ownerSubjectKey === null ? 'Unassigned' : action.ownerSubjectKey],
+                [['Owner ID', labelled(action) ? 'Named owner without a platform account' : action.ownerSubjectKey === null ? 'Unassigned' : action.ownerSubjectKey],
                     ['Owner eligibility', 'Current eligibility not checked'], ['Action ID', action.actionId],
                     ['Control ID', action.controlId], ['Item ID', action.itemId], ['Domain ID', action.domainId]]
                     .forEach(pair => fact(idFacts, pair[0], pair[1])); identifiers.append(idFacts); card.append(identifiers);
@@ -309,7 +329,8 @@
                 action.history.forEach(event => {
                     const entry = node('li'); entry.append(node('h4', '', 'Plan revision ' + event.revision + ' · ' + event.label), node('p', '', event.at + ' (UTC)'));
                     const details = node('dl');
-                    if (event.type === 'assign') { fact(details, 'Owner ID (current eligibility not checked)', event.details.ownerSubjectKey === null ? 'Unassigned' : event.details.ownerSubjectKey); fact(details, 'Due date (UTC calendar day)', event.details.dueDate === null ? 'Not set' : event.details.dueDate); }
+                    if (event.type === 'assign' && labelled(event.details)) { fact(details, 'Owner name', event.details.ownerLabel); fact(details, 'Due date (UTC calendar day)', event.details.dueDate); }
+                    else if (event.type === 'assign') { fact(details, 'Owner ID (current eligibility not checked)', event.details.ownerSubjectKey === null ? 'Unassigned' : event.details.ownerSubjectKey); fact(details, 'Due date (UTC calendar day)', event.details.dueDate === null ? 'Not set' : event.details.dueDate); }
                     if (event.type === 'block' || event.type === 'reopen') fact(details, 'Reason', event.details.reason);
                     if (event.type === 'complete') { fact(details, 'Completion note', event.details.note); fact(details, 'Evidence reference (unverified)', event.details.evidenceReference === null ? 'Not recorded' : event.details.evidenceReference); fact(details, 'Evidence status', 'Unverified; durable link not established.'); }
                     entry.append(details); timeline.append(entry);
@@ -327,5 +348,5 @@
     // The trusted host decides when a read is pending and when to replace this
     // status with mount(). This component starts no request or automatic retry.
     function mountLoading(root) { return mount(root, loadingState); }
-    return Object.freeze({ mount, mountLoading });
+    return Object.freeze({ mount, mountLoading, normaliseOwnerLabel });
 }));

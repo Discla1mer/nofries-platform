@@ -167,7 +167,14 @@ module.exports = function registerLifecycleEmailOutboxTests() {
         const tables = (await pool.query(`SELECT relname FROM pg_class WHERE relnamespace='nofries'::regnamespace
             AND relkind IN ('r','p','v','m') AND relname NOT IN ('email_outbox','email_preferences') ORDER BY relname`)).rows.map(r => r.relname);
         expect(tables.filter(t => t.startsWith('dashboard_ncsc_assessment')).length).toBeGreaterThan(0);
-        for (const table of tables) {
+        // 0023 adds exactly SELECT (account_id, subject_key) on starter accounts;
+        // every other table, and every other column there, stays unreadable.
+        const lookup = (await pool.query(`SELECT a.attname, has_column_privilege('nofries_email_dispatcher', a.attrelid, a.attnum, 'SELECT') AS s
+            FROM pg_attribute a WHERE a.attrelid='nofries.dashboard_starter_accounts'::regclass AND a.attnum > 0 AND NOT a.attisdropped
+            ORDER BY a.attnum`)).rows.filter(r => r.s).map(r => r.attname);
+        expect(lookup).toEqual(['account_id', 'subject_key']);
+        expect((await pool.query("SELECT has_table_privilege('nofries_email_dispatcher','nofries.dashboard_starter_accounts','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS t")).rows[0].t).toBe(false);
+        for (const table of tables.filter(t => t !== 'dashboard_starter_accounts')) {
             const r = (await pool.query("SELECT has_table_privilege('nofries_email_dispatcher',$1,'SELECT') AS s, has_any_column_privilege('nofries_email_dispatcher',$1,'SELECT') AS c",
                 ['nofries.' + table])).rows[0];
             expect({ table, ...r }).toEqual({ table, s: false, c: false });

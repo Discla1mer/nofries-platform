@@ -35,13 +35,13 @@ function editorContext(state, planId = 'plan-a', canWrite = true) {
     return { schemaVersion: 1, scope: { ...SCOPE, planId }, planRevision: model.planRevision, asOf: AT, canWrite,
         ownerChoices: canWrite ? [{ subjectKey: ACTOR, label: 'Assign to me' }] : [],
         actions: model.actions.map(action => ({ actionId: action.actionId, commands: !canWrite ? [] : action.status === 'completed' ? ['reopen'] :
-            ['assign', ...['open', 'blocked'].includes(action.status) && action.ownerSubjectKey ? ['start'] : [],
+            ['assign', ...['open', 'blocked'].includes(action.status) && (action.ownerSubjectKey || action.ownerLabel) ? ['start'] : [],
                 ...action.status === 'in_progress' ? ['block'] : [],
-                ...['in_progress', 'blocked'].includes(action.status) && action.ownerSubjectKey ? ['complete'] : []] })) };
+                ...['in_progress', 'blocked'].includes(action.status) && (action.ownerSubjectKey || action.ownerLabel) ? ['complete'] : []] })) };
 }
 function append(state, type, payload, actionId = presentation(state).actions[0].actionId, operationId = 'seed-' + state.commands.length, expectedRevision = state.commands.length) {
     const owners = [...new Set([ACTOR, ...getImprovementPlanView(state).actions.map(action => action.ownerSubjectKey).filter(Boolean),
-        ...type === 'assign' ? [payload.ownerSubjectKey] : []])];
+        ...type === 'assign' && payload.ownerSubjectKey ? [payload.ownerSubjectKey] : []])];
     return applyImprovementActionCommand(state, { ...SCOPE, planId: state.planId, evaluationOutputSha256: state.source.evaluationOutputSha256,
         actionId, operationId, expectedRevision, actorSubjectKey: ACTOR, at: AT, type, payload },
     { ...SCOPE, actorSubjectKey: ACTOR, eligibleOwnerSubjectKeys: owners });
@@ -229,11 +229,25 @@ test('explicit generation sends the exact submitted revision and independent IDs
         return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
     } });
     await h.controller.ready; expect(await h.controller.generate()).toBe(true);
-    expect(h.request.mock.calls[1]).toEqual(['/api/dashboard/improvement/execute', { planId: 'generated-1', type: 'generate',
-        operationId: 'generated-2', expectedRevision: null, actionId: null,
+    const planId = 'overview-plan-' + selected.revisionSha256;
+    expect(h.request.mock.calls[1]).toEqual(['/api/dashboard/improvement/execute', { planId, type: 'generate',
+        operationId: 'overview-plan-generate-' + selected.revisionSha256, expectedRevision: null, actionId: null,
         payload: { assessmentId: selected.assessmentId, assessmentRevision: selected.revision, assessmentRevisionSha256: selected.revisionSha256 } }]);
-    expect(h.request.mock.calls[2]).toEqual(['/api/dashboard/improvement/view?planId=generated-1']);
-    expect(h.root.textContent).toContain('Improvement action plan'); expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(h.request.mock.calls[2]).toEqual(['/api/dashboard/improvement/view?planId=' + planId]);
+    expect(h.root.textContent).toContain('Improvement action plan'); expect(h.options.newId).not.toHaveBeenCalled();
+});
+
+test('a generate conflict opens the plan already saved for this revision instead of making another', async () => {
+    const selected = source(), planId = 'overview-plan-' + selected.revisionSha256;
+    const h = harness({ options: { sourceAssessment: selected }, respond(path, body, state) {
+        if (path.includes('/plans?')) return { status: 200, value: page([]) };
+        if (path.endsWith('/execute')) { state.plans.set(planId, seed(planId)); return { status: 409, value: { code: 'improvement_operation_conflict' } }; }
+        return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
+    } });
+    await h.controller.ready; expect(await h.controller.generate()).toBe(true);
+    expect(h.request.mock.calls.filter(call => call[0].endsWith('/execute'))).toHaveLength(1);
+    expect(h.request.mock.calls[2]).toEqual(['/api/dashboard/improvement/view?planId=' + planId]);
+    expect(h.root.textContent).toContain('Improvement action plan');
 });
 
 test('uncertain writes retain their exact immutable command for explicit retry and hold shell leave', async () => {
@@ -250,9 +264,9 @@ test('uncertain writes retain their exact immutable command for explicit retry a
     await h.controller.ready; expect(await h.controller.generate()).toBe(false);
     expect(h.root.textContent).toContain('outcome is unconfirmed'); expect(h.root.textContent).not.toContain('PRIVATE');
     const leave = jest.fn(); expect(await h.controller.requestLeave(leave)).toBe(false); expect(leave).not.toHaveBeenCalled();
-    expect(await h.controller.generate()).toBe(false); expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(await h.controller.generate()).toBe(false); expect(h.options.newId).not.toHaveBeenCalled();
     expect(button(h, 'Retry pending improvement command')).toBeDefined();
-    expect(await h.controller.retry()).toBe(true); expect(attempts).toBe(2); expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(await h.controller.retry()).toBe(true); expect(attempts).toBe(2); expect(h.options.newId).not.toHaveBeenCalled();
     expect(await h.controller.requestLeave(leave)).toBe(true); expect(leave).toHaveBeenCalledTimes(1);
 });
 
@@ -276,7 +290,7 @@ test.each([408, 429])('an unexpected %i response after plan creation retains the
     expect(await h.controller.requestLeave(jest.fn())).toBe(false);
     expect(await h.controller.generate()).toBe(false);
     expect(await h.controller.retry()).toBe(true);
-    expect(attempts).toBe(2); expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(attempts).toBe(2); expect(h.options.newId).not.toHaveBeenCalled();
     expect(h.state.plans.size).toBe(2); // The fixture's existing plan plus the single created plan.
 });
 
@@ -399,7 +413,7 @@ test.each([503, 'malformed'])('unconfirmed %s acknowledgement retains the origin
     expect(await h.controller.requestLeave(jest.fn())).toBe(false);
     expect(await h.controller.refresh()).toBe(false); expect(h.request).toHaveBeenCalledTimes(count);
     expect(await h.controller.retry()).toBe(false); expect(h.request.mock.calls.at(-1)[1]).toBe(posted);
-    expect(h.options.newId).toHaveBeenCalledTimes(2);
+    expect(h.options.newId).not.toHaveBeenCalled();
 });
 
 test('definite rejected generation releases its retry identity and shell leave without claiming a saved plan', async () => {
@@ -466,8 +480,51 @@ const OPERATIONS = [
     { type: 'complete', label: 'Complete action', state: started,
         values: { 'Completion note': 'Recorded workflow completion.', 'Completion evidence reference (unverified)': 'synthetic:evidence:completion' },
         payload: { note: 'Recorded workflow completion.', evidenceReference: 'synthetic:evidence:completion' } },
-    { type: 'reopen', label: 'Reopen action', state: completed, values: { 'Reopen reason': 'Follow-up work remains.' }, payload: { reason: 'Follow-up work remains.' } }
+    { type: 'reopen', label: 'Reopen action', state: completed, values: { 'Reopen reason': 'Follow-up work remains.' }, payload: { reason: 'Follow-up work remains.' } },
+    { type: 'assign', label: 'Set owner and due date', state: seed, values: { 'Owner name': '  Aroha   Ngata ', 'Due date (UTC)': '2026-10-02' },
+        payload: { ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' } }
 ];
+const OWNER_LABEL_HELP = 'Enter the owner’s name in 1 to 80 characters. Use a name rather than an email address, and not the words “all” or “unassigned”.';
+function labelOwned() { return append(seed(), 'assign', { ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' }); }
+
+test('a label-owned action shows its named owner and can be started without a platform owner', async () => {
+    const h = harness({ plan: labelOwned() }); expect(await h.controller.ready).toBe(true);
+    const actionId = chooseAction(h);
+    expect(h.root.textContent).toContain('Status: Open. Owner: Aroha Ngata. Due date (UTC): 2026-10-02.');
+    expect(h.root.textContent).toContain('Aroha Ngata (named owner)');
+    expect(button(h, 'Assign to me')).toBeDefined(); button(h, 'Set owner and due date').click();
+    expect(field(h, 'Owner name').value).toBe('Aroha Ngata'); expect(field(h, 'Owner name').maxLength).toBe(80);
+    expect(field(h, 'Owner name').parentElement.tagName).toBe('LABEL'); button(h, 'Cancel changes').click();
+    button(h, 'Start action').click(); await submitForm(h);
+    expect(h.request.mock.calls.filter(([path]) => path.endsWith('/execute'))[0][1]).toMatchObject({ type: 'start', actionId, payload: {} });
+    const action = getImprovementPlanView(h.state.plans.get('plan-a')).actions.find(row => row.actionId === actionId);
+    expect(action).toMatchObject({ status: 'in_progress', ownerSubjectKey: null, ownerLabel: 'Aroha Ngata' });
+});
+
+test.each(['', '   ', 'aroha@example.nz', 'Unassigned', 'ＡＬＬ', 'x'.repeat(81)])('owner name %j shows plain-English help without sending', async value => {
+    const h = harness(); expect(await h.controller.ready).toBe(true); chooseAction(h);
+    button(h, 'Set owner and due date').click();
+    const owner = fill(h, 'Owner name', value); fill(h, 'Due date (UTC)', '2026-10-02'); const count = h.request.mock.calls.length;
+    await submitForm(h);
+    expect(h.request).toHaveBeenCalledTimes(count); expect(h.options.newId).not.toHaveBeenCalled();
+    expect(h.document.activeElement).toBe(owner); expect(owner.getAttribute('aria-invalid')).toBe('true');
+    expect(owner.parentElement.querySelector('span').textContent).toBe(OWNER_LABEL_HELP);
+});
+
+test('a server owner_label_invalid keeps the draft and shows inline owner help', async () => {
+    const h = harness({ respond(path, body, state) {
+        if (path.endsWith('/execute')) return { status: 400, value: { code: 'owner_label_invalid' } };
+        if (path.includes('/plans?')) return { status: 200, value: page() };
+        return { status: 200, value: presentation(state.plans.get('plan-a')) };
+    } });
+    expect(await h.controller.ready).toBe(true); chooseAction(h); button(h, 'Set owner and due date').click();
+    const retained = form(h), owner = fill(h, 'Owner name', 'Aroha Ngata'); fill(h, 'Due date (UTC)', '2026-10-02');
+    await submitForm(h);
+    expect(h.request.mock.calls.filter(([path]) => path.endsWith('/execute'))[0][1].payload).toEqual({ ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' });
+    expect(form(h)).toBe(retained); expect(owner.disabled).toBe(false); expect(h.document.activeElement).toBe(owner);
+    expect(owner.getAttribute('aria-invalid')).toBe('true'); expect(owner.parentElement.querySelector('span').textContent).toBe(OWNER_LABEL_HELP);
+    expect(h.root.textContent).toContain('Improvement action plan'); expect(button(h, 'Retry pending improvement command')).toBeUndefined();
+});
 
 test.each(OPERATIONS)('actual $type form sends the retained command and refreshes its resulting view/editor', async operation => {
     const h = harness({ plan: operation.state() }); expect(await h.controller.ready).toBe(true);
