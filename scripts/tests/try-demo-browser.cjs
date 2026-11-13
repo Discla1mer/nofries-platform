@@ -37,7 +37,7 @@ async function run(browser, origin, name, viewport) {
     assert.match(await page.locator('.try-demo-banner').innerText(), /fictional business/);
     assert.equal(await page.getByRole('link', { name: 'Create your account' }).getAttribute('href'), '/login?intent=create');
     assert.equal(await page.locator('h1').innerText(), 'Overview');
-    assert.match(await main(page).innerText(), /Build your first baseline/);
+    assert.match(await main(page).innerText(), /Start your cyber check/);
     assert.ok(await fits(page), name + ': no horizontal scroll');
     await shot(page, name + '-1-overview.png', !touch);
 
