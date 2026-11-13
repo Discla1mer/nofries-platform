@@ -340,7 +340,7 @@ test('existing runtime and normalizer accept corrected text without entering the
         f.input('role', 'Director'); await f.submit();
         expect(results.map(result => [result.method, result.status])).toEqual([['GET', 200], ['POST', 200]]);
         expect(accepted).toBe(1);
-        expect(f.root.querySelector('h1').textContent).toBe('Continuing account setup');
+        expect(f.root.querySelector('h1').textContent).toBe('Finishing your sign-in');
     } finally { f.close(); }
 });
 

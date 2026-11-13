@@ -14,6 +14,7 @@ const { createImprovementPlan, applyImprovementActionCommand } = require('../../
 const { projectImprovementActionList } = require('../../api/shared/improvementPlan/improvementActionListProjection');
 const { projectImprovementActionPlanPresentation } = require('../../api/shared/improvementPlan/improvementActionPlanPresentation');
 const { acceptedRegistry } = require('../../api/shared/assessmentLifecycle/ncscAssessmentSubmission');
+const { actionTitle, calendarDay } = require('../../api/shared/protectedAssets/improvementActionPlanView');
 const fixture = require('../../test/fixtures/ncscAcceptedEvaluation.json').input;
 const root = path.resolve(__dirname, '../..');
 const files = ['api/shared/protectedAssets/improvementActionPlanView.js',
@@ -143,10 +144,11 @@ async function main() {
             // Native DOM facts preserve presentation values and sequence; guidance
             // does not pick a different action or invent a human owner name.
             for (const [index, action] of models.mixed.actions.entries()) {
-                assert.equal(await page.locator('article h3').nth(index).innerText(), action.controlId + ' · ' + action.labels.kind);
-                assert.equal(facts[index].Owner, action.labels.owner);
-                assert.equal(facts[index]['Due date (UTC calendar day)'], action.dueDate || 'Not set');
-                assert.equal(facts[index]['Overdue at supplied as-of date (UTC)'], action.isOverdue ? 'Yes' : 'No');
+                assert.equal(await page.locator('article h3').nth(index).innerText(), actionTitle(action));
+                assert.equal(facts[index].Owner, action.ownerSubjectKey === null && !action.ownerLabel ? 'Unassigned' :
+                    action.ownerLabel ? action.ownerLabel + ' (named owner)' : 'Assigned to someone in your organisation');
+                assert.equal(facts[index]['Due date'], calendarDay(action.dueDate));
+                assert.equal(facts[index].Overdue, action.isOverdue ? 'Yes' : 'No');
                 assert.ok(facts[index]['Next step'], 'Every action has a plain-language next step');
                 if (action.status === 'completed') assert.match(facts[index]['Next step'], /completion note.*history/);
                 else if (action.status === 'blocked') assert.match(facts[index]['Next step'], /block reason.*move forward/);
