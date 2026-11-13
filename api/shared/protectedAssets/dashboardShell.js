@@ -75,6 +75,8 @@
         let queuedEvent = null;
         let unmanagedBoundaryHash = null;
         let planBaselineToken = 0;
+        let informationAt = model.generatedAt;
+        let informationStamp = null;
         // A history pointer is a read hint, never authority or saved answers.
         const restored = win && win.history && win.history.state && win.history.state.nofriesCyber;
         let cyberLocation = restored && restored.organisationId === model.context.organisationId &&
@@ -319,15 +321,26 @@
             else if (current.key === 'improvement_plan' && stateFor(current.key) === 'ready' && typeof options.mountImprovement === 'function') renderImprovement(sourceAssessment);
             else renderModule(planBaselineToken);
             const footer = element('footer', 'dashboard-provenance');
-            // People read local time; keep the exact instant in the datetime attribute.
-            let shown;
-            try { shown = new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(model.generatedAt)) + ' NZ time'; }
-            catch (_) { shown = model.generatedAt.replace('T', ' ').replace('.000Z', ' UTC'); }
-            const stamp = element('time', '', shown);
-            stamp.dateTime = model.generatedAt;
+            const stamp = element('time');
+            informationStamp = stamp; showInformationTime();
             footer.append(element('span', '', 'Information as at '), stamp,
                 element('p', '', 'Assessment indicators are not audit, assurance or certification.'));
             main.append(footer);
+        }
+        // People read local time; keep the exact instant in the datetime attribute.
+        function showInformationTime() {
+            if (!informationStamp) return;
+            let shown;
+            try { shown = new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(informationAt)) + ' NZ time'; }
+            catch (_) { shown = informationAt.replace('T', ' ').replace('.000Z', ' UTC'); }
+            informationStamp.textContent = shown;
+            informationStamp.dateTime = informationAt;
+        }
+        // The host reports each successful read of saved information. This
+        // only moves the displayed time forward; it grants nothing.
+        function informationRead(value) {
+            if (disposed || !canonicalInstant(value) || Date.parse(value) <= Date.parse(informationAt)) return;
+            informationAt = value; showInformationTime();
         }
         function renderOverview() {
             const connectedPicture = pictureAvailable;
@@ -341,7 +354,7 @@
             const attention = panel('Needs attention', 'Named owners. Clear next steps.');
             attention.classList.add('dashboard-attention');
             if (!model.summary.attention.length) {
-                attention.append(element('h3', '', 'Build your first baseline'), element('p', '', 'No assessment or improvement record has been shared with this view yet.'));
+                attention.append(element('h3', '', 'Start your cyber check'), element('p', '', 'No assessment or improvement record has been shared with this view yet.'));
                 const assessment = available.find(function (item) { return item.group === 'Assess' && stateFor(item.key) === 'ready'; });
                 if (assessment) attention.append(button('View ' + assessment.label, function () { navigate(assessment.route, true); }));
                 else attention.append(element('p', 'dashboard-muted', 'An organisation administrator can confirm your assessment scope.'));
@@ -622,7 +635,7 @@
                 if (active()) handleLocation(eventType);
             });
         }
-        const controller = { navigate: function (route) { return navigate(route, true); }, requestLeave: function (commit) {
+        const controller = { informationRead: informationRead, navigate: function (route) { return navigate(route, true); }, requestLeave: function (commit) {
             if (disposed) return Promise.resolve(false);
             if (child) return child.requestLeave(commit);
             if (typeof commit === 'function') commit();

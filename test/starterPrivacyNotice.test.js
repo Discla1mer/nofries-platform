@@ -25,7 +25,7 @@ describe('starter signup privacy disclosure', () => {
         expect(verification).toContain('This cleanup does not apply to the durable representative and account records');
         const durable = section('Organisation and representative details');
         for (const statement of ['stored durably in separate private Azure storage', '24-hour request expires',
-            'original starter period ends', 'no automatic deletion timer', 'including unfinished setup', 'expiry alone is not account deletion',
+            'earlier offer’s access period ends', 'no automatic deletion timer', 'including unfinished setup', 'expiry alone is not account deletion',
             'Recoverable storage versions and backups']) expect(durable).toContain(statement);
     });
     test('retains a request contact without claiming automatic or immediate deletion', () => {

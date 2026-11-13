@@ -8,25 +8,18 @@
     <meta name="description" content="How No Fries Limited handles personal information for the dashboard, the public website and related services.">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/home.css">
 </head>
 <body class="legal-page">
     <a class="skip-link" href="#main-content">Skip to content</a>
+    <header class="site-header shell public-site-header">
+        <a class="brand" href="/" aria-label="No Fries Dashboard home">
+            <img class="brand-logo" src="/images/nofrieslogo.png" width="44" height="44" alt="">
+            <span class="brand-copy"><strong>No Fries</strong> <span>Dashboard</span></span>
+        </a>
+        <nav aria-label="Main navigation"><a href="/">Home</a><a href="/pricing.html">Pricing</a><a href="/managed-it.html">Managed IT</a><a href="/roadmap.html">Roadmap</a><a href="/contact.html">Contact</a><a class="site-login" href="/login?intent=login">Log in</a></nav>
+    </header>
     <main class="public-shell">
-        <header class="public-header">
-            <a class="login-brand" href="/" aria-label="No Fries home">
-                <img src="/images/nofrieslogo.png" width="44" height="44" alt="No Fries logo">
-                <div><strong>No Fries</strong></div>
-            </a>
-            <nav aria-label="Main navigation">
-                <a href="/">Dashboard</a>
-                <a href="/pricing.html">Pricing</a>
-                <a href="/managed-it.html">Managed IT</a>
-                <a href="/roadmap.html">Roadmap</a>
-                <a href="/contact.html">Contact</a>
-                <a href="/login?intent=login">Log in</a>
-            </nav>
-        </header>
-
         <article class="public-panel" id="main-content" tabindex="-1">
             <p class="eyebrow">Privacy notice</p>
             <h1>How No Fries handles information</h1>
@@ -43,7 +36,7 @@
                     <li><strong>How long we keep it:</strong> while your account is active and as set out in your agreement. Your access ending does not delete your saved work. You can ask us to delete it. See <a href="#retention">How long we keep information</a>.</li>
                     <li><strong>Access, correction and complaints:</strong> under the <a href="https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23223.html">Privacy Act 2020</a> you can ask to see and correct personal information we hold about you. If you are not satisfied, you can complain to the <a href="https://www.privacy.org.nz/">Office of the Privacy Commissioner</a> (privacy.org.nz). If a privacy breach is likely to cause serious harm, we notify affected people and the Commissioner. See <a href="#requests">Access, correction and complaints</a>.</li>
                 </ul>
-                <p>The sections below are the customer notice. Staff, operator and pilot workspaces are in a <a href="#staff-workspaces">separate section</a> at the end.</p>
+                <p>The sections below are the customer notice. Information about No Fries staff and Managed IT service workspaces is in a <a href="#staff-workspaces">collapsed section</a> at the end.</p>
             </section>
 
             <nav aria-label="On this page">
@@ -117,7 +110,7 @@
             <section id="representative">
                 <h2>Organisation and representative details</h2>
                 <p>After email verification, Company and Consultant signup asks for your full name, your role, the organisation or workspace's business address, an optional company registration number (your New Zealand Business Number, if you have one), and your explicit assertion that you are authorised to set up the dashboard and accept its terms. A consultant supplies these details and a separate authority assertion for each client organisation. No Fries retains these details with the verified email, account type, organisation name, verification and authority evidence, the offered schedule, and any actual terms acceptance and activation records to operate the account and document its agreed access.</p>
-                <p>These representative, account and client-setup records are stored durably in separate private Azure storage; accepted access and assessment records also use the dashboard database. They are not deleted when a verification code or its 24-hour request expires, or when the original starter period ends. There is no automatic deletion timer for these durable starter records, including unfinished setup. You can request access, correction or deletion using the contact details below; expiry alone is not account deletion. Recoverable storage versions and backups may remain for the configured infrastructure-retention period described below.</p>
+                <p>These representative, account and client-setup records are stored durably in separate private Azure storage; accepted access and assessment records also use the dashboard database. They are not deleted when a verification code or its 24-hour request expires, or when an earlier offer’s access period ends. There is no automatic deletion timer for these durable starter records, including unfinished setup. You can request access, correction or deletion using the contact details below; expiry alone is not account deletion. Recoverable storage versions and backups may remain for the configured infrastructure-retention period described below.</p>
             </section>
 
             <section id="scope">
@@ -159,9 +152,8 @@
 
             <section id="retention">
                 <h2>How long we keep information</h2>
-                <p>For the dashboard, we keep information while your account is active and for the periods in your accepted agreement. Ending your access does not delete saved work. You can ask us to delete it. Expiry of a code or a setup request is not account deletion. Your accepted agreement sets how long dashboard accounts, assessments and acceptance records are kept.</p>
-                <p>The current default lifecycle policy makes raw prospect conversation messages eligible for removal after 90 days, abandoned unlinked prospect records eligible after 180 days, detailed AI observability events eligible after 365 days, and prospect security events eligible after 30 days. An authenticated administrator must preview the eligible records and explicitly run the retention job. Removal is not automatic. Expired prospect security events are also pruned when a new security event is recorded. Linked scoping or customer records and conversations awaiting human contact are excluded from automatic selection. The structured lifecycle summary may remain after raw messages are removed where the prospect is still linked or active.</p>
-                <p>You can ask for export or deletion. Authenticated operators can export an individual lifecycle record and its related conversation, audit, AI activity, and correction data as JSON. Administrators can delete an unlinked lifecycle prospect after typing its exact name, or delete a sales-workspace customer and associated assessments, proposals, and recorded handoffs. A linked lifecycle record cannot be deleted until its scoping customer is deleted or unlinked. Minimal audit metadata may record that retention or deletion occurred without retaining the deleted content. Platform backups or recoverable storage versions may remain for the operator’s configured infrastructure-retention period. That period is not stated as a number on this page. Proposal exports are available only to authenticated users with export permission.</p>
+                <p>For the dashboard, we keep information while your account is active and for the periods in your accepted agreement. Ending your access does not delete saved work. You can ask us to delete it. Expiry of a code, a setup request or an earlier offer’s access period is not account deletion. Your accepted agreement sets how long dashboard accounts, assessments and acceptance records are kept.</p>
+                <p>Platform backups or recoverable storage versions may remain for the configured infrastructure-retention period. Retention for website assistant conversations and staff workspace records is in <a href="#staff-workspaces">Staff and Managed IT service workspaces</a>.</p>
             </section>
 
             <section id="requests">
@@ -172,19 +164,24 @@
                 <p>If you are not satisfied with how we handle a privacy request or complaint, you can complain to the Office of the Privacy Commissioner at <a href="https://www.privacy.org.nz/">privacy.org.nz</a>. You can do that whether or not you have already written to us.</p>
             </section>
 
-            <section id="staff-workspaces">
-                <h2>Staff, operator and pilot workspaces</h2>
+            <details class="legal-staff" id="staff-workspaces">
+                <summary><h2>Staff and Managed IT service workspaces</h2></summary>
+                <p>Most customers do not need this section. It covers No Fries staff tools, the website assistant’s prospect records and pilot workspaces.</p>
                 <p>This section is for No Fries staff and approved users of the private scoping, operator and service-desk workspaces. It is not the customer summary above. Customer dashboard terms are at <a href="/terms.html">Dashboard terms</a>. Pilot workspace terms are at <a href="/pilot-terms.html">pilot workspace terms</a>.</p>
                 <p>Approved users may enter customer profiles, discovery answers, notes, evidence references, internal qualification, service recommendations, proposal drafts, and CRM handoff metadata. When an operator confirms a lifecycle-to-scoping handoff, known prospect facts may pre-populate equivalent scoped answers or appear as context notes; unknown answers remain visibly unknown. Microsoft identity details are used to determine tenant and role access. Limited audit records identify who performed material actions and when.</p>
                 <p>Catalogue, customer, assessment, proposal, export, audit, and CRM actions require an explicit permission. Uploaded service definitions and matching signals remain in authenticated tenant storage. They are not published in the public website or the website’s downloaded code. Authorised users can still see information required to perform their role, so contractual and organisational controls remain important.</p>
                 <p>No Fries does not continuously read a CRM. The pilot integration is a user-initiated, one-way handoff of an approved proposal to a tenant-controlled endpoint. Endpoint details and credentials stay server-side. Production writes are disabled unless the operator explicitly enables them. A tenant-approved Microsoft Power Automate or Logic Apps flow may be used for CRM handoff once configured. Nothing in a dashboard assessment automatically sends a proposal or creates a CRM commitment.</p>
-            </section>
+                <h3>Website assistant and prospect records: how long we keep them</h3>
+                <p>The current default lifecycle policy makes raw prospect conversation messages eligible for removal after 90 days, abandoned unlinked prospect records eligible after 180 days, detailed AI observability events eligible after 365 days, and prospect security events eligible after 30 days. An authenticated administrator must preview the eligible records and explicitly run the retention job. Removal is not automatic. Expired prospect security events are also pruned when a new security event is recorded. Linked scoping or customer records and conversations awaiting human contact are excluded from automatic selection. The structured lifecycle summary may remain after raw messages are removed where the prospect is still linked or active.</p>
+                <p>You can ask for export or deletion. Authenticated operators can export an individual lifecycle record and its related conversation, audit, AI activity, and correction data as JSON. Administrators can delete an unlinked lifecycle prospect after typing its exact name, or delete a sales-workspace customer and associated assessments, proposals, and recorded handoffs. A linked lifecycle record cannot be deleted until its scoping customer is deleted or unlinked. Minimal audit metadata may record that retention or deletion occurred without retaining the deleted content. Platform backups or recoverable storage versions may remain for the operator’s configured infrastructure-retention period. That period is not stated as a number on this page. Proposal exports are available only to authenticated users with export permission.</p>
+            </details>
 
         </article>
-        <footer class="public-header public-footer">
-            <nav aria-label="Footer links"><a href="/">Dashboard</a><a href="/pricing.html">Pricing</a><a href="/managed-it.html">Managed IT</a><a href="/roadmap.html">Roadmap</a><a href="/contact.html">Contact</a><a href="/privacy.html" aria-current="page">Privacy</a><a href="/terms.html">Terms</a><a href="mailto:hello@nofries.nz">hello@nofries.nz</a></nav>
-        </footer>
-        <details class="site-release" id="site-version"><summary>Site version</summary><!-- FRONTEND_RELEASE_INFO --></details>
     </main>
+    <footer class="home-footer">
+        <span>© 2026 No Fries · Auckland</span>
+        <nav aria-label="Footer links"><a href="/">Home</a><a href="/pricing.html">Pricing</a><a href="/managed-it.html">Managed IT</a><a href="/roadmap.html">Roadmap</a><a href="/contact.html">Contact</a><a href="/privacy.html" aria-current="page">Privacy</a><a href="/terms.html">Terms</a></nav>
+    </footer>
+    <details class="site-release" id="site-version"><summary>Site version</summary><!-- FRONTEND_RELEASE_INFO --></details>
 </body>
 </html>

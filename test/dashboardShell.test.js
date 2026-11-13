@@ -51,7 +51,7 @@ test('connected picture Overview omits the unused metric grid and the repeated n
         assert.equal(dom.root.querySelector('.dashboard-overview-grid'), null);
         assert.equal(dom.root.querySelector('.dashboard-metrics'), null);
         assert.equal(dom.root.querySelector('.dashboard-availability'), null);
-        assert.doesNotMatch(dom.root.textContent, /Other dashboard areas and availability|The current picture|Build your first baseline/);
+        assert.doesNotMatch(dom.root.textContent, /Other dashboard areas and availability|The current picture|Start your cyber check|baseline/);
         assert.equal(!!dom.root.querySelector('.dashboard-attention'), !empty);
     }
 });
@@ -172,7 +172,7 @@ test('missing metrics are displayed as not assessed, never zero', () => {
     const dom = mount(view({ empty: true }));
     assert.equal(dom.root.querySelectorAll('.dashboard-metric-value').length, 4);
     assert.ok(dom.root.querySelectorAll('.dashboard-metric-value').every(item => item.textContent === 'Not assessed'));
-    assert.match(dom.root.textContent, /Build your first baseline/);
+    assert.match(dom.root.textContent, /Start your cyber check/);
 });
 
 test('Overview leads with attention and distinct versioned metrics', () => {
@@ -866,4 +866,50 @@ test('Escape closes the More tools menu and returns focus to its summary', () =>
     menu.open = false;
     for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
     assert.equal(menu.open, false);
+});
+
+test('error summaries and scroll targets clear the sticky organisation bar', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
+    const bar = css.match(/\.nofries-dashboard \.dashboard-topbar \{ max-height: (\d+)rem;/);
+    assert.ok(bar, 'the sticky bar has a bounded height');
+    assert.match(css, /\.nofries-dashboard \.dashboard-topbar \{[^}]*position: sticky; top: 0;/);
+    const rule = css.match(/\.nofries-dashboard :is\(([^)]*)\) \{ scroll-margin-top: (\d+)rem; \}/);
+    assert.ok(rule);
+    for (const target of ['.ncsc-errors', '.picture-top-gaps h3', '.ncsc-question', '.dashboard-main h1']) assert.ok(rule[1].split(', ').includes(target), target);
+    assert.ok(Number(rule[2]) >= Number(bar[1]), 'scroll margin covers the tallest sticky bar');
+});
+
+test('the footer information time moves forward only for a later valid read', () => {
+    const model = clone(view());
+    const dom = mount(model);
+    const stamp = () => dom.root.querySelector('.dashboard-provenance').querySelector('time');
+    assert.equal(stamp().dateTime, model.generatedAt);
+    const original = stamp().textContent;
+    const later = new Date(Date.parse(model.generatedAt) + 3 * 60000).toISOString();
+    dom.controller.informationRead(later);
+    assert.equal(stamp().dateTime, later);
+    assert.notEqual(stamp().textContent, original);
+    assert.match(stamp().textContent, /NZ time$/);
+    for (const ignored of [model.generatedAt, '2000-01-01T00:00:00.000Z', 'not a time', 5, null]) {
+        dom.controller.informationRead(ignored);
+        assert.equal(stamp().dateTime, later);
+    }
+    dom.controller.navigate('services');
+    assert.equal(stamp().dateTime, later);
+    dom.controller.destroy();
+});
+
+test('the dashboard footer disclosure and organisations pill follow the page grid with 44px tap targets', () => {
+    const home = fs.readFileSync(path.join(__dirname, '../home.css'), 'utf8');
+    const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
+    // "About this site" uses the footer's width and margins, not x=0.
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details \{ width: min\(1180px, calc\(100% - 40px\)\); margin-inline: auto;/);
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details \{ width: min\(100% - 24px, 1180px\); \}/);
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details > summary \{[^}]*min-height: 44px;/);
+    // Full-width ready layouts keep the pill and footer on the header's gutter.
+    const wide = css.slice(css.indexOf('keep the organisations pill and the footer'));
+    assert.match(wide, /^[^]*?@media screen and \(min-width: 1220px\) \{[^]*?#dashboardChooser \{ margin-inline-start: 1rem; \}/);
+    assert.match(wide, /:is\(\.dashboard-release-footer, \.site-details\) \{ width: auto; margin-inline: 1rem; \}/);
+    const html = fs.readFileSync(path.join(__dirname, '../app/dashboard.html'), 'utf8');
+    assert.match(html, /<details class="site-details">\s*<summary>About this site<\/summary>/);
 });

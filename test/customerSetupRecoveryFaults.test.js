@@ -470,7 +470,7 @@ test.each([false, true])('the generated hosted=%s page loads partial progress re
         const resume = page.root.querySelectorAll('button').find(button => button.textContent === 'Resume organisation setup');
         expect(resume).toBeDefined();
         for (let i = 0; i < 2; i++) for (const click of resume.events.click) click({ preventDefault() {} });
-        await waitFor(() => page.root.querySelector('h1')?.textContent === 'Continuing account setup');
+        await waitFor(() => page.root.querySelector('h1')?.textContent === 'Finishing your sign-in');
         expect(page.payloads).toEqual([{ resume: true }]);
         expect(page.fetch.mock.calls.map(([url, options]) => [options.method, url])).toEqual([
             ['GET', ROUTE + '/state'], ['POST', ROUTE + '/setup']]);

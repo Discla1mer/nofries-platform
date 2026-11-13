@@ -18,7 +18,7 @@ test('customer terms stay separate from pilot terms and keep the operative limit
         'Fair Trading Act 1986', 'section 5D', 'sections 9, 12A and 13',
         'standard form small trade contracts', 'Contract and Commercial Law Act 2017',
         'Privacy Act 2020', 'earlier valid ISC grants', 'not an independent audit',
-        'no automatic paid conversion', 'give a new indemnity, warranty or personal guarantee',
+        'never turns into paid access automatically', 'Free dashboard; it doesn’t expire', 'give a new indemnity, warranty or personal guarantee',
         'Nothing in a dashboard assessment automatically sends a proposal or creates a CRM commitment'
     ]) expect(terms).toContain(text);
     expect(terms).toContain('href="/pilot-terms.html"');
@@ -56,6 +56,24 @@ test('the privacy notice keeps operative disclosures and states facts plainly', 
     expect(privacy).not.toContain('deterministic application logic');
     expect(privacy).not.toContain('structured tool calls');
     expect(privacy).not.toContain('token count');
+});
+
+test('the privacy notice keeps staff and service-workspace detail collapsed below the customer notice', () => {
+    const privacy = read('privacy.html');
+    const staff = privacy.match(/<details class="legal-staff" id="staff-workspaces">([\s\S]*?)<\/details>/);
+    expect(staff).not.toBeNull();
+    expect(staff[0]).not.toMatch(/<details[^>]*\sopen\b/);
+    expect(staff[1]).toMatch(/^\s*<summary><h2>Staff and Managed IT service workspaces<\/h2><\/summary>/);
+    // Internal tooling and prospect retention live only inside the collapsed section.
+    for (const text of ['CRM handoff', 'Power Automate', 'raw prospect conversation messages', 'detailed AI observability events']) {
+        expect(staff[1]).toContain(text);
+        expect(privacy.replace(staff[0], '')).not.toContain(text);
+    }
+    // Every customer section comes first.
+    for (const id of ['who', 'storage', 'sharing', 'retention', 'requests']) {
+        expect(privacy.indexOf(`id="${id}"`)).toBeLessThan(privacy.indexOf('id="staff-workspaces"'));
+    }
+    expect(read('style.css')).toMatch(/body\.legal-page \.legal-staff > summary \{[^}]*min-height: 44px;/);
 });
 
 test('public Terms labels open the customer terms, and legal in-page links resolve', () => {
