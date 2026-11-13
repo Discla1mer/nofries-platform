@@ -9,7 +9,7 @@ const { buildGatewayDocument } = require('./lib/gatewayDocument');
 const { withFrontendReleaseInformation } = require('./lib/frontendReleaseInfo');
 const {
     checkRateLimit,
-    getDashboardSessionKey,
+    getVerifiedDashboardSessionKey,
     getClientKeyFromHeaders,
     isBlockedUserAgent,
     rateLimitHeaders
@@ -1063,10 +1063,12 @@ function rateLimitApiRequests(req, res, next) {
     const method = String(req.method || 'GET').toUpperCase();
     const write = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
     const clientKey = getClientKeyFromHeaders(req.headers, req.ip || req.socket.remoteAddress);
-    const sessionKey = req.path.startsWith('/dashboard/') ? getDashboardSessionKey(req.headers) : null;
+    // Only a session the server has already issued or verified selects the
+    // dashboard allowance; a fabricated cookie stays on the address limit.
+    const sessionKey = req.path.startsWith('/dashboard/') ? getVerifiedDashboardSessionKey(req.headers) : null;
     let result;
     if (sessionKey) {
-        // Signed-in dashboard requests: a generous per-address ceiling first,
+        // Verified dashboard sessions: a generous per-address ceiling first,
         // then the per-session allowance that ordinary use stays within.
         result = checkRateLimit(write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey, apiEnvironment);
         if (result.allowed) {

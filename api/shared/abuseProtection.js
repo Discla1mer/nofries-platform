@@ -1,4 +1,4 @@
-const { createHash } = require('node:crypto');
+const { createHmac, randomBytes } = require('node:crypto');
 
 const rateLimitBuckets = new Map();
 const MAX_RATE_LIMIT_BUCKETS = 6000;
@@ -6,9 +6,9 @@ const MAX_RATE_LIMIT_BUCKETS = 6000;
 const defaultRateLimits = {
     apiRead: { windowMs: 15 * 60 * 1000, max: 240 },
     apiWrite: { windowMs: 10 * 60 * 1000, max: 90 },
-    // Signed-in dashboard traffic is counted per browser session, so people
-    // sharing an office address do not use up each other's allowance. The
-    // per-address ceiling still bounds anyone who rotates cookie values.
+    // Dashboard traffic from a session the server has already verified is
+    // counted per session, so people sharing an office address do not use up
+    // each other's allowance. Unverified cookies stay on apiRead/apiWrite.
     dashboardSessionRead: { windowMs: 15 * 60 * 1000, max: 600 },
     dashboardSessionWrite: { windowMs: 10 * 60 * 1000, max: 120 },
     dashboardAddressRead: { windowMs: 15 * 60 * 1000, max: 1800 },
@@ -102,24 +102,65 @@ function checkRateLimit(bucketName, clientKey, env = process.env) {
 }
 
 const DASHBOARD_SESSION_COOKIES = ['__Host-nofries-auth', '__Host-nofries-customer', '__Host-nofries-external-customer'];
+const MAX_VERIFIED_DASHBOARD_SESSIONS = 10000;
+const MAX_VERIFIED_DASHBOARD_SESSION_TTL_MS = 15 * 60 * 1000;
+// Keyed by an HMAC under a per-process secret, so no cookie value (or a
+// digest that could be matched against one) is retained. Value: expiry time.
+const verifiedDashboardSessions = new Map();
+const verifiedSessionSecret = randomBytes(32);
 
-// Returns an opaque per-session key for dashboard requests that carry a
-// session cookie, or null. The key is a digest so no cookie value is retained.
-// It only selects a rate-limit bucket; the dashboard still authenticates.
-function getDashboardSessionKey(headers) {
+function dashboardSessionDigest(name, value) {
+    return createHmac('sha256', verifiedSessionSecret).update(name + '=' + value).digest('hex').slice(0, 32);
+}
+
+function isDashboardSessionCookie(name, value) {
+    return DASHBOARD_SESSION_COOKIES.includes(name) && typeof value === 'string' && value.length >= 16 && value.length <= 4096;
+}
+
+// Called only after the server has issued or verified this exact session
+// against the session store. Rate limiting never reads the store itself.
+function markDashboardSessionVerified(name, value, ttlMs) {
+    if (!isDashboardSessionCookie(name, value)) return;
+    const ttl = Math.min(Number(ttlMs), MAX_VERIFIED_DASHBOARD_SESSION_TTL_MS);
+    if (!Number.isFinite(ttl) || ttl <= 0) return;
+    const key = dashboardSessionDigest(name, value);
+    verifiedDashboardSessions.delete(key);
+    verifiedDashboardSessions.set(key, Date.now() + ttl);
+    while (verifiedDashboardSessions.size > MAX_VERIFIED_DASHBOARD_SESSIONS) {
+        verifiedDashboardSessions.delete(verifiedDashboardSessions.keys().next().value);
+    }
+}
+
+// Sign-out, expiry or an invalid record: the session loses the dashboard
+// allowance at once rather than when its entry times out.
+function forgetDashboardSession(name, value) {
+    if (!isDashboardSessionCookie(name, value)) return;
+    verifiedDashboardSessions.delete(dashboardSessionDigest(name, value));
+}
+
+// Returns the opaque key of a session cookie on this request that the server
+// has already verified, or null. Unverified, fabricated or rotated cookie
+// values return null, so those requests stay on the ordinary address limits.
+function getVerifiedDashboardSessionKey(headers) {
     const header = getHeader(headers, 'cookie');
     const raw = Array.isArray(header) ? header.join(';') : String(header || '');
     if (!raw || raw.length > 16384) return null;
-    const values = [];
-    raw.split(';').forEach((part) => {
-        const index = part.indexOf('=');
-        if (index < 0) return;
-        const name = part.slice(0, index).trim();
-        const value = part.slice(index + 1).trim();
-        if (DASHBOARD_SESSION_COOKIES.includes(name) && value.length >= 16 && value.length <= 4096) values.push(name + '=' + value);
-    });
-    if (!values.length) return null;
-    return createHash('sha256').update(values.sort().join(';')).digest('hex').slice(0, 32);
+    const now = Date.now();
+    const parts = raw.split(';');
+    for (const name of DASHBOARD_SESSION_COOKIES) {
+        for (const part of parts) {
+            const index = part.indexOf('=');
+            if (index < 0 || part.slice(0, index).trim() !== name) continue;
+            const value = part.slice(index + 1).trim();
+            if (!isDashboardSessionCookie(name, value)) continue;
+            const key = dashboardSessionDigest(name, value);
+            const expiresAt = verifiedDashboardSessions.get(key);
+            if (expiresAt === undefined) continue;
+            if (expiresAt <= now) { verifiedDashboardSessions.delete(key); continue; }
+            return key;
+        }
+    }
+    return null;
 }
 
 function rateLimitHeaders(result) {
@@ -187,11 +228,14 @@ function cleanupBuckets(now, enforceCap = false) {
 
 function resetAbuseProtectionForTests() {
     rateLimitBuckets.clear();
+    verifiedDashboardSessions.clear();
 }
 
 module.exports = {
     checkRateLimit,
-    getDashboardSessionKey,
+    forgetDashboardSession,
+    getVerifiedDashboardSessionKey,
+    markDashboardSessionVerified,
     getClientKeyFromHeaders,
     isBlockedUserAgent,
     rateLimitHeaders,
