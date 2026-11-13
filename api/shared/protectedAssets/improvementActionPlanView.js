@@ -246,6 +246,42 @@
             const filters = node('p', 'dashboard-muted', 'Filters: status ' + (model.filters.status === 'all' ? 'All' : statuses[model.filters.status]) +
                 '; owner ' + model.filters.owner + '; overdue only ' + (model.filters.overdueOnly ? 'Yes' : 'No') + '.');
             countDetails.append(filters); panel.append(countDetails);
+            // Use only this already validated selection, never a second plan read.
+            // Global revisions provide save order even when timestamps are equal.
+            if (model.actions.length) {
+                const updates = model.actions.flatMap(action => action.history.map(event => ({ action, event })))
+                    .sort((left, right) => right.event.revision - left.event.revision);
+                const recent = node('section', 'dashboard-panel');
+                recent.setAttribute('aria-label', 'Latest saved action updates');
+                recent.append(node('h3', '', 'Latest saved action updates'));
+                recent.append(node('p', 'dashboard-muted', 'Only actions shown in this view are included; current filters apply. ' +
+                    'Workflow updates do not verify evidence or change assessment scores. Full records remain in each action’s Action history below.'));
+                if (!updates.length) recent.append(node('p', '', 'No saved updates for the actions shown.'));
+                else {
+                    recent.append(node('p', 'dashboard-muted', 'Latest ' + Math.min(5, updates.length) + ' of ' + updates.length +
+                        ' saved updates for the actions shown. Newest plan revision first.'));
+                    const list = node('ol');
+                    updates.slice(0, 5).forEach(({ action, event }) => {
+                        const entry = node('li');
+                        const work = Array.from(action.rationale.suggestedAction);
+                        entry.append(node('strong', 'ncsc-preserve-text', (event.type === 'complete' ? 'Workflow completed' : event.label) +
+                            ' · ' + work.slice(0, 100).join('') + (work.length > 100 ? '…' : '')));
+                        entry.append(node('div', 'dashboard-muted', action.controlId + ' · ' + action.labels.kind +
+                            ' · Plan revision ' + event.revision + ' · ' + event.at + ' (UTC)'));
+                        if (event.type === 'assign') entry.append(node('div', '', 'Assignment updated · Due date (UTC): ' + (event.details.dueDate || 'Not set')));
+                        const note = event.type === 'complete' ? event.details.note :
+                            event.type === 'block' || event.type === 'reopen' ? event.details.reason : null;
+                        if (note !== null) {
+                            const characters = Array.from(note), preview = characters.slice(0, 160).join('') + (characters.length > 160 ? '…' : '');
+                            entry.append(node('div', 'ncsc-preserve-text', (event.type === 'complete' ? 'Completion note' : 'Reason') +
+                                (characters.length > 160 ? ' (preview)' : '') + ': ' + preview));
+                        }
+                        list.append(entry);
+                    });
+                    recent.append(list);
+                }
+                panel.append(recent);
+            }
             if (!model.actions.length) panel.append(node('p', 'dashboard-muted', model.counts.all.total ?
                 'No actions match these filters. Review the selection in Counts and filters to see what is included.' :
                 'No retained improvement actions. Check that this is the assessment version you intended to review.'));
