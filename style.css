@@ -523,13 +523,11 @@ body[data-page="public-error"] .public-panel .button { max-width: 100%; color: v
 .terms-glance ul { display: grid; gap: 6px; padding-left: 1.2em; }
 body.legal-page .public-panel > section { display: grid; gap: 10px; }
 body.legal-page .public-panel > section > h2 { margin-top: 12px; }
-body.legal-page .public-panel > section.terms-glance > h2,
-body.legal-page .public-panel > section.legal-open > h2 { margin-top: 0; }
+body.legal-page .public-panel > section.terms-glance > h2 { margin-top: 0; }
 body.legal-page .public-panel p,
 body.legal-page .public-panel li { max-width: 68ch; }
 .legal-contents { display: grid; gap: 4px; margin: 0; padding-left: 1.2em; }
 body.legal-page .public-panel ol:not(.legal-contents) { margin: 0; padding-left: 1.4em; }
-.legal-open { padding: clamp(16px, 3vw, 24px); border: 2px dashed var(--line-strong); border-radius: var(--radius); }
 
 /* Public information pages share the site's open header and footer treatment. */
 body.legal-page .public-header,
@@ -551,3 +549,10 @@ body:is(.legal-page, [data-page="contact"]) { background-image: none; }
 body[data-page="contact"] .public-panel { max-width: 48rem; margin-inline: auto; width: 100%; }
 body[data-page="contact"] .public-panel h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.15; }
 body[data-page="contact"] .contact-form { max-width: none; width: 100%; }
+
+/* Privacy: staff and service-workspace detail stays on the page, collapsed below the customer notice. */
+body.legal-page .legal-staff { margin-top: 24px; padding: clamp(14px, 3vw, 20px); border: 1px solid var(--line); border-radius: var(--radius); }
+body.legal-page .legal-staff > :not(summary) { margin-block: 10px 0; }
+body.legal-page .legal-staff > summary { min-height: 44px; padding-block: 8px; cursor: pointer; }
+body.legal-page .legal-staff > summary h2 { display: inline; margin: 0; font-size: 1.15rem; }
+body.legal-page .legal-staff > h3 { margin-top: 16px; font-size: 1rem; }
