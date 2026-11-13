@@ -45,7 +45,7 @@ test('account creation and login have distinct entries and availability is expli
     assert.doesNotMatch(accountCard, /For your company or your clients\./);
     assert.doesNotMatch(html, /<ol\b[^>]*\bclass="gateway-steps"/);
     assert.deepEqual([...accountCard.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)]
-        .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]), [['/login?intent=create', 'Create account'], ['/sample-result.html', 'See an example result'], ['#dashboard-benefits', 'How it works']]);
+        .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]), [['/login?intent=create', 'Create account'], ['/sample-result.html', 'See an example result'], ['/try', 'Try the demo'], ['#dashboard-benefits', 'How it works']]);
     assert.match(html, /class="homepage-login" href="\/login\?intent=login"/);
     assert.equal((html.match(/href="\/login\?intent=create"/g) || []).length, 1);
     assert.match(html, /id="dashboard-benefits"/);

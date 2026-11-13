@@ -1,6 +1,6 @@
 # Try No Fries: fictional interactive demo (#29)
 
-The real signed-in dashboard, running in the browser for a made-up business. Visitors see the same Overview, the full 14-question Cyber Security assessment, review and submit, results and "Compare with previous assessment" that clients see. The banner links to "Create your account" (`/login?intent=create`), `/contact.html` and the homepage. The static site publishes it at `/try` as an unlisted, noindex page; it is not linked from the homepage.
+The real signed-in dashboard, running in the browser for a made-up business. Visitors see the same Overview, the full 14-question Cyber Security assessment, review and submit, results and "Compare with previous assessment" that clients see. The banner links to "Create your account" (`/login?intent=create`), `/contact.html` and the homepage. The static site publishes it at `/try` as a noindex page, linked from the homepage hero as "Try the demo".
 
     node demo/try/serve.js    # http://127.0.0.1:3000/try; browser check: node scripts/tests/try-demo-browser.cjs
 
