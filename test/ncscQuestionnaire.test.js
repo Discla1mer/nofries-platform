@@ -2697,8 +2697,9 @@ describe('batched automatic save', () => {
             const status = () => byId(ui, 'ncsc-save-status').textContent;
             expect(status()).toMatch(/Last saved \d+ \w+ \d{4}, .+ NZ time\.$/);
             choose(ui, 0, 'yes');
-            expect(status()).toMatch(/^Last saved .+ NZ time\. Newer changes are not saved yet\.$/);
-            expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · 1 not saved yet.');
+            // During the autosave pause the status reads as saving (#328).
+            expect(status()).toBe('Saving…');
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · saving….');
             await until(() => status().startsWith('Your progress is saved. Last saved '));
             expect(status()).toMatch(/^Your progress is saved\. Last saved .+ NZ time\.$/);
             expect(ui.root.textContent).not.toMatch(/revision \d/i);
