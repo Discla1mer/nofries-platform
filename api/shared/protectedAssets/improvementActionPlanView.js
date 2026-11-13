@@ -24,6 +24,21 @@
         owner: 'Owner references do not confirm current membership or permission.'
     };
     const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+    // People read times in New Zealand time. Due and review dates are calendar
+    // days, shown as written without moving them between time zones.
+    function nzDateTime(value) {
+        try {
+            return new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short', year: 'numeric',
+                hour: 'numeric', minute: '2-digit' }).format(new Date(value));
+        } catch (_) { return value.slice(0, 10) + ' ' + value.slice(11, 16) + ' UTC'; }
+    }
+    function calendarDay(value) {
+        if (value === null || value === undefined) return 'Not set';
+        try {
+            return new Intl.DateTimeFormat('en-NZ', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' })
+                .format(new Date(value + 'T00:00:00.000Z'));
+        } catch (_) { return value; }
+    }
     function invalid() { throw new Error('improvement_view_unavailable'); }
     function fields(value, names) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) invalid();
@@ -187,9 +202,36 @@
         return value;
     }
 
+    // Plain names for people. Codes stay in each action's identifiers.
+    const plainKinds = { implementation: 'Gap to fix', assessment: 'Answer to check', applicability: 'Answer to check', evidence: 'Evidence to add' };
+    function actionTitle(action, titles) {
+        const title = titles && typeof titles === 'object' && own(titles, action.controlId) && typeof titles[action.controlId] === 'string' &&
+            titles[action.controlId].trim() && titles[action.controlId].length <= 200 ? titles[action.controlId] : action.controlId;
+        return title + ' · ' + (own(plainKinds, action.rationale.kind) ? plainKinds[action.rationale.kind] : action.labels.kind);
+    }
+    function ownerText(action, currentOwner) {
+        if (labelled(action)) return action.ownerLabel + ' (named owner)';
+        if (!assigned(action)) return 'Unassigned';
+        // Without the signed-in person, say plainly that someone is assigned;
+        // the raw owner reference stays in the closed Action identifiers.
+        if (typeof currentOwner !== 'string') return 'Assigned to someone in your organisation';
+        return action.ownerSubjectKey === currentOwner ? 'You' : 'Someone else in your organisation';
+    }
+    function planSummary(actions) {
+        const gaps = actions.filter(action => action.rationale.kind === 'implementation').length;
+        const checks = actions.filter(action => ['assessment', 'applicability'].includes(action.rationale.kind)).length;
+        const evidence = actions.filter(action => action.rationale.kind === 'evidence').length;
+        const parts = [[gaps, 'gap to fix', 'gaps to fix'], [checks, 'answer to check', 'answers to check'],
+            [evidence, 'answer that needs supporting evidence', 'answers that need supporting evidence']]
+            .filter(part => part[0] > 0).map(part => part[0] + ' ' + (part[0] === 1 ? part[1] : part[2]));
+        const list = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts.join('');
+        return 'This plan has ' + actions.length + (actions.length === 1 ? ' action' : ' actions') + (list ? ': ' + list + '.' : '.');
+    }
+
     // A trusted host supplies a current authorised presentation. This component
     // grants no access, reads no clock and performs no requests or commands.
     function mount(root, presentation, options) {
+        const titles = options && options.controlTitles, currentOwner = options && options.currentOwner;
         if (!root || !root.ownerDocument || typeof root.replaceChildren !== 'function') throw new Error('improvement_view_root_required');
         if (mounted.has(root)) mounted.get(root).destroy();
         const doc = root.ownerDocument, actionCards = new Map();
@@ -222,8 +264,10 @@
             const model = validate(presentation), panel = node('section', 'dashboard-panel');
             panel.setAttribute('aria-label', 'Improvement action plan');
             panel.append(node('h2', '', 'Improvement action plan'));
-            panel.append(node('p', 'dashboard-muted', 'Assessment ' + model.source.assessmentId + ' · revision ' + model.source.assessmentRevision +
-                ' · As of ' + model.asOf + ' (UTC)'));
+            panel.append(node('p', 'dashboard-muted', 'From the assessment submitted ' + nzDateTime(model.source.scoreAsOf) +
+                ' · Plan last updated ' + nzDateTime(model.updatedAt) + ' (NZ time)'));
+            const unfiltered = model.filters.status === 'all' && model.filters.owner === 'all' && model.filters.overdueOnly === false;
+            if (unfiltered && model.actions.length) panel.append(node('p', '', planSummary(model.actions)));
             panel.append(node('p', '', 'Showing ' + model.counts.visible.total + ' of ' + model.counts.all.total + ' actions. ' +
                 'Visible overdue: ' + model.counts.visible.overdue + ' · Unassigned: ' + model.counts.visible.unassigned + '.'));
             panel.append(node('p', 'dashboard-muted', model.notices.priority + ' ' + model.notices.order),
@@ -234,7 +278,7 @@
                 'Read-only plan. Review each action’s next step, owner and due date. ' +
                     'Open Action history for earlier updates. Changes cannot be made in this view.';
             panel.append(node('p', '', guidance));
-            const sourceDetails = disclosure('Source and plan metadata');
+            const sourceDetails = disclosure('Technical details for support');
             sourceDetails.append(record('Retained source', [
                 ['Plan ID', model.scope.planId], ['Plan revision', String(model.planRevision)], ['Plan last updated (UTC)', model.updatedAt],
                 ['As of (UTC)', model.asOf], ['Assessment ID', model.source.assessmentId],
@@ -266,16 +310,16 @@
                 if (!updates.length) recent.append(node('p', '', 'No saved updates for the actions shown.'));
                 else {
                     recent.append(node('p', 'dashboard-muted', 'Latest ' + Math.min(5, updates.length) + ' of ' + updates.length +
-                        ' saved updates for the actions shown. Newest plan revision first.'));
+                        ' saved updates for the actions shown. Newest first.'));
                     const list = node('ol');
                     updates.slice(0, 5).forEach(({ action, event }) => {
                         const entry = node('li');
                         const work = Array.from(action.rationale.suggestedAction);
                         entry.append(node('strong', 'ncsc-preserve-text', (event.type === 'complete' ? 'Workflow completed' : event.label) +
                             ' · ' + work.slice(0, 100).join('') + (work.length > 100 ? '…' : '')));
-                        entry.append(node('div', 'dashboard-muted', action.controlId + ' · ' + action.labels.kind +
-                            ' · Plan revision ' + event.revision + ' · ' + event.at + ' (UTC)'));
-                        if (event.type === 'assign') entry.append(node('div', '', 'Assignment updated · Due date (UTC): ' + (event.details.dueDate || 'Not set')));
+                        entry.append(node('div', 'dashboard-muted', actionTitle(action, titles) +
+                            ' · ' + nzDateTime(event.at)));
+                        if (event.type === 'assign') entry.append(node('div', '', 'Assignment updated · Due date: ' + calendarDay(event.details.dueDate)));
                         const note = event.type === 'complete' ? event.details.note :
                             event.type === 'block' || event.type === 'reopen' ? event.details.reason : null;
                         if (note !== null) {
@@ -295,17 +339,17 @@
             model.actions.forEach(action => {
                 const card = node('article', 'dashboard-panel');
                 card.setAttribute('tabindex', '-1'); actionCards.set(action.actionId, card);
-                card.append(node('h3', '', action.controlId + ' · ' + action.labels.kind), node('span', 'dashboard-badge', action.labels.status),
+                card.append(node('h3', '', actionTitle(action, titles)), node('span', 'dashboard-badge', action.labels.status),
                     node('p', 'ncsc-preserve-text', action.rationale.suggestedAction));
                 const facts = node('dl');
-                [['Next step', nextStep(action)], ['Owner', labelled(action) ? action.ownerLabel + ' (named owner)' : action.labels.owner],
-                    ['Due date (UTC calendar day)', action.dueDate === null ? 'Not set' : action.dueDate],
-                    ['Overdue at supplied as-of date (UTC)', action.isOverdue ? 'Yes' : 'No'], ['Assessment response', action.labels.response],
+                [['Next step', nextStep(action)], ['Owner', ownerText(action, currentOwner)],
+                    ['Due date', calendarDay(action.dueDate)],
+                    ['Overdue', action.isOverdue ? 'Yes' : 'No'], ['Assessment response', action.labels.response],
                     ['Response origin', action.labels.responseOrigin], ['Assessment evidence', action.labels.evidenceState]].forEach(pair => fact(facts, pair[0], pair[1]));
                 if (action.blockedReason !== null) fact(facts, 'Block reason', action.blockedReason);
                 if (action.completion !== null) {
-                    fact(facts, 'Workflow completed at (UTC)', action.completion.at); fact(facts, 'Completion note', action.completion.note);
-                    fact(facts, 'Next review date (UTC)', action.completion.nextReviewDate || 'Not set');
+                    fact(facts, 'Completed', nzDateTime(action.completion.at)); fact(facts, 'Completion note', action.completion.note);
+                    fact(facts, 'Next review date', calendarDay(action.completion.nextReviewDate));
                     fact(facts, 'Completion meaning', 'Workflow completed; control implementation has not been verified.');
                 }
                 card.append(facts);
@@ -316,14 +360,13 @@
                     evidence.append(node('p', '', 'No completion evidence reference is recorded for the current action. Review the assessment claim and Action history for earlier records.'));
                 } else {
                     fact(evidenceFacts, 'Completion evidence reference (unverified)', action.evidence.completionReference);
-                    fact(evidenceFacts, 'Completion reference recorded at (UTC)', action.completion === null ? 'Unknown' : action.completion.at);
+                    fact(evidenceFacts, 'Completion reference recorded', action.completion === null ? 'Unknown' : nzDateTime(action.completion.at));
                 }
                 fact(evidenceFacts, 'Verification', action.evidence.completionVerification === 'not_verified' ? 'Not verified' : 'No verification recorded');
                 evidence.append(evidenceFacts, node('p', 'dashboard-muted', 'Completing an action does not verify a control or change scores.'));
                 evidence.append(node('h4', '', 'Assessment source'));
                 const assessmentFacts = node('dl');
-                [['Assessment ID', model.source.assessmentId], ['Assessment revision', model.source.assessmentRevision],
-                    ['Assessment scored at (UTC)', model.source.scoreAsOf]]
+                [['Assessment submitted', nzDateTime(model.source.scoreAsOf)]]
                     .forEach(pair => fact(assessmentFacts, pair[0], pair[1]));
                 evidence.append(assessmentFacts); card.append(evidence);
                 const identifiers = disclosure('Action identifiers'), idFacts = node('dl');
@@ -335,12 +378,14 @@
                 if (!action.history.length) history.append(node('p', 'dashboard-muted', 'No updates recorded for this action.'));
                 const timeline = node('ol');
                 action.history.forEach(event => {
-                    const entry = node('li'); entry.append(node('h4', '', 'Plan revision ' + event.revision + ' · ' + event.label), node('p', '', event.at + ' (UTC)'));
+                    const entry = node('li'); entry.append(node('h4', '', event.label + ' · ' + nzDateTime(event.at)));
                     const details = node('dl');
-                    if (event.type === 'assign' && labelled(event.details)) { fact(details, 'Owner name', event.details.ownerLabel); fact(details, 'Due date (UTC calendar day)', event.details.dueDate); }
-                    else if (event.type === 'assign') { fact(details, 'Owner ID (current eligibility not checked)', event.details.ownerSubjectKey === null ? 'Unassigned' : event.details.ownerSubjectKey); fact(details, 'Due date (UTC calendar day)', event.details.dueDate === null ? 'Not set' : event.details.dueDate); }
+                    if (event.type === 'assign' && labelled(event.details)) { fact(details, 'Owner name', event.details.ownerLabel); fact(details, 'Due date', calendarDay(event.details.dueDate)); }
+                    else if (event.type === 'assign') { fact(details, 'Owner', event.details.ownerSubjectKey === null ? 'Unassigned' :
+                        typeof currentOwner !== 'string' ? 'Assigned to someone in your organisation' :
+                        event.details.ownerSubjectKey === currentOwner ? 'You' : 'Someone else in your organisation'); fact(details, 'Due date', calendarDay(event.details.dueDate)); }
                     if (event.type === 'block' || event.type === 'reopen') fact(details, 'Reason', event.details.reason);
-                    if (event.type === 'complete') { fact(details, 'Completion note', event.details.note); fact(details, 'Evidence reference (unverified)', event.details.evidenceReference === null ? 'Not recorded' : event.details.evidenceReference); fact(details, 'Evidence status', 'Unverified; durable link not established.'); fact(details, 'Next review date (UTC)', event.details.nextReviewDate || 'Not set'); }
+                    if (event.type === 'complete') { fact(details, 'Completion note', event.details.note); fact(details, 'Evidence reference (unverified)', event.details.evidenceReference === null ? 'Not recorded' : event.details.evidenceReference); fact(details, 'Evidence status', 'Unverified; durable link not established.'); fact(details, 'Next review date', calendarDay(event.details.nextReviewDate)); }
                     entry.append(details); timeline.append(entry);
                 });
                 history.append(timeline); card.append(history); panel.append(card);
@@ -356,5 +401,5 @@
     // The trusted host decides when a read is pending and when to replace this
     // status with mount(). This component starts no request or automatic retry.
     function mountLoading(root) { return mount(root, loadingState); }
-    return Object.freeze({ mount, mountLoading, normaliseOwnerLabel });
+    return Object.freeze({ mount, mountLoading, normaliseOwnerLabel, actionTitle, nzDateTime, calendarDay });
 }));
