@@ -685,6 +685,7 @@ function registerRealPostgresTests() {
         }
         afterEach(async () => {
             mockResourceAfterWork = null; mockRuntimeAfterReconcile = null; mockAfterHostDecision = null;
+            delete process.env.NOFRIES_LIFECYCLE_EMAIL_ENQUEUE_ENABLED;
             if (fixture) fixture.state.hook = null;
             const closed = await Promise.allSettled(reconstructionPoolClosers.splice(0).map(close => close()));
             const failure = closed.find(result => result.status === 'rejected');
@@ -703,8 +704,9 @@ function registerRealPostgresTests() {
             await ownerPool.query('TRUNCATE ' + tables.map(table => 'nofries.' + table).join(', '));
             fixture = harness();
         });
-        test.each([false, true])('new starter signup atomically grants fixed allowances and replays after lost COMMIT=%s', async loseCommit => {
+        test.each([[false, false], [true, false], [false, true], [true, true]])('new starter signup atomically grants fixed allowances and replays after lost COMMIT=%s (lifecycle email enqueue: %s)', async (loseCommit, enqueue) => {
             const f = fixture; f.state.now = new Date().toISOString(); await f.initialize();
+            if (enqueue) process.env.NOFRIES_LIFECYCLE_EMAIL_ENQUEUE_ENABLED = 'true';
             const { createStarterAccountAllocator } = require('../../api/shared/customerSignup/starterAccountAllocation');
             const { compileStarterProvisioning } = require('../../api/shared/customerSignup/starterProvisioning');
             const { createPostgresSignupAcceptanceJournal } = require('../../api/shared/customerSignup/postgresSignupAcceptanceJournal');
@@ -747,6 +749,17 @@ function registerRealPostgresTests() {
                 scheduleId: p.schedule.scheduleId, scheduleDigest: p.schedule.scheduleDigest, acceptedAt: Date.now(), status: 'pending_admission', dashboardAccess: false };
             await createPostgresSignupAcceptanceJournal({ database }).persist(receipt);
             await createPostgresSignupRegistrationStore({ database }).registerAcceptance(receipt);
+            if (enqueue && !loseCommit) {
+                // A failed enqueue fails the activation and rolls back every activation write.
+                f.state.hook = event => {
+                    if (event.phase === 'before' && event.sql.startsWith('INSERT INTO nofries.email_outbox')) throw new Error('Synthetic outbox write failure');
+                };
+                await expect(runtime.starterProvisioning(request, { requestId, phase: 'activate' })).rejects.toThrow();
+                f.state.hook = null;
+                expect((await ownerPool.query('SELECT activation FROM nofries.dashboard_starter_scopes')).rows).toEqual([{ activation: null }]);
+                expect((await ownerPool.query('SELECT activated_at FROM nofries.dashboard_starter_accounts')).rows[0].activated_at).toBeNull();
+                expect((await ownerPool.query('SELECT count(*)::int AS n FROM nofries.email_outbox')).rows[0].n).toBe(0);
+            }
             let activationPid, lost = false;
             if (loseCommit) f.state.hook = event => {
                 if (event.phase === 'after' && event.sql.startsWith('UPDATE nofries.dashboard_starter_scopes SET activation=')) activationPid = event.backendPid;
@@ -764,6 +777,36 @@ function registerRealPostgresTests() {
             expect(usages.rows[0].payload.counters).toEqual({ memberships: 1, assessment_runs: 0, ai_requests: 0, evidence_bytes: 0, report_exports: 0 });
             expect((await ownerPool.query('SELECT count(*) FROM nofries.dashboard_identity_bindings WHERE tenant_id=$1', [slot.tenantId])).rows[0].count).toBe('1');
             await expect(runtime.starterProvisioning(f.operator(), { requestId, phase: 'activate' })).rejects.toThrow();
+            const outboxRows = async () => (await ownerPool.query(`SELECT tenant_id, organisation_id, account_id, email_type, dedupe_key,
+                template_version, params, status, not_before FROM nofries.email_outbox ORDER BY not_before`)).rows;
+            if (!enqueue) {
+                expect(await outboxRows()).toEqual([]);
+                expect(f.state.trace.some(event => event.sql.includes('email_outbox'))).toBe(false);
+                return;
+            }
+            // One welcome now and one nudge at +7 days, written by the runtime role
+            // under RLS, and the replay above queued nothing more.
+            const activatedAt = (await ownerPool.query('SELECT activated_at FROM nofries.dashboard_starter_accounts')).rows[0].activated_at;
+            const queued = await outboxRows(), ids = { tenant_id: slot.tenantId, organisation_id: slot.organisationId,
+                account_id: p.accountId, dedupe_key: p.accountId, params: {}, status: 'pending' };
+            expect(queued.map(({ not_before, ...row }) => row)).toEqual([{ ...ids, email_type: 'welcome', template_version: 'welcome-v1' },
+                { ...ids, email_type: 'nudge_unfinished', template_version: 'nudge-unfinished-v1' }]);
+            expect(queued[0].not_before.getTime()).toBe(activatedAt.getTime());
+            expect(queued[1].not_before.getTime() - activatedAt.getTime()).toBe(7 * 86400000);
+            // The submit path's cancel, as the runtime role under the account's
+            // subject, cancels this nudge; a later activation replay never requeues it.
+            const outbox = require('../../api/shared/lifecycleEmail/outboxWriter');
+            const client = await runtimePool.connect();
+            try {
+                await client.query('BEGIN'); await client.query('SET LOCAL ROLE nofries_runtime');
+                await client.query(`SELECT set_config('nofries.tenant_id',$1,true), set_config('nofries.organisation_id',$2,true),
+                    set_config('nofries.subject_key',$3,true)`, [slot.tenantId, slot.organisationId, customer]);
+                expect(await outbox.cancelPending(client, { tenantId: slot.tenantId, organisationId: slot.organisationId,
+                    accountId: p.accountId, types: ['nudge_unfinished', 'reassess_reminder'] })).toBe(1);
+                await client.query('COMMIT');
+            } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+            expect(await runtime.starterProvisioning(request, { requestId, phase: 'activate' })).toEqual(result);
+            expect((await outboxRows()).map(row => [row.email_type, row.status])).toEqual([['welcome', 'pending'], ['nudge_unfinished', 'cancelled']]);
         });
         test.each([false, true])('client saved acceptance explicitly completes its original registration after interruption (lost acknowledgement: %s)', async loseAcknowledgement => {
             const f = fixture; f.state.now = new Date().toISOString(); await f.initialize();
