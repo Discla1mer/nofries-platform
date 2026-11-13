@@ -1634,7 +1634,7 @@ describe('questionnaire form accessibility', () => {
         expect(create).toHaveBeenCalledTimes(1);
         expect(byId(ui, 'ncsc-scope').value).toBe('Synthetic corrected scope.');
         expect(byId(ui, 'ncsc-scope').getAttribute('aria-invalid')).toBeNull();
-        expect(byId(ui, 'ncsc-scope').getAttribute('aria-describedby')).toBe('ncsc-scope-help');
+        expect(byId(ui, 'ncsc-scope').getAttribute('aria-describedby')).toBe('ncsc-scope-note ncsc-scope-help');
         expect(ui.root.querySelector('.ncsc-errors').hidden).toBe(true);
         expect(ui.root.textContent).not.toContain('Enter a nonblank scope');
         expect(h.records).toHaveLength(0); ui.controller.destroy();
@@ -3129,9 +3129,45 @@ describe('reconciled persona journey', () => {
             await until(() => byId(ui, 'ncsc-scope'));
             expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-scope'));
             expect(control(ui, 'Create assessment')).toBeDefined();
-            expect(ui.root.textContent).toContain('Scope can\'t be changed after you start, so check it carefully.');
+            expect(ui.root.textContent).toContain('You can\'t edit the scope once the assessment starts. If it needs to change later, you can start a new assessment.');
+            expect(ui.root.textContent).not.toMatch(/check it carefully|verified inventory|Auckland office/);
             control(ui, 'Back to assessments').click(); await until(() => control(ui, 'Start an assessment'));
             expect(byId(ui, 'ncsc-scope')).toBeUndefined();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('the scope step links its note to the box, fills a small-business example and creates with Ctrl+Enter or Cmd+Enter', async () => {
+        const keydown = (element, init) => { for (const handler of element.events.keydown || []) handler({ preventDefault() {}, ...init }); };
+        for (const modifier of ['ctrlKey', 'metaKey']) {
+            const h = await backend(), ui = mountUi(h, { startNew: true });
+            try {
+                await until(() => byId(ui, 'ncsc-scope'));
+                const scope = byId(ui, 'ncsc-scope');
+                const described = scope.getAttribute('aria-describedby').split(' ');
+                expect(described).toEqual(['ncsc-scope-note', 'ncsc-scope-help']);
+                expect(byId(ui, 'ncsc-scope-note').textContent).toMatch(/^You can't edit the scope once the assessment starts\./);
+                expect(byId(ui, 'ncsc-scope-help').textContent).toContain('Ctrl+Enter');
+                expect(ui.root.querySelector('.ncsc-scope-examples').textContent).toContain('café');
+                keydown(scope, { key: 'Enter' }); expect(h.records).toHaveLength(0);
+                control(ui, 'Use this example').click();
+                expect(scope.value).toBe(ui.root.querySelector('.ncsc-scope-examples').children.map(item => item.textContent).join('\n'));
+                expect(ui.document.activeElement).toBe(scope);
+                keydown(scope, { key: 'Enter', [modifier]: true });
+                await until(() => control(ui, 'Save progress'));
+                expect(h.records).toHaveLength(1);
+                expect(h.records[0].payload.scopePopulation.description).toBe(scope.value);
+            } finally { ui.controller.destroy(); }
+        }
+    });
+
+    test('Use this example adds below scope text already written', async () => {
+        const h = await backend(), ui = mountUi(h, { startNew: true });
+        try {
+            await until(() => byId(ui, 'ncsc-scope'));
+            enter(byId(ui, 'ncsc-scope'), 'Synthetic own line.\n');
+            control(ui, 'Use this example').click();
+            expect(byId(ui, 'ncsc-scope').value).toMatch(/^Synthetic own line\.\nPeople: /);
+            expect(h.records).toHaveLength(0);
         } finally { ui.controller.destroy(); }
     });
 
