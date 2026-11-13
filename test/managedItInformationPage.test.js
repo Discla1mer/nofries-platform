@@ -103,8 +103,12 @@ testCase('hours, backup and on-site wording agree across the page', () => {
 });
 
 testCase('pricing navigation describes the enquiry destination without promising a price list', () => {
+    // The header carries only the shared public links; the in-page links sit with the hero actions.
     const navigation = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
-    assert.match(navigation, /<a href="#enquire">Discuss pricing<\/a>/);
+    assert.doesNotMatch(navigation, /href="#/);
+    const actions = html.match(/<div class="managed-it-actions">([\s\S]*?)<\/div>/)[1];
+    assert.match(actions, /<a class="text-link" href="#plans">Plans and prices <span aria-hidden="true">↓<\/span><\/a>/);
+    assert.match(actions, /<a class="text-link" href="#enquire">Discuss pricing <span aria-hidden="true">↓<\/span><\/a>/);
     assert.match(html, /<section class="managed-it-enquiry" id="enquire" aria-labelledby="enquiry-title">/);
     assert.doesNotMatch(html, /Service pricing|Plan your managed service|Open the existing scoping workspace/);
 });

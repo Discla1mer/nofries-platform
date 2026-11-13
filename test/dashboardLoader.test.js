@@ -2137,8 +2137,9 @@ describe('ready Cyber composition', () => {
         const saved = stored.read('assessment-home');
         const h = harness({ cyber: true, hash: '#cyber-security' }); await openedRecord(h, stored);
         selectAnswer(h);
-        expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
-        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('1 not saved yet');
+        // Automatic saving is on here, so the short wait before it sends reads as saving.
+        expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toBe('Saving…');
+        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('· saving…');
         expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/\*$/);
         h.homeClick(); control(h, 'Discard unsent changes').click(); await flush();
         expect(h.requests.filter(request => request.init.method === 'POST')).toHaveLength(0);
@@ -3557,3 +3558,14 @@ test.each([['external', '/login?provider=external&intent=create', false], ['staf
         if (href) expect(h.elements.dashboardCreateAccountLink.href).toBe(href);
         expect(ENTRY_HTML).toContain('New here? <a id="dashboardCreateAccountLink" href="/login?intent=create">Create an account</a>');
     });
+
+test('dashboard startup shows one steady progress message instead of changing stages', () => {
+    // Round 2: "Checking your sign-in…", "Preparing your dashboard…" and
+    // "Confirming your access…" over 6 to 16 seconds read as separate waits.
+    for (const stage of ['Checking your sign-in…', 'Loading your organisation…', 'Preparing your dashboard…', 'Confirming your access…']) {
+        expect(SOURCE).not.toContain("'" + stage + "'");
+    }
+    expect(SOURCE).toContain("const OPENING_MESSAGE = 'Getting your dashboard ready. This can take up to 20 seconds.';");
+    expect(SOURCE.match(/loadingStage\(cycle, OPENING_MESSAGE, OPENING_DETAIL\)/g)).toHaveLength(2);
+    expect(SOURCE.match(/sessionForReconcile\(cycle, OPENING_MESSAGE, OPENING_DETAIL\)/g)).toHaveLength(2);
+});

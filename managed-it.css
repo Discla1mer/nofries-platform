@@ -2,33 +2,6 @@ body[data-page="managed-it-information"] {
     min-height: 100dvh;
 }
 
-body[data-page="managed-it-information"] .site-header {
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 20px 28px;
-    padding-block: 18px;
-}
-
-body[data-page="managed-it-information"] .site-header nav {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 4px 8px;
-}
-
-body[data-page="managed-it-information"] .site-header nav a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    padding: 8px 10px;
-    font-size: .78rem;
-}
-
-body[data-page="managed-it-information"] .site-header nav a[aria-current="page"] {
-    border-radius: 8px;
-    color: var(--ink);
-    background: var(--yellow-soft);
-}
-
 .managed-it-main {
     padding-bottom: 64px;
 }
@@ -326,15 +299,6 @@ body[data-page="managed-it-information"] .home-footer nav a {
 }
 
 @media (max-width: 980px) {
-    body[data-page="managed-it-information"] .site-header {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 12px;
-    }
-
-    body[data-page="managed-it-information"] .site-header nav {
-        justify-content: flex-start;
-    }
-
     .managed-it-hero {
         grid-template-columns: minmax(0, 1fr);
         gap: 36px;
@@ -371,14 +335,6 @@ body[data-page="managed-it-information"] .home-footer nav a {
 }
 
 @media (max-width: 620px) {
-    body[data-page="managed-it-information"] .site-header nav {
-        gap: 2px 4px;
-    }
-
-    body[data-page="managed-it-information"] .site-header nav a {
-        padding-inline: 8px;
-    }
-
     .managed-it-hero {
         padding-top: 26px;
     }
