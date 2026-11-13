@@ -730,7 +730,7 @@ describe('consultant client setup', () => {
         expect(setup.querySelector('.client-draft-steps').querySelectorAll('li').map(item => item.textContent)).toEqual([
             'Read the client schedule and dashboard terms below.',
             'Tick that you accept them, then choose Accept and create client dashboard. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.']);
-        expect(setup.textContent).toContain('If you leave now, the draft stays in your organisation list as “Setup saved”. Choose Continue setup to return to it.');
+        expect(setup.textContent).toContain('If you leave now, the draft stays in your organisation list as “Draft, not yet set up”. Choose Resume to return to it.');
         const accept = buttons(h).find(b => b.textContent === 'Accept and create client dashboard');
         accept.click(); await flush(); expect(h.requests).toHaveLength(5);
         expect(status.textContent).toBe('Read and accept the terms to continue.');

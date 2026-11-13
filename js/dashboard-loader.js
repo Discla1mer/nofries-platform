@@ -928,7 +928,7 @@
                 steps.append(element('li', 'Read the client schedule and dashboard terms below.'),
                     element('li', 'Tick that you accept them, then choose Accept and create client dashboard. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.'));
                 content.append(element('p', 'Steps left:'), steps,
-                    element('p', 'If you leave now, the draft stays in your organisation list as “Setup saved”. Choose Continue setup to return to it.'));
+                    element('p', 'If you leave now, the draft stays in your organisation list as “Draft, not yet set up”. Choose Resume to return to it.'));
                 const schedule = element('section'); schedule.className = 'client-terms-section';
                 const scheduleHeading = element('h4', 'Client schedule'); scheduleHeading.id = 'clientScheduleHeading';
                 schedule.setAttribute('aria-labelledby', scheduleHeading.id);
