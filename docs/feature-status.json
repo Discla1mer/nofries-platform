@@ -47,7 +47,7 @@
       "id": "edit-submitted-answers",
       "name": "Edit a submitted assessment and refresh scores",
       "status": "coming-next",
-      "roadmapTitle": "Update answers and compare results",
+      "roadmapTitle": "Update submitted answers",
       "availabilityClaims": ["edit (?:a |your )?submitted"]
     },
     {
