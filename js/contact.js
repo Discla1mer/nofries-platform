@@ -6,7 +6,70 @@
     const form = document.getElementById('contact-form');
     const status = document.getElementById('contact-status');
     const send = document.getElementById('contact-send');
+    const summary = document.getElementById('contact-errors');
     const FALLBACK = 'Please email hello@nofries.nz instead.';
+    const checks = {
+        'contact-name': function (value) { return value.trim() ? '' : 'Enter your name.'; },
+        'contact-email': function (value) {
+            const email = value.trim();
+            return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? '' : 'Enter a valid email address.';
+        },
+        'contact-message': function (value) {
+            return value.trim().length >= 10 ? '' : 'Tell us how we can help, in at least 10 characters.';
+        }
+    };
+
+    function describedBy(input, errorId, invalid) {
+        const help = (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(function (value) {
+            return value && value !== errorId;
+        });
+        if (invalid) help.unshift(errorId);
+        if (help.length) input.setAttribute('aria-describedby', help.join(' '));
+        else input.removeAttribute('aria-describedby');
+    }
+
+    function showFieldError(id, message) {
+        const input = document.getElementById(id);
+        const error = document.getElementById(id + '-error');
+        if (!input || !error) return;
+        error.textContent = message || '';
+        error.hidden = !message;
+        if (message) input.setAttribute('aria-invalid', 'true');
+        else input.removeAttribute('aria-invalid');
+        describedBy(input, id + '-error', !!message);
+    }
+
+    function validateFields() {
+        const problems = [];
+        Object.keys(checks).forEach(function (id) {
+            const input = document.getElementById(id);
+            const message = input ? checks[id](input.value || '') : 'Check this field.';
+            showFieldError(id, message);
+            if (message) problems.push({ id: id, message: message });
+        });
+        if (!summary) return problems;
+        summary.replaceChildren();
+        summary.hidden = problems.length === 0;
+        if (!problems.length) return problems;
+        const title = document.createElement('p');
+        title.textContent = 'Please check these details:';
+        const list = document.createElement('ul');
+        problems.forEach(function (problem) {
+            const item = document.createElement('li');
+            const link = document.createElement('a');
+            link.href = '#' + problem.id;
+            link.textContent = problem.message;
+            link.addEventListener('click', function (event) {
+                event.preventDefault();
+                const field = document.getElementById(problem.id);
+                if (field) field.focus();
+            });
+            item.append(link);
+            list.append(item);
+        });
+        summary.append(title, list);
+        return problems;
+    }
 
     let available = false;
     let checking;
@@ -29,8 +92,11 @@
                 status.textContent = 'The enquiry form is not available right now. ' + FALLBACK;
                 return;
             }
-            if (!form.reportValidity()) {
+            const problems = validateFields();
+            if (problems.length) {
                 status.textContent = '';
+                const first = document.getElementById(problems[0].id);
+                if (first) first.focus();
                 return;
             }
             const data = new FormData(form);

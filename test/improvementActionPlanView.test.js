@@ -231,6 +231,33 @@ test('read-only next steps explain each current status without changing ownershi
     for (const tag of ['button', 'input', 'select', 'form', 'a']) expect(dom.root.querySelectorAll(tag)).toEqual([]);
 });
 
+const LABEL = '<b>Aroha</b> Ngata 證據';
+function labelOwned() {
+    return step(step(seed(), 0, 'assign', { ownerLabel: LABEL, dueDate: '2026-10-01' }), 0, 'start', {});
+}
+test('a label-owned action renders its named owner as inert text, including when filtered by that name', () => {
+    const state = labelOwned();
+    for (const filters of [{}, { owner: LABEL }]) {
+        const model = presentation(state, { filters }), dom = render(model), named = card(dom, state.proposals[0].actionId);
+        expect(cardFacts(named)).toMatchObject({ 'Owner': LABEL + ' (named owner)', 'Owner ID': 'Named owner without a platform account',
+            'Due date (UTC calendar day)': '2026-10-01', 'Next step': 'Review progress with the action owner against the due date.' });
+        expect(facts(history(named).querySelector('li').querySelector('dl'))).toEqual({ 'Owner name': LABEL, 'Due date (UTC calendar day)': '2026-10-01' });
+        expect(dom.root.querySelectorAll('b')).toEqual([]);
+    }
+});
+test.each([
+    ['email address', action => { action.ownerLabel = 'aroha@example.nz'; }],
+    ['reserved word', action => { action.ownerLabel = 'Unassigned'; }],
+    ['unnormalised spacing', action => { action.ownerLabel = ' Aroha  Ngata'; }],
+    ['label beside a subject', action => { action.ownerSubjectKey = OWNER; }],
+    ['label without a due date', action => { action.dueDate = null; }],
+    ['history label and subject', action => { action.history[0].details.ownerSubjectKey = OWNER; }]
+])('a label-owned row with %s fails closed', (_name, corrupt) => {
+    const state = labelOwned(), model = clone(presentation(state));
+    corrupt(model.actions.find(action => action.actionId === state.proposals[0].actionId));
+    expect(render(model).root.textContent).toBe(UNAVAILABLE);
+});
+
 test('filtered and empty selections show original all counts and plan-wide metadata', () => {
     const state = mixed(), all = presentation(state), selected = presentation(state, { filters: { status: 'completed' } }), dom = render(selected);
     expect(cards(dom)).toHaveLength(1); expect(dom.root.textContent).toContain('Showing 1 of 14 actions.');

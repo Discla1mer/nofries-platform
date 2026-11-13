@@ -1502,7 +1502,7 @@ describe('questionnaire form accessibility', () => {
         const explanations = {
             yes: 'All parts of this statement are in place across your declared scope.',
             partial: 'Plans alone do not count.', no: 'including when work is only planned.',
-            unknown: 'not have enough information', not_applicable: 'counts as still to confirm, not as in place.'
+            unknown: 'not have enough information', not_applicable: 'count as not yet met in your result until a reviewer confirms them'
         };
         for (const [id, explanation] of Object.entries(explanations)) {
             const input = byId(ui, `ncsc-answer-${question.id}-${id}`), label = input.parentElement;
@@ -1513,8 +1513,8 @@ describe('questionnaire form accessibility', () => {
         choose(ui, 0, 'not_applicable', 'Synthetic pending exclusion.');
         const help = byId(ui, `ncsc-rationale-help-${question.id}`);
         expect(byId(ui, `ncsc-rationale-${question.id}`).getAttribute('aria-describedby')).toBe(help.id);
-        expect(help.textContent).toContain('still counts towards your result until approved');
-        expect(help.textContent).toContain('Approval is not available yet.');
+        expect(help.textContent).toContain('count as not yet met in your result until a reviewer confirms them');
+        expect(help.textContent).toContain('Reviews are coming soon.');
         expect(help.textContent).not.toContain('until reviewed');
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
@@ -1534,7 +1534,7 @@ describe('questionnaire form accessibility', () => {
             }
             expect(help.textContent).toContain('all outside your declared scope');
             expect(help.textContent).toContain('If you are unsure, choose Unknown.');
-            expect(help.textContent).toContain('still counts towards your result until approved');
+            expect(help.textContent).toContain('Reviews are coming soon.');
             expect(h.records).toHaveLength(1);
             control(ui, 'Save progress').click();
             await until(() => ui.root.textContent.includes('Your progress is saved.'));
@@ -1556,7 +1556,7 @@ describe('questionnaire form accessibility', () => {
             expect(ui.root.textContent).toContain('Not handling payments is not enough');
             choose(ui, 0, 'not_applicable', 'Synthetic unrelated exclusion.');
             expect(ui.root.textContent).not.toContain('Not handling payments is not enough');
-            expect(byId(ui, `ncsc-rationale-help-${questions[0].id}`).textContent).toContain('Approval is not available yet.');
+            expect(byId(ui, `ncsc-rationale-help-${questions[0].id}`).textContent).toContain('Reviews are coming soon.');
             expect(h.records).toHaveLength(2);
         } finally { ui.controller.destroy(); }
     });
@@ -3086,6 +3086,7 @@ describe('reconciled persona journey', () => {
             await until(() => byId(ui, 'ncsc-scope'));
             expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-scope'));
             expect(control(ui, 'Create assessment')).toBeDefined();
+            expect(ui.root.textContent).toContain('Scope can\'t be changed after you start, so check it carefully.');
             control(ui, 'Back to assessments').click(); await until(() => control(ui, 'Start an assessment'));
             expect(byId(ui, 'ncsc-scope')).toBeUndefined();
         } finally { ui.controller.destroy(); }

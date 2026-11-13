@@ -217,6 +217,22 @@ test('output is detached and recursively frozen, and Unicode/HTML-looking conten
     expect(projectImprovementActionPlanPresentation(before)).toEqual(model);
 });
 
+test('a label-owned row keeps its exact named owner, counts as assigned and matches an owner-name filter', () => {
+    const state = run(step(seed(), 0, 'assign', { ownerLabel: 'Aroha Ngata', dueDate: '2026-10-01' }), 1);
+    for (const filters of [FILTERS, { ...FILTERS, owner: 'Aroha Ngata' }]) {
+        const model = projectImprovementActionPlanPresentation(listOf(state, filters)), named = row(model, state);
+        expect(named).toMatchObject({ ownerSubjectKey: null, ownerLabel: 'Aroha Ngata', dueDate: '2026-10-01',
+            labels: { owner: 'Assigned (eligibility not checked)' } });
+        expect(named.history[0]).toMatchObject({ type: 'assign', label: 'Assigned', details: { ownerLabel: 'Aroha Ngata', dueDate: '2026-10-01' } });
+    }
+    expect(projectImprovementActionPlanPresentation(listOf(state, { ...FILTERS, owner: 'Aroha Ngata' })).actions).toHaveLength(1);
+    for (const corrupt of [action => { action.ownerLabel = 'aroha@example.nz'; }, action => { action.ownerLabel = 'all'; },
+        action => { action.ownerSubjectKey = OWNER; }, action => { action.history[0].details.ownerLabel = 'x'.repeat(81); }]) {
+        const input = clone(listOf(state)); corrupt(input.actions.find(action => action.actionId === state.proposals[0].actionId));
+        assertUnavailable(() => projectImprovementActionPlanPresentation(input));
+    }
+});
+
 const corruptions = [
     ['root extra field', input => { input.privateDetail = 'private source payload'; }],
     ['root schema', input => { input.schemaVersion = 2; }],
