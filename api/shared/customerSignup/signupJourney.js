@@ -226,8 +226,18 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             root.append(element('p', 'Continue secure sign-in with the email linked to your account. Your saved setup and work are kept.'));
             signInLinks();
         } else if (state.status === 'continue_authentication' && customerTransport) {
-            heading.textContent = 'Continuing account setup';
-            const link = element('a', 'Continue securely'); link.href = '/api/external-customer-auth/login'; link.className = 'button';
+            // Saving setup never upgrades this session; only a fresh callback can.
+            // The page normally goes to Microsoft by itself, so say what is
+            // happening and offer the link as a fallback, not a second step.
+            heading.textContent = 'Finishing your sign-in';
+            root.append(element('p', 'Your details are saved. Microsoft now checks your sign-in once more so your new account can open. You should not need to enter anything.'));
+            const automatic = !signInRecovery && !chooseAccount;
+            if (automatic) {
+                const progress = element('p', 'Taking you to Microsoft now. This can take up to 30 seconds. Please keep this page open.');
+                progress.className = 'signup-progress'; progress.setAttribute('role', 'status');
+                root.append(progress, element('p', 'If nothing happens after 30 seconds, choose Continue to Microsoft.'));
+            }
+            const link = element('a', 'Continue to Microsoft'); link.href = '/api/external-customer-auth/login'; link.className = 'button';
             root.append(link);
             setupSignOut();
         } else if (state.status === 'terms' && validTerms(state)) {

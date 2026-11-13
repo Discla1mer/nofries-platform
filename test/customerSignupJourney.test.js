@@ -326,7 +326,7 @@ test('reserved account fields stay locked and submission uses their captured can
         expect(f.client.completeSetup).toHaveBeenCalledWith({ ...savedAccount,
             details: { name: 'Synthetic name', role: 'Owner', address: 'Synthetic address', registrationId: '9429000000000', authorityConfirmed: true } },
         { signal: expect.any(AbortSignal) });
-        expect(f.root.textContent).toContain('Continuing account setup');
+        expect(f.root.textContent).toContain('Finishing your sign-in');
     } finally { f.view.dispose(); }
 });
 

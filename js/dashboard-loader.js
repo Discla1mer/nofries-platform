@@ -18,6 +18,10 @@
     // already waited REQUEST_MS, so they are not tried again here.
     const SESSION_RETRY_MS = [1000, 2000, 4000];
     const ACTION_PLAN_LIMIT = 5;
+    // One steady message while the dashboard opens (round 2: three changing
+    // lines over 6 to 16 seconds read as separate waits). Retries still say so.
+    const OPENING_MESSAGE = 'Getting your dashboard ready. This can take up to 20 seconds.';
+    const OPENING_DETAIL = 'Please keep this page open.';
     const MAX_RECONCILIATIONS = 2;
     const ADD_ORG_RETURN = 'nofries-return-add-organisation';
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -202,7 +206,7 @@
     function show(cycle, state, focusHeading) {
         if (!current(cycle)) return;
         const copy = {
-            loading: ['Opening your dashboard', 'Checking your sign-in…', 'This usually takes a moment.'],
+            loading: ['Opening your dashboard', OPENING_MESSAGE, OPENING_DETAIL],
             selection: ['Choose an organisation', 'Select the organisation you want to view.', 'Your selection will be checked before the dashboard opens.'],
             ready: ['Your dashboard', 'Choose another organisation or sign out when finished.', 'Dashboard ready.'],
             queue: ['Work queue', 'Follow up on saved improvement actions across your organisations.', 'Each organisation is checked before its actions are shown.'],
@@ -523,7 +527,7 @@
         return reconcileCurrent(cycle, transitions, initializeAllowed).finally(function () { cycle.reconciling -= 1; });
     }
     async function reconcileCurrent(cycle, transitions, initializeAllowed) {
-        const result = await sessionForReconcile(cycle, 'Checking your sign-in…', 'This usually takes a moment.');
+        const result = await sessionForReconcile(cycle, OPENING_MESSAGE, OPENING_DETAIL);
         if (!current(cycle)) return;
         if (result.status === 409 && initializeAllowed && fields(result.value, ['code']) && result.value.code === 'dashboard_initialization_required') {
             const pending = command('initialize', { operationId: secureId() });
@@ -538,7 +542,7 @@
         if (cycle.openSelection && value.accountType === 'consultant' && !currentRoute()) {
             window.history.replaceState(null, '', lastOrganisationRoute);
         }
-        loadingStage(cycle, 'Loading your organisation…', 'Fetching what you can open.');
+        loadingStage(cycle, OPENING_MESSAGE, OPENING_DETAIL);
         const snapshot = Object.freeze({ generation: value.generation, selectedBindingId: value.selectedBindingId });
         if (value.accountType === 'consultant' && window.location.hash === '#work-queue' && !cycle.openSelection) {
             if (value.workQueueAvailable === true) { mountWorkQueue(cycle); return; }
@@ -565,7 +569,7 @@
         const prefetchCyber = Array.isArray(projection?.modules) && projection.modules.some(function (item) {
             return item && item.key === 'cyber_security' && item.state === 'ready';
         });
-        loadingStage(cycle, 'Preparing your dashboard…', 'Loading the pages you use.');
+        loadingStage(cycle, OPENING_MESSAGE, OPENING_DETAIL);
         const prepared = await Promise.all([assets(cycle), prefetchCyber
             ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess)
             : Promise.resolve(null)]);
@@ -579,7 +583,7 @@
         const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1]) : null;
         const improvementReady = model.modules.some(function (item) { return item.key === 'improvement_plan' && item.state === 'ready'; });
         const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId) : null;
-        const witnessed = await sessionForReconcile(cycle, 'Confirming your access…', 'One last check before the page opens.');
+        const witnessed = await sessionForReconcile(cycle, OPENING_MESSAGE, OPENING_DETAIL);
         const fresh = session(requireSuccess(witnessed));
         if (!current(cycle)) return;
         if (!sameSession(value, fresh)) {
