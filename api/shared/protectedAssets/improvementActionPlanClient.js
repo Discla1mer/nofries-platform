@@ -520,7 +520,15 @@
             const token = ++serial; let targetLoaded = false;
             busy = true; clearView(); rendered = view.mountLoading(content); message = 'Loading improvement actions…'; render();
             try {
-                const result = response(await request('/api/dashboard/improvement/view?planId=' + encodeURIComponent(planId)));
+                // The plan and its editor options are independent reads of the
+                // same plan. Send both together, one round trip instead of two;
+                // the editor result is still used only after the plan is valid.
+                // A work-queue target may be gone, so it reads the plan first.
+                const editorPath = '/api/dashboard/improvement/editor?planId=' + encodeURIComponent(planId);
+                const viewRequest = request('/api/dashboard/improvement/view?planId=' + encodeURIComponent(planId));
+                const earlyEditor = exactTarget ? null : request(editorPath);
+                if (earlyEditor) Promise.resolve(earlyEditor).catch(() => {});
+                const result = response(await viewRequest);
                 if (!active() || token !== serial) return false;
                 if (result.status !== 200) {
                     unavailable(result.status, false, result.value);
@@ -558,8 +566,16 @@
                 if (!Array.from(content.querySelectorAll('section')).some(section => section.getAttribute('aria-label') === 'Improvement action plan')) invalid();
                 accepted();
                 model = value; message = 'Checking current action options…'; render();
-                const editorResult = response(await request('/api/dashboard/improvement/editor?planId=' + encodeURIComponent(planId)));
+                let editorResult = response(await (earlyEditor || request(editorPath)));
                 if (!active() || token !== serial) return false;
+                // The editor must not describe the plan at an earlier moment than
+                // the view shown. A parallel read can be stamped first, so retry
+                // it once in sequence instead of rejecting the plan.
+                if (earlyEditor && editorResult.status === 200 && editorResult.value && typeof editorResult.value.asOf === 'string' &&
+                    editorResult.value.asOf < value.asOf) {
+                    editorResult = response(await request(editorPath));
+                    if (!active() || token !== serial) return false;
+                }
                 if (editorResult.status !== 200) {
                     if (editorResult.status === 401 || editorResult.status === 403) unavailable(editorResult.status, false);
                     else {
