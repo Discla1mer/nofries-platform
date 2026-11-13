@@ -31,7 +31,7 @@ const GB = 'b'.repeat(64);
 const GC = 'c'.repeat(64);
 const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dashboardMessage', 'dashboardStatus', 'dashboardRetry',
     'dashboardSignIn', 'dashboardSignOut', 'dashboardChooser', 'dashboardChoices', 'dashboardMore', 'dashboardApp',
-    'dashboardApplicationIntegrity', 'dashboardStyleIntegrity', 'dashboardSkipLink'];
+    'dashboardApplicationIntegrity', 'dashboardStyleIntegrity', 'dashboardSkipLink', 'dashboardCreateAccount', 'dashboardCreateAccountLink'];
 
 function state(selectedBindingId = A, generation = GA, extra = {}) {
     return { schemaVersion: 1, authenticated: true, purpose: 'operator_dashboard', expiresAt: '2026-09-09T00:30:00.000Z',
@@ -3695,6 +3695,17 @@ describe('Overview Actions card', () => {
         h.window.dispatch('pagehide');
     });
 });
+
+test.each([['external', '/login?provider=external&intent=create', false], ['staff', null, true]])(
+    'a signed-out %s visitor to /dashboard is offered account creation only on customer entry', async (provider, href, hidden) => {
+        // Round 2: typing /dashboard while signed out showed only "Please sign in".
+        const h = harness(provider === 'external' ? { external: true } : {}); await flush();
+        await h.reply(0, 401, { code: 'dashboard_session_required' });
+        expect(h.status).toBe('unauthenticated');
+        expect(h.elements.dashboardCreateAccount.hidden).toBe(hidden);
+        if (href) expect(h.elements.dashboardCreateAccountLink.href).toBe(href);
+        expect(ENTRY_HTML).toContain('New here? <a id="dashboardCreateAccountLink" href="/login?intent=create">Create an account</a>');
+    });
 
 test('dashboard startup shows one steady progress message instead of changing stages', () => {
     // Round 2: "Checking your sign-in…", "Preparing your dashboard…" and

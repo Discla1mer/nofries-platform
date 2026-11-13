@@ -17,7 +17,7 @@ function setup(state = { status: 'create_account' }, options, suppliedClient) {
     return { ...dom, client, view };
 }
 test.each([
-    [{ customerTransport: 'external' }, 'Login'],
+    [{ customerTransport: 'external' }, 'Sign up or sign in'],
     [{ customerTransport: 'external', signInRecovery: 'retry' }, 'Restart secure sign-in'],
     [{ customerTransport: 'external', chooseAccount: true }, 'Sign in with another account']
 ])('external entry omits the invitation alternative while retaining deliberate normal login: %j', async (options, label) => {

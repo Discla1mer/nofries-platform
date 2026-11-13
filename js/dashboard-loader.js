@@ -139,6 +139,10 @@
     }
     elements.signIn.href = customerProvider === 'staff'
         ? '/api/auth/login?returnTo=' + encodeURIComponent('/dashboard' + currentRoute()) : customerEntry;
+    // A signed-out visitor may be new. Offer account creation beside sign-in.
+    const createAccount = document.getElementById('dashboardCreateAccount');
+    const createAccountLink = document.getElementById('dashboardCreateAccountLink');
+    if (createAccountLink) createAccountLink.href = customerEntry + (customerEntry.indexOf('?') === -1 ? '?' : '&') + 'intent=create';
 
     function current(cycle) { return active === cycle && !cycle.closed; }
     function dispose(cycle) {
@@ -255,6 +259,7 @@
         elements.signIn.hidden = !['unauthenticated', 'expired', 'denied'].includes(state);
         if (!elements.signIn.dataset.restingLabel) elements.signIn.dataset.restingLabel = elements.signIn.textContent;
         elements.signIn.textContent = state === 'expired' ? 'Sign in again' : elements.signIn.dataset.restingLabel;
+        if (createAccount) createAccount.hidden = customerProvider === 'staff' || gateway || state !== 'unauthenticated';
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
         if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
