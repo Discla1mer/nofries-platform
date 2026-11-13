@@ -51,7 +51,7 @@ test('connected picture Overview omits the unused metric grid and the repeated n
         assert.equal(dom.root.querySelector('.dashboard-overview-grid'), null);
         assert.equal(dom.root.querySelector('.dashboard-metrics'), null);
         assert.equal(dom.root.querySelector('.dashboard-availability'), null);
-        assert.doesNotMatch(dom.root.textContent, /Other dashboard areas and availability|The current picture|Build your first baseline/);
+        assert.doesNotMatch(dom.root.textContent, /Other dashboard areas and availability|The current picture|Start your cyber check|baseline/);
         assert.equal(!!dom.root.querySelector('.dashboard-attention'), !empty);
     }
 });
@@ -172,7 +172,7 @@ test('missing metrics are displayed as not assessed, never zero', () => {
     const dom = mount(view({ empty: true }));
     assert.equal(dom.root.querySelectorAll('.dashboard-metric-value').length, 4);
     assert.ok(dom.root.querySelectorAll('.dashboard-metric-value').every(item => item.textContent === 'Not assessed'));
-    assert.match(dom.root.textContent, /Build your first baseline/);
+    assert.match(dom.root.textContent, /Start your cyber check/);
 });
 
 test('Overview leads with attention and distinct versioned metrics', () => {

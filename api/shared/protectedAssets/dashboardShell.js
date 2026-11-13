@@ -339,7 +339,7 @@
             const attention = panel('Needs attention', 'Named owners. Clear next steps.');
             attention.classList.add('dashboard-attention');
             if (!model.summary.attention.length) {
-                attention.append(element('h3', '', 'Build your first baseline'), element('p', '', 'No assessment or improvement record has been shared with this view yet.'));
+                attention.append(element('h3', '', 'Start your cyber check'), element('p', '', 'No assessment or improvement record has been shared with this view yet.'));
                 const assessment = available.find(function (item) { return item.group === 'Assess' && stateFor(item.key) === 'ready'; });
                 if (assessment) attention.append(button('View ' + assessment.label, function () { navigate(assessment.route, true); }));
                 else attention.append(element('p', 'dashboard-muted', 'An organisation administrator can confirm your assessment scope.'));

@@ -1648,7 +1648,7 @@ describe('ready Cyber composition', () => {
         const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
         await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
         expect(h.ncscMounts).toHaveLength(0);
-        control(h, 'Open assessment').click(); await flush();
+        control(h, 'Start your cyber check').click(); await flush();
         expect(h.ncscMounts).toHaveLength(1);
         expect(h.ncscMounts[0][1]).toMatchObject({ startNew: true, initialAssessmentId: undefined,
             organisationId: h.cyberProjection.context.organisationId });
