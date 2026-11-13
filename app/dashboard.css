@@ -285,6 +285,7 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-questionnaire summary { cursor: pointer; min-height: 2.75rem; padding: .5rem 0; font-weight: var(--dashboard-weight-regular); }
 .ncsc-guidance p, .ncsc-provenance p, .ncsc-scope p { margin-top: .75rem; }
 .ncsc-preserve-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ncsc-scope-list { margin: .25rem 0 .5rem; padding-left: 1.25rem; }
 .ncsc-answer { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
 .ncsc-answer legend { font-size: var(--dashboard-font-section); font-weight: var(--dashboard-weight-emphasis); line-height: 1.4; padding: 0 0 1rem; }
 .ncsc-option { display: flex; align-items: center; gap: .85rem; min-height: 3rem; padding: .8rem 1rem; margin-bottom: .55rem; border: 1px solid var(--dashboard-line, #d3c9b7); border-radius: .5rem; background: var(--dashboard-surface, #f6f2ea); cursor: pointer; }

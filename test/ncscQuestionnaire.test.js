@@ -1635,6 +1635,18 @@ describe('questionnaire form accessibility', () => {
         expect(h.records).toHaveLength(0); ui.controller.destroy();
     });
 
+    test('D-004: a saved scope written on separate lines reads as a list', async () => {
+        const h = await backend(), ui = mountUi(h); await until(() => control(ui, 'Start an assessment'));
+        control(ui, 'Start an assessment').click();
+        const input = byId(ui, 'ncsc-scope');
+        const text = 'Included: 12 staff and their laptops\nIncluded: Auckland office\nExcluded: warehouse systems';
+        enter(input, text); control(ui, 'Create assessment').click(); await until(() => control(ui, 'Save progress'));
+        expect(h.records[0].payload.scopePopulation.description).toBe(text);
+        expect(ui.root.querySelector('.ncsc-scope').querySelectorAll('li').map(item => item.textContent))
+            .toEqual(['Included: 12 staff and their laptops', 'Included: Auckland office', 'Excluded: warehouse systems']);
+        ui.controller.destroy();
+    });
+
     test.each([false, true])('save failure updates the mounted live region and preserves focus ownership (outside: %s)', async outsideFocus => {
         const h = await backend(), wait = deferred(), save = jest.fn(async () => { await wait.promise; throw { code: 'ncsc_unavailable', statusCode: 503, ambiguous: true }; });
         const ui = await createInUi(h, { client: { ...h.client, save } }); choose(ui, 0, 'unknown');
