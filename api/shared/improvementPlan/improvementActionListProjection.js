@@ -33,7 +33,8 @@ function eventDetails(command) {
         : { ownerSubjectKey: payload.ownerSubjectKey, dueDate: payload.dueDate };
     if (command.type === 'block' || command.type === 'reopen') return { reason: payload.reason };
     if (command.type === 'complete') return { note: payload.note, evidenceReference: payload.evidenceReference,
-        evidenceVerification: 'not_verified', durableLinkStatus: 'not_established' };
+        evidenceVerification: 'not_verified', durableLinkStatus: 'not_established',
+        ...(Object.hasOwn(payload, 'nextReviewDate') ? { nextReviewDate: payload.nextReviewDate } : {}) };
     return {};
 }
 // ownerLabel appears only on label-owned rows, matching the domain view.
@@ -67,7 +68,8 @@ function projectImprovementActionList(stateInput, optionsInput) {
         blockedReason: action.blockedReason,
         rationale: { kind: action.kind, response: action.response, responseOrigin: action.responseOrigin,
             suggestedAction: action.suggestedAction },
-        completion: action.completion === null ? null : { at: action.completion.completedAt, note: action.completion.note },
+        completion: action.completion === null ? null : { at: action.completion.completedAt, note: action.completion.note,
+            ...(Object.hasOwn(action.completion, 'nextReviewDate') ? { nextReviewDate: action.completion.nextReviewDate } : {}) },
         evidence: { assessmentState: action.evidenceState,
             completionReference: action.completion?.evidenceReference ?? null,
             completionVerification: action.completion === null ? 'not_recorded' : 'not_verified',
