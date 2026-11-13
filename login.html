@@ -10,8 +10,8 @@
 <section class="organisation-card signup-card" id="create-organisation" tabindex="-1" aria-labelledby="organisation-title">
                     <p class="eyebrow">Your account</p>
                     <h1 id="organisation-title" tabindex="-1">Sign up / Sign in</h1>
-                    <p id="organisation-intro">New here or coming back, start with your email.</p>
-                    <ol class="signup-progress" aria-label="Sign-up steps">
+                    <p id="organisation-intro">Opening account setup…</p>
+                    <ol id="organisation-steps" class="signup-progress" hidden aria-label="Sign-up steps">
                         <li id="organisation-step-email" aria-current="step">Email</li>
                         <li id="organisation-step-code">Code</li>
                         <li id="organisation-step-account">Company or Consultant</li>
@@ -29,7 +29,7 @@
                         <button id="organisation-company" class="signup-choice" type="button"><strong>Company</strong><span>I want to assess my organisation’s IT.</span><span class="signup-choice-action">Set up my company <span aria-hidden="true">→</span></span></button>
                         <button id="organisation-consultant" class="signup-choice" type="button"><strong>Consultant</strong><span>I want to manage assessments for multiple client organisations.</span><span class="signup-choice-action">Set up my consultant account <span aria-hidden="true">→</span></span></button>
                     </div>
-                    <form id="organisation-form" novalidate>
+                    <form id="organisation-form" hidden novalidate>
                         <label for="organisation-email">Email address</label>
                         <input id="organisation-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" maxlength="254" required aria-describedby="work-email-help">
                         <p id="organisation-email-error" class="signup-field-error" hidden></p>

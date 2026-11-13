@@ -772,6 +772,19 @@ test.each([
     h.lifecycle('pagehide');
 });
 
+test('create intent on the public entry shows the external setup journey before handover', async () => {
+    const h = fixture({ search: '?intent=create' });
+    expect(h.nodes.title.textContent).toBe('Create your account');
+    expect(h.nodes.intro.textContent).toContain('email and password');
+    expect(h.nodes.intro.textContent).toContain('Microsoft’s secure sign-in');
+    expect(h.nodes.intro.textContent).toContain('Company or Consultant');
+    expect(h.nodes.form.hidden).toBe(true);
+    await h.reply(0, 200, { state: 'start' }, true, { 'x-nofries-customer-entry': 'external' });
+    expect(h.window.location.replace).toHaveBeenCalledWith('/signup?provider=external&intent=create');
+    expect(h.nodes.intro.textContent).not.toContain('Email');
+    h.lifecycle('pagehide');
+});
+
 test('create intent has one primary action and follows the chosen account step with heading focus', async () => {
     const h = fixture({ search: '?provider=legacy&intent=create' });
     await h.reply(0, 200, { state: 'start' }, false, { 'x-nofries-customer-sign-in': 'available' });

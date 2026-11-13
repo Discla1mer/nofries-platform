@@ -80,7 +80,7 @@ test('connected view preserves golden server range, uncertainty and completion w
     assert.match(dom.root.textContent, /All 14 responses are saved/);
     assert.match(dom.root.textContent, /6.5–8.5 reported or possible credits ÷ 14/);
     assert.match(dom.root.textContent, /overall result weights questions, not the five function percentages/);
-    assert.match(dom.root.textContent, /Approval is not available yet/);
+    assert.match(dom.root.textContent, /Reviews are coming soon/);
     assert.equal(dom.root.querySelectorAll('.picture-domain-detail').length, 5);
 });
 
@@ -208,7 +208,7 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     const ids = category => category.querySelectorAll('article').map(node => node.getAttribute('data-question-id'));
     assert.deepEqual(ids(categories[0]), expected(['unknown', 'not_applicable']));
     assert.deepEqual(ids(categories[1]), expected(['partial', 'no']));
-    assert.match(categories[0].textContent, /Answers marked not applicable, to confirm, stay unresolved/);
+    assert.match(categories[0].textContent, /Not applicable answers count as not yet met until a reviewer confirms them/);
     assert.doesNotMatch(follow.textContent, /Supporting-evidence gaps|Supporting evidence:|upload/);
     assert.match(follow.textContent, /not a combined total or a risk ranking/);
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
@@ -872,6 +872,72 @@ test('denial and detached result controls cannot open a plan or change follow-up
         oldPlan.click(); oldReviews.forEach(control => control.click());
         assert.deepEqual(opened, []); assert.ok(categories.every(category => !category.open));
         if (stop === 'denial') assert.match(dom.root.textContent, /unavailable/);
+        dom.controller.destroy();
+    }
+});
+
+// "Plan this" on each top gap, present only when the host enables improvement actions.
+function gapPlanButtons(dom) { return dom.root.querySelectorAll('button').filter(button => button.textContent === 'Plan this'); }
+function gapPlanStatus(dom, index) { return dom.root.querySelectorAll('.picture-top-gap')[index].querySelector('.picture-gap-plan-status'); }
+
+test('Plan this appears on each top gap only when the host enables improvement actions', async () => {
+    const off = setup({ options: { openImprovement: () => true } }); await flush();
+    assert.equal(gapPlanButtons(off).length, 0); off.controller.destroy();
+    const dom = setup({ options: { planGap: async () => true } }); await flush();
+    const buttons = gapPlanButtons(dom), items = dom.root.querySelectorAll('.picture-top-gap');
+    assert.equal(buttons.length, 3);
+    buttons.forEach((button, index) => {
+        assert.equal(button.tagName, 'BUTTON'); assert.equal(button.type, 'button');
+        assert.ok(button.classList.contains('picture-gap-plan')); assert.equal(button.parentElement, items[index]);
+        assert.equal(button.getAttribute('aria-label'), 'Plan this: ' + items[index].querySelector('h4').textContent);
+        assert.equal(gapPlanStatus(dom, index).hidden, true);
+    });
+    dom.controller.destroy();
+});
+
+test('Plan this sends the exact submitted selection and the gap item, and shows progress once', async () => {
+    const record = mixed(), calls = []; let finish;
+    const client = { list: async () => ({ assessments: [record], nextAfterAssessmentId: null }), read: async () => ({ assessment: record }) };
+    const dom = setup({ client, options: { planGap: (selection, itemId, stillCurrent) => { calls.push([selection, itemId]);
+        assert.equal(stillCurrent(), true); return new Promise(done => { finish = done; }); } } });
+    await flush();
+    const items = dom.root.querySelectorAll('.picture-top-gap'), buttons = gapPlanButtons(dom);
+    buttons[1].click(); await flush();
+    assert.deepEqual(calls, [[expectedImprovementSelection(record), items[1].dataset.gapItem]]);
+    assert.equal(gapPlanStatus(dom, 1).textContent, 'Opening plan…'); assert.equal(gapPlanStatus(dom, 1).getAttribute('role'), 'status');
+    assert.equal(buttons[1].disabled, true);
+    buttons[1].click(); buttons[0].click(); await flush(); assert.equal(calls.length, 1);
+    finish(true); await flush();
+    assert.equal(gapPlanStatus(dom, 1).hidden, true); assert.equal(buttons[1].disabled, false);
+    dom.controller.destroy();
+});
+
+test('Plan this goes stale silently when the selection changes while it is pending', async () => {
+    const first = mixed(), second = buildFixtures().tenants[0].assessments.find(record => record.status === 'submitted');
+    let finish, stillCurrent;
+    const client = { list: async () => ({ assessments: [first, second], nextAfterAssessmentId: null }),
+        read: async id => ({ assessment: id === first.assessmentId ? first : second }) };
+    const dom = setup({ client, options: { initialAssessmentId: first.assessmentId,
+        planGap: (_selection, _itemId, current) => { stillCurrent = current; return new Promise(done => { finish = done; }); } } });
+    await flush(); gapPlanButtons(dom)[0].click(); await flush(); assert.equal(stillCurrent(), true);
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), second.assessmentId); await flush();
+    assert.equal(stillCurrent(), false);
+    finish(false); await flush();
+    assert.doesNotMatch(dom.root.textContent, /Couldn't open the plan|Opening plan/);
+    dom.controller.destroy();
+});
+
+test('a Plan this failure says so, keeps Overview working and can be retried', async () => {
+    for (const outcome of [false, 'reject']) {
+        let attempts = 0;
+        const dom = setup({ options: { planGap: async () => { attempts++; if (outcome === 'reject') throw new Error('synthetic'); return false; } } });
+        await flush();
+        const button = gapPlanButtons(dom)[0]; button.click(); await flush();
+        assert.equal(gapPlanStatus(dom, 0).textContent, 'Couldn\'t open the plan. Try again.');
+        assert.equal(gapPlanStatus(dom, 0).hidden, false); assert.equal(button.disabled, false);
+        assert.match(dom.root.textContent, /Your top three gaps/); assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+        assert.equal(gapPlanButtons(dom).length, 3);
+        button.click(); await flush(); assert.equal(attempts, 2);
         dom.controller.destroy();
     }
 });

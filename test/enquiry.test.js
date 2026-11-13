@@ -151,6 +151,11 @@ describe('contact form progressive enhancement', () => {
         expect(html).toMatch(/<form\b[^>]*id="contact-form"[^>]*method="post"/);
         expect(html).toMatch(/<button\b[^>]*id="contact-send"[^>]*type="submit"[^>]*\bdisabled/);
         expect(html).toMatch(/<noscript>[\s\S]*mailto:hello@nofries.nz[\s\S]*<\/noscript>/);
+        expect((html.match(/class="field-required">\(required\)/g) || []).length).toBe(3);
+        expect(html).toMatch(/id="contact-errors"[^>]*role="alert"/);
+        expect(html).toMatch(/id="contact-name-error"/);
+        expect(html).toMatch(/id="contact-email-error"/);
+        expect(html).toMatch(/id="contact-message-error"/);
     });
 
     test('the website honeypot stays submittable but hidden from assistive tech, keyboard and page text', () => {
@@ -194,16 +199,43 @@ describe('contact form progressive enhancement', () => {
                 if (type === 'submit') submit = handler;
             }
         };
+        function field(id, valueKey) {
+            const input = {
+                described: id === 'contact-message' ? 'contact-message-help' : '',
+                get value() { return values[valueKey]; },
+                set value(next) { values[valueKey] = next; },
+                getAttribute: name => name === 'aria-describedby' ? input.described : name === 'aria-invalid' ? input.invalid || null : null,
+                setAttribute(name, value) { if (name === 'aria-describedby') input.described = value; if (name === 'aria-invalid') input.invalid = value; },
+                removeAttribute(name) { if (name === 'aria-describedby') input.described = ''; if (name === 'aria-invalid') input.invalid = ''; },
+                focus() { document.activeElement = input; }
+            };
+            const error = { textContent: '', hidden: true };
+            return { input, error };
+        }
+        const name = field('contact-name', 'name');
+        const email = field('contact-email', 'email');
+        const message = field('contact-message', 'message');
+        const summary = { hidden: true, children: [], replaceChildren() { summary.children = []; }, append(...nodes) { summary.children.push(...nodes); } };
         const document = {
+            activeElement: null,
             body: { dataset: { page: 'contact' } },
-            getElementById: id => ({ 'contact-form': form, 'contact-send': send, 'contact-status': status, 'contact-unavailable': notice })[id]
+            createElement(tag) {
+                const node = { tag, textContent: '', children: [], href: '', append(...items) { node.children.push(...items); }, addEventListener() {} };
+                return node;
+            },
+            getElementById: id => ({
+                'contact-form': form, 'contact-send': send, 'contact-status': status, 'contact-unavailable': notice,
+                'contact-errors': summary, 'contact-name': name.input, 'contact-name-error': name.error,
+                'contact-email': email.input, 'contact-email-error': email.error,
+                'contact-message': message.input, 'contact-message-error': message.error
+            })[id]
         };
         class FormData {
             constructor(target) { expect(target).toBe(form); }
             get(field) { return values[field]; }
         }
         return {
-            send, status, notice, form, values, fetchImpl, plausible,
+            send, status, notice, form, values, fetchImpl, plausible, document,
             run: () => vm.runInNewContext(script, { document, FormData, fetch: fetchImpl, window: { plausible, enquiryAvailability: availability } }),
             submit: () => submit
         };
@@ -258,18 +290,24 @@ describe('contact form progressive enhancement', () => {
         expect(page.send.disabled).toBe(true);
     });
 
-    test('cancels native navigation before validation can fail', async () => {
+    test('cancels native navigation and shows persistent errors before a send', async () => {
         const page = browser();
         const event = { preventDefault: jest.fn() };
-        page.form.reportValidity.mockImplementation(() => {
-            expect(event.preventDefault).toHaveBeenCalledTimes(1);
-            throw new Error('Validation unavailable');
-        });
+        page.values.name = '';
+        page.values.email = 'not-an-email';
+        page.values.message = 'short';
         await page.run();
-        await expect(page.submit()(event)).rejects.toThrow('Validation unavailable');
+        await page.submit()(event);
+        expect(event.preventDefault).toHaveBeenCalledTimes(1);
         expect(page.fetchImpl).not.toHaveBeenCalled();
         expect(page.form.reset).not.toHaveBeenCalled();
-        expect(page.values).toEqual({ ...VALID, website: '' });
+        expect(page.document.getElementById('contact-name-error').textContent).toBe('Enter your name.');
+        expect(page.document.getElementById('contact-email-error').textContent).toBe('Enter a valid email address.');
+        expect(page.document.getElementById('contact-message-error').textContent).toContain('at least 10 characters');
+        expect(page.document.getElementById('contact-name').getAttribute('aria-invalid')).toBe('true');
+        expect(page.document.getElementById('contact-message').getAttribute('aria-describedby')).toContain('contact-message-error');
+        expect(page.document.getElementById('contact-errors').hidden).toBe(false);
+        expect(page.document.activeElement).toBe(page.document.getElementById('contact-name'));
     });
 
     test('no submit control can override the POST fallback with GET', () => {

@@ -15,7 +15,7 @@ const { fixture } = require('./fixtures/dashboardFixture');
 const { projectDashboard } = require('../api/shared/appLifecycle/dashboardProjection');
 const { normaliseNcscCommand, projectNcscDetail, projectNcscSummary } = require('../api/shared/ncscAssessmentService');
 const { makeVersion, stableIntent } = require('../api/shared/assessmentLifecycle/postgresNcscAssessmentStore');
-const { ncscFixture, createClock, createContext, createCommand, saveCommand, allResponses } = require('./fixtures/ncscAssessmentFixture');
+const { ncscFixture, createClock, createContext, createCommand, saveCommand, submitCommand, allResponses } = require('./fixtures/ncscAssessmentFixture');
 
 const SOURCE = fs.readFileSync(process.env.NOFRIES_DASHBOARD_LOADER_TEST_SOURCE ||
     path.join(__dirname, '../js/dashboard-loader.js'), 'utf8');
@@ -163,7 +163,8 @@ function harness(options = {}) {
                 const controller = require('../api/shared/protectedAssets/improvementActionPlanClient').mount(root, { ...input,
                     request: async (path, body) => { const result = await input.request(path, body);
                         return { status: result.status, value: JSON.parse(JSON.stringify(result.value)) }; },
-                    ...(input.sourceAssessment ? { sourceAssessment: JSON.parse(JSON.stringify(input.sourceAssessment)) } : {}) });
+                    ...(input.sourceAssessment ? { sourceAssessment: JSON.parse(JSON.stringify(input.sourceAssessment)) } : {}),
+                    ...(input.initialTarget ? { initialTarget: JSON.parse(JSON.stringify(input.initialTarget)) } : {}) });
                 improvementMounts.push({ root, input, controller }); return controller;
             } };
             if (options.cyber) {
@@ -731,8 +732,26 @@ describe('consultant client setup', () => {
         const controls = h.document.getElementById('clientSetupControls');
         expect(controls.querySelector('a').href).toBe('/login?reauthenticate=1');
         expect(controls.textContent).toContain('Sign in again'); expect(buttons(h)).toHaveLength(0);
-        const warning = Array.from(controls.querySelectorAll('p')).find(p => p.textContent.startsWith('You will be asked to sign in again.'));
-        expect(warning.textContent).toBe('You will be asked to sign in again. Afterwards you come back to your organisations to resume this step.');
+        expect(controls.textContent).toContain('Adding an organisation needs a fresh sign-in to protect your account.');
+        expect(controls.textContent).toContain('After you sign in, you come back to this step to add the organisation.');
+    });
+    test('add-organisation sign-in remembers the return and opens the add step afterwards', async () => {
+        const storage = new Map();
+        const sessionStorage = {
+            setItem: (key, value) => storage.set(key, value),
+            getItem: key => storage.has(key) ? storage.get(key) : null,
+            removeItem: key => storage.delete(key)
+        };
+        const h = await portfolio();
+        h.window.sessionStorage = sessionStorage;
+        await h.reply(2, 401, { code: 'starter_reauthentication_required' });
+        h.document.getElementById('clientSetupControls').querySelector('a').click();
+        expect(sessionStorage.getItem('nofries-return-add-organisation')).toBe('1');
+        const back = await portfolio();
+        back.window.sessionStorage = sessionStorage;
+        await back.reply(2, 200, { csrfToken, state: { status: 'clients', remaining: 3, clients: [] } });
+        expect(back.document.getElementById('clientSetupControls').querySelector('form')).not.toBeNull();
+        expect(sessionStorage.getItem('nofries-return-add-organisation')).toBeNull();
     });
     test('draft client organisations are labelled and offer Resume', async () => {
         const h = await portfolio();
@@ -1215,11 +1234,42 @@ describe('internal dashboard loader protocol', () => {
         expect(h.status).toBe('unavailable'); expect(h.requests).toHaveLength(1); expect(h.native).toHaveLength(0);
     });
 
+    async function exhaustSessionRetries(h, status, body) {
+        for (const delay of [1000, 2000, 4000]) {
+            expect(h.status).toBe('loading');
+            expect(h.elements.dashboardHeading.textContent).toBe('No Fries is having a temporary problem');
+            expect(h.elements.dashboardMessage.textContent).toBe('We\'ll keep trying…');
+            expect(h.elements.dashboardSignIn.hidden).toBe(true);
+            jest.advanceTimersByTime(delay); await flush();
+            await h.reply(h.requests.length - 1, status, body);
+        }
+    }
     test.each([401, 403, 410, 503])('shows fixed safe state for HTTP %s without initializing or redirect loops', async status => {
-        const h = harness(); await flush(); await h.reply(0, status, { code: 'private_subject', error: '<private provider record>' });
+        const h = harness(); await flush(); const body = { code: 'private_subject', error: '<private provider record>' };
+        await h.reply(0, status, body);
+        if (status === 503) await exhaustSessionRetries(h, status, body);
         expect(h.status).toBe(status === 401 ? 'unauthenticated' : status === 403 ? 'denied' : 'unavailable');
         expect(h.elements.dashboardStatus.textContent).not.toMatch(/private|provider/);
-        expect(h.requests).toHaveLength(1); expect(h.window.location.assign).not.toHaveBeenCalled();
+        if (status === 401) expect(h.elements.dashboardHeading.textContent).toBe('Please sign in');
+        if (status === 503) {
+            expect(h.elements.dashboardHeading.textContent).toBe('No Fries is having a temporary problem');
+            expect(h.elements.dashboardStatus.textContent).toContain('not a lost sign-in');
+            expect(h.elements.dashboardSignIn.hidden).toBe(true);
+            expect(h.requests).toHaveLength(4);
+        } else expect(h.requests).toHaveLength(1);
+        expect(h.window.location.assign).not.toHaveBeenCalled();
+    });
+    test('a temporary session failure retries with backoff and then opens', async () => {
+        const h = harness(); await flush();
+        await h.reply(0, 503, { code: 'dashboard_unavailable' });
+        expect(h.elements.dashboardMessage.textContent).toBe('We\'ll keep trying…');
+        jest.advanceTimersByTime(1000); await flush();
+        expect(h.requests).toHaveLength(2);
+        expect(h.requests[1].url).toBe('/api/dashboard/session');
+        await h.open(state(), 'Recovered organisation', 1);
+        expect(h.status).toBe('ready');
+        expect(h.elements.dashboardApp.textContent).toContain('Recovered organisation');
+        expect(h.requests.filter(item => item.url === '/api/dashboard/session')).toHaveLength(3);
     });
 
     test.each([
@@ -1640,6 +1690,136 @@ describe('ready Cyber composition', () => {
         await h.reply(5, 403, { code: 'ncsc_access_denied' });
         expect(h.status).toBe('denied'); expect(h.elements.dashboardApp.children).toHaveLength(0);
     });
+    describe('Overview Plan this', () => {
+        async function planReady(h, stored) {
+            await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
+            const model = JSON.parse(JSON.stringify(projection()));
+            ['cyber_security', 'improvement_plan'].forEach(key => { model.modules.find(item => item.key === key).state = 'ready'; });
+            await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
+            h.cyberProjection = { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' };
+            await h.reply(3, 200, h.cyberProjection); await h.reply(4, 200, state());
+            // With improvement actions on, Overview also reads the plan index for its Actions card.
+            const atUrl = pattern => h.requests.findIndex(item => pattern.test(item.url));
+            const index = atUrl(/^\/api\/dashboard\/improvement\/plans\?limit=/), assessments = atUrl(/^\/api\/dashboard\/ncsc\/assessments/);
+            await h.reply(index, 200, { schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId, organisationId: model.context.organisationId },
+                asOf: NOW, plans: [], nextAfterPlanId: null });
+            await ncscReply(h, assessments, 200, stored.list()); await ncscReply(h, 7, 200, stored.read('assessment-plan'));
+            const record = stored.read('assessment-plan').assessment;
+            const itemId = h.elements.dashboardApp.querySelector('.picture-top-gap').dataset.gapItem;
+            const planId = 'overview-plan-' + record.revisionSha256;
+            const view = { schemaVersion: 1, scope: { planId }, planRevision: 2,
+                source: { assessmentId: record.assessmentId, evaluationOutputSha256: record.submission.evaluation.outputSha256 },
+                actions: [{ actionId: 'action:other', itemId: 'other-item' }, { actionId: 'action:gap', itemId }] };
+            return { record, itemId, planId, view, model };
+        }
+        async function submitted() {
+            const stored = await records();
+            stored.execute(createCommand('assessment-plan', 'create-plan', 'Synthetic plan scope.'));
+            stored.execute(saveCommand('assessment-plan', 0, 'save-plan', allResponses().map((row, index) => ({ ...row, optionId: index < 2 ? 'no' : 'yes' }))));
+            stored.execute(submitCommand('assessment-plan', 1, 'submit-plan'));
+            return stored;
+        }
+        const target = planId => ({ planId, actionId: 'action:gap', planRevision: 2 });
+        test('is absent when improvement actions are off', async () => {
+            const stored = await submitted();
+            const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+            await ncscReply(h, 5, 200, stored.list()); await ncscReply(h, 6, 200, stored.read('assessment-plan'));
+            expect(h.elements.dashboardApp.querySelector('.picture-top-gap')).not.toBeNull();
+            expect(control(h, 'Plan this')).toBeUndefined();
+            h.window.dispatch('pagehide');
+        });
+        test('creates the plan for the submitted revision, then opens the editor at that gap', async () => {
+            const stored = await submitted();
+            const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { record, planId, view } = await planReady(h, stored);
+            control(h, 'Plan this').click(); await flush();
+            expect(h.elements.dashboardApp.textContent).toContain('Opening plan…');
+            expect(h.requests[8].url).toBe('/api/dashboard/improvement/view?planId=' + planId);
+            expect(h.requests[8].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+            await h.reply(8, 404, { code: 'improvement_not_found' });
+            expect(h.requests[9].url).toBe('/api/dashboard/improvement/execute');
+            expect(h.requests[9].init.method).toBe('POST');
+            expect(JSON.parse(h.requests[9].init.body)).toEqual({ planId, type: 'generate', operationId: 'overview-plan-generate-' + record.revisionSha256,
+                expectedRevision: null, actionId: null, payload: { assessmentId: record.assessmentId,
+                    assessmentRevision: record.revision, assessmentRevisionSha256: record.revisionSha256 } });
+            await h.reply(9, 200, { schemaVersion: 1, plan: { planId } });
+            expect(h.requests[10].url).toBe('/api/dashboard/improvement/view?planId=' + planId);
+            await h.reply(10, 200, view);
+            expect(h.improvementMounts).toHaveLength(1);
+            expect(h.improvementMounts[0].input.initialTarget).toEqual(target(planId));
+            expect(h.window.location.hash).toBe('#improvement-plan');
+            expect(h.requests[11].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
+            h.window.dispatch('pagehide');
+        });
+        test('Plan this and the older create button create the same revision-derived plan ID', async () => {
+            const stored = await submitted();
+            const first = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { record, planId } = await planReady(first, stored);
+            control(first, 'Plan this').click(); await flush();
+            await first.reply(8, 404, { code: 'improvement_not_found' });
+            const fromGap = JSON.parse(first.requests[9].init.body);
+            first.window.dispatch('pagehide');
+            const second = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { model } = await planReady(second, stored);
+            control(second, 'Plan improvements for this assessment').click(); await flush();
+            expect(second.requests[8].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
+            await second.reply(8, 200, { schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId,
+                organisationId: model.context.organisationId }, asOf: NOW, plans: [], nextAfterPlanId: null });
+            control(second, 'Create improvement plan for this assessment').click(); await flush();
+            expect(second.requests[9].url).toBe('/api/dashboard/improvement/execute');
+            const fromButton = JSON.parse(second.requests[9].init.body);
+            expect(fromButton.planId).toBe(planId); expect(fromGap.planId).toBe(planId);
+            expect(fromButton.operationId).toBe(fromGap.operationId);
+            expect(planId).toBe('overview-plan-' + record.revisionSha256);
+            second.window.dispatch('pagehide');
+        });
+        test.each([404, 200])('a selection change while Plan this is pending (%s) creates and opens nothing', async status => {
+            const stored = await submitted();
+            stored.execute(createCommand('assessment-zeta', 'create-zeta', 'Synthetic second scope.'));
+            stored.execute(saveCommand('assessment-zeta', 0, 'save-zeta', allResponses().map((row, index) => ({ ...row, optionId: index < 3 ? 'partial' : 'yes' }))));
+            stored.execute(submitCommand('assessment-zeta', 1, 'submit-zeta'));
+            const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { view } = await planReady(h, stored);
+            control(h, 'Plan this').click(); await flush();
+            const picker = h.elements.dashboardApp.querySelector('.picture-toolbar').querySelector('select');
+            picker.value = 'assessment-zeta'; for (const callback of picker.events.change) callback(); await flush();
+            expect(h.requests[9].url).toBe('/api/dashboard/ncsc/assessments/assessment-zeta');
+            await h.reply(8, status, status === 200 ? view : { code: 'improvement_not_found' });
+            await ncscReply(h, 9, 200, stored.read('assessment-zeta'));
+            expect(h.requests.filter(item => item.init.method === 'POST')).toHaveLength(0);
+            expect(h.requests).toHaveLength(10);
+            expect(h.improvementMounts).toHaveLength(0);
+            expect(h.window.location.hash).toBe('#overview');
+            expect(h.elements.dashboardApp.textContent).not.toContain('Couldn\'t open the plan');
+            h.window.dispatch('pagehide');
+        });
+        test('opens an existing plan at that gap without creating another', async () => {
+            const stored = await submitted();
+            const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { planId, view } = await planReady(h, stored);
+            control(h, 'Plan this').click(); await flush();
+            await h.reply(8, 200, view);
+            expect(h.requests.filter(item => item.init.method === 'POST')).toHaveLength(0);
+            expect(h.improvementMounts).toHaveLength(1);
+            expect(h.improvementMounts[0].input.initialTarget).toEqual(target(planId));
+            h.window.dispatch('pagehide');
+        });
+        test.each([[503, null], [404, 403], [200, 'mismatch']])('a failed open (%s, %s) keeps Overview and offers a retry', async (first, second) => {
+            const stored = await submitted();
+            const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { view } = await planReady(h, stored);
+            control(h, 'Plan this').click(); await flush();
+            await h.reply(8, first, second === 'mismatch' ? { ...view, source: { ...view.source, assessmentId: 'other' } } : { code: 'improvement_unavailable' });
+            if (first === 404) { expect(h.requests[9].init.method).toBe('POST'); await h.reply(9, second, { code: 'improvement_access_denied' }); }
+            expect(h.improvementMounts).toHaveLength(0);
+            expect(h.status).toBe('ready');
+            expect(h.window.location.hash).toBe('#overview');
+            expect(h.elements.dashboardApp.textContent).toContain('Couldn\'t open the plan. Try again.');
+            expect(h.elements.dashboardApp.textContent).toContain('Your top');
+            expect(control(h, 'Plan this').disabled).toBe(false);
+            h.window.dispatch('pagehide');
+        });
+    });
     const control = (h, label) => h.elements.dashboardApp.querySelectorAll('button').find(button => button.textContent === label);
     function inputEvent(input, event = 'input') { for (const callback of input.events[event] || []) callback(); }
     function unsavedScope(h) {
@@ -1675,6 +1855,27 @@ describe('ready Cyber composition', () => {
             read(id) { return { schemaVersion: 1, assessment: projectNcscDetail(versions.get(id)) }; }
         };
     }
+    test('the coming-next plan follows a later assessment page before saying there is no baseline', async () => {
+        const h = harness({ cyber: true, hash: '#improvement-plan' });
+        const stored = await records();
+        stored.execute(createCommand('assessment-a', 'create-a', 'Draft scope only.'));
+        stored.execute(createCommand('assessment-b', 'create-b', 'Submitted scope.'));
+        stored.execute(saveCommand('assessment-b', 0, 'save-b', allResponses('yes')));
+        stored.execute(submitCommand('assessment-b', 1, 'submit-b'));
+        const draft = projectNcscSummary(stored.versions.get('assessment-a'));
+        const submitted = projectNcscSummary(stored.versions.get('assessment-b'));
+        await ready(h);
+        expect(h.requests[5].url).toBe('/api/dashboard/ncsc/assessments?limit=50');
+        await ncscReply(h, 5, 200, { schemaVersion: 1, assessments: [draft], nextAfterAssessmentId: draft.assessmentId });
+        expect(h.requests[6].url).toBe('/api/dashboard/ncsc/assessments?limit=50&afterAssessmentId=' + draft.assessmentId);
+        await ncscReply(h, 6, 200, { schemaVersion: 1, assessments: [submitted], nextAfterAssessmentId: null });
+        expect(h.elements.dashboardApp.textContent).toContain('Review the gaps in your submitted assessment');
+        expect(h.elements.dashboardApp.textContent).not.toContain('There is no submitted assessment yet');
+        const review = h.elements.dashboardApp.querySelectorAll('button').find(button => button.textContent === 'Review gaps in your results');
+        expect(review).toBeDefined();
+        review.click();
+        expect(h.ncscMounts.at(-1)[1].initialAssessmentId).toBe('assessment-b');
+    });
     async function openedRecord(h, stored) {
         await ready(h); await ncscReply(h, 5, 200, stored.list());
         const row = h.elements.dashboardApp.querySelector('.ncsc-assessment-list').querySelector('button');
@@ -2355,9 +2556,15 @@ describe('unmounted authority refresh coalescing', () => {
 
     test('failed initial reconciliation releases sharing so the next focus can retry fresh reads', async () => {
         const h = harness(); await flush(); await h.reply(0, 503, { code: 'dashboard_unavailable' });
+        for (const delay of [1000, 2000, 4000]) {
+            expect(h.status).toBe('loading');
+            jest.advanceTimersByTime(delay); await flush();
+            await h.reply(h.requests.length - 1, 503, { code: 'dashboard_unavailable' });
+        }
         expect(h.status).toBe('unavailable');
-        h.window.dispatch('focus'); await flush(); await h.open(state(), 'Recovered after unavailable', 1);
-        expect(h.status).toBe('ready'); expect(h.requests).toHaveLength(5);
+        const next = h.requests.length;
+        h.window.dispatch('focus'); await flush(); await h.open(state(), 'Recovered after unavailable', next);
+        expect(h.status).toBe('ready'); expect(h.requests).toHaveLength(next + 4);
     });
 
     test('pagehide invalidates a pending chain and overlapping return events share the new tenant checks', async () => {
