@@ -1013,6 +1013,78 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
 
+    // The question text the page shows. Prefer the question form of the wording when the
+    // catalogue has one, so these focus tests follow the wording rather than pin it.
+    const plainQuestion = question => question.smallBusiness.question || question.smallBusiness.meaning;
+
+    test('arrow keys move the question picker without loading questions; Enter or Go opens the choice and focuses its text', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        const keydown = (element, key) => { for (const handler of element.events.keydown || []) handler({ key, preventDefault() {} }); };
+        try {
+            const picker = byId(ui, 'ncsc-question-index');
+            // Arrow presses change the select value (and fire change in some browsers) but leave question 1 on screen.
+            for (const value of ['1', '2', '3']) { keydown(picker, 'ArrowDown'); picker.value = value; event(picker, 'change'); }
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[0]));
+            keydown(picker, 'Enter');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[3]));
+            expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
+            const current = byId(ui, 'ncsc-question-index'); keydown(current, 'ArrowDown'); current.value = '6'; event(current, 'change');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[3]));
+            control(ui, 'Go').click();
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[6]));
+            expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
+            expect(h.records).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a save that finishes after Next unanswered keeps focus on the question text, not the page heading', async () => {
+        const h = await backend(), gate = deferred();
+        const client = { ...h.client, save: async (command, settings) => { await gate.promise; return h.client.save(command, settings); } };
+        const ui = await createInUi(h, { client, autosaveIdleMs: 40 });
+        try {
+            choose(ui, 0, 'yes'); await until(() => h.calls.length > 0 && ui.root.querySelector('.ncsc-status').textContent.startsWith('Saving'));
+            control(ui, 'Next unanswered question').click();
+            expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
+            gate.resolve(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            const legend = byId(ui, 'ncsc-question-text');
+            expect(ui.document.activeElement).toBe(legend); expect(legend.textContent).toBe(plainQuestion(metadata().questions[1]));
+        } finally { gate.resolve(); ui.controller.destroy(); }
+    });
+
+    test('a keystroke that cannot move the picker, or a pointer press, does not hold back a pointer choice', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        const fire = (element, type, value) => { for (const handler of element.events[type] || []) handler(value); };
+        try {
+            const picker = byId(ui, 'ncsc-question-index');
+            fire(picker, 'keydown', { key: 'Shift', preventDefault() {} }); picker.value = '2'; event(picker, 'change');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[2]));
+            const current = byId(ui, 'ncsc-question-index');
+            fire(current, 'keydown', { key: 'ArrowDown', preventDefault() {} }); fire(current, 'pointerdown', {});
+            current.value = '5'; event(current, 'change');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[5]));
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a keyboard choice in the question picker survives an autosave that re-renders before Enter or Go', async () => {
+        const h = await backend(), gate = deferred();
+        const client = { ...h.client, save: async (command, settings) => { await gate.promise; return h.client.save(command, settings); } };
+        const ui = await createInUi(h, { client, autosaveIdleMs: 40 }), questions = metadata().questions;
+        const keydown = (element, key) => { for (const handler of element.events.keydown || []) handler({ key, preventDefault() {} }); };
+        try {
+            choose(ui, 0, 'yes'); await until(() => h.calls.length > 0 && ui.root.querySelector('.ncsc-status').textContent.startsWith('Saving'));
+            const picker = byId(ui, 'ncsc-question-index'); picker.focus();
+            keydown(picker, 'ArrowDown'); picker.value = '4'; event(picker, 'change');
+            gate.resolve(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            const current = byId(ui, 'ncsc-question-index');
+            expect(current).not.toBe(picker);
+            expect(current.value).toBe('4');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[0]));
+            keydown(current, 'Enter');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[4]));
+            expect(byId(ui, 'ncsc-question-index').value).toBe('4');
+        } finally { gate.resolve(); ui.controller.destroy(); }
+    });
+
     test('detached navigation and picker controls cannot change the current selection after a render', async () => {
         const h = await backend(), ui = await createInUi(h);
         const oldPicker = byId(ui, 'ncsc-question-index'), oldJump = control(ui, 'Next unanswered question');
@@ -3134,7 +3206,11 @@ describe('reconciled persona journey', () => {
             expect(ui.root.textContent).toContain('Suggested follow-ups: 14.');
             const followUps = ui.root.querySelector('.ncsc-next-steps');
             expect([...followUps.querySelectorAll('li')].filter(item => !item.hidden)).toHaveLength(3);
-            expect(control(ui, 'View all 14 follow-ups')).toBeDefined();
+            const more = control(ui, 'View all 14 follow-ups'); more.focus(); more.click();
+            // The button disappears, so focus moves to the first follow-up it revealed.
+            expect(control(ui, 'View all 14 follow-ups')).toBeUndefined();
+            expect([...followUps.querySelectorAll('li')].filter(item => !item.hidden)).toHaveLength(14);
+            expect(ui.document.activeElement).toBe(followUps.querySelectorAll('li')[3]);
             expect(byId(ui, 'ncsc-provider-summary').value).toContain('Partial');
             const before = h.records.length; control(ui, 'Retry loading results').click(); await until(() => read.mock.calls.length === 2);
             expect(h.records).toHaveLength(before);
