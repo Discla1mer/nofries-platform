@@ -9,6 +9,7 @@ const { buildGatewayDocument } = require('./lib/gatewayDocument');
 const { withFrontendReleaseInformation } = require('./lib/frontendReleaseInfo');
 const {
     checkRateLimit,
+    getVerifiedDashboardSessionKey,
     getClientKeyFromHeaders,
     isBlockedUserAgent,
     rateLimitHeaders
@@ -59,6 +60,7 @@ const { errorResult: enquiryErrorResult } = require('./api/enquiry');
 const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
 const { createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest } = require('./api/shared/funnelCounts');
+const { PATH: UNSUBSCRIBE_PATH, MAX_BODY_BYTES: UNSUBSCRIBE_BODY_BYTES, createUnsubscribeWriter, handleUnsubscribeRequest } = require('./api/shared/lifecycleEmail/unsubscribeEndpoint');
 const { logSafeFailure: logStaffAuthFailure } = require('./api/shared/browserAuthDiagnostics');
 const { createAuthLoginFunction } = require('./api/authLogin');
 const { createAuthCallbackFunction } = require('./api/authCallback');
@@ -630,6 +632,14 @@ express.json({ limit: 64 }), asyncRoute(async (req, res) => {
     }
     sendResult(res, result);
 }));
+// Lifecycle email unsubscribe (#151 E6): live whenever its secret is set, even
+// with sending off, so an already-delivered link keeps working. Form or RFC 8058
+// one-click bodies are small; the token itself may also arrive in the query.
+const recordUnsubscribe = funnelPool ? createUnsubscribeWriter({ pool: funnelPool }) : null;
+app.all(UNSUBSCRIBE_PATH, express.urlencoded({ extended: false, limit: UNSUBSCRIBE_BODY_BYTES, parameterLimit: 4 }), asyncRoute(async (req, res) => {
+    sendResult(res, await handleUnsubscribeRequest(req, { env: apiEnvironment, record: recordUnsubscribe,
+        clientKey: req.ip || req.socket.remoteAddress, log: console }));
+}));
 app.use(express.json({ limit: '3mb' }));
 if (configuration.signupBootstrap) {
     if (typeof configuration.signupBootstrap !== 'function') throw new Error('signup_bootstrap_invalid');
@@ -1058,18 +1068,33 @@ function blockSuspiciousUserAgents(req, res, next) {
 function rateLimitApiRequests(req, res, next) {
     // Anonymous funnel counts use their own isolated limiter, so they never
     // spend the shared write budget that signup and enquiries depend on.
-    if (req.path === '/telemetry') return next();
+    // The unsubscribe route likewise has its own limiter: one-click POSTs come
+    // from shared mail-provider addresses.
+    if (req.path === '/telemetry' || req.path === '/emailPreferences') return next();
     const method = String(req.method || 'GET').toUpperCase();
-    const bucket = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? 'apiWrite' : 'apiRead';
+    const write = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
     const clientKey = getClientKeyFromHeaders(req.headers, req.ip || req.socket.remoteAddress);
-    const result = checkRateLimit(bucket, clientKey, apiEnvironment);
+    // Only a session the server has already issued or verified selects the
+    // dashboard allowance; a fabricated cookie stays on the address limit.
+    const sessionKey = req.path.startsWith('/dashboard/') ? getVerifiedDashboardSessionKey(req.headers) : null;
+    let result;
+    if (sessionKey) {
+        // Verified dashboard sessions: a generous per-address ceiling first,
+        // then the per-session allowance that ordinary use stays within.
+        result = checkRateLimit(write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey, apiEnvironment);
+        if (result.allowed) {
+            result = checkRateLimit(write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey, apiEnvironment);
+        }
+    } else {
+        result = checkRateLimit(write ? 'apiWrite' : 'apiRead', clientKey, apiEnvironment);
+    }
     Object.entries(rateLimitHeaders(result)).forEach(([name, value]) => {
         if (value) {
             res.setHeader(name, value);
         }
     });
     if (!result.allowed) {
-        return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+        return res.status(429).json({ error: 'Too many requests. Please try again later.', retryAfterSeconds: result.retryAfterSeconds });
     }
     return next();
 }
