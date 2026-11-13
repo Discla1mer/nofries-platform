@@ -311,7 +311,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         const heading = element('h1', 'We could not open your account');
         heading.tabIndex = -1;
         root.append(heading,
-            element('p', 'Your sign-in may have worked, but No Fries could not check your account and workspace access just now. If you already have an account, it and your saved work are kept. You do not need to sign up again.'),
+            element('p', 'Your sign-in may have worked, but No Fries could not check your account and organisation access just now. If you already have an account, it and your saved work are kept. You do not need to sign up again.'),
             element('p', 'Try again now. If your account still does not open, sign in again with the same email and password.'),
             element('p', 'Error code: NF-SIGNIN-UNCONFIRMED'));
         showDiagnostic(diagnosticSource);
