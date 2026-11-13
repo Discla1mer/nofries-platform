@@ -481,7 +481,7 @@ async function main() {
                 await assigned.locator('summary').filter({ hasText: /^Action identifiers$/ }).click();
                 await assigned.locator('summary').filter({ hasText: /^Action history \(1 events\)$/ }).click();
                 const refreshed = await page.locator('[aria-label="Improvement action plan"]').innerText();
-                assert.match(refreshed, /Assigned \(eligibility not checked\)/);
+                assert.match(refreshed, /Owner\s*You/);
                 assert.ok(refreshed.includes('Assigned'));
                 assert.ok(refreshed.includes(SUBJECT));
                 assert.equal(fixture.requests.filter(row => row.method === 'POST').length, 1, 'Browser made only the intentional generation command');
