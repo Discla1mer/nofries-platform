@@ -465,6 +465,10 @@ test.each([503, 200])('actual client/view carries only the original %s unavailab
     } })).mockResolvedValueOnce(new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
     const createAccount = jest.fn(), client = createSignupClient({ fetch, createAccount, customerTransport: 'external' });
     const f = setup(undefined, externalOptions, client); let fresh, freshClient;
+    // A failed opening read (503) is the A-001 sign-in check view with a manual
+    // retry; an explicit 'unavailable' state (200) stays the signup message.
+    const code = status === 503 ? 'Error code: NF-SIGNIN-UNCONFIRMED' : 'Error code: NF-SIGNUP-UNCONFIRMED';
+    const buttons = status === 503 ? ['Try again'] : [];
     try {
         await f.view.ready;
         const first = unavailableReport(f);
@@ -478,8 +482,8 @@ test.each([503, 200])('actual client/view carries only the original %s unavailab
         expect(draft.body).toContain('Original API release run: ' + apiReleaseRunId);
         expect(draft.body + first.link.href + f.root.textContent).not.toMatch(/synthetic-private|FFFFFFFFFFFFFFFF|bbbbbbbb|Failed step:/);
         expect(fetch).toHaveBeenCalledTimes(1);
-        expect(f.root.querySelector('button')).toBeNull();
-        expect(f.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
+        expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(buttons);
+        expect(f.root.textContent).toContain(code);
         await flush(); expect(fetch).toHaveBeenCalledTimes(1);
         f.view.dispose(); client.dispose();
         freshClient = createSignupClient({ fetch, createAccount, customerTransport: 'external' });
@@ -489,9 +493,10 @@ test.each([503, 200])('actual client/view carries only the original %s unavailab
             ['/api/external-customer-signup/state', 'GET'], ['/api/external-customer-signup/state', 'GET']
         ]);
         expect(createAccount).not.toHaveBeenCalled();
-        expect(fresh.root.textContent).toContain('Do not create another account or submit your details again.');
-        expect(fresh.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
-        expect(fresh.root.querySelector('button')).toBeNull();
+        expect(fresh.root.textContent).toContain(status === 503 ? 'You do not need to sign up again.'
+            : 'Do not create another account or submit your details again.');
+        expect(fresh.root.textContent).toContain(code);
+        expect(fresh.root.querySelectorAll('button').map(node => node.textContent)).toEqual(buttons);
     } finally { fresh?.view.dispose(); freshClient?.dispose(); f.view.dispose(); client.dispose(); }
 });
 
@@ -551,7 +556,51 @@ test.each(['register', '', null, ['login']])('invalid entry intent %j is refused
 });
 
 
-test.each(['network', '503', 'timeout', 'unavailable', 'malformed'])(
+// A-001: a failed first read is a sign-in/access check failure with a working
+// retry; an explicit server 'unavailable' state remains the signup message.
+test.each(['network', '503', 'timeout', 'malformed'])(
+    'external %s opening failure offers one manual retry without private error reflection', async kind => {
+        if (kind === 'timeout') jest.useFakeTimers();
+        const canary = 'synthetic-private-provider-or-account-detail';
+        let failing = true;
+        const fetch = jest.fn(() => {
+            if (!failing) return Promise.resolve(new Response(JSON.stringify({ state: { status: 'pending_admission' } }),
+                { status: 200, headers: { 'content-type': 'application/json' } }));
+            if (kind === 'network') return Promise.reject(new Error(canary));
+            if (kind === 'timeout') return new Promise(() => {});
+            const body = kind === 'malformed' ? '{invalid-json:' + canary : JSON.stringify({ error: canary });
+            return Promise.resolve(new Response(body, { status: kind === '503' ? 503 : 200,
+                headers: { 'content-type': 'application/json' } }));
+        });
+        const createAccount = jest.fn(), client = createSignupClient({ fetch, createAccount, customerTransport: 'external' });
+        const f = setup(undefined, externalOptions, client);
+        try {
+            if (kind === 'timeout') await jest.advanceTimersByTimeAsync(15000);
+            await f.view.ready; await flush();
+            expect(f.root.querySelector('h1').textContent).toBe('We could not open your account');
+            expect(f.root.textContent).toContain('You do not need to sign up again.');
+            expect(f.root.textContent).toContain('Error code: NF-SIGNIN-UNCONFIRMED');
+            expect(f.root.textContent).not.toContain('Signup is unavailable');
+            expect(f.root.textContent).not.toContain('NF-SIGNUP-UNCONFIRMED');
+            expect(f.root.textContent).not.toContain(canary);
+            expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
+            expect(f.root.querySelector('form')).toBeNull();
+            expect(f.root.getAttribute('aria-busy')).toBe('false'); expect(f.document.activeElement.tagName).toBe('H1');
+            expect(f.root.querySelectorAll('a').map(link => link.href)).toEqual([
+                '/api/external-customer-auth/login', '/api/external-customer-auth/login?account=choose',
+                '/report.html#kind=error&screen=signup&code=signup_unavailable'
+            ]);
+            expect(fetch.mock.calls.map(([url, options]) => [url, options.method])).toEqual([['/api/external-customer-signup/state', 'GET']]);
+            failing = false;
+            f.root.querySelector('button').click(); await flush();
+            expect(f.root.querySelector('h1').textContent).toBe('Account setup received');
+            expect(fetch.mock.calls.map(([url, options]) => [url, options.method])).toEqual([
+                ['/api/external-customer-signup/state', 'GET'], ['/api/external-customer-signup/state', 'GET']]);
+            expect(createAccount).not.toHaveBeenCalled();
+        } finally { f.view.dispose(); client.dispose(); if (kind === 'timeout') jest.useRealTimers(); }
+    });
+
+test.each(['unavailable'])(
     'external %s observation is unconfirmed without a retry action or private error reflection', async kind => {
         if (kind === 'timeout') jest.useFakeTimers();
         const canary = 'synthetic-private-provider-or-account-detail';
