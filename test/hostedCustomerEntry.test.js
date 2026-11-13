@@ -778,7 +778,7 @@ test.each(['dynamic', 'hosted'])('%s legacy invitation fragment consumes only it
             ['/api/customer-signup/bootstrap', 'POST'], ['/api/customer-signup/state', 'GET']]);
         expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ invitationToken: 'a'.repeat(43) });
         expect(page.replace).not.toHaveBeenCalled(); expect(page.assign).not.toHaveBeenCalled();
-        expect(page.root.querySelector('button').textContent).toBe('Login');
+        expect(page.root.querySelector('button').textContent).toBe('Sign up or sign in');
         page.root.querySelector('button').click();
         expect(page.assign).toHaveBeenCalledWith('/api/customer-auth/login');
     } finally { page.close(); await settle(); }

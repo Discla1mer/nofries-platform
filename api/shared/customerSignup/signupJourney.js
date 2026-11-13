@@ -100,7 +100,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             // enforces its five-minute, one-use authentication transaction.
             const entry = button(chooseAccount ? 'Sign in with another account' : signInRecovery === 'account' ? 'Try signing in again'
                 : signInRecovery ? 'Restart secure sign-in'
-                : entryIntent === 'create' ? 'Create account' : entryIntent === 'login' ? 'Log in' : 'Login',
+                : entryIntent === 'create' ? 'Create account' : entryIntent === 'login' ? 'Log in' : 'Sign up or sign in',
                 signal => client.createAccount({ signal }), 630000);
             entry.classList.add('signup-entry-action'); root.append(entry);
             const start = element('a', customerTransport ? signInRecovery || chooseAccount ? 'Return to No Fries' : 'Back to home' : 'Start with email verification');
