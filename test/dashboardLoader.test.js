@@ -1728,6 +1728,75 @@ describe('ready Cyber composition', () => {
             expect(control(h, 'Plan this')).toBeUndefined();
             h.window.dispatch('pagehide');
         });
+        async function emptyPlanTab() {
+            const h = harness({ cyber: true, improvement: true, hash: '#improvement-plan' });
+            await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
+            const model = JSON.parse(JSON.stringify(projection()));
+            ['cyber_security', 'improvement_plan'].forEach(key => { model.modules.find(item => item.key === key).state = 'ready'; });
+            await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
+            await h.reply(3, 200, { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'),
+                summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false,
+                metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' });
+            await h.reply(4, 200, state());
+            const atUrl = pattern => h.requests.findIndex(item => pattern.test(item.url));
+            await h.reply(atUrl(/^\/api\/dashboard\/improvement\/plans\?limit=/), 200, { schemaVersion: 1,
+                scope: { tenantId: fixture().scope.tenantId, organisationId: model.context.organisationId }, asOf: NOW, plans: [], nextAfterPlanId: null });
+            return { h, atUrl };
+        }
+        test('an empty Improvement Plan tab offers the latest submitted assessment from the validated list', async () => {
+            const stored = await submitted();
+            const { h, atUrl } = await emptyPlanTab();
+            const list = atUrl(/^\/api\/dashboard\/ncsc\/assessments\?limit=100$/);
+            expect(list).toBeGreaterThan(0);
+            expect(h.requests[list].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+            await ncscReply(h, list, 200, stored.list()); await flush();
+            expect(h.improvementMounts).toHaveLength(1);
+            expect(h.elements.dashboardApp.textContent).toContain('No improvement plan yet');
+            expect(h.elements.dashboardApp.textContent).toContain('Create a plan from your latest submitted assessment');
+            expect(control(h, 'Create improvement plan from latest assessment')).toBeDefined();
+            h.window.dispatch('pagehide');
+        });
+        test('the empty Improvement Plan tab reads every assessment page before choosing the latest submitted one', async () => {
+            const stored = await records();
+            const drafts = [1, 2, 3, 4, 5, 6].map(n => {
+                stored.execute(createCommand('assessment-a' + n, 'create-a' + n, 'Draft scope ' + n + '.'));
+                return projectNcscSummary(stored.versions.get('assessment-a' + n));
+            });
+            stored.execute(createCommand('assessment-b', 'create-b', 'Submitted scope.'));
+            stored.execute(saveCommand('assessment-b', 0, 'save-b', allResponses('yes')));
+            stored.execute(submitCommand('assessment-b', 1, 'submit-b'));
+            const submittedRow = projectNcscSummary(stored.versions.get('assessment-b'));
+            const { h, atUrl } = await emptyPlanTab();
+            let after = null;
+            for (const draft of drafts) {
+                const index = atUrl(new RegExp('^/api/dashboard/ncsc/assessments\\?limit=100' + (after ? '&afterAssessmentId=' + after : '') + '$'));
+                expect(index).toBeGreaterThan(0);
+                await ncscReply(h, index, 200, { schemaVersion: 1, assessments: [draft], nextAfterAssessmentId: draft.assessmentId });
+                after = draft.assessmentId;
+            }
+            const last = atUrl(new RegExp('^/api/dashboard/ncsc/assessments\\?limit=100&afterAssessmentId=' + after + '$'));
+            expect(last).toBeGreaterThan(0);
+            await ncscReply(h, last, 200, { schemaVersion: 1, assessments: [submittedRow], nextAfterAssessmentId: null }); await flush();
+            expect(h.elements.dashboardApp.textContent).toContain('Create a plan from your latest submitted assessment');
+            expect(h.elements.dashboardApp.textContent).not.toContain('Submit an assessment first');
+            expect(control(h, 'Create improvement plan from latest assessment')).toBeDefined();
+            h.window.dispatch('pagehide');
+        });
+        test('the empty Improvement Plan tab says it could not check when the assessment cursor does not advance', async () => {
+            const stored = await records();
+            stored.execute(createCommand('assessment-a', 'create-a', 'Draft scope only.'));
+            const draft = projectNcscSummary(stored.versions.get('assessment-a'));
+            const { h, atUrl } = await emptyPlanTab();
+            await ncscReply(h, atUrl(/^\/api\/dashboard\/ncsc\/assessments\?limit=100$/), 200,
+                { schemaVersion: 1, assessments: [draft], nextAfterAssessmentId: draft.assessmentId });
+            const again = atUrl(new RegExp('^/api/dashboard/ncsc/assessments\\?limit=100&afterAssessmentId=' + draft.assessmentId + '$'));
+            expect(again).toBeGreaterThan(0);
+            await ncscReply(h, again, 200, { schemaVersion: 1, assessments: [], nextAfterAssessmentId: draft.assessmentId }); await flush();
+            expect(h.elements.dashboardApp.textContent).toContain('We could not check your submitted assessments just now.');
+            expect(h.elements.dashboardApp.textContent).not.toContain('Submit an assessment first');
+            expect(control(h, 'Create improvement plan from latest assessment')).toBeUndefined();
+            h.window.dispatch('pagehide');
+        });
         test('creates the plan for the submitted revision, then opens the editor at that gap', async () => {
             const stored = await submitted();
             const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
