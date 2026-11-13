@@ -297,7 +297,7 @@ test.each(['setup_details', 'continue_authentication'])('a forged choose marker 
         state: { status, ...(status === 'setup_details' ? { email: 'synthetic@example.test' } : {}) } });
     try {
         await flush(); expect(page.assign).not.toHaveBeenCalled(); expect(page.replace).not.toHaveBeenCalled();
-        expect(page.root.querySelector('h1').textContent).toBe(status === 'setup_details' ? 'Set up your organisation' : 'Continuing account setup');
+        expect(page.root.querySelector('h1').textContent).toBe(status === 'setup_details' ? 'Set up your organisation' : 'Finishing your sign-in');
         const forms = page.root.querySelectorAll('form'), logout = forms.find(form => form.action === LOGOUT);
         expect(logout).toBeDefined(); expect(logout.method).toBe('post'); expect(logout.parentElement).toBe(page.root);
         expect(forms.every(form => form.querySelectorAll('form').length === 0)).toBe(true);
