@@ -69,7 +69,11 @@ async function main() {
             assert.match(await card.textContent(), /12 Nov 2026 \(UTC\)/);
             assert.match(await card.textContent(), /does not confirm a review took place/);
             const link = card.getByRole('link', { name: 'View the full plan', exact: true });
-            await link.focus(); await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+            // The link is first in this standalone document. Stay inside the
+            // page rather than testing the browser toolbar's reverse Tab cycle.
+            await link.focus(); await page.keyboard.press('Tab');
+            assert.equal(await page.locator('.picture-toolbar select').evaluate(node => node === document.activeElement), true);
+            await page.keyboard.press('Shift+Tab');
             const focus = await link.evaluate(node => { const box = node.getBoundingClientRect(); return {
                 active: node === document.activeElement, ring: parseFloat(getComputedStyle(node).outlineWidth),
                 visible: node.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)) }; });
