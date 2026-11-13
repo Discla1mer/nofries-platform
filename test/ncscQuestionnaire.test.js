@@ -2923,7 +2923,7 @@ describe('final submission review step', () => {
             control(ui, 'Review and submit').click();
             // A-015: the finish path says how many answers are still to confirm in plain words.
             const readiness = byId(ui, 'ncsc-review-readiness').textContent;
-            expect(readiness).toMatch(/^Every question has an answer and every N\/A has an explanation\. \d+ answers are still to confirm \(Unknown, or Not applicable waiting for review\)\. You can submit with them, but they do not count as in place\.$/);
+            expect(readiness).toMatch(/^Every question has an answer and every not applicable answer has an explanation\. \d+ answers are still to confirm \(Unknown, or marked not applicable, to confirm\)\. You can submit with them, but they do not count as in place\.$/);
             expect(readiness).not.toMatch(/unresolved/i);
             const confirm = control(ui, 'Save and submit assessment'); confirm.click(); confirm.click();
             expect(ui.root.querySelectorAll('.ncsc-submit-dialog')).toHaveLength(1);

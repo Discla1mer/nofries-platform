@@ -634,7 +634,7 @@ test('domain categories explicitly show no matches without presenting empty list
         const empty = category.querySelector('.picture-follow-up-empty');
         assert.equal(empty.hidden, false); assert.match(empty.textContent, /No follow-up items in this function for this category/);
     }
-    assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 still to confirm, including 1 Not applicable waiting for review/);
+    assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 still to confirm, including 1 answer marked not applicable, to confirm/);
     const before = follow.textContent, visibility = follow.querySelectorAll('article').map(article => article.hidden);
     change(filter, 'unrecognised-domain');
     assert.equal(follow.textContent, before); assert.deepEqual(follow.querySelectorAll('article').map(article => article.hidden), visibility);
