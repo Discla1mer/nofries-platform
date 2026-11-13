@@ -1324,6 +1324,16 @@
         mountCyber.controlTitles = Object.assign(Object.create(null), Object.fromEntries(value.metadata.controls.map(function (control) {
             return [control.id, control.title];
         })));
+        // Each topic's concrete follow-up, worded as on the results page, so a
+        // plan gap names the actual work (F1-R10). Display only.
+        mountCyber.controlFollowUps = Object.create(null);
+        value.metadata.questions.forEach(function (question) {
+            const followUp = question.smallBusiness && question.smallBusiness.checks.join(' ') ||
+                question.guidance && question.guidance.startingActions && question.guidance.startingActions[0];
+            if (typeof followUp === 'string' && followUp.trim() && followUp.length <= 1000 && !mountCyber.controlFollowUps[question.controlId]) {
+                mountCyber.controlFollowUps[question.controlId] = followUp;
+            }
+        });
         // The Improvement Plan's empty state offers the latest submitted
         // assessment. This reads the same validated, bounded list as Overview.
         mountCyber.latestSubmitted = async function () {
@@ -1411,6 +1421,7 @@
                         planRevision: cycle.workQueueTarget.planRevision } } : {}),
                 sourceAssessment: presentation && presentation.sourceAssessment,
                 ...(cyber && cyber.controlTitles ? { controlTitles: cyber.controlTitles } : {}),
+                ...(cyber && cyber.controlFollowUps ? { controlFollowUps: cyber.controlFollowUps } : {}),
                 ...(cyber && typeof cyber.latestSubmitted === 'function' ? { latestSource: cyber.latestSubmitted } : {}),
                 newId: secureId,
                 isCurrent: function () { return current(cycle) && !cycle.authorityPending; },

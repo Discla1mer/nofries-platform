@@ -209,6 +209,14 @@
             titles[action.controlId].trim() && titles[action.controlId].length <= 200 ? titles[action.controlId] : action.controlId;
         return title + ' · ' + (own(plainKinds, action.rationale.kind) ? plainKinds[action.rationale.kind] : action.labels.kind);
     }
+    // A gap's concrete follow-up for its topic, as the results show it (F1-R10).
+    // The retained rationale stays the record; this is display wording only.
+    function actionWork(action, followUps) {
+        const followUp = action.rationale.kind === 'implementation' && followUps && typeof followUps === 'object' &&
+            own(followUps, action.controlId) && typeof followUps[action.controlId] === 'string' &&
+            followUps[action.controlId].trim() && followUps[action.controlId].length <= 1000 ? followUps[action.controlId] : null;
+        return followUp || action.rationale.suggestedAction;
+    }
     function ownerText(action, currentOwner) {
         if (labelled(action)) return action.ownerLabel + ' (named owner)';
         if (!assigned(action)) return 'Unassigned';
@@ -232,6 +240,7 @@
     // grants no access, reads no clock and performs no requests or commands.
     function mount(root, presentation, options) {
         const titles = options && options.controlTitles, currentOwner = options && options.currentOwner;
+        const followUps = options && options.controlFollowUps;
         if (!root || !root.ownerDocument || typeof root.replaceChildren !== 'function') throw new Error('improvement_view_root_required');
         if (mounted.has(root)) mounted.get(root).destroy();
         const doc = root.ownerDocument, actionCards = new Map();
@@ -314,7 +323,7 @@
                     const list = node('ol');
                     updates.slice(0, 5).forEach(({ action, event }) => {
                         const entry = node('li');
-                        const work = Array.from(action.rationale.suggestedAction);
+                        const work = Array.from(actionWork(action, followUps));
                         entry.append(node('strong', 'ncsc-preserve-text', (event.type === 'complete' ? 'Workflow completed' : event.label) +
                             ' · ' + work.slice(0, 100).join('') + (work.length > 100 ? '…' : '')));
                         entry.append(node('div', 'dashboard-muted', actionTitle(action, titles) +
@@ -339,13 +348,16 @@
             model.actions.forEach(action => {
                 const card = node('article', 'dashboard-panel');
                 card.setAttribute('tabindex', '-1'); actionCards.set(action.actionId, card);
+                const work = actionWork(action, followUps);
                 card.append(node('h3', '', actionTitle(action, titles)), node('span', 'dashboard-badge', action.labels.status),
-                    node('p', 'ncsc-preserve-text', action.rationale.suggestedAction));
-                const facts = node('dl');
-                [['Next step', nextStep(action)], ['Owner', ownerText(action, currentOwner)],
-                    ['Due date', calendarDay(action.dueDate)],
-                    ['Overdue', action.isOverdue ? 'Yes' : 'No'], ['Assessment response', action.labels.response],
-                    ['Response origin', action.labels.responseOrigin], ['Assessment evidence', action.labels.evidenceState]].forEach(pair => fact(facts, pair[0], pair[1]));
+                    node('p', 'ncsc-preserve-text improvement-action-work', work));
+                // Owner and due date lead, so they can be scanned down the plan;
+                // assessment metadata sits in a closed disclosure below.
+                const facts = node('dl', 'improvement-action-key');
+                [['Owner', ownerText(action, currentOwner)],
+                    ['Due date', calendarDay(action.dueDate)]].forEach(pair => fact(facts, pair[0], pair[1]));
+                if (action.isOverdue) fact(facts, 'Overdue', 'Yes');
+                fact(facts, 'Next step', nextStep(action));
                 if (action.blockedReason !== null) fact(facts, 'Block reason', action.blockedReason);
                 if (action.completion !== null) {
                     fact(facts, 'Completed', nzDateTime(action.completion.at)); fact(facts, 'Completion note', action.completion.note);
@@ -353,6 +365,12 @@
                     fact(facts, 'Completion meaning', 'Workflow completed; control implementation has not been verified.');
                 }
                 card.append(facts);
+                const more = disclosure('Assessment details'), moreFacts = node('dl');
+                [['Assessment response', action.labels.response],
+                    ['Response origin', action.labels.responseOrigin], ['Assessment evidence', action.labels.evidenceState]]
+                    .forEach(pair => fact(moreFacts, pair[0], pair[1]));
+                if (work !== action.rationale.suggestedAction) fact(moreFacts, 'Plan record wording', action.rationale.suggestedAction);
+                more.append(moreFacts); card.append(more);
                 const evidence = disclosure('Supporting evidence'), evidenceFacts = node('dl');
                 evidence.append(node('p', 'dashboard-muted', 'The assessment claim and completion reference are self-reported. No supporting document version is linked to this action; its date and version are unknown.'));
                 fact(evidenceFacts, 'Assessment evidence claim', action.labels.evidenceState);
@@ -401,5 +419,5 @@
     // The trusted host decides when a read is pending and when to replace this
     // status with mount(). This component starts no request or automatic retry.
     function mountLoading(root) { return mount(root, loadingState); }
-    return Object.freeze({ mount, mountLoading, normaliseOwnerLabel, actionTitle, nzDateTime, calendarDay });
+    return Object.freeze({ mount, mountLoading, normaliseOwnerLabel, actionTitle, actionWork, nzDateTime, calendarDay });
 }));

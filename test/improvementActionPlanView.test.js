@@ -61,8 +61,9 @@ function facts(element) {
     return Object.fromEntries(terms.map((term, index) => [term.textContent, values[index].textContent]));
 }
 function cardFacts(card) {
-    const identifiers = card.children.find(child => child.tagName === 'DETAILS' && child.children[0].textContent === 'Action identifiers');
-    return { ...facts(card.children.find(child => child.tagName === 'DL')), ...facts(identifiers.querySelector('dl')) };
+    const disclosure = title => card.children.find(child => child.tagName === 'DETAILS' && child.children[0].textContent === title);
+    return { ...facts(card.children.find(child => child.tagName === 'DL')), ...facts(disclosure('Assessment details').querySelector('dl')),
+        ...facts(disclosure('Action identifiers').querySelector('dl')) };
 }
 const history = card => card.children.find(child => child.tagName === 'DETAILS' && child.children[0].textContent.startsWith('Action history'));
 const evidence = card => card.children.find(child => child.tagName === 'DETAILS' && child.children[0].textContent === 'Supporting evidence');
@@ -135,7 +136,7 @@ test('native details/summary history controls preserve default browser keyboard 
     expect(dom.root.querySelectorAll('details').filter(element => element.children[0].textContent.startsWith('Action history'))).toHaveLength(cards(dom).length);
     dom.root.querySelectorAll('details').forEach(element => {
         expect(element.children[0].tagName).toBe('SUMMARY');
-        expect(element.children[0].textContent).toMatch(/^(Action history \(\d+ events\)|Supporting evidence|Action identifiers|Technical details for support|Counts and filters)$/);
+        expect(element.children[0].textContent).toMatch(/^(Action history \(\d+ events\)|Supporting evidence|Assessment details|Action identifiers|Technical details for support|Counts and filters)$/);
         expect(element.getAttribute('role')).toBeNull(); expect(element.children[0].getAttribute('role')).toBeNull();
         expect(element.children[0].getAttribute('tabindex')).toBeNull(); expect(element.children[0].events).toEqual({});
     });
@@ -287,7 +288,8 @@ test('filtered and empty selections show original all counts and plan-wide metad
 });
 
 test.each([
-    ['2026-10-01T23:59:59.999Z', 'No'], ['2026-10-02T00:00:00.000Z', 'Yes']
+    // Not overdue leaves the key facts to owner, due date and next step.
+    ['2026-10-01T23:59:59.999Z', undefined], ['2026-10-02T00:00:00.000Z', 'Yes']
 ])('renders supplied UTC overdue decision at %s without reading the current clock', (asOf, expected) => {
     const state = assign(seed(), 0), model = presentation(state, { asOf });
     const now = jest.spyOn(Date, 'now').mockImplementation(() => { throw new Error('clock forbidden'); });
@@ -384,6 +386,38 @@ test('plan guidance points to the action editor only when the host supplies it',
 });
 
 describe('plain action names, owners and plan summary', () => {
+    test('gap actions carry each topic\'s concrete follow-up; owner and due date lead the facts (F1-R10)', () => {
+        const model = presentation(), followUps = Object.fromEntries(model.actions.map(action => [action.controlId, 'Do the work for ' + action.controlId + '.']));
+        const dom = createDom(); mount(dom.root, model, { controlFollowUps: followUps });
+        const gaps = model.actions.filter(action => action.rationale.kind === 'implementation');
+        expect(gaps.length).toBeGreaterThan(1);
+        model.actions.forEach(action => {
+            const element = card(dom, action.actionId), work = element.querySelector('.improvement-action-work').textContent;
+            const key = element.children.find(child => child.tagName === 'DL');
+            expect(key.className).toBe('improvement-action-key');
+            expect(key.children.filter(child => child.tagName === 'DT').slice(0, 2).map(child => child.textContent)).toEqual(['Owner', 'Due date']);
+            const details = cardFacts(element);
+            if (action.rationale.kind === 'implementation') {
+                expect(work).toBe(followUps[action.controlId]);
+                // The retained wording is kept, out of the way, rather than repeated on every card.
+                expect(details['Plan record wording']).toBe(action.rationale.suggestedAction);
+            } else {
+                expect(work).toBe(action.rationale.suggestedAction);
+                expect(details).not.toHaveProperty('Plan record wording');
+            }
+        });
+        expect(new Set(gaps.map(action => card(dom, action.actionId).querySelector('.improvement-action-work').textContent)).size).toBe(gaps.length);
+        expect(dom.root.textContent).toContain(model.notices.order);
+    });
+
+    test('missing or malformed follow-ups keep the retained wording', () => {
+        const model = presentation();
+        for (const followUps of [undefined, { [model.actions[0].controlId]: '   ' }, { [model.actions[0].controlId]: 'x'.repeat(1001) }]) {
+            const dom = createDom(); mount(dom.root, model, followUps ? { controlFollowUps: followUps } : {});
+            expect(cards(dom)[0].querySelector('.improvement-action-work').textContent).toBe(model.actions[0].rationale.suggestedAction);
+        }
+    });
+
     test('actions are named by topic, with codes kept in Action identifiers', () => {
         const model = presentation(), titles = Object.fromEntries(model.actions.map(action => [action.controlId, 'Topic for ' + action.domainId]));
         const dom = createDom(); mount(dom.root, model, { controlTitles: titles });

@@ -251,6 +251,13 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-questionnaire .ncsc-question-picker select { flex: 1 1 auto; min-width: 0; margin: 0; }
 .ncsc-question-picker .ncsc-question-go { flex: 0 0 auto; }
 .ncsc-questionnaire button:disabled { cursor: default; opacity: .55; }
+/* Improvement Plan cards: the topic's work, then owner and due date in a scannable pair (F1-R10). */
+.improvement-action-work { margin: .75rem 0; font-size: 1.05rem; line-height: 1.6; }
+.improvement-action-key { display: grid; grid-template-columns: minmax(5.5rem, max-content) minmax(0, 1fr); gap: .35rem 1rem; margin: .75rem 0 1rem; }
+.improvement-action-key dt { font-weight: var(--dashboard-weight-regular); }
+.improvement-action-key dd { margin: 0; overflow-wrap: anywhere; }
+.improvement-action-key dd:nth-of-type(-n + 2) { color: var(--dashboard-ink, #17140f); font-weight: var(--dashboard-weight-emphasis, 600); }
+@media (max-width: 25rem) { .improvement-action-key { grid-template-columns: minmax(0, 1fr); gap: 0; } .improvement-action-key dd { margin-bottom: .5rem; } }
 .improvement-action-form label { display: block; margin: .75rem 0; }
 .improvement-action-form input { display: block; width: 100%; max-width: 24rem; box-sizing: border-box; min-height: 2.75rem; margin-top: .5rem; padding: .5rem .75rem; }
 .ncsc-questionnaire [aria-invalid="true"] { border-color: #a3352a; outline-color: #a3352a; }

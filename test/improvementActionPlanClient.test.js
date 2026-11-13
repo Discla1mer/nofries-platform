@@ -963,6 +963,21 @@ describe('plain action names and "You" as owner in the editor', () => {
         expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toBe(view.actionTitle(actions[0], titles));
     });
 
+    test('topic follow-ups from the host reach the cards and the editor summary (F1-R10)', async () => {
+        const actions = presentation(seed()).actions, followUps = Object.fromEntries(actions.map(action => [action.controlId, 'Follow-up for ' + action.controlId]));
+        const h = harness({ options: { controlFollowUps: followUps } }); await h.controller.ready;
+        const gap = actions.findIndex(action => action.rationale.kind === 'implementation');
+        expect(h.root.querySelectorAll('article')[gap].querySelector('.improvement-action-work').textContent).toBe(followUps[actions[gap].controlId]);
+        expect(view.actionWork(actions[gap], followUps)).toBe(followUps[actions[gap].controlId]);
+    });
+
+    test('malformed follow-ups fall back to the retained wording without breaking the plan', async () => {
+        const h = harness({ options: { controlFollowUps: { 'bad key with spaces': 'x' } } });
+        expect(await h.controller.ready).toBe(true);
+        const actions = presentation(seed()).actions;
+        expect(h.root.querySelectorAll('article')[0].querySelector('.improvement-action-work').textContent).toBe(actions[0].rationale.suggestedAction);
+    });
+
     test('malformed titles fall back to codes without breaking the plan', async () => {
         const h = harness({ options: { controlTitles: { 'bad key with spaces': 'x' } } });
         expect(await h.controller.ready).toBe(true);
