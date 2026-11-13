@@ -839,11 +839,20 @@ test('disabled Board Reports keeps the disabled label even when Cyber picture is
     assert.match(board.root.textContent, /temporarily unavailable/);
 });
 
-test('the plan label is not presented as a result', () => {
+test('the plan uses a customer-friendly name, not the stored code', () => {
     const dom = mount();
-    assert.match(dom.root.textContent, /Your plan/);
-    assert.match(dom.root.textContent, /Plan: Govern/);
-    assert.match(dom.root.textContent, /not a security score/);
+    const plan = dom.root.querySelector('.dashboard-subscription');
+    assert.match(plan.textContent, /Your plan/);
+    assert.match(plan.textContent, /Governance plan/);
+    assert.doesNotMatch(plan.textContent, /Plan: Govern|not a security score/);
+    const free = clone(view()); free.subscription = 'Score';
+    const freeDom = mount(free);
+    const freePlan = freeDom.root.querySelector('.dashboard-subscription');
+    assert.match(freePlan.textContent, /Free plan/);
+    assert.doesNotMatch(freePlan.textContent, /Score/);
+    const services = mount(free, { initialRoute: 'services' });
+    assert.match(services.root.querySelector('.dashboard-subscription-panel').textContent, /Your plan: Free plan/);
+    assert.doesNotMatch(services.root.querySelector('.dashboard-subscription-panel').textContent, /Score/);
 });
 
 test('Escape closes the More tools menu and returns focus to its summary', () => {
