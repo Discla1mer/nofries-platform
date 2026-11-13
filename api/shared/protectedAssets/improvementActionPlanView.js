@@ -82,7 +82,8 @@
     const assigned = action => action.ownerSubjectKey !== null || labelled(action);
     function label(map, key, actual) { if (!own(map, key) || actual !== map[key]) invalid(); }
     function nextStep(action) {
-        if (action.status === 'completed') return 'Review the completion note and action history.';
+        if (action.status === 'completed') return 'Review the completion note and action history. If your answers have changed, submit a new assessment in Cyber Security. ' +
+            'Then use Change over time on Overview to compare saved results and answer coverage, not verified improvement. Completing this action does not change your saved score.';
         if (action.status === 'blocked') return 'Review the block reason and agree how to move forward.';
         if (!assigned(action)) return 'Agree an owner and due date before starting this action.';
         if (action.status === 'in_progress') return 'Review progress with the action owner against the due date.';

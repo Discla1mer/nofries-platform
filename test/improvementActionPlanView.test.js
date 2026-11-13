@@ -232,7 +232,8 @@ test('read-only next steps explain each current status without changing ownershi
     expect(facts(assignEvent)).not.toHaveProperty('Owner ID (current eligibility not checked)');
     expect(cardFacts(active)['Next step']).toBe('Review progress with the action owner against the due date.');
     expect(cardFacts(blocked)).toMatchObject({ 'Next step': 'Review the block reason and agree how to move forward.', 'Block reason': REASON });
-    expect(cardFacts(completed)['Next step']).toBe('Review the completion note and action history.');
+    expect(cardFacts(completed)['Next step']).toBe('Review the completion note and action history. If your answers have changed, submit a new assessment in Cyber Security. ' +
+        'Then use Change over time on Overview to compare saved results and answer coverage, not verified improvement. Completing this action does not change your saved score.');
     expect(cardFacts(reopened)['Next step']).toBe(cardFacts(assigned)['Next step']);
     expect(cardFacts(reopened)).not.toHaveProperty('Completion note');
     expect(history(reopened).textContent).toContain(NOTE);
@@ -381,6 +382,20 @@ test('plan guidance points to the action editor only when the host supplies it',
     mount(dom.root, presentation(), { actionEditorAbove: true });
     expect(dom.root.textContent).toContain('Where available, use Update an improvement action above to make changes.');
     expect(dom.root.textContent).not.toContain('Changes cannot be made in this view.');
+});
+
+
+test('reassessment guidance follows confirmed completion only and leaves the saved assessment source unchanged', () => {
+    const state = mixed(), model = presentation(state), before = JSON.stringify(model), dom = render(model);
+    const guidance = 'If your answers have changed, submit a new assessment in Cyber Security.';
+    expect(cards(dom).filter(value => cardFacts(value)['Next step'].includes(guidance))).toHaveLength(1);
+    expect(cardFacts(card(dom, state.proposals[4].actionId))['Next step']).not.toContain(guidance);
+    expect(JSON.stringify(model)).toBe(before);
+    const reopened = step(state, 3, 'reopen', { reason: REASON });
+    const updated = presentation(reopened);
+    mount(dom.root, updated);
+    expect(dom.root.textContent).not.toContain(guidance);
+    expect(updated.source).toEqual(model.source);
 });
 
 describe('plain action names, owners and plan summary', () => {
