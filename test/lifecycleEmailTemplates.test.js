@@ -62,3 +62,14 @@ test('the Resend client posts plain text with a 10 second timeout and the idempo
     expect(fetchImpl.mock.calls[0][1].headers).toEqual({ Authorization: 'Bearer key', 'Content-Type': 'application/json', 'Idempotency-Key': 'id-1' });
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ from: 'a@example.invalid', to: ['b@example.invalid'], subject: 's', text: 't' });
 });
+
+test('the Resend client passes only the RFC 8058 unsubscribe headers', async () => {
+    const fetchImpl = jest.fn(async () => ({ ok: true })), client = createResendClient({ apiKey: 'key', fetchImpl });
+    const headers = { 'List-Unsubscribe': '<https://nofries.nz/api/emailPreferences?t=x>', 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' };
+    await client.send({ from: 'a@example.invalid', to: 'b@example.invalid', subject: 's', text: 't', headers });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).headers).toEqual(headers);
+    for (const bad of [{}, { Bcc: 'c@example.invalid' }, { 'List-Unsubscribe': 'a\r\nBcc: c@example.invalid' }, { 'List-Unsubscribe': 1 }]) {
+        await expect(client.send({ from: 'a', to: 'b', subject: 's', text: 't', headers: bad })).rejects.toThrow('resend_headers_invalid');
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+});
