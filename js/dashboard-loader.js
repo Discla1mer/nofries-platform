@@ -578,7 +578,7 @@
         const cyberReady = model.modules.some(function (item) { return item.key === 'cyber_security' && item.state === 'ready'; });
         const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1]) : null;
         const improvementReady = model.modules.some(function (item) { return item.key === 'improvement_plan' && item.state === 'ready'; });
-        const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId) : null;
+        const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId, cyber) : null;
         const witnessed = await sessionForReconcile(cycle, 'Confirming your access…', 'One last check before the page opens.');
         const fresh = session(requireSuccess(witnessed));
         if (!current(cycle)) return;
@@ -1286,6 +1286,25 @@
                 complete: complete
             };
         };
+        // The Improvement Plan's empty state offers the latest submitted
+        // assessment. This reads the same validated, bounded list as Overview.
+        mountCyber.latestSubmitted = async function () {
+            // Plain null-prototype records: both bounded clients accept them.
+            const plain = function (value) { return Object.assign(Object.create(null), value); };
+            let after = null, latest = null;
+            for (let pageCount = 0; pageCount < 5; pageCount++) {
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                const listed = await client.list(plain(after === null ? { limit: 100 } : { limit: 100, afterAssessmentId: after }));
+                listed.assessments.forEach(function (row) {
+                    if (row.status === 'submitted' && (!latest || row.updatedAt > latest.updatedAt)) latest = row;
+                });
+                after = listed.nextAfterAssessmentId;
+                if (after === null) break;
+            }
+            if (!current(cycle) || cycle.authorityPending) throw invalid();
+            return latest && plain({ assessmentId: latest.assessmentId, revision: latest.revision, revisionSha256: latest.revisionSha256,
+                profileRef: plain(latest.profileRef), submittedAt: latest.updatedAt });
+        };
         const picture = window.NoFriesOrganisationPicture;
         let pictureSelection = null;
         if (picture && typeof picture.mount === 'function') {
@@ -1328,7 +1347,7 @@
         }));
         return { lists: lists, more: page.nextAfterPlanId !== null };
     }
-    function improvementOptions(cycle, snapshot, organisationId) {
+    function improvementOptions(cycle, snapshot, organisationId, cyber) {
         const factory = window.NoFriesImprovementActionPlanClient;
         if (!factory || typeof factory.mount !== 'function') throw invalid();
         return function (root, presentation) {
@@ -1339,6 +1358,7 @@
                     ? { initialTarget: { planId: cycle.workQueueTarget.planId, actionId: cycle.workQueueTarget.actionId,
                         planRevision: cycle.workQueueTarget.planRevision } } : {}),
                 sourceAssessment: presentation && presentation.sourceAssessment,
+                ...(cyber && typeof cyber.latestSubmitted === 'function' ? { latestSource: cyber.latestSubmitted } : {}),
                 newId: secureId,
                 isCurrent: function () { return current(cycle) && !cycle.authorityPending; },
                 request: async function (path, body) {

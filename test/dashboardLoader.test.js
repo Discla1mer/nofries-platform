@@ -1728,6 +1728,30 @@ describe('ready Cyber composition', () => {
             expect(control(h, 'Plan this')).toBeUndefined();
             h.window.dispatch('pagehide');
         });
+        test('an empty Improvement Plan tab offers the latest submitted assessment from the validated list', async () => {
+            const stored = await submitted();
+            const h = harness({ cyber: true, improvement: true, hash: '#improvement-plan' });
+            await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
+            const model = JSON.parse(JSON.stringify(projection()));
+            ['cyber_security', 'improvement_plan'].forEach(key => { model.modules.find(item => item.key === key).state = 'ready'; });
+            await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
+            await h.reply(3, 200, { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'),
+                summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false,
+                metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' });
+            await h.reply(4, 200, state());
+            const atUrl = pattern => h.requests.findIndex(item => pattern.test(item.url));
+            await h.reply(atUrl(/^\/api\/dashboard\/improvement\/plans\?limit=/), 200, { schemaVersion: 1,
+                scope: { tenantId: fixture().scope.tenantId, organisationId: model.context.organisationId }, asOf: NOW, plans: [], nextAfterPlanId: null });
+            const list = atUrl(/^\/api\/dashboard\/ncsc\/assessments\?limit=100$/);
+            expect(list).toBeGreaterThan(0);
+            expect(h.requests[list].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+            await ncscReply(h, list, 200, stored.list()); await flush();
+            expect(h.improvementMounts).toHaveLength(1);
+            expect(h.elements.dashboardApp.textContent).toContain('No improvement plan yet');
+            expect(h.elements.dashboardApp.textContent).toContain('Create a plan from your latest submitted assessment');
+            expect(control(h, 'Create improvement plan from latest assessment')).toBeDefined();
+            h.window.dispatch('pagehide');
+        });
         test('creates the plan for the submitted revision, then opens the editor at that gap', async () => {
             const stored = await submitted();
             const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
