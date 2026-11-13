@@ -116,7 +116,7 @@ describe('lifecycle email dispatcher', () => {
 
         test('sends a signed per-type link and the RFC 8058 one-click headers', async () => {
             const h = harness({ env: SIGNED, subjectKey: SUBJECT,
-                rows: [row({ email_type: 'nudge_unfinished', template_version: 'nudge-unfinished-v1' })] });
+                rows: [row({ email_type: 'nudge_unfinished', template_version: 'nudge-unfinished-v2' })] });
             expect(await h.dispatcher.runOnce()).toEqual({ claimed: 1 });
             const message = h.send.mock.calls[0][0];
             const url = new URL(message.headers['List-Unsubscribe'].slice(1, -1));

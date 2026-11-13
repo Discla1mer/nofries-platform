@@ -44,7 +44,7 @@ describe('lifecycle email enqueue at activation (#151)', () => {
         expect(db.rows.map(({ outboxId, ...row }) => row)).toEqual([
             { ...scope, type: 'welcome', dedupeKey: ACCOUNT, templateVersion: 'welcome-v1', params: '{}',
                 notBefore: AT, status: 'pending' },
-            { ...scope, type: 'nudge_unfinished', dedupeKey: ACCOUNT, templateVersion: 'nudge-unfinished-v1', params: '{}',
+            { ...scope, type: 'nudge_unfinished', dedupeKey: ACCOUNT, templateVersion: 'nudge-unfinished-v2', params: '{}',
                 notBefore: '2026-11-20T09:00:00.000Z', status: 'pending' }]);
         expect(db.calls.every(call => /ON CONFLICT \(account_id, organisation_id, email_type, dedupe_key\) DO NOTHING/.test(call.sql))).toBe(true);
         // Only identifiers and timestamps leave the activation; never an address or name.

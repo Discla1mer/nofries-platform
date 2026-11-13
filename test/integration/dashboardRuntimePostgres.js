@@ -790,7 +790,7 @@ function registerRealPostgresTests() {
             const queued = await outboxRows(), ids = { tenant_id: slot.tenantId, organisation_id: slot.organisationId,
                 account_id: p.accountId, dedupe_key: p.accountId, params: {}, status: 'pending' };
             expect(queued.map(({ not_before, ...row }) => row)).toEqual([{ ...ids, email_type: 'welcome', template_version: 'welcome-v1' },
-                { ...ids, email_type: 'nudge_unfinished', template_version: 'nudge-unfinished-v1' }]);
+                { ...ids, email_type: 'nudge_unfinished', template_version: 'nudge-unfinished-v2' }]);
             expect(queued[0].not_before.getTime()).toBe(activatedAt.getTime());
             expect(queued[1].not_before.getTime() - activatedAt.getTime()).toBe(7 * 86400000);
             // The submit path's cancel, as the runtime role under the account's
