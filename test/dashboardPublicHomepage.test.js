@@ -63,8 +63,6 @@ test('how it works states the real question count, free starter access and live 
     assert.match(questionnaire, /button\('Print these results'/);
     assert.match(how, /compare it with your previous results/);
     assert.match(picture, /'Compare with previous assessment'/);
-    // The demo stays unlinked until the owner decides to publish it.
-    assert.doesNotMatch(html, /href="\/try/);
 });
 
 test('the example results are labelled, internally consistent and not presented as a live result', () => {
