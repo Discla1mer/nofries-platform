@@ -1,6 +1,8 @@
 'use strict';
 
 const { mount } = require('../api/shared/protectedAssets/improvementActionPlanClient');
+const view = require('../api/shared/protectedAssets/improvementActionPlanView');
+const { calendarDay } = view;
 const { createDom } = require('./fixtures/dashboardDom');
 const { createImprovementPlan, getImprovementPlanView, applyImprovementActionCommand } = require('../api/shared/improvementPlan/improvementPlanDomain');
 const { projectImprovementActionList } = require('../api/shared/improvementPlan/improvementActionListProjection');
@@ -128,8 +130,8 @@ test('queue handoff opens the fresh action state and reports a changed observed 
     const h = harness({ plan: after, options: { initialTarget: { planId: 'plan-a', actionId, planRevision: 0 } } });
     expect(await h.controller.ready).toBe(true);
     expect(h.root.textContent).toContain('This plan changed since the work queue was checked.');
-    expect(h.document.activeElement.textContent).toContain('2026-10-03');
-    expect(h.root.querySelector('select').children.find(option => option.value === 'plan-a').textContent).toContain('revision 1');
+    expect(h.document.activeElement.textContent).toContain('3 Oct 2026');
+    expect(h.root.querySelector('select').children.find(option => option.value === 'plan-a').textContent).toMatch(/^Plan: \d{1,2} \w+ \d{4}$/);
 });
 
 test('queue handoff focuses the exact retained card even when the current plan is read-only', async () => {
@@ -217,7 +219,9 @@ test('a selected saved assessment is snapshotted but never automatically generat
     expect(await h.controller.ready).toBe(true);
     expect(h.request).toHaveBeenCalledTimes(1); expect(h.options.newId).not.toHaveBeenCalled();
     expect(button(h, 'Create improvement plan for this assessment')).toBeDefined();
-    expect(h.root.textContent).toContain(expected.assessmentId); expect(h.root.textContent).not.toContain('changed');
+    // The assessment is named in plain words; its internal ID is not shown.
+    expect(h.root.textContent).toContain('Plan for the assessment you chose on Overview.');
+    expect(h.root.textContent).not.toContain(expected.assessmentId); expect(h.root.textContent).not.toContain('changed');
     expect(h.root.querySelectorAll('article')).toEqual([]);
     expect(await h.controller.select('guessed-plan')).toBe(false); expect(h.request).toHaveBeenCalledTimes(1);
 });
@@ -286,12 +290,35 @@ test.each([408, 429])('an unexpected %i response after plan creation retains the
     } });
     await h.controller.ready;
     expect(await h.controller.generate()).toBe(false);
-    expect(h.root.textContent).toContain('outcome is unconfirmed');
+    expect(h.root.textContent).toContain(status === 429 ?
+        'Too many requests in a short time. Wait about a minute, then select Retry pending improvement command.' : 'outcome is unconfirmed');
     expect(await h.controller.requestLeave(jest.fn())).toBe(false);
     expect(await h.controller.generate()).toBe(false);
     expect(await h.controller.retry()).toBe(true);
     expect(attempts).toBe(2); expect(h.options.newId).not.toHaveBeenCalled();
     expect(h.state.plans.size).toBe(2); // The fixture's existing plan plus the single created plan.
+});
+
+test.each([
+    [{ error: 'Too many requests. Please try again later.', retryAfterSeconds: 95 }, 'Wait about 2 minutes, then select Refresh improvement plan.'],
+    [{ error: 'Too many requests. Please try again later.', retryAfterSeconds: 20 }, 'Wait about 20 seconds, then select Refresh improvement plan.'],
+    [{ code: 'intermediary_error' }, 'Wait about a minute, then select Refresh improvement plan.']
+])('a rate-limited read says how long to wait in plain words', async (value, wait) => {
+    const h = harness(); await h.controller.ready;
+    h.request.mockResolvedValueOnce({ status: 429, value });
+    expect(await h.controller.refresh()).toBe(false);
+    expect(h.root.textContent).toContain('Too many requests in a short time. ' + wait);
+    expect(h.root.textContent).not.toContain('Improvement Plan is unavailable');
+    h.request.mockClear();
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).not.toContain('Too many requests');
+});
+
+test('a rate-limited editor read keeps the plan visible and says how long to wait', async () => {
+    const h = harness({ editorRespond: () => ({ status: 429, value: { error: 'Too many requests. Please try again later.', retryAfterSeconds: 30 } }) });
+    expect(await h.controller.ready).toBe(false);
+    expect(h.root.textContent).toContain('Improvement action plan');
+    expect(h.root.textContent).toContain('Too many requests in a short time, so action options are not loaded. Wait about 30 seconds');
 });
 
 test.each([401, 403])('denial %i clears presentation and prevents further reads/writes in the old mount', async status => {
@@ -323,7 +350,7 @@ test('external owner operation uses the existing command contract and refreshes 
     expect(h.request.mock.calls.filter(args => args[0].endsWith('/execute'))).toEqual([['/api/dashboard/improvement/execute', command]]);
     expect(h.request.mock.calls.at(-2)).toEqual(['/api/dashboard/improvement/view?planId=plan-a']);
     expect(h.request.mock.calls.at(-1)).toEqual(['/api/dashboard/improvement/editor?planId=plan-a']);
-    expect(h.root.textContent).toContain('2026-10-02'); expect(h.root.textContent).toContain('Assigned');
+    expect(h.root.textContent).toContain('2 Oct 2026'); expect(h.root.textContent).toContain('Assigned');
     expect(h.root.textContent).toContain('scores are unchanged');
 });
 
@@ -474,14 +501,14 @@ function assigned() { return append(seed(), 'assign', { ownerSubjectKey: ACTOR, 
 function started() { return append(assigned(), 'start', {}); }
 function completed() { return append(started(), 'complete', { note: 'Recorded workflow completion.', evidenceReference: 'synthetic:evidence:original' }); }
 const OPERATIONS = [
-    { type: 'assign', label: 'Assign to me', state: seed, values: { 'Due date (UTC)': '2026-10-02' }, payload: { ownerSubjectKey: ACTOR, dueDate: '2026-10-02' } },
+    { type: 'assign', label: 'Assign to me', state: seed, values: { 'Due date': '2026-10-02' }, payload: { ownerSubjectKey: ACTOR, dueDate: '2026-10-02' } },
     { type: 'start', label: 'Start action', state: assigned, values: {}, payload: {} },
     { type: 'block', label: 'Block action', state: started, values: { 'Block reason': 'Awaiting an agreed dependency.' }, payload: { reason: 'Awaiting an agreed dependency.' } },
     { type: 'complete', label: 'Complete action', state: started,
         values: { 'Completion note': 'Recorded workflow completion.', 'Completion evidence reference (unverified)': 'synthetic:evidence:completion' },
         payload: { note: 'Recorded workflow completion.', evidenceReference: 'synthetic:evidence:completion' } },
     { type: 'reopen', label: 'Reopen action', state: completed, values: { 'Reopen reason': 'Follow-up work remains.' }, payload: { reason: 'Follow-up work remains.' } },
-    { type: 'assign', label: 'Set owner and due date', state: seed, values: { 'Owner name': '  Aroha   Ngata ', 'Due date (UTC)': '2026-10-02' },
+    { type: 'assign', label: 'Set owner and due date', state: seed, values: { 'Owner name': '  Aroha   Ngata ', 'Due date': '2026-10-02' },
         payload: { ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' } }
 ];
 const OWNER_LABEL_HELP = 'Enter the owner’s name in 1 to 80 characters. Use a name rather than an email address, and not the words “all” or “unassigned”.';
@@ -490,7 +517,7 @@ function labelOwned() { return append(seed(), 'assign', { ownerLabel: 'Aroha Nga
 test('a label-owned action shows its named owner and can be started without a platform owner', async () => {
     const h = harness({ plan: labelOwned() }); expect(await h.controller.ready).toBe(true);
     const actionId = chooseAction(h);
-    expect(h.root.textContent).toContain('Status: Open. Owner: Aroha Ngata. Due date (UTC): 2026-10-02.');
+    expect(h.root.textContent).toContain('Status: Open. Owner: Aroha Ngata. Due date: 2 Oct 2026.');
     expect(h.root.textContent).toContain('Aroha Ngata (named owner)');
     expect(button(h, 'Assign to me')).toBeDefined(); button(h, 'Set owner and due date').click();
     expect(field(h, 'Owner name').value).toBe('Aroha Ngata'); expect(field(h, 'Owner name').maxLength).toBe(80);
@@ -504,7 +531,7 @@ test('a label-owned action shows its named owner and can be started without a pl
 test.each(['', '   ', 'aroha@example.nz', 'Unassigned', 'ＡＬＬ', 'x'.repeat(81)])('owner name %j shows plain-English help without sending', async value => {
     const h = harness(); expect(await h.controller.ready).toBe(true); chooseAction(h);
     button(h, 'Set owner and due date').click();
-    const owner = fill(h, 'Owner name', value); fill(h, 'Due date (UTC)', '2026-10-02'); const count = h.request.mock.calls.length;
+    const owner = fill(h, 'Owner name', value); fill(h, 'Due date', '2026-10-02'); const count = h.request.mock.calls.length;
     await submitForm(h);
     expect(h.request).toHaveBeenCalledTimes(count); expect(h.options.newId).not.toHaveBeenCalled();
     expect(h.document.activeElement).toBe(owner); expect(owner.getAttribute('aria-invalid')).toBe('true');
@@ -518,7 +545,7 @@ test('a server owner_label_invalid keeps the draft and shows inline owner help',
         return { status: 200, value: presentation(state.plans.get('plan-a')) };
     } });
     expect(await h.controller.ready).toBe(true); chooseAction(h); button(h, 'Set owner and due date').click();
-    const retained = form(h), owner = fill(h, 'Owner name', 'Aroha Ngata'); fill(h, 'Due date (UTC)', '2026-10-02');
+    const retained = form(h), owner = fill(h, 'Owner name', 'Aroha Ngata'); fill(h, 'Due date', '2026-10-02');
     await submitForm(h);
     expect(h.request.mock.calls.filter(([path]) => path.endsWith('/execute'))[0][1].payload).toEqual({ ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' });
     expect(form(h)).toBe(retained); expect(owner.disabled).toBe(false); expect(h.document.activeElement).toBe(owner);
@@ -537,7 +564,7 @@ test.each(OPERATIONS)('actual $type form sends the retained command and refreshe
     expect(form(h)).toBeDefined(); expect(button(h, 'Cancel changes')).toBeDefined();
     expect(h.document.activeElement.closest('form')).toBe(form(h));
     if (operation.type === 'assign') {
-        expect(field(h, 'Due date (UTC)').type).toBe('date'); expect(field(h, 'Due date (UTC)').required).toBe(true);
+        expect(field(h, 'Due date').type).toBe('date'); expect(field(h, 'Due date').required).toBe(true);
     }
     for (const [label, value] of Object.entries(operation.values)) fill(h, label, value);
     await submitForm(h);
@@ -654,7 +681,7 @@ test('the retained history limit exposes no new action commands even for a curre
 
 test('cancel clears a local action draft without allocating an operation or sending a write', async () => {
     const h = harness(); await h.controller.ready; chooseAction(h); button(h, 'Assign to me').click();
-    fill(h, 'Due date (UTC)', '2026-10-02'); const before = h.request.mock.calls.length, leave = jest.fn();
+    fill(h, 'Due date', '2026-10-02'); const before = h.request.mock.calls.length, leave = jest.fn();
     expect(await h.controller.requestLeave(leave)).toBe(false); expect(leave).not.toHaveBeenCalled();
     expect(await h.controller.refresh()).toBe(false); expect(await h.controller.select('plan-a')).toBe(false);
     expect(h.request).toHaveBeenCalledTimes(before); expect(h.options.newId).not.toHaveBeenCalled();
@@ -665,7 +692,7 @@ test('cancel clears a local action draft without allocating an operation or send
 });
 
 const FORM_VALIDATION_MESSAGES = {
-    'Due date (UTC)': 'Enter a valid due date in UTC (YYYY-MM-DD), then save again.',
+    'Due date': 'Enter a valid due date, then save again.',
     'Block reason': 'Enter a block reason of up to 1000 characters using plain text, then save again.',
     'Reopen reason': 'Enter a reopen reason of up to 1000 characters using plain text, then save again.',
     'Completion note': 'Enter a completion note of up to 1000 characters using plain text, then save again.',
@@ -676,7 +703,7 @@ const INVALID_ACTION_FIELDS = [
         ['empty date', ''], ['non-calendar date', '2026-02-30'], ['invalid leap day', '2026-02-29'],
         ['wrong format', '02/10/2026'], ['timestamp instead of calendar day', '2026-10-02T00:00:00.000Z'],
         ['surrounding spaces', ' 2026-10-02 ']
-    ].map(([description, value]) => ({ type: 'assign', field: 'Due date (UTC)', description, value })),
+    ].map(([description, value]) => ({ type: 'assign', field: 'Due date', description, value })),
     ...[
         ['block', 'Block reason'], ['reopen', 'Reopen reason'], ['complete', 'Completion note']
     ].flatMap(([type, field]) => [
@@ -763,18 +790,18 @@ test('simultaneous mounts and a remount keep field descriptions unique without a
     const described = [];
     for (const current of [h, other]) {
         chooseAction(current); button(current, 'Assign to me').click();
-        const control = fill(current, 'Due date (UTC)', ''); await submitForm(current);
+        const control = fill(current, 'Due date', ''); await submitForm(current);
         const id = control.getAttribute('aria-describedby'), feedback = control.parentElement.querySelector('span');
         expect(id).toMatch(/^improvement-action-field-feedback-\d+$/);
         expect(host.querySelectorAll('[id="' + id + '"]')).toEqual([feedback]);
-        expect(feedback.hidden).toBe(false); expect(feedback.textContent).toBe(FORM_VALIDATION_MESSAGES['Due date (UTC)']);
+        expect(feedback.hidden).toBe(false); expect(feedback.textContent).toBe(FORM_VALIDATION_MESSAGES['Due date']);
         described.push({ id, feedback, root: current.root });
     }
     expect(new Set(described.map(item => item.id)).size).toBe(2);
     expect(h.root.querySelector('[id="' + described[1].id + '"]')).toBeNull();
     expect(other.root.querySelector('[id="' + described[0].id + '"]')).toBeNull();
     other.controller = mount(otherRoot, h.options); expect(await other.controller.ready).toBe(true);
-    chooseAction(other); button(other, 'Assign to me').click(); const remountedControl = fill(other, 'Due date (UTC)', ''); await submitForm(other);
+    chooseAction(other); button(other, 'Assign to me').click(); const remountedControl = fill(other, 'Due date', ''); await submitForm(other);
     const remountedId = remountedControl.getAttribute('aria-describedby');
     expect(remountedId).toMatch(/^improvement-action-field-feedback-\d+$/);
     expect(described.some(item => item.id === remountedId)).toBe(false);
@@ -796,10 +823,10 @@ test('a 409 keeps the draft for review and requires cancel plus explicit refresh
         }
         throw new Error('unexpected fixture path');
     } });
-    await h.controller.ready; chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date (UTC)', '2026-10-02');
+    await h.controller.ready; chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date', '2026-10-02');
     const reads = h.request.mock.calls.length; await submitForm(h);
     expect(writes).toBe(1); expect(h.request.mock.calls).toHaveLength(reads + 1);
-    expect(h.root.textContent).toContain('Plan changed'); expect(field(h, 'Due date (UTC)').value).toBe('2026-10-02');
+    expect(h.root.textContent).toContain('Plan changed'); expect(field(h, 'Due date').value).toBe('2026-10-02');
     const formSubmit = form(h).querySelectorAll('button').find(node => node.type === 'submit'); expect(disabled(formSubmit)).toBe(true);
     expect(button(h, 'Retry pending improvement command')).toBeUndefined();
     expect(await h.controller.requestLeave(jest.fn())).toBe(false); expect(await h.controller.refresh()).toBe(false);
@@ -807,7 +834,7 @@ test('a 409 keeps the draft for review and requires cancel plus explicit refresh
     expect(await h.controller.refresh()).toBe(true); expect(writes).toBe(1);
     expect(h.request.mock.calls.slice(-2).map(([path]) => path)).toEqual(['/api/dashboard/improvement/view?planId=plan-a',
         '/api/dashboard/improvement/editor?planId=plan-a']);
-    expect(h.root.textContent).toContain('2026-10-03'); expect(h.options.newId).toHaveBeenCalledTimes(1);
+    expect(h.root.textContent).toContain('3 Oct 2026'); expect(h.options.newId).toHaveBeenCalledTimes(1);
 });
 
 test('uncertain action submission disables editing and cancel while retry reuses the exact captured identity', async () => {
@@ -823,13 +850,13 @@ test('uncertain action submission disables editing and cancel while retry reuses
         }
         throw new Error('unexpected fixture path');
     } });
-    await h.controller.ready; chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date (UTC)', '2026-10-02');
-    await submitForm(h); expect(attempts).toBe(1); expect(disabled(field(h, 'Due date (UTC)'))).toBe(true);
+    await h.controller.ready; chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date', '2026-10-02');
+    await submitForm(h); expect(attempts).toBe(1); expect(disabled(field(h, 'Due date'))).toBe(true);
     expect(disabled(button(h, 'Cancel changes'))).toBe(true); expect(await h.controller.requestLeave(jest.fn())).toBe(false);
-    field(h, 'Due date (UTC)').value = '2030-01-01'; emit(field(h, 'Due date (UTC)'), 'input');
+    field(h, 'Due date').value = '2030-01-01'; emit(field(h, 'Due date'), 'input');
     button(h, 'Retry pending improvement command').click(); await settle();
     expect(attempts).toBe(2); expect(first.payload.dueDate).toBe('2026-10-02'); expect(h.options.newId).toHaveBeenCalledTimes(1);
-    expect(form(h)).toBeUndefined(); expect(h.root.textContent).toContain('2026-10-02');
+    expect(form(h)).toBeUndefined(); expect(h.root.textContent).toContain('2 Oct 2026');
 });
 
 test.each([401, 403])('editor-context %i clears all private action and plan content', async status => {
@@ -872,9 +899,9 @@ test.each(['2026-10-01', '2026-12-01', ''])('completion form persists optional r
     const posted = h.request.mock.calls.find(([path]) => path.endsWith('/execute'))[1];
     expect(posted.payload).toEqual({ note: 'Reviewed the completed work.', evidenceReference: 'evidence:review',
         ...(nextReviewDate ? { nextReviewDate } : {}) });
-    expect(h.root.textContent).toContain('Next review date (UTC) ' + (nextReviewDate || 'Not set'));
+    expect(h.root.textContent).toContain('Next review date ' + calendarDay(nextReviewDate || null));
     expect(await h.controller.refresh()).toBe(true);
-    expect(h.root.textContent).toContain('Next review date (UTC) ' + (nextReviewDate || 'Not set'));
+    expect(h.root.textContent).toContain('Next review date ' + calendarDay(nextReviewDate || null));
 });
 
 test('past review date is focused without a write; cancel discards it', async () => {
@@ -903,7 +930,7 @@ test('uncertain completion retry keeps its exact review date and operation ident
     const writes = h.request.mock.calls.filter(([path]) => path.endsWith('/execute'));
     expect(writes).toHaveLength(2); expect(writes[1][1]).toBe(posted);
     expect(h.options.newId).toHaveBeenCalledTimes(1); expect(h.state.plans.get('plan-a').commands).toHaveLength(3);
-    expect(h.root.textContent).toContain('Next review date (UTC) 2026-12-01');
+    expect(h.root.textContent).toContain('Next review date 1 Dec 2026');
 });
 
 
@@ -919,9 +946,189 @@ test('named-owner completion retains its owner and optional review date through 
         note: 'Completed work to review.', evidenceReference: 'evidence:named-review', nextReviewDate: '2026-12-01' });
     expect(await h.controller.refresh()).toBe(true);
     expect(h.root.textContent).toContain('Synthetic action owner');
-    expect(h.root.textContent).toContain('Next review date (UTC) 2026-12-01');
+    expect(h.root.textContent).toContain('Next review date 1 Dec 2026');
     expect(h.root.textContent).not.toContain('Improvement action plan is unavailable.');
     const completed = presentation(h.state.plans.get('plan-a')).actions.find(action => action.status === 'completed');
     expect(completed.ownerLabel).toBe('Synthetic action owner');
     expect(completed.completion.nextReviewDate).toBe('2026-12-01');
+});
+
+describe('plain action names and "You" as owner in the editor', () => {
+    test('action choices and cards use topic titles from the host', async () => {
+        const actions = presentation(seed()).actions, titles = Object.fromEntries(actions.map(action => [action.controlId, 'Title ' + action.controlId.slice(-5)]));
+        const h = harness({ options: { controlTitles: titles } }); await h.controller.ready;
+        const picker = h.root.querySelectorAll('select').find(node => node.getAttribute('aria-label') === 'Improvement action');
+        expect(picker.children.map(option => option.textContent)).toEqual(actions.map(action => view.actionTitle(action, titles)));
+        expect(picker.children.map(option => option.textContent).join(' ')).not.toMatch(/NF-NCSC/);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toBe(view.actionTitle(actions[0], titles));
+    });
+
+    test('malformed titles fall back to codes without breaking the plan', async () => {
+        const h = harness({ options: { controlTitles: { 'bad key with spaces': 'x' } } });
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toContain('NF-NCSC');
+    });
+
+    test('after Assign to me the owner reads "You", not a platform user', async () => {
+        const h = harness(); await h.controller.ready;
+        const actionId = chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date', '2026-10-02'); await submitForm(h);
+        expect(h.root.textContent).toContain('Owner: you.');
+        expect(h.root.textContent).not.toContain('a platform user');
+        const assignedCard = h.root.querySelectorAll('article').find(card => card.textContent.includes(actionId));
+        expect(assignedCard.textContent).toContain('Owner You');
+        expect(assignedCard.textContent).not.toContain('eligibility not checked)');
+    });
+});
+
+describe('empty Improvement Plan tab', () => {
+    const SUBMITTED = '2026-11-13T04:51:10.202Z';
+    function latest() {
+        return { assessmentId: input.assessmentId, revision: 10, revisionSha256: 'b'.repeat(64), profileRef: clone(input.profileRef), submittedAt: SUBMITTED };
+    }
+    function empty(latestSource) {
+        const writes = [];
+        const h = harness({ options: { latestSource }, respond(path, body, state) {
+            if (path.includes('/plans?')) return { status: 200, value: page([...state.plans.keys()].filter(id => id !== 'plan-a').map(planId => ({ planId, planRevision: 0 }))) };
+            if (path.endsWith('/execute')) {
+                writes.push(body); state.plans.set(body.planId, seed(body.planId));
+                return { status: 200, value: { schemaVersion: 1, plan: getImprovementPlanView(state.plans.get(body.planId)) } };
+            }
+            return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
+        } });
+        return { ...h, writes };
+    }
+
+    test('offers to create a plan from the latest submitted assessment and creates it there', async () => {
+        const h = empty(jest.fn(async () => latest()));
+        expect(await h.controller.ready).toBe(true);
+        expect(h.options.latestSource).toHaveBeenCalledTimes(1);
+        expect(h.root.textContent).toContain('No improvement plan yet');
+        expect(h.root.textContent).toContain('Create a plan from your latest submitted assessment (submitted 13 Nov 2026, 5:51 pm).');
+        expect(h.root.textContent).not.toContain('No saved improvement plans are available');
+        const create = button(h, 'Create improvement plan from latest assessment');
+        expect(create).toBeDefined();
+        emit(create, 'click'); await settle(); await settle();
+        expect(h.writes).toEqual([expect.objectContaining({ type: 'generate', planId: 'overview-plan-' + 'b'.repeat(64),
+            payload: { assessmentId: input.assessmentId, assessmentRevision: 10, assessmentRevisionSha256: 'b'.repeat(64) } })]);
+        expect(h.root.textContent).toContain('Improvement action plan');
+        expect(h.root.textContent).not.toContain('No improvement plan yet');
+        expect(h.options.newId).not.toHaveBeenCalled();
+    });
+
+    test('says to submit an assessment first when none is submitted', async () => {
+        const h = empty(async () => null);
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.textContent).toContain('Submit an assessment first. Your improvement plan is built from its results.');
+        expect(button(h, 'Create improvement plan from latest assessment')).toBeUndefined();
+    });
+
+    test('explains when submitted assessments could not be checked', async () => {
+        const h = empty(async () => { throw new Error('synthetic outage'); });
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.textContent).toContain('We could not check your submitted assessments just now.');
+        expect(h.root.textContent).not.toContain('synthetic outage');
+        expect(button(h, 'Create improvement plan from latest assessment')).toBeUndefined();
+    });
+
+    test('rejects a malformed latest assessment without offering creation', async () => {
+        const h = empty(async () => ({ ...latest(), revisionSha256: 'not-a-digest' }));
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.textContent).toContain('We could not check your submitted assessments just now.');
+        expect(button(h, 'Create improvement plan from latest assessment')).toBeUndefined();
+    });
+});
+
+test('Refresh says the plan is up to date, or that it was updated', async () => {
+    const h = harness(); await h.controller.ready;
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Up to date. Nothing has changed since you last looked. Checked at 10:00 pm.');
+    h.state.plans.set('plan-a', append(h.state.plans.get('plan-a'), 'assign', { ownerSubjectKey: ACTOR, dueDate: '2026-10-03' }));
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Updated with the latest saved changes. Checked at 10:00 pm.');
+});
+
+test('Refresh reports an update when another listed plan changed, not only the selected one', async () => {
+    const h = harness(); await h.controller.ready;
+    h.state.plans.set('plan-b', seed('plan-b'));
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Updated with the latest saved changes.');
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Up to date. Nothing has changed since you last looked.');
+    h.state.plans.set('plan-b', append(h.state.plans.get('plan-b'), 'assign', { ownerSubjectKey: ACTOR, dueDate: '2026-10-03' }));
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Updated with the latest saved changes.');
+});
+
+describe('plain words in the plan controls', () => {
+    test('opening from Overview shows the existing plan for that assessment and hides the create button', async () => {
+        const selected = source(), planId = 'overview-plan-' + selected.revisionSha256;
+        const h = harness({ plan: seed(planId), options: { sourceAssessment: selected }, respond(path, body, state) {
+            if (path.includes('/plans?')) return { status: 200, value: page([{ planId, planRevision: 0 }]) };
+            return { status: 200, value: presentation(seed(planId)) };
+        } });
+        h.state.plans.set(planId, seed(planId));
+        expect(await h.controller.ready).toBe(true);
+        expect(h.request.mock.calls.map(args => args[0])).toEqual(['/api/dashboard/improvement/plans?limit=20',
+            '/api/dashboard/improvement/view?planId=' + encodeURIComponent(planId), '/api/dashboard/improvement/editor?planId=' + encodeURIComponent(planId)]);
+        expect(button(h, 'Create improvement plan for this assessment')).toBeUndefined();
+        const note = h.root.querySelectorAll('p').find(item => item.textContent === 'A plan already exists for this assessment, so it is shown below.');
+        expect(visible(note)).toBe(true);
+        expect(h.options.newId).not.toHaveBeenCalled();
+    });
+
+    test('plan choices use plain names and never show plan IDs or revisions', async () => {
+        const h = harness(); await h.controller.ready;
+        const options = h.root.querySelector('select').children.map(option => option.textContent);
+        expect(options).toEqual(['Choose a plan', expect.stringMatching(/^Plan: \d{1,2} \w+ \d{4}$/)]);
+        expect(options.join(' ')).not.toMatch(/plan-a|revision/);
+    });
+
+    test('while action options load, the editor says it is checking instead of unavailable', async () => {
+        const pending = deferred();
+        const h = harness({ editorRespond: () => pending.promise });
+        await settle(); await settle();
+        expect(h.root.textContent).toContain('Checking what you can change…');
+        expect(h.root.textContent).not.toContain('Action updates are unavailable');
+        pending.resolve({ status: 200, value: editorContext(h.state) });
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.textContent).not.toContain('Checking what you can change…');
+    });
+});
+
+describe('onAccepted reports only responses that pass validation', () => {
+    test('a valid plan index and plan view are each reported once', async () => {
+        const onAccepted = jest.fn(), h = harness({ options: { onAccepted } });
+        expect(await h.controller.ready).toBe(true);
+        expect(onAccepted).toHaveBeenCalledTimes(2);
+    });
+    test('a 200 plan index with an invalid schema is not reported', async () => {
+        const onAccepted = jest.fn(), h = harness({ options: { onAccepted }, respond: () => ({ status: 200, value: { ...page(), schemaVersion: 2 } }) });
+        expect(await h.controller.ready).toBe(false);
+        expect(onAccepted).not.toHaveBeenCalled();
+    });
+    test('a 200 plan view with an invalid schema is not reported', async () => {
+        const onAccepted = jest.fn(), h = harness({ options: { onAccepted }, respond(path, body, state) {
+            if (path.includes('/plans?')) return { status: 200, value: page() };
+            return { status: 200, value: { ...presentation(state.plans.get('plan-a')), schemaVersion: 2 } };
+        } });
+        await h.controller.ready;
+        expect(onAccepted).toHaveBeenCalledTimes(1); // the plan index only
+    });
+    test('an invalid save acknowledgement is not reported and keeps the command pending', async () => {
+        const selected = source(), onAccepted = jest.fn(), h = harness({ options: { sourceAssessment: selected, onAccepted }, respond(path, body) {
+            if (path.includes('/plans?')) return { status: 200, value: page([]) };
+            if (path.endsWith('/execute')) return { status: 200, value: { schemaVersion: 1, plan: { ...getImprovementPlanView(seed(body.planId)), revision: 7 } } };
+            throw new Error('unexpected fixture request');
+        } });
+        await h.controller.ready;
+        expect(onAccepted).toHaveBeenCalledTimes(1);
+        expect(await h.controller.generate()).toBe(false);
+        expect(onAccepted).toHaveBeenCalledTimes(1);
+        expect(h.root.textContent).toContain('The command outcome is unconfirmed');
+    });
+    test('a non-function onAccepted is rejected at mount', () => {
+        const dom = createDom();
+        expect(() => mount(dom.root, { request: jest.fn(), isCurrent: () => true, newId: jest.fn(), organisationId: SCOPE.organisationId,
+            onAccepted: 'yes' })).toThrow();
+    });
 });
