@@ -163,7 +163,7 @@ test('start mounts the real shell with the real Cyber Security workspace; reset 
     dom.window.location.pathname = '/try';
     demo.start(dom.window);
     assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
-    assert.match(dom.root.textContent, /Build your first baseline/);
+    assert.match(dom.root.textContent, /Start your cyber check/);
     dom.root.querySelectorAll('a').find(link => link.textContent.includes('Cyber Security')).click();
     for (let index = 0; index < 20 && !/Start an assessment/.test(dom.root.textContent); index++) await new Promise(resolve => setImmediate(resolve));
     assert.match(dom.root.textContent, /Cyber security assessment[\s\S]*Start an assessment/);
