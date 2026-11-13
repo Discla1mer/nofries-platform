@@ -169,7 +169,8 @@ function harness(options = {}) {
             } };
             if (options.cyber) {
                 window.NoFriesNcscAssessmentClient = { createClient: input => ncscClient.createClient({
-                    metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch }) };
+                    metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch,
+                    ...(input.onAccepted ? { onAccepted: input.onAccepted } : {}) }) };
                 window.NoFriesNcscQuestionnaire = { mount: (...args) => { ncscMounts.push(args); return questionnaire.mount(...args); } };
                 if (options.picture) window.NoFriesOrganisationPicture = require('../api/shared/protectedAssets/organisationPicture');
             }
@@ -1653,6 +1654,16 @@ describe('ready Cyber composition', () => {
         expect(before).not.toBe('2026-09-08T23:47:00.000Z');
         expect(stamp().dateTime).toBe('2026-09-08T23:47:00.000Z');
         expect(stamp().textContent).toContain('NZ time');
+        h.window.dispatch('pagehide');
+    });
+    test.each([['truncated', '{'], ['invalid', JSON.stringify({ schemaVersion: 2, assessments: [], nextAfterAssessmentId: null })]])
+    ('a 2xx saved-assessment read with a %s body leaves the footer information time unchanged', async (_, body) => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:48:00.000Z'));
+        await h.reply(5, 200, {}, { text: async () => body });
+        expect(stamp().dateTime).toBe(before);
         h.window.dispatch('pagehide');
     });
     test('Overview first-use action reaches the production questionnaire as a new-assessment start', async () => {

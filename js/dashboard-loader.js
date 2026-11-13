@@ -1246,8 +1246,11 @@
             if (result && [401, 403].includes(result.status)) {
                 const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
             }
-            if (result && result.status >= 200 && result.status < 300) informationRead(cycle);
             return result;
+        }, onAccepted: function () {
+            // Only after the client has read and validated the body: a 2xx
+            // whose body then stalls, is cut short or is invalid moves nothing.
+            informationRead(cycle);
         } });
         const mountCyber = function (root, presentation) {
             if (!current(cycle)) throw invalid();
