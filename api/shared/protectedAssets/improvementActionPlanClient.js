@@ -566,8 +566,16 @@
                 if (!Array.from(content.querySelectorAll('section')).some(section => section.getAttribute('aria-label') === 'Improvement action plan')) invalid();
                 accepted();
                 model = value; message = 'Checking current action options…'; render();
-                const editorResult = response(await (earlyEditor || request(editorPath)));
+                let editorResult = response(await (earlyEditor || request(editorPath)));
                 if (!active() || token !== serial) return false;
+                // The editor must not describe the plan at an earlier moment than
+                // the view shown. A parallel read can be stamped first, so retry
+                // it once in sequence instead of rejecting the plan.
+                if (earlyEditor && editorResult.status === 200 && editorResult.value && typeof editorResult.value.asOf === 'string' &&
+                    editorResult.value.asOf < value.asOf) {
+                    editorResult = response(await request(editorPath));
+                    if (!active() || token !== serial) return false;
+                }
                 if (editorResult.status !== 200) {
                     if (editorResult.status === 401 || editorResult.status === 403) unavailable(editorResult.status, false);
                     else {

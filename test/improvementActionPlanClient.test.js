@@ -1158,6 +1158,25 @@ test('after a plan is created its view and editor reads go out together, one rou
     expect(h.request).toHaveBeenCalledTimes(4);
 });
 
+test('an early editor answer stamped before the plan view is re-read in sequence instead of failing the plan', async () => {
+    // Review of #343: the parallel editor read can be stamped before the view, which editorContext rejects.
+    const selected = source(), planId = 'overview-plan-' + selected.revisionSha256; let editorCalls = 0;
+    const h = harness({ options: { sourceAssessment: selected }, respond(path, body, state) {
+        if (path.includes('/plans?')) return { status: 200, value: page([]) };
+        if (path.endsWith('/execute')) { const plan = seed(body.planId); state.plans.set(body.planId, plan); return { status: 200, value: { schemaVersion: 1, plan: getImprovementPlanView(plan) } }; }
+        return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
+    }, editorRespond(path, body, state) {
+        editorCalls += 1;
+        const value = editorContext(state, planId);
+        return { status: 200, value: editorCalls === 1 ? Object.assign({}, value, { asOf: '2000-01-01T00:00:00.000Z' }) : value };
+    } });
+    await h.controller.ready;
+    expect(await h.controller.generate()).toBe(true);
+    expect(editorCalls).toBe(2);
+    expect(h.root.textContent).toContain('Saved plan and current action options loaded.');
+    expect(h.root.textContent).not.toContain('Improvement Plan is unavailable');
+});
+
 test('an editor answer is discarded when the plan view in the same round trip fails', async () => {
     const h = harness({ respond(path, body, state) {
         if (path.startsWith('/api/dashboard/improvement/plans?')) return { status: 200, value: page() };
