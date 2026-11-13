@@ -961,7 +961,7 @@
         }
         // The plain-language question people answer. The framework prompt is
         // kept for reference but never replaces it where answers are shown.
-        function plainQuestion(question) { return question.smallBusiness ? question.smallBusiness.meaning : question.prompt; }
+        function plainQuestion(question) { return question.smallBusiness ? question.smallBusiness.question : question.prompt; }
         function reviewState() {
             return questions.map(function (question, index) {
                 const value = drafts.get(question.id).value, saved = savedAnswer(question.id), option = optionById.get(value.optionId);
