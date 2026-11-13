@@ -315,7 +315,15 @@ function createBrowserAuthService(options = {}) {
             const cancelled = await storeCall(() => store.cancelTransaction(transactionId, {
                 customerProviderKey: config.customerProviderKey, customerTransport
             }));
-            if (cancelled === 'missing') throw new BrowserAuthError(503, 'browser_auth_account_change_pending');
+            if (cancelled === 'missing') {
+                // The one-use transaction already settled. Only a callback that
+                // is already running can still use it, and that request carries
+                // its own cookie. Withhold acknowledgement, but let the browser
+                // drop the stale cookie so it cannot block every later sign-out.
+                const pending = new BrowserAuthError(503, 'browser_auth_account_change_pending');
+                pending.clearTransactionCookie = true;
+                throw pending;
+            }
             if (cancelled === false) throw new BrowserAuthError(401, 'browser_auth_transaction_invalid');
             if (cancelled !== true) throw new BrowserAuthError(503, 'browser_auth_store_unavailable');
         }

@@ -5,6 +5,7 @@ const {
 } = require('../shared/abuseProtection');
 const {
     BrowserAuthError,
+    clearExternalCustomerTransactionCookie,
     createBrowserAuthService,
     parseFormBody
 } = require('../shared/browserAuth');
@@ -63,10 +64,15 @@ function createAuthLogoutFunction(options = {}) {
         } catch (error) {
             logSafeFailure(context, error);
             const status = error instanceof BrowserAuthError ? error.statusCode : 500;
+            // Only setup account change may drop its own already-settled
+            // transaction cookie. The session cookie is never cleared here.
+            const staleTransaction = options.setupAccountChange === true && error instanceof BrowserAuthError &&
+                error.code === 'browser_auth_account_change_pending' && error.clearTransactionCookie === true
+                ? { 'Set-Cookie': [clearExternalCustomerTransactionCookie()] } : {};
             if (options.setupAccountChange === true && getHeader(headers, 'accept').includes('text/html')) {
                 context.res = {
                     status,
-                    headers: apiSecurityHeaders(Object.assign({}, rateLimitHeaders(rateLimit), {
+                    headers: apiSecurityHeaders(Object.assign({}, rateLimitHeaders(rateLimit), staleTransaction, {
                         'Content-Type': 'text/html; charset=utf-8',
                         'Content-Security-Policy': apiSecurityHeaders()['Content-Security-Policy'] + "; style-src 'self'; img-src 'self'"
                     })),
@@ -78,7 +84,8 @@ function createAuthLogoutFunction(options = {}) {
                         '<span class="brand-copy"><strong>No Fries</strong><span>Dashboard</span></span></a><a class="text-link" href="/">Back to home</a></header>' +
                         '<main class="shell account-notice-layout"><section class="organisation-card signup-card" id="signout-message" tabindex="-1" aria-labelledby="signout-title">' +
                         '<p class="eyebrow">Account access</p><h1 id="signout-title">Sign-out was not confirmed</h1>' +
-                        '<p>No Fries could not confirm sign-out. Any sign-in already in progress may still finish. Wait for it to finish, then return to workspace setup and try again.</p>' +
+                        '<p>No Fries could not confirm sign-out. Any sign-in already in progress may still finish. Wait a few seconds, then return to workspace setup and choose Sign out again. It should work the second time.</p>' +
+                        '<p>If it still does not work, email hello@nofries.nz.</p>' +
                         '<a class="button" href="/signup?provider=external">Return to workspace setup</a>' +
                         '<p class="field-help signup-status-help"><a href="/report.html#kind=error&amp;screen=signup" target="_blank" rel="noopener noreferrer" aria-label="Report this problem (opens in a new tab)">Report this problem</a></p></section></main></body></html>'
                 };
@@ -89,7 +96,7 @@ function createAuthLogoutFunction(options = {}) {
                     ? 'No Fries sign-out is temporarily unavailable.'
                     : 'No Fries could not complete sign-out.',
                 code: status >= 500 ? 'browser_auth_unavailable' : 'browser_auth_failed'
-            }, rateLimitHeaders(rateLimit));
+            }, Object.assign({}, rateLimitHeaders(rateLimit), staleTransaction));
         }
     };
 }

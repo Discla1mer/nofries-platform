@@ -212,7 +212,10 @@ test.each(['application/json', 'text/html'])('a genuinely pending callback preve
     try {
         await exchanging; expect(auth.has(txKey)).toBe(false); // Real callback consumed it before awaiting provider redemption.
         const response = await postLogout(h, `${session.cookie}; ${tx}`).set('Accept', accept);
-        expect(response.status).toBe(503); expect(response.headers['set-cookie']).toBeUndefined(); expect(response.headers.location).toBeUndefined();
+        // No acknowledgement and no session change. Only the settled one-use
+        // transaction cookie is dropped; the running callback already sent it.
+        expect(response.status).toBe(503); expect(response.headers.location).toBeUndefined();
+        expect(response.headers['set-cookie']).toEqual([expect.stringMatching(/^__Host-nofries-external-customer-tx=;.*Max-Age=0/)]);
         expect(auth.get(sidKey).equals(parent)).toBe(true); expect(preserved(h)).toBe(retained);
         if (accept === 'text/html') {
             expect(response.headers['content-type']).toMatch(/^text\/html/);
@@ -228,6 +231,35 @@ test.each(['application/json', 'text/html'])('a genuinely pending callback preve
     expect(preserved(h, false)).toBe(customerData);
     expect([...h.getContainer('dashboard-proofs').records].map(([key, bytes]) => [key, digest(bytes)]))
         .toEqual(expect.arrayContaining(proofs));
+});
+
+test('a stale settled transaction cookie blocks only one setup sign-out, and the next one is confirmed', async () => {
+    // Round 2: "Sign-out was not confirmed" twice in a row from the setup page.
+    const h = fixture(), session = await setupSession(h), auth = h.getContainer('nofries-browser-auth').records;
+    const started = await request(h.app).get(LOGIN).set('Cookie', session.cookie); expect(started.status).toBe(302);
+    const tx = cookie(started.headers['set-cookie'][0]), sidKey = authKey('sessions', session.cookie);
+    auth.delete(authKey('transactions', tx)); // Already settled elsewhere; nothing is running.
+    const parent = Buffer.from(auth.get(sidKey)), retained = preserved(h);
+    const first = await postLogout(h, `${session.cookie}; ${tx}`).set('Accept', 'text/html');
+    expect(first.status).toBe(503); expect(first.headers.location).toBeUndefined();
+    expect(first.text).toContain('Sign-out was not confirmed'); expect(first.text).toContain('choose Sign out again');
+    expect(first.headers['set-cookie']).toEqual([expect.stringMatching(/^__Host-nofries-external-customer-tx=;.*Max-Age=0/)]);
+    expect(auth.get(sidKey).equals(parent)).toBe(true);
+    const second = await postLogout(h, session.cookie);
+    expect(second.status).toBe(303); expect(second.headers.location).toBe(CHOOSE);
+    expect(auth.has(sidKey)).toBe(false); expect(preserved(h)).toBe(retained);
+});
+
+test('the setup form says that signing out clears what was typed but not yet saved', async () => {
+    const dom = createDom();
+    const view = mountSignupJourney(dom.root, { load: async () => ({ status: 'setup_details', email: 'synthetic@example.test' }),
+        createAccount: jest.fn(), acceptTerms: jest.fn(), completeSetup: jest.fn() }, { customerTransport: 'external' });
+    try {
+        await view.ready;
+        const logout = dom.root.querySelectorAll('form').find(form => form.action === LOGOUT);
+        expect(logout.textContent).toContain('Signing out clears anything you have typed on this page.');
+        expect(logout.textContent).toContain('Your account, saved setup and work are kept.');
+    } finally { view.dispose(); }
 });
 
 test.each(['dynamic', 'hosted'])('%s choose-account marker performs one state read and requires a manual fixed login action', async kind => {

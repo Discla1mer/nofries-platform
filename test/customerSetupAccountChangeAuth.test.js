@@ -226,7 +226,10 @@ test('lost transaction-cancellation acknowledgement keeps the setup session; nam
     });
     await expect(h.service.logoutSetup({ cookieHeader: header })).rejects.toMatchObject({ code: 'browser_auth_store_unavailable' });
     expect(h.store.transactions.has(id(pending.cookie))).toBe(false); expect(h.store.sessions.has(id(completed.cookie))).toBe(true);
-    await expect(h.service.logoutSetup({ cookieHeader: header })).rejects.toMatchObject({ code: 'browser_auth_account_change_pending' });
+    // Still no acknowledgement, but the route may now drop the settled cookie
+    // so the browser's next attempt is not blocked until it expires.
+    await expect(h.service.logoutSetup({ cookieHeader: header }))
+        .rejects.toMatchObject({ code: 'browser_auth_account_change_pending', clearTransactionCookie: true });
     expect(h.store.sessions.has(id(completed.cookie))).toBe(true);
     h.setNow(NOW + 300000);
     expect((await h.service.logoutSetup({ cookieHeader: atom(completed.cookie) })).cookie).toHaveLength(2);
