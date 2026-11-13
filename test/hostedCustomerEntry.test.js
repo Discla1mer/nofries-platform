@@ -298,14 +298,14 @@ test('an external customer with old valid setup bypasses unavailable legacy read
 });
 
 function execute({ runtime = prepared.runtime, search = '', hash = '', fetch = jest.fn(async () => response({ status: 'create_account' })),
-    timers = { setTimeout, clearTimeout } } = {}) {
+    timers = { setTimeout, clearTimeout }, sessionStorage } = {}) {
     const dom = createDom(), create = dom.document.createElement;
     dom.document.createElement = tag => Object.assign(create(tag), { style: {}, reportValidity: () => true });
     const help = dom.document.createElement('a'); help.setAttribute('href', '/login');
     dom.document.getElementById = id => id === 'signup' ? dom.root : id === 'signup-return-to-login' ? help : null;
     const listeners = {}, assign = jest.fn(), replace = jest.fn(), replaceState = jest.fn();
     const window = { fetch, location: { search, hash, assign, replace }, history: { replaceState },
-        addEventListener(name, fn) { listeners[name] = fn; } };
+        addEventListener(name, fn) { listeners[name] = fn; }, ...(sessionStorage ? { sessionStorage } : {}) };
     vm.runInNewContext(runtime, { document: dom.document, window, URLSearchParams, AbortController, TextDecoder,
         setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
     return { ...dom, fetch, help, assign, replace, replaceState, close() { listeners.pagehide?.(); } };
@@ -842,4 +842,30 @@ test.each([false, true])('production registration requires the SDK to retain its
         expect(requests).toHaveLength(2); expect(snapshot()).toEqual(after);
     }
     expect(server.state.delivered).toEqual([]); expect(server.pool.registrations.size).toBe(0); expect(server.pool.receipts.size).toBe(0);
+});
+
+// Round 2: after signing out from #cyber-security and back in, Alex landed on Overview.
+function memoryStorage(value) {
+    const items = new Map(value === undefined ? [] : [['nofries-return-route', value]]);
+    return { items, getItem: key => items.has(key) ? items.get(key) : null, setItem: (key, item) => items.set(key, String(item)),
+        removeItem: key => items.delete(key) };
+}
+test.each(['dynamic', 'hosted'].flatMap(kind => [
+    [kind, JSON.stringify({ route: '#cyber-security', at: Date.now() - 1000 }), '/dashboard#cyber-security'],
+    [kind, JSON.stringify({ route: '#improvement-plan', at: Date.now() }), '/dashboard#improvement-plan'],
+    [kind, JSON.stringify({ route: '#cyber-security', at: Date.now() - 2 * 3600000 }), '/dashboard'],
+    [kind, JSON.stringify({ route: '//evil.invalid/#cyber-security', at: Date.now() }), '/dashboard'],
+    [kind, JSON.stringify({ route: 'https://evil.invalid', at: Date.now() }), '/dashboard'],
+    [kind, JSON.stringify({ route: '#cyber-security?next=https://evil.invalid', at: Date.now() }), '/dashboard'],
+    [kind, JSON.stringify({ route: '#cyber-security', at: Date.now() + 60000 }), '/dashboard'],
+    [kind, '{not json', '/dashboard'],
+    [kind, undefined, '/dashboard']
+]))('%s sign-in returns only to an allowlisted, recent dashboard page (%s)', async (kind, saved, destination) => {
+    const sessionStorage = memoryStorage(saved);
+    const page = execute({ runtime: entryRuntime(kind), search: '?provider=external', sessionStorage,
+        fetch: jest.fn(async () => response({ status: 'continue_to_dashboard', accountType: 'company' })) });
+    try {
+        await settle(); expect(page.replace.mock.calls).toEqual([[destination]]);
+        expect(sessionStorage.items.has('nofries-return-route')).toBe(false);
+    } finally { page.close(); }
 });
