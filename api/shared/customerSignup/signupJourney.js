@@ -132,7 +132,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             heading.textContent = 'Set up your organisation';
             root.append(element('p', 'Signed in as ' + state.email));
             const form = element('form');
-            const controls = {}, validateText = [];
+            const controls = {}, validateText = [], counters = [];
             const typeLabel = element('label', 'Account type'), accountType = element('select');
             accountType.name = 'accountType';
             for (const [value, title] of [['company', 'Company'], ['consultant', 'Consultant']]) {
@@ -157,6 +157,22 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 };
                 input.addEventListener('input', validate); validateText.push(validate);
                 label.append(input);
+                // The browser cuts text at the limit without saying so. Show a
+                // count as the limit gets close, and say plainly when it is hit.
+                if (name !== 'registrationId') {
+                    const count = element('span'); count.className = 'field-help signup-field-count';
+                    count.setAttribute('id', 'signup-' + name + '-count'); count.setAttribute('aria-live', 'polite');
+                    const update = () => {
+                        const used = String(input.value || '').length;
+                        count.hidden = used < maximum - 20;
+                        count.textContent = used >= maximum
+                            ? used + ' of ' + maximum + ' characters. This is the limit, so anything longer is cut off.'
+                            : used + ' of ' + maximum + ' characters.';
+                    };
+                    input.setAttribute('aria-describedby', 'signup-' + name + '-count');
+                    input.addEventListener('input', update); update(); counters.push(update);
+                    label.append(count);
+                }
                 if (name === 'registrationId') {
                     const help = element('span', 'Your New Zealand Business Number, if you have one.');
                     help.className = 'field-help'; help.setAttribute('id', 'signup-nzbn-help');
@@ -180,6 +196,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 }
                 setupDraft = null;
             }
+            for (const update of counters) update();
             const label = element('label'), authority = element('input');
             label.className = 'organisation-authority-check';
             authority.type = 'checkbox'; authority.required = true; authority.name = 'authorityConfirmed';
@@ -226,8 +243,18 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             root.append(element('p', 'Continue secure sign-in with the email linked to your account. Your saved setup and work are kept.'));
             signInLinks();
         } else if (state.status === 'continue_authentication' && customerTransport) {
-            heading.textContent = 'Continuing account setup';
-            const link = element('a', 'Continue securely'); link.href = '/api/external-customer-auth/login'; link.className = 'button';
+            // Saving setup never upgrades this session; only a fresh callback can.
+            // The page normally goes to Microsoft by itself, so say what is
+            // happening and offer the link as a fallback, not a second step.
+            heading.textContent = 'Finishing your sign-in';
+            root.append(element('p', 'Your details are saved. Microsoft now checks your sign-in once more so your new account can open. You should not need to enter anything.'));
+            const automatic = !signInRecovery && !chooseAccount;
+            if (automatic) {
+                const progress = element('p', 'Taking you to Microsoft now. This can take up to 30 seconds. Please keep this page open.');
+                progress.className = 'signup-progress'; progress.setAttribute('role', 'status');
+                root.append(progress, element('p', 'If nothing happens after 30 seconds, choose Continue to Microsoft.'));
+            }
+            const link = element('a', 'Continue to Microsoft'); link.href = '/api/external-customer-auth/login'; link.className = 'button';
             root.append(link);
             setupSignOut();
         } else if (state.status === 'terms' && validTerms(state)) {

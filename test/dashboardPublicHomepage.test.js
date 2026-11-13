@@ -19,7 +19,7 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
     assert.equal((html.match(/<h1\b/g) || []).length, 1);
     assert.match(html, /<p class="homepage-lockup"><span class="lockup-row"><span class="lockup-word">No<\/span><img class="lockup-mark" src="\/images\/nofries-mark-large\.webp" width="640" height="640" alt=""><\/span> <span class="lockup-row"><span class="lockup-word">Fries<\/span> <span class="lockup-tagline">Dashboard\.<br>Managed IT\.<\/span><\/span><\/p>/);
     assert.match(html, /<h1 id="home-title" class="homepage-headline">Know where your business stands on cyber security in about 15 minutes\.<\/h1>/);
-    assert.match(html, /A free check for New Zealand small businesses, based on NCSC guidance\./);
+    assert.match(html, /A free check for New Zealand small businesses, based on guidance from New Zealand’s National Cyber Security Centre \(NCSC\)\./);
     assert.match(html, /Free to start · No card required/);
     assert.equal((html.match(/Understand your IT and cyber security and see where the gaps are\./g) || []).length, 2);
     assert.doesNotMatch(html, /in real time|continuous monitoring|automatically updated/i);
@@ -158,4 +158,13 @@ test('the simplified homepage preserves all protected entry and integrity marker
         assert.equal(html.split(marker).length - 1, 1, marker);
     }
     assert.match(html, /data-dashboard-gateway="true"/);
+});
+
+test('in-page homepage links move keyboard focus to their target section', () => {
+    const links = [...html.matchAll(/<a\b[^>]*href="#([^"]+)"/g)].map(match => match[1]);
+    assert.ok(links.includes('dashboard-benefits'));
+    for (const id of links) {
+        // A target with tabindex="-1" receives focus on fragment navigation, so the next Tab continues from it.
+        assert.match(html, new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*\\btabindex="-1"`), `#${id} is not focusable`);
+    }
 });
