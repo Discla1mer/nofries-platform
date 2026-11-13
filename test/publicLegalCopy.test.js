@@ -58,6 +58,21 @@ test('the privacy notice keeps operative disclosures and states facts plainly', 
     expect(privacy).not.toContain('token count');
 });
 
+test('the privacy notice describes service emails and action-owner names as the code handles them', () => {
+    const privacy = read('privacy.html');
+    const section = privacy.match(/<section id="service-emails">([\s\S]*?)<\/section>/);
+    expect(section).not.toBeNull();
+    for (const text of ['four service emails', 'about 7 days later', 'about 90 days after', 'Resend delivers them',
+        'do not greet you by name', 'do not contain your answers, gap titles, results or scores',
+        'Resend’s message id', 'how many gaps it found', 'does not hold the text of the email or your email address',
+        'stops that type of email', 'one-click unsubscribe', 'Unsubscribing is permanent']) expect(section[1]).toContain(text);
+    expect(privacy).toContain('names you enter as action owners in your improvement plan');
+    expect(privacy).toContain('cannot be an email address');
+    expect(privacy).toContain('stay in the improvement plan’s history for as long as the plan record is kept');
+    expect(privacy).toContain('Resend delivers signup codes and service emails');
+    expect(privacy.indexOf('id="service-emails"')).toBeLessThan(privacy.indexOf('id="staff-workspaces"'));
+});
+
 test('the privacy notice keeps staff and service-workspace detail collapsed below the customer notice', () => {
     const privacy = read('privacy.html');
     const staff = privacy.match(/<details class="legal-staff" id="staff-workspaces">([\s\S]*?)<\/details>/);
