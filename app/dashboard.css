@@ -104,9 +104,15 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-first-use-step h3 { margin-bottom: .35rem; }
 .picture-first-use-step p { margin-bottom: 0; }
 .picture-first-use-number { display: grid; flex: 0 0 2.5rem; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--dashboard-navy); color: var(--dashboard-ink); font-weight: var(--dashboard-weight-emphasis); }
-.picture-first-use-action { display: block; width: min(100%, 23rem); margin: 0 auto; font-family: var(--font-serif, Georgia, serif) !important; font-size: 1.25rem !important; }
+.picture-first-use-action { display: block; width: min(100%, 23rem); margin: 1.25rem 0 0; font-family: var(--font-serif, Georgia, serif) !important; font-size: 1.25rem !important; }
 @media (min-width: 60.01rem) { .picture-first-use-step:not(:last-child)::after { content: '→'; position: absolute; right: -.8rem; top: 50%; z-index: 1; transform: translateY(-50%); padding: .1rem; background: var(--dashboard-surface); color: var(--dashboard-ink); } }
 @media (max-width: 60rem) { .picture-first-use-steps { grid-template-columns: 1fr; } }
+/* Keep the first-use action high on small phones. */
+@media (max-width: 30rem) {
+    .picture-first-use-eyebrow { letter-spacing: .06em; }
+    .nofries-dashboard .picture-first-use h2 { font-size: 1.75rem; }
+    .picture-first-use-action { font-size: 1.1rem !important; }
+}
 
 .picture-heading { padding: 1.25rem 0 .5rem; border-top: 1px solid var(--dashboard-line); }
 .picture-heading > :last-child { margin-bottom: 0; }
