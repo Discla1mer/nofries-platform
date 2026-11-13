@@ -67,10 +67,10 @@ test('enabled local route is self-contained, cookieless and blocks network, form
 });
 
 test('the page runs the real dashboard assets and scoring modules, with no fixture data', () => {
-    assert.deepEqual(SOURCES.slice(0, 4), ['dashboardRegistry.js', 'dashboardShell.js', 'ncscAssessmentClient.js', 'ncscQuestionnaire.js']
-        .map(file => 'api/shared/protectedAssets/' + file));
+    assert.deepEqual(SOURCES.slice(0, 6), ['dashboardRegistry.js', 'dashboardShell.js', 'ncscAssessmentClient.js', 'ncscQuestionnaire.js',
+        'assessmentExplanation.js', 'organisationPicture.js'].map(file => 'api/shared/protectedAssets/' + file));
     const gateway = read('scripts/build-static.js').match(/protectedAppSource: \[([^\]]+)\]/)[1];
-    for (const file of SOURCES.slice(0, 4)) assert.ok(gateway.includes("'" + path.basename(file) + "'"), file + ' is in the signed-in dashboard bundle');
+    for (const file of SOURCES.slice(0, 6)) assert.ok(gateway.includes("'" + path.basename(file) + "'"), file + ' is in the signed-in dashboard bundle');
     const modules = [...engineModules().keys()];
     assert.ok(modules.includes('api/shared/assessmentEngine/assessmentEvaluator.js') && modules.includes('api/shared/ncscQuestionnaireMetadata.js'));
     assert.ok(modules.every(file => /^api\/shared\/(assessmentEngine|securityGap)\/|^api\/shared\/ncscQuestionnaireMetadata\.js$/.test(file)), modules.join());
@@ -130,6 +130,16 @@ test('results match the real server path for the same answers, in Node and in th
     assert.deepEqual(pageSubmitted, nodeSubmitted, 'identical bytes, hashes and evaluation');
 });
 
+test('the fictional earlier assessment is scored by the real rules and seeds Overview comparison', async () => {
+    const backend = demo.createBackend(demo.createStore(recordingStorage()), steppingClock());
+    const client = createClient({ metadata: backend.metadata, fetch: backend.fetch });
+    const listed = await client.list({ limit: 50 });
+    assert.deepEqual(listed.assessments.map(item => [item.assessmentId, item.status, item.progress.answered]), [[demo.EARLIER_ID, 'submitted', 14]]);
+    const earlier = questionnaire.resultModel((await client.read(demo.EARLIER_ID)).assessment, backend.metadata, demo.ORGANISATION_ID);
+    assert.equal(earlier.attainment, '28.6%–42.9%', 'lower bound first');
+    assert.equal(backend.metadata.questions.length, 14);
+});
+
 test('saved steps replay after reload; unreadable or stale logs start afresh; reset clears only the demo key', async () => {
     const storage = recordingStorage({ 'nofries.unrelated': 'kept' });
     const first = demo.createBackend(demo.createStore(storage), steppingClock());
@@ -145,25 +155,29 @@ test('saved steps replay after reload; unreadable or stale logs start afresh; re
     for (const value of ['{not json', JSON.stringify({ log: [{ command: { assessmentId: 'x', action: 'submit' }, at: NOW }] }), JSON.stringify({ answers: {}, view: 'results' })]) {
         const stale = recordingStorage({ [demo.STORAGE_KEY]: value });
         const fresh = createClient({ metadata: first.metadata, fetch: demo.createBackend(demo.createStore(stale), steppingClock()).fetch });
-        assert.deepEqual((await fresh.list({})).assessments, []);
+        assert.deepEqual((await fresh.list({})).assessments.map(item => item.assessmentId), [demo.EARLIER_ID]);
     }
     const blocked = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }, removeItem() { throw new Error('blocked'); } };
     const store = demo.createStore(blocked);
     store.append({ command: { a: 1 }, at: NOW });
     assert.deepEqual(store.read(), [{ command: { a: 1 }, at: NOW }]);
     store.clear(); assert.deepEqual(store.read(), []);
+    await assert.rejects(demo.pageFetch('https://example.invalid/'), TypeError);
+    assert.deepEqual(await (await demo.pageFetch('/api/enquiry')).json(), { available: true });
 });
 
-test('start mounts the real shell with the real Cyber Security workspace; reset returns to Overview', async () => {
+test('start mounts the real shell with the real Overview and Cyber Security workspaces; reset returns to Overview', async () => {
     const dom = createDom(); const storage = recordingStorage({ 'nofries.unrelated': 'kept' });
     const nodes = { 'try-demo-dashboard': dom.root, 'try-demo-status': dom.document.createElement('p'), 'try-demo-reset': dom.document.createElement('button') };
     dom.document.getElementById = id => nodes[id];
     Object.assign(dom.window, { document: dom.document, localStorage: storage, NoFriesDashboard: shell, NoFriesNcscAssessmentClient: { createClient },
-        NoFriesNcscQuestionnaire: questionnaire });
+        NoFriesNcscQuestionnaire: questionnaire, NoFriesOrganisationPicture: require('../api/shared/protectedAssets/organisationPicture') });
     dom.window.location.pathname = '/try';
     demo.start(dom.window);
+    assert.equal(dom.window.fetch, demo.pageFetch);
     assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
-    assert.match(dom.root.textContent, /Build your first baseline/);
+    for (let index = 0; index < 20 && !/28\.6%–42\.9%/.test(dom.root.textContent); index++) await new Promise(resolve => setImmediate(resolve));
+    assert.match(dom.root.textContent, /Cyber baseline[\s\S]*28\.6%–42\.9%/);
     dom.root.querySelectorAll('a').find(link => link.textContent.includes('Cyber Security')).click();
     for (let index = 0; index < 20 && !/Start an assessment/.test(dom.root.textContent); index++) await new Promise(resolve => setImmediate(resolve));
     assert.match(dom.root.textContent, /Cyber security assessment[\s\S]*Start an assessment/);

@@ -20,6 +20,12 @@
     const BUSINESS = 'Brightwater Joinery (fictional)';
     const ORGANISATION_ID = 'fictional-demo';
     const PREFIX = '/api/dashboard/ncsc/assessments';
+    const EARLIER_ID = 'brightwater-july-2026';
+    const EARLIER_AT = '2026-07-14T21:00:00.000Z';
+    const EARLIER_SCOPE = 'Brightwater Joinery (fictional): 9 staff, the workshop and office laptops, Microsoft 365 email and files, and the online accounting and job-booking services.';
+    // The fictional business's earlier answers, keyed by the real question-ID stem.
+    const EARLIER_ANSWERS = Object.freeze({ RM: 'no', SA: 'partial', AI: 'no', SC: 'unknown', PA: 'partial', MF: 'partial', DU: 'no',
+        LP: 'partial', DR: 'yes', RP: 'no', PM: 'no', SV: 'yes', AC: 'unknown', NS: 'no' });
     const MAX_LOG = 400;
     let engine = null;
     function getEngine() { if (!engine) engine = loadEngine(); return engine; }
@@ -141,6 +147,18 @@
             const at = clock();
             return { command: command, at: at, response: execute(command, at) };
         }
+        function seed() {
+            const responses = metadata.questions.map(function (question) {
+                return { itemId: question.id, optionId: EARLIER_ANSWERS[question.id.split('-')[3]], rationale: null };
+            });
+            [{ action: 'create', expectedRevision: null, payload: { scopePopulation: { description: EARLIER_SCOPE } } },
+                { action: 'save', expectedRevision: 0, payload: { responses: responses } },
+                { action: 'submit', expectedRevision: 1, payload: {} }].forEach(function (step) {
+                const result = execute(Object.assign({ assessmentId: EARLIER_ID, idempotencyKey: 'seed-' + step.action }, step), EARLIER_AT);
+                if (result.status >= 300) throw new Error('try_demo_seed_failed');
+            });
+        }
+        seed();
         return { metadata: metadata, route: route, execute: execute };
     }
 
@@ -196,9 +214,19 @@
         };
     }
 
+    // Overview asks the public enquiry status before showing "Get help closing
+    // these gaps" (a link to /contact.html). Answer that here; refuse anything else.
+    function pageFetch(url) {
+        if (url === '/api/enquiry') {
+            return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve({ available: true }); } });
+        }
+        return Promise.reject(new TypeError('The demo makes no network requests.'));
+    }
+
     function mountOptions(win, backend) {
-        const dashboard = win.NoFriesNcscAssessmentClient, questionnaire = win.NoFriesNcscQuestionnaire;
+        const dashboard = win.NoFriesNcscAssessmentClient, questionnaire = win.NoFriesNcscQuestionnaire, picture = win.NoFriesOrganisationPicture;
         const client = dashboard.createClient({ metadata: backend.metadata, fetch: backend.fetch });
+        let pictureSelection = null;
         return {
             window: win,
             mountCyber: function (root, presentation) {
@@ -206,6 +234,12 @@
                     organisationId: ORGANISATION_ID, initialAssessmentId: presentation && presentation.initialAssessmentId,
                     initialQuestionIndex: presentation && presentation.initialQuestionIndex, onLocation: presentation && presentation.onLocation,
                     startNew: !!(presentation && presentation.startNew === true) });
+            },
+            mountPicture: function (root, presentation) {
+                return picture.mount(root, { metadata: backend.metadata, client: client, organisationId: ORGANISATION_ID,
+                    displayName: presentation.displayName, initialAssessmentId: pictureSelection || undefined,
+                    onSelection: function (assessmentId, source) { if (source === 'user') pictureSelection = assessmentId; },
+                    openCyber: presentation.openCyber });
             }
         };
     }
@@ -217,6 +251,7 @@
         let storage = null; try { storage = win.localStorage; } catch (_) { storage = null; }
         const store = createStore(storage);
         const now = function () { return new Date().toISOString(); };
+        win.fetch = pageFetch;
         function mountDashboard(route) {
             const options = mountOptions(win, createBackend(store, now));
             options.initialRoute = route;
@@ -231,7 +266,7 @@
         mountDashboard(null);
     }
 
-    return Object.freeze({ STORAGE_KEY: STORAGE_KEY, BUSINESS: BUSINESS, ORGANISATION_ID: ORGANISATION_ID,
+    return Object.freeze({ STORAGE_KEY: STORAGE_KEY, BUSINESS: BUSINESS, ORGANISATION_ID: ORGANISATION_ID, EARLIER_ID: EARLIER_ID,
         projection: projection, createServer: createServer, createStore: createStore, createBackend: createBackend,
-        mountOptions: mountOptions, start: start });
+        pageFetch: pageFetch, mountOptions: mountOptions, start: start });
 }));

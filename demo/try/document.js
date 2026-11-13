@@ -1,7 +1,7 @@
 'use strict';
 
 // Self-contained fictional demo page (#29). It runs the real dashboard shell,
-// questionnaire and results, scored by the real evaluator, against
+// questionnaire, results and Overview, scored by the real evaluator, against
 // an in-memory assessment store. The CSP forbids every network request,
 // form submission, frame and image. server.js serves it only for
 // createNoFriesApp({ tryDemo: true }); the static build publishes it at /try.
@@ -10,9 +10,11 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const ROOT = path.resolve(__dirname, '../..');
-// The same protected assets the signed-in dashboard loads (scripts/build-static.js gateway bundle).
+// The same protected assets the signed-in dashboard loads (scripts/build-static.js
+// gateway bundle), without the Improvement Plan, which is not enabled in the demo.
 const SOURCES = ['api/shared/protectedAssets/dashboardRegistry.js', 'api/shared/protectedAssets/dashboardShell.js',
     'api/shared/protectedAssets/ncscAssessmentClient.js', 'api/shared/protectedAssets/ncscQuestionnaire.js',
+    'api/shared/protectedAssets/assessmentExplanation.js', 'api/shared/protectedAssets/organisationPicture.js',
     'demo/try/node-shims.js', 'demo/try/try-demo.js'];
 // Server modules bundled unchanged so the page scores with the real rules.
 const ENGINE_ENTRIES = ['api/shared/assessmentEngine/ncscAssessmentEvaluator.js', 'api/shared/assessmentEngine/assessmentEvaluator.js',

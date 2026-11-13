@@ -37,7 +37,8 @@ async function run(browser, origin, name, viewport) {
     assert.match(await page.locator('.try-demo-banner').innerText(), /fictional business/);
     assert.equal(await page.getByRole('link', { name: 'Create your account' }).getAttribute('href'), '/login?intent=create');
     assert.equal(await page.locator('h1').innerText(), 'Overview');
-    assert.match(await main(page).innerText(), /Build your first baseline/);
+    await main(page).getByText('28.6%–42.9%').first().waitFor();
+    assert.equal(await page.getByRole('link', { name: 'Get help closing these gaps' }).getAttribute('href'), '/contact.html');
     assert.ok(await fits(page), name + ': no horizontal scroll');
     await shot(page, name + '-1-overview.png', !touch);
 
@@ -70,19 +71,19 @@ async function run(browser, origin, name, viewport) {
     await shot(page, name + '-3-results.png');
 
     await page.reload();
-    await press(page.getByRole('button', { name: 'Back to assessments' }));
-    await press(main(page).getByRole('button', { name: 'View results' }).first());
-    await page.getByRole('heading', { name: 'Assessment results' }).waitFor();
-    assert.match(await main(page).innerText(), /Reported implementation\s+67\.9%–75\.0%/, 'submitted result survives reload');
+    await (touch ? page.locator('.dashboard-mobile-nav a', { hasText: 'Overview' }).tap() : page.locator('.dashboard-rail a', { hasText: 'Overview' }).click());
+    await press(page.getByRole('button', { name: 'Compare with previous assessment' }));
+    await page.getByText(/Compared with the previous assessment/).waitFor();
+    assert.match(await main(page).innerText(), /Overall\s+28\.6%–42\.9%\s+67\.9%–75\.0%/, 'saved answers survive reload and compare');
+    await shot(page, name + '-4-compare.png');
 
     const reset = page.getByRole('button', { name: 'Reset demo' });
     if (name === 'desktop') { await reset.focus(); await page.keyboard.press('Enter'); } else await reset.tap();
     assert.match(await page.locator('#try-demo-status').innerText(), /Demo reset/);
     assert.equal(await page.locator('h1').innerText(), 'Overview');
     assert.deepEqual(await page.evaluate(key => [localStorage.getItem(key), localStorage.getItem('nofries.unrelated')], STORAGE_KEY), [null, 'kept']);
-    await (touch ? page.locator('.dashboard-mobile-nav a', { hasText: 'Cyber Security' }).tap() : page.locator('.dashboard-rail a', { hasText: 'Cyber Security' }).click());
-    await main(page).getByRole('button', { name: 'Start an assessment' }).waitFor();
-    assert.equal(await main(page).getByRole('button', { name: 'View results' }).count(), 0, 'reset removed the visitor assessment');
+    await main(page).getByText('28.6%–42.9%').first().waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Compare with previous assessment' }).count(), 0, 'reset removed the visitor assessment');
     assert.deepEqual(await context.cookies(), []);
     assert.deepEqual(unexpected, [], name + ': no network, console, CSP or script errors');
     await context.close();
@@ -97,7 +98,7 @@ async function run(browser, origin, name, viewport) {
         await run(browser, origin, 'desktop', { width: 1280, height: 860 });
         await run(browser, origin, 'mobile', { width: 390, height: 844 });
         await run(browser, origin, 'narrow', { width: 320, height: 844 });
-        console.log('Try demo browser check passed (1280px, 390px and 320px: 14 questions, review, submit, results, reload, reset). Screenshots: ' + shots);
+        console.log('Try demo browser check passed (1280px, 390px and 320px: 14 questions, review, submit, results, compare, reset). Screenshots: ' + shots);
     } finally {
         await browser.close();
         server.close();
