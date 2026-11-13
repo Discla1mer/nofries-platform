@@ -390,18 +390,16 @@
             }
         }
         const newestFirst = (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId);
-        // Display-only view over results the validator already accepted. It
-        // subtracts saved percentages for display and never re-scores answers.
+        // Display-only view over results the validator already accepted. The
+        // contract pins the profile and included question set, but contains no
+        // evidence that two declarations cover the same real-world population.
+        // Neither equal descriptions nor record-bound scope hashes establish it.
         function trendPoint(value, result) {
-            const attainment = value.submission.evaluation.attainment;
             return { assessmentId: value.assessmentId, submittedAt: value.updatedAt, scope: value.scopePopulation.description,
-                attainment: result.attainment, lower: attainment.lowerPercentTenths,
-                domains: result.domains.map(domain => ({ title: domain.title, attainment: domain.attainment, lower: domain.lowerPercentTenths })) };
-        }
-        function changeText(before, after) {
-            if (before === null || after === null) return 'Not comparable';
-            const difference = after - before, points = (Math.abs(difference) / 10).toFixed(1);
-            return difference === 0 ? 'No change' : (difference > 0 ? 'Up ' : 'Down ') + points + (points === '1.0' ? ' point' : ' points');
+                attainment: result.attainment, total: result.total,
+                answered: new Set(result.domains.flatMap(domain => domain.controls.flatMap(control => control.questions))
+                    .filter(question => ['yes', 'partial', 'no'].includes(question.responseOptionId)).map(question => question.itemId)),
+                domains: result.domains.map(domain => ({ title: domain.title, attainment: domain.attainment })) };
         }
         function trendSection(result) {
             const section = node('section', 'picture-trend'), key = epoch + ':' + detail.assessmentId;
@@ -453,7 +451,7 @@
             if (trend.status === 'idle') {
                 const others = trend.reads.length, state = trend, token = epoch;
                 section.append(node('p', '', (others === 1 ? 'There is 1 other submitted assessment.'
-                    : 'There are ' + others + ' other submitted assessments.') + ' Compare results to see what has changed.'));
+                    : 'There are ' + others + ' other submitted assessments.') + ' Compare saved results and answer coverage.'));
                 const action = button(trend.previousId ? (after !== null ? 'Compare with an earlier assessment'
                     : 'Compare with previous assessment') : 'Compare with later assessments',
                     () => compareTrend(state, token, action));
@@ -467,7 +465,7 @@
                 section.append(node('p', 'dashboard-muted', 'Earlier results could not be loaded, so no change is shown. Refresh to try again.')); return heading;
             }
             if (trend.total === 1) {
-                section.append(node('p', '', 'This is the only submitted assessment so far. Submit another assessment later to see what has changed since this one.'));
+                section.append(node('p', '', 'This is the only submitted assessment so far. Another submitted assessment is needed to compare saved results and answer coverage.'));
                 if (after !== null) section.append(node('p', 'dashboard-muted', 'Other saved assessments may not be loaded yet. Load more to include them.'));
                 return heading;
             }
@@ -475,31 +473,38 @@
             // While pages remain unloaded, an unseen submission may fall between
             // these two, so do not call the comparison "the previous assessment".
             const incomplete = after !== null, earlier = incomplete ? 'Earlier' : 'Previous';
-            if (!trend.previousId) section.append(node('p', '', 'This is the earliest submitted assessment shown, so there is nothing earlier to compare it with. Choose a later assessment to see what changed.'));
+            if (!trend.previousId) section.append(node('p', '', 'This is the earliest submitted assessment shown, so there is nothing earlier to compare it with. Choose a later assessment to compare saved results and answer coverage.'));
             else if (!previous) section.append(node('p', '', (incomplete ? 'The earlier' : 'The previous') + ' assessment\'s results could not be shown, so no change is shown.'));
             else {
                 section.append(node('p', '', incomplete
                     ? 'Compared with the most recent earlier assessment loaded so far, submitted ' + displayDate(previous.submittedAt) +
                         '. Other saved assessments are not loaded yet, so there may be one in between. Load more to check.'
                     : 'Compared with the previous assessment, submitted ' + displayDate(previous.submittedAt) + '.'));
-                if (previous.scope !== current.scope) section.append(node('p', 'ncsc-warning',
-                    'The two assessments describe their scope differently. Some of the change may come from the different scope rather than from changes in the organisation.'));
+                const shared = [...previous.answered].filter(itemId => current.answered.has(itemId)).length;
+                const sameCoverage = previous.total === current.total && shared === previous.answered.size && shared === current.answered.size;
+                section.append(node('p', 'picture-trend-coverage', 'Question coverage: ' + earlier + ' ' +
+                    previous.answered.size + ' of ' + previous.total + '; selected ' + current.answered.size + ' of ' + current.total +
+                    ' answered Yes, Partial or No. ' + shared + ' questions have one of these answers in both. Unknown and unapproved N/A answers remain unresolved.'));
+                section.append(node('p', 'ncsc-warning', 'Not comparable as improvement or decline: ' +
+                    (previous.scope !== current.scope ? 'the saved scope declarations differ.'
+                        : 'matching saved scope descriptions do not establish the same real-world population.') +
+                    (!sameCoverage ? ' The set of questions answered Yes, Partial or No also differs.' : '') +
+                    ' Saved ranges are shown separately; no change is calculated.'));
                 const table = node('table', 'picture-trend-table');
-                table.append(node('caption', '', 'Reported implementation, ' + earlier.toLowerCase() + ' and now'));
+                table.append(node('caption', '', 'Reported implementation, ' + earlier.toLowerCase() + ' and selected'));
                 const head = node('thead'), headRow = node('tr');
-                ['Area', earlier, 'Now', 'Change'].forEach(label => { const cell = node('th', '', label); cell.setAttribute('scope', 'col'); headRow.append(cell); });
+                ['Area', earlier, 'Selected'].forEach(label => { const cell = node('th', '', label); cell.setAttribute('scope', 'col'); headRow.append(cell); });
                 head.append(headRow);
                 const body = node('tbody');
                 const line = (label, before, now) => {
                     const row = node('tr'), title = node('th', '', label); title.setAttribute('scope', 'row');
-                    row.append(title, node('td', '', before.attainment), node('td', '', now.attainment),
-                        node('td', 'picture-trend-change', changeText(before.lower, now.lower)));
+                    row.append(title, node('td', '', before.attainment), node('td', '', now.attainment));
                     body.append(row);
                 };
                 line('Overall', previous, current);
                 current.domains.forEach((domain, position) => line(domain.title, previous.domains[position], domain));
                 table.append(head, body); section.append(table,
-                    node('p', 'dashboard-muted', 'Change compares the lower figure in each range: what was reported as in place. Unknown answers and Not applicable answers waiting for review are not counted as in place. These are self-reported answers, not a risk trend or proof that controls work.'));
+                    node('p', 'dashboard-muted', 'Both saved results use the accepted profile and included question weights. Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown answers and unapproved N/A still contribute to the upper bound; no subset is re-scored.'));
             }
             section.append(node('h4', '', 'Submitted assessments'));
             const list = node('ol', 'picture-trend-history');
