@@ -152,6 +152,12 @@
         let currentOwner = null;
         const actionName = action => typeof view.actionTitle === 'function' ? view.actionTitle(action, controlTitles) : action.controlId + ' · ' + action.labels.kind;
         const viewOptions = () => ({ actionEditorAbove: true, ...(controlTitles ? { controlTitles } : {}), ...(currentOwner ? { currentOwner } : {}) });
+        const day = value => typeof view.calendarDay === 'function' ? view.calendarDay(value) : value || 'Not set';
+        const when = value => typeof view.nzDateTime === 'function' ? view.nzDateTime(value) : value;
+        // Plain plan names, learned from each plan's validated view. Plans not
+        // yet opened are numbered by their place in the list.
+        const planNames = new Map();
+        const sourcePlanId = initialSource ? identifier('overview-plan-' + initialSource.revisionSha256) : null;
         if (mounted.has(root)) mounted.get(root).destroy();
         let alive = true, denied = false, serial = 0, busy = false, scope = null, rows = [], next = null;
         let selected = null, selectedRevision = null, generatedPlanId = null, pending = null, rendered = null, message = '', controller;
@@ -172,13 +178,14 @@
         status.setAttribute('role', 'status'); picker.setAttribute('aria-label', 'Saved improvement plans');
         picker.addEventListener('change', function () { if (active() && !picker.disabled && picker.value) select(picker.value); });
         const refreshControl = button('Refresh improvement plan', refresh), moreControl = button('More saved plans', function () { readPage(next, true); });
+        const existingNote = node('p', 'A plan already exists for this assessment, so it is shown below.'); existingNote.hidden = true;
         const createControl = initialSource ? button('Create improvement plan for this assessment', generate) : null;
         const retryControl = button('Retry pending improvement command', retry);
         toolbar.append(picker, refreshControl, moreControl);
         if (initialSource) {
-            const selectedSource = node('p', 'Selected saved assessment ' + initialSource.assessmentId + ' · revision ' + initialSource.revision +
-                '. These are saved self-reported results; creating a plan does not verify controls or change scores.');
-            selectedSource.className = 'ncsc-preserve-text'; toolbar.append(selectedSource, createControl);
+            const selectedSource = node('p', 'Plan for the assessment you chose on Overview. ' +
+                'It uses your saved self-reported answers; creating a plan does not check controls or change your results.');
+            selectedSource.className = 'ncsc-preserve-text'; toolbar.append(selectedSource, createControl, existingNote);
         }
         toolbar.append(retryControl);
         const editorPanel = node('section'), actionPicker = node('select'), actionSummary = node('p'), actionState = node('p');
@@ -224,7 +231,7 @@
             actionSummary.textContent = draft ? draft.name + ': ' + draft.work : detail ? actionName(detail) + ': ' + detail.rationale.suggestedAction : '';
             actionSummary.hidden = !draft && !permitted;
             actionState.textContent = detail ? 'Status: ' + detail.labels.status + '. Owner: ' + (labelled(detail) ? detail.ownerLabel :
-                detail.ownerSubjectKey === null ? 'not set' : detail.ownerSubjectKey === currentOwner ? 'you' : 'someone else in your organisation') + '. Due date (UTC): ' + (detail.dueDate || 'not set') + '.' : '';
+                detail.ownerSubjectKey === null ? 'not set' : detail.ownerSubjectKey === currentOwner ? 'you' : 'someone else in your organisation') + '. Due date: ' + day(detail.dueDate) + '.' : '';
             actionState.hidden = !!draft || !permitted || !detail;
             ACTION_BUTTONS.forEach(type => {
                 const control = actionButtons[type], command = type === 'assignNamed' ? 'assign' : type;
@@ -232,7 +239,8 @@
                     type === 'assign' && editor.ownerChoices.length !== 1;
                 control.disabled = busy || !!pending;
             });
-            editorMessage.textContent = staleDraft ? 'Plan changed; cancel these changes and refresh.' : !editor ?
+            editorMessage.textContent = staleDraft ? 'Plan changed; cancel these changes and refresh.' : !editor && busy ?
+                'Checking what you can change…' : !editor ?
                 'Action updates are unavailable. Refresh the saved plan to check current access and revision.' : !permitted ?
                     'This plan is read-only for the current access.' : !draft && !editor.actions.some(row => row.commands.length) ?
                         'No action updates are available at this plan revision.' : '';
@@ -264,15 +272,15 @@
             if (named) {
                 form.append(node('p', 'Name the person responsible for this action. They do not need a No Fries account.'));
                 input('ownerLabel', 'Owner name', 'text', 80, labelled(detail) ? detail.ownerLabel : '');
-                inputs.ownerLabel.autocomplete = 'off'; input('dueDate', 'Due date (UTC)', 'date', null, detail.dueDate);
-            } else if (type === 'assign') { form.append(node('p', 'Assign this action to your current eligible membership.')); input('dueDate', 'Due date (UTC)', 'date', null, detail.dueDate); }
+                inputs.ownerLabel.autocomplete = 'off'; input('dueDate', 'Due date', 'date', null, detail.dueDate);
+            } else if (type === 'assign') { form.append(node('p', 'Assign this action to your current eligible membership.')); input('dueDate', 'Due date', 'date', null, detail.dueDate); }
             else if (type === 'block') input('reason', 'Block reason', 'textarea', 1000);
             else if (type === 'reopen') input('reason', 'Reopen reason', 'textarea', 1000);
             else if (type === 'complete') {
                 input('note', 'Completion note', 'textarea', 1000); input('evidenceReference', 'Completion evidence reference (unverified)', 'text', 180);
-                input('nextReviewDate', 'Next review date (UTC, optional)', 'date'); inputs.nextReviewDate.required = false;
+                input('nextReviewDate', 'Next review date (optional)', 'date'); inputs.nextReviewDate.required = false;
                 inputs.nextReviewDate.min = model.asOf.slice(0, 10);
-                form.append(node('p', 'Choose today or a future UTC date to review the completed work and evidence. This records a date, not a reminder or verification.'));
+                form.append(node('p', 'Choose today or a later date to review the completed work and evidence. This records a date, not a reminder or verification.'));
                 form.append(node('p', 'The evidence reference is an unverified record ID. Workflow completion does not verify the control or change scores.'));
             } else form.append(node('p', 'Start the assigned action using this displayed plan revision.'));
             const save = node('button', SAVE_LABELS[choice]); save.type = 'submit'; save.className = 'dashboard-button';
@@ -316,7 +324,7 @@
                     if (key === 'nextReviewDate' && input.value < model.asOf.slice(0, 10)) invalid();
                 }
                 catch (_) {
-                    fieldError(key, key === 'ownerLabel' ? OWNER_LABEL_HELP : key === 'nextReviewDate' ? 'Choose today or a future UTC review date (YYYY-MM-DD), or leave it empty.' : key === 'dueDate' ? 'Enter a valid due date in UTC (YYYY-MM-DD), then save again.' :
+                    fieldError(key, key === 'ownerLabel' ? OWNER_LABEL_HELP : key === 'nextReviewDate' ? 'Choose today or a later review date, or leave it empty.' : key === 'dueDate' ? 'Enter a valid due date, then save again.' :
                         key === 'evidenceReference' ? 'Enter an unverified record ID of up to 180 characters without surrounding spaces. URLs and file paths cannot be used.' :
                             'Enter a ' + (key === 'note' ? 'completion note' : draft.type === 'block' ? 'block reason' : 'reopen reason') +
                             ' of up to 1000 characters using plain text, then save again.'); return Promise.resolve(false);
@@ -332,7 +340,7 @@
                 authorisedCommand(checked);
                 pending = command({ ...checked, operationId: identifier(newId()) });
             } catch (_) {
-                message = 'Complete the required action details using a UTC date or an unverified record ID, then save again.'; render(); return Promise.resolve(false);
+                message = 'Complete the required action details, then save again.'; render(); return Promise.resolve(false);
             }
             return submit();
         }
@@ -346,11 +354,15 @@
                 picker.disabled = busy || !!pending || !!draft;
                 const available = rows.slice();
                 if (selected !== null && !available.some(row => row.planId === selected)) available.unshift({ planId: selected, planRevision: selectedRevision });
-                picker.replaceChildren(node('option', 'Choose a saved improvement plan')); picker.children[0].value = '';
-                available.forEach(row => { const option = node('option', row.planId + ' · revision ' + row.planRevision); option.value = row.planId; picker.append(option); });
+                picker.replaceChildren(node('option', 'Choose a plan')); picker.children[0].value = '';
+                available.forEach((row, index) => {
+                    const option = node('option', planNames.get(row.planId) || 'Saved plan ' + (index + 1)); option.value = row.planId; picker.append(option);
+                });
                 picker.value = selected || ''; refreshControl.disabled = busy || !!pending || !!draft;
                 moreControl.hidden = next === null; moreControl.disabled = busy || !!pending || !!draft;
-                if (createControl) createControl.disabled = busy || !!pending || !!draft || scope === null;
+                const planExists = sourcePlanId !== null && (selected === sourcePlanId || rows.some(row => row.planId === sourcePlanId));
+                if (createControl) { createControl.hidden = planExists; createControl.disabled = busy || !!pending || !!draft || scope === null; }
+                existingNote.hidden = !planExists;
                 retryControl.hidden = !pending || busy; retryControl.disabled = busy;
                 renderEditor();
                 if (!busy && focusAfterRead) {
@@ -429,6 +441,7 @@
                 if (!more) clearView();
                 busy = false; render();
                 if (!more && target) return readView(target.planId, target);
+                if (!more && selected === null && sourcePlanId !== null && rows.some(row => row.planId === sourcePlanId)) return readView(sourcePlanId);
                 if (!more && (selected !== null || !initialSource && rows.length)) return readView(selected || rows[0].planId);
                 return true;
             } catch (_) { if (active() && token === serial) unavailable(null, false); return false; }
@@ -469,6 +482,8 @@
                     message = 'This action is no longer available in this plan. Return to the work queue or refresh to check again.'; render(); return false;
                 }
                 selected = planId; selectedRevision = value.planRevision; clearView(); rendered = view.mount(content, value, viewOptions());
+                try { timestamp(value.source.scoreAsOf); planNames.set(planId, 'Plan: ' + when(value.source.scoreAsOf).split(',')[0]); }
+                catch (_) { /* The renderer below withholds an invalid presentation. */ }
                 // The reused renderer withholds invalid presentations. An editor
                 // is offered only beside its successfully rendered plan panel.
                 if (!Array.from(content.querySelectorAll('section')).some(section => section.getAttribute('aria-label') === 'Improvement action plan')) invalid();

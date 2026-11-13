@@ -1331,6 +1331,9 @@ describe('submitted assessment results', () => {
         const metrics = panel.querySelectorAll('.ncsc-result-metric');
         expect(metrics.map(card => card.querySelector('h3').textContent)).toEqual(['Reported implementation', 'Answers confirmed']);
         expect(metrics[0].querySelector('.ncsc-result-value').textContent).toBe('100.0%');
+        // One figure is shown, so the caption does not talk about a lower and a higher figure.
+        expect(metrics[0].textContent).toContain('Every answer is Yes, Partial or No, so there is one figure.');
+        expect(metrics[0].textContent).not.toMatch(/lower figure|higher figure/);
         // Internal calculation provenance and the always-empty evidence measure stay out of customer results.
         expect(panel.querySelector('.ncsc-result-provenance')).toBeNull();
         for (const hidden of ['Calculation inputs and versions', 'SHA-256', 'Evaluator', 'Score contract', 'Supporting evidence', 'Evidence: Not provided']) {
@@ -1354,6 +1357,8 @@ describe('submitted assessment results', () => {
         await h.execute(submitCommand()); const ui = await resumeUi(h);
         const panel = ui.root.querySelector('.ncsc-results');
         expect(panel.textContent).toContain('46.4%–60.7%');
+        const reported = panel.querySelectorAll('.ncsc-result-metric').find(card => card.querySelector('h3').textContent === 'Reported implementation');
+        expect(reported.textContent).toContain('The lower figure is what you reported as in place. The higher figure adds answers still to confirm');
         const resolved = panel.querySelectorAll('.ncsc-result-metric').find(card => card.querySelector('h3').textContent === 'Answers confirmed');
         expect(resolved.textContent).toContain('12 of 14'); expect(resolved.textContent).toContain('85.7%');
         const assessment = (await h.client.read('assessment-a')).assessment;
@@ -1629,7 +1634,7 @@ describe('questionnaire form accessibility', () => {
         expect(create).toHaveBeenCalledTimes(1);
         expect(byId(ui, 'ncsc-scope').value).toBe('Synthetic corrected scope.');
         expect(byId(ui, 'ncsc-scope').getAttribute('aria-invalid')).toBeNull();
-        expect(byId(ui, 'ncsc-scope').getAttribute('aria-describedby')).toBe('ncsc-scope-help');
+        expect(byId(ui, 'ncsc-scope').getAttribute('aria-describedby')).toBe('ncsc-scope-note ncsc-scope-help');
         expect(ui.root.querySelector('.ncsc-errors').hidden).toBe(true);
         expect(ui.root.textContent).not.toContain('Enter a nonblank scope');
         expect(h.records).toHaveLength(0); ui.controller.destroy();
@@ -2455,7 +2460,10 @@ describe('batched automatic save', () => {
         try {
             const before = h.records.length;
             choose(ui, 0, 'yes'); choose(ui, 1, 'no'); choose(ui, 2, 'unknown');
-            expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('3 not saved yet');
+            // Help says answers save a moment after each change, so the pause reads as saving, not as unsaved work.
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('· saving….');
+            expect(byId(ui, 'ncsc-draft-progress').textContent).not.toContain('not saved yet');
+            expect(byId(ui, 'ncsc-save-status').textContent).toBe('Saving…');
             await until(() => ui.root.textContent.includes('Your progress is saved.'));
             expect(h.records).toHaveLength(before + 1);
             expect(h.records.at(-1).payload.responses).toHaveLength(3);
@@ -2468,10 +2476,20 @@ describe('batched automatic save', () => {
         try {
             const before = h.records.length;
             choose(ui, 0, 'yes'); choose(ui, 1, 'not_applicable');
+            const id = metadata().questions[1].id, needed = byId(ui, `ncsc-rationale-needed-${id}`);
+            // The reason is shown straight away, beside the explanation box, not only after Save progress.
+            expect(needed.hidden).toBe(false); expect(needed.textContent).toBe('Add an explanation to save this answer.');
+            expect(byId(ui, `ncsc-rationale-${id}`).getAttribute('aria-describedby')).toBe(`${needed.id} ncsc-rationale-help-${id}`);
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('2 not saved yet (a not applicable answer needs an explanation).');
             await settle();
             expect(h.records).toHaveLength(before);
             expect(ui.root.querySelector('.ncsc-errors').hidden).toBe(true);
             expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('2 not saved yet');
+            enter(byId(ui, `ncsc-rationale-${id}`), 'Synthetic reason.');
+            expect(needed.hidden).toBe(true);
+            expect(byId(ui, `ncsc-rationale-${id}`).getAttribute('aria-describedby')).toBe(`ncsc-rationale-help-${id}`);
+            await until(() => h.records.length === before + 1);
+            await until(() => byId(ui, 'ncsc-draft-progress').textContent.endsWith(' · all saved.'));
         } finally { ui.controller.destroy(); }
     });
     test('automatic saves stop while revisions are kept for Save progress and Submit', async () => {
@@ -2936,6 +2954,24 @@ describe('final submission review step', () => {
             expect(h.records.slice(2).map(row => row.action)).toEqual(['save', 'submit']);
             expect(h.records[3].expectedRevision).toBe(h.records[2].expectedRevision + 1);
             expect(ui.root.querySelector('.ncsc-review')).toBeNull(); expect(control(ui, 'Review and submit')).toBeUndefined();
+            // Submitted: no save-progress wording, no instruction to choose, and the read-only answers start at question 1.
+            const statusText = ui.root.querySelector('.ncsc-status').textContent;
+            expect(statusText).toBe('Assessment submitted. Your answers are now read-only.');
+            expect(ui.root.textContent).not.toMatch(/Saved revision|Your progress is saved|Choose one answer/);
+            expect(byId(ui, 'ncsc-question-index').value).toBe('0');
+            const first = metadata().questions[0];
+            expect(byId(ui, `ncsc-input-guidance-${first.id}`).textContent).toBe('This is the answer you submitted. Submitted answers cannot be changed.');
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a submitted assessment reopens on question 1 without save wording, even from a remembered question', async () => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand()); await h.execute(submitCommand());
+        const ui = mountUi(h, { initialAssessmentId: 'assessment-a', initialQuestionIndex: 2 });
+        try {
+            await until(() => ui.root.querySelector('.ncsc-sealed'));
+            expect(byId(ui, 'ncsc-question-index').value).toBe('0');
+            expect(ui.root.querySelector('.ncsc-status').textContent).not.toMatch(/Saved revision/);
+            expect(ui.root.textContent).not.toMatch(/Choose one answer for your whole declared scope/);
         } finally { ui.controller.destroy(); }
     });
 
@@ -3093,9 +3129,45 @@ describe('reconciled persona journey', () => {
             await until(() => byId(ui, 'ncsc-scope'));
             expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-scope'));
             expect(control(ui, 'Create assessment')).toBeDefined();
-            expect(ui.root.textContent).toContain('Scope can\'t be changed after you start, so check it carefully.');
+            expect(ui.root.textContent).toContain('You can\'t edit the scope once the assessment starts. If it needs to change later, you can start a new assessment.');
+            expect(ui.root.textContent).not.toMatch(/check it carefully|verified inventory|Auckland office/);
             control(ui, 'Back to assessments').click(); await until(() => control(ui, 'Start an assessment'));
             expect(byId(ui, 'ncsc-scope')).toBeUndefined();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('the scope step links its note to the box, fills a small-business example and creates with Ctrl+Enter or Cmd+Enter', async () => {
+        const keydown = (element, init) => { for (const handler of element.events.keydown || []) handler({ preventDefault() {}, ...init }); };
+        for (const modifier of ['ctrlKey', 'metaKey']) {
+            const h = await backend(), ui = mountUi(h, { startNew: true });
+            try {
+                await until(() => byId(ui, 'ncsc-scope'));
+                const scope = byId(ui, 'ncsc-scope');
+                const described = scope.getAttribute('aria-describedby').split(' ');
+                expect(described).toEqual(['ncsc-scope-note', 'ncsc-scope-help']);
+                expect(byId(ui, 'ncsc-scope-note').textContent).toMatch(/^You can't edit the scope once the assessment starts\./);
+                expect(byId(ui, 'ncsc-scope-help').textContent).toContain('Ctrl+Enter');
+                expect(ui.root.querySelector('.ncsc-scope-examples').textContent).toContain('café');
+                keydown(scope, { key: 'Enter' }); expect(h.records).toHaveLength(0);
+                control(ui, 'Use this example').click();
+                expect(scope.value).toBe(ui.root.querySelector('.ncsc-scope-examples').children.map(item => item.textContent).join('\n'));
+                expect(ui.document.activeElement).toBe(scope);
+                keydown(scope, { key: 'Enter', [modifier]: true });
+                await until(() => control(ui, 'Save progress'));
+                expect(h.records).toHaveLength(1);
+                expect(h.records[0].payload.scopePopulation.description).toBe(scope.value);
+            } finally { ui.controller.destroy(); }
+        }
+    });
+
+    test('Use this example adds below scope text already written', async () => {
+        const h = await backend(), ui = mountUi(h, { startNew: true });
+        try {
+            await until(() => byId(ui, 'ncsc-scope'));
+            enter(byId(ui, 'ncsc-scope'), 'Synthetic own line.\n');
+            control(ui, 'Use this example').click();
+            expect(byId(ui, 'ncsc-scope').value).toMatch(/^Synthetic own line\.\nPeople: /);
+            expect(h.records).toHaveLength(0);
         } finally { ui.controller.destroy(); }
     });
 

@@ -626,7 +626,7 @@ test.each(['company', 'consultant'].flatMap(accountType =>
                 }
                 expect(page.replace).not.toHaveBeenCalled();
             } else {
-                expect(page.root.textContent).toContain('Continuing account setup');
+                expect(page.root.textContent).toContain('Finishing your sign-in');
                 expect(page.replace).toHaveBeenCalledTimes(1);
                 expect(page.replace).toHaveBeenCalledWith('/api/external-customer-auth/login');
             }

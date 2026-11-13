@@ -425,7 +425,7 @@ async function main() {
     }
     async function fillAssignment(page, dueDate) {
         const form = await openAction(page, 'assign');
-        const due = form.getByLabel('Due date (UTC)', { exact: true });
+        const due = form.getByLabel('Due date', { exact: true });
         assert.equal(await due.evaluate(node => node === document.activeElement), true, 'Assignment opens on its labelled UTC date field');
         await due.fill(dueDate); return form;
     }
@@ -460,7 +460,7 @@ async function main() {
                 assert.equal(await page.getByRole('combobox', { name: 'Saved improvement plans', exact: true }).inputValue(), planId);
                 assert.ok(await page.locator('[aria-label="Improvement action plan"] article').count());
                 await page.locator('[aria-label="Improvement action plan"] summary')
-                    .filter({ hasText: /^Source and plan metadata$/ }).click();
+                    .filter({ hasText: /^Technical details for support$/ }).click();
                 const rendered = await page.locator('[aria-label="Improvement action plan"]').innerText();
                 assert.ok(rendered.includes(SELECTED));
                 assert.ok(rendered.includes(selectedSource.outputSha256));
@@ -757,7 +757,7 @@ async function main() {
             await submitAction(page, 'assign');
             await editorSection(page).getByText('Plan changed; cancel these changes and refresh.', { exact: true }).waitFor();
             const form = updateForm(page);
-            assert.equal(await form.getByLabel('Due date (UTC)', { exact: true }).inputValue(), DUE_DATE, '409 preserves the user draft for review');
+            assert.equal(await form.getByLabel('Due date', { exact: true }).inputValue(), DUE_DATE, '409 preserves the user draft for review');
             assert.equal(await form.getByRole('button', { name: 'Save assignment', exact: true }).isDisabled(), true);
             assert.equal(fixture.requests.filter(row => ['/api/dashboard/improvement/view', '/api/dashboard/improvement/editor'].includes(row.path)).length,
                 beforeReads, '409 performs no hidden read/rebase/resubmit');
@@ -785,7 +785,7 @@ async function main() {
             const retry = page.getByRole('button', { name: 'Retry pending improvement command', exact: true }); await retry.waitFor();
             assert.equal(await updateForm(page).getByRole('button', { name: 'Cancel changes', exact: true }).isDisabled(), true,
                 'An unknown write outcome cannot be discarded as a clean cancellation');
-            assert.equal(await updateForm(page).getByLabel('Due date (UTC)', { exact: true }).isDisabled(), true);
+            assert.equal(await updateForm(page).getByLabel('Due date', { exact: true }).isDisabled(), true);
             await navigate(page, 'services');
             assert.equal(await page.locator('#dashboard-content > header h1').innerText(), 'Improvement Plan');
             const pendingPosts = fixture.requests.filter(row => row.method === 'POST');
