@@ -423,7 +423,9 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         form.method = 'post'; form.action = '/api/external-customer-auth/logout';
         const submit = element('button', 'Sign out and change account');
         submit.type = 'submit'; submit.className = 'button secondary';
-        form.append(submit, element('p', 'Your account, saved setup and work are kept.'));
+        // The setup form keeps typed text only in this page; say so before it goes.
+        form.append(submit, element('p', root.querySelector('form') ? 'Signing out clears anything you have typed on this page. Your account, saved setup and work are kept.'
+            : 'Your account, saved setup and work are kept.'));
         root.append(form);
     }
     function validTerms(s) {

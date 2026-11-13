@@ -1,7 +1,8 @@
 'use strict';
 
 const { mount } = require('../api/shared/protectedAssets/improvementActionPlanClient');
-const { calendarDay } = require('../api/shared/protectedAssets/improvementActionPlanView');
+const view = require('../api/shared/protectedAssets/improvementActionPlanView');
+const { calendarDay } = view;
 const { createDom } = require('./fixtures/dashboardDom');
 const { createImprovementPlan, getImprovementPlanView, applyImprovementActionCommand } = require('../api/shared/improvementPlan/improvementPlanDomain');
 const { projectImprovementActionList } = require('../api/shared/improvementPlan/improvementActionListProjection');
@@ -289,12 +290,35 @@ test.each([408, 429])('an unexpected %i response after plan creation retains the
     } });
     await h.controller.ready;
     expect(await h.controller.generate()).toBe(false);
-    expect(h.root.textContent).toContain('outcome is unconfirmed');
+    expect(h.root.textContent).toContain(status === 429 ?
+        'Too many requests in a short time. Wait about a minute, then select Retry pending improvement command.' : 'outcome is unconfirmed');
     expect(await h.controller.requestLeave(jest.fn())).toBe(false);
     expect(await h.controller.generate()).toBe(false);
     expect(await h.controller.retry()).toBe(true);
     expect(attempts).toBe(2); expect(h.options.newId).not.toHaveBeenCalled();
     expect(h.state.plans.size).toBe(2); // The fixture's existing plan plus the single created plan.
+});
+
+test.each([
+    [{ error: 'Too many requests. Please try again later.', retryAfterSeconds: 95 }, 'Wait about 2 minutes, then select Refresh improvement plan.'],
+    [{ error: 'Too many requests. Please try again later.', retryAfterSeconds: 20 }, 'Wait about 20 seconds, then select Refresh improvement plan.'],
+    [{ code: 'intermediary_error' }, 'Wait about a minute, then select Refresh improvement plan.']
+])('a rate-limited read says how long to wait in plain words', async (value, wait) => {
+    const h = harness(); await h.controller.ready;
+    h.request.mockResolvedValueOnce({ status: 429, value });
+    expect(await h.controller.refresh()).toBe(false);
+    expect(h.root.textContent).toContain('Too many requests in a short time. ' + wait);
+    expect(h.root.textContent).not.toContain('Improvement Plan is unavailable');
+    h.request.mockClear();
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).not.toContain('Too many requests');
+});
+
+test('a rate-limited editor read keeps the plan visible and says how long to wait', async () => {
+    const h = harness({ editorRespond: () => ({ status: 429, value: { error: 'Too many requests. Please try again later.', retryAfterSeconds: 30 } }) });
+    expect(await h.controller.ready).toBe(false);
+    expect(h.root.textContent).toContain('Improvement action plan');
+    expect(h.root.textContent).toContain('Too many requests in a short time, so action options are not loaded. Wait about 30 seconds');
 });
 
 test.each([401, 403])('denial %i clears presentation and prevents further reads/writes in the old mount', async status => {
@@ -927,6 +951,112 @@ test('named-owner completion retains its owner and optional review date through 
     const completed = presentation(h.state.plans.get('plan-a')).actions.find(action => action.status === 'completed');
     expect(completed.ownerLabel).toBe('Synthetic action owner');
     expect(completed.completion.nextReviewDate).toBe('2026-12-01');
+});
+
+describe('plain action names and "You" as owner in the editor', () => {
+    test('action choices and cards use topic titles from the host', async () => {
+        const actions = presentation(seed()).actions, titles = Object.fromEntries(actions.map(action => [action.controlId, 'Title ' + action.controlId.slice(-5)]));
+        const h = harness({ options: { controlTitles: titles } }); await h.controller.ready;
+        const picker = h.root.querySelectorAll('select').find(node => node.getAttribute('aria-label') === 'Improvement action');
+        expect(picker.children.map(option => option.textContent)).toEqual(actions.map(action => view.actionTitle(action, titles)));
+        expect(picker.children.map(option => option.textContent).join(' ')).not.toMatch(/NF-NCSC/);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toBe(view.actionTitle(actions[0], titles));
+    });
+
+    test('malformed titles fall back to codes without breaking the plan', async () => {
+        const h = harness({ options: { controlTitles: { 'bad key with spaces': 'x' } } });
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toContain('NF-NCSC');
+    });
+
+    test('after Assign to me the owner reads "You", not a platform user', async () => {
+        const h = harness(); await h.controller.ready;
+        const actionId = chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date', '2026-10-02'); await submitForm(h);
+        expect(h.root.textContent).toContain('Owner: you.');
+        expect(h.root.textContent).not.toContain('a platform user');
+        const assignedCard = h.root.querySelectorAll('article').find(card => card.textContent.includes(actionId));
+        expect(assignedCard.textContent).toContain('Owner You');
+        expect(assignedCard.textContent).not.toContain('eligibility not checked)');
+    });
+});
+
+describe('empty Improvement Plan tab', () => {
+    const SUBMITTED = '2026-11-13T04:51:10.202Z';
+    function latest() {
+        return { assessmentId: input.assessmentId, revision: 10, revisionSha256: 'b'.repeat(64), profileRef: clone(input.profileRef), submittedAt: SUBMITTED };
+    }
+    function empty(latestSource) {
+        const writes = [];
+        const h = harness({ options: { latestSource }, respond(path, body, state) {
+            if (path.includes('/plans?')) return { status: 200, value: page([...state.plans.keys()].filter(id => id !== 'plan-a').map(planId => ({ planId, planRevision: 0 }))) };
+            if (path.endsWith('/execute')) {
+                writes.push(body); state.plans.set(body.planId, seed(body.planId));
+                return { status: 200, value: { schemaVersion: 1, plan: getImprovementPlanView(state.plans.get(body.planId)) } };
+            }
+            return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
+        } });
+        return { ...h, writes };
+    }
+
+    test('offers to create a plan from the latest submitted assessment and creates it there', async () => {
+        const h = empty(jest.fn(async () => latest()));
+        expect(await h.controller.ready).toBe(true);
+        expect(h.options.latestSource).toHaveBeenCalledTimes(1);
+        expect(h.root.textContent).toContain('No improvement plan yet');
+        expect(h.root.textContent).toContain('Create a plan from your latest submitted assessment (submitted 13 Nov 2026, 5:51 pm).');
+        expect(h.root.textContent).not.toContain('No saved improvement plans are available');
+        const create = button(h, 'Create improvement plan from latest assessment');
+        expect(create).toBeDefined();
+        emit(create, 'click'); await settle(); await settle();
+        expect(h.writes).toEqual([expect.objectContaining({ type: 'generate', planId: 'overview-plan-' + 'b'.repeat(64),
+            payload: { assessmentId: input.assessmentId, assessmentRevision: 10, assessmentRevisionSha256: 'b'.repeat(64) } })]);
+        expect(h.root.textContent).toContain('Improvement action plan');
+        expect(h.root.textContent).not.toContain('No improvement plan yet');
+        expect(h.options.newId).not.toHaveBeenCalled();
+    });
+
+    test('says to submit an assessment first when none is submitted', async () => {
+        const h = empty(async () => null);
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.textContent).toContain('Submit an assessment first. Your improvement plan is built from its results.');
+        expect(button(h, 'Create improvement plan from latest assessment')).toBeUndefined();
+    });
+
+    test('explains when submitted assessments could not be checked', async () => {
+        const h = empty(async () => { throw new Error('synthetic outage'); });
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.textContent).toContain('We could not check your submitted assessments just now.');
+        expect(h.root.textContent).not.toContain('synthetic outage');
+        expect(button(h, 'Create improvement plan from latest assessment')).toBeUndefined();
+    });
+
+    test('rejects a malformed latest assessment without offering creation', async () => {
+        const h = empty(async () => ({ ...latest(), revisionSha256: 'not-a-digest' }));
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.textContent).toContain('We could not check your submitted assessments just now.');
+        expect(button(h, 'Create improvement plan from latest assessment')).toBeUndefined();
+    });
+});
+
+test('Refresh says the plan is up to date, or that it was updated', async () => {
+    const h = harness(); await h.controller.ready;
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Up to date. Nothing has changed since you last looked. Checked at 10:00 pm.');
+    h.state.plans.set('plan-a', append(h.state.plans.get('plan-a'), 'assign', { ownerSubjectKey: ACTOR, dueDate: '2026-10-03' }));
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Updated with the latest saved changes. Checked at 10:00 pm.');
+});
+
+test('Refresh reports an update when another listed plan changed, not only the selected one', async () => {
+    const h = harness(); await h.controller.ready;
+    h.state.plans.set('plan-b', seed('plan-b'));
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Updated with the latest saved changes.');
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Up to date. Nothing has changed since you last looked.');
+    h.state.plans.set('plan-b', append(h.state.plans.get('plan-b'), 'assign', { ownerSubjectKey: ACTOR, dueDate: '2026-10-03' }));
+    expect(await h.controller.refresh()).toBe(true);
+    expect(h.root.textContent).toContain('Updated with the latest saved changes.');
 });
 
 describe('plain words in the plan controls', () => {

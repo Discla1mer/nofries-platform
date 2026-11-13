@@ -154,8 +154,8 @@
             integer(question.order, 1000000); text(question.prompt); guidance(question.guidance);
             if (Object.hasOwn(question, 'sources')) sourceLinks(question.sources);
             if (Object.hasOwn(question, 'smallBusiness')) {
-                record(question.smallBusiness, ['meaning', 'example', 'checks']);
-                text(question.smallBusiness.meaning); text(question.smallBusiness.example);
+                record(question.smallBusiness, ['question', 'meaning', 'example', 'checks']);
+                text(question.smallBusiness.question); text(question.smallBusiness.meaning); text(question.smallBusiness.example);
                 strings(question.smallBusiness.checks);
                 if (!question.smallBusiness.checks.length || question.smallBusiness.checks.length > 8) invalid();
             }

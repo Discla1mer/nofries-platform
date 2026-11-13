@@ -85,6 +85,10 @@
             example: 'Guest Wi-Fi is separate, but everyday user devices can freely reach backup and administration systems. This matches Partial.'
         }
     };
+    // A small-business scope example. "Use this example" copies it into the box.
+    const SCOPE_EXAMPLE = ['People: the owner and two part-time staff.', 'Devices: the till, the office laptop and the owner\'s phone.',
+        'Places and online services: the café, email and the online booking system.', 'Not included: staff personal phones.'];
+    const SCOPE_DESCRIBED_BY = 'ncsc-scope-note ncsc-scope-help';
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
     function equal(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
     function profileMatches(value, expected) {
@@ -366,6 +370,7 @@
         let submitLocked = false;
         let questionRegion;
         let questionIndex;
+        let pendingPickerChoice = null;
         let questionProgress;
         let navigationSummary;
         let nextUnanswered;
@@ -640,6 +645,11 @@
             const savingFocus = focused && ['ncsc-save', 'ncsc-save-status'].includes(focused.id);
             const progressHeight = savingFocus && questionProgress && typeof questionProgress.getBoundingClientRect === 'function'
                 ? questionProgress.getBoundingClientRect().height : null;
+            // A keyboard choice in the question picker waits for Enter or Go. Keep it
+            // when a save re-renders the page so the choice is not lost.
+            const pickerChoice = questionIndex && acknowledged && questionIndex.value !== String(activeQuestion)
+                ? { assessmentId: acknowledged.assessmentId, value: questionIndex.value } : null;
+            pendingPickerChoice = pickerChoice;
             questionIndex = null; questionProgress = null; navigationSummary = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
             if (!acknowledged || acknowledged.status === 'submitted' || !editable) { reviewing = false; returnToReview = null; }
             // Keep the live region attached so asynchronous updates change an
@@ -886,18 +896,32 @@
         }
         function renderCreate() {
             const renderedEpoch = epoch;
-            content.append(node('p', '', 'Scope can\'t be changed after you start, so check it carefully. Describe what this assessment covers. Use separate lines for people, devices, sites and services, and say what is excluded. This is your declaration, not verified inventory. To correct a mistake later, start a new assessment with the corrected scope.'));
+            content.append(node('p', '', 'Describe what this assessment covers: the people, devices, places and online services. Put each on its own line, and say what you are leaving out.'));
+            content.append(node('p', 'dashboard-muted', 'For example, for a small café:'));
             const scopeExamples = node('ul', 'ncsc-scope-examples');
-            ['People: all staff, including contractors.', 'Devices: company laptops and phones.',
-                'Sites and services: Auckland office, remote work and Microsoft 365.',
-                'Excluded: personal devices not used for work.'].forEach(function (text) { scopeExamples.append(node('li', '', text)); });
+            SCOPE_EXAMPLE.forEach(function (text) { scopeExamples.append(node('li', '', text)); });
             content.append(scopeExamples);
+            const useExample = button('Use this example', function () {
+                if (busy || pending) return;
+                // Fill an empty box; otherwise add the example below what is already written.
+                const text = SCOPE_EXAMPLE.join('\n'), current = input.value.replace(/\s+$/, '');
+                input.value = current ? current + '\n' + text : text; declaration = input.value; edited();
+                input.focus(); if (typeof input.setSelectionRange === 'function') input.setSelectionRange(input.value.length, input.value.length);
+            }, 'dashboard-button dashboard-button-secondary');
+            useExample.id = 'ncsc-scope-use-example'; useExample.setAttribute('aria-controls', 'ncsc-scope');
+            content.append(useExample);
             const label = node('label', '', 'Assessment scope'); label.setAttribute('for', 'ncsc-scope');
+            // Linked to the box so keyboard and screen reader users hear it when they reach the field.
+            const note = node('p', 'dashboard-muted', 'You can\'t edit the scope once the assessment starts. If it needs to change later, you can start a new assessment.'); note.id = 'ncsc-scope-note';
             const input = node('textarea', 'ncsc-textarea'); input.id = 'ncsc-scope'; input.value = declaration; input.rows = 5; input.readOnly = busy || !!pending;
-            input.setAttribute('aria-describedby', 'ncsc-scope-help'); input.required = true;
+            input.setAttribute('aria-describedby', SCOPE_DESCRIBED_BY); input.required = true;
             input.addEventListener('input', function () { if (live(renderedEpoch) && !busy && !pending) { declaration = input.value; edited(); } });
-            content.append(label, input, node('p', 'dashboard-muted', 'Describe the people, systems and locations covered, in up to 4,000 characters. For example: our Auckland office, staff laptops and Microsoft 365; excluding the warehouse systems.'));
-            content.children[content.children.length - 1].id = 'ncsc-scope-help';
+            input.addEventListener('keydown', function (event) {
+                if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || !live(renderedEpoch)) return;
+                event.preventDefault(); if (!start.disabled) createAssessment();
+            });
+            const help = node('p', 'dashboard-muted', 'Up to 4,000 characters. Press Ctrl+Enter, or Cmd+Enter on a Mac, to create the assessment.'); help.id = 'ncsc-scope-help';
+            content.append(label, note, input, help);
             const usage = allowanceNote(); if (usage) content.append(usage);
             controls = node('div', 'ncsc-actions');
             const start = button('Create assessment', createAssessment);
@@ -947,9 +971,32 @@
             index.setAttribute('aria-describedby', 'ncsc-question-index-help');
             questionIndex = index;
             questions.forEach(function (_item, i) { const option = node('option', '', (i + 1) + ' of ' + questions.length); option.value = String(i); index.append(option); });
-            index.value = String(activeQuestion);
-            index.addEventListener('change', function () { const i = Number(index.value); if (live(renderedEpoch) && index.parentElement === content && Number.isInteger(i) && i >= 0 && i < questions.length) { activeQuestion = i; renderQuestion(); } });
-            content.append(indexLabel, index);
+            const keptChoice = pendingPickerChoice; pendingPickerChoice = null;
+            const keptIndex = keptChoice && keptChoice.assessmentId === acknowledged.assessmentId ? Number(keptChoice.value) : NaN;
+            index.value = String(Number.isInteger(keptIndex) && keptIndex >= 0 && keptIndex < questions.length ? keptIndex : activeQuestion);
+            // A pointer choice opens the question at once. Arrow keys only move the
+            // selection; Enter or Go opens it, so keyboard users do not load every
+            // question on the way.
+            let keyedAt = 0;
+            function openSelected(moveFocus) {
+                const i = Number(index.value);
+                if (!live(renderedEpoch) || !content.contains(index) || !Number.isInteger(i) || i < 0 || i >= questions.length) return;
+                activeQuestion = i; if (moveFocus) renderAssessmentQuestion(); else renderQuestion();
+            }
+            index.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') { keyedAt = 0; event.preventDefault(); openSelected(true); }
+                // Only keys that can move the selection hold back the change; a
+                // modifier such as Shift must not swallow a later pointer choice.
+                else if (/^(Arrow(Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/.test(event.key) || (event.key && event.key.length === 1)) keyedAt = Date.now();
+            });
+            // A pointer choice always opens at once, even straight after a keystroke.
+            index.addEventListener('pointerdown', function () { keyedAt = 0; });
+            index.addEventListener('mousedown', function () { keyedAt = 0; });
+            index.addEventListener('change', function () { if (Date.now() - keyedAt < 1000) { keyedAt = 0; return; } openSelected(false); });
+            const go = button('Go', function () { openSelected(true); }, 'dashboard-button dashboard-button-secondary ncsc-question-go');
+            go.id = 'ncsc-question-go'; go.setAttribute('aria-label', 'Go to the selected question');
+            const picker = node('div', 'ncsc-question-picker'); picker.append(index, go);
+            content.append(indexLabel, picker);
             const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable ? ' Answers save automatically a moment after each change.' : ''));
             indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
@@ -975,9 +1022,13 @@
             content.append(controls);
             content.append(node('p', 'dashboard-muted', 'Resolved means answered Yes, Partial or No; it does not mean implemented. To submit, answer every question and explain each not applicable answer. Unknown answers, and answers marked not applicable, to confirm, are allowed. A submitted baseline is read-only and is not a certification.'));
         }
+        // "2 Unknown and 1 not applicable", leaving out a part that is zero.
+        function confirmBreakdown(unknown, notApplicable) {
+            return [unknown ? unknown + ' Unknown' : '', notApplicable ? notApplicable + ' not applicable' : ''].filter(Boolean).join(' and ');
+        }
         // The plain-language question people answer. The framework prompt is
         // kept for reference but never replaces it where answers are shown.
-        function plainQuestion(question) { return question.smallBusiness ? question.smallBusiness.meaning : question.prompt; }
+        function plainQuestion(question) { return question.smallBusiness ? question.smallBusiness.question : question.prompt; }
         function reviewState() {
             return questions.map(function (question, index) {
                 const value = drafts.get(question.id).value, saved = savedAnswer(question.id), option = optionById.get(value.optionId);
@@ -990,6 +1041,8 @@
             const rows = reviewState();
             const unanswered = rows.filter(function (row) { return !row.option; }).length;
             const unexplained = rows.filter(function (row) { return row.missingRationale; }).length;
+            const notApplicable = rows.filter(function (row) { return row.value.optionId === 'not_applicable'; }).length;
+            const toConfirm = rows.filter(function (row) { return ['unknown', 'not_applicable'].includes(row.value.optionId); }).length;
             const unsaved = rows.filter(function (row) { return row.unsaved; }).length;
             const panel = node('section', 'ncsc-review'); panel.setAttribute('aria-labelledby', 'ncsc-review-title');
             const title = node('h3', '', 'Review your answers before submitting'); title.id = 'ncsc-review-title'; title.tabIndex = -1;
@@ -1004,7 +1057,10 @@
             if (unexplained) blockers.push('explain ' + unexplained + ' N/A ' + (unexplained === 1 ? 'answer' : 'answers'));
             const readiness = node('p', blockers.length ? 'ncsc-review-blocked' : 'ncsc-review-ready', blockers.length
                 ? 'Before you can submit, ' + blockers.join(' and ') + '.'
-                : 'Every question has an answer and every not applicable answer has an explanation. Unknown answers, and answers marked not applicable, to confirm, stay unresolved.');
+                // Mention only what applies: no N/A sentence without N/A answers.
+                : 'Every question has an answer.' + (notApplicable ? ' ' + (notApplicable === 1 ? 'Your not applicable answer has an explanation.' : 'Each not applicable answer has an explanation.') : '') +
+                    (toConfirm ? ' ' + toConfirm + (toConfirm === 1 ? ' answer is' : ' answers are') + ' still to confirm (' + confirmBreakdown(toConfirm - notApplicable, notApplicable) +
+                        '). You can submit with ' + (toConfirm === 1 ? 'it' : 'them') + ', but ' + (toConfirm === 1 ? 'it does' : 'they do') + ' not count as in place.' : ''));
             readiness.id = 'ncsc-review-readiness'; panel.append(readiness);
             const scope = node('section', 'ncsc-review-scope'); scope.append(node('h4', '', 'Assessment scope'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description));
             panel.append(scope);
@@ -1091,7 +1147,9 @@
                 : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
-            panel.append(node('p', '', 'Unknown or unresolved answers: ' + results.unknown + '. Marked not applicable, to confirm: ' + results.pending + '.'));
+            // results.unknown already includes answers marked not applicable, so state one total.
+            panel.append(node('p', '', results.unknown ? 'Answers still to confirm: ' + results.unknown + ' (' + confirmBreakdown(results.unknown - results.pending, results.pending) + ').'
+                : 'Every answer is confirmed as Yes, Partial or No.'));
             panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries calculation, not an NCSC score.'));
             panel.append(node('h3', '', 'Explore NCSC functions and assessment topics'));
             results.domains.forEach(function (domain) {
@@ -1129,6 +1187,8 @@
                 const more = button('View all ' + followUpCount + ' follow-ups', function () {
                     items.forEach(function (item) { item.hidden = false; });
                     more.remove();
+                    // The button is gone, so keep keyboard focus on the first follow-up it revealed.
+                    items[3].tabIndex = -1; items[3].focus();
                 }, 'dashboard-button dashboard-button-secondary');
                 section.append(more);
             }
@@ -1154,7 +1214,11 @@
             const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
             const domain = metadata.domains.find(function (item) { return control && item.id === control.domainId; });
             questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
-            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', plainQuestion(question)));
+            // A stable id lets a save that re-renders the page keep focus on the
+            // question text instead of dropping it to the page heading.
+            const legend = node('legend', '', plainQuestion(question));
+            legend.id = 'ncsc-question-text'; legend.tabIndex = -1;
+            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(legend);
             const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
             const sealed = acknowledged.status === 'submitted';
             const hint = node('p', 'ncsc-input-guidance', sealed ? 'This is the answer you submitted. Submitted answers cannot be changed.'
@@ -1254,6 +1318,17 @@
             }); next.disabled = activeQuestion === questions.length - 1;
             navigationSummary = node('span', 'ncsc-navigation-summary');
             const navigationActions = node('div', 'ncsc-navigation-actions'); navigationActions.append(previous, next);
+            // On narrow screens the bar sticks to the bottom of the screen with
+            // Previous and Next; the two jump buttons sit behind More. Wider
+            // screens show all four and no More button. DOM order is the tab order.
+            const more = node('div', 'ncsc-navigation-more ncsc-navigation-collapsed'); more.id = 'ncsc-navigation-more';
+            const moreToggle = button('More', function () {
+                const expanded = moreToggle.getAttribute('aria-expanded') !== 'true';
+                moreToggle.setAttribute('aria-expanded', String(expanded));
+                more.classList[expanded ? 'remove' : 'add']('ncsc-navigation-collapsed');
+            }, 'dashboard-button dashboard-button-secondary ncsc-navigation-more-toggle');
+            moreToggle.id = 'ncsc-navigation-more-toggle'; moreToggle.setAttribute('aria-expanded', 'false'); moreToggle.setAttribute('aria-controls', more.id);
+            navigationActions.append(moreToggle, more);
             nextUnanswered = null;
             if (acknowledged.status !== 'submitted') {
                 const jump = button('Next unanswered question', function () {
@@ -1261,14 +1336,14 @@
                     const index = unansweredIndex(activeQuestion);
                     if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
                 }, 'dashboard-text-button');
-                nextUnanswered = jump; navigationActions.append(jump);
+                nextUnanswered = jump; more.append(jump);
             }
             const unresolved = button('Next unresolved question', function () {
                 if (!questionRegion.contains(unresolved)) return;
                 const index = unresolvedIndex(activeQuestion);
                 if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
             }, 'dashboard-text-button');
-            nextUnresolved = unresolved; navigationActions.append(unresolved);
+            nextUnresolved = unresolved; more.append(unresolved);
             nav.append(navigationSummary, navigationActions); questionRegion.append(nav); updateQuestionNavigation();
             questionRegion.append(node('p', 'dashboard-muted', 'Unresolved means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
             applyInlineErrors();
@@ -1418,8 +1493,8 @@
             if (view === 'create') {
                 const input = content.querySelector('textarea');
                 if (input) {
-                    if (errors.length) { input.setAttribute('aria-invalid', 'true'); errorBox.id = 'ncsc-scope-error'; input.setAttribute('aria-describedby', 'ncsc-scope-help ncsc-scope-error'); }
-                    else { input.removeAttribute('aria-invalid'); input.setAttribute('aria-describedby', 'ncsc-scope-help'); }
+                    if (errors.length) { input.setAttribute('aria-invalid', 'true'); errorBox.id = 'ncsc-scope-error'; input.setAttribute('aria-describedby', SCOPE_DESCRIBED_BY + ' ncsc-scope-error'); }
+                    else { input.removeAttribute('aria-invalid'); input.setAttribute('aria-describedby', SCOPE_DESCRIBED_BY); }
                 }
             }
             if (questionRegion && acknowledged) renderQuestion();
