@@ -582,12 +582,11 @@
         }
         const prefetchProjection = value.selectedBindingId !== null && !(value.accountType === 'consultant' &&
             !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations'));
-        // The fixed protected assets depend only on this fresh session, so they
-        // load beside the directory and projection reads instead of one round
-        // trip later. The Cyber Security module read starts as soon as the
-        // projection lists that module as ready, without waiting for the
-        // directory. Nothing mounts before the closing session witness.
-        const early = prefetchProjection ? { assets: assets(cycle) } : null;
+        // The Cyber Security module read starts as soon as the projection lists
+        // that module as ready, without waiting for the directory. The fixed
+        // protected assets still wait for both reads and the route decision,
+        // and nothing mounts before the closing session witness.
+        const early = prefetchProjection ? {} : null;
         const listed = directory(cycle, value, [], null);
         if (early) {
             early.projection = request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess);
@@ -595,7 +594,7 @@
                 return current(cycle) && cyberListedReady(projection)
                     ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess) : null;
             });
-            [early.assets, early.projection, early.cyber, listed].forEach(function (work) { work.catch(function () {}); });
+            [early.projection, early.cyber, listed].forEach(function (work) { work.catch(function () {}); });
         }
         // Both reads depend only on this fresh session. Reconciliation failure
         // disposes the cycle and cancels siblings; neither response admits the protected shell.
@@ -611,7 +610,7 @@
         // validating or mounting; the final session witness still gates display.
         const prefetchCyber = cyberListedReady(projection);
         loadingStage(cycle, OPENING_MESSAGE, OPENING_DETAIL);
-        const prepared = await Promise.all([early ? early.assets : assets(cycle), early ? early.cyber : prefetchCyber
+        const prepared = await Promise.all([assets(cycle), early ? early.cyber : prefetchCyber
             ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess)
             : Promise.resolve(null)]);
         if (!current(cycle)) return;
