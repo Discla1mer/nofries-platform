@@ -328,11 +328,19 @@ test.each(['dynamic', 'hosted'].flatMap(kind => ['login', 'create'].map(intent =
             if (intent === 'login') {
                 expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login']]);
                 expect(page.assign).not.toHaveBeenCalled();
+                expect(page.root.textContent).not.toContain('What happens on the Microsoft pages');
             } else {
                 expect(page.replace).not.toHaveBeenCalled();
                 expect(page.assign).not.toHaveBeenCalled();
                 expect(page.root.textContent).toContain('Microsoft’s secure sign-in page');
                 expect(page.root.textContent).toContain('Company to assess your own organisation');
+                // Round 2: say what the Microsoft-hosted pages look like, after the button.
+                const guide = page.root.querySelector('section');
+                expect(guide.querySelector('h2').textContent).toBe('What happens on the Microsoft pages');
+                for (const text of ['nofriescustomers.ciamlogin.com', '“No Fries Customers (via Microsoft)”', 'can take a few minutes',
+                    'junk or spam', 'resend option', 'hello@nofries.nz', '“not published by Microsoft”']) expect(guide.textContent).toContain(text);
+                const children = [...page.root.children];
+                expect(children.indexOf(page.root.querySelector('button'))).toBeLessThan(children.indexOf(guide));
                 page.root.querySelectorAll('button').find(node => node.textContent === 'Create account').click();
                 await settle();
                 expect(page.assign.mock.calls).toEqual([['/api/external-customer-auth/login?intent=create']]);
