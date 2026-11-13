@@ -63,3 +63,34 @@ test('display labels never alter the immutable scope record through save and sub
         expect(projectNcscDetail(version).scopePopulation.description).toBe(description);
     }
 });
+
+test('onAccepted is reported only after the body is read and validated within the time limit', async () => {
+    const metadata = createNcscQuestionnaireMetadata();
+    const reply = text => new Response(text, { status: 200, headers: { 'content-type': 'application/json' } });
+    const valid = JSON.stringify({ schemaVersion: 1, assessments: [], nextAfterAssessmentId: null });
+    const accepted = jest.fn();
+    expect(() => createClient({ metadata, fetch: async () => reply(valid), onAccepted: 'yes' })).toThrow();
+    await createClient({ metadata, fetch: async () => reply(valid), onAccepted: accepted }).list();
+    expect(accepted).toHaveBeenCalledTimes(1);
+    expect(accepted).toHaveBeenCalledWith('list');
+    for (const body of ['{', JSON.stringify({ schemaVersion: 2, assessments: [], nextAfterAssessmentId: null })]) {
+        await expect(createClient({ metadata, fetch: async () => reply(body), onAccepted: accepted }).list())
+            .rejects.toMatchObject({ code: 'ncsc_unavailable' });
+    }
+    expect(accepted).toHaveBeenCalledTimes(1);
+    // Headers arrive but the body never completes: the 12-second limit fails
+    // the read and nothing is reported, even if the body arrives later.
+    jest.useFakeTimers();
+    try {
+        let release;
+        const stalled = { status: 200, headers: new Headers({ 'content-type': 'application/json' }),
+            text: () => new Promise(resolve => { release = () => resolve(valid); }) };
+        const pending = createClient({ metadata, fetch: async () => stalled, onAccepted: accepted }).list();
+        const outcome = expect(pending).rejects.toMatchObject({ code: 'ncsc_unavailable' });
+        await jest.advanceTimersByTimeAsync(12000);
+        await outcome;
+        if (release) release();
+        await jest.advanceTimersByTimeAsync(0);
+        expect(accepted).toHaveBeenCalledTimes(1);
+    } finally { jest.useRealTimers(); }
+});
