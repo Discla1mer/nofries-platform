@@ -5,75 +5,49 @@ const { execFileSync, spawnSync } = require('child_process');
 const yaml = require('js-yaml');
 
 const {
+    assertRemediatedMsalClosure,
     evaluateFindings,
     normaliseAuditReport,
     parseArguments,
     rejectUnsupportedShrinkwrap,
-    stripTemporaryMsalFindings,
-    validateReviewedSourceScope,
     validateConnectorClosure,
     validateExceptionRegistry,
     validateManifestLock
 } = require('../scripts/check-dependency-audit');
 
 const NOW = new Date('2026-09-10T00:00:00Z');
-const MSAL_NOW = new Date('2026-10-24T00:00:00Z');
 const MSAL_URL = 'https://github.com/advisories/GHSA-xcx6-jx8p-x3h5';
-const DIRECT_MSAL_NODES = ['node_modules/@azure/msal-node'];
-const DIRECT_IDENTITY_NODES = ['node_modules/@azure/identity'];
 const ROOT_MSAL_NODES = [
     'node_modules/@azure/msal-node',
     'node_modules/promptfoo/node_modules/@azure/identity/node_modules/@azure/msal-node',
     'node_modules/promptfoo/node_modules/@azure/msal-node'
 ];
-const ROOT_IDENTITY_NODES = [
-    'node_modules/@azure/identity',
-    'node_modules/promptfoo/node_modules/@azure/identity'
-];
 
-function msalAuditFixture(surface = 'root-all') {
-    const rootAll = surface === 'root-all';
-    const vulnerabilities = {
-        '@azure/msal-node': {
-            name: '@azure/msal-node', severity: 'high',
-            nodes: [...(rootAll ? ROOT_MSAL_NODES : DIRECT_MSAL_NODES)],
-            via: [{ url: MSAL_URL, source: 1243111, severity: 'high' }]
-        },
-        '@azure/identity': {
-            name: '@azure/identity', severity: 'high',
-            nodes: [...(rootAll ? ROOT_IDENTITY_NODES : DIRECT_IDENTITY_NODES)],
-            via: ['@azure/msal-node']
-        }
+// The remediated root closure: every MSAL copy is 7.1.1.
+function remediatedLockFixture() {
+    const packages = {
+        'node_modules/@azure/identity': { version: '4.13.1' },
+        'node_modules/promptfoo/node_modules/@azure/identity': { version: '4.13.3' },
+        'node_modules/promptfoo': { version: '0.124.0' },
+        'node_modules/hono': { version: '4.13.11' },
+        'node_modules/@hono/node-server': { version: '2.1.3' }
     };
-    if (rootAll) {
-        vulnerabilities['@azure/ai-projects'] = {
-            name: '@azure/ai-projects', severity: 'high',
-            nodes: ['node_modules/@azure/ai-projects'], via: ['@azure/identity']
-        };
-        vulnerabilities.promptfoo = {
-            name: 'promptfoo', severity: 'high', nodes: ['node_modules/promptfoo'],
-            via: ['@azure/ai-projects', '@azure/identity', '@azure/msal-node']
-        };
-    }
-    return {
-        auditReportVersion: 2,
-        vulnerabilities
-    };
+    for (const node of ROOT_MSAL_NODES) packages[node] = { version: '7.1.1' };
+    return { packages };
 }
 
-function msalLockFixture(surface = 'root-all') {
-    const packages = {
-        'node_modules/@azure/msal-node': { version: '5.6.0' },
-        'node_modules/@azure/identity': { version: '4.13.1' }
-    };
-    if (surface === 'root-all') Object.assign(packages, {
-        'node_modules/promptfoo/node_modules/@azure/identity/node_modules/@azure/msal-node': { version: '6.0.1' },
-        'node_modules/promptfoo/node_modules/@azure/msal-node': { version: '7.0.1' },
-        'node_modules/promptfoo/node_modules/@azure/identity': { version: '4.13.3' },
-        'node_modules/@azure/ai-projects': { version: '2.5.0', dev: true, optional: true },
-        'node_modules/promptfoo': { version: '0.124.0' }
-    });
-    return { packages };
+// The npm 10.9.4 projection that broke main: promptfoo is reported only
+// because of non-MSAL Moderate advisories in its own dependency chain.
+function nonMsalPromptfooReport() {
+    return { auditReportVersion: 2, vulnerabilities: {
+        hono: { name: 'hono', severity: 'moderate', nodes: ['node_modules/hono'],
+            via: [{ url: 'https://github.com/advisories/GHSA-4m76-xfj5-7975', source: 1246368, severity: 'moderate' }] },
+        '@hono/node-server': { name: '@hono/node-server', severity: 'moderate',
+            nodes: ['node_modules/@hono/node-server'],
+            via: [{ url: 'https://github.com/advisories/GHSA-qv5m-9pm6-hqp3', source: 1246356, severity: 'moderate' }, 'hono'] },
+        promptfoo: { name: 'promptfoo', severity: 'moderate', nodes: ['node_modules/promptfoo'],
+            via: ['@hono/node-server', 'hono'] }
+    } };
 }
 
 function finding(overrides = {}) {
@@ -114,139 +88,61 @@ function exception(overrides = {}) {
 }
 
 describe('build-lane dependency audit policy', () => {
-    test.each(['root-all', 'api-runtime', 'root-optional', 'root-runtime', 'api-production'])
-    ('accepts only the fully pinned temporary MSAL chain on %s', (surface) => {
-        const report = msalAuditFixture(surface);
-        const { report: remaining, accepted } = stripTemporaryMsalFindings(
-            surface, report, msalLockFixture(surface), MSAL_NOW, '11.9.0'
-        );
-        expect(Object.keys(remaining.vulnerabilities)).toEqual([]);
-        expect(accepted.map((item) => item.package).sort())
-            .toEqual(Object.keys(report.vulnerabilities).sort());
-        expect(report.vulnerabilities['@azure/msal-node']).toBeDefined();
+    test('a remediated MSAL closure filters nothing: non-MSAL promptfoo findings are evaluated normally', () => {
+        const lock = remediatedLockFixture();
+        expect(() => assertRemediatedMsalClosure('root-all', lock)).not.toThrow();
+        const findings = normaliseAuditReport('root-all', nonMsalPromptfooReport(), lock);
+        expect(findings.map((item) => item.package).sort())
+            .toEqual(['@hono/node-server', 'hono', 'promptfoo']);
+        const promptfoo = findings.find((item) => item.package === 'promptfoo');
+        expect(promptfoo.advisoryIds).toEqual(['GHSA-4M76-XFJ5-7975', 'GHSA-QV5M-9PM6-HQP3']);
+        const result = evaluateFindings(findings, { dependencyChanged: true, exceptions: [], now: NOW });
+        expect(result.blocked.map((item) => item.finding.package).sort())
+            .toEqual(['@hono/node-server', 'hono', 'promptfoo']);
+        expect(result.blocked.every((item) => /Moderate/.test(item.reason))).toBe(true);
     });
 
-    test('accepts only the exact npm 10 optional-omitted root projection', () => {
-        const report = msalAuditFixture();
-        delete report.vulnerabilities['@azure/ai-projects'];
-        report.vulnerabilities.promptfoo.via = ['@azure/identity'];
-        const lock = msalLockFixture();
-        const result = stripTemporaryMsalFindings('root-all', report, lock, MSAL_NOW, '10.9.4');
-        expect(result.accepted.map((item) => item.package).sort())
-            .toEqual(['@azure/identity', '@azure/msal-node', 'promptfoo']);
-        expect(Object.keys(result.report.vulnerabilities)).toEqual([]);
-        expect(() => stripTemporaryMsalFindings('root-all', report, lock, MSAL_NOW, '11.9.0'))
-            .toThrow();
-        expect(() => stripTemporaryMsalFindings('root-all', msalAuditFixture(), lock,
-            MSAL_NOW, '10.9.4')).toThrow();
-        expect(() => stripTemporaryMsalFindings('root-all', report, lock, MSAL_NOW, '10.9.5'))
-            .toThrow(/unreviewed npm audit client version/);
-        lock.packages['node_modules/@azure/ai-projects'].version = '2.5.1';
-        expect(() => stripTemporaryMsalFindings('root-all', report, lock, MSAL_NOW, '10.9.4'))
-            .toThrow(/locked version changed/);
-        lock.packages['node_modules/@azure/ai-projects'].version = '2.5.0';
-        lock.packages['node_modules/@azure/ai-projects'].optional = false;
-        expect(() => stripTemporaryMsalFindings('root-all', report, lock, MSAL_NOW, '10.9.4'))
-            .toThrow(/optional lock classification changed/);
+    test('an MSAL advisory finding is never filtered and always blocks as High', () => {
+        const lock = remediatedLockFixture();
+        const report = { auditReportVersion: 2, vulnerabilities: {
+            '@azure/msal-node': { name: '@azure/msal-node', severity: 'high',
+                nodes: ['node_modules/@azure/msal-node'],
+                via: [{ url: MSAL_URL, source: 1243111, severity: 'high' }] },
+            promptfoo: { name: 'promptfoo', severity: 'high', nodes: ['node_modules/promptfoo'],
+                via: ['@azure/msal-node'] }
+        } };
+        const findings = normaliseAuditReport('root-all', report, lock);
+        expect(findings.map((item) => item.package).sort()).toEqual(['@azure/msal-node', 'promptfoo']);
+        expect(evaluateFindings(findings, { dependencyChanged: false, exceptions: [], now: NOW })
+            .blocked).toHaveLength(2);
     });
 
-    test('blocks expiry and any changed MSAL advisory, node, version, severity or inherited parent', () => {
-        const make = () => msalAuditFixture();
-        const lock = msalLockFixture();
-        expect(() => stripTemporaryMsalFindings('root-all', make(), lock,
-            new Date('2026-10-27T00:00:00Z'))).toThrow(/expired/);
-        expect(() => stripTemporaryMsalFindings('root-all', make(), lock,
-            new Date('invalid'))).toThrow(/expired/);
-        const cases = [
-            (report) => { report.vulnerabilities['@azure/msal-node'].via[0].url =
-                'https://github.com/advisories/GHSA-other'; },
-            (report) => { report.vulnerabilities['@azure/msal-node'].via[0].severity = 'critical'; },
-            (report) => { report.vulnerabilities['@azure/msal-node'].via.push({ url: MSAL_URL, source: 99 }); },
-            (report) => { report.vulnerabilities['@azure/msal-node'].nodes.push('node_modules/other/@azure/msal-node'); },
-            (report) => { report.vulnerabilities['@azure/msal-node'].severity = 'critical'; },
-            (report) => { report.vulnerabilities.promptfoo.via.push('unreviewed'); },
-            (report) => { delete report.vulnerabilities['@azure/identity']; },
-            (report) => { delete report.vulnerabilities.promptfoo; }
-        ];
-        for (const mutate of cases) {
-            const report = make();
-            mutate(report);
-            expect(() => stripTemporaryMsalFindings('root-all', report, lock, MSAL_NOW, '11.9.0')).toThrow();
-        }
-        const changedLock = msalLockFixture();
-        changedLock.packages['node_modules/promptfoo/node_modules/@azure/msal-node'].version = '7.1.0';
-        expect(() => stripTemporaryMsalFindings('root-all', make(), changedLock, MSAL_NOW, '11.9.0'))
-            .toThrow(/locked version changed/);
-    });
-
-    test('retains unrelated findings and rejects malformed reports', () => {
-        const report = msalAuditFixture('api-runtime');
-        report.vulnerabilities.other = {
-            name: 'other', severity: 'high', nodes: ['node_modules/other'],
-            via: [{ url: 'https://github.com/advisories/GHSA-other' }]
-        };
-        const lock = msalLockFixture('api-runtime');
-        lock.packages['node_modules/other'] = { version: '1.0.0' };
-        const filtered = stripTemporaryMsalFindings('api-runtime', report, lock, MSAL_NOW);
-        expect(normaliseAuditReport('api-runtime', filtered.report, lock))
-            .toEqual([expect.objectContaining({ package: 'other', severity: 'high' })]);
-        expect(evaluateFindings(normaliseAuditReport('api-runtime', filtered.report, lock), {
-            dependencyChanged: true, exceptions: [], now: MSAL_NOW
-        }).blocked).toHaveLength(1);
-        expect(() => stripTemporaryMsalFindings('api-runtime', {
-            ...msalAuditFixture('api-runtime'), error: { code: 'EAUDIT' }
-        }, lock, MSAL_NOW)).toThrow(/failed npm audit/);
-        expect(() => stripTemporaryMsalFindings('api-runtime', {
-            auditReportVersion: 2, vulnerabilities: {}
-        }, lock, MSAL_NOW)).toThrow(/finding missing/);
-        const patchedLock = msalLockFixture('root-all');
-        patchedLock.packages['node_modules/@azure/msal-node'].version = '7.1.0';
-        expect(() => stripTemporaryMsalFindings('root-all', {
-            auditReportVersion: 2, vulnerabilities: {}
-        }, patchedLock, MSAL_NOW)).toThrow(/finding missing/);
-        const removedLock = { packages: {} };
-        expect(stripTemporaryMsalFindings('api-runtime', {
-            auditReportVersion: 2, vulnerabilities: {}
-        }, removedLock, MSAL_NOW).accepted).toEqual([]);
-    });
-
-    test('retires acceptance only for conclusively remediated full MSAL closures after expiry', () => {
-        const lock = msalLockFixture();
-        for (const node of ROOT_MSAL_NODES) lock.packages[node].version = '7.1.1';
-        const report = { auditReportVersion: 2, vulnerabilities: {} };
-        expect(stripTemporaryMsalFindings('root-all', report, lock,
-            new Date('2026-10-28T00:00:00Z'))).toEqual({ report, accepted: [] });
-        for (const version of ['6.0.1', '7.0.1', '7.1.1-beta.1', 'garbage', undefined, '07.1.1']) {
-            const hidden = structuredClone(lock);
+    test('fails closed when any locked MSAL copy is vulnerable, prerelease or unknown', () => {
+        for (const version of ['5.6.0', '6.0.1', '7.0.1', '7.1.1-beta.1', 'garbage', undefined, '07.1.1']) {
+            for (const node of ROOT_MSAL_NODES) {
+                const lock = remediatedLockFixture();
+                lock.packages[node] = { version };
+                expect(() => assertRemediatedMsalClosure('root-all', lock))
+                    .toThrow(/not remediated for GHSA-XCX6-JX8P-X3H5/);
+            }
+            const hidden = remediatedLockFixture();
             hidden.packages['node_modules/optional-sdk/node_modules/@azure/msal-node'] = { version };
-            expect(() => stripTemporaryMsalFindings('root-all', report, hidden,
-                new Date('2026-10-28T00:00:00Z'))).toThrow(/finding missing/);
+            expect(() => assertRemediatedMsalClosure('root-all', hidden)).toThrow(/not remediated/);
         }
-        for (const severity of ['moderate', 'high', 'critical']) {
-            const unrelated = { auditReportVersion: 2, vulnerabilities: { other: {
-                name: 'other', severity, nodes: ['node_modules/other'],
-                via: [{ url: 'https://github.com/advisories/GHSA-other' }]
-            } } };
-            lock.packages['node_modules/other'] = { version: '1.0.0' };
-            const result = stripTemporaryMsalFindings('root-all', unrelated, lock,
-                new Date('2026-10-28T00:00:00Z'));
-            expect(result.accepted).toEqual([]);
-            expect(evaluateFindings(normaliseAuditReport('root-all', result.report, lock), {
-                dependencyChanged: true, exceptions: [], now: NOW
-            }).blocked).toHaveLength(1);
+        expect(() => assertRemediatedMsalClosure('root-all', { packages: {} })).not.toThrow();
+        for (const lock of [null, {}, { packages: null }]) {
+            expect(() => assertRemediatedMsalClosure('root-all', lock)).toThrow(/packages map/);
         }
     });
 
     test('recognizes MSAL identity and aliases, including hidden, malformed and unresolved copies', () => {
-        const report = { auditReportVersion: 2, vulnerabilities: {} };
-        const now = new Date('2026-10-28T00:00:00Z');
         const make = () => ({ packages: {
             '': { dependencies: { 'legacy-msal': 'npm:@azure/msal-node@7.0.1' } },
             'node_modules/@azure/msal-node': { version: '7.1.1' },
             'node_modules/legacy-msal': { name: '@azure/msal-node', version: '7.0.1' }
         } });
-        const reject = lock => expect(() => stripTemporaryMsalFindings('root-all', report, lock, now))
-            .toThrow(/finding missing/);
+        const reject = lock => expect(() => assertRemediatedMsalClosure('root-all', lock))
+            .toThrow(/not remediated/);
         reject(make());
         const identityOnly = make(); delete identityOnly.packages[''].dependencies;
         reject(identityOnly);
@@ -268,10 +164,17 @@ describe('build-lane dependency audit policy', () => {
         } };
         delete nested.packages['node_modules/legacy-msal'].name; reject(nested);
         nested.packages['node_modules/legacy-msal'].version = '7.1.1';
-        expect(stripTemporaryMsalFindings('root-all', report, nested, now)).toEqual({ report, accepted: [] });
+        expect(() => assertRemediatedMsalClosure('root-all', nested)).not.toThrow();
         // Resolve the nearest nested copy rather than accepting a safe hoisted alias.
         nested.packages['node_modules/optional-sdk/node_modules/legacy-msal'] = { version: '7.0.1' };
         reject(nested);
+    });
+
+    test('the committed root and API locks are fully remediated', () => {
+        for (const lockPath of ['../package-lock.json', '../api/package-lock.json']) {
+            const lock = JSON.parse(fs.readFileSync(path.join(__dirname, lockPath)));
+            expect(() => assertRemediatedMsalClosure(lockPath, lock)).not.toThrow();
+        }
     });
 
     test('admits only the reviewed API Identity override and exact audited MSAL closure', () => {
@@ -314,17 +217,6 @@ describe('build-lane dependency audit policy', () => {
         expect(() => validateManifestLock('other', manifest, lock)).toThrow(/explicitly audited/);
     });
 
-    test('blocks source changes outside the exact reviewed dependency and audit files', () => {
-        expect(() => validateReviewedSourceScope([
-            'package-lock.json', 'scripts/check-dependency-audit.js'
-        ])).not.toThrow();
-        for (const changed of ['api/shared/browserAuth.js', 'api/shared/identity.js',
-            'connector-functions/package-lock.json', '.github/workflows/ci.yml']) {
-            expect(() => validateReviewedSourceScope([changed])).toThrow(/source exposure changed/);
-        }
-        expect(() => validateReviewedSourceScope(['package-lock.json', null]))
-            .toThrow(/source exposure changed/);
-    });
     test('always blocks High and Critical findings', () => {
         for (const severity of ['high', 'critical']) {
             const result = evaluateFindings([finding({ severity })], {
