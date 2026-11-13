@@ -196,12 +196,13 @@ test('a storage failure withholds logout acknowledgement without exposing its er
     expect(digest(auth.records.get(target))).toBe(before); expect(preserved(h)).toBe(retained);
 });
 
-test.each(['application/json', 'text/html'])('a genuinely pending callback prevents false setup logout acknowledgement for %s', async accept => {
+test.each(['application/json', 'text/html'])('setup sign-out during a pending callback, and its retry, are confirmed and the callback then issues no session (%s)', async accept => {
     const h = fixture(), session = await setupSession(h), auth = h.getContainer('nofries-browser-auth').records;
     const started = await request(h.app).get(LOGIN).set('Cookie', session.cookie); expect(started.status).toBe(302);
     const tx = cookie(started.headers['set-cookie'][0]), sidKey = authKey('sessions', session.cookie), txKey = authKey('transactions', tx);
-    const parent = Buffer.from(auth.get(sidKey)), retained = preserved(h), customerData = preserved(h, false);
+    const retained = preserved(h), customerData = preserved(h, false);
     const proofs = [...h.getContainer('dashboard-proofs').records].map(([key, bytes]) => [key, digest(bytes)]);
+    const sessions = () => [...auth.keys()].filter(key => key.startsWith('browser-auth/sessions/'));
     const original = h.exchange.getMockImplementation();
     let input, resume, entered;
     const exchanging = new Promise(resolve => { entered = resolve; });
@@ -211,23 +212,61 @@ test.each(['application/json', 'text/html'])('a genuinely pending callback preve
         .then(value => value);
     try {
         await exchanging; expect(auth.has(txKey)).toBe(false); // Real callback consumed it before awaiting provider redemption.
+        // Codex's sequence: sign out while the callback is redeeming the code,
+        // retry without the transaction cookie, then let the callback finish.
         const response = await postLogout(h, `${session.cookie}; ${tx}`).set('Accept', accept);
-        expect(response.status).toBe(503); expect(response.headers['set-cookie']).toBeUndefined(); expect(response.headers.location).toBeUndefined();
-        expect(auth.get(sidKey).equals(parent)).toBe(true); expect(preserved(h)).toBe(retained);
-        if (accept === 'text/html') {
-            expect(response.headers['content-type']).toMatch(/^text\/html/);
-            expect(response.text).toContain('Sign-out was not confirmed'); expect(response.text).toContain('may still finish');
-            expect(response.text).toContain('href="/signup?provider=external"');
-            expect(response.headers['content-security-policy']).toBeDefined(); expect(response.text).not.toContain(PRIVATE);
-        } else expect(response.body.code).toBe('browser_auth_unavailable');
+        expect(response.status).toBe(303); expect(response.headers.location).toBe(CHOOSE);
+        expect(auth.has(sidKey)).toBe(false); expect(preserved(h)).toBe(retained);
+        const retry = await postLogout(h, session.cookie).set('Accept', accept);
+        expect(retry.status).toBe(303); expect(retry.headers.location).toBe(CHOOSE);
         expect(JSON.stringify(warn.mock.calls)).not.toContain(PRIVATE);
     } finally { resume(await original(input)); }
-    expect((await callback).status).toBe(303); expect(auth.get(sidKey).equals(parent)).toBe(true);
-    // The already-running callback may issue its own new session/proof. It must
-    // preserve previous proofs and customer data; logout never claimed success.
+    const late = await callback;
+    // The callback lost to the server-side revocation: no session record and no
+    // session cookie, only the sign-in retry page.
+    expect(late.status).toBe(303); expect(late.headers.location).toMatch(/^\/login\?signin=retry&provider=external/);
+    expect((late.headers['set-cookie'] || []).filter(value => /^__Host-nofries-external-customer=[^;]/.test(value))).toEqual([]);
+    expect(sessions()).toEqual([]);
     expect(preserved(h, false)).toBe(customerData);
     expect([...h.getContainer('dashboard-proofs').records].map(([key, bytes]) => [key, digest(bytes)]))
         .toEqual(expect.arrayContaining(proofs));
+});
+
+test('a stale settled transaction cookie no longer blocks setup sign-out', async () => {
+    // Round 2: "Sign-out was not confirmed" twice in a row from the setup page.
+    const h = fixture(), session = await setupSession(h), auth = h.getContainer('nofries-browser-auth').records;
+    const started = await request(h.app).get(LOGIN).set('Cookie', session.cookie); expect(started.status).toBe(302);
+    const tx = cookie(started.headers['set-cookie'][0]), sidKey = authKey('sessions', session.cookie);
+    auth.delete(authKey('transactions', tx)); // Already settled elsewhere; nothing is running.
+    const retained = preserved(h);
+    const first = await postLogout(h, `${session.cookie}; ${tx}`).set('Accept', 'text/html');
+    expect(first.status).toBe(303); expect(first.headers.location).toBe(CHOOSE);
+    expect(auth.has(sidKey)).toBe(false); expect(preserved(h)).toBe(retained);
+});
+
+test('an unconfirmed setup sign-out page says to choose Sign out again and changes no cookie', async () => {
+    const h = fixture(), session = await setupSession(h), auth = h.getContainer('nofries-browser-auth');
+    const target = authKey('sessions', session.cookie), original = auth.getBlockBlobClient;
+    auth.getBlockBlobClient = key => key === target ? { download: async () => { throw new Error(PRIVATE); } } : original(key);
+    const response = await postLogout(h, session.cookie).set('Accept', 'text/html');
+    expect(response.status).toBe(503); expect(response.headers.location).toBeUndefined();
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(response.headers['content-type']).toMatch(/^text\/html/);
+    expect(response.text).toContain('Sign-out was not confirmed'); expect(response.text).toContain('choose Sign out again');
+    expect(response.text).toContain('href="/signup?provider=external"');
+    expect(response.headers['content-security-policy']).toBeDefined(); expect(response.text).not.toContain(PRIVATE);
+});
+
+test('the setup form says that signing out clears what was typed but not yet saved', async () => {
+    const dom = createDom();
+    const view = mountSignupJourney(dom.root, { load: async () => ({ status: 'setup_details', email: 'synthetic@example.test' }),
+        createAccount: jest.fn(), acceptTerms: jest.fn(), completeSetup: jest.fn() }, { customerTransport: 'external' });
+    try {
+        await view.ready;
+        const logout = dom.root.querySelectorAll('form').find(form => form.action === LOGOUT);
+        expect(logout.textContent).toContain('Signing out clears anything you have typed on this page.');
+        expect(logout.textContent).toContain('Your account, saved setup and work are kept.');
+    } finally { view.dispose(); }
 });
 
 test.each(['dynamic', 'hosted'])('%s choose-account marker performs one state read and requires a manual fixed login action', async kind => {
@@ -265,7 +304,7 @@ test.each(['setup_details', 'continue_authentication'])('a forged choose marker 
         state: { status, ...(status === 'setup_details' ? { email: 'synthetic@example.test' } : {}) } });
     try {
         await flush(); expect(page.assign).not.toHaveBeenCalled(); expect(page.replace).not.toHaveBeenCalled();
-        expect(page.root.querySelector('h1').textContent).toBe(status === 'setup_details' ? 'Set up your organisation' : 'Continuing account setup');
+        expect(page.root.querySelector('h1').textContent).toBe(status === 'setup_details' ? 'Set up your organisation' : 'Finishing your sign-in');
         const forms = page.root.querySelectorAll('form'), logout = forms.find(form => form.action === LOGOUT);
         expect(logout).toBeDefined(); expect(logout.method).toBe('post'); expect(logout.parentElement).toBe(page.root);
         expect(forms.every(form => form.querySelectorAll('form').length === 0)).toBe(true);

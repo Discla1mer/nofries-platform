@@ -121,6 +121,9 @@
             lines.forEach(line => list.append(node('li', 'ncsc-preserve-text', line)));
             return list;
         }
+        // One live region for the whole view, kept across repaints so screen
+        // readers hear both "Loading…" and the end of loading.
+        const liveStatus = node('p', 'picture-status'); liveStatus.setAttribute('role', 'status');
         function button(label, action) {
             const control = node('button', 'dashboard-button', label); control.type = 'button';
             control.addEventListener('click', () => { if (live() && !denied) action(); }); return control;
@@ -227,7 +230,8 @@
         // never changes the assessment picture below it.
         function placeActions() {
             const previous = root.querySelector('.picture-actions'); if (previous) previous.remove();
-            if (!live() || denied || !actions) return;
+            // Before any submitted result there is nothing to act on yet.
+            if (!live() || denied || !actions || !actions.total && !rows.some(row => row.status === 'submitted')) return;
             const card = node('section', 'picture-actions'), heading = node('h3', '', 'Actions');
             heading.id = id + '-actions'; card.setAttribute('aria-labelledby', heading.id); card.append(heading);
             const gaps = root.querySelector('.picture-top-gaps');
@@ -267,18 +271,24 @@
         function paint() {
             if (!live()) return;
             clearExplanation();
-            root.replaceChildren(); root.classList.add('organisation-picture');
+            Array.from(root.children).forEach(child => { if (child !== liveStatus) child.remove(); });
+            root.classList.add('organisation-picture');
+            if (liveStatus.parentElement !== root) root.append(liveStatus);
             const isEmpty = !loading && !rows.length && loaded && !message && !selected && after === null;
             if (!isEmpty) {
                 const header = node('header', 'picture-heading');
                 header.append(node('h2', '', 'Cyber baseline'),
                     node('p', 'dashboard-muted', 'A saved assessment of the selected scope, not a live check of connected systems.'));
-                root.append(header);
+                root.prepend(header);
             }
-            const status = node('p', 'picture-status', message || (loading ? 'Loading saved assessment…' : ''));
-            status.setAttribute('role', 'status'); status.hidden = !message && !loading; root.append(status);
+            // After loading, the status stays in place but only for screen readers.
+            const done = detail ? 'Saved assessment loaded.' : isEmpty ? 'No saved assessments yet.' : loaded ? 'Saved assessments loaded.' : '';
+            const text = message || (loading ? 'Loading saved assessment…' : done);
+            if (liveStatus.textContent !== text) liveStatus.textContent = text;
+            liveStatus.className = message || loading ? 'picture-status' : 'picture-status picture-status-quiet';
             if (denied) return;
-            if (allowance) {
+            function appendAllowance() {
+                if (!allowance) return;
                 // Plan usage in plain English, so the limit is known before starting work.
                 const exhausted = allowance.used >= allowance.limit;
                 const usage = node('p', exhausted ? 'ncsc-warning picture-allowance' : 'dashboard-muted picture-allowance',
@@ -288,6 +298,7 @@
                 if (exhausted) { const contact = node('a', '', 'Contact No Fries about more submissions'); contact.href = '/contact.html'; usage.append(contact); }
                 root.append(usage);
             }
+            if (!isEmpty) appendAllowance();
             if (detail && detail.status !== 'submitted') renderResume();
             if (rows.length) {
                 const toolbar = node('div', 'picture-toolbar');
@@ -327,15 +338,24 @@
                 if (!detail) root.append(node('p', 'dashboard-muted', 'Refresh reloads saved assessments. It does not check whether answers still reflect the organisation today.'));
             }
             if (isEmpty) {
+                // A new organisation leads with one plain action, before any detail.
                 const empty = node('section', 'picture-first-use');
                 empty.append(node('p', 'picture-first-use-eyebrow', 'Welcome to No Fries'),
-                    node('h2', '', 'Build your first baseline'),
-                    node('p', 'picture-first-use-intro', 'No saved assessments yet. A cyber assessment helps you understand where you stand.'));
+                    node('h2', '', 'Start your cyber check'),
+                    node('p', 'picture-first-use-intro', 'No saved assessments yet. Answer questions about your business to see where you stand and what to fix first.'));
+                if (typeof options.openCyber === 'function') {
+                    const token = epoch;
+                    const action = button('Start your cyber check', () => {
+                        if (live(token) && !loading && !message && !rows.length && !selected && after === null &&
+                            action.parentElement === empty && empty.parentElement === root) options.openCyber(undefined, { startNew: true });
+                    });
+                    action.classList.add('picture-first-use-action'); empty.append(action);
+                }
                 const steps = node('ol', 'picture-first-use-steps'); steps.setAttribute('role', 'list');
                 [
-                    ['Assessment', 'Answer questions about your chosen scope.'],
-                    ['Results', 'Submit to see your saved baseline and its limitations.'],
-                    ['Next steps', 'Review follow-up points from your results.']
+                    ['Answer the questions', 'Tell us what is in place for the part of your business you choose.'],
+                    ['See your results', 'Submit your answers to see where you stand.'],
+                    ['Fix the gaps', 'Get your top three gaps and plan what to do next.']
                 ].forEach((step, index) => {
                     const item = node('li', 'picture-first-use-step');
                     const number = node('span', 'picture-first-use-number', String(index + 1));
@@ -345,15 +365,8 @@
                     item.append(number, content); steps.append(item);
                 });
                 empty.append(steps);
-                if (typeof options.openCyber === 'function') {
-                    const token = epoch;
-                    const action = button('Open assessment', () => {
-                        if (live(token) && !loading && !message && !rows.length && !selected && after === null &&
-                            action.parentElement === empty && empty.parentElement === root) options.openCyber(undefined, { startNew: true });
-                    });
-                    action.classList.add('picture-first-use-action'); empty.append(action);
-                }
                 root.append(empty);
+                appendAllowance();
             }
             if (message && !loading) root.append(button('Retry', () => { if (retry) retry(); }));
             if (!detail) return;

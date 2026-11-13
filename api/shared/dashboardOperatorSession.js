@@ -67,6 +67,12 @@ function createDashboardSession(options, customer) {
             if (!auth.store || typeof auth.store[name] !== 'function') throw unavailable();
             return [name, auth.store[name].bind(auth.store)];
         }));
+        // External setup callbacks settle the setup sign-out fence before any
+        // cookie is issued. Without it browserAuth refuses the callback.
+        if (customer && auth.customerTransport === 'external' && !keys.includes('customerPurpose') &&
+            auth.store && typeof auth.store.settleTransaction === 'function') {
+            store.settleTransaction = auth.store.settleTransaction.bind(auth.store);
+        }
         fields(options.proofStore, ['createOriginalProof', 'readOriginalProof']);
         proof = Object.fromEntries(['createOriginalProof', 'readOriginalProof'].map(name => {
             if (typeof options.proofStore[name] !== 'function') throw unavailable();
