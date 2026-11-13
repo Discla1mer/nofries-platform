@@ -21,7 +21,7 @@ const authLogin = require('../api/authLogin');
 const authCallback = require('../api/authCallback');
 const authLogout = require('../api/authLogout');
 const authSession = require('../api/authSession');
-const { resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
+const { getVerifiedDashboardSessionKey, markDashboardSessionVerified, resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
 
 const TENANT_ID = '947787df-88fd-4417-b6b2-99c13d8410ba';
 const CLIENT_ID = 'd414ee2d-73e5-4e5b-bb16-03ef55fea597';
@@ -444,6 +444,68 @@ describe('opaque same-domain Entra browser authentication', () => {
         expect(result.cookie).toContain('Max-Age=0');
         await expect(harness.service.readSession(requestCookie(completed.cookie)))
             .rejects.toMatchObject({ code: 'browser_auth_session_invalid' });
+    });
+
+    test('only issued or store-verified sessions are recorded for the dashboard rate allowance', async () => {
+        const harness = serviceHarness();
+        const verified = cookie => getVerifiedDashboardSessionKey({ cookie });
+        const fabricated = '__Host-nofries-auth=' + Buffer.alloc(32, 7).toString('base64url');
+        await expect(harness.service.readSession(fabricated)).rejects.toMatchObject({ code: 'browser_auth_session_invalid' });
+        expect(verified(fabricated)).toBeNull();
+        const started = await harness.service.beginLogin();
+        const completed = await harness.service.completeLogin({
+            body: { code: 'one-time-code', state: harness.calls.urlRequest.state },
+            cookieHeader: requestCookie(started.cookie)
+        });
+        const cookie = requestCookie(completed.cookie);
+        const key = verified(cookie);
+        expect(key).toMatch(/^[0-9a-f]{32}$/);
+        // The key is keyed by a per-process secret, not the cookie value itself.
+        expect(key).not.toContain(cookieValue(completed.cookie));
+        await harness.service.readSession(cookie);
+        expect(verified(cookie)).toBe(key);
+        expect(verified(fabricated + '; ' + cookie)).toBe(key);
+        await harness.service.logout({ cookieHeader: cookie, returnTo: '/' });
+        expect(verified(cookie)).toBeNull();
+    });
+
+    test('a session found invalid or expired loses the dashboard rate allowance', async () => {
+        let now = NOW;
+        const harness = serviceHarness({ now: () => now });
+        const started = await harness.service.beginLogin();
+        const completed = await harness.service.completeLogin({
+            body: { code: 'one-time-code', state: harness.calls.urlRequest.state },
+            cookieHeader: requestCookie(started.cookie)
+        });
+        const cookie = requestCookie(completed.cookie);
+        expect(getVerifiedDashboardSessionKey({ cookie })).not.toBeNull();
+        now += 5 * 60 * 60 * 1000;
+        await expect(harness.service.readSession(cookie)).rejects.toMatchObject({ statusCode: 401 });
+        expect(getVerifiedDashboardSessionKey({ cookie })).toBeNull();
+    });
+
+    test('the verified-session record is bounded and time-limited', () => {
+        const id = n => Buffer.alloc(32, 0).fill(n % 256, 0, 1).fill(Math.floor(n / 256) % 256, 1, 2).toString('base64url');
+        const realNow = Date.now;
+        try {
+            let clock = realNow();
+            Date.now = () => clock;
+            markDashboardSessionVerified('__Host-nofries-auth', id(0), 60 * 60 * 1000);
+            expect(getVerifiedDashboardSessionKey({ cookie: '__Host-nofries-auth=' + id(0) })).not.toBeNull();
+            // Capped at 15 minutes even when the session itself lasts longer.
+            clock += 15 * 60 * 1000;
+            expect(getVerifiedDashboardSessionKey({ cookie: '__Host-nofries-auth=' + id(0) })).toBeNull();
+            markDashboardSessionVerified('__Host-nofries-auth', id(1), 0);
+            markDashboardSessionVerified('__Host-nofries-unknown', id(2), 1000);
+            expect(getVerifiedDashboardSessionKey({ cookie: '__Host-nofries-auth=' + id(1) })).toBeNull();
+            expect(getVerifiedDashboardSessionKey({ cookie: '__Host-nofries-unknown=' + id(2) })).toBeNull();
+            for (let n = 3; n < 10004; n++) markDashboardSessionVerified('__Host-nofries-auth', id(n), 60000);
+            // Least recently verified entries are dropped beyond 10,000.
+            expect(getVerifiedDashboardSessionKey({ cookie: '__Host-nofries-auth=' + id(3) })).toBeNull();
+            expect(getVerifiedDashboardSessionKey({ cookie: '__Host-nofries-auth=' + id(10003) })).not.toBeNull();
+        } finally {
+            Date.now = realNow;
+        }
     });
 
     test.each([
