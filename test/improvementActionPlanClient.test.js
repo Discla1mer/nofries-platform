@@ -1,6 +1,7 @@
 'use strict';
 
 const { mount } = require('../api/shared/protectedAssets/improvementActionPlanClient');
+const { calendarDay } = require('../api/shared/protectedAssets/improvementActionPlanView');
 const { createDom } = require('./fixtures/dashboardDom');
 const { createImprovementPlan, getImprovementPlanView, applyImprovementActionCommand } = require('../api/shared/improvementPlan/improvementPlanDomain');
 const { projectImprovementActionList } = require('../api/shared/improvementPlan/improvementActionListProjection');
@@ -128,8 +129,8 @@ test('queue handoff opens the fresh action state and reports a changed observed 
     const h = harness({ plan: after, options: { initialTarget: { planId: 'plan-a', actionId, planRevision: 0 } } });
     expect(await h.controller.ready).toBe(true);
     expect(h.root.textContent).toContain('This plan changed since the work queue was checked.');
-    expect(h.document.activeElement.textContent).toContain('2026-10-03');
-    expect(h.root.querySelector('select').children.find(option => option.value === 'plan-a').textContent).toContain('revision 1');
+    expect(h.document.activeElement.textContent).toContain('3 Oct 2026');
+    expect(h.root.querySelector('select').children.find(option => option.value === 'plan-a').textContent).toMatch(/^Plan: \d{1,2} \w+ \d{4}$/);
 });
 
 test('queue handoff focuses the exact retained card even when the current plan is read-only', async () => {
@@ -217,7 +218,9 @@ test('a selected saved assessment is snapshotted but never automatically generat
     expect(await h.controller.ready).toBe(true);
     expect(h.request).toHaveBeenCalledTimes(1); expect(h.options.newId).not.toHaveBeenCalled();
     expect(button(h, 'Create improvement plan for this assessment')).toBeDefined();
-    expect(h.root.textContent).toContain(expected.assessmentId); expect(h.root.textContent).not.toContain('changed');
+    // The assessment is named in plain words; its internal ID is not shown.
+    expect(h.root.textContent).toContain('Plan for the assessment you chose on Overview.');
+    expect(h.root.textContent).not.toContain(expected.assessmentId); expect(h.root.textContent).not.toContain('changed');
     expect(h.root.querySelectorAll('article')).toEqual([]);
     expect(await h.controller.select('guessed-plan')).toBe(false); expect(h.request).toHaveBeenCalledTimes(1);
 });
@@ -323,7 +326,7 @@ test('external owner operation uses the existing command contract and refreshes 
     expect(h.request.mock.calls.filter(args => args[0].endsWith('/execute'))).toEqual([['/api/dashboard/improvement/execute', command]]);
     expect(h.request.mock.calls.at(-2)).toEqual(['/api/dashboard/improvement/view?planId=plan-a']);
     expect(h.request.mock.calls.at(-1)).toEqual(['/api/dashboard/improvement/editor?planId=plan-a']);
-    expect(h.root.textContent).toContain('2026-10-02'); expect(h.root.textContent).toContain('Assigned');
+    expect(h.root.textContent).toContain('2 Oct 2026'); expect(h.root.textContent).toContain('Assigned');
     expect(h.root.textContent).toContain('scores are unchanged');
 });
 
@@ -474,14 +477,14 @@ function assigned() { return append(seed(), 'assign', { ownerSubjectKey: ACTOR, 
 function started() { return append(assigned(), 'start', {}); }
 function completed() { return append(started(), 'complete', { note: 'Recorded workflow completion.', evidenceReference: 'synthetic:evidence:original' }); }
 const OPERATIONS = [
-    { type: 'assign', label: 'Assign to me', state: seed, values: { 'Due date (UTC)': '2026-10-02' }, payload: { ownerSubjectKey: ACTOR, dueDate: '2026-10-02' } },
+    { type: 'assign', label: 'Assign to me', state: seed, values: { 'Due date': '2026-10-02' }, payload: { ownerSubjectKey: ACTOR, dueDate: '2026-10-02' } },
     { type: 'start', label: 'Start action', state: assigned, values: {}, payload: {} },
     { type: 'block', label: 'Block action', state: started, values: { 'Block reason': 'Awaiting an agreed dependency.' }, payload: { reason: 'Awaiting an agreed dependency.' } },
     { type: 'complete', label: 'Complete action', state: started,
         values: { 'Completion note': 'Recorded workflow completion.', 'Completion evidence reference (unverified)': 'synthetic:evidence:completion' },
         payload: { note: 'Recorded workflow completion.', evidenceReference: 'synthetic:evidence:completion' } },
     { type: 'reopen', label: 'Reopen action', state: completed, values: { 'Reopen reason': 'Follow-up work remains.' }, payload: { reason: 'Follow-up work remains.' } },
-    { type: 'assign', label: 'Set owner and due date', state: seed, values: { 'Owner name': '  Aroha   Ngata ', 'Due date (UTC)': '2026-10-02' },
+    { type: 'assign', label: 'Set owner and due date', state: seed, values: { 'Owner name': '  Aroha   Ngata ', 'Due date': '2026-10-02' },
         payload: { ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' } }
 ];
 const OWNER_LABEL_HELP = 'Enter the owner’s name in 1 to 80 characters. Use a name rather than an email address, and not the words “all” or “unassigned”.';
@@ -490,7 +493,7 @@ function labelOwned() { return append(seed(), 'assign', { ownerLabel: 'Aroha Nga
 test('a label-owned action shows its named owner and can be started without a platform owner', async () => {
     const h = harness({ plan: labelOwned() }); expect(await h.controller.ready).toBe(true);
     const actionId = chooseAction(h);
-    expect(h.root.textContent).toContain('Status: Open. Owner: Aroha Ngata. Due date (UTC): 2026-10-02.');
+    expect(h.root.textContent).toContain('Status: Open. Owner: Aroha Ngata. Due date: 2 Oct 2026.');
     expect(h.root.textContent).toContain('Aroha Ngata (named owner)');
     expect(button(h, 'Assign to me')).toBeDefined(); button(h, 'Set owner and due date').click();
     expect(field(h, 'Owner name').value).toBe('Aroha Ngata'); expect(field(h, 'Owner name').maxLength).toBe(80);
@@ -504,7 +507,7 @@ test('a label-owned action shows its named owner and can be started without a pl
 test.each(['', '   ', 'aroha@example.nz', 'Unassigned', 'ＡＬＬ', 'x'.repeat(81)])('owner name %j shows plain-English help without sending', async value => {
     const h = harness(); expect(await h.controller.ready).toBe(true); chooseAction(h);
     button(h, 'Set owner and due date').click();
-    const owner = fill(h, 'Owner name', value); fill(h, 'Due date (UTC)', '2026-10-02'); const count = h.request.mock.calls.length;
+    const owner = fill(h, 'Owner name', value); fill(h, 'Due date', '2026-10-02'); const count = h.request.mock.calls.length;
     await submitForm(h);
     expect(h.request).toHaveBeenCalledTimes(count); expect(h.options.newId).not.toHaveBeenCalled();
     expect(h.document.activeElement).toBe(owner); expect(owner.getAttribute('aria-invalid')).toBe('true');
@@ -518,7 +521,7 @@ test('a server owner_label_invalid keeps the draft and shows inline owner help',
         return { status: 200, value: presentation(state.plans.get('plan-a')) };
     } });
     expect(await h.controller.ready).toBe(true); chooseAction(h); button(h, 'Set owner and due date').click();
-    const retained = form(h), owner = fill(h, 'Owner name', 'Aroha Ngata'); fill(h, 'Due date (UTC)', '2026-10-02');
+    const retained = form(h), owner = fill(h, 'Owner name', 'Aroha Ngata'); fill(h, 'Due date', '2026-10-02');
     await submitForm(h);
     expect(h.request.mock.calls.filter(([path]) => path.endsWith('/execute'))[0][1].payload).toEqual({ ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' });
     expect(form(h)).toBe(retained); expect(owner.disabled).toBe(false); expect(h.document.activeElement).toBe(owner);
@@ -537,7 +540,7 @@ test.each(OPERATIONS)('actual $type form sends the retained command and refreshe
     expect(form(h)).toBeDefined(); expect(button(h, 'Cancel changes')).toBeDefined();
     expect(h.document.activeElement.closest('form')).toBe(form(h));
     if (operation.type === 'assign') {
-        expect(field(h, 'Due date (UTC)').type).toBe('date'); expect(field(h, 'Due date (UTC)').required).toBe(true);
+        expect(field(h, 'Due date').type).toBe('date'); expect(field(h, 'Due date').required).toBe(true);
     }
     for (const [label, value] of Object.entries(operation.values)) fill(h, label, value);
     await submitForm(h);
@@ -654,7 +657,7 @@ test('the retained history limit exposes no new action commands even for a curre
 
 test('cancel clears a local action draft without allocating an operation or sending a write', async () => {
     const h = harness(); await h.controller.ready; chooseAction(h); button(h, 'Assign to me').click();
-    fill(h, 'Due date (UTC)', '2026-10-02'); const before = h.request.mock.calls.length, leave = jest.fn();
+    fill(h, 'Due date', '2026-10-02'); const before = h.request.mock.calls.length, leave = jest.fn();
     expect(await h.controller.requestLeave(leave)).toBe(false); expect(leave).not.toHaveBeenCalled();
     expect(await h.controller.refresh()).toBe(false); expect(await h.controller.select('plan-a')).toBe(false);
     expect(h.request).toHaveBeenCalledTimes(before); expect(h.options.newId).not.toHaveBeenCalled();
@@ -665,7 +668,7 @@ test('cancel clears a local action draft without allocating an operation or send
 });
 
 const FORM_VALIDATION_MESSAGES = {
-    'Due date (UTC)': 'Enter a valid due date in UTC (YYYY-MM-DD), then save again.',
+    'Due date': 'Enter a valid due date, then save again.',
     'Block reason': 'Enter a block reason of up to 1000 characters using plain text, then save again.',
     'Reopen reason': 'Enter a reopen reason of up to 1000 characters using plain text, then save again.',
     'Completion note': 'Enter a completion note of up to 1000 characters using plain text, then save again.',
@@ -676,7 +679,7 @@ const INVALID_ACTION_FIELDS = [
         ['empty date', ''], ['non-calendar date', '2026-02-30'], ['invalid leap day', '2026-02-29'],
         ['wrong format', '02/10/2026'], ['timestamp instead of calendar day', '2026-10-02T00:00:00.000Z'],
         ['surrounding spaces', ' 2026-10-02 ']
-    ].map(([description, value]) => ({ type: 'assign', field: 'Due date (UTC)', description, value })),
+    ].map(([description, value]) => ({ type: 'assign', field: 'Due date', description, value })),
     ...[
         ['block', 'Block reason'], ['reopen', 'Reopen reason'], ['complete', 'Completion note']
     ].flatMap(([type, field]) => [
@@ -763,18 +766,18 @@ test('simultaneous mounts and a remount keep field descriptions unique without a
     const described = [];
     for (const current of [h, other]) {
         chooseAction(current); button(current, 'Assign to me').click();
-        const control = fill(current, 'Due date (UTC)', ''); await submitForm(current);
+        const control = fill(current, 'Due date', ''); await submitForm(current);
         const id = control.getAttribute('aria-describedby'), feedback = control.parentElement.querySelector('span');
         expect(id).toMatch(/^improvement-action-field-feedback-\d+$/);
         expect(host.querySelectorAll('[id="' + id + '"]')).toEqual([feedback]);
-        expect(feedback.hidden).toBe(false); expect(feedback.textContent).toBe(FORM_VALIDATION_MESSAGES['Due date (UTC)']);
+        expect(feedback.hidden).toBe(false); expect(feedback.textContent).toBe(FORM_VALIDATION_MESSAGES['Due date']);
         described.push({ id, feedback, root: current.root });
     }
     expect(new Set(described.map(item => item.id)).size).toBe(2);
     expect(h.root.querySelector('[id="' + described[1].id + '"]')).toBeNull();
     expect(other.root.querySelector('[id="' + described[0].id + '"]')).toBeNull();
     other.controller = mount(otherRoot, h.options); expect(await other.controller.ready).toBe(true);
-    chooseAction(other); button(other, 'Assign to me').click(); const remountedControl = fill(other, 'Due date (UTC)', ''); await submitForm(other);
+    chooseAction(other); button(other, 'Assign to me').click(); const remountedControl = fill(other, 'Due date', ''); await submitForm(other);
     const remountedId = remountedControl.getAttribute('aria-describedby');
     expect(remountedId).toMatch(/^improvement-action-field-feedback-\d+$/);
     expect(described.some(item => item.id === remountedId)).toBe(false);
@@ -796,10 +799,10 @@ test('a 409 keeps the draft for review and requires cancel plus explicit refresh
         }
         throw new Error('unexpected fixture path');
     } });
-    await h.controller.ready; chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date (UTC)', '2026-10-02');
+    await h.controller.ready; chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date', '2026-10-02');
     const reads = h.request.mock.calls.length; await submitForm(h);
     expect(writes).toBe(1); expect(h.request.mock.calls).toHaveLength(reads + 1);
-    expect(h.root.textContent).toContain('Plan changed'); expect(field(h, 'Due date (UTC)').value).toBe('2026-10-02');
+    expect(h.root.textContent).toContain('Plan changed'); expect(field(h, 'Due date').value).toBe('2026-10-02');
     const formSubmit = form(h).querySelectorAll('button').find(node => node.type === 'submit'); expect(disabled(formSubmit)).toBe(true);
     expect(button(h, 'Retry pending improvement command')).toBeUndefined();
     expect(await h.controller.requestLeave(jest.fn())).toBe(false); expect(await h.controller.refresh()).toBe(false);
@@ -807,7 +810,7 @@ test('a 409 keeps the draft for review and requires cancel plus explicit refresh
     expect(await h.controller.refresh()).toBe(true); expect(writes).toBe(1);
     expect(h.request.mock.calls.slice(-2).map(([path]) => path)).toEqual(['/api/dashboard/improvement/view?planId=plan-a',
         '/api/dashboard/improvement/editor?planId=plan-a']);
-    expect(h.root.textContent).toContain('2026-10-03'); expect(h.options.newId).toHaveBeenCalledTimes(1);
+    expect(h.root.textContent).toContain('3 Oct 2026'); expect(h.options.newId).toHaveBeenCalledTimes(1);
 });
 
 test('uncertain action submission disables editing and cancel while retry reuses the exact captured identity', async () => {
@@ -823,13 +826,13 @@ test('uncertain action submission disables editing and cancel while retry reuses
         }
         throw new Error('unexpected fixture path');
     } });
-    await h.controller.ready; chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date (UTC)', '2026-10-02');
-    await submitForm(h); expect(attempts).toBe(1); expect(disabled(field(h, 'Due date (UTC)'))).toBe(true);
+    await h.controller.ready; chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date', '2026-10-02');
+    await submitForm(h); expect(attempts).toBe(1); expect(disabled(field(h, 'Due date'))).toBe(true);
     expect(disabled(button(h, 'Cancel changes'))).toBe(true); expect(await h.controller.requestLeave(jest.fn())).toBe(false);
-    field(h, 'Due date (UTC)').value = '2030-01-01'; emit(field(h, 'Due date (UTC)'), 'input');
+    field(h, 'Due date').value = '2030-01-01'; emit(field(h, 'Due date'), 'input');
     button(h, 'Retry pending improvement command').click(); await settle();
     expect(attempts).toBe(2); expect(first.payload.dueDate).toBe('2026-10-02'); expect(h.options.newId).toHaveBeenCalledTimes(1);
-    expect(form(h)).toBeUndefined(); expect(h.root.textContent).toContain('2026-10-02');
+    expect(form(h)).toBeUndefined(); expect(h.root.textContent).toContain('2 Oct 2026');
 });
 
 test.each([401, 403])('editor-context %i clears all private action and plan content', async status => {
@@ -872,9 +875,9 @@ test.each(['2026-10-01', '2026-12-01', ''])('completion form persists optional r
     const posted = h.request.mock.calls.find(([path]) => path.endsWith('/execute'))[1];
     expect(posted.payload).toEqual({ note: 'Reviewed the completed work.', evidenceReference: 'evidence:review',
         ...(nextReviewDate ? { nextReviewDate } : {}) });
-    expect(h.root.textContent).toContain('Next review date (UTC) ' + (nextReviewDate || 'Not set'));
+    expect(h.root.textContent).toContain('Next review date ' + calendarDay(nextReviewDate || null));
     expect(await h.controller.refresh()).toBe(true);
-    expect(h.root.textContent).toContain('Next review date (UTC) ' + (nextReviewDate || 'Not set'));
+    expect(h.root.textContent).toContain('Next review date ' + calendarDay(nextReviewDate || null));
 });
 
 test('past review date is focused without a write; cancel discards it', async () => {
@@ -903,7 +906,7 @@ test('uncertain completion retry keeps its exact review date and operation ident
     const writes = h.request.mock.calls.filter(([path]) => path.endsWith('/execute'));
     expect(writes).toHaveLength(2); expect(writes[1][1]).toBe(posted);
     expect(h.options.newId).toHaveBeenCalledTimes(1); expect(h.state.plans.get('plan-a').commands).toHaveLength(3);
-    expect(h.root.textContent).toContain('Next review date (UTC) 2026-12-01');
+    expect(h.root.textContent).toContain('Next review date 1 Dec 2026');
 });
 
 
@@ -919,7 +922,7 @@ test('named-owner completion retains its owner and optional review date through 
         note: 'Completed work to review.', evidenceReference: 'evidence:named-review', nextReviewDate: '2026-12-01' });
     expect(await h.controller.refresh()).toBe(true);
     expect(h.root.textContent).toContain('Synthetic action owner');
-    expect(h.root.textContent).toContain('Next review date (UTC) 2026-12-01');
+    expect(h.root.textContent).toContain('Next review date 1 Dec 2026');
     expect(h.root.textContent).not.toContain('Improvement action plan is unavailable.');
     const completed = presentation(h.state.plans.get('plan-a')).actions.find(action => action.status === 'completed');
     expect(completed.ownerLabel).toBe('Synthetic action owner');
@@ -991,4 +994,40 @@ test('Refresh says the plan is up to date, or that it was updated', async () => 
     h.state.plans.set('plan-a', append(h.state.plans.get('plan-a'), 'assign', { ownerSubjectKey: ACTOR, dueDate: '2026-10-03' }));
     expect(await h.controller.refresh()).toBe(true);
     expect(h.root.textContent).toContain('Updated with the latest saved changes. Checked at 10:00 pm.');
+});
+
+describe('plain words in the plan controls', () => {
+    test('opening from Overview shows the existing plan for that assessment and hides the create button', async () => {
+        const selected = source(), planId = 'overview-plan-' + selected.revisionSha256;
+        const h = harness({ plan: seed(planId), options: { sourceAssessment: selected }, respond(path, body, state) {
+            if (path.includes('/plans?')) return { status: 200, value: page([{ planId, planRevision: 0 }]) };
+            return { status: 200, value: presentation(seed(planId)) };
+        } });
+        h.state.plans.set(planId, seed(planId));
+        expect(await h.controller.ready).toBe(true);
+        expect(h.request.mock.calls.map(args => args[0])).toEqual(['/api/dashboard/improvement/plans?limit=20',
+            '/api/dashboard/improvement/view?planId=' + encodeURIComponent(planId), '/api/dashboard/improvement/editor?planId=' + encodeURIComponent(planId)]);
+        expect(button(h, 'Create improvement plan for this assessment')).toBeUndefined();
+        const note = h.root.querySelectorAll('p').find(item => item.textContent === 'A plan already exists for this assessment, so it is shown below.');
+        expect(visible(note)).toBe(true);
+        expect(h.options.newId).not.toHaveBeenCalled();
+    });
+
+    test('plan choices use plain names and never show plan IDs or revisions', async () => {
+        const h = harness(); await h.controller.ready;
+        const options = h.root.querySelector('select').children.map(option => option.textContent);
+        expect(options).toEqual(['Choose a plan', expect.stringMatching(/^Plan: \d{1,2} \w+ \d{4}$/)]);
+        expect(options.join(' ')).not.toMatch(/plan-a|revision/);
+    });
+
+    test('while action options load, the editor says it is checking instead of unavailable', async () => {
+        const pending = deferred();
+        const h = harness({ editorRespond: () => pending.promise });
+        await settle(); await settle();
+        expect(h.root.textContent).toContain('Checking what you can change…');
+        expect(h.root.textContent).not.toContain('Action updates are unavailable');
+        pending.resolve({ status: 200, value: editorContext(h.state) });
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.textContent).not.toContain('Checking what you can change…');
+    });
 });
