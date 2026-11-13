@@ -964,3 +964,41 @@ describe('plain words in the plan controls', () => {
         expect(h.root.textContent).not.toContain('Checking what you can change…');
     });
 });
+
+describe('onAccepted reports only responses that pass validation', () => {
+    test('a valid plan index and plan view are each reported once', async () => {
+        const onAccepted = jest.fn(), h = harness({ options: { onAccepted } });
+        expect(await h.controller.ready).toBe(true);
+        expect(onAccepted).toHaveBeenCalledTimes(2);
+    });
+    test('a 200 plan index with an invalid schema is not reported', async () => {
+        const onAccepted = jest.fn(), h = harness({ options: { onAccepted }, respond: () => ({ status: 200, value: { ...page(), schemaVersion: 2 } }) });
+        expect(await h.controller.ready).toBe(false);
+        expect(onAccepted).not.toHaveBeenCalled();
+    });
+    test('a 200 plan view with an invalid schema is not reported', async () => {
+        const onAccepted = jest.fn(), h = harness({ options: { onAccepted }, respond(path, body, state) {
+            if (path.includes('/plans?')) return { status: 200, value: page() };
+            return { status: 200, value: { ...presentation(state.plans.get('plan-a')), schemaVersion: 2 } };
+        } });
+        await h.controller.ready;
+        expect(onAccepted).toHaveBeenCalledTimes(1); // the plan index only
+    });
+    test('an invalid save acknowledgement is not reported and keeps the command pending', async () => {
+        const selected = source(), onAccepted = jest.fn(), h = harness({ options: { sourceAssessment: selected, onAccepted }, respond(path, body) {
+            if (path.includes('/plans?')) return { status: 200, value: page([]) };
+            if (path.endsWith('/execute')) return { status: 200, value: { schemaVersion: 1, plan: { ...getImprovementPlanView(seed(body.planId)), revision: 7 } } };
+            throw new Error('unexpected fixture request');
+        } });
+        await h.controller.ready;
+        expect(onAccepted).toHaveBeenCalledTimes(1);
+        expect(await h.controller.generate()).toBe(false);
+        expect(onAccepted).toHaveBeenCalledTimes(1);
+        expect(h.root.textContent).toContain('The command outcome is unconfirmed');
+    });
+    test('a non-function onAccepted is rejected at mount', () => {
+        const dom = createDom();
+        expect(() => mount(dom.root, { request: jest.fn(), isCurrent: () => true, newId: jest.fn(), organisationId: SCOPE.organisationId,
+            onAccepted: 'yes' })).toThrow();
+    });
+});

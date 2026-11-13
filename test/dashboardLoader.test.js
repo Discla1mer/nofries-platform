@@ -252,6 +252,17 @@ describe('mounted retained Improvement Plan', () => {
         expect(h.elements.dashboardApp.children).toHaveLength(0);
         expect(h.requests).toHaveLength(5);
     });
+    test.each([['valid', true], ['invalid', false]])('a 200 plan index with a %s body moves the footer information time only when accepted', async (_, valid) => {
+        const h = harness({ improvement: true, hash: '#improvement-plan' }), model = await ready(h);
+        await h.reply(3, 200, state());
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:49:00.000Z'));
+        await h.reply(4, 200, valid ? empty(model) : { ...empty(model), schemaVersion: 2 });
+        await h.improvementMounts[0].controller.ready;
+        expect(stamp().dateTime).toBe(valid ? '2026-09-08T23:49:00.000Z' : before);
+        h.window.dispatch('pagehide');
+    });
     test('an unready module never installs the controller or requests retained plan data', async () => {
         const h = harness({ improvement: true, hash: '#improvement-plan' }); await flush(); await h.open();
         expect(h.mounts[0].config.mountImprovement).toBeUndefined();
@@ -3570,6 +3581,17 @@ describe('Overview Actions card', () => {
         expect(h.status).toBe('ready');
         expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
         expect(h.mounts[0].destroy).not.toHaveBeenCalled();
+        h.window.dispatch('pagehide');
+    });
+    test.each([['valid', true], ['invalid', false]])('Actions card lists with a %s body move the footer information time only when accepted', async (_, valid) => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:51:00.000Z'));
+        await h.reply(at(h, /improvement\/plans/), 200, plans(model));
+        expect(stamp().dateTime).toBe(before);
+        await h.reply(at(h, /improvement\/list/), 200, valid ? list : { schemaVersion: 1, asOf: NOW });
+        expect(stamp().dateTime).toBe(valid ? '2026-09-08T23:51:00.000Z' : before);
         h.window.dispatch('pagehide');
     });
     test('with improvement actions off, Overview makes no improvement reads and shows no card', async () => {

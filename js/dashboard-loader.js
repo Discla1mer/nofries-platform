@@ -1331,7 +1331,6 @@
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             const value = requireSuccess(await request(cycle, path, undefined, snapshot.generation));
             if (!current(cycle) || cycle.authorityPending) throw invalid();
-            informationRead(cycle);
             return value;
         };
         const page = await read('/api/dashboard/improvement/plans?limit=' + ACTION_PLAN_LIMIT);
@@ -1340,7 +1339,13 @@
             if (!plan || typeof plan.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(plan.planId)) throw invalid();
             return read('/api/dashboard/improvement/list?planId=' + encodeURIComponent(plan.planId));
         }));
-        return { lists: lists, more: page.nextAfterPlanId !== null };
+        const result = { lists: lists, more: page.nextAfterPlanId !== null };
+        // Advance "Information as at" only when the Actions card will accept
+        // every list it was given; an invalid list leaves the time unchanged.
+        const picture = window.NoFriesOrganisationPicture;
+        if (current(cycle) && !cycle.authorityPending && picture && typeof picture.actionSummary === 'function' &&
+            picture.actionSummary(result) !== null) informationRead(cycle);
+        return result;
     }
     function improvementOptions(cycle, snapshot, organisationId) {
         const factory = window.NoFriesImprovementActionPlanClient;
@@ -1364,9 +1369,10 @@
                     if ([401, 403].includes(result.status)) {
                         const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
                     }
-                    if (result.status === 200) informationRead(cycle);
                     return result;
-                }
+                },
+                // Only after the plan client has validated the response.
+                onAccepted: function () { informationRead(cycle); }
             });
             cycle.workQueueTarget = null;
             return result;
