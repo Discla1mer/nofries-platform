@@ -494,15 +494,28 @@
                 const unsaved = !sealed && !equal(value, savedAnswer(question.id)) ? ' *' : '';
                 questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
             });
-            const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length;
+            const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length, saving = savingNow();
             // One progress line. What is saved and what is still only in this
             // browser are stated together so the counts cannot disagree.
             questionProgress.textContent = answered + ' of ' + questions.length + ' answered' + (missing ? ' · ' + missing + ' to go' : '') +
                 (unresolved ? ' · ' + unresolved + ' to check later (unknown, or marked not applicable, to confirm)' : '') +
-                (sealed ? ' · submitted' : !editable ? ' · saved' : dirty ? ' · ' + dirty + ' not saved yet' : ' · all saved') + '.';
+                (sealed ? ' · submitted' : !editable ? ' · saved' : saving ? ' · saving…' : dirty ? ' · ' + dirty + ' not saved yet' +
+                    (missingExplanation() ? ' (a not applicable answer needs an explanation)' : '') : ' · all saved') + '.';
             if (navigationSummary) navigationSummary.textContent = 'Question ' + (activeQuestion + 1) + ' of ' + questions.length + ' · ' + missing + ' unanswered';
             if (nextUnanswered) nextUnanswered.disabled = unansweredIndex(activeQuestion) === -1;
             if (nextUnresolved) nextUnresolved.disabled = unresolvedIndex(activeQuestion) === -1;
+        }
+        // True while a save is running, or an automatic save is waiting for
+        // the short pause and will be allowed to send this draft.
+        function savingNow() {
+            if (!acknowledged || acknowledged.status === 'submitted' || !editable || !dirtyEntries().length) return false;
+            return busy && !!pending && pending.command.action === 'save' || autosaveTimer !== null && canAutosave(false);
+        }
+        function missingExplanation() {
+            return questions.some(function (question) {
+                const value = drafts.get(question.id).value, option = optionById.get(value.optionId);
+                return !!option && !option.applicable && (!value.rationale || !validText(value.rationale.text));
+            });
         }
         function deny() {
             abortRequests(); epoch += 1; selected = null; acknowledged = null; drafts.clear(); assistanceNotes.clear(); summaries = [];
@@ -659,7 +672,7 @@
             status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
             status.textContent = statusText || (busy ? 'Saving your answers. ' + saved : loading ?
                 view === 'assessment' && !acknowledged ? 'Loading the selected assessment.' : 'Loading assessments.'
-                : saved + (dirty ? dirty + (dirty === 1 ? ' answer has' : ' answers have') + ' unsaved changes.' : ''));
+                : savingNow() ? 'Saving…' : saved + (dirty ? dirty + (dirty === 1 ? ' answer has' : ' answers have') + ' unsaved changes.' : ''));
             if (saveStatus && root.contains(saveStatus)) saveStatus.textContent = status.textContent;
             if (controls) controls.querySelectorAll('button').forEach(function (control) {
                 if (control.dataset.mutation === 'true') control.disabled = busy || !!pending || conflict || !currentChecked;
@@ -668,7 +681,7 @@
         }
         function edited() {
             if (!pending && !busy && !conflict) statusText = '';
-            updateStatus(); scheduleAutosave();
+            scheduleAutosave(); updateStatus();
         }
         function cancelAutosave() { if (autosaveTimer !== null) { clearTimeout(autosaveTimer); autosaveTimer = null; } }
         function scheduleAutosave(delay) {
@@ -677,6 +690,7 @@
             const flush = delay === 0;
             autosaveTimer = setTimeout(function () { autosaveTimer = null; autosave(flush, flush); }, flush ? 0 : autosaveIdleMs);
             if (autosaveTimer && typeof autosaveTimer.unref === 'function') autosaveTimer.unref();
+            updateStatus();
         }
         // Silent: an automatic save never shows validation messages, opens a
         // dialog or sends a draft the person could not save by hand.
@@ -694,7 +708,8 @@
         function autosave(flush, keepalive) {
             cancelAutosave();
             if (flush && busy && pending && pending.command.action === 'save') { flushQueued = true; return; }
-            if (!canAutosave(flush)) return;
+            // Replace "Saving…" with the real state when this save cannot go.
+            if (!canAutosave(flush)) { updateStatus(); return; }
             flushQueued = false;
             saveAll(false, keepalive).catch(function () {});
         }
@@ -1167,15 +1182,22 @@
                 const label = node('label', '', 'Why this does not apply'); label.setAttribute('for', 'ncsc-rationale-' + question.id);
                 const rationale = node('textarea', 'ncsc-textarea'); rationale.id = 'ncsc-rationale-' + question.id; rationale.value = entry.value.rationale ? entry.value.rationale.text : '';
                 rationale.rows = 6; rationale.required = true; rationale.readOnly = !writable;
-                rationale.setAttribute('aria-describedby', 'ncsc-rationale-help-' + question.id);
+                // Say at once why the answer is not saved yet, instead of only when Save progress is pressed.
+                const needed = node('p', 'ncsc-rationale-needed', autosaveEnabled ? 'Add an explanation to save this answer.' : 'Add an explanation before you save this answer.');
+                needed.id = 'ncsc-rationale-needed-' + question.id;
+                const showNeeded = function () {
+                    needed.hidden = !writable || validText(rationale.value) || errors.some(function (item) { return item.id === question.id; });
+                    rationale.setAttribute('aria-describedby', (needed.hidden ? '' : needed.id + ' ') + 'ncsc-rationale-help-' + question.id);
+                };
+                showNeeded();
                 const scopeHelp = writable && inputGuidance && inputGuidance.notApplicable ? inputGuidance.notApplicable + ' ' : '';
                 const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'); help.id = 'ncsc-rationale-help-' + question.id;
                 rationale.addEventListener('input', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit()) return;
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });
-                    edited();
+                    showNeeded(); edited();
                 });
-                questionRegion.append(label, rationale, help);
+                questionRegion.append(label, needed, rationale, help);
             }
             if (writable) {
                 const clear = button('Clear answer', function () {

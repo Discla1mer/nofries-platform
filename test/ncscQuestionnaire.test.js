@@ -2455,7 +2455,10 @@ describe('batched automatic save', () => {
         try {
             const before = h.records.length;
             choose(ui, 0, 'yes'); choose(ui, 1, 'no'); choose(ui, 2, 'unknown');
-            expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('3 not saved yet');
+            // Help says answers save a moment after each change, so the pause reads as saving, not as unsaved work.
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('· saving….');
+            expect(byId(ui, 'ncsc-draft-progress').textContent).not.toContain('not saved yet');
+            expect(byId(ui, 'ncsc-save-status').textContent).toBe('Saving…');
             await until(() => ui.root.textContent.includes('Your progress is saved.'));
             expect(h.records).toHaveLength(before + 1);
             expect(h.records.at(-1).payload.responses).toHaveLength(3);
@@ -2468,10 +2471,20 @@ describe('batched automatic save', () => {
         try {
             const before = h.records.length;
             choose(ui, 0, 'yes'); choose(ui, 1, 'not_applicable');
+            const id = metadata().questions[1].id, needed = byId(ui, `ncsc-rationale-needed-${id}`);
+            // The reason is shown straight away, beside the explanation box, not only after Save progress.
+            expect(needed.hidden).toBe(false); expect(needed.textContent).toBe('Add an explanation to save this answer.');
+            expect(byId(ui, `ncsc-rationale-${id}`).getAttribute('aria-describedby')).toBe(`${needed.id} ncsc-rationale-help-${id}`);
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('2 not saved yet (a not applicable answer needs an explanation).');
             await settle();
             expect(h.records).toHaveLength(before);
             expect(ui.root.querySelector('.ncsc-errors').hidden).toBe(true);
             expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('2 not saved yet');
+            enter(byId(ui, `ncsc-rationale-${id}`), 'Synthetic reason.');
+            expect(needed.hidden).toBe(true);
+            expect(byId(ui, `ncsc-rationale-${id}`).getAttribute('aria-describedby')).toBe(`ncsc-rationale-help-${id}`);
+            await until(() => h.records.length === before + 1);
+            await until(() => byId(ui, 'ncsc-draft-progress').textContent.endsWith(' · all saved.'));
         } finally { ui.controller.destroy(); }
     });
     test('automatic saves stop while revisions are kept for Save progress and Submit', async () => {
