@@ -106,6 +106,13 @@
         }
         return result;
     }
+    function reviewFields(value, at) {
+        if (!own(value || {}, 'nextReviewDate')) return [];
+        if (value.nextReviewDate === null) invalid();
+        date(value.nextReviewDate);
+        if (value.nextReviewDate < at.slice(0, 10)) invalid();
+        return ['nextReviewDate'];
+    }
     function count(value) {
         fields(value, ['total', 'unassigned', 'overdue', 'byStatus']);
         number(value.total, 4096); number(value.unassigned, value.total); number(value.overdue, value.total);
@@ -151,7 +158,7 @@
             label(statuses, action.status, action.labels.status); label(kinds, action.rationale.kind, action.labels.kind);
             label(responses, action.rationale.response, action.labels.response); label(origins, action.rationale.responseOrigin, action.labels.responseOrigin);
             if (action.labels.owner !== (!assigned(action) ? 'Unassigned' : 'Assigned (eligibility not checked)')) invalid();
-            if (action.completion !== null) { fields(action.completion, ['at', 'note']); instant(action.completion.at); text(action.completion.note); }
+            if (action.completion !== null) { fields(action.completion, ['at', 'note', ...reviewFields(action.completion, action.completion.at)]); instant(action.completion.at); text(action.completion.note); }
             if ((action.status === 'completed') !== (action.completion !== null) || (action.status === 'blocked') !== (action.blockedReason !== null)) invalid();
             fields(action.evidence, ['assessmentState', 'completionReference', 'completionVerification', 'durableLinkStatus', 'downloadAllowed', 'scoreEffect']);
             label(evidenceStates, action.evidence.assessmentState, action.labels.evidenceState);
@@ -171,7 +178,7 @@
                 }
                 else if (event.type === 'block' || event.type === 'reopen') { fields(event.details, ['reason']); text(event.details.reason); }
                 else if (event.type === 'complete') {
-                    fields(event.details, ['note', 'evidenceReference', 'evidenceVerification', 'durableLinkStatus']); text(event.details.note);
+                    fields(event.details, ['note', 'evidenceReference', 'evidenceVerification', 'durableLinkStatus', ...reviewFields(event.details, event.at)]); text(event.details.note);
                     if (event.details.evidenceReference !== null) text(event.details.evidenceReference, 180);
                     if (event.details.evidenceVerification !== 'not_verified' || event.details.durableLinkStatus !== 'not_established') invalid();
                 } else fields(event.details, []);
@@ -298,6 +305,7 @@
                 if (action.blockedReason !== null) fact(facts, 'Block reason', action.blockedReason);
                 if (action.completion !== null) {
                     fact(facts, 'Workflow completed at (UTC)', action.completion.at); fact(facts, 'Completion note', action.completion.note);
+                    fact(facts, 'Next review date (UTC)', action.completion.nextReviewDate || 'Not set');
                     fact(facts, 'Completion meaning', 'Workflow completed; control implementation has not been verified.');
                 }
                 card.append(facts);
@@ -332,7 +340,7 @@
                     if (event.type === 'assign' && labelled(event.details)) { fact(details, 'Owner name', event.details.ownerLabel); fact(details, 'Due date (UTC calendar day)', event.details.dueDate); }
                     else if (event.type === 'assign') { fact(details, 'Owner ID (current eligibility not checked)', event.details.ownerSubjectKey === null ? 'Unassigned' : event.details.ownerSubjectKey); fact(details, 'Due date (UTC calendar day)', event.details.dueDate === null ? 'Not set' : event.details.dueDate); }
                     if (event.type === 'block' || event.type === 'reopen') fact(details, 'Reason', event.details.reason);
-                    if (event.type === 'complete') { fact(details, 'Completion note', event.details.note); fact(details, 'Evidence reference (unverified)', event.details.evidenceReference === null ? 'Not recorded' : event.details.evidenceReference); fact(details, 'Evidence status', 'Unverified; durable link not established.'); }
+                    if (event.type === 'complete') { fact(details, 'Completion note', event.details.note); fact(details, 'Evidence reference (unverified)', event.details.evidenceReference === null ? 'Not recorded' : event.details.evidenceReference); fact(details, 'Evidence status', 'Unverified; durable link not established.'); fact(details, 'Next review date (UTC)', event.details.nextReviewDate || 'Not set'); }
                     entry.append(details); timeline.append(entry);
                 });
                 history.append(timeline); card.append(history); panel.append(card);
