@@ -1561,3 +1561,30 @@ describe('honest saved-assessment comparisons', () => {
         dom.controller.destroy();
     });
 });
+
+test('one live status announces loading and its end without leaving the page', async () => {
+    let release; const record = mixed();
+    const client = { list: () => new Promise(done => { release = () => done({ assessments: [record], nextAfterAssessmentId: null }); }),
+        read: async () => ({ assessment: record }) };
+    const dom = setup({ client });
+    const status = dom.root.querySelector('.picture-status');
+    assert.equal(status.getAttribute('role'), 'status');
+    assert.equal(status.textContent, 'Loading saved assessment…'); assert.equal(status.hidden, false);
+    assert.ok(!status.classList.contains('picture-status-quiet'));
+    release(); await flush();
+    // The same element stays in place, so screen readers hear the change.
+    assert.equal(dom.root.querySelector('.picture-status'), status);
+    assert.equal(status.parentElement, dom.root);
+    assert.equal(status.textContent, 'Saved assessment loaded.');
+    assert.ok(status.classList.contains('picture-status-quiet'));
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    dom.controller.destroy();
+});
+
+test('an empty organisation hears that there are no saved assessments yet', async () => {
+    const dom = setup({ records: [] }); await flush();
+    const status = dom.root.querySelector('.picture-status');
+    assert.equal(status.textContent, 'No saved assessments yet.');
+    assert.ok(status.classList.contains('picture-status-quiet'));
+    dom.controller.destroy();
+});

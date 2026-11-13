@@ -1518,6 +1518,24 @@ describe('dashboard asynchronous ownership and sign-out', () => {
         expect(h.document.head.children).toHaveLength(2);
     });
 
+    test('a reload that clears the focused dashboard keeps focus on the announced loading heading', async () => {
+        const h = harness(); await flush(); await h.open();
+        expect(fs.readFileSync(path.join(__dirname, '../app/dashboard.html'), 'utf8')).toMatch(/<p id="dashboardMessage" aria-live="polite">/);
+        h.elements.dashboardApp.querySelector('main').focus();
+        h.event('pageshow', { persisted: true }); await flush();
+        expect(h.status).toBe('loading');
+        expect(h.elements.dashboardApp.children).toHaveLength(0);
+        expect(h.document.activeElement).toBe(h.elements.dashboardHeading);
+        expect(h.elements.dashboardMessage.textContent).toBe('Checking your sign-in…');
+    });
+
+    test('a reload does not move focus that was outside the dashboard', async () => {
+        const h = harness(); await flush(); await h.open();
+        const outside = h.document.createElement('a'); h.document.body.append(outside); outside.focus();
+        h.event('pageshow', { persisted: true }); await flush();
+        expect(h.status).toBe('loading'); expect(h.document.activeElement).toBe(outside);
+    });
+
     test('a stale error and delayed focus revalidation cannot erase or focus over a current mount', async () => {
         const h = harness(); await flush(); await h.open();
         h.window.dispatch('focus'); await flush(); const old = h.requests[4];
