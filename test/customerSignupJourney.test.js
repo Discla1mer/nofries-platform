@@ -17,7 +17,7 @@ function setup(state = { status: 'create_account' }, options, suppliedClient) {
     return { ...dom, client, view };
 }
 test.each([
-    [{ customerTransport: 'external' }, 'Login'],
+    [{ customerTransport: 'external' }, 'Sign up or sign in'],
     [{ customerTransport: 'external', signInRecovery: 'retry' }, 'Restart secure sign-in'],
     [{ customerTransport: 'external', chooseAccount: true }, 'Sign in with another account']
 ])('external entry omits the invitation alternative while retaining deliberate normal login: %j', async (options, label) => {
@@ -44,8 +44,10 @@ test('renders create-account, unchecked terms and pending-admission in sequence'
     expect(f.root.textContent).toContain('Sign up / Sign in');
     f.root.querySelector('button').click(); await flush();
     const box = f.root.querySelector('input'), submit = f.root.querySelector('button');
-    expect(box.checked).toBe(false); expect(submit.disabled).toBe(true);
+    // Round 2: the button stays reachable by Tab and says what to do first.
+    expect(box.checked).toBe(false); expect(submit.disabled).toBeFalsy();
     submit.click(); await flush(); expect(f.client.acceptTerms).not.toHaveBeenCalled();
+    expect(f.root.textContent).toContain('Tick the box above first.');
     box.checked = true; for (const fn of box.events.change) fn();
     submit.click(); await flush();
     expect(f.client.acceptTerms).toHaveBeenCalledWith({ termsVersion: 'pilot-1', termsDigest: 'a'.repeat(64), accepted: true }, { signal: expect.any(AbortSignal) });
@@ -210,6 +212,24 @@ test('summarises the schedule offer lines at a glance before the full schedule',
     f.view.dispose();
 });
 
+test('keeps the summary and accept control at the top, with the full texts in printable expanders', async () => {
+    // Round 2: the accept control sat after about 10,000 px (26,000 px on a phone) of legal text.
+    const scheduled = { ...TERMS, scheduleId: 'schedule-v1', scheduleText: 'Price: NZ$0.\nSynthetic schedule body.', scheduleDigest: 'b'.repeat(64) };
+    const f = setup(scheduled); await f.view.ready;
+    const order = node => f.root.children.indexOf(node);
+    const glance = f.root.querySelector('.signup-glance'), consent = f.root.querySelector('label'), accept = f.root.querySelector('button');
+    const details = f.root.querySelectorAll('details');
+    expect(details.map(node => node.querySelector('summary').textContent)).toEqual(['Organisation schedule: read the full text',
+        'Dashboard agreement: read the full text']);
+    expect(details[0].textContent).toContain(scheduled.scheduleText); expect(details[1].textContent).toContain(scheduled.termsText);
+    expect(order(glance)).toBeLessThan(order(consent)); expect(order(consent)).toBeLessThan(order(accept));
+    expect(order(accept)).toBeLessThan(order(details[0]));
+    expect(details.every(node => !node.open)).toBe(true);
+    f.window.dispatch('beforeprint');
+    expect(details.every(node => node.open === true)).toBe(true);
+    f.view.dispose();
+});
+
 test('the representative can save a copy of the exact schedule and agreement before accepting', async () => {
     const scheduled = { ...TERMS, scheduleId: 'schedule-v1', scheduleText: 'Synthetic organisation schedule.', scheduleDigest: 'b'.repeat(64) };
     const f = setup(scheduled); await f.view.ready;
@@ -326,7 +346,7 @@ test('reserved account fields stay locked and submission uses their captured can
         expect(f.client.completeSetup).toHaveBeenCalledWith({ ...savedAccount,
             details: { name: 'Synthetic name', role: 'Owner', address: 'Synthetic address', registrationId: '9429000000000', authorityConfirmed: true } },
         { signal: expect.any(AbortSignal) });
-        expect(f.root.textContent).toContain('Continuing account setup');
+        expect(f.root.textContent).toContain('Finishing your sign-in');
     } finally { f.view.dispose(); }
 });
 
@@ -658,4 +678,20 @@ test('actual signup transport displays saved read-only setup and rechecks it usi
         expect(f.root.querySelector('form')).toBeNull(); expect(f.root.querySelector('input')).toBeNull();
         expect(createAccount).not.toHaveBeenCalled();
     } finally { f.view.dispose(); client.dispose(); }
+});
+
+test('setup text fields show a count near their limit and say when text is cut off', async () => {
+    // Round 2: "Your name" silently stopped at 160 characters.
+    const f = setup({ status: 'setup_details', email: 'person@example.test' }, { customerTransport: 'external' });
+    await f.view.ready;
+    try {
+        const input = f.root.querySelector('form').querySelectorAll('input').find(node => node.name === 'name');
+        const count = f.root.querySelector('[id="' + input.getAttribute('aria-describedby') + '"]');
+        expect(count.getAttribute('aria-live')).toBe('polite');
+        expect(count.hidden).toBe(true);
+        input.value = 'x'.repeat(140); for (const fn of input.events.input) fn();
+        expect(count.hidden).toBe(false); expect(count.textContent).toBe('140 of 160 characters.');
+        input.value = 'x'.repeat(160); for (const fn of input.events.input) fn();
+        expect(count.textContent).toBe('160 of 160 characters. This is the limit, so anything longer is cut off.');
+    } finally { f.view.dispose(); }
 });

@@ -3,6 +3,7 @@ const {
     BrowserSessionStoreError,
     createBrowserSessionStore
 } = require('./browserSessionStore');
+const { forgetDashboardSession, markDashboardSessionVerified } = require('./abuseProtection');
 const {
     createCustomerIdentityProviderProfile,
     customerProviderKey,
@@ -57,6 +58,9 @@ function createBrowserAuthService(options = {}) {
     }
     const config = readBrowserAuthConfig(env, customerPolicy !== null, customerProvider, customerTransport, assertion);
     const sessionCookie = customerPurpose ? RETAINED_READ_COOKIE_NAME : customerTransport ? '__Host-nofries-external-customer' : customerPolicy ? '__Host-nofries-customer' : SESSION_COOKIE_NAME;
+    // Only the external setup session can be signed out from setup, so only its
+    // callbacks settle the sign-out fence.
+    const setupSignOutFence = customerTransport === 'external' && customerPurpose === undefined;
     const transactionCookie = customerPurpose ? RETAINED_READ_TRANSACTION_COOKIE_NAME : customerTransport ? '__Host-nofries-external-customer-tx' : customerPolicy ? '__Host-nofries-customer-tx' : TRANSACTION_COOKIE_NAME;
     const store = options.store || createBrowserSessionStore({
         env,
@@ -239,6 +243,23 @@ function createBrowserAuthService(options = {}) {
                 ...(customerTransport ? { customerTransport } : {}),
                 ...(customerPurpose ? { customerPurpose } : {})
             }));
+            if (setupSignOutFence) {
+                // Setup sign-out may already have run for this transaction while
+                // the provider exchange was pending. Settle the fence before any
+                // cookie exists; if sign-out won, this session is never issued.
+                let settled;
+                try {
+                    settled = await storeCall(() => store.settleTransaction(correlationId, setupFenceBinding(),
+                        sealSetupSession(correlationId, sessionId)));
+                } catch (error) {
+                    await storeCall(() => store.deleteSession(sessionId)).catch(() => {});
+                    throw error;
+                }
+                if (settled !== true) {
+                    await storeCall(() => store.deleteSession(sessionId));
+                    throw new BrowserAuthError(401, 'browser_auth_transaction_invalid');
+                }
+            }
             try {
                 validateTransaction(transaction, now, customerPurpose);
             } catch (error) {
@@ -248,6 +269,9 @@ function createBrowserAuthService(options = {}) {
                 throw error;
             }
             const cookie = makeCookie(sessionCookie, sessionId, Math.floor((absoluteExpiresAt - issuedAt) / 1000), 'Lax');
+            // The server has just stored this session, so its first dashboard
+            // request may use the verified-session rate allowance.
+            markDashboardSessionVerified(sessionCookie, sessionId, absoluteExpiresAt - issuedAt);
             return {
                 location: transaction.returnTo,
                 cookie,
@@ -276,6 +300,7 @@ function createBrowserAuthService(options = {}) {
     async function logout(input = {}) {
         const sessionId = optionalOpaqueCookie(input.cookieHeader, sessionCookie);
         if (sessionId) {
+            forgetDashboardSession(sessionCookie, sessionId);
             const record = await storeCall(() => store.loadSession(sessionId));
             if (record === undefined) throw new BrowserAuthError(503, 'browser_auth_store_unavailable');
             if (record !== null) assertSessionPurpose(record, customerPurpose);
@@ -287,6 +312,10 @@ function createBrowserAuthService(options = {}) {
                 ? [clearCookie(sessionCookie, 'Lax'), externalSignedOutCookie()]
                 : clearCookie(sessionCookie, 'Lax')
         };
+    }
+
+    function setupFenceBinding() {
+        return { customerTransport, customerProviderKey: config.customerProviderKey };
     }
 
     async function logoutSetup(input = {}) {
@@ -315,10 +344,26 @@ function createBrowserAuthService(options = {}) {
             const cancelled = await storeCall(() => store.cancelTransaction(transactionId, {
                 customerProviderKey: config.customerProviderKey, customerTransport
             }));
-            if (cancelled === 'missing') throw new BrowserAuthError(503, 'browser_auth_account_change_pending');
-            if (cancelled === false) throw new BrowserAuthError(401, 'browser_auth_transaction_invalid');
-            if (cancelled !== true) throw new BrowserAuthError(503, 'browser_auth_store_unavailable');
+            if (cancelled === 'missing') {
+                // A callback already consumed the one-use transaction. It may
+                // still be redeeming the code, or it may have finished. Revoke it
+                // server-side: a callback that has not settled yet is refused and
+                // never issues a session; one that already settled hands back its
+                // sealed session, which is deleted here before confirming.
+                const fence = await storeCall(() => store.revokeTransaction(transactionId, setupFenceBinding()));
+                if (fence === false) throw new BrowserAuthError(401, 'browser_auth_transaction_invalid');
+                if (fence !== null) {
+                    const issued = fence && typeof fence === 'object' ? openSetupSession(transactionId, fence.sealed) : null;
+                    if (!issued) throw new BrowserAuthError(503, 'browser_auth_account_change_pending');
+                    await storeCall(() => store.deleteSession(issued));
+                }
+            } else if (cancelled === false) {
+                throw new BrowserAuthError(401, 'browser_auth_transaction_invalid');
+            } else if (cancelled !== true) {
+                throw new BrowserAuthError(503, 'browser_auth_store_unavailable');
+            }
         }
+        if (sessionId) forgetDashboardSession(sessionCookie, sessionId);
         if (ownedSetupSession) await storeCall(() => store.deleteSession(sessionId));
         return { location: '/signup?provider=external&account=choose', cookie: [
             clearCookie(sessionCookie, 'Lax'), clearCookie(transactionCookie, 'None')
@@ -353,10 +398,14 @@ async function readBrowserSessionDetails(source, options = {}) {
 
 async function readStoredSession(source, options) {
     const cookieHeader = typeof source === 'string' ? source : getHeader(source, 'cookie');
-    const sessionId = optionalOpaqueCookie(cookieHeader, options.customerPurpose ? RETAINED_READ_COOKIE_NAME : options.customerTransport ? '__Host-nofries-external-customer' : options.customerPolicy ? '__Host-nofries-customer' : SESSION_COOKIE_NAME);
+    const cookieName = options.customerPurpose ? RETAINED_READ_COOKIE_NAME : options.customerTransport ? '__Host-nofries-external-customer' : options.customerPolicy ? '__Host-nofries-customer' : SESSION_COOKIE_NAME;
+    const sessionId = optionalOpaqueCookie(cookieHeader, cookieName);
     if (!sessionId) return null;
     const record = await storeCall(() => options.store.loadSession(sessionId));
-    if (!record) throw new BrowserAuthError(401, 'browser_auth_session_invalid');
+    if (!record) {
+        forgetDashboardSession(cookieName, sessionId);
+        throw new BrowserAuthError(401, 'browser_auth_session_invalid');
+    }
     // A transplanted SID does not grant ownership of the other purpose's
     // record, including ownership of its invalid-session cleanup.
     assertSessionPurpose(record, options.customerPurpose);
@@ -366,8 +415,13 @@ async function readStoredSession(source, options) {
             await options.customerPolicy.recheck({ identity: details.identity, assurance: record.customerAssurance, now: Number(options.now()) });
             if (Math.min(record.idleExpiresAt, record.absoluteExpiresAt) <= Number(options.now())) throw new BrowserAuthError(401, 'browser_auth_session_expired');
         }
+        // Verified against the store: later requests carrying this exact
+        // session may use the dashboard rate allowance until it expires.
+        markDashboardSessionVerified(cookieName, sessionId,
+            Math.min(record.idleExpiresAt, record.absoluteExpiresAt) - Number(options.now()));
         return details;
     } catch (error) {
+        if (error instanceof BrowserAuthError) forgetDashboardSession(cookieName, sessionId);
         if (error instanceof BrowserAuthError && error.statusCode === 401) {
             try {
                 await options.store.deleteSession(sessionId);
@@ -909,6 +963,35 @@ function normaliseOptionalEmail(value) {
         throw new BrowserAuthError(400, 'browser_auth_email_invalid');
     }
     return email;
+}
+
+// The fence keeps the issued session id only sealed under a key derived from
+// the transaction cookie, which the store never holds (it keys records by a
+// hash). Only the browser that started the sign-in can open it at sign-out.
+function setupFenceKey(transactionId) {
+    return crypto.createHmac('sha256', String(transactionId)).update('nofries-setup-signout-fence-v1').digest();
+}
+
+function sealSetupSession(transactionId, sessionId) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', setupFenceKey(transactionId), iv);
+    cipher.setAAD(Buffer.from('settled'));
+    const body = Buffer.concat([cipher.update(String(sessionId), 'utf8'), cipher.final()]);
+    return Buffer.concat([iv, cipher.getAuthTag(), body]).toString('base64url');
+}
+
+function openSetupSession(transactionId, sealed) {
+    try {
+        const raw = Buffer.from(String(sealed || ''), 'base64url');
+        if (raw.length <= 28) return null;
+        const decipher = crypto.createDecipheriv('aes-256-gcm', setupFenceKey(transactionId), raw.subarray(0, 12));
+        decipher.setAAD(Buffer.from('settled'));
+        decipher.setAuthTag(raw.subarray(12, 28));
+        const value = Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8');
+        return /^[A-Za-z0-9_-]{43}$/.test(value) ? value : null;
+    } catch (_) {
+        return null;
+    }
 }
 
 async function storeCall(work) {

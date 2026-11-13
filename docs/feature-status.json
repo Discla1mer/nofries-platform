@@ -39,7 +39,7 @@
     {
       "id": "improvement-plan",
       "name": "Improvement plan with owners and due dates",
-      "status": "coming-next",
+      "status": "live",
       "roadmapTitle": "Improvement actions",
       "availabilityClaims": ["improvement plans?", "action plans?", "plan the way forward", "start improving", "track (?:your )?(?:improvements|remediation)"]
     },

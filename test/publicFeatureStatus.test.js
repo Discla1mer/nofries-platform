@@ -40,7 +40,7 @@ describe('public feature-status registry', () => {
             expect(item.name).toEqual(expect.any(String));
         }
         expect(registry.capabilities.filter(item => item.status === 'live').map(item => item.id)).toEqual([
-            'company-account', 'ncsc-assessment', 'ncsc-results', 'shareable-summary', 'change-over-time'
+            'company-account', 'ncsc-assessment', 'ncsc-results', 'shareable-summary', 'change-over-time', 'improvement-plan'
         ]);
     });
 
