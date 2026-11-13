@@ -70,7 +70,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .dashboard-module-card .dashboard-module-link { font-weight: var(--dashboard-weight-regular); }
 .dashboard-button, .dashboard-text-button { min-height: 2.875rem; border: 1px solid var(--dashboard-yellow); border-radius: .7rem; padding: .7rem 1rem; background: var(--dashboard-yellow); color: var(--dashboard-ink); text-align: left; font-weight: var(--dashboard-weight-regular) !important; }
 .dashboard-text-button { color: var(--dashboard-blue); background: transparent; border-color: transparent; padding-left: 0; }
-.dashboard-button:hover { background: #eec55c; border-color: #eec55c; }
+/* Shared primary-button tokens from style.css (F1-R08), with the same values as fallbacks. */
+.nofries-dashboard .dashboard-button, .ncsc-questionnaire .dashboard-button { font-family: var(--button-font, Inter, ui-sans-serif, system-ui, sans-serif); font-size: var(--button-size, 1rem); font-weight: var(--button-weight, 600) !important; }
+.dashboard-button:not(.dashboard-button-secondary) { border-color: var(--button-fill, #dbb157); background: var(--button-fill, #dbb157); color: var(--button-ink, #151816); }
+.dashboard-button:not(.dashboard-button-secondary):hover { background: var(--button-fill-hover, #e4be6e); border-color: var(--button-fill-hover, #e4be6e); }
+.nofries-dashboard .dashboard-button:focus-visible, .ncsc-questionnaire .dashboard-button:focus-visible { outline: var(--button-focus-ring, 3px solid #17140f); outline-offset: var(--button-focus-offset, 4px); }
 .dashboard-button-secondary { background: transparent; border-color: var(--dashboard-control-border); color: var(--dashboard-ink); }
 .dashboard-button-secondary:hover { background: var(--dashboard-navy); border-color: var(--dashboard-blue); }
 .nofries-dashboard a.dashboard-button { color: var(--dashboard-ink); }
@@ -104,7 +108,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-first-use-step h3 { margin-bottom: .35rem; }
 .picture-first-use-step p { margin-bottom: 0; }
 .picture-first-use-number { display: grid; flex: 0 0 2.5rem; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--dashboard-navy); color: var(--dashboard-ink); font-weight: var(--dashboard-weight-emphasis); }
-.picture-first-use-action { display: block; width: min(100%, 23rem); margin: 1.25rem 0 0; font-family: var(--font-serif, Georgia, serif) !important; font-size: 1.25rem !important; }
+.picture-first-use-action { display: block; width: min(100%, 23rem); margin: 1.25rem 0 0; font-family: var(--button-font, Inter, ui-sans-serif, system-ui, sans-serif) !important; font-size: var(--button-size-large, 1.0625rem) !important; text-align: center; }
 @media (min-width: 60.01rem) { .picture-first-use-step:not(:last-child)::after { content: '→'; position: absolute; right: -.8rem; top: 50%; z-index: 1; transform: translateY(-50%); padding: .1rem; background: var(--dashboard-surface); color: var(--dashboard-ink); } }
 @media (max-width: 60rem) { .picture-first-use-steps { grid-template-columns: 1fr; } }
 /* Keep the first-use action high on small phones. */
@@ -525,13 +529,13 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .nofries-dashboard .dashboard-page-heading > .dashboard-badge { border-color: transparent; background: var(--dashboard-navy); color: var(--dashboard-ink); border-radius: 999px; padding-inline: .8rem; }
 .nofries-dashboard .picture-heading { border-top: 0; padding-top: 0; }
 .nofries-dashboard .picture-heading h2 { font-size: clamp(1.25rem, 2vw, 1.5rem); }
-.nofries-dashboard :is(.picture-resume, .picture-metric, .picture-domains, .picture-follow-up, .picture-empty, .ncsc-assessment-card, .ncsc-result-metric, .picture-first-use) { border-radius: 1rem; box-shadow: 0 1px 2px rgb(23 20 15 / 6%), 0 8px 24px rgb(23 20 15 / 6%); }
+.nofries-dashboard :is(.picture-resume, .picture-metric, .picture-domains, .picture-follow-up, .picture-empty, .ncsc-assessment-card, .ncsc-result-metric, .picture-first-use) { border-radius: var(--result-card-radius, 1rem); box-shadow: var(--result-card-shadow, 0 1px 2px rgb(23 20 15 / 6%), 0 8px 24px rgb(23 20 15 / 6%)); }
 .nofries-dashboard .picture-resume { padding: clamp(1.25rem, 2.5vw, 2rem); background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-top: 4px solid var(--dashboard-yellow); }
 .nofries-dashboard .picture-resume .picture-large { font-family: var(--font-serif, Georgia, serif); font-size: clamp(1.35rem, 2.2vw, 1.75rem); }
 .nofries-dashboard .picture-toolbar { padding: .75rem 1rem; border: 1px solid var(--dashboard-line); border-radius: .75rem; background: var(--dashboard-surface); }
 .nofries-dashboard .picture-calculation { background: transparent; border-style: dashed; }
 .nofries-dashboard .dashboard-provenance { border-top: 1px solid var(--dashboard-line); }
-.nofries-dashboard .dashboard-button { border-radius: 999px; padding-inline: 1.25rem; box-shadow: 0 1px 0 rgb(23 20 15 / 18%); }
+.nofries-dashboard .dashboard-button { border-radius: var(--button-radius, 999px); padding-inline: 1.25rem; box-shadow: 0 1px 0 rgb(23 20 15 / 18%); }
 .nofries-dashboard .dashboard-button-secondary { box-shadow: none; }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .site-header .brand-logo { width: 36px; height: 36px; }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .site-header .brand-copy strong { font-family: var(--font-serif, Georgia, serif); font-size: var(--dashboard-font-section); }
