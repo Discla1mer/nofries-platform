@@ -932,8 +932,24 @@
             questionIndex = index;
             questions.forEach(function (_item, i) { const option = node('option', '', (i + 1) + ' of ' + questions.length); option.value = String(i); index.append(option); });
             index.value = String(activeQuestion);
-            index.addEventListener('change', function () { const i = Number(index.value); if (live(renderedEpoch) && index.parentElement === content && Number.isInteger(i) && i >= 0 && i < questions.length) { activeQuestion = i; renderQuestion(); } });
-            content.append(indexLabel, index);
+            // A pointer choice opens the question at once. Arrow keys only move the
+            // selection; Enter or Go opens it, so keyboard users do not load every
+            // question on the way.
+            let keyedAt = 0;
+            function openSelected(moveFocus) {
+                const i = Number(index.value);
+                if (!live(renderedEpoch) || !content.contains(index) || !Number.isInteger(i) || i < 0 || i >= questions.length) return;
+                activeQuestion = i; if (moveFocus) renderAssessmentQuestion(); else renderQuestion();
+            }
+            index.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') { keyedAt = 0; event.preventDefault(); openSelected(true); }
+                else if (event.key !== 'Tab' && event.key !== 'Escape') keyedAt = Date.now();
+            });
+            index.addEventListener('change', function () { if (Date.now() - keyedAt < 1000) { keyedAt = 0; return; } openSelected(false); });
+            const go = button('Go', function () { openSelected(true); }, 'dashboard-button dashboard-button-secondary ncsc-question-go');
+            go.id = 'ncsc-question-go'; go.setAttribute('aria-label', 'Go to the selected question');
+            const picker = node('div', 'ncsc-question-picker'); picker.append(index, go);
+            content.append(indexLabel, picker);
             const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable ? ' Answers save automatically a moment after each change.' : ''));
             indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
@@ -1102,6 +1118,8 @@
                 const more = button('View all ' + followUpCount + ' follow-ups', function () {
                     items.forEach(function (item) { item.hidden = false; });
                     more.remove();
+                    // The button is gone, so keep keyboard focus on the first follow-up it revealed.
+                    items[3].tabIndex = -1; items[3].focus();
                 }, 'dashboard-button dashboard-button-secondary');
                 section.append(more);
             }
@@ -1127,7 +1145,11 @@
             const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
             const domain = metadata.domains.find(function (item) { return control && item.id === control.domainId; });
             questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
-            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', question.smallBusiness ? question.smallBusiness.meaning : question.prompt));
+            // A stable id lets a save that re-renders the page keep focus on the
+            // question text instead of dropping it to the page heading.
+            const legend = node('legend', '', question.smallBusiness ? question.smallBusiness.meaning : question.prompt);
+            legend.id = 'ncsc-question-text'; legend.tabIndex = -1;
+            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(legend);
             const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
             const hint = node('p', 'ncsc-input-guidance', question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
             hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
