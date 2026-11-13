@@ -193,11 +193,12 @@ test.each([
 
 test('compact heading leads with action summary while verbose source, counts and identifiers use native disclosures', () => {
     const model = presentation(), dom = render(model), panel = dom.root.children[0];
-    expect(panel.children.slice(0, 5).map(child => child.tagName)).toEqual(['H2', 'P', 'P', 'P', 'P']);
+    expect(panel.children.slice(0, 6).map(child => child.tagName)).toEqual(['H2', 'P', 'P', 'P', 'P', 'P']);
     expect(panel.children[1].textContent).toBe('From the assessment submitted ' + nzDateTime(model.source.scoreAsOf) +
         ' · Plan last updated ' + nzDateTime(model.updatedAt) + ' (NZ time)');
     expect(panel.children[1].textContent).not.toContain(model.source.assessmentId);
-    expect(panel.children[2].textContent).toContain('Visible overdue: ' + model.counts.visible.overdue);
+    expect(panel.children[2].textContent).toBe('This plan has 14 actions: 9 gaps to fix, 2 answers to check and 3 answers that need supporting evidence.');
+    expect(panel.children[3].textContent).toContain('Visible overdue: ' + model.counts.visible.overdue);
     const details = panel.children.filter(child => child.tagName === 'DETAILS');
     expect(details.map(child => child.children[0].textContent)).toEqual(['Technical details for support', 'Counts and filters']);
     details.forEach(element => expect(element.getAttribute('open')).toBeNull());
@@ -218,7 +219,17 @@ test('read-only next steps explain each current status without changing ownershi
     const blocked = card(dom, state.proposals[2].actionId), completed = card(dom, state.proposals[3].actionId);
     const reopened = card(dom, state.proposals[4].actionId), unassigned = card(dom, state.proposals[5].actionId);
     expect(cardFacts(assigned)).toMatchObject({ 'Next step': 'Confirm the owner and due date, then review the suggested work.',
-        'Owner': 'Assigned (eligibility not checked)', 'Due date': '1 Oct 2026' });
+        'Owner': 'Assigned to someone in your organisation', 'Due date': '1 Oct 2026' });
+    // Without the signed-in person, owners read in plain words. The raw owner
+    // reference stays only in the closed Action identifiers section.
+    const assignedFacts = facts(assigned.children.find(child => child.tagName === 'DL'));
+    expect(Object.values(assignedFacts).join(' ')).not.toMatch(/eligibility not checked/);
+    const ownerRef = model.actions.find(action => action.actionId === state.proposals[0].actionId).ownerSubjectKey;
+    expect(typeof ownerRef).toBe('string');
+    expect(Object.values(assignedFacts).join(' ')).not.toContain(ownerRef);
+    const assignEvent = history(assigned).querySelectorAll('li')[0].querySelector('dl');
+    expect(facts(assignEvent)).toMatchObject({ 'Owner': 'Assigned to someone in your organisation', 'Due date': '1 Oct 2026' });
+    expect(facts(assignEvent)).not.toHaveProperty('Owner ID (current eligibility not checked)');
     expect(cardFacts(active)['Next step']).toBe('Review progress with the action owner against the due date.');
     expect(cardFacts(blocked)).toMatchObject({ 'Next step': 'Review the block reason and agree how to move forward.', 'Block reason': REASON });
     expect(cardFacts(completed)['Next step']).toBe('Review the completion note and action history.');
@@ -370,4 +381,41 @@ test('plan guidance points to the action editor only when the host supplies it',
     mount(dom.root, presentation(), { actionEditorAbove: true });
     expect(dom.root.textContent).toContain('Where available, use Update an improvement action above to make changes.');
     expect(dom.root.textContent).not.toContain('Changes cannot be made in this view.');
+});
+
+describe('plain action names, owners and plan summary', () => {
+    test('actions are named by topic, with codes kept in Action identifiers', () => {
+        const model = presentation(), titles = Object.fromEntries(model.actions.map(action => [action.controlId, 'Topic for ' + action.domainId]));
+        const dom = createDom(); mount(dom.root, model, { controlTitles: titles });
+        cards(dom).forEach((element, index) => {
+            const action = model.actions[index];
+            expect(element.querySelector('h3').textContent).toBe(titles[action.controlId] + ' · ' +
+                { implementation: 'Gap to fix', assessment: 'Answer to check', applicability: 'Answer to check', evidence: 'Evidence to add' }[action.rationale.kind]);
+            expect(element.querySelector('h3').textContent).not.toContain(action.controlId);
+            expect(cardFacts(element)['Control ID']).toBe(action.controlId);
+        });
+    });
+
+    test('without titles, the code is the fallback name', () => {
+        const model = presentation(), dom = render(model);
+        expect(cards(dom)[0].querySelector('h3').textContent).toBe(model.actions[0].controlId + ' · ' +
+            (model.actions[0].rationale.kind === 'implementation' ? 'Gap to fix' : model.actions[0].rationale.kind === 'evidence' ? 'Evidence to add' : 'Answer to check'));
+    });
+
+    test('the current person sees "You" as owner; other people are not named by ID', () => {
+        const mine = step(seed(), 0, 'assign', { ownerSubjectKey: OWNER, dueDate: '2026-10-01' }), model = presentation(mine);
+        const self = createDom(); mount(self.root, model, { currentOwner: OWNER });
+        expect(cardFacts(card(self, mine.proposals[0].actionId)).Owner).toBe('You');
+        expect(cardFacts(card(self, mine.proposals[1].actionId)).Owner).toBe('Unassigned');
+        const other = createDom(); mount(other.root, model, { currentOwner: OTHER });
+        expect(cardFacts(card(other, mine.proposals[0].actionId)).Owner).toBe('Someone else in your organisation');
+        expect(other.root.textContent).not.toContain('platform user');
+    });
+
+    test('the summary explains how the actions relate, and is left out when a filter hides some', () => {
+        const state = mixed(), all = render(presentation(state));
+        expect(all.root.textContent).toContain('This plan has 14 actions: 9 gaps to fix, 2 answers to check and 3 answers that need supporting evidence.');
+        const filtered = render(presentation(state, { filters: { status: 'completed' } }));
+        expect(filtered.root.textContent).not.toContain('This plan has');
+    });
 });

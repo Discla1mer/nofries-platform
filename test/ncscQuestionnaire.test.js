@@ -918,7 +918,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         ]));
         const ui = await resumeUi(h), picker = byId(ui, 'ncsc-question-index');
         expect(picker.value).toBe('2');
-        expect(ui.root.querySelector('legend').textContent).toBe(metadata().questions[2].smallBusiness.meaning);
+        expect(ui.root.querySelector('legend').textContent).toBe(metadata().questions[2].smallBusiness.question);
         expect(picker.children[0].textContent).toContain('Unknown');
         expect(picker.children[1].textContent).toContain('Not applicable, to confirm');
         expect(picker.children[2].textContent).toContain('Unanswered');
@@ -961,7 +961,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
                 expect(picker.children[index].value).toBe(String(index));
                 expect(picker.children[index].textContent).toBe((index + 1) + ' of ' + questions.length + ' · Unanswered');
                 picker.value = String(index); event(picker, 'change');
-                expect(ui.root.querySelector('legend').textContent).toBe(question.smallBusiness.meaning);
+                expect(ui.root.querySelector('legend').textContent).toBe(question.smallBusiness.question);
             });
             const help = byId(ui, picker.getAttribute('aria-describedby'));
             expect(help.textContent).toBe('The full question is below. * marks unsaved changes. Answers save automatically a moment after each change.');
@@ -1011,6 +1011,78 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(picker.value).toBe('2'); expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
         expect(ui.root.querySelector('.ncsc-navigation-summary').textContent).toBe('Question 3 of 14 · 12 unanswered');
         expect(h.records).toHaveLength(1); ui.controller.destroy();
+    });
+
+    // The question text the page shows. Prefer the question form of the wording when the
+    // catalogue has one, so these focus tests follow the wording rather than pin it.
+    const plainQuestion = question => question.smallBusiness.question || question.smallBusiness.meaning;
+
+    test('arrow keys move the question picker without loading questions; Enter or Go opens the choice and focuses its text', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        const keydown = (element, key) => { for (const handler of element.events.keydown || []) handler({ key, preventDefault() {} }); };
+        try {
+            const picker = byId(ui, 'ncsc-question-index');
+            // Arrow presses change the select value (and fire change in some browsers) but leave question 1 on screen.
+            for (const value of ['1', '2', '3']) { keydown(picker, 'ArrowDown'); picker.value = value; event(picker, 'change'); }
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[0]));
+            keydown(picker, 'Enter');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[3]));
+            expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
+            const current = byId(ui, 'ncsc-question-index'); keydown(current, 'ArrowDown'); current.value = '6'; event(current, 'change');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[3]));
+            control(ui, 'Go').click();
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[6]));
+            expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
+            expect(h.records).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a save that finishes after Next unanswered keeps focus on the question text, not the page heading', async () => {
+        const h = await backend(), gate = deferred();
+        const client = { ...h.client, save: async (command, settings) => { await gate.promise; return h.client.save(command, settings); } };
+        const ui = await createInUi(h, { client, autosaveIdleMs: 40 });
+        try {
+            choose(ui, 0, 'yes'); await until(() => h.calls.length > 0 && ui.root.querySelector('.ncsc-status').textContent.startsWith('Saving'));
+            control(ui, 'Next unanswered question').click();
+            expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
+            gate.resolve(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            const legend = byId(ui, 'ncsc-question-text');
+            expect(ui.document.activeElement).toBe(legend); expect(legend.textContent).toBe(plainQuestion(metadata().questions[1]));
+        } finally { gate.resolve(); ui.controller.destroy(); }
+    });
+
+    test('a keystroke that cannot move the picker, or a pointer press, does not hold back a pointer choice', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        const fire = (element, type, value) => { for (const handler of element.events[type] || []) handler(value); };
+        try {
+            const picker = byId(ui, 'ncsc-question-index');
+            fire(picker, 'keydown', { key: 'Shift', preventDefault() {} }); picker.value = '2'; event(picker, 'change');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[2]));
+            const current = byId(ui, 'ncsc-question-index');
+            fire(current, 'keydown', { key: 'ArrowDown', preventDefault() {} }); fire(current, 'pointerdown', {});
+            current.value = '5'; event(current, 'change');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[5]));
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a keyboard choice in the question picker survives an autosave that re-renders before Enter or Go', async () => {
+        const h = await backend(), gate = deferred();
+        const client = { ...h.client, save: async (command, settings) => { await gate.promise; return h.client.save(command, settings); } };
+        const ui = await createInUi(h, { client, autosaveIdleMs: 40 }), questions = metadata().questions;
+        const keydown = (element, key) => { for (const handler of element.events.keydown || []) handler({ key, preventDefault() {} }); };
+        try {
+            choose(ui, 0, 'yes'); await until(() => h.calls.length > 0 && ui.root.querySelector('.ncsc-status').textContent.startsWith('Saving'));
+            const picker = byId(ui, 'ncsc-question-index'); picker.focus();
+            keydown(picker, 'ArrowDown'); picker.value = '4'; event(picker, 'change');
+            gate.resolve(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            const current = byId(ui, 'ncsc-question-index');
+            expect(current).not.toBe(picker);
+            expect(current.value).toBe('4');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[0]));
+            keydown(current, 'Enter');
+            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[4]));
+            expect(byId(ui, 'ncsc-question-index').value).toBe('4');
+        } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
     test('detached navigation and picker controls cannot change the current selection after a render', async () => {
@@ -1370,7 +1442,9 @@ describe('submitted assessment results', () => {
                 upperPercentTenths: evaluated.attainment.upperPercentTenths, denominatorWeight: evaluated.attainment.denominatorWeight,
                 completed: evaluated.countsCompletion.completionNumerator, total: evaluated.countsCompletion.completionDenominator });
         });
-        expect(panel.textContent).toContain('Unknown or unresolved answers: 2. Marked not applicable, to confirm: 1.');
+        // One total that already includes the not applicable answer, so it cannot read as 3 separate items.
+        expect(panel.textContent).toContain('Answers still to confirm: 2 (1 Unknown and 1 not applicable).');
+        expect(panel.textContent).not.toMatch(/Marked not applicable, to confirm/);
         expect(panel.textContent).toContain(rationale); expect(panel.querySelectorAll('img')).toHaveLength(0);
         expect(panel.querySelectorAll('script')).toHaveLength(0); ui.controller.destroy();
     });
@@ -1459,7 +1533,7 @@ describe('questionnaire form accessibility', () => {
             for (const [index, question] of metadata().questions.entries()) {
                 const picker = byId(ui, 'ncsc-question-index'); picker.value = String(index); event(picker, 'change');
                 const fieldset = ui.root.querySelector('fieldset'), hint = byId(ui, 'ncsc-input-guidance-' + question.id);
-                expect(fieldset.querySelector('legend').textContent).toBe(question.smallBusiness.meaning);
+                expect(fieldset.querySelector('legend').textContent).toBe(question.smallBusiness.question);
                 expect(hint.parentElement).toBe(fieldset);
                 expect(hint.textContent.length).toBeGreaterThan(40);
                 expect(hint.textContent).not.toBe(question.prompt);
@@ -1732,7 +1806,7 @@ describe('questionnaire public controls and retained mutation intent', () => {
     test('create, N/A rationale, explicit clear, destroy/remount and resume use acknowledged API progress', async () => {
         const h = await backend(), ui = await createInUi(h), question = metadata().questions[0];
         expect(ui.root.textContent).toContain(question.prompt);
-        expect(ui.root.querySelector('fieldset').querySelector('legend').textContent).toBe(question.smallBusiness.meaning);
+        expect(ui.root.querySelector('fieldset').querySelector('legend').textContent).toBe(question.smallBusiness.question);
         expect(ui.root.querySelectorAll('input').filter(input => input.type === 'radio').map(input => input.value)).toEqual(question.responseOptionIds);
         choose(ui, 0, 'not_applicable', '  Exact Māori claim\n界 \uD83D\uDE80  ');
         const rationale = byId(ui, `ncsc-rationale-${question.id}`); rationale.focus(); enter(rationale, rationale.value + '!');
@@ -2857,7 +2931,7 @@ describe('final submission review step', () => {
             expect(ui.root.querySelectorAll('.ncsc-review-item')).toHaveLength(questions.length);
             questions.forEach((question, index) => {
                 // The heading repeats the plain question that was answered; the framework wording is optional and collapsed.
-                expect(reviewItem(ui, index).querySelector('h4').textContent).toBe(question.smallBusiness.meaning);
+                expect(reviewItem(ui, index).querySelector('h4').textContent).toBe(question.smallBusiness.question);
                 const framework = reviewItem(ui, index).querySelector('details');
                 expect(framework.open).toBeFalsy();
                 expect(framework.querySelector('summary').textContent).toBe('Full framework question');
@@ -2898,7 +2972,7 @@ describe('final submission review step', () => {
             control(ui, 'Review and submit').click();
             control(ui, 'Edit question 6').click();
             expect(byId(ui, 'ncsc-question-index').value).toBe('5');
-            expect(ui.document.activeElement.textContent).toBe(question.smallBusiness.meaning);
+            expect(ui.document.activeElement.textContent).toBe(question.smallBusiness.question);
             const input = byId(ui, `ncsc-answer-${question.id}-unknown`); input.checked = true; event(input, 'change');
             control(ui, 'Return to review').click();
             expect(ui.document.activeElement).toBe(byId(ui, `ncsc-review-edit-${question.id}`));
@@ -2982,11 +3056,28 @@ describe('final submission review step', () => {
         try {
             control(ui, 'Review and submit').click();
             expect(byId(ui, 'ncsc-review-readiness').textContent).toMatch(/^Every question has an answer/);
+            // A complete Yes draft has no N/A or Unknown answers, so neither is mentioned.
+            expect(byId(ui, 'ncsc-review-readiness').textContent).toBe('Every question has an answer.');
             const confirm = control(ui, 'Save and submit assessment'); confirm.click(); confirm.click(); confirm.click();
             const accept = ui.root.querySelector('.ncsc-submit-dialog').querySelectorAll('button').find(button => button.textContent === 'Submit');
             accept.click(); accept.click();
             await until(() => ui.root.querySelector('.ncsc-sealed'));
             expect(submit).toHaveBeenCalledTimes(1); expect(h.records.filter(row => row.action === 'submit')).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('ready review names the explanation and answers still to confirm only when there are some', async () => {
+        const h = await backend(); await h.execute(createCommand());
+        const rows = allResponses('yes'); rows[0] = { itemId: rows[0].itemId, optionId: 'unknown', rationale: null };
+        rows[1] = { itemId: rows[1].itemId, optionId: 'unknown', rationale: null };
+        rows[2] = { itemId: rows[2].itemId, optionId: 'not_applicable', rationale: { text: 'Synthetic N/A reason.' } };
+        await h.execute(saveCommand('assessment-a', 0, 'save-a', rows));
+        const ui = await resumeUi(h);
+        try {
+            control(ui, 'Review and submit').click();
+            expect(byId(ui, 'ncsc-review-readiness').textContent).toBe('Every question has an answer. Your not applicable answer has an explanation. ' +
+                '3 answers are still to confirm (2 Unknown and 1 not applicable). You can submit with them, but they do not count as in place.');
+            expect(posts(h)).toHaveLength(0);
         } finally { ui.controller.destroy(); }
     });
 
@@ -3115,7 +3206,11 @@ describe('reconciled persona journey', () => {
             expect(ui.root.textContent).toContain('Suggested follow-ups: 14.');
             const followUps = ui.root.querySelector('.ncsc-next-steps');
             expect([...followUps.querySelectorAll('li')].filter(item => !item.hidden)).toHaveLength(3);
-            expect(control(ui, 'View all 14 follow-ups')).toBeDefined();
+            const more = control(ui, 'View all 14 follow-ups'); more.focus(); more.click();
+            // The button disappears, so focus moves to the first follow-up it revealed.
+            expect(control(ui, 'View all 14 follow-ups')).toBeUndefined();
+            expect([...followUps.querySelectorAll('li')].filter(item => !item.hidden)).toHaveLength(14);
+            expect(ui.document.activeElement).toBe(followUps.querySelectorAll('li')[3]);
             expect(byId(ui, 'ncsc-provider-summary').value).toContain('Partial');
             const before = h.records.length; control(ui, 'Retry loading results').click(); await until(() => read.mock.calls.length === 2);
             expect(h.records).toHaveLength(before);

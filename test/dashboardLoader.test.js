@@ -1850,6 +1850,10 @@ describe('ready Cyber composition', () => {
             await h.reply(10, 200, view);
             expect(h.improvementMounts).toHaveLength(1);
             expect(h.improvementMounts[0].input.initialTarget).toEqual(target(planId));
+            // Plain topic titles come from the same validated Cyber metadata.
+            const titles = h.improvementMounts[0].input.controlTitles;
+            h.cyberProjection.metadata.controls.forEach(item => expect(titles[item.id]).toBe(item.title));
+            expect(Object.keys(titles)).toHaveLength(h.cyberProjection.metadata.controls.length);
             expect(h.window.location.hash).toBe('#improvement-plan');
             expect(h.requests[11].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
             h.window.dispatch('pagehide');

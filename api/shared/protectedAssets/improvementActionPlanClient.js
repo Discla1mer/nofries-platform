@@ -153,6 +153,14 @@
         return value;
     }
 
+    // Optional host catalogue titles (control ID → plain title). Bounded text only.
+    function titlesOption(input) {
+        if (input === undefined || input === null) return null;
+        const value = copy(input, 65536);
+        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length > 500) invalid();
+        Object.keys(value).forEach(key => { identifier(key); text(value[key], 200); });
+        return value;
+    }
     function mount(root, options) {
         if (!root || !root.ownerDocument || typeof root.replaceChildren !== 'function' || !options ||
             typeof options.request !== 'function' || typeof options.isCurrent !== 'function' || typeof options.newId !== 'function' ||
@@ -164,6 +172,11 @@
         // Reported only after a response has passed this client's validation.
         // A display hint for the host ("Information as at"); it grants nothing.
         const accepted = () => { if (options.onAccepted) { try { options.onAccepted(); } catch (_) { /* Display only. */ } } };
+        let controlTitles = null;
+        try { controlTitles = titlesOption(options.controlTitles); } catch (_) { controlTitles = null; /* Codes remain the fallback names. */ }
+        let currentOwner = null;
+        const actionName = action => typeof view.actionTitle === 'function' ? view.actionTitle(action, controlTitles) : action.controlId + ' · ' + action.labels.kind;
+        const viewOptions = () => ({ actionEditorAbove: true, ...(controlTitles ? { controlTitles } : {}), ...(currentOwner ? { currentOwner } : {}) });
         const readLatest = !initialSource && typeof options.latestSource === 'function' ? options.latestSource : null;
         let latest = null, pageAsOf = null;
         const day = value => typeof view.calendarDay === 'function' ? view.calendarDay(value) : value || 'Not set';
@@ -237,15 +250,16 @@
                 if (!editor.actions.some(row => row.actionId === selectedAction)) selectedAction = editor.actions[0]?.actionId || null;
                 actionPicker.replaceChildren();
                 model.actions.forEach(action => {
-                    const option = node('option', action.controlId + ' · ' + action.labels.kind); option.value = action.actionId; actionPicker.append(option);
+                    const option = node('option', actionName(action)); option.value = action.actionId; actionPicker.append(option);
                 });
                 actionPicker.value = selectedAction || ''; actionPicker.disabled = busy || !!pending;
             }
             const detail = selectedDetail(), authority = selectedAuthority();
-            actionSummary.textContent = draft ? draft.controlId + ' · ' + draft.work : detail ? detail.controlId + ' · ' + detail.rationale.suggestedAction : '';
+            actionSummary.textContent = draft ? draft.name + ': ' + draft.work : detail ? actionName(detail) + ': ' + detail.rationale.suggestedAction : '';
             actionSummary.hidden = !draft && !permitted;
             actionState.textContent = detail ? 'Status: ' + detail.labels.status + '. Owner: ' + (labelled(detail) ? detail.ownerLabel :
-                detail.ownerSubjectKey === null ? 'not set' : 'a platform user') + '. Due date: ' + day(detail.dueDate) + '.' : '';
+                detail.ownerSubjectKey === null ? 'not set' : typeof currentOwner !== 'string' ? 'someone in your organisation' :
+                detail.ownerSubjectKey === currentOwner ? 'you' : 'someone else in your organisation') + '. Due date: ' + day(detail.dueDate) + '.' : '';
             actionState.hidden = !!draft || !permitted || !detail;
             ACTION_BUTTONS.forEach(type => {
                 const control = actionButtons[type], command = type === 'assignNamed' ? 'assign' : type;
@@ -268,7 +282,7 @@
             if (!active() || busy || pending || draft || !editor || !editor.canWrite || !model) return false;
             const detail = selectedDetail(), authority = selectedAuthority(), named = choice === 'assignNamed', type = named ? 'assign' : choice;
             if (!detail || !authority || !authority.commands.includes(type) || choice === 'assign' && editor.ownerChoices.length !== 1) return false;
-            draft = { type, named, actionId: detail.actionId, planId: selected, revision: selectedRevision, controlId: detail.controlId,
+            draft = { type, named, actionId: detail.actionId, planId: selected, revision: selectedRevision, controlId: detail.controlId, name: actionName(detail),
                 work: detail.rationale.suggestedAction, ownerSubjectKey: choice === 'assign' ? editor.ownerChoices[0].subjectKey : null };
             staleDraft = false;
             const form = node('form'); form.setAttribute('aria-label', 'Improvement action update'); form.className = 'ncsc-questionnaire improvement-action-form';
@@ -524,7 +538,7 @@
                     clearView(); selected = null; selectedRevision = null; selectedAction = null;
                     message = 'This action is no longer available in this plan. Return to the work queue or refresh to check again.'; render(); return false;
                 }
-                selected = planId; selectedRevision = value.planRevision; clearView(); rendered = view.mount(content, value, { actionEditorAbove: true });
+                selected = planId; selectedRevision = value.planRevision; clearView(); rendered = view.mount(content, value, viewOptions());
                 try { timestamp(value.source.scoreAsOf); planNames.set(planId, 'Plan: ' + when(value.source.scoreAsOf).split(',')[0]); }
                 catch (_) { /* The renderer below withholds an invalid presentation. */ }
                 // The reused renderer withholds invalid presentations. An editor
@@ -540,6 +554,10 @@
                     return false;
                 }
                 editor = editorContext(editorResult.value, model);
+                // Name the signed-in person's own actions "You" once the editor
+                // confirms who they are; re-render the already validated plan.
+                const self = editor.ownerChoices.length === 1 ? editor.ownerChoices[0].subjectKey : null;
+                if (self !== currentOwner) { currentOwner = self; if (rendered) rendered.destroy(); rendered = view.mount(content, model, viewOptions()); }
                 if (exactTarget) selectedAction = exactTarget.actionId;
                 else if (!editor.actions.some(action => action.actionId === selectedAction)) selectedAction = editor.actions[0]?.actionId || null;
                 message = exactTarget ? value.planRevision !== exactTarget.planRevision ?
