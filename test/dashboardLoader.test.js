@@ -3546,3 +3546,18 @@ describe('Overview Actions card', () => {
         h.window.dispatch('pagehide');
     });
 });
+
+test.each([[{ external: true }, '#cyber-security', '#cyber-security'], [{ external: true }, '#not-a-route', undefined],
+    [{}, '#cyber-security', undefined]])('a signed-out dashboard remembers only a listed customer page for sign-in (%j %s)', async (options, hash, saved) => {
+    // Round 2: after signing out and back in, Alex landed on Overview, not the assessment he left.
+    const storage = new Map();
+    const h = harness({ ...options, hash });
+    h.window.sessionStorage = { setItem: (key, value) => storage.set(key, value), getItem: key => storage.get(key) ?? null,
+        removeItem: key => storage.delete(key) };
+    await flush();
+    await h.reply(0, 401, { code: 'dashboard_session_required' });
+    expect(h.status).toBe('unauthenticated');
+    const value = storage.get('nofries-return-route');
+    if (saved === undefined) expect(value).toBeUndefined();
+    else { const parsed = JSON.parse(value); expect(Object.keys(parsed).sort()).toEqual(['at', 'route']); expect(parsed.route).toBe(saved); }
+});

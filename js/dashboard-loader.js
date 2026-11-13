@@ -20,6 +20,9 @@
     const ACTION_PLAN_LIMIT = 5;
     const MAX_RECONCILIATIONS = 2;
     const ADD_ORG_RETURN = 'nofries-return-add-organisation';
+    // Customer sign-in returns through /signup, which reads this once. Only a
+    // listed dashboard fragment is stored; /signup checks it against its own list.
+    const SIGNIN_RETURN = 'nofries-return-route';
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
     const DIGEST = /^[0-9a-f]{64}$/;
     const ROUTES = ['overview', 'ai-governance', 'cyber-security', 'it-optimisation', 'improvement-plan', 'evidence', 'board-reports', 'services'];
@@ -136,6 +139,12 @@
     elements.signIn.href = customerProvider === 'staff'
         ? '/api/auth/login?returnTo=' + encodeURIComponent('/dashboard' + currentRoute()) : customerEntry;
 
+    function rememberReturnRoute() {
+        if (customerProvider === 'staff' || gateway) return;
+        const route = currentRoute();
+        if (!route) return;
+        try { window.sessionStorage.setItem(SIGNIN_RETURN, JSON.stringify({ route: route, at: Date.now() })); } catch (_) {}
+    }
     function current(cycle) { return active === cycle && !cycle.closed; }
     function dispose(cycle) {
         if (!cycle || cycle.closed) return;
@@ -245,6 +254,7 @@
         elements.signIn.hidden = !['unauthenticated', 'expired', 'denied'].includes(state);
         if (!elements.signIn.dataset.restingLabel) elements.signIn.dataset.restingLabel = elements.signIn.textContent;
         elements.signIn.textContent = state === 'expired' ? 'Sign in again' : elements.signIn.dataset.restingLabel;
+        if (state === 'unauthenticated' || state === 'expired') rememberReturnRoute();
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
         if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
@@ -1639,6 +1649,7 @@
     elements.signOut.addEventListener('click', function () {
         if (!active || active.busy || active.authorityPending || unresolved || blockPendingClientNavigation(active)) return;
         leave(active, function () {
+            rememberReturnRoute();
             const cycle = begin();
             const pending = command('logout', {});
             execute(cycle, pending).catch(function (error) { failure(cycle, error); });
