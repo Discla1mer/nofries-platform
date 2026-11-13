@@ -78,7 +78,8 @@ function createAuthLogoutFunction(options = {}) {
                         '<span class="brand-copy"><strong>No Fries</strong><span>Dashboard</span></span></a><a class="text-link" href="/">Back to home</a></header>' +
                         '<main class="shell account-notice-layout"><section class="organisation-card signup-card" id="signout-message" tabindex="-1" aria-labelledby="signout-title">' +
                         '<p class="eyebrow">Account access</p><h1 id="signout-title">Sign-out was not confirmed</h1>' +
-                        '<p>No Fries could not confirm sign-out. Any sign-in already in progress may still finish. Wait for it to finish, then return to workspace setup and try again.</p>' +
+                        '<p>No Fries could not confirm sign-out. Any sign-in already in progress may still finish. Return to workspace setup and choose Sign out again.</p>' +
+                        '<p>If it still does not work, email hello@nofries.nz.</p>' +
                         '<a class="button" href="/signup?provider=external">Return to workspace setup</a>' +
                         '<p class="field-help signup-status-help"><a href="/report.html#kind=error&amp;screen=signup" target="_blank" rel="noopener noreferrer" aria-label="Report this problem (opens in a new tab)">Report this problem</a></p></section></main></body></html>'
                 };
