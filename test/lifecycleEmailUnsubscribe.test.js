@@ -123,15 +123,18 @@ describe('unsubscribe handler', () => {
         expect((await handleUnsubscribeRequest(call('POST'), { env: ENV, record: null })).status).toBe(503);
     });
 
-    test('rate limits per client with its own bucket', async () => {
+    test('rate limits failed token checks per client, never valid tokens', async () => {
         const record = jest.fn(async () => {});
-        for (let i = 0; i < RATE_MAX; i += 1) expect((await handleUnsubscribeRequest(call('GET'), { env: ENV, record })).status).toBe(200);
-        const limited = await handleUnsubscribeRequest(call('POST'), { env: ENV, record });
+        const bad = (extra = {}) => call('GET', { query: { t: 'v1.not-a-token' }, ...extra });
+        for (let i = 0; i < RATE_MAX; i += 1) expect((await handleUnsubscribeRequest(bad(), { env: ENV, record })).status).toBe(400);
+        const limited = await handleUnsubscribeRequest(bad(), { env: ENV, record });
         expect(limited.status).toBe(429);
         expect(limited.headers['Retry-After']).toBe('600');
-        expect(record).not.toHaveBeenCalled();
-        const other = await handleUnsubscribeRequest(call('GET', { headers: { 'x-forwarded-for': '198.51.100.7' } }), { env: ENV, record });
-        expect(other.status).toBe(200);
+        const other = await handleUnsubscribeRequest(bad({ headers: { 'x-forwarded-for': '198.51.100.7' } }), { env: ENV, record });
+        expect(other.status).toBe(400);
+        // A valid token from the same (shared mail-provider) address still works.
+        expect((await handleUnsubscribeRequest(call('POST'), { env: ENV, record })).status).toBe(200);
+        expect(record).toHaveBeenCalledTimes(1);
     });
 
     test('other methods get 405', async () => {

@@ -22,8 +22,9 @@ const UPSERT_SQL = `INSERT INTO nofries.email_preferences (account_id, email_typ
     WHERE email_preferences.unsubscribed_at IS NULL`;
 const TYPE_LABELS = Object.freeze({ welcome: 'welcome emails', result_summary: 'result summary emails',
     nudge_unfinished: 'reminders to finish an assessment', reassess_reminder: 'reminders to reassess' });
-// Own small limiter, like /api/telemetry: it neither spends nor is starved by
-// the shared signup and enquiry budget. IPv6 clients share their /64.
+// Own small limiter for failed token checks, like /api/telemetry: it neither
+// spends nor is starved by the shared signup and enquiry budget. IPv6 clients
+// share their /64.
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX = 30;
 const MAX_BUCKETS = 2000;
@@ -108,12 +109,17 @@ async function handleUnsubscribeRequest(req, { env = process.env, record = null,
     if (method !== 'GET' && method !== 'POST') {
         return withHeaders(page(405, 'Method not allowed', ['Use the link in the email.']), { Allow: 'GET, POST' });
     }
-    if (!allow(getClientKeyFromHeaders((req && req.headers) || {}, clientKey || 'unknown'))) {
-        return withHeaders(page(429, 'Too many requests', ['Please wait a few minutes and try again.']), { 'Retry-After': '600' });
-    }
     const token = readToken(req);
     const claims = token ? verifyUnsubscribeToken(token, env) : null;
-    if (!claims) return invalid();
+    // Only failed token checks are limited. One-click POSTs arrive from shared
+    // mail-provider addresses, so a valid signed token must never be throttled:
+    // a lost unsubscribe is a compliance failure, and valid writes are idempotent.
+    if (!claims) {
+        if (!allow(getClientKeyFromHeaders((req && req.headers) || {}, clientKey || 'unknown'))) {
+            return withHeaders(page(429, 'Too many requests', ['Please wait a few minutes and try again.']), { 'Retry-After': '600' });
+        }
+        return invalid();
+    }
     const label = TYPE_LABELS[claims.emailType];
     if (method === 'GET') {
         const form = `<form method="post" action="${PATH}?t=${encodeURIComponent(token)}">
