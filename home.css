@@ -1076,6 +1076,9 @@ body[data-page="operator-dashboard"] .site-details > summary { display: flex; al
 .sample-result-gaps { margin: 16px 0 0; padding: 0; list-style: none; }
 .sample-result-gaps > li { min-width: 0; padding: 24px; border: 1px solid var(--line); border-radius: 16px; }
 .sample-result-gaps p { margin: 10px 0 0; }
+/* The example's cards use the same opaque surface as saved results (F1-R06). */
+.sample-result :is(.public-roadmap-grid > article, .sample-result-gaps > li) { border-color: var(--result-card-line); border-radius: var(--result-card-radius); background: var(--result-card-surface); box-shadow: var(--result-card-shadow); }
+.sample-result-banner { position: relative; z-index: 1; box-shadow: var(--result-card-shadow); font-size: 1.05rem; }
 .sample-result-table { width: 100%; border-collapse: collapse; }
 .sample-result-table :is(th, td) { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .sample-result-table td { white-space: nowrap; }
@@ -1225,8 +1228,8 @@ body[data-dashboard-gateway="true"]:has(#dashboardStatusPanel:not([hidden])) .ho
 .lockup-tagline::after { content: ""; display: block; width: 18px; height: 1px; margin-top: 12px; background: var(--ink); }
 .homepage-lead { max-width: 38ch; margin: 0; color: var(--ink-soft); font-size: 1.12rem; line-height: 1.7; }
 .homepage-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 18px 24px; margin-top: 30px; }
-#gatewayPublic .homepage-primary { display: inline-flex; align-items: center; justify-content: space-between; gap: 26px; min-height: 54px; padding: 14px 22px; border: 1px solid var(--yellow); border-radius: 10px; color: var(--ink); background: var(--yellow); box-shadow: none; font-size: .94rem; font-weight: 700; }
-#gatewayPublic .homepage-primary:hover { background: var(--yellow-hover); border-color: var(--yellow-hover); transform: none; }
+#gatewayPublic .homepage-primary { display: inline-flex; align-items: center; justify-content: space-between; gap: 26px; min-height: 54px; padding: 14px 22px; border: 1px solid var(--button-fill); border-radius: var(--button-radius); color: var(--button-ink); background: var(--button-fill); box-shadow: none; font-family: var(--button-font); font-size: var(--button-size-large); font-weight: var(--button-weight); }
+#gatewayPublic .homepage-primary:hover { background: var(--button-fill-hover); border-color: var(--button-fill-hover); transform: none; }
 .homepage-primary > span { font-size: 1.25rem; font-weight: 500; }
 .homepage-secondary { display: inline-flex; align-items: center; gap: 12px; min-height: 46px; color: var(--ink-soft); font-size: .88rem; font-weight: 600; }
 .homepage-secondary:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 5px; }
