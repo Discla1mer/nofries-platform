@@ -3,6 +3,7 @@ const {
     BrowserSessionStoreError,
     createBrowserSessionStore
 } = require('./browserSessionStore');
+const { forgetDashboardSession, markDashboardSessionVerified } = require('./abuseProtection');
 const {
     createCustomerIdentityProviderProfile,
     customerProviderKey,
@@ -248,6 +249,9 @@ function createBrowserAuthService(options = {}) {
                 throw error;
             }
             const cookie = makeCookie(sessionCookie, sessionId, Math.floor((absoluteExpiresAt - issuedAt) / 1000), 'Lax');
+            // The server has just stored this session, so its first dashboard
+            // request may use the verified-session rate allowance.
+            markDashboardSessionVerified(sessionCookie, sessionId, absoluteExpiresAt - issuedAt);
             return {
                 location: transaction.returnTo,
                 cookie,
@@ -276,6 +280,7 @@ function createBrowserAuthService(options = {}) {
     async function logout(input = {}) {
         const sessionId = optionalOpaqueCookie(input.cookieHeader, sessionCookie);
         if (sessionId) {
+            forgetDashboardSession(sessionCookie, sessionId);
             const record = await storeCall(() => store.loadSession(sessionId));
             if (record === undefined) throw new BrowserAuthError(503, 'browser_auth_store_unavailable');
             if (record !== null) assertSessionPurpose(record, customerPurpose);
@@ -319,6 +324,7 @@ function createBrowserAuthService(options = {}) {
             if (cancelled === false) throw new BrowserAuthError(401, 'browser_auth_transaction_invalid');
             if (cancelled !== true) throw new BrowserAuthError(503, 'browser_auth_store_unavailable');
         }
+        if (sessionId) forgetDashboardSession(sessionCookie, sessionId);
         if (ownedSetupSession) await storeCall(() => store.deleteSession(sessionId));
         return { location: '/signup?provider=external&account=choose', cookie: [
             clearCookie(sessionCookie, 'Lax'), clearCookie(transactionCookie, 'None')
@@ -353,10 +359,14 @@ async function readBrowserSessionDetails(source, options = {}) {
 
 async function readStoredSession(source, options) {
     const cookieHeader = typeof source === 'string' ? source : getHeader(source, 'cookie');
-    const sessionId = optionalOpaqueCookie(cookieHeader, options.customerPurpose ? RETAINED_READ_COOKIE_NAME : options.customerTransport ? '__Host-nofries-external-customer' : options.customerPolicy ? '__Host-nofries-customer' : SESSION_COOKIE_NAME);
+    const cookieName = options.customerPurpose ? RETAINED_READ_COOKIE_NAME : options.customerTransport ? '__Host-nofries-external-customer' : options.customerPolicy ? '__Host-nofries-customer' : SESSION_COOKIE_NAME;
+    const sessionId = optionalOpaqueCookie(cookieHeader, cookieName);
     if (!sessionId) return null;
     const record = await storeCall(() => options.store.loadSession(sessionId));
-    if (!record) throw new BrowserAuthError(401, 'browser_auth_session_invalid');
+    if (!record) {
+        forgetDashboardSession(cookieName, sessionId);
+        throw new BrowserAuthError(401, 'browser_auth_session_invalid');
+    }
     // A transplanted SID does not grant ownership of the other purpose's
     // record, including ownership of its invalid-session cleanup.
     assertSessionPurpose(record, options.customerPurpose);
@@ -366,8 +376,13 @@ async function readStoredSession(source, options) {
             await options.customerPolicy.recheck({ identity: details.identity, assurance: record.customerAssurance, now: Number(options.now()) });
             if (Math.min(record.idleExpiresAt, record.absoluteExpiresAt) <= Number(options.now())) throw new BrowserAuthError(401, 'browser_auth_session_expired');
         }
+        // Verified against the store: later requests carrying this exact
+        // session may use the dashboard rate allowance until it expires.
+        markDashboardSessionVerified(cookieName, sessionId,
+            Math.min(record.idleExpiresAt, record.absoluteExpiresAt) - Number(options.now()));
         return details;
     } catch (error) {
+        if (error instanceof BrowserAuthError) forgetDashboardSession(cookieName, sessionId);
         if (error instanceof BrowserAuthError && error.statusCode === 401) {
             try {
                 await options.store.deleteSession(sessionId);
