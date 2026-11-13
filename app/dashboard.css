@@ -301,6 +301,8 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-navigation-actions button { white-space: normal; }
 .ncsc-actions, .ncsc-question-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }
 .ncsc-question-navigation { justify-content: space-between; }
+.ncsc-navigation-more { display: contents; }
+.ncsc-navigation-more-toggle { display: none; }
 .ncsc-warning, .ncsc-errors, .ncsc-sealed { padding: 1.15rem; margin: 1rem 0; border: 1px solid #c29221; border-left: 4px solid var(--dashboard-yellow); border-radius: .7rem; background: #f2e4bc; }
 .ncsc-warning button { margin: .3rem .6rem .3rem 0; }
 .ncsc-errors { border-color: #a3352a; background: #f6ddd6; }
@@ -330,11 +332,18 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-leave-dialog .dashboard-text-button { border-color: var(--dashboard-control-border, #7d7262); }
 .ncsc-leave-dialog .dashboard-text-button:hover { background: var(--dashboard-navy, #f2e4bc); }
 @media (max-width: 30rem) {
-    .ncsc-question-navigation { align-items: stretch; }
-    .ncsc-question-navigation button { flex: 1 1 100%; text-align: center; }
-    .ncsc-question-navigation span { flex: 1 1 100%; text-align: center; }
-    .ncsc-navigation-actions { width: 100%; }
-    .ncsc-navigation-actions button { width: 100%; }
+    /* A compact bar that stays at the bottom of the screen while the question is in view. */
+    .ncsc-question-navigation { position: sticky; bottom: 0; z-index: 2; gap: .4rem; margin: 1rem 0 0; padding: .5rem 0; align-items: stretch;
+        background: var(--dashboard-paper, #fffdf8); border-top: 1px solid var(--dashboard-line, #d3c9b7); }
+    .ncsc-question-navigation .ncsc-navigation-summary { flex: 1 1 100%; text-align: center; }
+    .ncsc-navigation-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr auto; gap: .4rem; }
+    /* Outranks the rounded dashboard button padding so the labels fit without breaking words. */
+    .ncsc-question-navigation .ncsc-navigation-actions button { width: 100%; min-width: 0; padding: .6rem .5rem; text-align: center; }
+    .ncsc-navigation-more-toggle { display: block; }
+    .ncsc-navigation-more { display: grid; grid-column: 1 / -1; gap: .4rem; }
+    .ncsc-navigation-more.ncsc-navigation-collapsed { display: none; }
+    /* Keep a focused control clear of the sticky bar. */
+    .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-bottom: 9rem; }
     .ncsc-actions > button { width: 100%; text-align: center; }
     .ncsc-review-item .dashboard-text-button { width: 100%; text-align: center; }
     .ncsc-review-counts { flex-direction: column; }
@@ -438,6 +447,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) { container: dashboard-mobile / inline-size; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .dashboard-main { padding-block-end: 1.5rem; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .ncsc-questionnaire :is(a, button, input, textarea, select, summary) { scroll-margin-block: 8px; }
+    /* The rule above is more specific than the narrow-screen clearance for the sticky
+       question bar, so restate that clearance here for the ready dashboard. */
+    @media (max-width: 30rem) {
+        body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-block-end: 9rem; }
+    }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .dashboard-mobile-nav .dashboard-task { scroll-margin-block: 8px; }
     /* Keep the familiar fixed bar for tall, normal-text overview/task layouts.
        A mounted questionnaire stays in flow: native focus placement changes with
