@@ -159,3 +159,12 @@ test('the simplified homepage preserves all protected entry and integrity marker
     }
     assert.match(html, /data-dashboard-gateway="true"/);
 });
+
+test('in-page homepage links move keyboard focus to their target section', () => {
+    const links = [...html.matchAll(/<a\b[^>]*href="#([^"]+)"/g)].map(match => match[1]);
+    assert.ok(links.includes('dashboard-benefits'));
+    for (const id of links) {
+        // A target with tabindex="-1" receives focus on fragment navigation, so the next Tab continues from it.
+        assert.match(html, new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*\\btabindex="-1"`), `#${id} is not focusable`);
+    }
+});
