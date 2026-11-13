@@ -244,13 +244,18 @@ test.each(['dynamic', 'hosted'].flatMap(kind => ['retry', 'expired', undefined].
     const f = runDocument(document, { search: '?provider=external' + (hint ? '&signin=' + hint : ''),
         state: { status: 'continue_authentication' } });
     try {
-        await flush(); expect(f.root.querySelector('h1').textContent).toBe('Continuing account setup');
-        expect(f.root.querySelector('a').textContent).toBe('Continue securely');
+        await flush(); expect(f.root.querySelector('h1').textContent).toBe('Finishing your sign-in');
+        expect(f.root.querySelector('a').textContent).toBe('Continue to Microsoft');
         expect(f.root.querySelector('a').href).toBe('/api/external-customer-auth/login');
         expect(f.root.querySelector('button').textContent).toBe('Sign out and change account');
         expect(f.root.querySelector('button').type).toBe('submit'); expect(f.assign).not.toHaveBeenCalled();
-        if (hint) expect(f.replace).not.toHaveBeenCalled();
-        else { expect(f.replace).toHaveBeenCalledTimes(1); expect(f.replace).toHaveBeenCalledWith('/api/external-customer-auth/login'); }
+        if (hint) { expect(f.replace).not.toHaveBeenCalled(); expect(f.root.textContent).not.toContain('Taking you to Microsoft now'); }
+        else {
+            expect(f.replace).toHaveBeenCalledTimes(1); expect(f.replace).toHaveBeenCalledWith('/api/external-customer-auth/login');
+            // Round 2: say why this step exists and that it is automatic.
+            expect(f.root.textContent).toContain('Your details are saved. Microsoft now checks your sign-in once more');
+            expect(f.root.textContent).toContain('Taking you to Microsoft now. This can take up to 30 seconds.');
+        }
         expect(f.fetch.mock.calls.map(([url]) => url)).toEqual(['/api/external-customer-signup/state']);
     } finally { f.dispose(); }
 });

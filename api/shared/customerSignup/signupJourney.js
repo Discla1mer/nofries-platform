@@ -44,6 +44,21 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             element('p', 'These points summarise your organisation schedule below. The full schedule and agreement are what you accept.'));
         return section;
     }
+    // What testers met on the Microsoft-hosted pages, said before they get there.
+    function handoffGuide() {
+        const section = element('section'); section.className = 'signup-handoff';
+        section.setAttribute('aria-labelledby', 'signup-handoff-title');
+        const title = element('h2', 'What happens on the Microsoft pages'); title.setAttribute('id', 'signup-handoff-title');
+        const list = element('ul');
+        for (const line of [
+            'Microsoft runs the sign-up page for No Fries. Its address starts with nofriescustomers.ciamlogin.com.',
+            'Your code comes from “No Fries Customers (via Microsoft)”. It can take a few minutes. Check your junk or spam folder.',
+            'No code after 5 minutes? Use the resend option on the Microsoft page. Still nothing? Email hello@nofries.nz.',
+            'Microsoft then asks to share your name and email with No Fries. It says the app is “not published by Microsoft”. That is expected: No Fries made the app, and Microsoft runs the sign-in. Accept to continue.'
+        ]) list.append(element('li', line));
+        section.append(title, list);
+        return section;
+    }
     function button(label, action, timeoutMs = 30000, restoreDraft = false) {
         const node = element('button', label);
         const revision = viewRevision;
@@ -95,14 +110,11 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                     : entryIntent === 'login' ? 'Sign in with your existing email and password.'
                     : 'Create an account with your email and password, or sign in to your existing account.' : 'Continue secure sign-in with the email address you verified or that received your invitation.'));
             }
-            if (customerTransport) root.append(element('p', 'You will continue to Microsoft’s secure sign-in page. Have your inbox ready; you can return here and restart if sign-in does not finish.'));
-            if (customerTransport && entryIntent === 'create') root.append(element('p',
-                'After signing in, choose Company to assess your own organisation, or Consultant to work with client organisations. You will review the applicable terms during setup.'));
             // Browser cancellation backstop only. The server independently
             // enforces its five-minute, one-use authentication transaction.
             const entry = button(chooseAccount ? 'Sign in with another account' : signInRecovery === 'account' ? 'Try signing in again'
                 : signInRecovery ? 'Restart secure sign-in'
-                : entryIntent === 'create' ? 'Create account' : entryIntent === 'login' ? 'Log in' : 'Login',
+                : entryIntent === 'create' ? 'Create account' : entryIntent === 'login' ? 'Log in' : 'Sign up or sign in',
                 signal => client.createAccount({ signal }), 630000);
             entry.classList.add('signup-entry-action'); root.append(entry);
             const start = element('a', customerTransport ? signInRecovery || chooseAccount ? 'Return to No Fries' : 'Back to home' : 'Start with email verification');
@@ -112,11 +124,17 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 choose.href = '/api/external-customer-auth/login?account=choose';
                 choose.className = 'text-link signup-secondary-action'; root.append(choose);
             }
+            // Explanations follow the action, so a small phone still shows the
+            // button without scrolling.
+            if (customerTransport) root.append(element('p', 'You will continue to Microsoft’s secure sign-in page. Have your inbox ready; you can return here and restart if sign-in does not finish.'));
+            if (customerTransport && !chooseAccount && !signInRecovery && entryIntent !== 'login') root.append(handoffGuide());
+            if (customerTransport && entryIntent === 'create') root.append(element('p',
+                'After signing in, choose Company to assess your own organisation, or Consultant to work with client organisations. You will review the applicable terms during setup.'));
         } else if (state.status === 'setup_details' && customerTransport && typeof client.completeSetup === 'function') {
             heading.textContent = 'Set up your organisation';
             root.append(element('p', 'Signed in as ' + state.email));
             const form = element('form');
-            const controls = {}, validateText = [];
+            const controls = {}, validateText = [], counters = [];
             const typeLabel = element('label', 'Account type'), accountType = element('select');
             accountType.name = 'accountType';
             for (const [value, title] of [['company', 'Company'], ['consultant', 'Consultant']]) {
@@ -141,6 +159,22 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 };
                 input.addEventListener('input', validate); validateText.push(validate);
                 label.append(input);
+                // The browser cuts text at the limit without saying so. Show a
+                // count as the limit gets close, and say plainly when it is hit.
+                if (name !== 'registrationId') {
+                    const count = element('span'); count.className = 'field-help signup-field-count';
+                    count.setAttribute('id', 'signup-' + name + '-count'); count.setAttribute('aria-live', 'polite');
+                    const update = () => {
+                        const used = String(input.value || '').length;
+                        count.hidden = used < maximum - 20;
+                        count.textContent = used >= maximum
+                            ? used + ' of ' + maximum + ' characters. This is the limit, so anything longer is cut off.'
+                            : used + ' of ' + maximum + ' characters.';
+                    };
+                    input.setAttribute('aria-describedby', 'signup-' + name + '-count');
+                    input.addEventListener('input', update); update(); counters.push(update);
+                    label.append(count);
+                }
                 if (name === 'registrationId') {
                     const help = element('span', 'Your New Zealand Business Number, if you have one.');
                     help.className = 'field-help'; help.setAttribute('id', 'signup-nzbn-help');
@@ -164,6 +198,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 }
                 setupDraft = null;
             }
+            for (const update of counters) update();
             const label = element('label'), authority = element('input');
             label.className = 'organisation-authority-check';
             authority.type = 'checkbox'; authority.required = true; authority.name = 'authorityConfirmed';
@@ -210,35 +245,69 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             root.append(element('p', 'Continue secure sign-in with the email linked to your account. Your saved setup and work are kept.'));
             signInLinks();
         } else if (state.status === 'continue_authentication' && customerTransport) {
-            heading.textContent = 'Continuing account setup';
-            const link = element('a', 'Continue securely'); link.href = '/api/external-customer-auth/login'; link.className = 'button';
+            // Saving setup never upgrades this session; only a fresh callback can.
+            // The page normally goes to Microsoft by itself, so say what is
+            // happening and offer the link as a fallback, not a second step.
+            heading.textContent = 'Finishing your sign-in';
+            root.append(element('p', 'Your details are saved. Microsoft now checks your sign-in once more so your new account can open. You should not need to enter anything.'));
+            const automatic = !signInRecovery && !chooseAccount;
+            if (automatic) {
+                const progress = element('p', 'Taking you to Microsoft now. This can take up to 30 seconds. Please keep this page open.');
+                progress.className = 'signup-progress'; progress.setAttribute('role', 'status');
+                root.append(progress, element('p', 'If nothing happens after 30 seconds, choose Continue to Microsoft.'));
+            }
+            const link = element('a', 'Continue to Microsoft'); link.href = '/api/external-customer-auth/login'; link.className = 'button';
             root.append(link);
             setupSignOut();
         } else if (state.status === 'terms' && validTerms(state)) {
             heading.textContent = 'Review your terms';
             root.append(element('p', 'Your email has been verified. Review the applicable organisation schedule and agreement before continuing.'));
-            if (Object.hasOwn(state, 'scheduleId')) {
-                const schedule = element('section');
-                schedule.setAttribute('aria-label', 'Organisation schedule');
-                const scheduleText = element('p', state.scheduleText); scheduleText.className = 'signup-legal-text';
-                schedule.append(element('h2', 'Organisation schedule'), scheduleText);
-                schedule.className = 'signup-legal signup-schedule';
-                const glance = scheduleSummary(state.scheduleText);
-                if (glance) root.append(glance);
-                root.append(schedule);
-            }
-            const terms = element('section');
-            terms.setAttribute('aria-label', 'Terms');
-            const termsText = element('p', state.termsText); termsText.className = 'signup-legal-text';
-            terms.append(element('h2', 'Dashboard agreement'), termsText);
-            terms.className = 'signup-legal signup-agreement';
-            root.append(terms);
+            const scheduled = Object.hasOwn(state, 'scheduleId');
+            // Summary and the accept control sit together at the top. The full
+            // texts follow in expanders; their wording is unchanged and hashed.
+            const glance = scheduled ? scheduleSummary(state.scheduleText) : null;
+            if (glance) root.append(glance);
+            const label = element('label'), consent = element('input');
+            label.className = 'organisation-authority-check signup-consent';
+            consent.type = 'checkbox';
+            consent.checked = false;
+            label.append(consent, element('span', scheduled
+                ? ' I accept this organisation schedule and agreement.' : ' I accept these terms.'));
+            const hint = element('p'); hint.className = 'signup-field-error signup-consent-hint'; hint.hidden = true;
+            hint.setAttribute('role', 'alert');
+            // Keep the button reachable by keyboard. Without the tick it explains
+            // what to do instead of doing nothing.
+            const submit = element('button', 'Accept and continue'), revision = viewRevision;
+            submit.type = 'button'; submit.className = 'button';
+            submit.addEventListener('click', () => {
+                if (submit.disabled || busy || revision !== viewRevision) return;
+                if (!consent.checked) {
+                    hint.textContent = 'Tick the box above first.'; hint.hidden = false;
+                    if (typeof consent.focus === 'function') consent.focus();
+                    return;
+                }
+                run(signal => client.acceptTerms({ termsVersion: state.termsVersion, termsDigest: state.termsDigest,
+                    ...(scheduled ? { scheduleId: state.scheduleId, scheduleDigest: state.scheduleDigest } : {}),
+                    accepted: true }, { signal }));
+            });
+            consent.addEventListener('change', () => { if (consent.checked) hint.hidden = true; });
+            root.append(label, submit, hint,
+                element('p', 'You can read the full ' + (scheduled ? 'schedule and agreement' : 'terms') + ' below before you accept.'));
+            const expander = (title, text, className, ariaLabel) => {
+                const details = element('details'), summary = element('summary', title), body = element('p', text);
+                body.className = 'signup-legal-text';
+                details.className = 'signup-legal ' + className; details.setAttribute('aria-label', ariaLabel);
+                details.append(summary, body);
+                return details;
+            };
+            if (scheduled) root.append(expander('Organisation schedule: read the full text', state.scheduleText, 'signup-schedule', 'Organisation schedule'));
+            root.append(expander('Dashboard agreement: read the full text', state.termsText, 'signup-agreement', 'Terms'));
+            const view = doc.defaultView;
             // Let the representative keep a copy of exactly what they are asked to accept.
             const saveCopy = element('button', 'Save a copy of these terms');
             saveCopy.type = 'button'; saveCopy.className = 'text-link signup-secondary-action';
             saveCopy.addEventListener('click', () => {
-                const view = doc.defaultView;
-                const parts = [Object.hasOwn(state, 'scheduleId') ? 'Organisation schedule\n\n' + state.scheduleText + '\n\n' : '',
+                const parts = [scheduled ? 'Organisation schedule\n\n' + state.scheduleText + '\n\n' : '',
                     'Dashboard agreement (' + state.termsVersion + ')\n\n' + state.termsText + '\n'];
                 if (!view || typeof view.Blob !== 'function' || !view.URL || typeof view.URL.createObjectURL !== 'function') return;
                 const url = view.URL.createObjectURL(new view.Blob(parts, { type: 'text/plain;charset=utf-8' }));
@@ -246,21 +315,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 root.append(link); link.click(); link.remove();
                 view.setTimeout(() => view.URL.revokeObjectURL(url), 1000);
             });
-            const label = element('label'), consent = element('input');
-            label.className = 'organisation-authority-check signup-consent';
-            consent.type = 'checkbox';
-            consent.checked = false;
-            label.append(consent, element('span', Object.hasOwn(state, 'scheduleId')
-                ? ' I accept this organisation schedule and agreement.' : ' I accept these terms.'));
-            const submit = button('Accept and continue', signal => {
-                if (!consent.checked) return Promise.resolve(state);
-                return client.acceptTerms({ termsVersion: state.termsVersion, termsDigest: state.termsDigest,
-                    ...(Object.hasOwn(state, 'scheduleId') ? { scheduleId: state.scheduleId, scheduleDigest: state.scheduleDigest } : {}),
-                    accepted: true }, { signal });
-            });
-            submit.disabled = true;
-            consent.addEventListener('change', () => { submit.disabled = !consent.checked || busy; });
-            root.append(label, submit, saveCopy);
+            root.append(saveCopy);
         } else if (state.status === 'resume_acceptance') {
             heading.textContent = 'Complete account setup';
             root.append(element('p', 'Your acceptance was recorded, but account setup did not finish. Resume the protected setup without accepting again.'),
@@ -403,7 +458,9 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         form.method = 'post'; form.action = '/api/external-customer-auth/logout';
         const submit = element('button', 'Sign out and change account');
         submit.type = 'submit'; submit.className = 'button secondary';
-        form.append(submit, element('p', 'Your account, saved setup and work are kept.'));
+        // The setup form keeps typed text only in this page; say so before it goes.
+        form.append(submit, element('p', root.querySelector('form') ? 'Signing out clears anything you have typed on this page. Your account, saved setup and work are kept.'
+            : 'Your account, saved setup and work are kept.'));
         root.append(form);
     }
     function validTerms(s) {
@@ -451,10 +508,14 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             }
         }
     }
+    // Printing shows the full terms even when an expander is closed.
+    const printView = doc.defaultView, openForPrint = () => { for (const details of root.querySelectorAll('details')) details.open = true; };
+    if (printView && typeof printView.addEventListener === 'function') printView.addEventListener('beforeprint', openForPrint);
     const ready = run(signal => client.load({ signal }));
     return Object.freeze({ ready, dispose() {
         disposed = true; generation++;
         setupDraft = null;
+        if (printView && typeof printView.removeEventListener === 'function') printView.removeEventListener('beforeprint', openForPrint);
         if (cancelOperation) cancelOperation();
         cancelOperation = null;
         root.replaceChildren();
