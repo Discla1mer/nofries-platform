@@ -230,8 +230,9 @@ function createDashboardRuntimeHandlers(configuration) {
         fields(policy, ['policyId', 'policyRevision', 'issuer', 'identityTenantId', 'audience']);
         fields(supplied.proofStore, ['createOriginalProof', 'readOriginalProof']);
         const originalStore = Object.fromEntries(STORE.map(name => [name, method(authOptions.store, name)]));
-        const cancelTransaction = configurationKeys.includes('externalCustomer')
-            ? method(authOptions.store, 'cancelTransaction', true) : null;
+        const setupFence = configurationKeys.includes('externalCustomer')
+            ? Object.fromEntries(['cancelTransaction', 'settleTransaction', 'revokeTransaction']
+                .map(name => [name, method(authOptions.store, name, true)]).filter(([, fn]) => fn)) : {};
         const proof = Object.fromEntries(['createOriginalProof', 'readOriginalProof'].map(name => [name, method(supplied.proofStore, name)]));
         const connect = method(supplied.pool, 'connect'), end = method(supplied.pool, 'end');
         clock = supplied.clock; budget = supplied.requestBudgetMs;
@@ -241,7 +242,7 @@ function createDashboardRuntimeHandlers(configuration) {
         if (!Number.isSafeInteger(budget) || budget <= 0 || budget > 60000) throw unavailable();
         authOptions.store = Object.freeze({ ...Object.fromEntries(STORE.map(name => [name,
             provider(originalStore[name], { load: name === 'loadSession', consume: name === 'consumeTransaction' })])),
-            ...(cancelTransaction ? { cancelTransaction: provider(cancelTransaction) } : {}) });
+            ...Object.fromEntries(Object.entries(setupFence).map(([name, fn]) => [name, provider(fn)])) });
         if (own(authOptions, 'clientApplication')) {
             const client = authOptions.clientApplication;
             const cache = method(client, 'getTokenCache', true);

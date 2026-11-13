@@ -354,10 +354,15 @@ test('an old saved-record action cannot open after a refresh or destruction', as
 test('empty organisation has an actionable baseline state and no invented zero score', async () => {
     let opened = 0; const dom = setup({ records: [], options: { openCyber: () => opened++ } }); await flush();
     assert.match(dom.root.textContent, /No saved assessments yet/); assert.doesNotMatch(dom.root.textContent, /0\.0%/);
-    assert.match(dom.root.textContent, /Build your first baseline/);
+    assert.match(dom.root.textContent, /Start your cyber check/);
+    assert.doesNotMatch(dom.root.textContent, /baseline/i);
     assert.equal(dom.root.querySelectorAll('.picture-first-use-step').length, 3);
     const action = dom.root.querySelector('.picture-first-use-action');
-    click(dom, 'Open assessment'); assert.equal(opened, 1);
+    // The one action comes straight after the introduction, before the steps.
+    const section = dom.root.querySelector('.picture-first-use');
+    assert.ok(section.children.indexOf(action) < section.children.indexOf(section.querySelector('.picture-first-use-steps')));
+    assert.equal(dom.root.querySelectorAll('button').length, 1);
+    click(dom, 'Start your cyber check'); assert.equal(opened, 1);
     dom.root.replaceChildren(); action.click(); assert.equal(opened, 1);
     dom.controller.destroy(); action.click(); assert.equal(opened, 1);
 });
@@ -1467,6 +1472,16 @@ test('Actions card shows overdue and next-14-day counts with up to three titles 
     dom.controller.destroy();
 });
 
+test('Actions card stays hidden until there is a submitted result', async () => {
+    const draft = buildFixtures().tenants[0].assessments.find(record => record.status !== 'submitted');
+    for (const records of [[], [draft]]) {
+        const dom = actionsCard({ records, value: { more: false, lists: [] }, options: { openCyber() {} } }); await flush(); await flush();
+        assert.equal(dom.root.querySelector('.picture-actions'), null);
+        assert.doesNotMatch(dom.root.textContent, /No actions yet|Start with your top three gaps/);
+        dom.controller.destroy();
+    }
+});
+
 test('Actions card empty state links to the top three gaps panel', async () => {
     const dom = actionsCard({ value: { more: false, lists: [] } }); await flush();
     const card = dom.root.querySelector('.picture-actions');
@@ -1560,4 +1575,31 @@ describe('honest saved-assessment comparisons', () => {
         assert.match(dom.root.querySelector('.picture-metrics').textContent, /0.0%/);
         dom.controller.destroy();
     });
+});
+
+test('one live status announces loading and its end without leaving the page', async () => {
+    let release; const record = mixed();
+    const client = { list: () => new Promise(done => { release = () => done({ assessments: [record], nextAfterAssessmentId: null }); }),
+        read: async () => ({ assessment: record }) };
+    const dom = setup({ client });
+    const status = dom.root.querySelector('.picture-status');
+    assert.equal(status.getAttribute('role'), 'status');
+    assert.equal(status.textContent, 'Loading saved assessment…'); assert.equal(status.hidden, false);
+    assert.ok(!status.classList.contains('picture-status-quiet'));
+    release(); await flush();
+    // The same element stays in place, so screen readers hear the change.
+    assert.equal(dom.root.querySelector('.picture-status'), status);
+    assert.equal(status.parentElement, dom.root);
+    assert.equal(status.textContent, 'Saved assessment loaded.');
+    assert.ok(status.classList.contains('picture-status-quiet'));
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    dom.controller.destroy();
+});
+
+test('an empty organisation hears that there are no saved assessments yet', async () => {
+    const dom = setup({ records: [] }); await flush();
+    const status = dom.root.querySelector('.picture-status');
+    assert.equal(status.textContent, 'No saved assessments yet.');
+    assert.ok(status.classList.contains('picture-status-quiet'));
+    dom.controller.destroy();
 });
