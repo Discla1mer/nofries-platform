@@ -1128,7 +1128,8 @@
             section.setAttribute('aria-labelledby', 'ncsc-review-range-title');
             const heading = node('h4', '', 'Projected score range'); heading.id = 'ncsc-review-range-title'; section.append(heading);
             const count = pendingRows.length;
-            section.append(node('p', '', count + (count === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm.'));
+            // Mention not applicable answers only when there are some (#297).
+            if (count) section.append(node('p', '', count + (count === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm.'));
             if (unanswered) {
                 section.append(node('p', '', 'The projected range appears when every question has an answer.'));
             } else {

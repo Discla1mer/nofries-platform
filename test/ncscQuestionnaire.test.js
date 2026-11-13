@@ -3019,7 +3019,7 @@ describe('final submission review step', () => {
         try {
             control(clean, 'Review and submit').click();
             const range = byId(clean, 'ncsc-review-range');
-            expect(range.textContent).toContain('0 answers marked not applicable, to confirm.');
+            expect(range.textContent).not.toMatch(/not applicable/);
             expect(byId(clean, 'ncsc-review-range-value').textContent).toBe('With your current answers, reported implementation would be 100.0%.');
             expect(range.textContent).not.toContain('Approval is not available');
             expect(range.querySelectorAll('button')).toHaveLength(0);
