@@ -3,7 +3,8 @@
 const crypto = require('node:crypto');
 const request = require('supertest');
 const { createUnsubscribeToken, verifyUnsubscribeToken, unsubscribeConfigured, EMAIL_TYPES } = require('../api/shared/lifecycleEmail/unsubscribeToken');
-const { handleUnsubscribeRequest, createUnsubscribeWriter, resetUnsubscribeRateLimitForTests, UPSERT_SQL, RATE_MAX } =
+const { handleUnsubscribeRequest, createUnsubscribeWriter, resetUnsubscribeRateLimitForTests, UPSERT_SQL, RATE_MAX,
+    TOKEN_RATE_MAX, MAX_IN_FLIGHT } =
     require('../api/shared/lifecycleEmail/unsubscribeEndpoint');
 const { resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
 
@@ -97,8 +98,36 @@ describe('unsubscribe handler', () => {
             expect(result.status).toBe(200);
             expect(result.body).toContain('You are unsubscribed');
         }
-        expect(record).toHaveBeenCalledTimes(2);
+        // The second POST is answered from the recorded unsubscribe, without a write.
+        expect(record).toHaveBeenCalledTimes(1);
         expect(record).toHaveBeenCalledWith(claims);
+    });
+
+    test('a replayed valid token is bounded per account and type, and writes are capped in flight', async () => {
+        let fail = true;
+        const record = jest.fn(async () => { if (fail) throw new Error('down'); });
+        for (let i = 0; i < TOKEN_RATE_MAX; i += 1) {
+            expect((await handleUnsubscribeRequest(call('POST'), { env: ENV, record })).status).toBe(503);
+        }
+        const limited = await handleUnsubscribeRequest(call('POST'), { env: ENV, record });
+        expect(limited.status).toBe(429);
+        expect(record).toHaveBeenCalledTimes(TOKEN_RATE_MAX);
+
+        resetUnsubscribeRateLimitForTests();
+        fail = false;
+        const release = [];
+        const slow = jest.fn(() => new Promise(resolve => release.push(resolve)));
+        const other = (accountId) => call('POST', { query: { t: createUnsubscribeToken({ ...claims, accountId }, ENV) } });
+        const pending = [];
+        for (let i = 0; i < MAX_IN_FLIGHT; i += 1) {
+            pending.push(handleUnsubscribeRequest(other(`00000000-0000-4000-8000-00000000000${i}`), { env: ENV, record: slow }));
+        }
+        const over = await handleUnsubscribeRequest(call('POST'), { env: ENV, record: slow });
+        expect(over.status).toBe(503);
+        expect(over.headers['Retry-After']).toBe('60');
+        release.forEach(resolve => resolve());
+        for (const result of await Promise.all(pending)) expect(result.status).toBe(200);
+        expect((await handleUnsubscribeRequest(call('POST'), { env: ENV, record })).status).toBe(200);
     });
 
     test('invalid tokens get one generic 400 and no write', async () => {
