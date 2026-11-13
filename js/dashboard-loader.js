@@ -432,6 +432,11 @@
             }).catch(function (error) { finish(reject, error); });
         });
     }
+    // Move the dashboard's "Information as at" time forward after a
+    // successful read for the current cycle. Display only.
+    function informationRead(cycle) {
+        if (current(cycle) && controller && typeof controller.informationRead === 'function') controller.informationRead(new Date().toISOString());
+    }
     function requireSuccess(result) {
         if (result.status !== 200) { const error = invalid(); error.status = result.status; throw error; }
         return result.value;
@@ -1246,6 +1251,10 @@
                 const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
             }
             return result;
+        }, onAccepted: function () {
+            // Only after the client has read and validated the body: a 2xx
+            // whose body then stalls, is cut short or is invalid moves nothing.
+            informationRead(cycle);
         } });
         const mountCyber = function (root, presentation) {
             if (!current(cycle)) throw invalid();
@@ -1361,7 +1370,13 @@
             if (!plan || typeof plan.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(plan.planId)) throw invalid();
             return read('/api/dashboard/improvement/list?planId=' + encodeURIComponent(plan.planId));
         }));
-        return { lists: lists, more: page.nextAfterPlanId !== null };
+        const result = { lists: lists, more: page.nextAfterPlanId !== null };
+        // Advance "Information as at" only when the Actions card will accept
+        // every list it was given; an invalid list leaves the time unchanged.
+        const picture = window.NoFriesOrganisationPicture;
+        if (current(cycle) && !cycle.authorityPending && picture && typeof picture.actionSummary === 'function' &&
+            picture.actionSummary(result) !== null) informationRead(cycle);
+        return result;
     }
     function improvementOptions(cycle, snapshot, organisationId, cyber) {
         const factory = window.NoFriesImprovementActionPlanClient;
@@ -1388,7 +1403,9 @@
                         const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
                     }
                     return result;
-                }
+                },
+                // Only after the plan client has validated the response.
+                onAccepted: function () { informationRead(cycle); }
             });
             cycle.workQueueTarget = null;
             return result;
@@ -1748,6 +1765,7 @@
             if (!sameSession(fresh, confirmed)) { restore(); return; }
             remember(cycle, confirmed);
             renderDirectory(cycle, confirmed, middle[0].rows, middle[0].nextAfterBindingId, middle[0].pageCount);
+            informationRead(cycle);
             elements.status.textContent = previousStatus;
             delete elements.status.dataset.accessWarning;
             elements.retry.hidden = true;
