@@ -55,8 +55,9 @@ test('how it works states the real question count, free starter access and live 
     const picture = fs.readFileSync(path.join(root, 'api', 'shared', 'protectedAssets', 'organisationPicture.js'), 'utf8');
     assert.match(how, /reported implementation range/);
     assert.match(questionnaire, /metric\('Reported implementation'/);
-    assert.match(how, /grouped by your answer: No, then Partial, then Unknown, then Not applicable\. The list is not ranked by risk\./);
-    assert.match(questionnaire, /grouped by your answer \(No, then Partial, then Unknown, then Not applicable\)\. It is not ranked by risk/);
+    assert.match(how, /suggested follow-ups grouped by your answer: No, then Partial, then Unknown, then Not applicable\. Not ranked by risk or urgency\./);
+    assert.match(questionnaire, /'Suggested follow-ups'/);
+    assert.match(questionnaire, /Grouped by your answer \(No, then Partial, then Unknown, then Not applicable\)\. Not ranked by risk or urgency\./);
     assert.match(how, /Copy or print a summary for your IT provider\./);
     assert.match(questionnaire, /button\('Copy summary'/);
     assert.match(questionnaire, /button\('Print these results'/);
