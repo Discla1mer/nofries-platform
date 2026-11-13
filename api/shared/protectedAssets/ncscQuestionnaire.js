@@ -342,6 +342,9 @@
         let acknowledged = null;
         let drafts = new Map();
         const assistanceNotes = new Map();
+        // Open state of each question's "Help with this question" section,
+        // kept while answering re-renders the question.
+        const questionHelpOpen = new Map();
         let activeQuestion = 0;
         let summaries = [];
         let listSearch = '';
@@ -1224,15 +1227,31 @@
             const hint = node('p', 'ncsc-input-guidance', sealed ? 'This is the answer you submitted. Submitted answers cannot be changed.'
                 : question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
             hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
+            // The choices follow the question directly. The example, checks, full
+            // framework wording and answer meanings sit in one native disclosure
+            // after them: open by default on wider screens, closed on narrow ones.
+            const help = node('details', 'ncsc-question-help'); help.id = 'ncsc-question-help-' + question.id;
+            help.append(node('summary', '', 'Help with this question'));
             if (question.smallBusiness) {
-                const wording = node('details'); wording.append(node('summary', '', 'Full framework question'), node('p', '', question.prompt));
-                fieldset.append(wording);
-                fieldset.append(node('p', 'ncsc-input-example', 'Example: ' + question.smallBusiness.example));
-                const parts = node('details'); parts.append(node('summary', '', 'What to check')); const checks = node('ul');
-                parts.open = acknowledged.status !== 'submitted';
-                question.smallBusiness.checks.forEach(function (text) { checks.append(node('li', '', text)); }); parts.append(checks); fieldset.append(parts);
-                parts.append(node('p', 'dashboard-muted', 'Use these checks to choose one overall answer. If only some parts are in place, choose Partial. These are guidance, not separately saved or scored answers.'));
+                help.append(node('p', 'ncsc-input-example', 'Example: ' + question.smallBusiness.example));
+                const checks = node('ul');
+                question.smallBusiness.checks.forEach(function (text) { checks.append(node('li', '', text)); });
+                help.append(node('h3', '', 'What to check'), checks,
+                    node('p', 'dashboard-muted', 'Use these checks to choose one overall answer. If only some parts are in place, choose Partial. These are guidance, not separately saved or scored answers.'),
+                    node('h3', '', 'Full framework question'), node('p', '', question.prompt));
             }
+            // Narrow screens hide the definition under each choice; the same
+            // definitions stay here and in each choice's accessible description.
+            const meanings = node('div', 'ncsc-help-answers'); meanings.append(node('h3', '', 'What the answers mean'));
+            const meaningList = node('ul');
+            question.responseOptionIds.forEach(function (id) {
+                const option = optionById.get(id); const item = node('li');
+                item.append(node('strong', '', option.label + ': '), node('span', '', ANSWER_GUIDANCE[id])); meaningList.append(item);
+            });
+            meanings.append(meaningList); help.append(meanings);
+            const narrow = !!(win && typeof win.matchMedia === 'function' && win.matchMedia('(max-width: 30rem)').matches);
+            help.open = questionHelpOpen.has(question.id) ? questionHelpOpen.get(question.id) : !sealed && !narrow;
+            help.addEventListener('toggle', function () { if (live(renderedEpoch)) questionHelpOpen.set(question.id, help.open); });
             if (acknowledged.status === 'submitted') fieldset.append(node('p', 'dashboard-badge', 'Your answer: ' + (optionById.get(entry.value.optionId)?.label || 'Not answered')));
             if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
             const writable = canEdit();
@@ -1241,9 +1260,9 @@
                 const input = node('input'); input.type = 'radio'; input.name = 'ncsc-answer-' + question.id; input.id = 'ncsc-answer-' + question.id + '-' + id;
                 input.value = id; input.checked = entry.value.optionId === id; input.disabled = !writable;
                 const title = node('strong', '', option.label); title.id = input.id + '-label';
-                const help = node('span', 'dashboard-muted', ANSWER_GUIDANCE[id]); help.id = input.id + '-help';
-                input.setAttribute('aria-labelledby', title.id); input.setAttribute('aria-describedby', help.id);
-                const description = node('span'); description.append(title, node('br'), help);
+                const definition = node('span', 'dashboard-muted ncsc-option-help', ANSWER_GUIDANCE[id]); definition.id = input.id + '-help';
+                input.setAttribute('aria-labelledby', title.id); input.setAttribute('aria-describedby', definition.id);
+                const description = node('span'); description.append(title, node('br', 'ncsc-option-break'), definition);
                 label.setAttribute('for', input.id); label.append(input, description);
                 input.addEventListener('change', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit() || !input.checked) return;
@@ -1283,6 +1302,7 @@
                 }, 'dashboard-text-button');
                 clear.id = 'ncsc-clear-answer'; questionRegion.append(clear);
             }
+            questionRegion.append(help);
             const guidance = node('details', 'ncsc-guidance'); guidance.append(node('summary', '', 'Guidance and evidence examples'));
             if (inputGuidance) guidance.append(node('p', 'ncsc-input-example', 'Example: ' + inputGuidance.example));
             if (question.guidance) {
