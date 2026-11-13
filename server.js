@@ -9,6 +9,7 @@ const { buildGatewayDocument } = require('./lib/gatewayDocument');
 const { withFrontendReleaseInformation } = require('./lib/frontendReleaseInfo');
 const {
     checkRateLimit,
+    getVerifiedDashboardSessionKey,
     getClientKeyFromHeaders,
     isBlockedUserAgent,
     rateLimitHeaders
@@ -1071,16 +1072,29 @@ function rateLimitApiRequests(req, res, next) {
     // from shared mail-provider addresses.
     if (req.path === '/telemetry' || req.path === '/emailPreferences') return next();
     const method = String(req.method || 'GET').toUpperCase();
-    const bucket = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? 'apiWrite' : 'apiRead';
+    const write = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
     const clientKey = getClientKeyFromHeaders(req.headers, req.ip || req.socket.remoteAddress);
-    const result = checkRateLimit(bucket, clientKey, apiEnvironment);
+    // Only a session the server has already issued or verified selects the
+    // dashboard allowance; a fabricated cookie stays on the address limit.
+    const sessionKey = req.path.startsWith('/dashboard/') ? getVerifiedDashboardSessionKey(req.headers) : null;
+    let result;
+    if (sessionKey) {
+        // Verified dashboard sessions: a generous per-address ceiling first,
+        // then the per-session allowance that ordinary use stays within.
+        result = checkRateLimit(write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey, apiEnvironment);
+        if (result.allowed) {
+            result = checkRateLimit(write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey, apiEnvironment);
+        }
+    } else {
+        result = checkRateLimit(write ? 'apiWrite' : 'apiRead', clientKey, apiEnvironment);
+    }
     Object.entries(rateLimitHeaders(result)).forEach(([name, value]) => {
         if (value) {
             res.setHeader(name, value);
         }
     });
     if (!result.allowed) {
-        return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+        return res.status(429).json({ error: 'Too many requests. Please try again later.', retryAfterSeconds: result.retryAfterSeconds });
     }
     return next();
 }
