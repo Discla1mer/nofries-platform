@@ -959,6 +959,9 @@
             content.append(controls);
             content.append(node('p', 'dashboard-muted', 'Resolved means answered Yes, Partial or No; it does not mean implemented. To submit, answer every question and explain each not applicable answer. Unknown answers, and answers marked not applicable, to confirm, are allowed. A submitted baseline is read-only and is not a certification.'));
         }
+        // The plain-language question people answer. The framework prompt is
+        // kept for reference but never replaces it where answers are shown.
+        function plainQuestion(question) { return question.smallBusiness ? question.smallBusiness.meaning : question.prompt; }
         function reviewState() {
             return questions.map(function (question, index) {
                 const value = drafts.get(question.id).value, saved = savedAnswer(question.id), option = optionById.get(value.optionId);
@@ -994,7 +997,12 @@
                 const item = node('li', 'ncsc-review-item' + (row.unsaved ? ' ncsc-review-unsaved' : '') + (!row.option || row.missingRationale ? ' ncsc-review-incomplete' : ''));
                 item.id = 'ncsc-review-item-' + row.question.id;
                 const control = metadata.controls.find(function (entry) { return entry.id === row.question.controlId; });
-                item.append(node('p', 'dashboard-eyebrow', 'Question ' + (row.index + 1) + (control ? ' · ' + control.title : '')), node('h4', '', row.question.prompt));
+                item.append(node('p', 'dashboard-eyebrow', 'Question ' + (row.index + 1) + (control ? ' · ' + control.title : '')), node('h4', '', plainQuestion(row.question)));
+                // The same plain question that was answered; the framework wording stays one click away.
+                if (row.question.smallBusiness) {
+                    const wording = node('details', 'ncsc-review-framework'); wording.append(node('summary', '', 'Full framework question'), node('p', '', row.question.prompt));
+                    item.append(wording);
+                }
                 const answerText = row.option ? (row.option.applicable ? row.option.label : 'N/A (pending claim)') : row.cleared ? 'Unanswered (answer cleared)' : 'Unanswered';
                 item.append(node('p', 'ncsc-review-answer', 'Answer: ' + answerText));
                 if (row.option && !row.option.applicable) {
@@ -1127,7 +1135,7 @@
             const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
             const domain = metadata.domains.find(function (item) { return control && item.id === control.domainId; });
             questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
-            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', question.smallBusiness ? question.smallBusiness.meaning : question.prompt));
+            const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(node('legend', '', plainQuestion(question)));
             const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
             const hint = node('p', 'ncsc-input-guidance', question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
             hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
