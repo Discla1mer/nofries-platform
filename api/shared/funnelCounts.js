@@ -99,6 +99,39 @@ function createFunnelCountWriter({ pool }) {
     };
 }
 
+// Server-side increments (#151 F3). These three steps are counted by their own
+// handlers, never from the browser. Best-effort and fire-and-forget: called only
+// after the business response is final, never awaited, bounded by a short
+// timeout and silent apart from one fixed tag. The flag is read on each call.
+const SERVER_FUNNEL_EVENTS = Object.freeze(['code_confirmed', 'submitted', 'enquiry_sent']);
+const SERVER_COUNT_TIMEOUT_MS = 2000;
+
+function createServerFunnelCounter({ env = process.env, record = null, log = null, now = () => new Date(),
+    timeoutMs = SERVER_COUNT_TIMEOUT_MS } = {}) {
+    return function countFunnelEvent(event) {
+        if (!funnelCountsEnabled(env) || typeof record !== 'function' || !SERVER_FUNNEL_EVENTS.includes(event)) return;
+        let timer = null;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('funnel_count_timeout')), timeoutMs);
+            if (typeof timer.unref === 'function') timer.unref();
+        });
+        Promise.race([Promise.resolve().then(() => record(event, aucklandDay(now()))), timeout])
+            .catch(() => {
+                try { if (log && typeof log.warn === 'function') log.warn('funnel_count_write_failed'); } catch (_) { /* never surface */ }
+            })
+            .finally(() => clearTimeout(timer));
+    };
+}
+
+// A successful NCSC submit through the dashboard runtime: POST to
+// ncsc/assessments/<id>/submit (path relative to /api/dashboard) answered 200
+// with a submitted assessment. A same-key replay after a lost response gets the
+// same answer and counts again; the HTTP layer cannot tell the two apart.
+function isAssessmentSubmit(method, path, result) {
+    return method === 'POST' && typeof path === 'string' && /^\/ncsc\/assessments\/[^/]+\/submit$/.test(path) &&
+        Boolean(result) && result.status === 200 && result.body?.assessment?.status === 'submitted';
+}
+
 function retired() {
     return result(410, { error: 'Public acquisition telemetry is disabled', code: 'telemetry_disabled' });
 }
@@ -149,6 +182,9 @@ function result(status, body, extraHeaders = {}) {
 }
 
 module.exports = {
+    SERVER_FUNNEL_EVENTS,
+    createServerFunnelCounter,
+    isAssessmentSubmit,
     resetTelemetryRateLimitForTests,
     telemetryKey,
     FUNNEL_EVENTS,
