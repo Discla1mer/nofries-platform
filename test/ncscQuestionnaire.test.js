@@ -2048,6 +2048,25 @@ describe('questionnaire public controls and retained mutation intent', () => {
             optionId: 'not_applicable', rationale: { text: 'New text during current GET' } }] } }); ui.controller.destroy();
     });
 
+    test('a save conflict lists each question whose answer here differs from the newer saved answers', async () => {
+        const h = await backend(); await h.execute(createCommand());
+        const rows = allResponses('yes'); rows[2] = { ...rows[2], optionId: 'not_applicable', rationale: { text: 'Saved reason' } };
+        await h.execute(saveCommand('assessment-a', 0, 'seed', rows));
+        const ui = await resumeUi(h);
+        choose(ui, 0, 'no'); choose(ui, 2, 'not_applicable', 'My reason');
+        await h.execute(saveCommand('assessment-a', 1, 'other-session', [{ ...rows[0], optionId: 'partial' },
+            { ...rows[2], rationale: { text: 'Their reason' } }]));
+        control(ui, 'Save progress').click(); await until(() => control(ui, 'Keep my answers'));
+        const panel = ui.root.querySelector('.ncsc-warning'), list = panel.querySelector('.ncsc-conflict-differences');
+        expect(panel.querySelector('h3').textContent).toBe('These answers were changed somewhere else');
+        expect(panel.textContent).toContain('2 answers on this page differ from the newer saved answers:');
+        expect(list.querySelectorAll('li').map(item => item.textContent.replace(/\s+/g, ' '))).toEqual([
+            'Question 1: ' + metadata().questions[0].smallBusiness.question + ' Your answer: No · Saved answer: Partial',
+            'Question 3: ' + metadata().questions[2].smallBusiness.question + ' Your answer: Not applicable, with a different explanation · Saved answer: Not applicable']);
+        control(ui, 'Use saved answers').click();
+        expect(ui.root.querySelector('.ncsc-conflict-differences')).toBeNull(); ui.controller.destroy();
+    });
+
     test('failed required GET after a successful retry prevents later writes until explicit successful reload', async () => {
         const h = await backend(); let lose = true, blockRead = false;
         const save = jest.fn(async (...args) => { const value = await h.client.save(...args); if (lose) { lose = false; throw Object.assign(new Error('lost'), { statusCode: 503 }); } return value; });

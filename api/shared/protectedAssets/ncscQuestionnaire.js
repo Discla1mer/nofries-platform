@@ -1802,12 +1802,33 @@
         }
         function renderConflict() {
             const panel = node('section', 'ncsc-warning'); panel.append(node('h3', '', 'These answers were changed somewhere else'), node('p', '', 'Someone saved newer answers to this assessment, in another tab or on another device, after you opened it. Your unsaved answers are still here.'), node('p', '', 'Keep my answers puts your answers on top of the newer saved ones so you can review and save them. Use saved answers drops your unsaved changes.'));
+            renderConflictDifferences(panel);
             panel.append(button('Reload current saved answers', async function () { const expected = epoch; await refreshCurrent(true, expected); if (live(expected)) render(); }));
             if (acknowledged.status !== 'submitted') {
                 const keep = button('Keep my answers', function () { if (!currentChecked) return; conflict = false; statusText = 'Your answers are kept on top of the newer saved ones. Review them, then save.'; render(); });
                 keep.disabled = !currentChecked; panel.append(keep);
             }
             panel.append(button('Use saved answers', function () { resetDrafts(); conflict = !currentChecked; errors = []; statusText = 'Showing saved answers.'; render(); }, 'dashboard-text-button')); content.append(panel);
+        }
+        // Once the newest saved answers are loaded, name each question where this
+        // page's answer differs from them, with both answers.
+        function renderConflictDifferences(panel) {
+            if (!currentChecked || acknowledged.status === 'submitted') return;
+            const differences = dirtyEntries().map(function (entry) {
+                return { index: questions.findIndex(function (question) { return question.id === entry.value.itemId; }), mine: entry.value, saved: savedAnswer(entry.value.itemId) };
+            }).filter(function (item) { return item.index !== -1; }).sort(function (a, b) { return a.index - b.index; });
+            if (!differences.length) return;
+            const label = function (value) { const option = optionById.get(value.optionId); return option ? option.label : 'No answer'; };
+            panel.append(node('p', '', differences.length === 1 ? '1 answer on this page differs from the newer saved answers:' : differences.length + ' answers on this page differ from the newer saved answers:'));
+            const list = node('ul', 'ncsc-conflict-differences');
+            differences.forEach(function (item) {
+                const row = node('li');
+                const sameOption = item.mine.optionId === item.saved.optionId;
+                row.append(node('strong', '', 'Question ' + (item.index + 1) + ': ' + plainQuestion(questions[item.index])), node('br'),
+                    node('span', '', 'Your answer: ' + label(item.mine) + (sameOption ? ', with a different explanation' : '') + ' · Saved answer: ' + label(item.saved)));
+                list.append(row);
+            });
+            panel.append(list);
         }
         function hasDraft() { return view === 'create' ? declaration.length > 0 : dirtyEntries().length > 0; }
         function requestLeave(commit) {
