@@ -187,3 +187,25 @@ test('the legacy signup index is never touched', async () => {
     await storage.delete(found, signal());
     expect([...blobs.keys()]).toEqual([ticket]);
 });
+
+test('retained signup contexts and the external signup claim are deleted with the account', async () => {
+    const blobs = new Map(), email = 'context@example.test', a = account(1, email, 'company'); seed(a, blobs, email);
+    const context = `customer-starter/contexts/${a.slot.organisationId}.json`, claim = `customer-starter/external-claims/${a.record.accountId}.json`;
+    blobs.set(context, { schemaVersion: 1, accountId: a.record.accountId, source: { subjectKey: a.subjectKey } }); blobs.set(claim, { email });
+    const storage = createAccountWipeStorage(container(blobs).value, container(new Map()).value);
+    await storage.delete(await storage.inventory(email, signal()), signal());
+    expect(blobs.has(context)).toBe(false); expect(blobs.has(claim)).toBe(false); expect(blobs.size).toBe(0);
+});
+
+test('an invited but unactivated account takes its subject from the retained context and removes its sign-in records', async () => {
+    const blobs = new Map(), email = 'invited@example.test', a = account(1, email, 'company');
+    const raw = JSON.parse(JSON.stringify(a.record)); raw.activation = null; delete raw.identitySubjectKey;
+    blobs.set('customer-starter/' + starterAccountKey(email) + '.json', starterAccountRecord(raw));
+    blobs.set(`customer-starter/contexts/${a.slot.organisationId}.json`, { schemaVersion: 1, accountId: a.record.accountId, source: { subjectKey: a.subjectKey } });
+    blobs.set(`customer-subjects/${subjectHash(a.subjectKey)}.json`, { email });
+    const storage = createAccountWipeStorage(container(blobs).value, container(new Map()).value);
+    const found = await storage.inventory(email, signal());
+    expect(found.subjectKey).toBe(a.subjectKey);
+    await storage.delete(found, signal());
+    expect(blobs.size).toBe(0);
+});

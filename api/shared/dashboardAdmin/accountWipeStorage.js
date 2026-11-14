@@ -48,7 +48,7 @@ async function inventory(container, email, signal) {
             for await (const item of container.listBlobsFlat({ prefix: accountName, includeVersions: true, abortSignal: signal }))
                 if (item.name === accountName) { leftover = true; break; }
         } catch (_) { fail('account_wipe_storage_unavailable'); }
-        return leftover ? Object.freeze({ account: null, subjectKey: null, tenantIds: Object.freeze([]), exact: Object.freeze([]),
+        return leftover ? Object.freeze({ account: null, subjectKey: null, tenantIds: Object.freeze([]), subject: Object.freeze([]), exact: Object.freeze([]),
             session: Object.freeze([]), prefixes: Object.freeze([]), accountRecord: accountName }) : null;
     }
     const account = loaded.record;
@@ -63,24 +63,33 @@ async function inventory(container, email, signal) {
             cursor = result.nextCursor;
         }
     }
-    const subjectKey = account.identitySubjectKey ?? account.activation?.subjectKey ?? null;
-    const exact = [], session = [], prefixes = [`customer-starter/starter-clients/${uuid(account.accountId)}/`, `customer-starter/starter-client-bindings/${account.accountId}/`];
+    let subjectKey = account.identitySubjectKey ?? account.activation?.subjectKey ?? null;
+    if (!subjectKey) {
+        // Invited but not yet activated (legacy verified-mailbox signup): the
+        // subject is recorded only in the own organisation's retained context.
+        const context = await readJson(container, `customer-starter/contexts/${uuid(account.organisations[0].organisationId)}.json`, signal);
+        const candidate = context?.accountId === account.accountId ? context?.source?.subjectKey : null;
+        if (typeof candidate === 'string' && /^[0-9a-f-]{36}:[0-9a-f-]{36}$/.test(candidate)) subjectKey = candidate;
+    }
+    const exact = [], session = [], subjectRecords = [], prefixes = [`customer-starter/starter-clients/${uuid(account.accountId)}/`, `customer-starter/starter-client-bindings/${account.accountId}/`];
     if (subjectKey) {
-        exact.push(`customer-subjects/${subjectHash(subjectKey)}.json`, `customer-signup-recoveries/${subjectHash(subjectKey)}.json`);
+        subjectRecords.push(`customer-subjects/${subjectHash(subjectKey)}.json`, `customer-signup-recoveries/${subjectHash(subjectKey)}.json`);
         const authority = await readJson(container, `customer-subjects/${subjectHash(subjectKey)}.json`, signal);
         if (authority && typeof authority.invitationDigest === 'string' && /^[a-f0-9]{64}$/.test(authority.invitationDigest))
             // Same key as customerAuthority's proofKey; the proof lives in the session container.
             session.push(`customer-email-proofs/${sha256(`${subjectKey}\0${authority.invitationDigest}`)}.json`);
     }
     for (const slot of slots) {
-        exact.push(`customer-starter/starter-setups/${uuid(slot.organisationId)}.json`, `customer-activations/${uuid(slot.activationId)}.json`,
+        exact.push(`customer-starter/contexts/${uuid(slot.organisationId)}.json`,
+            `customer-starter/starter-setups/${uuid(slot.organisationId)}.json`, `customer-activations/${uuid(slot.activationId)}.json`,
             termsOfferKey(slot.tenantId, slot.organisationId));
     }
+    exact.push(`customer-starter/external-claims/${account.accountId}.json`);
     // The legacy signup index (NOFRIES_DASHBOARD_ADMIN_BINDING) is not touched:
     // removing only its writer ticket would leave a stale reference. Delete is
     // refused while that listing is configured (see docs/staff-admin.md).
     return Object.freeze({ account, subjectKey, tenantIds: Object.freeze([...new Set(slots.map(slot => slot.tenantId))]),
-        exact: Object.freeze([...new Set(exact)]), session: Object.freeze(session), prefixes: Object.freeze(prefixes), accountRecord: accountName });
+        subject: Object.freeze(subjectRecords), exact: Object.freeze([...new Set(exact)]), session: Object.freeze(session), prefixes: Object.freeze(prefixes), accountRecord: accountName });
 }
 
 // Delete one name and, where kept, its versions. With versioning on, deleting
@@ -114,12 +123,16 @@ function createAccountWipeStorage(container, sessionContainer) {
             // Each stage must be confirmed complete, versions included, before the
             // records a retry needs to rediscover it are removed:
             //   1. the email proof (its name comes from the sign-in authority record);
-            //   2. the authority and per-organisation records (their names come from
-            //      the account and client records);
-            //   3. client records and bindings (found from the account record);
-            //   4. the account record (its name comes from the email alone).
+            //   2. the sign-in authority and recovery records (their subject may come
+            //      from the own organisation's retained context);
+            //   3. per-organisation records, contexts and the signup claim (their
+            //      names come from the account and client records);
+            //   4. client records and bindings (found from the account record);
+            //   5. the account record (its name comes from the email alone).
             const complete = () => { if (counts.versionsRemaining || counts.versionsUnverified) fail('account_wipe_storage_incomplete'); };
             for (const name of found.session) { signal.throwIfAborted(); await removeName(sessionContainer, name, signal, counts); }
+            complete();
+            for (const name of found.subject) { signal.throwIfAborted(); await removeName(container, name, signal, counts); }
             complete();
             for (const name of found.exact) { signal.throwIfAborted(); await removeName(container, name, signal, counts); }
             complete();
