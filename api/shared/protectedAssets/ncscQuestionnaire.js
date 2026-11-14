@@ -851,7 +851,7 @@
             const filters = node('div', 'ncsc-assessment-filters');
             const searchLabel = node('label', '', 'Find a saved assessment'); searchLabel.htmlFor = 'ncsc-assessment-search';
             const search = node('input'); search.type = 'search'; search.id = searchLabel.htmlFor;
-            search.placeholder = 'Date or assessment reference'; search.value = listSearch;
+            search.placeholder = 'Scope, date or assessment reference'; search.value = listSearch;
             search.setAttribute('aria-describedby', 'ncsc-assessment-filter-note');
             const statusLabel = node('label', '', 'Status'); statusLabel.htmlFor = 'ncsc-assessment-status';
             const filter = node('select'); filter.id = statusLabel.htmlFor;
@@ -865,7 +865,7 @@
             const count = node('p', 'dashboard-muted'); count.setAttribute('role', 'status'); count.setAttribute('aria-atomic', 'true');
             const note = node('p', 'dashboard-muted', nextAfter !== null
                 ? 'Search applies to assessments shown so far. Load more to include older saved assessments.'
-                : 'Search by the date created, date last saved, or assessment reference.');
+                : 'Search by scope, the date created, date last saved, or assessment reference.');
             note.id = 'ncsc-assessment-filter-note';
             const empty = node('div', 'ncsc-assessment-empty');
             const emptyCopy = node('p', '');
@@ -883,7 +883,8 @@
                 }).forEach(function (item) {
                     const submitted = item.status === 'submitted';
                     if (listStatus === 'submitted' && !submitted || listStatus === 'unfinished' && submitted ||
-                        query && ![item.assessmentId, item.createdAt, item.updatedAt].some(function (value) { return value.toLowerCase().includes(query); })) return;
+                        query && ![item.assessmentId, item.createdAt, item.updatedAt, localDate(item.createdAt), localDate(item.updatedAt),
+                            item.scopePopulation ? item.scopePopulation.description : ''].some(function (value) { return value.toLowerCase().includes(query); })) return;
                     const row = node('li', 'ncsc-assessment-card');
                     const heading = node('div', 'ncsc-assessment-card-heading');
                     heading.append(node('h3', '', 'Assessment started ' + localDate(item.createdAt)),
