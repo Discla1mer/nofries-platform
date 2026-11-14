@@ -73,3 +73,15 @@ How to recognise it: dashboard access shows the membership as suspended; restore
 There is no button for this and the check is not relaxed in code. Recovery is a manual, reviewed fix by the owner: confirm from the database operation receipt that the suspension committed, then either correct the membership directly through the database maintenance procedure or repair the audit evidence under the audit policy. Record what was done and why.
 
 Signup listing (`NOFRIES_DASHBOARD_ADMIN_ENABLED`, `NOFRIES_DASHBOARD_ADMIN_BINDING`) is a separate feature and is not needed for any of the above.
+
+## Reset and delete (being built, not yet available)
+
+Joel decided on 14 Nov 2026 that the console offers three account actions: suspend (above), **reset** (clear an account's assessments, evidence and improvement plans, keep its organisations and sign-in) and **delete** (remove the account, its email and all its data, including the sign-in identity).
+
+The database part is migration `0025_account_wipe_role.sql` and `api/shared/dashboardAdmin/accountWipeRepository.js`:
+
+- `nofries_account_wipe` is a NOLOGIN role with only SELECT and DELETE. Its row-level policies see one tenant, account and subject at a time, named in transaction-local settings (`nofries.wipe_tenant_id`, `nofries.wipe_account_id`, `nofries.wipe_subject_key`). It can never insert or update.
+- The repository checks that the account exists under that subject and that every tenant belongs to the account, then deletes children before parents and commits once. Any error rolls everything back.
+- The migration grants the role to no login. Before reset or delete can run in production, the owner applies 0025 and grants the role to the app's database login with `SET` (no `INHERIT`). Both are owner-approved production steps.
+
+Blob records, the Entra External ID user, the console controls and their audit records come in later changes behind `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE`. Deleted data stays in backups until backup retention expires.
