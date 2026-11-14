@@ -62,6 +62,14 @@ test('attempt exhaustion and expiry deny the correct code without verification',
     h.clock.at += 86400000;
     expect((await h.call('state', undefined, b.cookie)).body.state).toBe('start');
 });
+test('only the first successful verification is marked for the funnel count', async () => {
+    const h = fixture(), a = await h.start();
+    expect(await h.call('verify', { code: '00000000' === a.code ? '11111111' : '00000000' }, a.cookie)).not.toHaveProperty('codeVerified');
+    expect((await h.call('verify', { code: a.code }, a.cookie)).codeVerified).toBe(true);
+    const replay = await h.call('verify', { code: a.code }, a.cookie);
+    expect(replay.status).toBe(200);
+    expect(replay).not.toHaveProperty('codeVerified');
+});
 test('concurrent verification commits once and safely resumes the same proof', async () => {
     const h = fixture(), a = await h.start();
     const results = await Promise.all([h.call('verify', { code: a.code }, a.cookie), h.call('verify', { code: a.code }, a.cookie)]);

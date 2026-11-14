@@ -1,8 +1,8 @@
 'use strict';
 
 const request = require('supertest');
-const { FUNNEL_EVENTS, aucklandDay, createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest, UPSERT_SQL,
-    resetTelemetryRateLimitForTests, telemetryKey } = require('../api/shared/funnelCounts');
+const { FUNNEL_EVENTS, BROWSER_FUNNEL_EVENTS, aucklandDay, createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest, UPSERT_SQL,
+    resetTelemetryRateLimitForTests, telemetryKey, STATEMENT_TIMEOUT_SQL, LOCK_TIMEOUT_SQL } = require('../api/shared/funnelCounts');
 const { handlers } = require('../api/shared/apiRuntime');
 const { checkRateLimit, resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
 
@@ -45,15 +45,34 @@ test('flag off gives 410 for every method and never records', async () => {
 test('valid event upserts once with the NZ date and returns 204 without cookies or logs', async () => {
     const record = jest.fn(async () => {});
     const log = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
-    for (const event of FUNNEL_EVENTS) {
+    for (const event of BROWSER_FUNNEL_EVENTS) {
         const result = await handleFunnelCountRequest(post({ event }), { env: ON, record, log,
             now: () => new Date('2026-11-12T12:30:00Z') });
         expect(result.status).toBe(204);
         expect(result.body).toBeNull();
         expect(Object.keys(result.headers).map(name => name.toLowerCase())).not.toContain('set-cookie');
     }
-    expect(record).toHaveBeenCalledTimes(FUNNEL_EVENTS.length);
+    expect(record).toHaveBeenCalledTimes(BROWSER_FUNNEL_EVENTS.length);
     expect(record).toHaveBeenNthCalledWith(1, 'visit', '2026-11-13');
+    expect(log.warn).not.toHaveBeenCalled();
+});
+
+test('the beacon accepts only the four browser steps; server-counted steps are refused', async () => {
+    expect(BROWSER_FUNNEL_EVENTS).toEqual(['visit', 'signup_started', 'first_answer', 'result_viewed']);
+    const record = jest.fn(async () => {});
+    for (const event of FUNNEL_EVENTS.filter(item => !BROWSER_FUNNEL_EVENTS.includes(item))) {
+        const result = await handleFunnelCountRequest(post({ event }), { env: ON, record });
+        expect(result.status).toBe(400);
+        expect(result.body.code).toBe('invalid_event');
+    }
+    expect(record).not.toHaveBeenCalled();
+});
+
+test('a skip at the in-flight cap is not logged as a write failure', async () => {
+    const log = { warn: jest.fn() };
+    const record = jest.fn(async () => { throw Object.assign(new Error('funnel_count_busy'), { code: 'funnel_count_busy' }); });
+    const result = await handleFunnelCountRequest(post({ event: 'visit' }), { env: ON, record, log });
+    expect(result.status).toBe(503);
     expect(log.warn).not.toHaveBeenCalled();
 });
 
@@ -129,7 +148,10 @@ test('writer runs one upsert under the runtime role in a transaction', async () 
     const record = createFunnelCountWriter({ pool: { connect: async () => client } });
     await record('submitted', '2026-11-13');
     expect(queries).toEqual([['BEGIN', undefined], ['SET LOCAL ROLE nofries_runtime', undefined],
+        [STATEMENT_TIMEOUT_SQL, undefined], [LOCK_TIMEOUT_SQL, undefined],
         [UPSERT_SQL, ['2026-11-13', 'submitted']], ['COMMIT', undefined]]);
+    expect(STATEMENT_TIMEOUT_SQL).toBe("SET LOCAL statement_timeout = '1000ms'");
+    expect(LOCK_TIMEOUT_SQL).toBe("SET LOCAL lock_timeout = '500ms'");
     expect(UPSERT_SQL).toMatch(/ON CONFLICT \(day, event\) DO UPDATE SET count = funnel_daily_counts\.count \+ 1/);
     expect(client.release).toHaveBeenCalledWith(false);
 });
@@ -180,7 +202,7 @@ test('a failed upsert with a clean rollback keeps the pooled connection', async 
 });
 
 test('a failed rollback discards the pooled connection', async () => {
-    const client = { query: jest.fn(async sql => { if (sql !== 'BEGIN' && sql !== 'SET LOCAL ROLE nofries_runtime') throw new Error('broken'); }), release: jest.fn() };
+    const client = { query: jest.fn(async sql => { if (sql !== 'BEGIN' && !sql.startsWith('SET LOCAL')) throw new Error('broken'); }), release: jest.fn() };
     const record = createFunnelCountWriter({ pool: { connect: async () => client } });
     await expect(record('visit', '2026-11-12')).rejects.toThrow('broken');
     expect(client.release).toHaveBeenCalledWith(true);
