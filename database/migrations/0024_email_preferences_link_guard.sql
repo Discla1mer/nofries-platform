@@ -20,7 +20,8 @@
 -- migrate is a no-op. It refuses with email_preferences_link_guard_precondition
 -- if the table is missing, the function or trigger already exists outside the
 -- ledger, or nofries_runtime or nofries_email_dispatcher could act as the
--- table owner (and so disable the trigger); and with
+-- table owner (and so disable the trigger) or may SET session_replication_role
+-- (and so skip it); and with
 -- email_preferences_link_rows_invalid if any 'link' row has no unsubscribed_at.
 --
 -- Rollback: DROP TRIGGER email_preferences_link_guard ON
@@ -31,11 +32,16 @@ DO $precheck$
 BEGIN
     IF to_regclass('nofries.email_preferences') IS NULL
         OR to_regprocedure('nofries.guard_email_preference()') IS NOT NULL
-        OR EXISTS (SELECT 1 FROM pg_catalog.pg_trigger WHERE tgname = 'email_preferences_link_guard')
+        OR EXISTS (SELECT 1 FROM pg_catalog.pg_trigger WHERE tgname = 'email_preferences_link_guard'
+            AND tgrelid = to_regclass('nofries.email_preferences'))
         OR EXISTS (SELECT 1 FROM pg_catalog.pg_class relation JOIN pg_catalog.pg_roles capability
             ON capability.rolname IN ('nofries_runtime', 'nofries_email_dispatcher')
             WHERE relation.oid = to_regclass('nofries.email_preferences')
-              AND pg_catalog.pg_has_role(capability.oid, relation.relowner, 'MEMBER')) THEN
+              AND pg_catalog.pg_has_role(capability.oid, relation.relowner, 'MEMBER'))
+        -- session_replication_role = replica would skip the trigger.
+        OR EXISTS (SELECT 1 FROM pg_catalog.pg_roles capability
+            WHERE capability.rolname IN ('nofries_runtime', 'nofries_email_dispatcher')
+              AND pg_catalog.has_parameter_privilege(capability.oid, 'session_replication_role', 'SET')) THEN
         RAISE EXCEPTION 'email_preferences_link_guard_precondition';
     END IF;
     IF EXISTS (SELECT 1 FROM nofries.email_preferences WHERE source = 'link' AND unsubscribed_at IS NULL) THEN

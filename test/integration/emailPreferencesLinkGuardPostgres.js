@@ -97,6 +97,17 @@ module.exports = function registerEmailPreferencesLinkGuardTests() {
         expect(await row('reassess_reminder')).toEqual({ source: 'link', unsubscribed_at: expect.any(Date) });
     });
 
+    test('the unsubscribe upsert keeps the time of a settings row that is already off', async () => {
+        await seed('reassess_reminder', 'settings');
+        const before = await row('reassess_reminder');
+        await runtime(UPSERT_SQL, [account.accountId, 'reassess_reminder']);
+        await runtime(UPSERT_SQL, [account.accountId, 'reassess_reminder']);
+        // Main's upsert leaves an earlier settings unsubscribe as it is; the E7
+        // upsert (COALESCE) relabels it 'link' with its original time. Both pass the guard.
+        const source = /COALESCE\(email_preferences\.unsubscribed_at/.test(UPSERT_SQL) ? 'link' : 'settings';
+        expect(await row('reassess_reminder')).toEqual({ source, unsubscribed_at: before.unsubscribed_at });
+    });
+
     test('a settings re-enable waiting on an open link unsubscribe fails once the link commits', async () => {
         await seed('result_summary', 'settings', false);
         const link = await pool.connect();
@@ -138,13 +149,14 @@ module.exports = function registerEmailPreferencesLinkGuardTests() {
         expect(triggers).toEqual([{ tgname: 'email_preferences_link_guard', tgenabled: 'O' }]);
     });
 
-    test('refuses to install over a link row without a time, or over an existing guard', async () => {
+    test('refuses to install over a link row without a time, an existing guard, or a runtime that may skip triggers', async () => {
         const sql = fs.readFileSync(path.join(__dirname, '../../database/migrations', MIGRATION), 'utf8');
         const undo = `DROP TRIGGER email_preferences_link_guard ON nofries.email_preferences;
             DROP FUNCTION nofries.guard_email_preference();`;
         const client = await pool.connect();
         try {
             for (const [setup, expected] of [[undo, null], ['', 'email_preferences_link_guard_precondition'],
+                [`${undo} GRANT SET ON PARAMETER session_replication_role TO nofries_runtime;`, 'email_preferences_link_guard_precondition'],
                 [`${undo} INSERT INTO nofries.email_preferences (account_id,email_type,unsubscribed_at,source)
                     VALUES ('${account.accountId}','welcome',NULL,'link');`, 'email_preferences_link_rows_invalid']]) {
                 await client.query('BEGIN');
