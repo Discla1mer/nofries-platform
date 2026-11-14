@@ -112,3 +112,19 @@ test('the signup list loads after the staff session, shows formed date and organ
     await [...denied.nodes.get('accountListLoad').events.click][0]();
     expect(denied.nodes.get('accountListStatus').textContent).toContain('Staff admin access is required');
 });
+
+test('pagehide aborts a pending signup list and its late response is never rendered', async () => {
+    const pending = deferred();
+    const fetch = jest.fn().mockResolvedValueOnce(session).mockReturnValueOnce(pending.promise);
+    const h = harness(fetch), load = h.nodes.get('accountListLoad'), result = h.nodes.get('accountListResults');
+    const run = [...load.events.click][0]();
+    while (fetch.mock.calls.length < 2) await new Promise(resolve => setImmediate(resolve));
+    h.window.dispatch('pagehide');
+    expect(fetch.mock.calls[1][1].signal.aborted).toBe(true);
+    expect(load.disabled).toBe(false); expect(result.getAttribute('aria-busy')).toBe('false');
+    pending.resolve(json(200, { rows: [{ provider: 'external', readable: true, email: 'late@example.test', accountType: 'company', plan: 'starter',
+        createdAt: null, activatedAt: null, signup: 'unfinished', signIn: 'none', organisationsComplete: true, organisations: [] }], truncated: false }));
+    await run;
+    expect(result.textContent).not.toContain('late@example.test');
+    expect(h.nodes.get('accountListStatus').textContent).toBe('');
+});

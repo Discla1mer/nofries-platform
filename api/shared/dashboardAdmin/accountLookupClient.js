@@ -137,16 +137,27 @@
         form.requestSubmit();
         panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+    let listActive = null;
+    function listReset() {
+        listActive?.abort(); listActive = null; listResult.replaceChildren(); listStatus.textContent = '';
+        listButton.disabled = false; listResult.setAttribute('aria-busy', 'false');
+    }
     listPanel.hidden = false;
-    window.addEventListener('pagehide', () => listResult.replaceChildren());
+    window.addEventListener('pagehide', listReset);
+    window.addEventListener('pageshow', event => { if (event?.persisted) listReset(); });
     listButton.addEventListener('click', async () => {
-        listButton.disabled = true; listResult.replaceChildren(); listResult.setAttribute('aria-busy', 'true');
-        const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 30000);
+        listReset();
+        const controller = new AbortController(); listActive = controller;
+        const timer = setTimeout(() => controller.abort(), 30000);
+        listButton.disabled = true; listResult.setAttribute('aria-busy', 'true');
         listStatus.textContent = 'Checking your staff session…';
         try {
             await ready(controller.signal);
+            if (listActive !== controller) return;
             listStatus.textContent = 'Loading signups…';
             const response = await request('/api/dashboard-admin/accounts/list', {}, controller.signal);
+            // A pagehide or newer load abandons this response unrendered.
+            if (listActive !== controller) return;
             if (response.status !== 200) throw Object.assign(new Error('refused'), { status: response.status });
             const value = response.value;
             if (!value.rows.length) { listStatus.textContent = 'No signups found.'; return; }
@@ -181,9 +192,13 @@
             listStatus.textContent = `${value.rows.length} signup${value.rows.length === 1 ? '' : 's'}` +
                 (value.truncated ? ', capped at 200. Older signups are not shown.' : '.');
         } catch (error) {
+            if (listActive !== controller) return;
             listStatus.textContent = error.name === 'AbortError' ? 'Loading signups timed out. Try again.' :
                 error.status === 429 ? 'Too many requests. Try again in a minute.' :
                 [401, 403].includes(error.status) ? 'Staff admin access is required. Sign in again.' : 'The signup list is unavailable.';
-        } finally { clearTimeout(timer); listButton.disabled = false; listResult.setAttribute('aria-busy', 'false'); }
+        } finally {
+            clearTimeout(timer);
+            if (listActive === controller) { listActive = null; listButton.disabled = false; listResult.setAttribute('aria-busy', 'false'); }
+        }
     });
 }());
