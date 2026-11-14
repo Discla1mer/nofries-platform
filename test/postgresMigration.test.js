@@ -74,6 +74,7 @@ require('./integration/starterClientPeriodPostgres')();
 require('./integration/starterClientDiscardPostgres')();
 require('./integration/lifecycleEmailOutboxPostgres')();
 require('./integration/emailDispatcherSubjectLookupPostgres')();
+require('./integration/emailPreferencesLinkGuardPostgres')();
 require('./integration/lifecycleEmailDispatcherPostgres')();
 require('./integration/lifecycleEmailUnsubscribePostgres')();
 require('./integration/lifecycleEmailSettingsPostgres')();
