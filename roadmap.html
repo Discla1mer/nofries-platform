@@ -27,7 +27,7 @@
             <p>Last updated <time datetime="2026-11-13">13 November 2026</time>. Plans may change. There are no confirmed dates for the capabilities below.</p>
             <p>What you can use depends on the access your organisation has agreed.</p>
             <p>Live means available to the accounts described. In development means being built or tested. Planned means future work whose scope may change.</p>
-                    </header>
+        </header>
         <section aria-labelledby="roadmap-live">
             <h2 id="roadmap-live"><span class="roadmap-status roadmap-status-live">Live</span> Available now</h2>
             <div class="public-roadmap-grid">
@@ -41,34 +41,76 @@
             </div>
         </section>
         <section aria-labelledby="roadmap-development">
-            <h2 id="roadmap-development"><span class="roadmap-status">In development</span> Work under way</h2>
-            <div class="public-roadmap-grid">
-                <article><h3>Faster sign-up and sign-in</h3><p>We are making sign-up, signing back in and returning to saved work quicker and simpler, including for consultants who manage several organisations.</p></article>
-                <article><h3>Update submitted answers</h3><p>Edit a submitted assessment and refresh your scores without starting again.</p></article>
-                <article><h3>Assess against your own requirements</h3><p>Import client requirements from text, review each question alongside its source and return to saved work. Keep customer-specific results separate from NCSC assessments.</p><p>Work to make this available inside the dashboard is under way. PDF, DOCX and scanned-document imports are planned.</p></article>
-                <article><h3>Email reminders</h3><p>A nudge if an assessment is left unfinished and a reminder when it is time to reassess. Every reminder will carry an unsubscribe link, so these start once unsubscribe is in place.</p></article>
-                <article><h3>Evidence and board reporting</h3><p>Work is under way on retaining evidence records and preparing assessment snapshots for reports. Customer uploads, evidence validation and downloadable reports are not available yet.</p></article>
-                <article><h3>Evidence references and recurring reviews</h3><p>Record evidence references, accountable owners and review due dates, then return to recurring reviews. A reference or completed review does not establish that a control has been independently verified.</p></article>
-                <article><h3>Separate assessment types</h3><p>Work is under way on separate, versioned assessment types, including NIST CSF and NZ NCSC. CIS, ISO 27001 readiness, Essential Eight and a distinct ASD Essentials assessment are planned. Each assessment type will retain its own version, scope and results.</p><p>The existing NCSC assessment remains available as described above.</p></article>
+            <h2 id="roadmap-development">Next: work under way</h2>
+            <p>Explore the work in progress. These are not release commitments or a delivery order.</p>
+            <div class="roadmap-themes">
+                <details class="roadmap-theme">
+                    <summary><span class="roadmap-theme-title">Signing in and returning to work</span> <span class="roadmap-status">In development</span></summary>
+                    <div class="roadmap-theme-content">
+                        <article><h3>Faster sign-up and sign-in</h3><p>We are making sign-up, signing back in and returning to saved work quicker and simpler, including for consultants who manage several organisations.</p></article>
+                        <article><h3>Email reminders</h3><p>A nudge if an assessment is left unfinished and a reminder when it is time to reassess. Every reminder will carry an unsubscribe link, so these start once unsubscribe is in place.</p></article>
+                    </div>
+                </details>
+                <details class="roadmap-theme">
+                    <summary><span class="roadmap-theme-title">Assessments and your requirements</span> <span class="roadmap-status">In development</span></summary>
+                    <div class="roadmap-theme-content">
+                        <article><h3>Update submitted answers</h3><p>Edit a submitted assessment and refresh your scores without starting again.</p></article>
+                        <article><h3>Assess against your own requirements</h3><p>Import client requirements from text, review each question alongside its source and return to saved work. Keep customer-specific results separate from NCSC assessments.</p><p>Work to make this available inside the dashboard is under way. PDF, DOCX and scanned-document imports are planned.</p></article>
+                        <article><h3>Separate assessment types</h3><p>Work is under way on separate, versioned assessment types, including NIST CSF and NZ NCSC. CIS, ISO 27001 readiness, Essential Eight and a distinct ASD Essentials assessment are planned. Each assessment type will retain its own version, scope and results.</p><p>The existing NCSC assessment remains available as described above.</p></article>
+                    </div>
+                </details>
+                <details class="roadmap-theme">
+                    <summary><span class="roadmap-theme-title">Evidence and reporting</span> <span class="roadmap-status">In development</span></summary>
+                    <div class="roadmap-theme-content">
+                        <article><h3>Evidence and board reporting</h3><p>Work is under way on retaining evidence records and preparing assessment snapshots for reports. Customer uploads, evidence validation and downloadable reports are not available yet.</p></article>
+                        <article><h3>Evidence references and recurring reviews</h3><p>Record evidence references, accountable owners and review due dates, then return to recurring reviews. A reference or completed review does not establish that a control has been independently verified.</p></article>
+                    </div>
+                </details>
             </div>
         </section>
         <section aria-labelledby="roadmap-planned">
-            <h2 id="roadmap-planned"><span class="roadmap-status">Planned</span> A wider compliance platform</h2>
-            <div class="public-roadmap-grid">
-                <article><h3>Reuse controls across frameworks</h3><p>Bring NCSC, CIS, ISO and SOC 2 control references into a versioned library. Map client requirements and their sources to relevant controls, with the mapping rationale and reviewer recorded.</p><p>Record which controls apply, who is accountable, who reviews them and how much confidence the supporting evidence provides.</p></article>
-                <article><h3>Evidence you can trace and review</h3><p>Keep uploaded and collected evidence over time, with its source, origin, collection date, freshness and review history. Distinguish submitted claims, technical checks, reviewer decisions and independent assurance.</p></article>
-                <article><h3>Connected evidence and continuous checks</h3><p>Connect supported systems and repeat control checks showing which systems, assets and people are covered and when evidence was collected. Missing, stale, disconnected or incomplete data must remain a gap, not a pass.</p><p>Potential connectors include Microsoft 365 sign-in and administrator settings, Datto RMM and patching evidence, and managed detection and response (MDR) evidence. These are planned options, not active integrations or included subscription services.</p></article>
-                <article><h3>Risk and exceptions</h3><p>Record risks, treatment decisions and approvals. Give exceptions an owner, reason, review date and expiry while retaining the original finding.</p></article>
-                <article><h3>Policies and approvals</h3><p>Manage policy versions, accountable owners, approvals, records of staff reading each policy and scheduled reviews.</p></article>
-                <article><h3>Assets, identities and devices</h3><p>Link asset and data inventories to owners and lifecycle records. Review access, joiners and leavers, multifactor authentication, device encryption, supported software, patching and endpoint protection evidence.</p><p>Show coverage and exceptions across devices, applications, networks, email and data protection, including physical locations and media where relevant.</p></article>
-                <article><h3>Supplier and personnel security</h3><p>Keep supplier assurance, review and renewal evidence alongside staff training and appropriate screening-completion records. Track gaps across the suppliers and people in scope.</p></article>
-                <article><h3>Recovery and incident readiness</h3><p>Review backup and restore evidence, recovery exercises and measured recovery objectives. Track incident plans, response exercises, responsibilities and reviewed notification decisions.</p></article>
-                <article><h3>Technical assurance</h3><p>Track vulnerability testing, secure development, software-component inventories, logging and security reviews. Keep penetration-test reports, remediation and independent retesting linked to their scope and findings.</p></article>
-                <article><h3>Customer questionnaires and audit-ready reporting</h3><p>Reuse reviewed answers and current evidence in customer security questionnaires. Prepare audit-ready exports and board reports that show scope, progress, gaps and exceptions without hiding incomplete checks.</p></article>
-                <article><h3>Prepare for an independent SOC 2 audit</h3><p>Support auditor requests, collaboration with access limited to the agreed scope, and evidence tracking over review periods for SOC 2 Type I and Type II readiness. Keep point-in-time evidence separate from evidence of operation over a period.</p><p>SOC 2 attestation is issued by an independent qualified auditor. No Fries does not self-certify or issue the auditor’s opinion.</p></article>
-                <article><h3>Privacy and data responsibilities</h3><p>Track data handling, subprocessor approvals, retention and deletion obligations, and reviewed privacy requests. Keep legal decisions and permissions separate from technical evidence.</p></article>
-                <article><h3>Client overview for consultants</h3><p>See assessment and plan status for each client organisation you are authorised to manage, in one list.</p></article>
-                <article><h3>AI governance and IT optimisation</h3><p>Understand your organisation’s AI use and find ways to improve your IT.</p></article>
+            <h2 id="roadmap-planned">Further ahead</h2>
+            <p>Five themes for the wider platform. Open a theme to see the planned capabilities and their limits.</p>
+            <div class="roadmap-themes">
+                <details class="roadmap-theme">
+                    <summary><span class="roadmap-theme-title">Controls, risk and policies</span> <span class="roadmap-status">Planned</span></summary>
+                    <div class="roadmap-theme-content">
+                        <article><h3>Reuse controls across frameworks</h3><p>Bring NCSC, CIS, ISO and SOC 2 control references into a versioned library. Map client requirements and their sources to relevant controls, with the mapping rationale and reviewer recorded.</p><p>Record which controls apply, who is accountable, who reviews them and how much confidence the supporting evidence provides.</p></article>
+                        <article><h3>Risk and exceptions</h3><p>Record risks, treatment decisions and approvals. Give exceptions an owner, reason, review date and expiry while retaining the original finding.</p></article>
+                        <article><h3>Policies and approvals</h3><p>Manage policy versions, accountable owners, approvals, records of staff reading each policy and scheduled reviews.</p></article>
+                    </div>
+                </details>
+                <details class="roadmap-theme">
+                    <summary><span class="roadmap-theme-title">Evidence, connected systems and technical checks</span> <span class="roadmap-status">Planned</span></summary>
+                    <div class="roadmap-theme-content">
+                        <article><h3>Evidence you can trace and review</h3><p>Keep uploaded and collected evidence over time, with its source, origin, collection date, freshness and review history. Distinguish submitted claims, technical checks, reviewer decisions and independent assurance.</p></article>
+                        <article><h3>Connected evidence and continuous checks</h3><p>Connect supported systems and repeat control checks showing which systems, assets and people are covered and when evidence was collected. Missing, stale, disconnected or incomplete data must remain a gap, not a pass.</p><p>Potential connectors include Microsoft 365 sign-in and administrator settings, Datto RMM and patching evidence, and managed detection and response (MDR) evidence. These are planned options, not active integrations or included subscription services.</p></article>
+                        <article><h3>Technical assurance</h3><p>Track vulnerability testing, secure development, software-component inventories, logging and security reviews. Keep penetration-test reports, remediation and independent retesting linked to their scope and findings.</p></article>
+                    </div>
+                </details>
+                <details class="roadmap-theme">
+                    <summary><span class="roadmap-theme-title">People, assets and recovery</span> <span class="roadmap-status">Planned</span></summary>
+                    <div class="roadmap-theme-content">
+                        <article><h3>Assets, identities and devices</h3><p>Link asset and data inventories to owners and lifecycle records. Review access, joiners and leavers, multifactor authentication, device encryption, supported software, patching and endpoint protection evidence.</p><p>Show coverage and exceptions across devices, applications, networks, email and data protection, including physical locations and media where relevant.</p></article>
+                        <article><h3>Supplier and personnel security</h3><p>Keep supplier assurance, review and renewal evidence alongside staff training and appropriate screening-completion records. Track gaps across the suppliers and people in scope.</p></article>
+                        <article><h3>Recovery and incident readiness</h3><p>Review backup and restore evidence, recovery exercises and measured recovery objectives. Track incident plans, response exercises, responsibilities and reviewed notification decisions.</p></article>
+                    </div>
+                </details>
+                <details class="roadmap-theme">
+                    <summary><span class="roadmap-theme-title">Questionnaires and independent audit preparation</span> <span class="roadmap-status">Planned</span></summary>
+                    <div class="roadmap-theme-content">
+                        <article><h3>Customer questionnaires and audit-ready reporting</h3><p>Reuse reviewed answers and current evidence in customer security questionnaires. Prepare audit-ready exports and board reports that show scope, progress, gaps and exceptions without hiding incomplete checks.</p></article>
+                        <article><h3>Prepare for an independent SOC 2 audit</h3><p>Support auditor requests, collaboration with access limited to the agreed scope, and evidence tracking over review periods for SOC 2 Type I and Type II readiness. Keep point-in-time evidence separate from evidence of operation over a period.</p><p>SOC 2 attestation is issued by an independent qualified auditor. No Fries does not self-certify or issue the auditor’s opinion.</p></article>
+                    </div>
+                </details>
+                <details class="roadmap-theme">
+                    <summary><span class="roadmap-theme-title">Privacy, consultants and AI</span> <span class="roadmap-status">Planned</span></summary>
+                    <div class="roadmap-theme-content">
+                        <article><h3>Privacy and data responsibilities</h3><p>Track data handling, subprocessor approvals, retention and deletion obligations, and reviewed privacy requests. Keep legal decisions and permissions separate from technical evidence.</p></article>
+                        <article><h3>Client overview for consultants</h3><p>See assessment and plan status for each client organisation you are authorised to manage, in one list.</p></article>
+                        <article><h3>AI governance and IT optimisation</h3><p>Understand your organisation’s AI use and find ways to improve your IT.</p></article>
+                    </div>
+                </details>
             </div>
         </section>
         <p class="public-roadmap-note">Use results to plan improvements. They are not NCSC endorsement, independent assurance, certification or a guarantee of compliance. Planned capabilities are not a promise of delivery or subscription inclusion.</p>
