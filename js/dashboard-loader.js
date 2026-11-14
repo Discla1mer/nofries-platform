@@ -1884,6 +1884,7 @@
             delete elements.status.dataset.accessWarning;
             elements.retry.hidden = true;
             cycle.quietStatus = undefined;
+            if (controller && typeof controller.refreshSavedData === 'function') await controller.refreshSavedData();
         }).catch(function (error) {
             if (!currentRefresh(cycle, refresh)) return;
             closeRefresh(refresh);

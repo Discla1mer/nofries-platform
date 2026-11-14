@@ -1687,6 +1687,22 @@ describe('ready Cyber composition', () => {
         h.window.dispatch('pagehide');
         expect(h.elements.dashboardApp.children).toHaveLength(0);
     });
+    test('Overview checks saved changes only after the final return-to-tab session witness', async () => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+        await ncscReply(h, 5, 200, empty);
+        for (let i = 0; i < 10; i++) h.window.dispatch('focus');
+        await flush(); await refreshToModule(h, 6); await h.reply(9, 200, h.cyberProjection);
+        expect(h.requests).toHaveLength(11);
+        expect(h.requests[10].url).toBe('/api/dashboard/session');
+        await h.reply(10, 200, state());
+        expect(h.requests[11].url).toMatch(/^\/api\/dashboard\/ncsc\/assessments/);
+        expect(h.requests[11].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        await ncscReply(h, 11, 200, empty);
+        expect(h.requests).toHaveLength(12);
+        expect(h.requests.every(request => request.init.method === 'GET')).toBe(true);
+        h.window.dispatch('pagehide');
+    });
     test('a successful saved-assessment read moves the footer information time forward', async () => {
         const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
         const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');

@@ -635,7 +635,9 @@
                 if (active()) handleLocation(eventType);
             });
         }
-        const controller = { informationRead: informationRead, navigate: function (route) { return navigate(route, true); }, requestLeave: function (commit) {
+        const controller = { informationRead: informationRead, refreshSavedData: function () {
+            if (!disposed && !navigation && current.key === 'overview' && child && typeof child.refreshSavedData === 'function') return child.refreshSavedData();
+        }, navigate: function (route) { return navigate(route, true); }, requestLeave: function (commit) {
             if (disposed) return Promise.resolve(false);
             if (child) return child.requestLeave(commit);
             if (typeof commit === 'function') commit();

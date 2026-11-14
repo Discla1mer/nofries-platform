@@ -204,7 +204,7 @@ test.each(['selection', 'refresh', 'destroy'])('Overview %s cancels a pending ex
             expect(explanation(ui).querySelector('[aria-label="Saved explanation"]')).toBeNull();
             if (leave === 'selection') {
                 expect(ui.root.querySelector('.picture-toolbar').querySelector('select').value).toBe('assessment-b');
-                expect(ui.root.querySelector('.picture-source').textContent).toContain('Submitted 7 Sept 2026, 9:00 pm NZ time');
+                expect(ui.root.querySelector('.picture-source').textContent).toContain('Answers submitted: 7 Sept 2026, 9:00 pm NZ time');
             }
         }
         expectReadOnly(h);

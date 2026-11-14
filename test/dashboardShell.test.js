@@ -868,6 +868,17 @@ test('Escape closes the More tools menu and returns focus to its summary', () =>
     assert.equal(menu.open, false);
 });
 
+test('fresh saved-data refresh is delegated only to the mounted read-only Overview', async () => {
+    const model = clone(view()); model.modules.find(item => item.key === 'cyber_security').state = 'ready';
+    let refreshed = 0, edited = 0;
+    const child = callback => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); }, refreshSavedData: callback });
+    const dom = mount(model, { mountPicture: () => child(() => refreshed++), mountCyber: () => child(() => edited++) });
+    await dom.controller.refreshSavedData(); assert.equal(refreshed, 1);
+    await dom.controller.navigate('cyber-security'); await dom.controller.refreshSavedData();
+    assert.equal(edited, 0); assert.equal(refreshed, 1);
+    dom.controller.destroy(); await dom.controller.refreshSavedData(); assert.equal(refreshed, 1);
+});
+
 test('error summaries and scroll targets clear the sticky organisation bar', () => {
     const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
     const bar = css.match(/\.nofries-dashboard \.dashboard-topbar \{ max-height: (\d+)rem;/);

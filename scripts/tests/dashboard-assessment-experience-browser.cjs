@@ -81,12 +81,28 @@ async function main() {
             const label = width + (enlarged ? '-text200' : '');
             const resume = await page.locator('.picture-resume').boundingBox(), toolbar = await page.locator('.picture-toolbar').boundingBox();
             assert.ok(resume.y < toolbar.y, 'Resume panel precedes maintenance');
+            const activity = page.locator('.picture-saved-work');
+            assert.equal(await activity.getByRole('heading', { name: 'Recent saved work' }).isVisible(), true);
+            assert.match(await page.locator('.picture-source').textContent(), /Answers saved: .*NZ time\s*Source: self-reported assessment answers/);
+            assert.match(await page.locator('.picture-refresh-note').textContent(), /Saved assessment data refreshed: .*does not re-verify answers/);
+            assert.ok((await page.locator('.picture-source').boundingBox()).y < (await activity.boundingBox()).y);
+            assert.ok(await activity.getByRole('button', { name: /^Continue updating:/ }).count() > 0);
+            const activityGeometry = await activity.evaluate(node => {
+                const box = node.getBoundingClientRect();
+                return { x: box.x, right: box.right, width: innerWidth, scroll: document.documentElement.scrollWidth,
+                    controls: [...node.querySelectorAll('button')].map(button => button.getBoundingClientRect().height) };
+            });
+            assert.ok(activityGeometry.x >= 0 && activityGeometry.right <= activityGeometry.width + 1);
+            assert.ok(activityGeometry.scroll <= activityGeometry.width + 1);
+            assert.ok(activityGeometry.controls.every(height => height >= 44));
+            await keyboardFocus(page, activity.getByRole('button', { name: /^Continue updating:/ }).first());
+            if (!enlarged) await page.locator('.dashboard-main').screenshot({ path: path.join(artifacts, 'overview-' + width + '.png') });
             await openList(page); await inspect(page, label + '-initial');
             assert.equal(await listActions(page).count(), 2);
             await page.locator('#ncsc-assessment-status').selectOption('submitted');
             assert.equal(await listActions(page).count(), 0);
             assert.equal(await page.getByText('No submitted assessments yet. Results appear here once an assessment is submitted.', { exact: true }).isVisible(), true);
-            assert.equal(await page.getByText('Search and filters cover loaded assessments. Load more to include more saved records.', { exact: true }).isVisible(), true);
+            assert.equal(await page.getByText('Search applies to assessments shown so far. Load more to include older saved assessments.', { exact: true }).isVisible(), true);
             await action(page, 'Load more assessments').click();
             await action(page, 'View results').waitFor();
             assert.equal(await page.locator('#ncsc-assessment-status').inputValue(), 'submitted');
@@ -109,7 +125,8 @@ async function main() {
             await search.fill('assessment-b');
             await keyboardFocus(page, action(page, 'Continue assessment')); await page.keyboard.press('Enter');
             await page.locator('#ncsc-question-index').waitFor();
-            assert.match(await page.locator('.ncsc-status').textContent(), /14 of 14 answered/);
+            assert.equal(await page.locator('#ncsc-draft-progress').isVisible(), true);
+            assert.match(await page.locator('#ncsc-draft-progress').textContent(), /^14 of 14 answered/);
             await action(page, 'Back to assessments').click();
             await search.waitFor(); assert.equal(await search.inputValue(), 'assessment-b');
             assert.equal(await listActions(page).count(), 1);
