@@ -14,7 +14,8 @@ jest.mock('../api/shared/funnelCounts', () => {
 });
 
 const request = require('supertest');
-const { SERVER_FUNNEL_EVENTS, FUNNEL_EVENTS, createServerFunnelCounter, isAssessmentSubmit } = jest.requireActual('../api/shared/funnelCounts');
+const { SERVER_FUNNEL_EVENTS, FUNNEL_EVENTS, MAX_IN_FLIGHT, createFunnelCountWriter, createServerFunnelCounter, isAssessmentSubmit,
+    resetFunnelWritesForTests } = jest.requireActual('../api/shared/funnelCounts');
 const { isHoneypotEnquiry } = require('../api/shared/enquiry');
 const { resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
 
@@ -22,7 +23,7 @@ process.env.NOFRIES_REQUIRE_AUTH = 'false';
 const ON = { NOFRIES_FUNNEL_COUNTS_ENABLED: 'true' };
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-beforeEach(() => { mockCounted.length = 0; resetAbuseProtectionForTests(); });
+beforeEach(() => { mockCounted.length = 0; resetAbuseProtectionForTests(); resetFunnelWritesForTests(); });
 
 describe('createServerFunnelCounter', () => {
     test('counts only the three server-side events, never the browser ones', () => {
@@ -90,6 +91,61 @@ describe('createServerFunnelCounter', () => {
         const log = { warn: () => { throw new Error('log'); } };
         createServerFunnelCounter({ env: ON, record: async () => { throw new Error('x'); }, log })('submitted');
         await flush();
+    });
+});
+
+describe('bounded writer', () => {
+    const okClient = () => ({ query: jest.fn(async () => {}), release: jest.fn() });
+
+    test('at most two writes run at once per process; the rest are skipped without touching the pool', async () => {
+        expect(MAX_IN_FLIGHT).toBe(2);
+        const held = [];
+        const pool = { connect: jest.fn(() => held.length < 2 ? new Promise(resolve => held.push(resolve)) : Promise.resolve(okClient())) };
+        const record = createFunnelCountWriter({ pool, acquireTimeoutMs: 10000 });
+        const first = record('submitted', '2026-11-13'), second = createFunnelCountWriter({ pool })('visit', '2026-11-13');
+        await expect(record('enquiry_sent', '2026-11-13')).rejects.toMatchObject({ code: 'funnel_count_busy' });
+        await flush();
+        expect(pool.connect).toHaveBeenCalledTimes(2);
+        held.forEach(resolve => resolve(okClient()));
+        await Promise.all([first, second]);
+        await record('enquiry_sent', '2026-11-13');
+        expect(pool.connect).toHaveBeenCalledTimes(3);
+    });
+
+    test('the server counter skips silently at the cap', async () => {
+        const pool = { connect: () => new Promise(() => {}) };
+        const record = createFunnelCountWriter({ pool, acquireTimeoutMs: 10000 });
+        const log = { warn: jest.fn() };
+        const count = createServerFunnelCounter({ env: ON, record, log, timeoutMs: 10000 });
+        count('submitted'); count('submitted'); count('submitted');
+        await flush();
+        expect(log.warn).not.toHaveBeenCalled();
+    });
+
+    test('a pool that cannot give a client within the acquire timeout is skipped and a late client is returned', async () => {
+        let deliver;
+        const client = okClient();
+        const pool = { connect: () => new Promise(resolve => { deliver = resolve; }) };
+        const record = createFunnelCountWriter({ pool, acquireTimeoutMs: 20 });
+        await expect(record('submitted', '2026-11-13')).rejects.toMatchObject({ code: 'funnel_count_acquire_timeout' });
+        deliver(client);
+        await flush();
+        expect(client.release).toHaveBeenCalledTimes(1);
+        expect(client.query).not.toHaveBeenCalled();
+        // The slot is free again after the timeout.
+        const fresh = okClient();
+        await createFunnelCountWriter({ pool: { connect: async () => fresh } })('submitted', '2026-11-13');
+        expect(fresh.release).toHaveBeenCalledWith(false);
+    });
+
+    test('a statement or lock timeout rolls back, keeps a clean connection and frees the slot', async () => {
+        const client = { query: jest.fn(async sql => { if (String(sql).startsWith('INSERT')) throw Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }); }),
+            release: jest.fn() };
+        const record = createFunnelCountWriter({ pool: { connect: async () => client } });
+        await expect(record('submitted', '2026-11-13')).rejects.toThrow('lock timeout');
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.release).toHaveBeenCalledWith(false);
+        for (let i = 0; i < 3; i += 1) await expect(record('submitted', '2026-11-13')).rejects.toThrow('lock timeout');
     });
 });
 

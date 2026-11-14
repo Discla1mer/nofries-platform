@@ -2,7 +2,7 @@
 
 const request = require('supertest');
 const { FUNNEL_EVENTS, aucklandDay, createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest, UPSERT_SQL,
-    resetTelemetryRateLimitForTests, telemetryKey } = require('../api/shared/funnelCounts');
+    resetTelemetryRateLimitForTests, telemetryKey, STATEMENT_TIMEOUT_SQL, LOCK_TIMEOUT_SQL } = require('../api/shared/funnelCounts');
 const { handlers } = require('../api/shared/apiRuntime');
 const { checkRateLimit, resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
 
@@ -129,7 +129,10 @@ test('writer runs one upsert under the runtime role in a transaction', async () 
     const record = createFunnelCountWriter({ pool: { connect: async () => client } });
     await record('submitted', '2026-11-13');
     expect(queries).toEqual([['BEGIN', undefined], ['SET LOCAL ROLE nofries_runtime', undefined],
+        [STATEMENT_TIMEOUT_SQL, undefined], [LOCK_TIMEOUT_SQL, undefined],
         [UPSERT_SQL, ['2026-11-13', 'submitted']], ['COMMIT', undefined]]);
+    expect(STATEMENT_TIMEOUT_SQL).toBe("SET LOCAL statement_timeout = '1000ms'");
+    expect(LOCK_TIMEOUT_SQL).toBe("SET LOCAL lock_timeout = '500ms'");
     expect(UPSERT_SQL).toMatch(/ON CONFLICT \(day, event\) DO UPDATE SET count = funnel_daily_counts\.count \+ 1/);
     expect(client.release).toHaveBeenCalledWith(false);
 });
@@ -180,7 +183,7 @@ test('a failed upsert with a clean rollback keeps the pooled connection', async 
 });
 
 test('a failed rollback discards the pooled connection', async () => {
-    const client = { query: jest.fn(async sql => { if (sql !== 'BEGIN' && sql !== 'SET LOCAL ROLE nofries_runtime') throw new Error('broken'); }), release: jest.fn() };
+    const client = { query: jest.fn(async sql => { if (sql !== 'BEGIN' && !sql.startsWith('SET LOCAL')) throw new Error('broken'); }), release: jest.fn() };
     const record = createFunnelCountWriter({ pool: { connect: async () => client } });
     await expect(record('visit', '2026-11-12')).rejects.toThrow('broken');
     expect(client.release).toHaveBeenCalledWith(true);

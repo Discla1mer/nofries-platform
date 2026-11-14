@@ -78,23 +78,63 @@ function aucklandDay(now = new Date()) {
     return NZ_DAY.format(now);
 }
 
-function createFunnelCountWriter({ pool }) {
+// Every count write, beacon or server-side, is bounded so it can never hold
+// the shared dashboard pool: at most MAX_IN_FLIGHT writes per process (more
+// are skipped), a bounded wait for a pooled client, and statement and lock
+// timeouts inside the transaction.
+const MAX_IN_FLIGHT = 2;
+const ACQUIRE_TIMEOUT_MS = 500;
+const STATEMENT_TIMEOUT_SQL = "SET LOCAL statement_timeout = '1000ms'";
+const LOCK_TIMEOUT_SQL = "SET LOCAL lock_timeout = '500ms'";
+let writesInFlight = 0;
+
+function resetFunnelWritesForTests() { writesInFlight = 0; }
+
+function codedError(code) { const error = new Error(code); error.code = code; return error; }
+
+async function acquireClient(pool, timeoutMs) {
+    let timer = null, timedOut = false;
+    const connecting = Promise.resolve().then(() => pool.connect());
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => { timedOut = true; reject(codedError('funnel_count_acquire_timeout')); }, timeoutMs);
+        if (typeof timer.unref === 'function') timer.unref();
+    });
+    try {
+        return await Promise.race([connecting, timeout]);
+    } catch (error) {
+        // A client that arrives after we gave up goes straight back to the pool.
+        if (timedOut) connecting.then(client => client.release(), () => {});
+        throw error;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function createFunnelCountWriter({ pool, acquireTimeoutMs = ACQUIRE_TIMEOUT_MS }) {
     if (!pool || typeof pool.connect !== 'function') throw new Error('funnel_counts_pool_invalid');
     return async function record(event, day) {
-        const client = await pool.connect();
-        let discard = false;
+        if (writesInFlight >= MAX_IN_FLIGHT) throw codedError('funnel_count_busy');
+        writesInFlight += 1;
         try {
-            await client.query('BEGIN');
+            const client = await acquireClient(pool, acquireTimeoutMs);
+            let discard = false;
             try {
-                await client.query('SET LOCAL ROLE nofries_runtime');
-                await client.query(UPSERT_SQL, [day, event]);
-                await client.query('COMMIT');
-            } catch (error) {
-                try { await client.query('ROLLBACK'); } catch (_) { discard = true; }
-                throw error;
+                await client.query('BEGIN');
+                try {
+                    await client.query('SET LOCAL ROLE nofries_runtime');
+                    await client.query(STATEMENT_TIMEOUT_SQL);
+                    await client.query(LOCK_TIMEOUT_SQL);
+                    await client.query(UPSERT_SQL, [day, event]);
+                    await client.query('COMMIT');
+                } catch (error) {
+                    try { await client.query('ROLLBACK'); } catch (_) { discard = true; }
+                    throw error;
+                }
+            } finally {
+                client.release(discard);
             }
         } finally {
-            client.release(discard);
+            writesInFlight -= 1;
         }
     };
 }
@@ -116,7 +156,9 @@ function createServerFunnelCounter({ env = process.env, record = null, log = nul
             if (typeof timer.unref === 'function') timer.unref();
         });
         Promise.race([Promise.resolve().then(() => record(event, aucklandDay(now()))), timeout])
-            .catch(() => {
+            .catch(error => {
+                // Skipped at the in-flight cap: expected under load, not a failure.
+                if (error && error.code === 'funnel_count_busy') return;
                 try { if (log && typeof log.warn === 'function') log.warn('funnel_count_write_failed'); } catch (_) { /* never surface */ }
             })
             .finally(() => clearTimeout(timer));
@@ -182,6 +224,10 @@ function result(status, body, extraHeaders = {}) {
 }
 
 module.exports = {
+    MAX_IN_FLIGHT,
+    STATEMENT_TIMEOUT_SQL,
+    LOCK_TIMEOUT_SQL,
+    resetFunnelWritesForTests,
     SERVER_FUNNEL_EVENTS,
     createServerFunnelCounter,
     isAssessmentSubmit,
