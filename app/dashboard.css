@@ -70,7 +70,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .dashboard-module-card .dashboard-module-link { font-weight: var(--dashboard-weight-regular); }
 .dashboard-button, .dashboard-text-button { min-height: 2.875rem; border: 1px solid var(--dashboard-yellow); border-radius: .7rem; padding: .7rem 1rem; background: var(--dashboard-yellow); color: var(--dashboard-ink); text-align: left; font-weight: var(--dashboard-weight-regular) !important; }
 .dashboard-text-button { color: var(--dashboard-blue); background: transparent; border-color: transparent; padding-left: 0; }
-.dashboard-button:hover { background: #eec55c; border-color: #eec55c; }
+/* Shared primary-button tokens from style.css (F1-R08), with the same values as fallbacks. */
+.nofries-dashboard .dashboard-button, .ncsc-questionnaire .dashboard-button { font-family: var(--button-font, Inter, ui-sans-serif, system-ui, sans-serif); font-size: var(--button-size, 1rem); font-weight: var(--button-weight, 600) !important; }
+.dashboard-button:not(.dashboard-button-secondary) { border-color: var(--button-fill, #dbb157); background: var(--button-fill, #dbb157); color: var(--button-ink, #151816); }
+.dashboard-button:not(.dashboard-button-secondary):hover { background: var(--button-fill-hover, #e4be6e); border-color: var(--button-fill-hover, #e4be6e); }
+.nofries-dashboard .dashboard-button:focus-visible, .ncsc-questionnaire .dashboard-button:focus-visible { outline: var(--button-focus-ring, 3px solid #17140f); outline-offset: var(--button-focus-offset, 4px); }
 .dashboard-button-secondary { background: transparent; border-color: var(--dashboard-control-border); color: var(--dashboard-ink); }
 .dashboard-button-secondary:hover { background: var(--dashboard-navy); border-color: var(--dashboard-blue); }
 .nofries-dashboard a.dashboard-button { color: var(--dashboard-ink); }
@@ -104,9 +108,15 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-first-use-step h3 { margin-bottom: .35rem; }
 .picture-first-use-step p { margin-bottom: 0; }
 .picture-first-use-number { display: grid; flex: 0 0 2.5rem; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--dashboard-navy); color: var(--dashboard-ink); font-weight: var(--dashboard-weight-emphasis); }
-.picture-first-use-action { display: block; width: min(100%, 23rem); margin: 0 auto; font-family: var(--font-serif, Georgia, serif) !important; font-size: 1.25rem !important; }
+.picture-first-use-action { display: block; width: min(100%, 23rem); margin: 1.25rem 0 0; font-family: var(--button-font, Inter, ui-sans-serif, system-ui, sans-serif) !important; font-size: var(--button-size-large, 1.0625rem) !important; text-align: center; }
 @media (min-width: 60.01rem) { .picture-first-use-step:not(:last-child)::after { content: '→'; position: absolute; right: -.8rem; top: 50%; z-index: 1; transform: translateY(-50%); padding: .1rem; background: var(--dashboard-surface); color: var(--dashboard-ink); } }
 @media (max-width: 60rem) { .picture-first-use-steps { grid-template-columns: 1fr; } }
+/* Keep the first-use action high on small phones. */
+@media (max-width: 30rem) {
+    .picture-first-use-eyebrow { letter-spacing: .06em; }
+    .nofries-dashboard .picture-first-use h2 { font-size: 1.75rem; }
+    .picture-first-use-action { font-size: 1.1rem !important; }
+}
 
 .picture-heading { padding: 1.25rem 0 .5rem; border-top: 1px solid var(--dashboard-line); }
 .picture-heading > :last-child { margin-bottom: 0; }
@@ -159,6 +169,33 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-trend-history li { margin: .4rem 0; }
 .organisation-picture > .dashboard-button { margin-top: 1rem; }
 .picture-status { color: var(--dashboard-muted); }
+.picture-status-quiet { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.picture-actions { background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 0 0 1.25rem; overflow-wrap: anywhere; }
+.picture-actions h3 { margin-top: 0; }
+.picture-actions h4 { margin: 1rem 0 .4rem; }
+.picture-actions-list { padding-left: 1.3rem; margin: 0; }
+.picture-action { margin: .5rem 0; }
+.picture-action-title, .picture-action-meta { display: block; }
+.picture-actions-plan { display: inline-block; margin-top: 1rem; }
+.picture-top-gaps { background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 1.25rem 0; }
+.picture-top-gaps-list { padding-left: 1.3rem; margin: 0; }
+.picture-top-gap { margin: 1rem 0 0; overflow-wrap: anywhere; }
+.picture-top-gap h4 { margin-bottom: .25rem; }
+.picture-top-gap p { margin: .25rem 0; }
+.picture-information { border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 1.25rem 0; overflow-wrap: anywhere; }
+.picture-information-list { padding-left: 1.3rem; }
+.picture-information-list li { margin: 1rem 0; }
+.picture-information-list h4, .picture-information-list p { margin: .25rem 0; }
+.picture-information .dashboard-button { min-height: 44px; min-width: 44px; max-width: 100%; white-space: normal; }
+.picture-top-gap .picture-gap-plan { min-height: 44px; min-width: 44px; max-width: 100%; margin-top: .5rem; }
+.picture-next-steps { border-top: 1px solid var(--dashboard-line); margin-top: 1.25rem; padding-top: 1rem; }
+.picture-next-steps .dashboard-button { display: inline-block; max-width: 100%; text-align: center; text-decoration: none; }
+.picture-summary { margin: .75rem 0; }
+.picture-summary summary { cursor: pointer; font-weight: 700; }
+.picture-summary textarea { display: block; box-sizing: border-box; width: 100%; max-width: 100%; resize: vertical; min-height: 8rem; line-height: 1.5; margin: .5rem 0; }
+.picture-summary .dashboard-button { margin: 0 .5rem .5rem 0; }
+.picture-summary-print { display: none; margin: .5rem 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+@media print { .picture-summary textarea { display: none; } .picture-summary-print { display: block; } }
 @media (max-width: 60rem) {
     .picture-metrics { grid-template-columns: minmax(0, 1fr); }
     .picture-metric h3 { min-height: 0; }
@@ -214,7 +251,19 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-questionnaire textarea, .ncsc-questionnaire select { color: var(--dashboard-ink, #17140f); background: var(--dashboard-surface, #f6f2ea); border: 1px solid var(--dashboard-control-border, #7d7262); border-radius: .4rem; padding: .75rem; }
 .ncsc-questionnaire textarea { display: block; width: 100%; resize: vertical; min-height: 8rem; line-height: 1.5; margin: .5rem 0; }
 .ncsc-questionnaire select { display: block; width: 100%; min-height: 3rem; margin: .5rem 0 1.5rem; }
+.ncsc-question-picker { display: flex; align-items: center; gap: .65rem; margin: .5rem 0 1.5rem; }
+.ncsc-questionnaire .ncsc-question-picker select { flex: 1 1 auto; min-width: 0; margin: 0; }
+.ncsc-question-picker .ncsc-question-go { flex: 0 0 auto; }
 .ncsc-questionnaire button:disabled { cursor: default; opacity: .55; }
+/* Improvement Plan cards: the topic's work, then owner and due date in a scannable pair (F1-R10). */
+.improvement-action-work { margin: .75rem 0; font-size: 1.05rem; line-height: 1.6; }
+.improvement-action-key { display: grid; grid-template-columns: minmax(5.5rem, max-content) minmax(0, 1fr); gap: .35rem 1rem; margin: .75rem 0 1rem; }
+.improvement-action-key dt { font-weight: var(--dashboard-weight-regular); }
+.improvement-action-key dd { margin: 0; overflow-wrap: anywhere; }
+.improvement-action-key dd:nth-of-type(-n + 2) { color: var(--dashboard-ink, #17140f); font-weight: var(--dashboard-weight-emphasis, 600); }
+@media (max-width: 25rem) { .improvement-action-key { grid-template-columns: minmax(0, 1fr); gap: 0; } .improvement-action-key dd { margin-bottom: .5rem; } }
+.improvement-action-form label { display: block; margin: .75rem 0; }
+.improvement-action-form input { display: block; width: 100%; max-width: 24rem; box-sizing: border-box; min-height: 2.75rem; margin-top: .5rem; padding: .5rem .75rem; }
 .ncsc-questionnaire [aria-invalid="true"] { border-color: #a3352a; outline-color: #a3352a; }
 .ncsc-questionnaire a, .ncsc-questionnaire button, .ncsc-questionnaire summary { overflow-wrap: anywhere; }
 .ncsc-questionnaire :focus-visible { outline: 3px solid var(--dashboard-focus, #17140f); outline-offset: 4px; }
@@ -253,10 +302,20 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .ncsc-assessment-filters { grid-template-columns: minmax(0, 1fr); }
     .ncsc-assessment-card { padding: 1rem; }
 }
-.ncsc-scope, .ncsc-guidance, .ncsc-provenance { margin: 1rem 0; padding: 1rem; border: 1px solid var(--dashboard-line, #d3c9b7); border-radius: .5rem; background: var(--dashboard-surface, #f6f2ea); }
+.ncsc-scope, .ncsc-guidance, .ncsc-question-help, .ncsc-provenance { margin: 1rem 0; padding: 1rem; border: 1px solid var(--dashboard-line, #d3c9b7); border-radius: .5rem; background: var(--dashboard-surface, #f6f2ea); }
 .ncsc-questionnaire summary { cursor: pointer; min-height: 2.75rem; padding: .5rem 0; font-weight: var(--dashboard-weight-regular); }
-.ncsc-guidance p, .ncsc-provenance p, .ncsc-scope p { margin-top: .75rem; }
+.ncsc-guidance p, .ncsc-question-help p, .ncsc-provenance p, .ncsc-scope p { margin-top: .75rem; }
+.ncsc-question-help h3 { margin: 1rem 0 .4rem; font-size: var(--dashboard-font-body, 1rem); }
+.ncsc-question-help ul { margin: .4rem 0; padding-left: 1.25rem; }
+/* Wider screens show each answer's meaning under its choice instead. */
+@media (min-width: 30.01rem) { .ncsc-help-answers { display: none; } }
+.ncsc-draft-observation-group { margin-top: 1rem; min-width: 0; }
+.ncsc-draft-observation-list { padding-left: 1.25rem; }
+.ncsc-draft-observation-list .dashboard-text-button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.ncsc-glossary dt { margin-top: .75rem; font-weight: 700; }
+.ncsc-glossary dd { margin: .25rem 0 0; }
 .ncsc-preserve-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ncsc-scope-list { margin: .25rem 0 .5rem; padding-left: 1.25rem; }
 .ncsc-answer { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
 .ncsc-answer legend { font-size: var(--dashboard-font-section); font-weight: var(--dashboard-weight-emphasis); line-height: 1.4; padding: 0 0 1rem; }
 .ncsc-option { display: flex; align-items: center; gap: .85rem; min-height: 3rem; padding: .8rem 1rem; margin-bottom: .55rem; border: 1px solid var(--dashboard-line, #d3c9b7); border-radius: .5rem; background: var(--dashboard-surface, #f6f2ea); cursor: pointer; }
@@ -270,6 +329,8 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-navigation-actions button { white-space: normal; }
 .ncsc-actions, .ncsc-question-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }
 .ncsc-question-navigation { justify-content: space-between; }
+.ncsc-navigation-more { display: contents; }
+.ncsc-navigation-more-toggle { display: none; }
 .ncsc-warning, .ncsc-errors, .ncsc-sealed { padding: 1.15rem; margin: 1rem 0; border: 1px solid #c29221; border-left: 4px solid var(--dashboard-yellow); border-radius: .7rem; background: #f2e4bc; }
 .ncsc-warning button { margin: .3rem .6rem .3rem 0; }
 .ncsc-errors { border-color: #a3352a; background: #f6ddd6; }
@@ -299,15 +360,27 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-leave-dialog .dashboard-text-button { border-color: var(--dashboard-control-border, #7d7262); }
 .ncsc-leave-dialog .dashboard-text-button:hover { background: var(--dashboard-navy, #f2e4bc); }
 @media (max-width: 30rem) {
-    .ncsc-question-navigation { align-items: stretch; }
-    .ncsc-question-navigation button { flex: 1 1 100%; text-align: center; }
-    .ncsc-question-navigation span { flex: 1 1 100%; text-align: center; }
-    .ncsc-navigation-actions { width: 100%; }
-    .ncsc-navigation-actions button { width: 100%; }
+    /* A compact bar that stays at the bottom of the screen while the question is in view. */
+    .ncsc-question-navigation { position: sticky; bottom: 0; z-index: 2; gap: .4rem; margin: 1rem 0 0; padding: .5rem 0; align-items: stretch;
+        background: var(--dashboard-paper, #fffdf8); border-top: 1px solid var(--dashboard-line, #d3c9b7); }
+    .ncsc-question-navigation .ncsc-navigation-summary { flex: 1 1 100%; text-align: center; }
+    .ncsc-navigation-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr auto; gap: .4rem; }
+    /* Outranks the rounded dashboard button padding so the labels fit without breaking words. */
+    .ncsc-question-navigation .ncsc-navigation-actions button { width: 100%; min-width: 0; padding: .6rem .5rem; text-align: center; }
+    .ncsc-navigation-more-toggle { display: block; }
+    .ncsc-navigation-more { display: grid; grid-column: 1 / -1; gap: .4rem; }
+    .ncsc-navigation-more.ncsc-navigation-collapsed { display: none; }
+    /* Keep a focused control clear of the sticky bar. */
+    .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-bottom: 9rem; }
     .ncsc-actions > button { width: 100%; text-align: center; }
     .ncsc-review-item .dashboard-text-button { width: 100%; text-align: center; }
     .ncsc-review-counts { flex-direction: column; }
     .ncsc-option { padding: .75rem; }
+    /* Choices stay compact; their meanings are under "Help with this question". */
+    .ncsc-option .ncsc-option-help, .ncsc-option .ncsc-option-break { display: none; }
+    .ncsc-question-help { padding: .25rem 1rem; }
+    .ncsc-answer legend { padding-bottom: .5rem; font-size: 1.125rem; line-height: 1.35; }
+    .ncsc-answer > p { margin: 0 0 .6rem; }
     .ncsc-leave-dialog { padding: 1rem; }
     .ncsc-leave-dialog[open] { grid-template-columns: minmax(0, 1fr); }
 }
@@ -382,6 +455,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-rail .dashboard-module-link { scroll-margin-block: 8px; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-rail .dashboard-module-link > span { min-width: 0; }
 }
+/* Wide ready layouts are full width: keep the organisations pill and the footer on the header's 1rem gutter. */
+@media screen and (min-width: 1220px) {
+    body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] #dashboardChooser { margin-inline-start: 1rem; }
+    body[data-page="operator-dashboard"][data-dashboard-state="ready"] :is(.dashboard-release-footer, .site-details) { width: auto; margin-inline: 1rem; }
+}
 @media screen and (min-width: 1600px) {
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] { --dashboard-workspace-gutter: 32px; }
 }
@@ -402,6 +480,11 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) { container: dashboard-mobile / inline-size; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .dashboard-main { padding-block-end: 1.5rem; }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .ncsc-questionnaire :is(a, button, input, textarea, select, summary) { scroll-margin-block: 8px; }
+    /* The rule above is more specific than the narrow-screen clearance for the sticky
+       question bar, so restate that clearance here for the ready dashboard. */
+    @media (max-width: 30rem) {
+        body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-block-end: 9rem; }
+    }
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden])) .dashboard-mobile-nav .dashboard-task { scroll-margin-block: 8px; }
     /* Keep the familiar fixed bar for tall, normal-text overview/task layouts.
        A mounted questionnaire stays in flow: native focus placement changes with
@@ -450,7 +533,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .nofries-dashboard .dashboard-rail .dashboard-module-link[aria-current="page"] { box-shadow: inset 3px 0 0 var(--dashboard-yellow); }
 .nofries-dashboard .dashboard-subscription { padding: 1rem .75rem; border: 1px solid var(--dashboard-line); border-radius: .75rem; background: var(--dashboard-paper); }
 .nofries-dashboard .dashboard-subscription strong { font-family: var(--font-serif, Georgia, serif); font-size: var(--dashboard-font-section); }
-.nofries-dashboard .dashboard-topbar { background: transparent; border-bottom: 0; padding-block: 1.5rem 0; }
+.nofries-dashboard .dashboard-topbar { background: var(--dashboard-paper); border-bottom: 1px solid var(--dashboard-line); padding-block: .75rem; position: sticky; top: 0; z-index: 2; }
 .nofries-dashboard .dashboard-topbar strong { color: var(--dashboard-muted); font-weight: var(--dashboard-weight-regular) !important; }
 .nofries-dashboard .dashboard-main { padding-top: 1rem; }
 .nofries-dashboard .dashboard-page-heading { padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--dashboard-line); }
@@ -459,16 +542,30 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .nofries-dashboard .dashboard-page-heading > .dashboard-badge { border-color: transparent; background: var(--dashboard-navy); color: var(--dashboard-ink); border-radius: 999px; padding-inline: .8rem; }
 .nofries-dashboard .picture-heading { border-top: 0; padding-top: 0; }
 .nofries-dashboard .picture-heading h2 { font-size: clamp(1.25rem, 2vw, 1.5rem); }
-.nofries-dashboard :is(.picture-resume, .picture-metric, .picture-domains, .picture-follow-up, .picture-empty, .ncsc-assessment-card, .ncsc-result-metric, .picture-first-use) { border-radius: 1rem; box-shadow: 0 1px 2px rgb(23 20 15 / 6%), 0 8px 24px rgb(23 20 15 / 6%); }
+.nofries-dashboard :is(.picture-resume, .picture-metric, .picture-domains, .picture-follow-up, .picture-empty, .ncsc-assessment-card, .ncsc-result-metric, .picture-first-use) { border-radius: var(--result-card-radius, 1rem); box-shadow: var(--result-card-shadow, 0 1px 2px rgb(23 20 15 / 6%), 0 8px 24px rgb(23 20 15 / 6%)); }
 .nofries-dashboard .picture-resume { padding: clamp(1.25rem, 2.5vw, 2rem); background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-top: 4px solid var(--dashboard-yellow); }
 .nofries-dashboard .picture-resume .picture-large { font-family: var(--font-serif, Georgia, serif); font-size: clamp(1.35rem, 2.2vw, 1.75rem); }
 .nofries-dashboard .picture-toolbar { padding: .75rem 1rem; border: 1px solid var(--dashboard-line); border-radius: .75rem; background: var(--dashboard-surface); }
 .nofries-dashboard .picture-calculation { background: transparent; border-style: dashed; }
 .nofries-dashboard .dashboard-provenance { border-top: 1px solid var(--dashboard-line); }
-.nofries-dashboard .dashboard-button { border-radius: 999px; padding-inline: 1.25rem; box-shadow: 0 1px 0 rgb(23 20 15 / 18%); }
+.nofries-dashboard .dashboard-button { border-radius: var(--button-radius, 999px); padding-inline: 1.25rem; box-shadow: 0 1px 0 rgb(23 20 15 / 18%); }
 .nofries-dashboard .dashboard-button-secondary { box-shadow: none; }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .site-header .brand-logo { width: 36px; height: 36px; }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .site-header .brand-copy strong { font-family: var(--font-serif, Georgia, serif); font-size: var(--dashboard-font-section); }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] #dashboardChooser:not([open]) { justify-self: start; width: auto; max-width: 100%; border-radius: 999px; padding-inline: 1.25rem; }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-layout { border-top: 1px solid var(--dashboard-line, #d3c9b7); }
 body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .dashboard-release-footer { margin-top: 0; padding-block: 1.25rem; }
+
+/* Scroll and focus targets clear the sticky organisation bar (at most 9rem tall). */
+.nofries-dashboard :is(.ncsc-question, .ncsc-sealed, .ncsc-errors, .picture-top-gaps h3, .dashboard-main h1) { scroll-margin-top: 10rem; }
+
+/* On phones the question's own text stays below the bar when the eyebrow is
+   partly covered, so the choices start higher on the screen. */
+@media (max-width: 30rem) { .nofries-dashboard .ncsc-questionnaire .ncsc-question { scroll-margin-top: 6rem; } }
+
+.nofries-dashboard .dashboard-topbar { max-height: 9rem; overflow: auto; }
+/* Improvement Plan choices stay readable on 320px phones. */
+@media (max-width: 25rem) {
+    .nofries-dashboard .dashboard-improvement-workspace .picture-toolbar { padding: .6rem .5rem; }
+    .dashboard-improvement-workspace .picture-toolbar select { flex-basis: 100%; padding: .5rem .4rem; }
+}

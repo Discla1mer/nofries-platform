@@ -25,18 +25,16 @@ writer/native recovery mode requires the private production schema verifier and
 must run in the private checkout; enabling that mode here fails before database
 creation. Its private verifier assertion has not been removed or bypassed.
 
-The dependency closure and application runtime source match the admitted source
-snapshot. The inherited GHSA-xcx6-jx8p-x3h5 disposition remains exact: only its
-reviewed advisory, High severity, package versions, installed paths and report
-chains can pass before 2026-10-27 00:00 UTC. All other High/Critical findings and
-undispositioned Moderate findings block. The public source fence hashes the
-exported source because the private ancestry is intentionally absent. The manifest
-digest is pinned in the verifier; the manifest and verifier are excluded from the
-file inventory to avoid a circular hash. Changes to either require policy review.
-Any source addition, removal or byte change blocks use of that temporary
-disposition. Do not regenerate the baseline to admit a change; remediate the
-dependency or obtain an explicit, bounded review. This is not an extension of
-the exception or authority to deploy.
+The dependency job audits the root closure and the API production closure with
+npm 10.9.4 (bundled with the pinned Node). High/Critical findings always block,
+and every Moderate finding must be fixed or exactly match an unexpired entry in
+`security/dependency-audit-exceptions.json`. Low findings are reported. The
+inherited GHSA-xcx6-jx8p-x3h5 temporary disposition expired on 2026-10-27 and
+is retired now that every locked `@azure/msal-node` copy is remediated (see
+`docs/msal-dependency-compatibility.md`); the checker filters no finding for it
+and fails closed if a vulnerable MSAL copy is locked again. Remediate a
+dependency rather than widening the policy; an exception needs an explicit,
+bounded review and is not authority to deploy.
 
 This repository is the primary home for new application branches and pull
 requests. The proposed main rule requires a pull request, up-to-date `application`,

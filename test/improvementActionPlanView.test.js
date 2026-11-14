@@ -5,7 +5,8 @@
 // authenticated host. Native details/summary owns keyboard behavior in browsers.
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { mount, mountLoading } = require('../api/shared/protectedAssets/improvementActionPlanView');
+const view = require('../api/shared/protectedAssets/improvementActionPlanView');
+const { mount, mountLoading, nzDateTime, calendarDay } = view;
 const { projectImprovementActionPlanPresentation } = require('../api/shared/improvementPlan/improvementActionPlanPresentation');
 const { projectImprovementActionList } = require('../api/shared/improvementPlan/improvementActionListProjection');
 const { createImprovementPlan, applyImprovementActionCommand } = require('../api/shared/improvementPlan/improvementPlanDomain');
@@ -61,8 +62,9 @@ function facts(element) {
     return Object.fromEntries(terms.map((term, index) => [term.textContent, values[index].textContent]));
 }
 function cardFacts(card) {
-    const identifiers = card.children.find(child => child.tagName === 'DETAILS' && child.children[0].textContent === 'Action identifiers');
-    return { ...facts(card.children.find(child => child.tagName === 'DL')), ...facts(identifiers.querySelector('dl')) };
+    const disclosure = title => card.children.find(child => child.tagName === 'DETAILS' && child.children[0].textContent === title);
+    return { ...facts(card.children.find(child => child.tagName === 'DL')), ...facts(disclosure('Assessment details').querySelector('dl')),
+        ...facts(disclosure('Action identifiers').querySelector('dl')) };
 }
 const history = card => card.children.find(child => child.tagName === 'DETAILS' && child.children[0].textContent.startsWith('Action history'));
 const evidence = card => card.children.find(child => child.tagName === 'DETAILS' && child.children[0].textContent === 'Supporting evidence');
@@ -115,7 +117,7 @@ test('workflow completion, blocks and reopened history retain exact global revis
     const completed = card(dom, state.proposals[3].actionId), reopened = card(dom, state.proposals[4].actionId);
     const completedModel = model.actions.find(value => value.actionId === state.proposals[3].actionId);
     expect(completedModel.completion.at < model.updatedAt).toBe(true);
-    expect(cardFacts(completed)).toMatchObject({ 'Workflow completed at (UTC)': completedModel.completion.at, 'Completion note': NOTE,
+    expect(cardFacts(completed)).toMatchObject({ 'Completed': nzDateTime(completedModel.completion.at), 'Completion note': NOTE,
         'Completion meaning': 'Workflow completed; control implementation has not been verified.' });
     expect(facts(evidence(completed).querySelector('dl'))['Completion evidence reference (unverified)']).toBe(REFERENCE);
     expect(cardFacts(card(dom, state.proposals[2].actionId))['Block reason']).toBe(REASON);
@@ -124,9 +126,9 @@ test('workflow completion, blocks and reopened history retain exact global revis
     expect(history(reopened).textContent).toContain(NOTE);
     expect(history(reopened).textContent).toContain(REFERENCE);
     const action = model.actions.find(value => value.actionId === state.proposals[4].actionId);
-    expect(history(reopened).querySelectorAll('h4').map(value => value.textContent)).toEqual(action.history.map(event => 'Plan revision ' + event.revision + ' · ' + event.label));
+    expect(history(reopened).querySelectorAll('h4').map(value => value.textContent)).toEqual(action.history.map(event => event.label + ' · ' + nzDateTime(event.at)));
     expect(action.history[0].revision).toBeGreaterThan(1); // Global revisions retain gaps from other actions.
-    action.history.forEach(event => expect(history(reopened).textContent).toContain(event.at + ' (UTC)'));
+    expect(history(reopened).textContent).not.toContain('Plan revision'); expect(history(reopened).textContent).not.toContain('(UTC)');
     for (const tag of ['a', 'img', 'script', 'svg', 'iframe', 'button', 'input', 'select', 'form']) expect(dom.root.querySelectorAll(tag)).toEqual([]);
 });
 
@@ -135,7 +137,7 @@ test('native details/summary history controls preserve default browser keyboard 
     expect(dom.root.querySelectorAll('details').filter(element => element.children[0].textContent.startsWith('Action history'))).toHaveLength(cards(dom).length);
     dom.root.querySelectorAll('details').forEach(element => {
         expect(element.children[0].tagName).toBe('SUMMARY');
-        expect(element.children[0].textContent).toMatch(/^(Action history \(\d+ events\)|Supporting evidence|Action identifiers|Source and plan metadata|Counts and filters)$/);
+        expect(element.children[0].textContent).toMatch(/^(Action history \(\d+ events\)|Supporting evidence|Assessment details|Action identifiers|Technical details for support|Counts and filters)$/);
         expect(element.getAttribute('role')).toBeNull(); expect(element.children[0].getAttribute('role')).toBeNull();
         expect(element.children[0].getAttribute('tabindex')).toBeNull(); expect(element.children[0].events).toEqual({});
     });
@@ -150,13 +152,12 @@ test('each action exposes retained evidence claims with separate assessment prov
             'Assessment evidence claim': action.labels.evidenceState,
             ...(action.completion === null ? {} : {
                 'Completion evidence reference (unverified)': action.evidence.completionReference,
-                'Completion reference recorded at (UTC)': action.completion.at
+                'Completion reference recorded': nzDateTime(action.completion.at)
             }),
             'Verification': action.completion === null ? 'No verification recorded' : 'Not verified'
         });
         expect(facts(section.querySelectorAll('dl')[1])).toEqual({
-            'Assessment ID': model.source.assessmentId, 'Assessment revision': model.source.assessmentRevision,
-            'Assessment scored at (UTC)': model.source.scoreAsOf
+            'Assessment submitted': nzDateTime(model.source.scoreAsOf)
         });
         expect(section.textContent).toContain('No supporting document version is linked to this action');
         expect(section.textContent).toContain('its date and version are unknown.');
@@ -173,7 +174,7 @@ test('reopening removes the current evidence reference without presenting its hi
     const values = facts(current.querySelector('dl'));
     expect(values.Verification).toBe('No verification recorded');
     expect(values).not.toHaveProperty('Completion evidence reference (unverified)');
-    expect(values).not.toHaveProperty('Completion reference recorded at (UTC)');
+    expect(values).not.toHaveProperty('Completion reference recorded');
     expect(current.textContent).toContain('its date and version are unknown.');
     expect(current.textContent).not.toContain(REFERENCE);
     expect(history(action).textContent).toContain(REFERENCE);
@@ -194,11 +195,14 @@ test.each([
 
 test('compact heading leads with action summary while verbose source, counts and identifiers use native disclosures', () => {
     const model = presentation(), dom = render(model), panel = dom.root.children[0];
-    expect(panel.children.slice(0, 5).map(child => child.tagName)).toEqual(['H2', 'P', 'P', 'P', 'P']);
-    expect(panel.children[1].textContent).toContain(model.source.assessmentRevision);
-    expect(panel.children[2].textContent).toContain('Visible overdue: ' + model.counts.visible.overdue);
+    expect(panel.children.slice(0, 6).map(child => child.tagName)).toEqual(['H2', 'P', 'P', 'P', 'P', 'P']);
+    expect(panel.children[1].textContent).toBe('From the assessment submitted ' + nzDateTime(model.source.scoreAsOf) +
+        ' · Plan last updated ' + nzDateTime(model.updatedAt) + ' (NZ time)');
+    expect(panel.children[1].textContent).not.toContain(model.source.assessmentId);
+    expect(panel.children[2].textContent).toBe('This plan has 14 actions: 9 gaps to fix, 2 answers to check and 3 answers that need supporting evidence.');
+    expect(panel.children[3].textContent).toContain('Visible overdue: ' + model.counts.visible.overdue);
     const details = panel.children.filter(child => child.tagName === 'DETAILS');
-    expect(details.map(child => child.children[0].textContent)).toEqual(['Source and plan metadata', 'Counts and filters']);
+    expect(details.map(child => child.children[0].textContent)).toEqual(['Technical details for support', 'Counts and filters']);
     details.forEach(element => expect(element.getAttribute('open')).toBeNull());
     const first = cards(dom)[0];
     expect(first.children[0].textContent).toContain(model.actions[0].controlId);
@@ -217,18 +221,56 @@ test('read-only next steps explain each current status without changing ownershi
     const blocked = card(dom, state.proposals[2].actionId), completed = card(dom, state.proposals[3].actionId);
     const reopened = card(dom, state.proposals[4].actionId), unassigned = card(dom, state.proposals[5].actionId);
     expect(cardFacts(assigned)).toMatchObject({ 'Next step': 'Confirm the owner and due date, then review the suggested work.',
-        'Owner': 'Assigned (eligibility not checked)', 'Due date (UTC calendar day)': '2026-10-01' });
+        'Owner': 'Assigned to someone in your organisation', 'Due date': '1 Oct 2026' });
+    // Without the signed-in person, owners read in plain words. The raw owner
+    // reference stays only in the closed Action identifiers section.
+    const assignedFacts = facts(assigned.children.find(child => child.tagName === 'DL'));
+    expect(Object.values(assignedFacts).join(' ')).not.toMatch(/eligibility not checked/);
+    const ownerRef = model.actions.find(action => action.actionId === state.proposals[0].actionId).ownerSubjectKey;
+    expect(typeof ownerRef).toBe('string');
+    expect(Object.values(assignedFacts).join(' ')).not.toContain(ownerRef);
+    const assignEvent = history(assigned).querySelectorAll('li')[0].querySelector('dl');
+    expect(facts(assignEvent)).toMatchObject({ 'Owner': 'Assigned to someone in your organisation', 'Due date': '1 Oct 2026' });
+    expect(facts(assignEvent)).not.toHaveProperty('Owner ID (current eligibility not checked)');
     expect(cardFacts(active)['Next step']).toBe('Review progress with the action owner against the due date.');
     expect(cardFacts(blocked)).toMatchObject({ 'Next step': 'Review the block reason and agree how to move forward.', 'Block reason': REASON });
-    expect(cardFacts(completed)['Next step']).toBe('Review the completion note and action history.');
+    expect(cardFacts(completed)['Next step']).toBe('Review the completion note and action history. If your answers have changed, submit a new assessment in Cyber Security. ' +
+        'Then use Change over time on Overview to compare saved results and answer coverage, not verified improvement. Completing this action does not change your saved score.');
     expect(cardFacts(reopened)['Next step']).toBe(cardFacts(assigned)['Next step']);
     expect(cardFacts(reopened)).not.toHaveProperty('Completion note');
     expect(history(reopened).textContent).toContain(NOTE);
     expect(cardFacts(unassigned)).toMatchObject({ 'Next step': 'Agree an owner and due date before starting this action.',
-        'Owner': 'Unassigned', 'Due date (UTC calendar day)': 'Not set' });
+        'Owner': 'Unassigned', 'Due date': 'Not set' });
     expect(history(unassigned).textContent).toContain('No updates recorded for this action.');
     expect(cards(dom).map(value => cardFacts(value)['Action ID'])).toEqual(model.actions.map(action => action.actionId));
     for (const tag of ['button', 'input', 'select', 'form', 'a']) expect(dom.root.querySelectorAll(tag)).toEqual([]);
+});
+
+const LABEL = '<b>Aroha</b> Ngata 證據';
+function labelOwned() {
+    return step(step(seed(), 0, 'assign', { ownerLabel: LABEL, dueDate: '2026-10-01' }), 0, 'start', {});
+}
+test('a label-owned action renders its named owner as inert text, including when filtered by that name', () => {
+    const state = labelOwned();
+    for (const filters of [{}, { owner: LABEL }]) {
+        const model = presentation(state, { filters }), dom = render(model), named = card(dom, state.proposals[0].actionId);
+        expect(cardFacts(named)).toMatchObject({ 'Owner': LABEL + ' (named owner)', 'Owner ID': 'Named owner without a platform account',
+            'Due date': '1 Oct 2026', 'Next step': 'Review progress with the action owner against the due date.' });
+        expect(facts(history(named).querySelector('li').querySelector('dl'))).toEqual({ 'Owner name': LABEL, 'Due date': '1 Oct 2026' });
+        expect(dom.root.querySelectorAll('b')).toEqual([]);
+    }
+});
+test.each([
+    ['email address', action => { action.ownerLabel = 'aroha@example.nz'; }],
+    ['reserved word', action => { action.ownerLabel = 'Unassigned'; }],
+    ['unnormalised spacing', action => { action.ownerLabel = ' Aroha  Ngata'; }],
+    ['label beside a subject', action => { action.ownerSubjectKey = OWNER; }],
+    ['label without a due date', action => { action.dueDate = null; }],
+    ['history label and subject', action => { action.history[0].details.ownerSubjectKey = OWNER; }]
+])('a label-owned row with %s fails closed', (_name, corrupt) => {
+    const state = labelOwned(), model = clone(presentation(state));
+    corrupt(model.actions.find(action => action.actionId === state.proposals[0].actionId));
+    expect(render(model).root.textContent).toBe(UNAVAILABLE);
 });
 
 test('filtered and empty selections show original all counts and plan-wide metadata', () => {
@@ -248,12 +290,13 @@ test('filtered and empty selections show original all counts and plan-wide metad
 });
 
 test.each([
-    ['2026-10-01T23:59:59.999Z', 'No'], ['2026-10-02T00:00:00.000Z', 'Yes']
+    // Not overdue leaves the key facts to owner, due date and next step.
+    ['2026-10-01T23:59:59.999Z', undefined], ['2026-10-02T00:00:00.000Z', 'Yes']
 ])('renders supplied UTC overdue decision at %s without reading the current clock', (asOf, expected) => {
     const state = assign(seed(), 0), model = presentation(state, { asOf });
     const now = jest.spyOn(Date, 'now').mockImplementation(() => { throw new Error('clock forbidden'); });
     try {
-        expect(cardFacts(card(render(model), state.proposals[0].actionId))['Overdue at supplied as-of date (UTC)']).toBe(expected);
+        expect(cardFacts(card(render(model), state.proposals[0].actionId))['Overdue']).toBe(expected);
     } finally { now.mockRestore(); }
 });
 
@@ -342,4 +385,96 @@ test('plan guidance points to the action editor only when the host supplies it',
     mount(dom.root, presentation(), { actionEditorAbove: true });
     expect(dom.root.textContent).toContain('Where available, use Update an improvement action above to make changes.');
     expect(dom.root.textContent).not.toContain('Changes cannot be made in this view.');
+});
+
+
+test('reassessment guidance follows confirmed completion only and leaves the saved assessment source unchanged', () => {
+    const state = mixed(), model = presentation(state), before = JSON.stringify(model), dom = render(model);
+    const guidance = 'If your answers have changed, submit a new assessment in Cyber Security.';
+    expect(cards(dom).filter(value => cardFacts(value)['Next step'].includes(guidance))).toHaveLength(1);
+    expect(cardFacts(card(dom, state.proposals[4].actionId))['Next step']).not.toContain(guidance);
+    expect(JSON.stringify(model)).toBe(before);
+    const reopened = step(state, 3, 'reopen', { reason: REASON });
+    const updated = presentation(reopened);
+    mount(dom.root, updated);
+    expect(dom.root.textContent).not.toContain(guidance);
+    expect(updated.source).toEqual(model.source);
+});
+
+describe('plain action names, owners and plan summary', () => {
+    test('gap actions carry each topic\'s concrete follow-up; owner and due date lead the facts (F1-R10)', () => {
+        const model = presentation(), followUps = Object.fromEntries(model.actions.map(action => [action.itemId, 'Do the work for ' + action.itemId + '.']));
+        const dom = createDom(); mount(dom.root, model, { itemFollowUps: followUps });
+        const gaps = model.actions.filter(action => action.rationale.kind === 'implementation');
+        expect(gaps.length).toBeGreaterThan(1);
+        model.actions.forEach(action => {
+            const element = card(dom, action.actionId), work = element.querySelector('.improvement-action-work').textContent;
+            const key = element.children.find(child => child.tagName === 'DL');
+            expect(key.className).toBe('improvement-action-key');
+            expect(key.children.filter(child => child.tagName === 'DT').slice(0, 2).map(child => child.textContent)).toEqual(['Owner', 'Due date']);
+            const details = cardFacts(element);
+            if (action.rationale.kind === 'implementation') {
+                expect(work).toBe(followUps[action.itemId]);
+                // The retained wording is kept, out of the way, rather than repeated on every card.
+                expect(details['Plan record wording']).toBe(action.rationale.suggestedAction);
+            } else {
+                expect(work).toBe(action.rationale.suggestedAction);
+                expect(details).not.toHaveProperty('Plan record wording');
+            }
+        });
+        expect(new Set(gaps.map(action => card(dom, action.actionId).querySelector('.improvement-action-work').textContent)).size).toBe(gaps.length);
+        expect(dom.root.textContent).toContain(model.notices.order);
+    });
+
+    test('two gaps under one control each show their own question\'s follow-up', () => {
+        const [first, second] = presentation().actions.filter(action => action.rationale.kind === 'implementation')
+            .slice(0, 2).map(action => ({ ...action }));
+        second.controlId = first.controlId;
+        const followUps = { [first.itemId]: 'First question work.', [second.itemId]: 'Second question work.' };
+        expect(view.actionWork(first, followUps)).toBe('First question work.');
+        expect(view.actionWork(second, followUps)).toBe('Second question work.');
+    });
+
+    test('missing or malformed follow-ups keep the retained wording', () => {
+        const model = presentation();
+        for (const followUps of [undefined, { [model.actions[0].itemId]: '   ' }, { [model.actions[0].itemId]: 'x'.repeat(1001) }]) {
+            const dom = createDom(); mount(dom.root, model, followUps ? { itemFollowUps: followUps } : {});
+            expect(cards(dom)[0].querySelector('.improvement-action-work').textContent).toBe(model.actions[0].rationale.suggestedAction);
+        }
+    });
+
+    test('actions are named by topic, with codes kept in Action identifiers', () => {
+        const model = presentation(), titles = Object.fromEntries(model.actions.map(action => [action.controlId, 'Topic for ' + action.domainId]));
+        const dom = createDom(); mount(dom.root, model, { controlTitles: titles });
+        cards(dom).forEach((element, index) => {
+            const action = model.actions[index];
+            expect(element.querySelector('h3').textContent).toBe(titles[action.controlId] + ' · ' +
+                { implementation: 'Gap to fix', assessment: 'Answer to check', applicability: 'Answer to check', evidence: 'Evidence to add' }[action.rationale.kind]);
+            expect(element.querySelector('h3').textContent).not.toContain(action.controlId);
+            expect(cardFacts(element)['Control ID']).toBe(action.controlId);
+        });
+    });
+
+    test('without titles, the code is the fallback name', () => {
+        const model = presentation(), dom = render(model);
+        expect(cards(dom)[0].querySelector('h3').textContent).toBe(model.actions[0].controlId + ' · ' +
+            (model.actions[0].rationale.kind === 'implementation' ? 'Gap to fix' : model.actions[0].rationale.kind === 'evidence' ? 'Evidence to add' : 'Answer to check'));
+    });
+
+    test('the current person sees "You" as owner; other people are not named by ID', () => {
+        const mine = step(seed(), 0, 'assign', { ownerSubjectKey: OWNER, dueDate: '2026-10-01' }), model = presentation(mine);
+        const self = createDom(); mount(self.root, model, { currentOwner: OWNER });
+        expect(cardFacts(card(self, mine.proposals[0].actionId)).Owner).toBe('You');
+        expect(cardFacts(card(self, mine.proposals[1].actionId)).Owner).toBe('Unassigned');
+        const other = createDom(); mount(other.root, model, { currentOwner: OTHER });
+        expect(cardFacts(card(other, mine.proposals[0].actionId)).Owner).toBe('Someone else in your organisation');
+        expect(other.root.textContent).not.toContain('platform user');
+    });
+
+    test('the summary explains how the actions relate, and is left out when a filter hides some', () => {
+        const state = mixed(), all = render(presentation(state));
+        expect(all.root.textContent).toContain('This plan has 14 actions: 9 gaps to fix, 2 answers to check and 3 answers that need supporting evidence.');
+        const filtered = render(presentation(state, { filters: { status: 'completed' } }));
+        expect(filtered.root.textContent).not.toContain('This plan has');
+    });
 });

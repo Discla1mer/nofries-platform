@@ -39,6 +39,13 @@
         window.location.replace('/signup?provider=' + (externalCustomer ? 'external' : 'legacy') + intentSuffix); return;
     }
     const defaultEntry = providers.length === 0 && !externalCustomer;
+    if (defaultEntry && entryIntent === 'create') {
+        byId('organisation-title').textContent = 'Create your account';
+        byId('organisation-intro').textContent = 'Create an account with your email and password. You will continue to Microsoft’s secure sign-in, then choose Company or Consultant and set up your organisation.';
+    } else if (defaultEntry && entryIntent === 'login') {
+        byId('organisation-title').textContent = 'Log in to No Fries';
+        byId('organisation-intro').textContent = 'Sign in with your existing email and password. You will continue to Microsoft’s secure sign-in and return to your saved work.';
+    }
     const setupRoute = externalCustomer ? '/api/external-organisation-setup/' : '/api/organisation-setup/';
     const codeForm = byId('organisation-code-form'), profileForm = byId('organisation-profile-form');
     const detailsForm = byId('organisation-details-form'), status = byId('organisation-status');
@@ -128,6 +135,11 @@
     }
     function setBusy(value) {
         busy = value;
+        // Until the first setup state arrives there is nothing to check yet: show
+        // an explicit busy message instead of an unavailable recovery action.
+        const opening = !rendered && !initialReadFailed;
+        byId('organisation-refresh').hidden = opening;
+        if (opening && value && byId('organisation-intro').textContent !== 'Opening account setup…') status.textContent = 'Opening account setup…';
         for (const item of [form, codeForm, profileForm, detailsForm]) item.setAttribute('aria-busy', String(value));
         for (const control of document.querySelectorAll('#create-organisation input, #create-organisation button')) {
             control.disabled = value || navigating || !ready && control !== byId('organisation-refresh');
@@ -178,8 +190,10 @@
         byId('organisation-verified-title').textContent = legacySignIn ? 'Continue to your account' : 'Email verified';
         byId('organisation-continue').hidden = !continuing;
         byId('organisation-switch').hidden = ['start', 'sign_in'].includes(value.state);
+        const steps = byId('organisation-steps');
+        if (steps) steps.hidden = false;
         byId('organisation-title').textContent = choosing ? selectedType ? selectedType === 'consultant' ? 'Name your consultancy' : 'Name your organisation' : 'How will you use No Fries?' : value.state === 'awaiting_code' ? 'Check your inbox' : details ? 'Your account details' : continuing ? 'Welcome back to No Fries' : entryIntent === 'create' ? 'Create your account' : 'Sign up / Sign in';
-        byId('organisation-intro').textContent = legacySignIn ? 'Use the email address associated with your existing account.' : choosing ? selectedType ? 'Email verified. You chose ' + (selectedType === 'consultant' ? 'Consultant' : 'Company') + '. Add the name for this workspace.' : 'Email verified. Choose the account that fits you.' : details ? 'Add the person and business details for your dashboard agreement.' : continuing ? 'Your saved account is ready to continue.' : value.state === 'awaiting_code' ? 'Enter the 8 digits we emailed you to confirm this address.' : 'Enter your email to create an account or recover access.';
+        byId('organisation-intro').textContent = legacySignIn ? 'Use the email address associated with your existing account.' : choosing ? selectedType ? 'Email verified. You chose ' + (selectedType === 'consultant' ? 'Consultant' : 'Company') + '. Add the name for this organisation.' : 'Email verified. Choose the account that fits you.' : details ? 'Add the person and business details for your dashboard agreement.' : continuing ? 'Your saved account is ready to continue.' : value.state === 'awaiting_code' ? 'Enter the 8 digits we emailed you to confirm this address.' : 'New here or coming back, start with your email.';
         byId('organisation-name-label').textContent = selectedType === 'consultant' ? 'Your name or consultancy' : 'Organisation name';
         if (legacySignIn) {
             byId('organisation-verified-name').textContent = '';
@@ -188,7 +202,7 @@
             byId('organisation-email-hint').textContent = 'Check ' + (emailRecord?.email || value.emailHint) + ' for your code.';
             status.textContent = value.delivery === 'unconfirmed' ? 'Delivery could not be confirmed. If a code arrives, enter it here; otherwise request a new code.' : value.codeExpired ? messages.verification_code_expired : value.attemptsExhausted ? messages.verification_attempts_exhausted : 'Enter the code to verify your email.';
         } else if (value.state === 'verified') {
-            byId('organisation-verified-name').textContent = value.organisationName ? (selectedType === 'consultant' ? 'Consultant workspace: ' : 'Organisation: ') + value.organisationName : '';
+            byId('organisation-verified-name').textContent = value.organisationName ? (selectedType === 'consultant' ? 'Consultancy: ' : 'Organisation: ') + value.organisationName : '';
             status.textContent = choosing ? '' : details ? 'Your email is verified.' : verificationOnly ? 'Your email is verified and your organisation details are saved. Account access has not been activated.' : continuing ? 'Continue secure sign-in to open your existing account or finish activation. Your saved work is kept.' : value.nextStep === 'setup_review_required' ? 'Your details are saved. Invitation delivery could not be confirmed and needs review. Your signup has not been reset or resent.' : 'Your saved setup is waiting for activation. Your account and saved details are kept.';
         } else status.textContent = signInRecovery === 'expired'
             ? 'This sign-in attempt has expired or is no longer valid. Start secure sign-in again with the same email. Your saved work is kept.'
@@ -201,8 +215,10 @@
         returningLink.className = entryIntent === 'create' || value.state === 'awaiting_code' ? 'text-link' : 'button';
         byId('organisation-details-summary').textContent = details
             ? (selectedType === 'consultant' ? 'Consultant' : 'Company') + ' · ' + value.organisationName + (emailRecord ? ' · ' + emailRecord.email : '') : '';
-        const activeStep = ['start', 'awaiting_code'].includes(value.state) ? 'email' : choosing ? 'account' : 'continue';
-        for (const name of ['email', 'account', 'continue']) {
+        // Organisation setup happens after Microsoft sign-in, on the signup page.
+        const activeStep = value.state === 'start' ? 'email' : value.state === 'awaiting_code' ? 'code'
+            : choosing || details ? 'account' : 'signin';
+        for (const name of ['email', 'code', 'account', 'signin', 'organisation']) {
             const item = byId('organisation-step-' + name);
             if (name === activeStep) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
         }
@@ -214,7 +230,7 @@
         if (value.nextStep === 'secure_sign_in') {
             byId('organisation-title').textContent = 'Continue secure sign-in';
             byId('organisation-intro').textContent = 'Create your password or sign in with your verified email.';
-            status.textContent = 'Your details are saved. Continue secure sign-in, then review your agreement before opening your workspace.';
+            status.textContent = 'Your details are saved. Continue secure sign-in, then review your agreement before opening your Dashboard.';
         }
         return stepChanged;
     }

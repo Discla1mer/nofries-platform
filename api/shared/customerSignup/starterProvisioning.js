@@ -1,7 +1,7 @@
 'use strict';
 
 const { fields, copy, freeze, uuid, subject, instant, hash, equal } = require('../appLifecycle/dashboardRuntimeRecords');
-const { starterAccountRecord, STARTER_SLOT_FIELDS } = require('./starterAccountAllocation');
+const { starterAccountRecord, STARTER_SLOT_FIELDS, CLIENT_RESERVATION_CEILING } = require('./starterAccountAllocation');
 const { compileStarterPreparation, compileStarterActivation, approvedStarterPlan, CONSULTANT_ORGANISATION_POLICY } = require('./customerStarterPlan');
 const { applyAdmissionCommand, normaliseStableIdentity } = require('../appLifecycle/dashboardOnboardingDomain');
 const { validateAcceptanceReceipt } = require('./invitationAcceptance');
@@ -49,7 +49,7 @@ function retainedStarterPreparation(input) {
     if (new Set([value.accountId, ...ids.map(k => value.slot[k])]).size !== ids.length + 1) fail();
     const unlimited = value.source?.offerInput?.consultantOrganisationPolicy === CONSULTANT_ORGANISATION_POLICY;
     if (!Number.isSafeInteger(value.ordinal) || value.ordinal < 0 ||
-        value.ordinal > (value.accountType === 'consultant' ? unlimited ? Number.MAX_SAFE_INTEGER : 3 : 0) ||
+        value.ordinal > (value.accountType === 'consultant' ? unlimited ? Number.MAX_SAFE_INTEGER : CLIENT_RESERVATION_CEILING : 0) ||
         value.kind !== (value.ordinal === 0 ? 'own' : 'client') || value.slot.kind !== value.kind) fail();
     const preparation = compileStarterPreparation(value.source);
     for (const key of Object.keys(preparation)) if (!equal(value[key], preparation[key])) fail();

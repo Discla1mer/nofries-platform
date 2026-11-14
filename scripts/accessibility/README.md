@@ -14,9 +14,9 @@ no dispatch trigger and no production network access from the browser. Installat
 uses the package/browser registries; the test itself permits only loopback GETs.
 Account/session responses are synthetic. No forms or chat messages are submitted.
 
-Seven built public pages are checked at 1280 and 320 CSS pixels, at 100% and 200%
-text, with help open and closed: home, login, Managed IT, privacy, terms, roadmap
-and report. The contact form joins automatically when #42 supplies it; its absence
+Eight built public pages are checked at 1280 and 320 CSS pixels, at 100% and 200%
+text, with help open and closed: home, login, Managed IT, privacy, terms, roadmap,
+report and the example result. The contact form joins automatically when #42 supplies it; its absence
 is printed as a deferred capability, not a pass. The loopback answers
 `GET /api/enquiry` with the form switched off (`available` and `promote`
 both false). Any other enquiry request, including POST, still fails the run. Text enlargement snapshots every

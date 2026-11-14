@@ -17,7 +17,7 @@ function setup(state = { status: 'create_account' }, options, suppliedClient) {
     return { ...dom, client, view };
 }
 test.each([
-    [{ customerTransport: 'external' }, 'Login'],
+    [{ customerTransport: 'external' }, 'Sign up or sign in'],
     [{ customerTransport: 'external', signInRecovery: 'retry' }, 'Restart secure sign-in'],
     [{ customerTransport: 'external', chooseAccount: true }, 'Sign in with another account']
 ])('external entry omits the invitation alternative while retaining deliberate normal login: %j', async (options, label) => {
@@ -44,8 +44,10 @@ test('renders create-account, unchecked terms and pending-admission in sequence'
     expect(f.root.textContent).toContain('Sign up / Sign in');
     f.root.querySelector('button').click(); await flush();
     const box = f.root.querySelector('input'), submit = f.root.querySelector('button');
-    expect(box.checked).toBe(false); expect(submit.disabled).toBe(true);
+    // Round 2: the button stays reachable by Tab and says what to do first.
+    expect(box.checked).toBe(false); expect(submit.disabled).toBeFalsy();
     submit.click(); await flush(); expect(f.client.acceptTerms).not.toHaveBeenCalled();
+    expect(f.root.textContent).toContain('Tick the box above first.');
     box.checked = true; for (const fn of box.events.change) fn();
     submit.click(); await flush();
     expect(f.client.acceptTerms).toHaveBeenCalledWith({ termsVersion: 'pilot-1', termsDigest: 'a'.repeat(64), accepted: true }, { signal: expect.any(AbortSignal) });
@@ -210,6 +212,24 @@ test('summarises the schedule offer lines at a glance before the full schedule',
     f.view.dispose();
 });
 
+test('keeps the summary and accept control at the top, with the full texts in printable expanders', async () => {
+    // Round 2: the accept control sat after about 10,000 px (26,000 px on a phone) of legal text.
+    const scheduled = { ...TERMS, scheduleId: 'schedule-v1', scheduleText: 'Price: NZ$0.\nSynthetic schedule body.', scheduleDigest: 'b'.repeat(64) };
+    const f = setup(scheduled); await f.view.ready;
+    const order = node => f.root.children.indexOf(node);
+    const glance = f.root.querySelector('.signup-glance'), consent = f.root.querySelector('label'), accept = f.root.querySelector('button');
+    const details = f.root.querySelectorAll('details');
+    expect(details.map(node => node.querySelector('summary').textContent)).toEqual(['Organisation schedule: read the full text',
+        'Dashboard agreement: read the full text']);
+    expect(details[0].textContent).toContain(scheduled.scheduleText); expect(details[1].textContent).toContain(scheduled.termsText);
+    expect(order(glance)).toBeLessThan(order(consent)); expect(order(consent)).toBeLessThan(order(accept));
+    expect(order(accept)).toBeLessThan(order(details[0]));
+    expect(details.every(node => !node.open)).toBe(true);
+    f.window.dispatch('beforeprint');
+    expect(details.every(node => node.open === true)).toBe(true);
+    f.view.dispose();
+});
+
 test('the representative can save a copy of the exact schedule and agreement before accepting', async () => {
     const scheduled = { ...TERMS, scheduleId: 'schedule-v1', scheduleText: 'Synthetic organisation schedule.', scheduleDigest: 'b'.repeat(64) };
     const f = setup(scheduled); await f.view.ready;
@@ -326,7 +346,7 @@ test('reserved account fields stay locked and submission uses their captured can
         expect(f.client.completeSetup).toHaveBeenCalledWith({ ...savedAccount,
             details: { name: 'Synthetic name', role: 'Owner', address: 'Synthetic address', registrationId: '9429000000000', authorityConfirmed: true } },
         { signal: expect.any(AbortSignal) });
-        expect(f.root.textContent).toContain('Continuing account setup');
+        expect(f.root.textContent).toContain('Finishing your sign-in');
     } finally { f.view.dispose(); }
 });
 
@@ -368,7 +388,7 @@ test('failed resume offers an unconfirmed code and manual sign-in without repeat
         f.view.dispose();
         fresh = mountSignupJourney(f.root, f.client, externalOptions); await fresh.ready;
         expect(f.client.load).toHaveBeenCalledTimes(2); expect(f.client.completeSetup).toHaveBeenCalledTimes(1);
-        expect(f.root.textContent).toContain('Resume your workspace setup');
+        expect(f.root.textContent).toContain('Resume your organisation setup');
     } finally { fresh?.dispose(); f.view.dispose(); }
 });
 
@@ -445,6 +465,10 @@ test.each([503, 200])('actual client/view carries only the original %s unavailab
     } })).mockResolvedValueOnce(new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
     const createAccount = jest.fn(), client = createSignupClient({ fetch, createAccount, customerTransport: 'external' });
     const f = setup(undefined, externalOptions, client); let fresh, freshClient;
+    // A failed opening read (503) is the A-001 sign-in check view with a manual
+    // retry; an explicit 'unavailable' state (200) stays the signup message.
+    const code = status === 503 ? 'Error code: NF-SIGNIN-UNCONFIRMED' : 'Error code: NF-SIGNUP-UNCONFIRMED';
+    const buttons = status === 503 ? ['Try again'] : [];
     try {
         await f.view.ready;
         const first = unavailableReport(f);
@@ -458,8 +482,8 @@ test.each([503, 200])('actual client/view carries only the original %s unavailab
         expect(draft.body).toContain('Original API release run: ' + apiReleaseRunId);
         expect(draft.body + first.link.href + f.root.textContent).not.toMatch(/synthetic-private|FFFFFFFFFFFFFFFF|bbbbbbbb|Failed step:/);
         expect(fetch).toHaveBeenCalledTimes(1);
-        expect(f.root.querySelector('button')).toBeNull();
-        expect(f.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
+        expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(buttons);
+        expect(f.root.textContent).toContain(code);
         await flush(); expect(fetch).toHaveBeenCalledTimes(1);
         f.view.dispose(); client.dispose();
         freshClient = createSignupClient({ fetch, createAccount, customerTransport: 'external' });
@@ -469,9 +493,10 @@ test.each([503, 200])('actual client/view carries only the original %s unavailab
             ['/api/external-customer-signup/state', 'GET'], ['/api/external-customer-signup/state', 'GET']
         ]);
         expect(createAccount).not.toHaveBeenCalled();
-        expect(fresh.root.textContent).toContain('Do not create another account or submit your details again.');
-        expect(fresh.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
-        expect(fresh.root.querySelector('button')).toBeNull();
+        expect(fresh.root.textContent).toContain(status === 503 ? 'You do not need to sign up again.'
+            : 'Do not create another account or submit your details again.');
+        expect(fresh.root.textContent).toContain(code);
+        expect(fresh.root.querySelectorAll('button').map(node => node.textContent)).toEqual(buttons);
     } finally { fresh?.view.dispose(); freshClient?.dispose(); f.view.dispose(); client.dispose(); }
 });
 
@@ -531,7 +556,51 @@ test.each(['register', '', null, ['login']])('invalid entry intent %j is refused
 });
 
 
-test.each(['network', '503', 'timeout', 'unavailable', 'malformed'])(
+// A-001: a failed first read is a sign-in/access check failure with a working
+// retry; an explicit server 'unavailable' state remains the signup message.
+test.each(['network', '503', 'timeout', 'malformed'])(
+    'external %s opening failure offers one manual retry without private error reflection', async kind => {
+        if (kind === 'timeout') jest.useFakeTimers();
+        const canary = 'synthetic-private-provider-or-account-detail';
+        let failing = true;
+        const fetch = jest.fn(() => {
+            if (!failing) return Promise.resolve(new Response(JSON.stringify({ state: { status: 'pending_admission' } }),
+                { status: 200, headers: { 'content-type': 'application/json' } }));
+            if (kind === 'network') return Promise.reject(new Error(canary));
+            if (kind === 'timeout') return new Promise(() => {});
+            const body = kind === 'malformed' ? '{invalid-json:' + canary : JSON.stringify({ error: canary });
+            return Promise.resolve(new Response(body, { status: kind === '503' ? 503 : 200,
+                headers: { 'content-type': 'application/json' } }));
+        });
+        const createAccount = jest.fn(), client = createSignupClient({ fetch, createAccount, customerTransport: 'external' });
+        const f = setup(undefined, externalOptions, client);
+        try {
+            if (kind === 'timeout') await jest.advanceTimersByTimeAsync(15000);
+            await f.view.ready; await flush();
+            expect(f.root.querySelector('h1').textContent).toBe('We could not open your account');
+            expect(f.root.textContent).toContain('You do not need to sign up again.');
+            expect(f.root.textContent).toContain('Error code: NF-SIGNIN-UNCONFIRMED');
+            expect(f.root.textContent).not.toContain('Signup is unavailable');
+            expect(f.root.textContent).not.toContain('NF-SIGNUP-UNCONFIRMED');
+            expect(f.root.textContent).not.toContain(canary);
+            expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
+            expect(f.root.querySelector('form')).toBeNull();
+            expect(f.root.getAttribute('aria-busy')).toBe('false'); expect(f.document.activeElement.tagName).toBe('H1');
+            expect(f.root.querySelectorAll('a').map(link => link.href)).toEqual([
+                '/api/external-customer-auth/login', '/api/external-customer-auth/login?account=choose',
+                '/report.html#kind=error&screen=signup&code=signup_unavailable'
+            ]);
+            expect(fetch.mock.calls.map(([url, options]) => [url, options.method])).toEqual([['/api/external-customer-signup/state', 'GET']]);
+            failing = false;
+            f.root.querySelector('button').click(); await flush();
+            expect(f.root.querySelector('h1').textContent).toBe('Account setup received');
+            expect(fetch.mock.calls.map(([url, options]) => [url, options.method])).toEqual([
+                ['/api/external-customer-signup/state', 'GET'], ['/api/external-customer-signup/state', 'GET']]);
+            expect(createAccount).not.toHaveBeenCalled();
+        } finally { f.view.dispose(); client.dispose(); if (kind === 'timeout') jest.useRealTimers(); }
+    });
+
+test.each(['unavailable'])(
     'external %s observation is unconfirmed without a retry action or private error reflection', async kind => {
         if (kind === 'timeout') jest.useFakeTimers();
         const canary = 'synthetic-private-provider-or-account-detail';
@@ -570,7 +639,7 @@ const readOnlySetup = { status: 'setup_read_only' };
 test.each([undefined, externalOptions])('saved read-only setup exposes only a status read and fixed home navigation (%j)', async options => {
     const f = setup(readOnlySetup, options); await f.view.ready;
     try {
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         expect(f.root.textContent).toContain('Further setup steps are unavailable right now.');
         expect(f.root.querySelector('form')).toBeNull(); expect(f.root.querySelector('input')).toBeNull();
         expect(f.root.querySelector('select')).toBeNull();
@@ -581,7 +650,7 @@ test.each([undefined, externalOptions])('saved read-only setup exposes only a st
         buttons[0].click(); await flush();
         expect(f.client.load).toHaveBeenCalledTimes(2);
         expect(f.client.load).toHaveBeenLastCalledWith({ signal: expect.any(AbortSignal) });
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         expect(f.document.activeElement.tagName).toBe('H1'); expect(f.root.getAttribute('aria-busy')).toBe('false');
         for (const name of ['createAccount', 'completeSetup', 'acceptTerms', 'resumeAcceptance']) expect(f.client[name]).not.toHaveBeenCalled();
     } finally { f.view.dispose(); }
@@ -613,7 +682,7 @@ test('read-only setup clears a cached details draft and stale form before an exp
         f.client.completeSetup.mockResolvedValueOnce(readOnlySetup);
         submitOld(); await flush();
         expect(f.client.completeSetup).toHaveBeenCalledTimes(1);
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         expect(f.root.querySelector('form')).toBeNull(); expect(f.root.textContent).not.toContain('Synthetic private');
         submitOld(); await flush(); expect(f.client.completeSetup).toHaveBeenCalledTimes(1);
         // A later explicit GET can observe ordinary editable historical state;
@@ -634,7 +703,7 @@ test('read-only setup replaces cached consent controls and prevents their later 
         const consent = f.root.querySelector('input'), accept = f.root.querySelector('button');
         consent.checked = true; for (const fn of consent.events.change) fn();
         f.client.acceptTerms.mockResolvedValueOnce(readOnlySetup); accept.click(); await flush();
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         expect(f.root.querySelector('input')).toBeNull(); expect(f.root.querySelector('form')).toBeNull();
         accept.disabled = false; accept.click(); await flush();
         expect(f.client.acceptTerms).toHaveBeenCalledTimes(1); expect(f.client.resumeAcceptance).not.toHaveBeenCalled();
@@ -649,13 +718,77 @@ test('actual signup transport displays saved read-only setup and rechecks it usi
     const f = setup(undefined, externalOptions, client);
     try {
         await f.view.ready;
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         f.root.querySelector('button').click(); await new Promise(setImmediate); await flush();
-        expect(f.root.querySelector('h1').textContent).toBe('Workspace setup saved');
+        expect(f.root.querySelector('h1').textContent).toBe('Organisation setup saved');
         expect(fetch.mock.calls.map(([path, options]) => [path, options.method])).toEqual([
             ['/api/external-customer-signup/state', 'GET'], ['/api/external-customer-signup/state', 'GET']
         ]);
         expect(f.root.querySelector('form')).toBeNull(); expect(f.root.querySelector('input')).toBeNull();
         expect(createAccount).not.toHaveBeenCalled();
     } finally { f.view.dispose(); client.dispose(); }
+});
+
+test('setup text fields show a count near their limit and say when text is cut off', async () => {
+    // Round 2: "Your name" silently stopped at 160 characters.
+    const f = setup({ status: 'setup_details', email: 'person@example.test' }, { customerTransport: 'external' });
+    await f.view.ready;
+    try {
+        const input = f.root.querySelector('form').querySelectorAll('input').find(node => node.name === 'name');
+        const count = f.root.querySelector('[id="' + input.getAttribute('aria-describedby') + '"]');
+        expect(count.getAttribute('aria-live')).toBe('polite');
+        expect(count.hidden).toBe(true);
+        input.value = 'x'.repeat(140); for (const fn of input.events.input) fn();
+        expect(count.hidden).toBe(false); expect(count.textContent).toBe('140 of 160 characters.');
+        input.value = 'x'.repeat(160); for (const fn of input.events.input) fn();
+        expect(count.textContent).toBe('160 of 160 characters. This is the limit, so anything longer is cut off.');
+    } finally { f.view.dispose(); }
+});
+
+describe('named progress while setup and acceptance run (F1 / D-013)', () => {
+    test('saving workspace details says so in a live status while the request runs', async () => {
+        const state = { status: 'setup_details', email: retained.email, reservation: { ...savedAccount } };
+        const f = setup(state, externalOptions); await f.view.ready;
+        let finish; f.client.completeSetup.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        try {
+            const form = f.root.querySelector('form');
+            const inputs = Object.fromEntries(form.querySelectorAll('input').map(input => [input.name, input]));
+            Object.assign(inputs.name, { value: 'Synthetic name' }); Object.assign(inputs.role, { value: 'Owner' });
+            Object.assign(inputs.address, { value: 'Synthetic address' }); Object.assign(inputs.registrationId, { value: '' });
+            inputs.authorityConfirmed.checked = true; form.reportValidity = () => true;
+            for (const submit of form.events.submit) submit({ preventDefault() {} });
+            await flush();
+            const progress = f.root.querySelector('.signup-progress');
+            expect(progress.getAttribute('role')).toBe('status');
+            expect(progress.textContent).toBe('Saving your details. This can take up to 20 seconds. Please keep this page open.');
+            expect(f.root.getAttribute('aria-busy')).toBe('true');
+            finish({ status: 'continue_authentication' }); await flush();
+            expect(f.root.textContent).not.toContain('Saving your details.');
+        } finally { f.view.dispose(); }
+    });
+
+    test('accepting terms names the acceptance and dashboard preparation', async () => {
+        const f = setup(TERMS); await f.view.ready;
+        let finish; f.client.acceptTerms.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        const box = f.root.querySelector('input'), submit = f.root.querySelector('button');
+        box.checked = true; for (const fn of box.events.change) fn();
+        submit.click(); await flush();
+        const progress = f.root.querySelector('.signup-progress');
+        expect(progress.getAttribute('role')).toBe('status');
+        expect(progress.textContent).toBe('Saving your acceptance and preparing your dashboard. This can take up to 20 seconds. Please keep this page open.');
+        finish({ status: 'continue_to_dashboard', accountType: 'company' }); await flush();
+        const opening = f.root.querySelector('.signup-progress');
+        expect(opening.getAttribute('role')).toBe('status');
+        expect(opening.textContent).toBe('Preparing your dashboard. Please keep this page open.');
+        expect(f.root.querySelector('a').getAttribute('href') || f.root.querySelector('a').href).toBe('/dashboard');
+        f.view.dispose();
+    });
+
+    test('other waits keep the general progress message', async () => {
+        const f = setup(); await f.view.ready;
+        let finish; f.client.createAccount.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        f.root.querySelector('button').click(); await flush();
+        expect(f.root.querySelector('.signup-progress').textContent).toBe('Working on it. This can take up to 20 seconds. Please keep this page open.');
+        finish(TERMS); await flush(); f.view.dispose();
+    });
 });

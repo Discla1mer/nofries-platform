@@ -10,7 +10,3 @@ body { margin: 0; background: #ece6da; }
 .try-demo-banner a.try-demo-cta { padding: 0 1rem; border-radius: .6rem; background: #111816; color: #fffbe6; text-decoration: none; font-weight: 600; }
 .try-demo-banner :focus-visible { outline: 3px solid #111816; outline-offset: 3px; }
 .try-demo-status { flex-basis: 100%; font-weight: 600; } .try-demo-status:empty { display: none; }
-.try-demo-actions-list { display: grid; gap: 1rem; padding-left: 1.25rem; }
-.try-demo-actions-list li p { margin: .4rem 0 0; }
-.try-demo-actions-list [data-priority="High"] { background: #f2e4bc; border-color: #c29221; color: var(--dashboard-ink); }
-.try-demo-assessment a.dashboard-button { text-decoration: none; }

@@ -96,8 +96,9 @@ test('repeated fresh navigations after rejection or unavailable discard the draf
         await f.failSubmit();
         f.fetch.mockRejectedValueOnce(new Error('synthetic read failure'));
         await f.navigate();
-        expect(f.root.querySelector('button')).toBeNull();
-        expect(f.root.textContent).toContain('NF-SIGNUP-UNCONFIRMED');
+        // A-001: a failed opening read offers only a manual state re-read.
+        expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
+        expect(f.root.textContent).toContain('NF-SIGNIN-UNCONFIRMED');
         await f.navigate(response({ status: 'unavailable' }));
         expect(f.root.querySelector('button')).toBeNull();
         await f.navigate(response(initial, 'c'));
