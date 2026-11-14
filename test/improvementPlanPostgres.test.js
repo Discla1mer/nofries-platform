@@ -707,9 +707,9 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
     });
 
     describe('reassessment carry-forward', () => {
-        async function reassessed() {
+        async function reassessed(description, seedOptions) {
             // The fixture grant allows two assessment runs at one unit each.
-            const { example, initial } = await generated();
+            const { example, initial } = await generated(seedOptions ? await seed(seedOptions) : null);
             const [a, b, c, d] = initial.plan.actions.map(action => action.actionId);
             let plan = initial.plan;
             const run = async (actionId, type, payload) => {
@@ -725,7 +725,7 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             await run(d, 'complete', { note: 'Synthetic work done.', evidenceReference: 'evidence:synthetic-1' });
             const before = await planRows(example, plan.planId);
             clock.advance(60000);
-            await ncsc.executeNcscAssessment(example.context, createCommand('assessment-b', 'create-b'));
+            await ncsc.executeNcscAssessment(example.context, createCommand('assessment-b', 'create-b', description));
             await ncsc.executeNcscAssessment(example.context, saveCommand('assessment-b', 0, 'save-b', allResponses('no')));
             const second = await ncsc.executeNcscAssessment(example.context, submitCommand('assessment-b', 1, 'submit-b'));
             clock.advance(1000);
@@ -767,6 +767,78 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             expect(read.plan.actions.slice(0, 4).map(action => [action.status, action.ownerLabel ?? action.ownerSubjectKey]))
                 .toEqual([['open', 'Ops lead'], ['open', null], ['blocked', 'Ops lead'], ['open', null]]);
             expect(read.history).toHaveLength(5);
+        });
+
+        test('a different-scope plan is never carried from, and a same-scope plan behind it still is', async () => {
+            const { example, previous, before, generate } = await reassessed('Synthetic warehouse systems only.', { capacity: 3 });
+            const fresh = await repository.executeImprovementPlan(example.context, generate);
+            expect((await repository.readImprovementPlan(example.context, { planId: 'plan-b' })).history).toHaveLength(1);
+            expect(fresh.plan.counts.unassigned).toBe(fresh.plan.counts.total);
+            // assessment-c repeats assessment-a's scope: the newer plan-b is skipped.
+            clock.advance(1000);
+            await ncsc.executeNcscAssessment(example.context, createCommand('assessment-c', 'create-c'));
+            await ncsc.executeNcscAssessment(example.context, saveCommand('assessment-c', 0, 'save-c', allResponses('no')));
+            const third = await ncsc.executeNcscAssessment(example.context, submitCommand('assessment-c', 1, 'submit-c'));
+            clock.advance(1000);
+            await repository.executeImprovementPlan(example.context, { ...generate, planId: 'plan-c', operationId: 'generate-c',
+                payload: { assessmentId: 'assessment-c', assessmentRevision: third.assessment.revision,
+                    assessmentRevisionSha256: third.assessment.revisionSha256 } });
+            const stored = await planRows(example, 'plan-c');
+            expect(stored).toHaveLength(8);
+            expect(stored.slice(1).every(row => row.operation_id.startsWith(`carry:${before.at(-1).payload_sha256}:`))).toBe(true);
+            expect(await planRows(example, previous.planId)).toEqual(before);
+        });
+
+        async function submitAssessment(example, id, description) {
+            clock.advance(1000);
+            await ncsc.executeNcscAssessment(example.context, createCommand(id, `create-${id}`, description));
+            await ncsc.executeNcscAssessment(example.context, saveCommand(id, 0, `save-${id}`, allResponses('no')));
+            const { assessment } = await ncsc.executeNcscAssessment(example.context, submitCommand(id, 1, `submit-${id}`));
+            clock.advance(1000);
+            return { assessmentId: id, assessmentRevision: assessment.revision, assessmentRevisionSha256: assessment.revisionSha256 };
+        }
+        const planFrom = (planId, payload) => ({ planId, type: 'generate', operationId: `generate-${planId}`,
+            expectedRevision: null, actionId: null, payload });
+
+        test('a previous plan that no longer validates does not block generation and carries nothing', async () => {
+            const { example, previous, generate } = await reassessed();
+            await ownerPool.query("UPDATE nofries.dashboard_improvement_revisions SET payload=jsonb_set(payload,'{resultSha256}',to_jsonb($3::text)) WHERE tenant_id=$1 AND plan_id=$2",
+                [example.scope.tenantId, previous.planId, 'f'.repeat(64)]);
+            const created = await repository.executeImprovementPlan(example.context, generate);
+            expect(created.plan.counts.unassigned).toBe(created.plan.counts.total);
+            expect(await planRows(example, 'plan-b')).toHaveLength(1);
+        });
+
+        test('the newest same-scope assessment wins over a plan generated later for an older assessment', async () => {
+            const example = await seed({ capacity: 3 });
+            const older = { assessmentId: 'assessment-a', assessmentRevision: example.submitted.assessment.revision,
+                assessmentRevisionSha256: example.submitted.assessment.revisionSha256 };
+            const newer = await submitAssessment(example, 'assessment-b');
+            let plan = (await repository.executeImprovementPlan(example.context, planFrom('plan-b', newer))).plan;
+            plan = (await repository.executeImprovementPlan(example.context, command(plan, 'assign', 'assign-b', { ownerLabel: 'Newer', dueDate: '2026-10-01' }))).plan;
+            clock.advance(1000);
+            // Generated later, but from the older assessment: nothing newer may carry into it.
+            let stale = (await repository.executeImprovementPlan(example.context, planFrom('plan-old', older))).plan;
+            expect(await planRows(example, 'plan-old')).toHaveLength(1);
+            stale = (await repository.executeImprovementPlan(example.context, command(stale, 'assign', 'assign-old', { ownerLabel: 'Stale', dueDate: '2026-10-01' }))).plan;
+            const latest = await submitAssessment(example, 'assessment-c');
+            const created = await repository.executeImprovementPlan(example.context, planFrom('plan-c', latest));
+            const read = await repository.readImprovementPlan(example.context, { planId: 'plan-c' });
+            expect(created.plan.revision).toBe(0);
+            expect(read.plan.actions[0]).toMatchObject({ ownerLabel: 'Newer' });
+            const sourceHead = (await planRows(example, 'plan-b')).at(-1).payload_sha256;
+            expect((await planRows(example, 'plan-c')).slice(1).map(row => row.operation_id)).toEqual([`carry:${sourceHead}:1`]);
+        });
+
+        test('plans from another organisation or another tenant are never selected', async () => {
+            const store = require('../api/shared/improvementPlan/improvementPlanStore');
+            const { example, second } = await reassessed(), other = await seed();
+            const source = { assessmentId: 'assessment-b', revision: second.assessment.revision, revisionSha256: second.assessment.revisionSha256 };
+            const lookup = (txScope, scope) => rawTransaction(txScope, tx => store.previousPlanId(tx, { ...scope, planId: 'plan-b' }, source));
+            expect(await lookup(example.scope, example.scope)).toBe('shared-plan');
+            expect(await lookup(example.scope, { ...example.scope, organisationId: 'other-organisation' })).toBeNull();
+            expect(await lookup(other.scope, example.scope)).toBeNull();
+            expect(await lookup(other.scope, other.scope)).toBeNull();
         });
     });
 });

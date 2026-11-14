@@ -7,7 +7,7 @@
 // work again, so it returns as open with its owner and due date. Previous
 // actions whose question is no longer a gap are left in the previous plan.
 function planCarryForward(previousPlan, nextPlan) {
-    if (!sameSource(previousPlan, nextPlan)) return [];
+    if (!canCarryFrom(previousPlan, nextPlan)) return [];
     const prior = new Map(previousPlan.actions.map(action => [action.itemId, action]));
     return nextPlan.actions.flatMap(action => {
         const source = prior.get(action.itemId);
@@ -25,7 +25,7 @@ function planCarryForward(previousPlan, nextPlan) {
 
 // Only carry from an earlier assessment of the same module, so a plan made
 // later for an older assessment never inherits from a newer one.
-function sameSource(previousPlan, nextPlan) {
+function canCarryFrom(previousPlan, nextPlan) {
     const before = previousPlan?.source?.provenance, after = nextPlan?.source?.provenance;
     return !!before && !!after && before.moduleId === after.moduleId &&
         before.assessmentId !== after.assessmentId && before.scoreAsOf <= after.scoreAsOf;
@@ -37,4 +37,4 @@ function carryOperationId(sourcePayloadSha256, revision) {
     return `carry:${sourcePayloadSha256}:${revision}`;
 }
 
-module.exports = Object.freeze({ planCarryForward, carryOperationId });
+module.exports = Object.freeze({ planCarryForward, canCarryFrom, carryOperationId });

@@ -94,7 +94,7 @@ async function harness() {
                 return { rows: clone(staged.revisions) };
             }
             // One plan per organisation here, so a reassessment finds none to carry.
-            if (sql.startsWith(`SELECT plan_id FROM ${REVISION_TABLE} `)) return { rows: [] };
+            if (sql.startsWith('SELECT p.plan_id FROM ')) return { rows: [] };
             if (sql.startsWith(`INSERT INTO ${REVISION_TABLE} `)) {
                 expect(values).toHaveLength(12);
                 expect(staged.revisions.some(row => row.revision === values[3] || row.operation_id === values[4])).toBe(false);

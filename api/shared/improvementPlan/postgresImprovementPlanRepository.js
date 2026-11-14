@@ -75,11 +75,19 @@ function createPostgresImprovementPlanRepository(options) {
     // organisation's previous plan as ordinary appended commands by the current
     // writer, in this transaction. Old plans are only read. Generate still
     // returns its own revision 0, so a replay returns the same result.
-    async function carryForward(tx, scope, current, context, initial, generated, source, at) {
-        const previousId = await store.previousPlanId(tx, scope, source.assessmentId);
+    async function carryForward(tx, scope, current, context, initial, generated, source, at, owners) {
+        const previousId = await store.previousPlanId(tx, scope, source);
         if (!previousId) return [];
-        const previous = await store.loadHistory(tx, { ...context.scope, planId: previousId }, current.tenantAggregate);
-        if (!previous) fail();
+        let previous;
+        try { previous = await store.loadHistory(tx, { ...context.scope, planId: previousId }, current.tenantAggregate); }
+        catch (error) {
+            // A previous plan that no longer validates must not block every
+            // later plan: start fresh. Database errors still abort.
+            if (!(error instanceof ImprovementPlanServiceError || error instanceof ImprovementPlanError)) throw error;
+            try { console.warn('[improvement-plan] carry_forward_source_invalid'); } catch (_) { /* No logging authority. */ }
+            return [];
+        }
+        if (!previous) return [];
         const records = [];
         let state = initial, head = generated;
         for (const action of planCarryForward(previous.result.plan, generated.result.plan)) {
@@ -105,6 +113,7 @@ function createPostgresImprovementPlanRepository(options) {
                 throw error;
             }
             records.push(...staged); state = next; head = last;
+            if (action.ownerSubjectKey) owners.push(action.ownerSubjectKey);
         }
         return records;
     }
@@ -130,6 +139,7 @@ function createPostgresImprovementPlanRepository(options) {
             } catch (error) { throw serviceError(error); }
             const attempt = async reconcile => {
                 let current, owner = null, ownerRequired = false;
+                const carriedOwners = [];
                 const generate = command.type === 'generate';
                 const result = await database.withTenantTransaction(context.scope.tenantId, async tx => {
                     current = await snapshot(tx, context);
@@ -171,12 +181,13 @@ function createPostgresImprovementPlanRepository(options) {
                     access(current, context, 'improvement.write', now(), generate);
                     await store.append(tx, scope, record);
                     if (generate) {
-                        for (const carried of await carryForward(tx, scope, current, context, state, record, source, at)) await store.append(tx, scope, carried);
+                        for (const carried of await carryForward(tx, scope, current, context, state, record, source, at, carriedOwners)) await store.append(tx, scope, carried);
                     }
                     if (audit) await auditCommand(context, at, now);
                     const finalAt = now();
                     access(current, context, 'improvement.write', finalAt, generate);
                     if (ownerRequired) resolveEligibleOwner(current, context, owner, finalAt);
+                    carriedOwners.forEach(key => resolveEligibleOwner(current, context, key, finalAt));
                     return record.result;
                 }, at => {
                     // A paired native host samples these source-specific facts
@@ -188,6 +199,7 @@ function createPostgresImprovementPlanRepository(options) {
                     // Replayed commands deliberately require the current writer,
                     // not renewed eligibility for an originally selected owner.
                     if (ownerRequired) resolveEligibleOwner(current, context, owner, checkedAt);
+                    carriedOwners.forEach(key => resolveEligibleOwner(current, context, key, checkedAt));
                 });
                 // Settlement may outlive the request's authority. Withholding
                 // disclosure here does not undo a committed revision and audit.
