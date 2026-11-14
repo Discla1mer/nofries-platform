@@ -88,3 +88,15 @@ CREATE POLICY dashboard_session_gates_account_wipe ON nofries.dashboard_session_
 CREATE POLICY signup_registrations_account_wipe ON nofries.signup_registrations FOR ALL TO nofries_account_wipe
     USING (subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), ''))
     WITH CHECK (false);
+
+-- Session-scoped runtime rows (for example the audit of a customer's
+-- organisation directory read) carry no tenant. They reference the customer's
+-- session gates, so they are visible to the capability by that session.
+CREATE POLICY dashboard_runtime_audit_account_wipe_session ON nofries.dashboard_runtime_audit FOR ALL TO nofries_account_wipe
+    USING (session_sha256 IN (SELECT g.session_sha256 FROM nofries.dashboard_session_gates g
+        WHERE g.subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), '') AND g.kind = 'customer'))
+    WITH CHECK (false);
+CREATE POLICY dashboard_runtime_receipts_account_wipe_session ON nofries.dashboard_runtime_receipts FOR ALL TO nofries_account_wipe
+    USING (anchor_session_sha256 IN (SELECT g.session_sha256 FROM nofries.dashboard_session_gates g
+        WHERE g.subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), '') AND g.kind = 'customer'))
+    WITH CHECK (false);

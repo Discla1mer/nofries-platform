@@ -30,8 +30,9 @@ const DELETE_TENANT_TABLES = Object.freeze([...RESET_TABLES,
     'dashboard_organisations', 'dashboard_tenants'
 ]);
 // Customer session gates reference bindings and onboarding proofs without
-// deferral, so they go first; the account and subject rows go last.
-const DELETE_FIRST_TABLES = Object.freeze(['dashboard_session_gates']);
+// deferral, so they go first, after the receipts and audit rows that reference
+// those sessions; the account and subject rows go last.
+const DELETE_FIRST_TABLES = Object.freeze(['dashboard_runtime_receipts', 'dashboard_runtime_audit', 'dashboard_session_gates']);
 const DELETE_ACCOUNT_TABLES = Object.freeze(['email_preferences', 'dashboard_starter_accounts', 'signup_registrations']);
 const MAX_TENANTS = 64;
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
@@ -71,8 +72,17 @@ function createAccountWipeRepository(pool) {
                     [tenantId, scope.accountId]);
                 if (scoped.rowCount !== 1) fail('account_wipe_tenant_mismatch');
             }
-            if (mode === 'delete') add('dashboard_session_gates', (await client.query("DELETE FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind = 'customer'",
-                [scope.subjectKey])).rowCount);
+            if (mode === 'delete') {
+                // Rows tied to the customer's sessions rather than a tenant (for example
+                // the organisation directory read), then the sessions themselves.
+                const sessions = "SELECT session_sha256 FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind = 'customer'";
+                add('dashboard_runtime_receipts', (await client.query(`DELETE FROM nofries.dashboard_runtime_receipts WHERE anchor_session_sha256 IN (${sessions})`,
+                    [scope.subjectKey])).rowCount);
+                add('dashboard_runtime_audit', (await client.query(`DELETE FROM nofries.dashboard_runtime_audit WHERE session_sha256 IN (${sessions})`,
+                    [scope.subjectKey])).rowCount);
+                add('dashboard_session_gates', (await client.query("DELETE FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind = 'customer'",
+                    [scope.subjectKey])).rowCount);
+            }
             for (const tenantId of scope.tenantIds) {
                 await client.query("SELECT set_config('nofries.wipe_tenant_id', $1, true)", [tenantId]);
                 for (const table of mode === 'delete' ? DELETE_TENANT_TABLES : RESET_TABLES) {
