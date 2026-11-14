@@ -192,6 +192,22 @@ describe('public help has no commercial, provider or private-context consequence
     });
 
     test.each([
+        ['What does Partial mean for MFA?', 'assessment_answers'],
+        ['What should I fix first?', 'assessment_priority'],
+        ['How is my score calculated?', 'assessment_scoring'],
+        ['Is my business compliant with NCSC?', 'assessment_compliance']
+    ])('help-only Ask Fry answers a basic assessment question instead of the generic fallback: %s', async (message, topic) => {
+        const h = harness();
+        const result = await handleProspectChatRequest(h.request(message, { helpOnly: true }), h.options);
+        const answer = done(result);
+        expect(answer).toMatchObject({ model: 'deterministic-public-help', publicHelp: { topic, helpOnly: true }, pricing: null });
+        expect(answer.publicHelp.topic).not.toBe('public_help');
+        expect(answer.conversation.id).toBe('');
+        expect(answer.organisation.organisationId).toBe('');
+        expectNoConsequences(h);
+    });
+
+    test.each([
         'What is the No Fries Dashboard?',
         'Should I choose Company or Consultant?',
         'How do I save and resume an assessment?',

@@ -82,7 +82,7 @@
         "What does No Fries cover for normal managed IT support?"
       ],
       "expect": {
-        "replyMustInclude": ["day-to-day support", "business email and shared work tools"],
+        "replyMustInclude": ["day-to-day support", "AI-assisted email helpdesk"],
         "forbiddenReplyPatterns": [
           "\\b(?:Datto|Kaseya|Autotask|RMM|EDR|MDR|SOC)\\b",
           "\\b(?:agentic|synergy|seamless|revolutionary|game-changing|cutting-edge)\\b"
@@ -177,16 +177,16 @@
         },
         "lifecycleState": "discovery",
         "replyMustInclude": [
-          "current No Fries estimate is NZ$1,230 + GST per month",
-          "initial set-up from NZ$810 + GST"
+          "current No Fries estimate is NZ$1,030 + GST per month",
+          "initial set-up from NZ$750 + GST"
         ],
         "pricing": {
-          "policyId": "managed_it_2026_08_4",
+          "policyId": "managed_it_2026_11_1",
           "status": "indicative",
           "currency": "NZD",
           "gstExclusive": true,
-          "monthly": 1230,
-          "onboarding": 810
+          "monthly": 1030,
+          "onboarding": 750
         },
         "conversationTextMaxOccurrences": {
           "current No Fries estimate is": 1
@@ -253,7 +253,7 @@
       "turns": ["What does Protect and Recover include for managed IT?"],
       "expect": {
         "topic": "protection_recovery",
-        "replyMustInclude": ["selected and scoped separately", "agreed business hours", "only when selected", "agreed work files"],
+        "replyMustInclude": ["Secure tier", "Managed tier up", "agreed business hours", "Extra business locations"],
         "forbiddenReplyPatterns": ["guaranteed recovery", "24/7 user support", "automatically included", "zero data loss"]
       }
     },
@@ -281,7 +281,7 @@
       "expect": {
         "topic": "feature_availability",
         "replyMustInclude": ["not dashboard access", "terms shown during account setup", "cannot confirm a new trial or paid dashboard plan"],
-        "forbiddenReplyPatterns": ["NZ\\$", "119", "750", "current No Fries estimate"]
+        "forbiddenReplyPatterns": ["NZ\\$", "75", "120", "165", "750", "current No Fries estimate"]
       }
     },
     {
@@ -307,8 +307,8 @@
       "turns": ["Where are the public links for News and Sales Agency?"],
       "expect": {
         "topic": "public_links",
-        "replyMustInclude": ["https://news.nofries.nz/", "https://sales.nofries.nz/", "https://nofries.nz/dashboard"],
-        "forbiddenReplyPatterns": ["automatically signed in", "account already linked", "Luna", "luna\\.nofries\\.nz"]
+        "replyMustInclude": ["https://nofries.nz/roadmap.html", "https://sales.nofries.nz/", "https://nofries.nz/dashboard"],
+        "forbiddenReplyPatterns": ["automatically signed in", "account already linked", "Luna", "luna\\.nofries\\.nz", "news\\.nofries\\.nz"]
       }
     },
     {

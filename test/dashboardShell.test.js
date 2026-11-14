@@ -15,6 +15,18 @@ const keys = value => value.modules.map(item => item.key);
 const mount = (model = view(), options = {}) => { const dom = createDom(); return { ...dom, controller: shell.mount(dom.root, model, options) }; };
 const buttons = dom => dom.root.querySelectorAll('button');
 
+test('organisation hash delegates to the host while retaining the current view for its leave guard', () => {
+    let requests = 0;
+    const dom = mount(view(), { initialRoute: 'cyber-security', onOpenOrganisations() { requests++; } });
+    const before = dom.root.textContent;
+    dom.window.location.hash = '#organisations';
+    dom.window.dispatch('hashchange');
+    assert.equal(requests, 1);
+    assert.equal(dom.window.location.hash, '#cyber-security');
+    assert.equal(dom.root.textContent, before);
+    dom.controller.destroy();
+});
+
 test('registry preserves approved eight-module order and canonical mobile groups', () => {
     assert.deepEqual(registry.modules.map(item => item.key), ['overview', 'ai_governance', 'cyber_security', 'it_optimisation', 'improvement_plan', 'evidence', 'board_reports', 'services']);
     assert.deepEqual(registry.groups, ['Home', 'Assess', 'Plan', 'Proof', 'More']);
@@ -29,6 +41,19 @@ test('connected picture preserves existing attention items and disposes before a
     dom.root.querySelector('[data-attention="0"]').click();
     assert.equal(disposed, 1);
     assert.match(dom.root.textContent, /Next action/);
+});
+
+test('connected picture Overview omits the unused metric grid and the repeated navigation list', () => {
+    const picture = () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } });
+    for (const empty of [false, true]) {
+        const model = clone(view({ empty })); model.modules.find(item => item.key === 'cyber_security').state = 'ready';
+        const dom = mount(model, { mountPicture: picture });
+        assert.equal(dom.root.querySelector('.dashboard-overview-grid'), null);
+        assert.equal(dom.root.querySelector('.dashboard-metrics'), null);
+        assert.equal(dom.root.querySelector('.dashboard-availability'), null);
+        assert.doesNotMatch(dom.root.textContent, /Other dashboard areas and availability|The current picture|Start your cyber check|baseline/);
+        assert.equal(!!dom.root.querySelector('.dashboard-attention'), !empty);
+    }
 });
 
 test('server projection reuses product entitlement and permission policy without provider identifiers', () => {
@@ -147,7 +172,7 @@ test('missing metrics are displayed as not assessed, never zero', () => {
     const dom = mount(view({ empty: true }));
     assert.equal(dom.root.querySelectorAll('.dashboard-metric-value').length, 4);
     assert.ok(dom.root.querySelectorAll('.dashboard-metric-value').every(item => item.textContent === 'Not assessed'));
-    assert.match(dom.root.textContent, /Build your first baseline/);
+    assert.match(dom.root.textContent, /Start your cyber check/);
 });
 
 test('Overview leads with attention and distinct versioned metrics', () => {
@@ -212,7 +237,7 @@ for (const route of ['#ai-governance', '#cyber-security/foreign-record', '#evide
     test(`unpermitted or object route ${route} returns safely without echoing details`, () => {
         const dom = mount(view({ role: 'viewer' }), { initialRoute: route });
         assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
-        assert.match(dom.root.textContent, /That view is not available/);
+        assert.match(dom.root.textContent, /We could not find that view/);
         assert.ok(!dom.root.textContent.includes('foreign-record'));
     });
 }
@@ -257,7 +282,8 @@ test('service scope control opens information without a purchase/write channel',
 test('disabled services explain policy availability rather than implying provider setup is sufficient', () => {
     const dom = mount(view({ service: 'managed_endpoint', enabled: { 'service:managed_endpoint': false } }), { initialRoute: 'services' });
     buttons(dom).find(item => item.textContent === 'About availability').click();
-    assert.match(dom.root.textContent, /provider connection alone will not activate it/);
+    assert.match(dom.root.textContent, /not available yet\. Contact No Fries if you need it\./);
+    assert.doesNotMatch(dom.root.textContent, /current build|provider connection alone/);
 });
 
 test('stale display is explicit and loading/denial clear old organisation content', () => {
@@ -377,6 +403,66 @@ test('Overview carries the exact selected source through the accepted Improvemen
     assert.equal(improvement.mounts.length, 2);
     assert.equal(Object.hasOwn(improvement.mounts[1].options, 'sourceAssessment'), false);
     dom.controller.destroy(); assert.equal(improvement.destroys, 2);
+});
+
+test('planned improvement plan distinguishes a draft from a submitted baseline', async () => {
+    const model = readyCyber();
+    model.modules.find(item => item.key === 'improvement_plan').state = 'planned';
+    let opened;
+    const dom = mount(model, {
+        readBaseline: async () => ({ submittedId: null, draftId: 'draft-assessment' }),
+        mountCyber: (_root, presentation) => {
+            opened = presentation;
+            return { destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } };
+        }
+    });
+    await dom.controller.navigate('improvement-plan');
+    for (let step = 0; step < 5; step += 1) await Promise.resolve();
+    assert.match(dom.root.textContent, /appears after you submit your first assessment/);
+    assert.match(dom.root.textContent, /You have a draft assessment/);
+    const resume = [...buttons(dom)].find(item => item.textContent === 'Continue your draft');
+    assert.ok(resume);
+    resume.click();
+    assert.equal(opened.initialAssessmentId, 'draft-assessment');
+    assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
+    dom.controller.destroy();
+});
+
+test('planned improvement plan links a submitted baseline to its results', async () => {
+    const model = readyCyber();
+    model.modules.find(item => item.key === 'improvement_plan').state = 'planned';
+    let opened;
+    const dom = mount(model, {
+        readBaseline: async () => ({ submittedId: 'submitted-assessment', draftId: 'draft-assessment' }),
+        mountCyber: (_root, presentation) => {
+            opened = presentation;
+            return { destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } };
+        }
+    });
+    await dom.controller.navigate('improvement-plan');
+    for (let step = 0; step < 5; step += 1) await Promise.resolve();
+    assert.match(dom.root.textContent, /Review the gaps in your submitted assessment/);
+    const review = [...buttons(dom)].find(item => item.textContent === 'Review gaps in your results');
+    assert.ok(review);
+    review.click();
+    assert.equal(opened.initialAssessmentId, 'submitted-assessment');
+    dom.controller.destroy();
+});
+
+test('an unfinished assessment scan does not claim that no baseline exists', async () => {
+    const model = readyCyber();
+    model.modules.find(item => item.key === 'improvement_plan').state = 'planned';
+    const dom = mount(model, {
+        readBaseline: async () => ({ submittedId: null, draftId: 'draft-assessment', complete: false }),
+        mountCyber: () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } })
+    });
+    await dom.controller.navigate('improvement-plan');
+    for (let step = 0; step < 5; step += 1) await Promise.resolve();
+    assert.match(dom.root.textContent, /could not check every saved assessment/);
+    assert.doesNotMatch(dom.root.textContent, /There is no submitted assessment yet/);
+    assert.doesNotMatch(dom.root.textContent, /You have a draft assessment/);
+    assert.ok([...buttons(dom)].some(item => item.textContent === 'Open Cyber Security'));
+    dom.controller.destroy();
 });
 
 for (const state of ['planned', 'disabled']) test(`Improvement ${state} cannot expose a picture callback or mount`, async () => {
@@ -552,6 +638,55 @@ function historyDom(options = {}) {
         historyState: () => ({ cursor, entries: clone(entries), calls: clone(calls), pendingMoves: [...pendingMoves] }) };
 }
 
+test('question history moves within the mounted assessment and restores its pointer only for the same organisation', async () => {
+    const dom = historyDom();
+    let presentation, shown, leaves = 0, mounts = 0;
+    const adapter = (_root, input) => {
+        presentation = input; mounts++;
+        return { destroy() {}, requestLeave(commit) { leaves++; commit(); return Promise.resolve(true); },
+            showQuestion(location) { if (location.assessmentId !== 'saved-assessment') return false; shown = location.questionIndex; return true; } };
+    };
+    const model = readyCyber();
+    const controller = shell.mount(dom.root, model, { window: dom.window, initialRoute: 'cyber-security', mountCyber: adapter });
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 0 });
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 1 });
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 2 });
+    const count = dom.window.history.length;
+    presentation.onLocation({ assessmentId: 'saved-assessment', questionIndex: 2 });
+    assert.equal(dom.window.history.length, count);
+    dom.window.history.back(); await tick();
+    assert.equal(shown, 1); assert.equal(leaves, 0); assert.equal(mounts, 1);
+    dom.window.history.forward(); await tick(); assert.equal(shown, 2);
+    controller.destroy();
+    const resumed = shell.mount(dom.root, model, { window: dom.window, initialRoute: 'cyber-security', mountCyber: adapter });
+    assert.equal(presentation.initialAssessmentId, 'saved-assessment'); assert.equal(presentation.initialQuestionIndex, 2);
+    dom.window.history.back(); await tick(); assert.equal(shown, 1);
+    dom.window.history.forward(); await tick(); assert.equal(shown, 2);
+    resumed.destroy();
+    const another = clone(model); another.context.organisationId = 'another-organisation';
+    const changed = shell.mount(dom.root, another, { window: dom.window, initialRoute: 'cyber-security', mountCyber: adapter });
+    assert.equal(presentation.initialAssessmentId, undefined);
+    changed.destroy();
+});
+
+test('cancelled organisation navigation returns to the actual history cursor without duplicate identities', async () => {
+    const dom = historyDom(); let requests = 0;
+    const controller = shell.mount(dom.root, readyCyber(), { initialRoute: 'cyber-security',
+        mountCyber: () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } }),
+        onOpenOrganisations() { requests++; } });
+    dom.window.location.hash = '#organisations'; await tick(); await tick();
+    assert.equal(requests, 1);
+    assert.equal(dom.historyState().cursor, 0);
+    const ids = dom.historyState().entries.map(entry => entry.state.nofriesDashboard.entry);
+    assert.equal(new Set(ids).size, ids.length);
+    await controller.navigate('services');
+    dom.window.history.back(); await tick(); await tick();
+    assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
+    await controller.navigate('overview');
+    assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
+    controller.destroy();
+});
+
 for (const managed of [false, true]) test(`repeating the current Services route preserves Back and Forward (${managed ? 'managed' : 'unmanaged'} history)`, async () => {
     const dom = historyDom();
     const options = { initialRoute: 'overview' };
@@ -586,12 +721,12 @@ test('selecting the current fallback module still replaces an invalid fragment w
     const dom = historyDom();
     dom.window.location.hash = '#unknown'; await tick();
     const controller = shell.mount(dom.root, view());
-    assert.match(dom.root.textContent, /That view is not available/);
+    assert.match(dom.root.textContent, /We could not find that view/);
     await controller.navigate('overview');
     assert.equal(dom.window.location.hash, '#overview');
     assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
     assert.equal(dom.document.activeElement, dom.root.querySelector('h1'));
-    assert.doesNotMatch(dom.root.textContent, /That view is not available/);
+    assert.doesNotMatch(dom.root.textContent, /We could not find that view/);
 });
 
 test('the current Overview link returns from attention detail without adding a history entry', async () => {
@@ -680,7 +815,8 @@ test('first baseline has no action into planned or disabled assessment modules',
 test('Overview uses the main navigation without duplicate module call-to-action cards', () => {
     const dom = mount(view({ empty: true }));
     assert.equal(dom.root.querySelectorAll('.dashboard-module-card').length, 0);
-    assert.equal(dom.root.querySelector('.dashboard-availability').querySelectorAll('a').length, 0);
+    assert.equal(dom.root.querySelector('.dashboard-availability'), null);
+    assert.doesNotMatch(dom.root.textContent, /Other dashboard areas and availability/);
 });
 
 test('mobile Workspace opens the ready authorized Cyber module ahead of planned AI', () => {
@@ -697,8 +833,83 @@ test('disabled Board Reports keeps the disabled label even when Cyber picture is
     model.modules.find(item => item.key === 'board_reports').state = 'disabled';
     const options = { mountPicture: () => ({ destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } }) };
     const overview = mount(model, options);
-    assert.doesNotMatch(overview.root.querySelector('.dashboard-availability').textContent, /Draft assessment snapshot/);
+    assert.doesNotMatch(overview.root.textContent, /Draft assessment snapshot/);
     const board = mount(model, { ...options, initialRoute: 'board-reports' });
     assert.doesNotMatch(board.root.textContent, /Draft assessment snapshot/);
     assert.match(board.root.textContent, /temporarily unavailable/);
+});
+
+test('the plan uses a customer-friendly name, not the stored code', () => {
+    const dom = mount();
+    const plan = dom.root.querySelector('.dashboard-subscription');
+    assert.match(plan.textContent, /Your plan/);
+    assert.match(plan.textContent, /Governance plan/);
+    assert.doesNotMatch(plan.textContent, /Plan: Govern|not a security score/);
+    const free = clone(view()); free.subscription = 'Score';
+    const freeDom = mount(free);
+    const freePlan = freeDom.root.querySelector('.dashboard-subscription');
+    assert.match(freePlan.textContent, /Free plan/);
+    assert.doesNotMatch(freePlan.textContent, /Score/);
+    const services = mount(free, { initialRoute: 'services' });
+    assert.match(services.root.querySelector('.dashboard-subscription-panel').textContent, /Your plan: Free plan/);
+    assert.doesNotMatch(services.root.querySelector('.dashboard-subscription-panel').textContent, /Score/);
+});
+
+test('Escape closes the More tools menu and returns focus to its summary', () => {
+    const dom = mount();
+    const menu = dom.root.querySelector('.dashboard-menu-other');
+    assert.ok(menu);
+    menu.open = true;
+    for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
+    assert.equal(menu.open, false);
+    assert.equal(dom.document.activeElement, menu.querySelector('summary'));
+    menu.open = false;
+    for (const fn of menu.events.keydown) fn({ key: 'Escape', stopPropagation() {} });
+    assert.equal(menu.open, false);
+});
+
+test('error summaries and scroll targets clear the sticky organisation bar', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
+    const bar = css.match(/\.nofries-dashboard \.dashboard-topbar \{ max-height: (\d+)rem;/);
+    assert.ok(bar, 'the sticky bar has a bounded height');
+    assert.match(css, /\.nofries-dashboard \.dashboard-topbar \{[^}]*position: sticky; top: 0;/);
+    const rule = css.match(/\.nofries-dashboard :is\(([^)]*)\) \{ scroll-margin-top: (\d+)rem; \}/);
+    assert.ok(rule);
+    for (const target of ['.ncsc-errors', '.picture-top-gaps h3', '.ncsc-question', '.dashboard-main h1']) assert.ok(rule[1].split(', ').includes(target), target);
+    assert.ok(Number(rule[2]) >= Number(bar[1]), 'scroll margin covers the tallest sticky bar');
+});
+
+test('the footer information time moves forward only for a later valid read', () => {
+    const model = clone(view());
+    const dom = mount(model);
+    const stamp = () => dom.root.querySelector('.dashboard-provenance').querySelector('time');
+    assert.equal(stamp().dateTime, model.generatedAt);
+    const original = stamp().textContent;
+    const later = new Date(Date.parse(model.generatedAt) + 3 * 60000).toISOString();
+    dom.controller.informationRead(later);
+    assert.equal(stamp().dateTime, later);
+    assert.notEqual(stamp().textContent, original);
+    assert.match(stamp().textContent, /NZ time$/);
+    for (const ignored of [model.generatedAt, '2000-01-01T00:00:00.000Z', 'not a time', 5, null]) {
+        dom.controller.informationRead(ignored);
+        assert.equal(stamp().dateTime, later);
+    }
+    dom.controller.navigate('services');
+    assert.equal(stamp().dateTime, later);
+    dom.controller.destroy();
+});
+
+test('the dashboard footer disclosure and organisations pill follow the page grid with 44px tap targets', () => {
+    const home = fs.readFileSync(path.join(__dirname, '../home.css'), 'utf8');
+    const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
+    // "About this site" uses the footer's width and margins, not x=0.
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details \{ width: min\(1180px, calc\(100% - 40px\)\); margin-inline: auto;/);
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details \{ width: min\(100% - 24px, 1180px\); \}/);
+    assert.match(home, /body\[data-page="operator-dashboard"\] \.site-details > summary \{[^}]*min-height: 44px;/);
+    // Full-width ready layouts keep the pill and footer on the header's gutter.
+    const wide = css.slice(css.indexOf('keep the organisations pill and the footer'));
+    assert.match(wide, /^[^]*?@media screen and \(min-width: 1220px\) \{[^]*?#dashboardChooser \{ margin-inline-start: 1rem; \}/);
+    assert.match(wide, /:is\(\.dashboard-release-footer, \.site-details\) \{ width: auto; margin-inline: 1rem; \}/);
+    const html = fs.readFileSync(path.join(__dirname, '../app/dashboard.html'), 'utf8');
+    assert.match(html, /<details class="site-details">\s*<summary>About this site<\/summary>/);
 });

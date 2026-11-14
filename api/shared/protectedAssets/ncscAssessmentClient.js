@@ -154,8 +154,8 @@
             integer(question.order, 1000000); text(question.prompt); guidance(question.guidance);
             if (Object.hasOwn(question, 'sources')) sourceLinks(question.sources);
             if (Object.hasOwn(question, 'smallBusiness')) {
-                record(question.smallBusiness, ['meaning', 'example', 'checks']);
-                text(question.smallBusiness.meaning); text(question.smallBusiness.example);
+                record(question.smallBusiness, ['question', 'meaning', 'example', 'checks']);
+                text(question.smallBusiness.question); text(question.smallBusiness.meaning); text(question.smallBusiness.example);
                 strings(question.smallBusiness.checks);
                 if (!question.smallBusiness.checks.length || question.smallBusiness.checks.length > 8) invalid();
             }
@@ -200,8 +200,10 @@
      * operation IDs, retries, storage, current tenant selection or UI readiness.
      */
     function createClient(adapters) {
-        const supplied = record(adapters, ['metadata', 'fetch']);
+        const supplied = record(adapters, ['metadata', 'fetch'], ['onAccepted']);
         if (typeof supplied.fetch !== 'function') invalid();
+        if (supplied.onAccepted !== undefined && typeof supplied.onAccepted !== 'function') invalid();
+        const onAccepted = supplied.onAccepted;
         const metadata = validateMetadata(supplied.metadata), fetch = supplied.fetch;
         const questions = new Map(metadata.questions.map(question => [question.id, question]));
         const options = new Map(metadata.responseOptions.map(option => [option.id, option]));
@@ -296,8 +298,14 @@
         }
         function validateResult(value, kind, selected) {
             if (kind === 'list') {
-                record(value, ['schemaVersion', 'assessments', 'nextAfterAssessmentId']);
+                record(value, ['schemaVersion', 'assessments', 'nextAfterAssessmentId'], ['submissionAllowance']);
                 if (!Array.isArray(value.assessments) || value.assessments.length > selected.limit) invalid();
+                if (value.submissionAllowance !== undefined && value.submissionAllowance !== null) {
+                    const allowance = record(value.submissionAllowance, ['used', 'limit']);
+                    // A product grant may set zero submissions; exhaustion is shown, not rejected.
+                    integer(allowance.used, Number.MAX_SAFE_INTEGER);
+                    integer(allowance.limit, Number.MAX_SAFE_INTEGER);
+                }
                 let previous = selected.afterAssessmentId;
                 for (const item of value.assessments) {
                     summary(item, false);
@@ -323,7 +331,7 @@
             if (value.schemaVersion !== 1) invalid();
             return freeze(value);
         }
-        async function request(url, kind, selected, signal, body) {
+        async function request(url, kind, selected, signal, body, keepalive) {
             const mutation = !['list', 'read'].includes(kind);
             const controller = new AbortController();
             let timer;
@@ -339,19 +347,23 @@
                 // Bound the complete response, including a stalled body stream.
                 // A timeout never proves a server mutation was cancelled.
                 timer = setTimeout(cancel, 12000);
-                return await Promise.race([receive(url, kind, selected, controller.signal, body), lifetime]);
+                const result = await Promise.race([receive(url, kind, selected, controller.signal, body, keepalive), lifetime]);
+                // Reported only once the body has been read and validated within
+                // the time limit. A display hint; it cannot change the result.
+                if (onAccepted) { try { onAccepted(kind); } catch { /* Display only. */ } }
+                return result;
             } finally {
                 clearTimeout(timer);
                 if (signal && typeof signal.removeEventListener === 'function') signal.removeEventListener('abort', cancel);
             }
         }
-        async function receive(url, kind, selected, signal, body) {
+        async function receive(url, kind, selected, signal, body, keepalive) {
             const mutation = !['list', 'read'].includes(kind);
             let response, value;
             try {
                 response = await fetch(url, { method: mutation ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
                     redirect: 'error', headers: { Accept: 'application/json', ...(mutation ? { 'Content-Type': 'application/json' } : {}) },
-                    ...(signal === undefined ? {} : { signal }), ...(mutation ? { body } : {}) });
+                    ...(signal === undefined ? {} : { signal }), ...(mutation ? { body } : {}), ...(keepalive ? { keepalive: true } : {}) });
                 if (!response || response.redirected === true || response.type === 'opaqueredirect' || response.type === 'opaque' ||
                     !Number.isInteger(response.status)) invalid();
                 value = await readJson(response);
@@ -366,12 +378,14 @@
             catch { throw unavailable(mutation); }
         }
         async function mutate(kind, input, settings) {
-            const command = normaliseCommand(input), config = record(settings === undefined ? {} : settings, [], ['signal']);
-            if (command.action !== kind) invalid();
+            // Only a save may outlive the page: the browser then still sends it
+            // with the same cookies, headers and body as any other save.
+            const command = normaliseCommand(input), config = record(settings === undefined ? {} : settings, [], kind === 'save' ? ['signal', 'keepalive'] : ['signal']);
+            if (command.action !== kind || config.keepalive !== undefined && typeof config.keepalive !== 'boolean') invalid();
             const create = kind === 'create', url = create ? PREFIX : PREFIX + '/' + encodeURIComponent(command.assessmentId) + '/' + kind;
             const body = JSON.stringify({ ...(create ? { assessmentId: command.assessmentId } : {}), idempotencyKey: command.idempotencyKey,
                 expectedRevision: command.expectedRevision, payload: command.payload });
-            return request(url, kind, command, config.signal, body);
+            return request(url, kind, command, config.signal, body, config.keepalive === true);
         }
         return Object.freeze({ normaliseCommand, commandByteLength,
             async list(input) {

@@ -72,7 +72,7 @@ for (const client of [false, true]) test(`one submitted result remains read-only
     const f = await retainedTrialFixture({ client }), reader = createRetainedTrialAssessmentReader(f.options);
     const before = JSON.stringify({ account: f.state.account, scopes: [...f.scopes], versions: f.versionRows });
     const result = await reader.read({}, f.input);
-    assert.equal(result.readOnly, true); assert.equal(result.trialEndedAt, f.account.activation.validUntil);
+    assert.equal(result.readOnly, true); assert.equal(Object.hasOwn(result, 'trialEndedAt'), false);
     assert.deepEqual(result.assessment, ncsc.projectNcscDetail(f.versions[2]));
     assert.deepEqual(Object.keys(reader), ['read']);
     assert.equal(JSON.stringify({ account: f.state.account, scopes: [...f.scopes], versions: f.versionRows }), before);

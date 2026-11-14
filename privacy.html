@@ -1,85 +1,188 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-NZ">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
-    <title>No Fries | Privacy and Security</title>
-    <meta name="description" content="Privacy, security, and data-handling information for No Fries Managed IT and its private scoping workspace.">
+    <title>No Fries | Privacy notice</title>
+    <meta name="description" content="How No Fries Limited handles personal information for the dashboard, the public website and related services.">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/home.css">
 </head>
-<body>
+<body class="legal-page">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <header class="site-header shell public-site-header">
+        <a class="brand" href="/" aria-label="No Fries Dashboard home">
+            <img class="brand-logo" src="/images/nofrieslogo.png" width="44" height="44" alt="">
+            <span class="brand-copy"><strong>No Fries</strong> <span>Dashboard</span></span>
+        </a>
+        <nav aria-label="Main navigation"><a href="/">Home</a><a href="/pricing.html">Pricing</a><a href="/managed-it.html">Managed IT</a><a href="/roadmap.html">Roadmap</a><a href="/contact.html">Contact</a><a class="site-login" href="/login?intent=login">Log in</a></nav>
+    </header>
     <main class="public-shell">
-        <header class="public-header">
-            <a class="login-brand" href="/" aria-label="No Fries Managed IT home">
-                <img src="/images/nofrieslogo.png" width="44" height="44" alt="No Fries logo">
-                <div><strong>No Fries</strong> <span>Managed IT</span></div>
-            </a>
-            <nav aria-label="Legal navigation">
-                <a href="/">Managed IT</a>
-                <a href="/operator">Staff workspace</a>
-                <a href="/terms.html">Terms</a>
-                <a href="mailto:hello@nofries.nz">Support</a>
+        <article class="public-panel" id="main-content" tabindex="-1">
+            <p class="eyebrow">Privacy notice</p>
+            <h1>How No Fries handles information</h1>
+            <p>Last updated: 11 November 2026. No Fries Limited, Auckland, New Zealand, provides the No Fries dashboard and the public website at nofries.nz. This notice says what personal information we collect, why, and how you can ask to see it, correct it or complain.</p>
+
+            <section class="terms-glance" id="glance" aria-labelledby="glance-title">
+                <h2 id="glance-title">At a glance</h2>
+                <ul>
+                    <li><strong>Who we are:</strong> No Fries Limited is the agency that collects and holds this information. Email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>.</li>
+                    <li><strong>What we collect:</strong> your name, role and email; your organisation’s name and business address; any NZBN you choose to give; assessment scope and answers; terms acceptance; and limited security records.</li>
+                    <li><strong>Why:</strong> to create and secure your account, record your organisation’s agreement, and save and calculate your assessment. We do not sell it, use it for marketing without asking, or use it to train AI. The manual assessment does not use AI.</li>
+                    <li><strong>Where it is stored:</strong> the dashboard and its assessment database run in Microsoft Azure New Zealand North. Sign-in sessions, signup invitations, agreement archives and related access-control records are in private Azure Storage in Australia East. Microsoft Entra ID handles sign-in and sends your verification code.</li>
+                    <li><strong>Who we share it with:</strong> people your organisation authorises, No Fries staff who need it to run the service, and our service providers (Microsoft, and Resend for email).</li>
+                    <li><strong>How long we keep it:</strong> while your account is active and as set out in your agreement. Your access ending does not delete your saved work. You can ask us to delete it. See <a href="#retention">How long we keep information</a>.</li>
+                    <li><strong>Access, correction and complaints:</strong> under the <a href="https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23223.html">Privacy Act 2020</a> you can ask to see and correct personal information we hold about you. If you are not satisfied, you can complain to the <a href="https://www.privacy.org.nz/">Office of the Privacy Commissioner</a> (privacy.org.nz). If a privacy breach is likely to cause serious harm, we notify affected people and the Commissioner. See <a href="#requests">Access, correction and complaints</a>.</li>
+                </ul>
+                <p>The sections below are the customer notice. Information about No Fries staff and Managed IT service workspaces is in a <a href="#staff-workspaces">collapsed section</a> at the end.</p>
+            </section>
+
+            <nav aria-label="On this page">
+                <ol class="legal-contents">
+                    <li><a href="#who">Who we are</a></li>
+                    <li><a href="#principles">The Privacy Act 2020</a></li>
+                    <li><a href="#assistant">Website assistant</a></li>
+                    <li><a href="#enquiries">Website enquiries</a></li>
+                    <li><a href="#signup">Account setup</a></li>
+                    <li><a href="#representative">Organisation details</a></li>
+                    <li><a href="#scope">Managed IT scope</a></li>
+                    <li><a href="#tracking">Website visitor tracking</a></li>
+                    <li><a href="#indirect-collection">Information about other people</a></li>
+                    <li><a href="#do-not-send">What not to send</a></li>
+                    <li><a href="#storage">Where it is stored</a></li>
+                    <li><a href="#sharing">Who we share it with</a></li>
+                    <li><a href="#retention">How long we keep it</a></li>
+                    <li><a href="#requests">Access, correction and complaints</a></li>
+                    <li><a href="#staff-workspaces">Staff and pilot workspaces</a></li>
+                </ol>
             </nav>
-        </header>
 
-        <article class="public-panel">
-            <p class="eyebrow">Privacy and security</p>
-            <h1>How the private workspace handles information</h1>
-            <p>Last updated: 2 November 2026. No Fries is operated from Auckland, New Zealand. This page covers the public managed IT website and assistant, verified service-scope access, customer dashboard signup and assessment use, and the private scoping, operator and service-desk workspaces.</p>
+            <section id="who">
+                <h2>Who we are</h2>
+                <p>No Fries Limited, Auckland, New Zealand, collects and holds the personal information described in this notice. For a privacy request or complaint, email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>. Do not include passwords, verification codes or other secrets.</p>
+                <p>Privacy questions and requests go to <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>. We respond within 20 working days. For our postal address, email us at the same address.</p>
+            </section>
 
-            <h2>Website assistant and prospect discovery</h2>
-            <p>When you choose to message the No Fries website assistant, No Fries processes the conversation, a signed browser-session identifier, limited request and security metadata, and the business or contact details you provide. The signed browser cookie lasts for up to 30 days so the conversation can continue on the same browser. The assistant progressively stores structured facts, their source and known or unknown status, a rolling summary, suggested next action, and technical run metadata such as latency, model, token count and approximate cost. Simply loading the website does not create a prospect record; a record is created when a message is submitted.</p>
-            <p>The default structured preview uses deterministic application logic and is labelled as a preview. If the live model runtime is enabled, selected conversation context and the current message are sent from the No Fries backend to the OpenAI API to produce structured tool calls and a response. Model requests are configured not to store response objects in OpenAI. The OpenAI credential remains on the backend. Do not enter passwords, access tokens, recovery codes, payment data or raw security configuration; the application rejects common secret patterns before creating the conversation. High-confidence attempts to override, expose or bypass the assistant’s instructions are rejected before model processing and are not retained as prospect-conversation text by this security control.</p>
+            <section id="principles">
+                <h2>The Privacy Act 2020</h2>
+                <p>The <a href="https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23223.html">Privacy Act 2020</a> has 13 <a href="https://www.privacy.org.nz/privacy-principles/">Information Privacy Principles</a>. This notice describes our handling. It is not a certificate that every system meets the Act. The principles, in plain language, are:</p>
+                <ol>
+                    <li><strong>Purpose.</strong> We collect personal information for a lawful purpose connected with what No Fries does, and we aim to collect what that purpose needs. See the sections below for each feature.</li>
+                    <li><strong>Source.</strong> We usually collect it from you, or from the person setting up your organisation. A colleague or consultant may give us information about someone else. See <a href="#indirect-collection">Information about other people</a>.</li>
+                    <li><strong>What we tell you when we collect it from you.</strong> This notice tells you who we are, why we collect it, who can receive it, that you can ask for access and correction, and what happens if we do not have the details a feature needs.</li>
+                    <li><strong>How we collect it.</strong> We collect it through the forms, messages and assessment answers you choose to send. We ask you not to include secrets or sensitive information the service does not need. See <a href="#do-not-send">What not to send</a>.</li>
+                    <li><strong>Storage and security.</strong> We protect it with the safeguards in <a href="#storage">Where information is stored</a>. No system can promise it will never be accessed without authority.</li>
+                    <li><strong>Access.</strong> You can ask whether we hold personal information about you, and ask for access. See <a href="#requests">Access, correction and complaints</a>.</li>
+                    <li><strong>Correction.</strong> You can ask us to correct it. If we do not make a correction you request, you can ask us to attach a statement of the correction sought.</li>
+                    <li><strong>Accuracy.</strong> Before we use or disclose personal information, the Act requires us to take reasonable steps to check it is accurate, up to date, complete, relevant and not misleading. Assessment answers are what you submit. Tell us if a personal detail is wrong.</li>
+                    <li><strong>Retention.</strong> We do not keep personal information for longer than we need for a lawful purpose. See <a href="#retention">How long we keep information</a>.</li>
+                    <li><strong>Use.</strong> We use it for the purposes in this notice. We do not sell it, use it for marketing without asking, or use it to train a general-purpose AI model. A new purpose needs a lawful basis and, where the Act requires it, notice.</li>
+                    <li><strong>Disclosure.</strong> We share it as described in <a href="#sharing">Who we share it with</a>, or when the Act otherwise allows.</li>
+                    <li><strong>Overseas disclosure (principle 12).</strong> Some storage is outside New Zealand, in Australia East. Some service providers may process information in other countries. See <a href="#sharing">Who we share it with</a>.</li>
+                    <li><strong>Unique identifiers.</strong> We may keep our own account identifier so we can tell your organisation’s records apart. We do not use a government identifier as your No Fries account number. The setup form asks for an NZBN only if you have one, and we store that company registration number only if you choose to give it. A business-looking email domain is not proof of organisation ownership.</li>
+                </ol>
+                <p>Principle 3A, from the amendment in force on 1 May 2026, can require us to tell a person when we collect their information from someone else. See <a href="#indirect-collection">Information about other people</a>.</p>
+                <p>A notifiable privacy breach is an unauthorised or accidental access, disclosure, alteration, loss or destruction of personal information that has caused or is likely to cause serious harm. If that threshold is met, we will notify affected people and the Privacy Commissioner as soon as practicable, as the Act requires. We do not promise a fixed number of hours. Notification is not a promise that the service is immune to every incident.</p>
+            </section>
 
-            <h2>Website enquiries</h2>
-            <p>When you send the contact form, No Fries processes your name, email address, optional organisation and message, plus limited request and security metadata used for rate limiting. Resend delivers the enquiry as a plain-text email to hello@nofries.nz with your address as the reply-to. The website does not store the enquiry; it is kept in the No Fries mailbox only as long as needed to reply and follow up.</p>
+            <section id="assistant">
+                <h2>Website assistant</h2>
+                <p>When you choose to message the No Fries website assistant, No Fries processes the conversation, a signed browser-session identifier, limited request and security metadata, and the business or contact details you provide. Simply loading the website does not create a prospect record; a record is created when a message is submitted.</p>
+                <p>A signed browser cookie lasts for up to 30 days so the conversation can continue on the same browser. The assistant stores structured facts, their source and known or unknown status, a rolling summary, a suggested next action, and limited technical records of the run: how long it took, which model replied, how much text was processed, and an approximate cost.</p>
+                <p>Until a live model is switched on, the structured preview is produced by fixed rules in the No Fries application and is labelled as a preview. If the live model runtime is enabled, selected conversation context and the current message are sent from the No Fries backend to the OpenAI API to produce a structured reply and suggestions the application can show. Model requests are configured not to store response objects in OpenAI. That setting is not a promise of zero retention by the provider. The OpenAI credential remains on the backend. The manual customer assessment does not use this model.</p>
+                <p>Do not enter passwords, access tokens, recovery codes, payment data or raw security configuration. The application rejects common secret patterns before creating the conversation. High-confidence attempts to override, expose or bypass the assistant’s instructions are rejected before model processing and are not retained as prospect-conversation text by this security control.</p>
+            </section>
 
-            <h2>Account setup and email verification</h2>
-            <p>When you request a signup code, No Fries processes your chosen account type (Company or Consultant), the name you give your organisation or consultant workspace, your email address (personal or work), a private browser continuation, hashed verification data and limited security counters. The eight-digit code expires after 10 minutes and allows at most five attempts. The setup request is usable for 24 hours, including after verification. It does not itself create membership, accept terms, activate services or subscribe you to marketing. A business-looking email domain is not proof of organisation ownership.</p>
-            <p>When enabled, Resend delivers the requested code. Short-lived email-verification requests and security counters are stored in private Azure authentication storage and follow its expiry and lifecycle-cleanup policy. This cleanup does not apply to the durable representative and account records described below. The browser continuation is HttpOnly, Secure and limited to this site. The successful verification record removes the code hash; no code is placed in URLs, browser storage or application logs. Completing account activation requires the separate identity, organisation-authority and terms checks.</p>
+            <section id="enquiries">
+                <h2>Website enquiries</h2>
+                <p>When you send the contact form, No Fries processes your name, email address, optional organisation and message, plus limited request and security metadata used for rate limiting. Resend delivers the enquiry as a plain-text email to hello@nofries.nz with your address as the reply-to. The website does not store the enquiry; it is kept in the No Fries mailbox only as long as needed to reply and follow up. If you do not send the form, we have no enquiry to answer.</p>
+            </section>
 
-            <h2>Representative records and account activation</h2>
-            <p>After email verification, Company and Consultant signup asks for your full name, your role, the organisation or workspace's business address, an optional company registration number, and your explicit assertion that you are authorised to set up the dashboard and accept its terms. A consultant supplies these details and a separate authority assertion for each client organisation. No Fries retains these details with the verified email, account type, organisation name, verification and authority evidence, the offered schedule, and any actual terms acceptance and activation records to operate the account and document its agreed access.</p>
-            <p>These representative, account and client-setup records are stored durably in separate private Azure storage; accepted access and assessment records also use the dashboard database. They are not deleted when a verification code or its 24-hour request expires, or when the original starter period ends. There is no automatic deletion timer for these durable starter records, including unfinished setup. You can request access, correction or deletion using the contact details below; expiry alone is not account deletion. Recoverable storage versions and backups may remain for the configured infrastructure-retention period described below.</p>
-            <h2>Email verification for the service scope</h2>
-            <p>When you request the detailed managed IT scope, No Fries processes the email address you provide, a short-lived verification challenge, limited delivery and security metadata, and the time verification succeeds. The code and confirmation link expire after 15 minutes and can be used once. Verified browser access expires after 24 hours. The email is used to deliver and secure the requested scope and to record genuine interest; it does not by itself subscribe you to a marketing list.</p>
+            <section id="signup">
+                <h2>Account setup and email verification</h2>
+                <p>When you request a signup code, No Fries processes your chosen account type (Company or Consultant), the name you give your organisation or consultant workspace, your email address (personal or work), a private browser continuation, hashed verification data and limited security counters. The eight-digit code expires after 10 minutes and allows at most five attempts. The setup request is usable for 24 hours, including after verification. It does not itself create membership, accept terms, activate services or subscribe you to marketing. A business-looking email domain is not proof of organisation ownership.</p>
+                <p>If we do not have the details needed to create and secure the account, we cannot open dashboard access. The company registration number is optional.</p>
+                <p>When enabled, Resend delivers the requested code. Short-lived email-verification requests and security counters are stored in private Azure authentication storage and follow its expiry and lifecycle-cleanup policy. This cleanup does not apply to the durable representative and account records described below. The browser continuation is limited to this site, is sent only over an encrypted connection, and cannot be read by website scripts. The successful verification record removes the code hash; no code is placed in URLs, browser storage or application logs. Completing account activation requires the separate identity, organisation-authority and terms checks.</p>
+            </section>
 
-            <h2>Service-scope storage and providers</h2>
-            <p>Verification challenges are stored in the application’s private Microsoft Azure storage, expire after 15 minutes and are deleted after successful use. Uncompleted challenge records follow the application storage-retention process. Only after successful confirmation, the verified email address and confirmation time are retained as an interest record. Resend is the intended transactional email provider for the verification message. Access cookies are signed, marked HttpOnly and Secure, and are not available to website JavaScript.</p>
+            <section id="representative">
+                <h2>Organisation and representative details</h2>
+                <p>After email verification, Company and Consultant signup asks for your full name, your role, the organisation or workspace's business address, an optional company registration number (your New Zealand Business Number, if you have one), and your explicit assertion that you are authorised to set up the dashboard and accept its terms. A consultant supplies these details and a separate authority assertion for each client organisation. No Fries retains these details with the verified email, account type, organisation name, verification and authority evidence, the offered schedule, and any actual terms acceptance and activation records to operate the account and document its agreed access.</p>
+                <p>These representative, account and client-setup records are stored durably in separate private Azure storage; accepted access and assessment records also use the dashboard database. They are not deleted when a verification code or its 24-hour request expires, or when an earlier offer’s access period ends. There is no automatic deletion timer for these durable starter records, including unfinished setup. You can request access, correction or deletion using the contact details below; expiry alone is not account deletion. Recoverable storage versions and backups may remain for the configured infrastructure-retention period described below.</p>
+            </section>
 
-            <h2>Website visitor tracking</h2>
-            <p>The public managed IT overview does not load a third-party visitor-tracking script. Standard hosting and security logs may process limited request metadata such as IP address, time, requested path, browser type and response status to operate and protect the service. For a blocked instruction-manipulation attempt, the application records the signed session identifier, detector category and a one-way keyed identifier derived from the network address; it does not store the raw address or rejected message in that security-event record. The website assistant creates its signed session only when the assistant is opened or messaged, as described above.</p>
+            <section id="scope">
+                <h2>Managed IT scope access</h2>
+                <p>When you request the detailed managed IT scope, No Fries processes the email address you provide, a short-lived verification challenge, limited delivery and security metadata, and the time verification succeeds. The code and confirmation link expire after 15 minutes and can be used once. Verified browser access expires after 24 hours. The email is used to deliver and secure the requested scope and to record genuine interest; it does not by itself subscribe you to a marketing list.</p>
+                <p>Verification challenges are stored in the application’s private Microsoft Azure storage, expire after 15 minutes and are deleted after successful use. Uncompleted challenge records follow the application storage-retention process. Only after successful confirmation, the verified email address and confirmation time are retained as an interest record. Resend is the intended transactional email provider for the verification message. The access cookie is signed, cannot be read by website scripts, and is sent only over an encrypted connection.</p>
+            </section>
 
-            <h2>Information processed</h2>
-            <p>Approved users may enter customer profiles, discovery answers, notes, evidence references, internal qualification, service recommendations, proposal drafts, and CRM handoff metadata. When an operator confirms a lifecycle-to-scoping handoff, known prospect facts may pre-populate equivalent scoped answers or appear as context notes; unknown answers remain visibly unknown. Microsoft identity details are used to determine tenant and role access. Limited audit records identify who performed material actions and when.</p>
+            <section id="tracking">
+                <h2>Website visitor tracking</h2>
+                <p>The public managed IT overview does not load a third-party visitor-tracking script. Standard hosting and security logs may process limited request metadata such as IP address, time, requested path, browser type and response status to operate and protect the service. For a blocked instruction-manipulation attempt, the application records the signed session identifier, detector category and a one-way keyed identifier derived from the network address; it does not store the raw address or rejected message in that security-event record. The website assistant creates its signed session only when the assistant is opened or messaged, as described above.</p>
+            </section>
 
-            <h2>Storage and location</h2>
-            <p>The customer dashboard application and its PostgreSQL assessment database are hosted in Microsoft Azure New Zealand North. Dashboard authentication sessions, signup invitations, agreement archives and related access-control records use private Azure Storage in Australia East. Microsoft Entra ID provides identity authentication. Data is encrypted in transit using HTTPS and encrypted at rest by the applicable Azure service. Static application files do not contain a tenant service catalogue or customer records.</p>
+            <section id="indirect-collection">
+                <h2>Information about other people</h2>
+                <p>Your assessment scope, answers and contact details may mention other people, such as staff, suppliers or your IT provider. Only enter what the assessment needs, and only where you are allowed to share it. Tell people when you include their details, and do not enter sensitive personal information. Your organisation remains responsible for its own collection and use of that information. A consultant’s agreement does not remove No Fries’ own duties under the Privacy Act.</p>
+                <p>Where principle 3A requires us to notify a person we did not collect the information from, we must do that as the Act requires. For questions about a notice like this, email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>.</p>
+            </section>
 
-            <h2>Tenant isolation and access</h2>
-            <p>Microsoft sign-in is necessary but not sufficient. Backend checks restrict each request to an approved tenant and role. Tenant storage keys are derived server-side; browser requests cannot select a different tenant. Catalogue, customer, assessment, proposal, export, audit, and CRM routes require explicit capabilities.</p>
+            <section id="do-not-send">
+                <h2>What not to send</h2>
+                <p>Do not enter passwords, API keys, private keys, authentication tokens, credentials, raw security configurations, or other secrets. During an evaluation, use fictional or specifically approved customer information and only service material approved for the external pilot environment.</p>
+            </section>
 
-            <h2>Service catalogue and proprietary material</h2>
-            <p>Uploaded service definitions and matching signals remain in authenticated tenant storage. They are not published in the public website or static JavaScript bundle. Authorised users can still see information required to perform their role, so contractual and organisational controls remain important.</p>
+            <section id="storage">
+                <h2>Where information is stored</h2>
+                <p>The customer dashboard application and its PostgreSQL assessment database are hosted in Microsoft Azure New Zealand North. Dashboard authentication sessions, signup invitations, agreement archives and related access-control records use private Azure Storage in Australia East. Microsoft Entra ID provides identity authentication. Data is encrypted in transit using HTTPS and encrypted at rest by the applicable Azure service. The public website files do not contain a tenant service catalogue or customer records.</p>
+                <p>Microsoft sign-in is necessary but not sufficient. Each request is limited to an approved organisation (tenant) and role. The browser cannot select a different organisation’s records; No Fries selects that store on the server. People your organisation authorises can see what their role allows.</p>
+                <p>Cookies for the assistant, account setup and managed IT scope access are limited to this site, sent only over an encrypted connection, and cannot be read by website scripts. Their expiry does not delete the server-side records described in this notice.</p>
+                <p>The dashboard remembers the last organisation you opened in this browser, so it can reopen it next time. Signing out, signing in with another account or your sign-in expiring clears it.</p>
+                <p>Australia East is outside New Zealand. This notice does not claim a region it does not state.</p>
+            </section>
 
-            <h2>CRM handoff</h2>
-            <p>No Fries does not continuously read a CRM. The pilot integration is a user-initiated, one-way handoff of an approved proposal to a tenant-controlled endpoint. Endpoint details and credentials stay server-side. Production writes are disabled unless the operator explicitly enables them.</p>
+            <section id="sharing">
+                <h2>Who we share it with</h2>
+                <p>We share personal information with people your organisation authorises, and with No Fries staff who need it to run the service. We do not sell it. We do not use it for marketing without asking. We may disclose it where the law permits or requires it. Each legal request is assessed on its own; this notice is not blanket access for every request.</p>
+                <p>Microsoft Azure provides dashboard hosting, PostgreSQL and private storage in the locations described above, and Microsoft Entra ID provides identity authentication. Microsoft Entra B2B, through Microsoft Graph, sends customer-invitation messages when onboarding is enabled. Resend may provide transactional scope-verification email, and Resend delivers contact-form enquiries. When enabled, Resend delivers signup codes. The manual customer assessment and deterministic results do not require OpenAI. OpenAI processes assistant requests only when a separately identified live model feature is enabled. The labelled deterministic preview does not call OpenAI. No public subscription billing is active.</p>
+                <p>Under principle 12, a disclosure outside New Zealand has to meet the Act: for example, the person is authorised, the recipient is subject to comparable safeguards, or the recipient is processing only for us under an agreement with comparable protections. Some information is stored in Australia East. Microsoft Entra ID, Resend and OpenAI may process information outside New Zealand. To ask which countries they use, email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>.</p>
+            </section>
 
-            <h2>Retention, export, and deletion</h2>
-            <p>The current default lifecycle policy makes raw prospect conversation messages eligible for removal after 90 days, abandoned unlinked prospect records eligible after 180 days, detailed AI observability events eligible after 365 days, and prospect security events eligible after 30 days. An authenticated administrator must preview the eligible records and explicitly run the retention job. Expired prospect security events are also pruned when a new security event is recorded. Linked scoping or customer records and conversations awaiting human contact are excluded from automatic selection. The structured lifecycle summary may remain after raw messages are removed where the prospect is still linked or active.</p>
-            <p>Authenticated operators can export an individual lifecycle record and its related conversation, audit, AI activity, and correction data as JSON. Administrators can delete an unlinked lifecycle prospect after typing its exact name, or delete a sales-workspace customer and associated assessments, proposals, and recorded handoffs. A linked lifecycle record cannot be deleted until its scoping customer is deleted or unlinked. Minimal audit metadata may record that retention or deletion occurred without retaining the deleted content. Platform backups or recoverable storage versions may remain for the operator’s configured infrastructure-retention period. Proposal exports are available only to authenticated users with export permission.</p>
+            <section id="retention">
+                <h2>How long we keep information</h2>
+                <p>For the dashboard, we keep information while your account is active and for the periods in your accepted agreement. Ending your access does not delete saved work. You can ask us to delete it. Expiry of a code, a setup request or an earlier offer’s access period is not account deletion. Your accepted agreement sets how long dashboard accounts, assessments and acceptance records are kept.</p>
+                <p>Platform backups or recoverable storage versions may remain for the configured infrastructure-retention period. Retention for website assistant conversations and staff workspace records is in <a href="#staff-workspaces">Staff and Managed IT service workspaces</a>.</p>
+            </section>
 
-            <h2>Do not upload</h2>
-            <p>Do not enter passwords, API keys, private keys, authentication tokens, credentials, raw security configurations, or other secrets. During an evaluation, use fictional or specifically approved customer information and only service material approved for the external pilot environment.</p>
+            <section id="requests">
+                <h2>Access, correction and complaints</h2>
+                <p>For an access, correction, export, deletion, privacy, or security request, email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>. Do not include secrets in the email. We will take proportionate steps to check that you are the person concerned, or that you have authority to act for them. Please do not email passwords or unsolicited copies of identity documents.</p>
+                <p>Under the Privacy Act 2020 you can ask for access to, and correction of, personal information we hold about you. We will respond as soon as reasonably practicable, and within 20 working days, unless a lawful extension applies. If we do not make a correction you request, you can ask us to attach your statement of the correction sought. We may need to withhold another person’s information or apply another ground the Act allows. If we refuse, we will explain the decision and how you can complain.</p>
+                <p>The Privacy Act does not give a general right to have every copy deleted. We will consider a deletion request against the retention rules above, including any lawful hold. Account closure, or an administrator removing access, is not the same as erasure.</p>
+                <p>If you are not satisfied with how we handle a privacy request or complaint, you can complain to the Office of the Privacy Commissioner at <a href="https://www.privacy.org.nz/">privacy.org.nz</a>. You can do that whether or not you have already written to us.</p>
+            </section>
 
-            <h2>Subprocessors and service providers</h2>
-            <p>Microsoft Azure provides dashboard hosting, PostgreSQL and private storage in the locations described above, and Microsoft Entra ID provides identity authentication. Microsoft Entra B2B, through Microsoft Graph, sends customer-invitation messages when onboarding is enabled. Resend may provide transactional scope-verification email. The manual customer assessment and deterministic results do not require OpenAI; OpenAI processes assistant requests only when a separately identified live model feature is enabled, while the labelled deterministic preview does not call OpenAI. A tenant-approved Microsoft Power Automate or Logic Apps flow may be used for CRM handoff once configured. No public subscription billing is active.</p>
+            <details class="legal-staff" id="staff-workspaces">
+                <summary><h2>Staff and Managed IT service workspaces</h2></summary>
+                <p>Most customers do not need this section. It covers No Fries staff tools, the website assistant’s prospect records and pilot workspaces.</p>
+                <p>This section is for No Fries staff and approved users of the private scoping, operator and service-desk workspaces. It is not the customer summary above. Customer dashboard terms are at <a href="/terms.html">Dashboard terms</a>. Pilot workspace terms are at <a href="/pilot-terms.html">pilot workspace terms</a>.</p>
+                <p>Approved users may enter customer profiles, discovery answers, notes, evidence references, internal qualification, service recommendations, proposal drafts, and CRM handoff metadata. When an operator confirms a lifecycle-to-scoping handoff, known prospect facts may pre-populate equivalent scoped answers or appear as context notes; unknown answers remain visibly unknown. Microsoft identity details are used to determine tenant and role access. Limited audit records identify who performed material actions and when.</p>
+                <p>Catalogue, customer, assessment, proposal, export, audit, and CRM actions require an explicit permission. Uploaded service definitions and matching signals remain in authenticated tenant storage. They are not published in the public website or the website’s downloaded code. Authorised users can still see information required to perform their role, so contractual and organisational controls remain important.</p>
+                <p>No Fries does not continuously read a CRM. The pilot integration is a user-initiated, one-way handoff of an approved proposal to a tenant-controlled endpoint. Endpoint details and credentials stay server-side. Production writes are disabled unless the operator explicitly enables them. A tenant-approved Microsoft Power Automate or Logic Apps flow may be used for CRM handoff once configured. Nothing in a dashboard assessment automatically sends a proposal or creates a CRM commitment.</p>
+                <h3>Website assistant and prospect records: how long we keep them</h3>
+                <p>The current default lifecycle policy makes raw prospect conversation messages eligible for removal after 90 days, abandoned unlinked prospect records eligible after 180 days, detailed AI observability events eligible after 365 days, and prospect security events eligible after 30 days. An authenticated administrator must preview the eligible records and explicitly run the retention job. Removal is not automatic. Expired prospect security events are also pruned when a new security event is recorded. Linked scoping or customer records and conversations awaiting human contact are excluded from automatic selection. The structured lifecycle summary may remain after raw messages are removed where the prospect is still linked or active.</p>
+                <p>You can ask for export or deletion. Authenticated operators can export an individual lifecycle record and its related conversation, audit, AI activity, and correction data as JSON. Administrators can delete an unlinked lifecycle prospect after typing its exact name, or delete a sales-workspace customer and associated assessments, proposals, and recorded handoffs. A linked lifecycle record cannot be deleted until its scoping customer is deleted or unlinked. Minimal audit metadata may record that retention or deletion occurred without retaining the deleted content. Platform backups or recoverable storage versions may remain for the operator’s configured infrastructure-retention period. That period is not stated as a number on this page. Proposal exports are available only to authenticated users with export permission.</p>
+            </details>
 
-            <h2>Incidents and requests</h2>
-            <p>For an access, correction, export, deletion, privacy, or security request, email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>. Do not include secrets in the email.</p>
         </article>
     </main>
+    <footer class="home-footer">
+        <span>© 2026 No Fries · Auckland</span>
+        <nav aria-label="Footer links"><a href="/">Home</a><a href="/pricing.html">Pricing</a><a href="/managed-it.html">Managed IT</a><a href="/roadmap.html">Roadmap</a><a href="/contact.html">Contact</a><a href="/privacy.html" aria-current="page">Privacy</a><a href="/terms.html">Terms</a></nav>
+    </footer>
+    <details class="site-release" id="site-version"><summary>Site version</summary><!-- FRONTEND_RELEASE_INFO --></details>
 </body>
 </html>

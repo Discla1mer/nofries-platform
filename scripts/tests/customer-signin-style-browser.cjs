@@ -28,7 +28,6 @@ const sources = { clientSource: read('api/shared/customerSignup/signupClient.js'
 const sourceFiles = ['style.css', 'home.css', 'index.html', 'app/dashboard.html', 'app/dashboard.css', 'images/nofrieslogo.png', 'login.html', 'lib/signupDocument.js', 'api/shared/customerSignup/signupJourney.js',
     'api/shared/customerSignup/signupClient.js', 'js/organisation-setup.js', 'api/authLogout/index.js',
     'staticwebapp.config.json', 'azure/staticwebapp.config.example.json', 'dist/staticwebapp.config.json',
-    'shared-assistant.css', 'images/fry-chat.png', 'lib/sharedAssistantDocument.js', 'lib/withSharedAssistantDocument.js', 'lib/withHashBoundSharedAssistantDocument.js',
     'dist/index.html', 'dist/app/dashboard.html', 'dist/login.html',
     'scripts/build-static.js', 'scripts/tests/customer-signin-style-browser.cjs'];
 const sourceHashes = () => Object.fromEntries(sourceFiles.map(file => [file, createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')]));
@@ -36,7 +35,6 @@ const frozenSources = sourceHashes();
 const dynamic = buildSignupDocument({ ...sources, customerLogin: true, customerTransport: 'external' });
 const hosted = buildHostedSignupDocument(sources);
 const assets = { '/style.css': 'style.css', '/home.css': 'home.css', '/js/organisation-setup.js': 'js/organisation-setup.js',
-    '/shared-assistant.css': 'shared-assistant.css', '/images/fry-chat.png': 'images/fry-chat.png',
     '/favicon.svg': 'favicon.svg', '/images/nofrieslogo.png': 'images/nofrieslogo.png' };
 const terms = { status: 'terms', termsText: 'Synthetic agreement for rendering only.\nNo consent will be submitted.\n' + 'LongTermsWithoutSpaces'.repeat(12),
     termsVersion: 'synthetic-v1', termsDigest: 'a'.repeat(64), scheduleId: 'synthetic-schedule', scheduleDigest: 'b'.repeat(64),
@@ -48,11 +46,11 @@ const cases = [
     { name: 'create-retry', state: { status: 'create_account' }, hint: '&signin=retry', heading: 'Restart secure sign-in' },
     { name: 'create-expired', state: { status: 'create_account' }, hint: '&signin=expired', heading: 'Restart secure sign-in' },
     { name: 'choose-account', state: { status: 'create_account' }, hint: '&account=choose', hosted: true, heading: 'Choose your account' },
-    { name: 'setup-details', state: { status: 'setup_details', email: 'synthetic@example.test' }, heading: 'Set up your workspace' },
+    { name: 'setup-details', state: { status: 'setup_details', email: 'synthetic@example.test' }, heading: 'Set up your organisation' },
     { name: 'saved-reservation', hosted: true, state: { status: 'setup_details', email: 'synthetic@example.test',
-        reservation: { accountType: 'consultant', organisationName: 'Synthetic saved consultancy' } }, heading: 'Set up your workspace' },
+        reservation: { accountType: 'consultant', organisationName: 'Synthetic saved consultancy' } }, heading: 'Set up your organisation' },
     { name: 'resume-setup', state: { status: 'resume_setup', email: 'synthetic@example.test', accountType: 'company',
-        organisationName: 'Synthetic saved company' }, heading: 'Resume your workspace setup' },
+        organisationName: 'Synthetic saved company' }, heading: 'Resume your organisation setup' },
     { name: 'signin-required', hosted: true, status: 401, state: { status: 'signin_required' }, heading: 'Sign in again' },
     { name: 'continue-manually', state: { status: 'continue_authentication' }, hint: '&signin=expired', heading: 'Continuing account setup' },
     { name: 'terms', hosted: true, state: terms, heading: 'Review your terms' },

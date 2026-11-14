@@ -238,10 +238,10 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             await until(() => button(ui, 'Save progress'));
             const assessmentId = transport.calls[0].assessmentId, rationale = '  Synthetic pending N/A claim.\n界 \uD83D\uDE80  ';
             answer(ui, 0, 'not_applicable', rationale); button(ui, 'Save progress').click();
-            await until(() => button(ui, 'Retry same operation'));
+            await until(() => button(ui, 'Try the save again'));
             expect((await repository.readNcscAssessment(first.context, { assessmentId })).assessment.revision).toBe(1);
             expect(await ui.controller.requestLeave()).toBe(false);
-            button(ui, 'Retry same operation').click();
+            button(ui, 'Try the save again').click();
             await until(() => ui.root.textContent.includes('The operation is confirmed and the current saved version has been checked.'));
             expect(transport.calls[2]).toEqual(transport.calls[1]);
             expect((await usageOf(first.scope)).counters.assessment_runs).toBe(0);
@@ -254,10 +254,12 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             expect(id(ui, `ncsc-rationale-${metadata.questions[0].id}`).value).toBe(rationale);
             expect(ui.root.textContent).toContain(declaration);
             button(ui, 'Clear answer').click(); button(ui, 'Save progress').click();
-            await until(() => ui.root.textContent.includes('Saved revision 2'));
-            expect((await restarted.client.read(assessmentId)).assessment.responses).toEqual([]);
+            await until(() => ui.root.textContent.includes('Your progress is saved. Last saved '));
+            expect((await restarted.client.read(assessmentId)).assessment).toMatchObject({ revision: 2, responses: [] });
             metadata.questions.forEach((_question, index) => answer(ui, index, index === 0 ? 'not_applicable' : 'unknown', index === 0 ? rationale : undefined));
-            button(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 3'));
+            expect(ui.root.textContent).not.toContain('Your progress is saved.');
+            button(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved. Last saved '));
+            expect((await restarted.client.read(assessmentId)).assessment.revision).toBe(3);
             ui.controller.destroy(); const finalTransport = composed(first); ui = await resume(finalTransport);
             button(ui, 'Review and submit').click(); button(ui, 'Save and submit assessment').click();
             button(ui, 'Submit').click();
@@ -856,6 +858,118 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 .toEqual(exported.dashboard_ncsc_assessment_revisions.map(row => row.payload_sha256));
             expect(manifest.engine).toMatch(/^\d+/);
         }, 60000);
+
+        // Lifecycle email slice E2 (#151). The production request transaction
+        // also sets the signed-in subject and organisation; mirror that here.
+        describe('lifecycle email enqueue at submit', () => {
+            const FLAG = 'NOFRIES_LIFECYCLE_EMAIL_ENQUEUE_ENABLED', accountId = crypto.randomUUID();
+            let starter = null;
+            const subjectDatabase = (scope, intercept = (sql, params, run) => run()) => ({
+                withTenantTransaction: (tenantId, work) => database.withTenantTransaction(tenantId, async tx => {
+                    await tx.query("SELECT set_config('nofries.organisation_id', $1, true), set_config('nofries.subject_key', $2, true)",
+                        [scope.organisationId, SUBJECT]);
+                    return work({ query: (sql, params) => intercept(sql, params, () => tx.query(sql, params), tx) });
+                }) });
+            const outboxRows = async () => (await ownerPool.query(`SELECT tenant_id, organisation_id, email_type, dedupe_key,
+                template_version, params, status, not_before FROM nofries.email_outbox WHERE account_id=$1 ORDER BY email_type, dedupe_key`,
+            [accountId])).rows.map(row => ({ ...row, not_before: row.not_before.toISOString() }));
+            const pendingNudge = (s, key) => ownerPool.query(`INSERT INTO nofries.email_outbox (outbox_id, tenant_id, organisation_id,
+                account_id, email_type, dedupe_key, template_version) VALUES ($1,$2,$3,$4,'nudge_unfinished',$5,'nudge-unfinished-v2')`,
+            [crypto.randomUUID(), s.scope.tenantId, s.scope.organisationId, accountId, key]);
+            const gaps = () => allResponses().map((row, index) => index < 3 ? { ...row, optionId: 'no' } : row);
+            async function starterTenant() {
+                if (starter) return starter;
+                const example = await seed({ tenantId: crypto.randomUUID(), organisationId: crypto.randomUUID(), capacity: 10 });
+                await ownerPool.query(`INSERT INTO nofries.dashboard_starter_accounts (account_id,email_sha256,subject_key,account_type)
+                    VALUES ($1,$2,$3,'company')`, [accountId, crypto.randomBytes(32).toString('hex'), SUBJECT]);
+                const preparation = { planId: 'nf-starter-2026-09-r1', kind: 'own', subjectKey: SUBJECT, accountType: 'company', scope: example.scope };
+                await ownerPool.query(`INSERT INTO nofries.dashboard_starter_scopes (tenant_id,organisation_id,account_id,account_type,subject_key,
+                    ordinal,authority_id,binding_id,preparation,activation) VALUES ($1,$2,$3,'company',$4,0,$5,$6,$7::jsonb,'{"synthetic":true}'::jsonb)`,
+                [example.scope.tenantId, example.scope.organisationId, accountId, SUBJECT, crypto.randomUUID(), crypto.randomUUID(), JSON.stringify(preparation)]);
+                starter = example;
+                return starter;
+            }
+            const headOf = async (s, id) => (await ownerPool.query('SELECT payload_sha256 FROM nofries.dashboard_ncsc_assessments WHERE tenant_id=$1 AND assessment_id=$2',
+                [s.scope.tenantId, id])).rows[0].payload_sha256;
+            async function draft(s, id) {
+                const repo = makeRepository(subjectDatabase(s.scope));
+                await repo.executeNcscAssessment(s.context, createCommand(id, `create-${id}`));
+                await repo.executeNcscAssessment(s.context, saveCommand(id, 0, `save-${id}`, gaps()));
+                return repo;
+            }
+            beforeAll(() => { process.env[FLAG] = 'true'; });
+            afterAll(async () => {
+                delete process.env[FLAG];
+                if (!ownerPool) return;
+                await ownerPool.query('DELETE FROM nofries.email_outbox WHERE account_id=$1', [accountId]);
+                await ownerPool.query('DELETE FROM nofries.dashboard_starter_scopes WHERE account_id=$1', [accountId]);
+                await ownerPool.query('DELETE FROM nofries.dashboard_starter_accounts WHERE account_id=$1', [accountId]);
+            });
+
+            test('a submit enqueues the result summary now and a 90-day reminder, and a duplicate submit is a no-op', async () => {
+                const s = await starterTenant(), repo = await draft(s, 'email-a');
+                const submitted = await repo.executeNcscAssessment(s.context, submitCommand('email-a', 1, 'submit-email-a'));
+                const head = (await ownerPool.query('SELECT payload_sha256 FROM nofries.dashboard_ncsc_assessments WHERE tenant_id=$1 AND assessment_id=$2',
+                    [s.scope.tenantId, 'email-a'])).rows[0].payload_sha256;
+                const counts = submitted.assessment.submission.evaluation.countsCompletion, gapCount = counts.no + counts.partial;
+                expect(gapCount).toBeGreaterThan(0);
+                const expected = [
+                    { ...s.scope, email_type: 'reassess_reminder', dedupe_key: head, template_version: 'reassess-reminder-v1',
+                        params: {}, status: 'pending', not_before: '2026-12-06T09:00:00.000Z' },
+                    { ...s.scope, email_type: 'result_summary', dedupe_key: head, template_version: 'result-summary-v1',
+                        params: { assessmentId: 'email-a', gapCount }, status: 'pending', not_before: NOW }]
+                    .map(({ tenantId, organisationId, ...row }) => ({ tenant_id: tenantId, organisation_id: organisationId, ...row }));
+                expect(await outboxRows()).toEqual(expected);
+                expect(await repo.executeNcscAssessment(s.context, submitCommand('email-a', 1, 'submit-email-a'))).toEqual(submitted);
+                expect(await outboxRows()).toEqual(expected);
+            });
+
+            test('a submit cancels the pending nudge and the older reminder but keeps the new reminder pending', async () => {
+                const s = await starterTenant(), repo = await draft(s, 'email-b');
+                await pendingNudge(s, 'nudge-1');
+                await repo.executeNcscAssessment(s.context, submitCommand('email-b', 1, 'submit-email-b'));
+                const a = await headOf(s, 'email-a'), b = await headOf(s, 'email-b');
+                const status = Object.fromEntries((await outboxRows()).map(row => [`${row.email_type}/${row.dedupe_key}`, row.status]));
+                expect(status).toMatchObject({ 'nudge_unfinished/nudge-1': 'cancelled', [`reassess_reminder/${a}`]: 'cancelled',
+                    [`reassess_reminder/${b}`]: 'pending' });
+                expect(Object.entries(status).filter(([key]) => key.startsWith('result_summary/')).map(([, value]) => value))
+                    .toEqual(['pending', 'pending']);
+            });
+
+            test('resubmitting the same assessment still leaves a pending reminder for it', async () => {
+                const s = await starterTenant(), repo = await draft(s, 'email-d');
+                await repo.executeNcscAssessment(s.context, submitCommand('email-d', 1, 'submit-email-d'));
+                // An exact retry replays; a new submit of a sealed assessment is refused. Neither loses the reminder.
+                await repo.executeNcscAssessment(s.context, submitCommand('email-d', 1, 'submit-email-d'));
+                await expect(repo.executeNcscAssessment(s.context, submitCommand('email-d', 2, 'resubmit-email-d'))).rejects.toMatchObject({ statusCode: 409 });
+                const d = await headOf(s, 'email-d');
+                expect((await outboxRows()).filter(row => row.email_type === 'reassess_reminder' && row.status === 'pending')
+                    .map(row => row.dedupe_key)).toEqual([d]);
+            });
+
+            test('a submit that fails after enqueueing rolls back its outbox rows and cancellations', async () => {
+                const s = await starterTenant(); await draft(s, 'email-c');
+                await pendingNudge(s, 'nudge-2');
+                const before = await outboxRows();
+                let inside = null;
+                const failing = makeRepository(subjectDatabase(s.scope, async (sql, params, run, tx) => {
+                    if (sql.startsWith('INSERT INTO nofries.dashboard_ncsc_assessment_receipts')) {
+                        inside = (await tx.query(`SELECT email_type, status FROM nofries.email_outbox WHERE dedupe_key = 'nudge-2'
+                            OR (email_type = 'reassess_reminder' AND status = 'pending')
+                            ORDER BY email_type`)).rows;
+                        throw new Error('synthetic receipt failure');
+                    }
+                    return run();
+                }));
+                await expect(failing.executeNcscAssessment(s.context, submitCommand('email-c', 1, 'submit-email-c')))
+                    .rejects.toMatchObject({ code: 'ncsc_unavailable' });
+                expect(inside).toEqual([{ email_type: 'nudge_unfinished', status: 'cancelled' }, { email_type: 'reassess_reminder', status: 'pending' }]);
+                expect(await outboxRows()).toEqual(before);
+                expect(before.find(row => row.dedupe_key === 'nudge-2').status).toBe('pending');
+                expect((await ownerPool.query('SELECT revision FROM nofries.dashboard_ncsc_assessments WHERE tenant_id=$1 AND assessment_id=$2',
+                    [s.scope.tenantId, 'email-c'])).rows).toEqual([{ revision: 1 }]);
+            });
+        });
     });
 };
 

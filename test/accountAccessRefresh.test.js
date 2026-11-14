@@ -276,6 +276,17 @@ test('ready workspace exposes refresh failure without replacing content, then cl
     expect(h.mounts[0].destroy).not.toHaveBeenCalled();
 });
 
+test('Account shows only the authenticated session label and clears it when access expires', async () => {
+    const h = harness({ hash: '#overview', accountMenu: true }); await flush();
+    await h.open(state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test' }));
+    const toggle = h.document.getElementById('dashboardAccountToggle');
+    expect(toggle.textContent).toBe('Account: synthetic@example.test');
+    h.window.dispatch('focus'); await flush();
+    await h.reply(4, 401, { code: 'dashboard_authentication_required' });
+    expect(toggle.textContent).toBe('Account');
+    expect(h.document.getElementById('dashboardAccountMenu').hidden).toBe(true);
+});
+
 test('native Account actions retain guarded consultant return and disappear after session expiry', async () => {
     const h = harness({ hash: '#overview', accountMenu: true }); await flush();
     const value = state(A, GA, { purpose: 'customer', accountType: 'consultant' });
@@ -290,6 +301,15 @@ test('native Account actions retain guarded consultant return and disappear afte
     h.document.getElementById('dashboardAccountToggle').click();
     expect(actions.hidden).toBe(false);
     expect(h.document.getElementById('dashboardAccountToggle').getAttribute('aria-expanded')).toBe('true');
+    // Escape closes the open menu and returns focus to the Account button.
+    const toggle = h.document.getElementById('dashboardAccountToggle');
+    const escape = { key: 'Escape', preventDefault: jest.fn() };
+    menu.events.keydown.forEach(listener => listener(escape));
+    expect(actions.hidden).toBe(true); expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(escape.preventDefault).toHaveBeenCalledTimes(1); expect(h.document.activeElement).toBe(toggle);
+    const other = { key: 'Tab', preventDefault: jest.fn() };
+    menu.events.keydown.forEach(listener => listener(other)); expect(other.preventDefault).not.toHaveBeenCalled();
+    toggle.click(); expect(actions.hidden).toBe(false);
     back.onclick(); await flush();
     expect(h.document.getElementById('dashboardAccountToggle').getAttribute('aria-expanded')).toBe('false');
     expect(actions.hidden).toBe(true); expect(back.hidden).toBe(true);

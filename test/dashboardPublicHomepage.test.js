@@ -17,14 +17,25 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
     assert.match(html, /data-product="dashboard"/);
     assert.match(html, /property="og:title" content="No Fries \| Dashboard\. Managed IT\."/);
     assert.equal((html.match(/<h1\b/g) || []).length, 1);
-    assert.match(html, /id="home-title" class="homepage-lockup"><span class="lockup-row"><span class="lockup-word">No<\/span><img class="lockup-mark" src="\/images\/nofries-mark-large\.webp" width="640" height="640" alt=""><\/span> <span class="lockup-row"><span class="lockup-word">Fries<\/span> <span class="lockup-tagline">Dashboard\.<br>Managed IT\.<\/span><\/span><\/h1>/);
-    assert.equal((html.match(/Understand your IT and cyber security, see where the gaps are and decide what needs attention\./g) || []).length, 2);
-    assert.match(html, /Understand where your IT and cyber security stand\. See the gaps, make informed decisions and start improving\./);
+    assert.match(html, /<p class="homepage-lockup"><span class="lockup-row"><span class="lockup-word">No<\/span><img class="lockup-mark" src="\/images\/nofries-mark-large\.webp" width="640" height="640" alt=""><\/span> <span class="lockup-row"><span class="lockup-word">Fries<\/span> <span class="lockup-tagline">Dashboard\.<br>Managed IT\.<\/span><\/span><\/p>/);
+    assert.match(html, /<h1 id="home-title" class="homepage-headline">Know where your business stands on cyber security in about 15 minutes\.<\/h1>/);
+    assert.match(html, /A free check for New Zealand small businesses, based on guidance from New Zealand’s National Cyber Security Centre \(NCSC\)\./);
+    assert.match(html, /Free dashboard; it doesn’t expire · No card required/);
+    assert.doesNotMatch(html, /Free to start|trial/i);
+    assert.equal((html.match(/Understand your IT and cyber security and see where the gaps are\./g) || []).length, 2);
     assert.doesNotMatch(html, /in real time|continuous monitoring|automatically updated/i);
     assert.match(html, /An illustrative view of assessment topics, not a live result\./);
     assert.match(html, /Your results reflect the answers you provide\./);
     assert.doesNotMatch(html, /Built from the assessment answers you submit; update them as your IT changes\./);
     assert.doesNotMatch(html, /Automatic updates and connected data feeds are planned\. Managed IT and advisory services are optional\./);
+});
+
+test('release identifiers are available in a collapsed site-version disclosure', () => {
+    for (const page of ['index.html', 'managed-it.html']) {
+        const source = fs.readFileSync(path.join(root, page), 'utf8');
+        assert.doesNotMatch(source, /About this site|<details class="site-details">/);
+        assert.match(source, /<details class="site-release" id="site-version"><summary>Site version<\/summary><!-- FRONTEND_RELEASE_INFO --><\/details>/);
+    }
 });
 
 test('account creation and login have distinct entries and availability is explicit', () => {
@@ -35,7 +46,7 @@ test('account creation and login have distinct entries and availability is expli
     assert.doesNotMatch(accountCard, /For your company or your clients\./);
     assert.doesNotMatch(html, /<ol\b[^>]*\bclass="gateway-steps"/);
     assert.deepEqual([...accountCard.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)]
-        .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]), [['/login?intent=create', 'Create account'], ['#dashboard-benefits', 'Explore the dashboard']]);
+        .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]), [['/login?intent=create', 'Create account'], ['/sample-result.html', 'See an example result'], ['/try', 'Try the demo'], ['#dashboard-benefits', 'How it works']]);
     assert.match(html, /class="homepage-login" href="\/login\?intent=login"/);
     assert.equal((html.match(/href="\/login\?intent=create"/g) || []).length, 1);
     assert.match(html, /id="dashboard-benefits"/);
@@ -63,10 +74,10 @@ test('public customer links exclude the separate staff entry', () => {
     assert.match(html, /href="\/terms\.html"/);
     const footer = html.match(/<footer\b[\s\S]*?<\/footer>/)[0];
     assert.deepEqual([...footer.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]),
-        ['https://news.nofries.nz/', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html']);
+        ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html']);
     const mainNav = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
     assert.deepEqual([...mainNav.matchAll(/href="([^"]+)"/g)].map(match => match[1]),
-        ['https://news.nofries.nz/', '/roadmap.html', '/login?intent=login']);
+        ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/login?intent=login']);
 });
 
 test('the homepage keeps only one compact MSP section below its Dashboard entry', () => {
@@ -76,7 +87,8 @@ test('the homepage keeps only one compact MSP section below its Dashboard entry'
     assert.equal(html.split('id="other-services"').length - 1, 1);
     const other = html.match(/<section class="gateway-other-services"[\s\S]*?<\/section>/)[0];
     assert.deepEqual([...other.matchAll(/href="([^"]+)"/g)].map(match => match[1]), ['/managed-it.html']);
-    assert.match(other, /Protection and backup are selected separately/);
+    assert.match(other, /Microsoft 365 backup is included from the Managed tier/);
+    assert.match(other, /Security hardening and alert review are included in Secure/);
     assert.ok(other.length < 650, 'secondary service information stays compact');
     assert.ok(html.indexOf('id="other-services"') > html.indexOf('Create account'));
     assert.match(html, /aria-label="Dashboard benefits"/);
@@ -92,9 +104,9 @@ test('service pricing remains server-owned rather than embedded in the homepage'
 
 test('gateway template includes only reviewed public scripts and a hash-bound loader marker', () => {
     const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
-    assert.equal(scripts.length, 5);
+    assert.equal(scripts.length, 4);
     assert.deepEqual(scripts.map(match => match[1].match(/src="([^"]+)"/)[1]),
-        ['/js/organisation-setup.js', '/js/home.js', '/js/enquiry-availability.js', '/js/enquiry-home.js', '/js/prospect-assistant.js']);
+        ['/js/organisation-setup.js', '/js/home.js', '/js/enquiry-availability.js', '/js/enquiry-home.js']);
     assert.ok(scripts.every(match => match[2].trim() === ''));
     assert.doesNotMatch(html, /\bon(?:click|load|error|submit)\s*=/i);
     assert.doesNotMatch(html, /(?:src|href)="(?:\/api\/dashboard\/(?:app\.js|bootstrap)|\/test\/fixtures\/)/);
@@ -147,4 +159,13 @@ test('the simplified homepage preserves all protected entry and integrity marker
         assert.equal(html.split(marker).length - 1, 1, marker);
     }
     assert.match(html, /data-dashboard-gateway="true"/);
+});
+
+test('in-page homepage links move keyboard focus to their target section', () => {
+    const links = [...html.matchAll(/<a\b[^>]*href="#([^"]+)"/g)].map(match => match[1]);
+    assert.ok(links.includes('dashboard-benefits'));
+    for (const id of links) {
+        // A target with tabindex="-1" receives focus on fragment navigation, so the next Tab continues from it.
+        assert.match(html, new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*\\btabindex="-1"`), `#${id} is not focusable`);
+    }
 });

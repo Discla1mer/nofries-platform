@@ -162,12 +162,7 @@ function answer(value) {
 
 function privateDocumentInlineScripts(html) {
     const scripts = [...String(html).matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
-    expect(scripts).toHaveLength(3);
-    const external = scripts.filter(script => /\bsrc\s*=/.test(script[1]));
-    expect(external.map(script => script[1])).toEqual([
-        ' src="/js/prospect-assistant.js" defer', ' src="/js/shared-assistant.js" defer'
-    ]);
-    expect(external.every(script => script[2] === '')).toBe(true);
+    expect(scripts).toHaveLength(1);
     const inline = scripts.filter(script => !/\bsrc\s*=/.test(script[1]));
     expect(inline).toHaveLength(1);
     return inline;
@@ -361,15 +356,16 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         }
         expect(response.text).toContain('<p class="eyebrow">Optional support</p>');
         expect(response.text).toContain('id="other-services-title">Need a hand with the day-to-day?</h2>');
-        expect(response.text).toContain('Public help only. No access to your organisation, forms or assessments, and no account or assessment changes. Keep private information out.');
+        expect(response.text).not.toContain('Ask Fry');
         expect(response.text).not.toContain('Tell us about your people, devices and current set-up.');
         expect(response.text).not.toContain('one useful question at a time');
         expect(response.text).not.toContain('Plan your Lean Managed IT service.');
-        expect(response.text).toContain('Protection and backup are selected separately.');
+        expect(response.text).toContain('Microsoft 365 backup is included from the Managed tier.');
+        expect(response.text).toContain('Security hardening and alert review are included in Secure.');
         expect(response.text).not.toContain('id="managed-it-per-user-price"');
         expect(response.text).toContain('<title>No Fries | Dashboard. Managed IT.</title>');
         expect(response.text).not.toContain('Automatic updates and connected data feeds are planned');
-        expect(response.text).toContain('data-assistant-help-only="true"');
+        expect(response.text).not.toContain('data-shared-assistant');
         expect(response.text).not.toContain('NZ$119 + GST');
         expect(response.text).not.toContain('Initial set-up starts at NZ$750 + GST');
         expect(response.text).not.toContain('NZ$895');
@@ -383,7 +379,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(response.text).not.toContain('/operator');
         expect(response.text).not.toContain('Staff sign in');
         expect(response.text).toContain('/js/home.js');
-        expect(response.text).toContain('/js/prospect-assistant.js');
+        expect(response.text).not.toContain('/js/prospect-assistant.js');
         expect(response.text).not.toContain('Sales Discovery Workspace');
         expect(response.text).not.toContain('security.monitoring=absent');
         expect(response.text).not.toContain('lead-form.js');
@@ -408,10 +404,16 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             streaming: true,
             pricing: {
                 currency: 'NZD',
-                perUserMonthly: 119,
+                perUserMonthly: 99,
                 includedEndpointsPerUser: 1,
                 onboardingFrom: 750,
-                gstExclusive: true
+                gstExclusive: true,
+                recommendedTierId: 'managed',
+                tiers: [
+                    expect.objectContaining({ id: 'essentials', perUserMonthly: 59 }),
+                    expect.objectContaining({ id: 'managed', perUserMonthly: 99, recommended: true }),
+                    expect.objectContaining({ id: 'secure', perUserMonthly: 139 })
+                ]
             }
         });
         expect(session.body.organisation.context.productivity.platform).toBe('unknown');
@@ -1464,17 +1466,17 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         const proposal = proposalResponse.body.proposal;
         expect(proposal.recommendations).toHaveLength(1);
         expect(proposal.pricing).toMatchObject({
-            policyId: 'managed_it_2026_08_4',
-            policyVersion: '2026.08.4',
-            perUserMonthly: 119,
+            policyId: 'managed_it_2026_11_1',
+            policyVersion: '2026.11.1',
+            perUserMonthly: 99,
             includedEndpointsPerUser: 1,
             onboardingFrom: 750,
             additionalEndpointMonthly: 20,
             additionalLocationMonthly: 125
         });
         expect(proposal.commercialPolicy).toMatchObject({
-            policyId: 'managed_it_2026_08_4',
-            policyVersion: '2026.08.4',
+            policyId: 'managed_it_2026_11_1',
+            policyVersion: '2026.11.1',
             serviceName: 'No Fries Managed IT'
         });
         expect(JSON.stringify(proposal)).not.toContain('estimatedMrr');
@@ -1491,7 +1493,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             identities: {
                 promptVersion: 'proposal-review-v2',
                 outputSchemaVersion: 'proposal-review-schema-v1',
-                policyId: 'managed_it_2026_08_4'
+                policyId: 'managed_it_2026_11_1'
             }
         });
         const mismatchedAccept = await request(app)
@@ -1583,7 +1585,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             reviewId: aiReview.body.review.reviewId,
             promptVersion: 'proposal-review-v2',
             outputSchemaVersion: 'proposal-review-schema-v1',
-            policyId: 'managed_it_2026_08_4',
+            policyId: 'managed_it_2026_11_1',
             sourceSha256: aiReview.body.review.sourceSha256,
             suggestionSha256: aiReview.body.review.suggestionSha256,
             feedback: { outcome: 'edited' },
@@ -1661,7 +1663,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
             userCount: 50,
             managedEndpointCount: 50,
             locationCount: 2,
-            monthlyTotalExGst: 6075,
+            monthlyTotalExGst: 5075,
             confirmed: true
         });
 
@@ -1670,7 +1672,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(word.headers['content-type']).toContain('application/msword');
         expect(word.text).toContain('Fictional Logistics Ltd');
         expect(word.text).toContain('Managed endpoint security');
-        expect(word.text).toContain('NZ$6,075 + GST per month');
+        expect(word.text).toContain('NZ$5,075 + GST per month');
         expect(word.text).toContain('Based on 50 supported people, 50 managed computers and 2 supported locations.');
         expect(word.text).toContain('Initial set-up: NZ$750 + GST.');
         expect(word.text).toContain('Proposed term: 12 months.');
@@ -1902,7 +1904,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(fs.existsSync(path.join(dist, 'js', 'scoping-copy.js'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'js', 'home.js'))).toBe(true);
         expect(fs.existsSync(path.join(dist, 'js', 'operator-loader.js'))).toBe(true);
-        expect(fs.existsSync(path.join(dist, 'js', 'prospect-assistant.js'))).toBe(true);
+        expect(fs.existsSync(path.join(dist, 'js', 'prospect-assistant.js'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'js', 'scope-access.js'))).toBe(true);
         expect(fs.existsSync(path.join(dist, 'app', 'mssp.js'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'js', 'paywall.js'))).toBe(false);
@@ -2474,6 +2476,72 @@ describe('configured dashboard actual HTTP transport', () => {
         expect(result.text).not.toContain('PRIVATE_SYNTHETIC_SQL_UNAVAILABLE');
     });
 
+    // Well-formed opaque session IDs that the server never issued.
+    const sid = letter => Buffer.alloc(32, letter.charCodeAt(0)).toString('base64url');
+
+    test('fabricated or rotated dashboard session cookies stay on the ordinary address read limit', async () => {
+        const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_READ_MAX: '2', NOFRIES_RATE_DASHBOARD_SESSION_READ_MAX: '50',
+            NOFRIES_RATE_DASHBOARD_ADDRESS_READ_MAX: '100' } });
+        const read = cookie => h.send('get', '/api/dashboard/session').set('Cookie', cookie);
+        const fake = letter => '__Host-nofries-auth=' + sid(letter);
+        h.resetObservations();
+        // An unissued cookie is checked by the dashboard (one store read each)
+        // but never gains the signed-in allowance.
+        expect((await read(fake('a'))).status).toBe(401);
+        expect((await read(fake('a'))).status).toBe(401);
+        expect(h.store.loadSession).toHaveBeenCalledTimes(2);
+        const limited = await read(fake('a'));
+        expect(limited.status).toBe(429);
+        expect(limited.body).toEqual({ error: 'Too many requests. Please try again later.', retryAfterSeconds: expect.any(Number) });
+        // Rotating fabricated values (any session cookie name) after a 429
+        // does not open a fresh allowance, and causes no further store reads.
+        for (const cookie of [fake('b'), fake('c'), '__Host-nofries-customer=' + sid('d'),
+            '__Host-nofries-external-customer=' + sid('e'), fake('f') + '; __Host-nofries-customer=' + sid('g')]) {
+            expect((await read(cookie)).status).toBe(429);
+        }
+        expect(h.store.loadSession).toHaveBeenCalledTimes(2);
+        expect((await h.send('get', '/api/dashboard/session')).status).toBe(429);
+    });
+
+    test('a verified dashboard session gets the per-session read allowance until it signs out', async () => {
+        const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_READ_MAX: '4', NOFRIES_RATE_DASHBOARD_SESSION_READ_MAX: '5',
+            NOFRIES_RATE_DASHBOARD_ADDRESS_READ_MAX: '20' } });
+        const first = (await h.login()).cookie, second = (await h.login()).cookie; // two ordinary address reads
+        const read = value => h.send('get', '/api/dashboard/session').set('Cookie', value);
+        // Unverified traffic from the address uses up the ordinary limit.
+        expect((await read('__Host-nofries-auth=' + sid('i'))).status).toBe(401);
+        expect((await read('__Host-nofries-auth=' + sid('j'))).status).toBe(401);
+        expect((await read('__Host-nofries-auth=' + sid('k'))).status).toBe(429);
+        // Each verified session still has its own allowance.
+        for (let i = 0; i < 5; i++) expect((await read(first)).status).not.toBe(429);
+        expect((await read(first)).status).toBe(429);
+        // A fabricated cookie next to the verified one does not escape its bucket.
+        expect((await read(first + '; __Host-nofries-customer=' + sid('h'))).status).toBe(429);
+        expect((await read(second)).status).not.toBe(429);
+        // Once the store no longer holds the session, the next check removes
+        // it from the verified record and the cookie is back on the exhausted
+        // ordinary limit although its session bucket still has room.
+        const secondId = second.slice(second.indexOf('=') + 1);
+        await h.store.deleteSession(secondId);
+        expect((await read(second)).status).toBe(401);
+        expect((await read(second)).status).toBe(429);
+    });
+
+    test('verified dashboard session writes are counted per session and other API writes stay per address', async () => {
+        const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_WRITE_MAX: '2', NOFRIES_RATE_DASHBOARD_SESSION_WRITE_MAX: '3',
+            NOFRIES_RATE_DASHBOARD_ADDRESS_WRITE_MAX: '10' } });
+        const { cookie } = await h.login(); // spends one ordinary address write
+        const write = value => h.send('post', '/api/dashboard/selection').set('Cookie', value).send({});
+        for (let i = 0; i < 3; i++) expect((await write(cookie)).status).not.toBe(429);
+        expect((await write(cookie)).status).toBe(429);
+        // A fabricated cookie uses the remaining ordinary write, then is limited.
+        expect((await write('__Host-nofries-auth=' + sid('k'))).status).not.toBe(429);
+        expect((await write('__Host-nofries-auth=' + sid('l'))).status).toBe(429);
+        // Only /api/dashboard routes use the session allowance.
+        const logout = () => h.send('post', '/api/auth/logout').set('Cookie', cookie).set('Sec-Fetch-Site', 'same-origin').type('form').send({});
+        expect((await logout()).status).toBe(429);
+    });
+
     test('common API rate rejection occurs before raw parsing and all dashboard authority work', async () => {
         const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_WRITE_MAX: '1' } });
         const first = await h.send('post', '/api/dashboard/logout').send({});
@@ -2481,7 +2549,8 @@ describe('configured dashboard actual HTTP transport', () => {
         h.resetObservations();
         const second = await h.send('post', '/api/dashboard/logout').set('Content-Type', 'text/plain').send('{');
         expect(second.status).toBe(429);
-        expect(second.body).toEqual({ error: 'Too many requests. Please try again later.' });
+        expect(second.body).toEqual({ error: 'Too many requests. Please try again later.', retryAfterSeconds: expect.any(Number) });
+        expect(second.headers['retry-after']).toBe(String(second.body.retryAfterSeconds));
         expect(h.configuration.clock).not.toHaveBeenCalled();
         h.expectNoAuthorityWork();
     });

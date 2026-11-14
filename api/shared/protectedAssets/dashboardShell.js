@@ -5,10 +5,22 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function (registry) {
     'use strict';
 
+    // Escape closes an open disclosure menu and returns focus to its summary.
+    function closeOnEscape(details) {
+        details.addEventListener('keydown', function (event) {
+            if (event.key !== 'Escape' || !details.open) return;
+            details.open = false;
+            const summary = details.querySelector('summary'); if (summary) summary.focus();
+            if (typeof event.stopPropagation === 'function') event.stopPropagation();
+        });
+    }
     const mounted = new WeakMap();
+    const START_NEW_ASSESSMENT = Object.freeze({ startNew: true });
     let mountSequence = 0;
-    const moduleStates = { ready: 'Included', planned: 'Included · workspace coming next', disabled: 'Included · unavailable' };
+    const moduleStates = { ready: 'Included', planned: 'Coming next', disabled: 'Included · unavailable' };
     const serviceStates = { not_included: 'Available to scope', disabled: 'Included · unavailable', setup_required: 'Waiting for setup' };
+    // Customer-facing plan names. The projection keeps its stored codes.
+    const planNames = { Score: 'Free plan', Govern: 'Governance plan' };
     const metricLabels = { implementation: 'Implementation attainment', evidence: 'Evidence confidence', risk: 'Risk priority', trend: 'Trend' };
 
     // The shell performs no authorisation, storage or scoring. An explicitly
@@ -47,7 +59,10 @@
         let navigation = null;
         const generation = Object.freeze({ mount: ++mountSequence });
         const previousTitle = doc ? doc.title : '';
-        const historySession = 'nofries-dashboard-' + generation.mount;
+        const previousHistory = win && win.history && win.history.state && win.history.state.nofriesDashboard;
+        const historySession = previousHistory && previousHistory.organisationId === model.context.organisationId &&
+            typeof previousHistory.session === 'string' && /^nofries-dashboard-[0-9]+$/.test(previousHistory.session)
+            ? previousHistory.session : 'nofries-dashboard-' + generation.mount;
         const historyEntries = new Map();
         let managedHistory = (typeof options.mountCyber === 'function' || typeof options.mountPicture === 'function' ||
             typeof options.mountImprovement === 'function') && win && win.history &&
@@ -59,6 +74,17 @@
         let eventQueued = false;
         let queuedEvent = null;
         let unmanagedBoundaryHash = null;
+        let planBaselineToken = 0;
+        let informationAt = model.generatedAt;
+        let informationStamp = null;
+        // A history pointer is a read hint, never authority or saved answers.
+        const restored = win && win.history && win.history.state && win.history.state.nofriesCyber;
+        let cyberLocation = restored && restored.organisationId === model.context.organisationId &&
+            validCyberLocation(restored.location) ? restored.location : null;
+        function validCyberLocation(value) {
+            return value && typeof value.assessmentId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(value.assessmentId) &&
+                Number.isInteger(value.questionIndex) && value.questionIndex >= 0 && value.questionIndex < 14;
+        }
 
         function element(tag, className, text) {
             const node = doc.createElement(tag);
@@ -94,9 +120,12 @@
             if (!secondary.length) return;
             const other = element('details', 'dashboard-menu-other');
             other.append(element('summary', '', 'More tools'));
+            closeOnEscape(other);
             secondary.forEach(function (item) {
                 const labels = { ready: 'Available', planned: 'Coming next', disabled: 'Unavailable' };
-                other.append(routeLink(item, null, labels[stateFor(item.key)]));
+                // D-010: the Improvement Plan is part of every plan, so say so while it is planned.
+                const state = stateFor(item.key);
+                other.append(routeLink(item, null, item.key === 'improvement_plan' && state === 'planned' ? 'Included · coming next' : labels[state]));
             });
             nav.append(other);
         }
@@ -126,8 +155,8 @@
             const nav = element('nav'); nav.setAttribute('aria-label', 'Workspace');
             appendMenu(nav, false);
             const subscription = element('div', 'dashboard-subscription');
-            subscription.append(element('span', 'dashboard-eyebrow', 'Dashboard subscription'), element('strong', '', model.subscription),
-                element('p', '', 'Managed and advisory services are scoped separately.'));
+            subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', planNames[model.subscription]),
+                element('p', '', 'Managed IT and advisory services are arranged separately.'));
             rail.append(brand, context, nav, subscription);
             const workspace = element('div', 'dashboard-workspace');
             const top = element('header', 'dashboard-topbar');
@@ -156,7 +185,9 @@
         function stateWith(entry) {
             const prior = win.history.state;
             const next = prior && typeof prior === 'object' && !Array.isArray(prior) ? Object.assign({}, prior) : {};
-            next.nofriesDashboard = { session: historySession, entry: entry.id };
+            next.nofriesDashboard = { session: historySession, entry: entry.id, organisationId: model.context.organisationId,
+                route: entry.route, position: entry.position };
+            next.nofriesCyber = entry.location ? { organisationId: model.context.organisationId, location: entry.location } : null;
             return next;
         }
         function makeEntry(route, position, hash) {
@@ -165,13 +196,23 @@
         }
         function readEntry() {
             const token = win.history.state && win.history.state.nofriesDashboard;
-            if (!token || token.session !== historySession || typeof token.entry !== 'string') return null;
-            const entry = historyEntries.get(token.entry);
+            if (!token || token.session !== historySession || token.organisationId !== model.context.organisationId ||
+                typeof token.entry !== 'string' || !/^[1-9][0-9]{0,8}$/.test(token.entry)) return null;
+            let entry = historyEntries.get(token.entry);
+            if (!entry && Number.isInteger(token.position) && token.position >= 0 && token.position <= 1000000 &&
+                registry.resolveRoute(token.route, permitted) && win.location.hash === '#' + token.route) {
+                const pointer = win.history.state.nofriesCyber;
+                entry = { id: token.entry, route: token.route, position: token.position, hash: win.location.hash,
+                    location: token.route === 'cyber-security' && pointer && pointer.organisationId === model.context.organisationId &&
+                        validCyberLocation(pointer.location) ? pointer.location : null };
+                historyEntries.set(entry.id, entry); entrySequence = Math.max(entrySequence, Number(entry.id));
+            }
             return entry && entry.hash === win.location.hash ? entry : null;
         }
         function tagInitial() {
             if (!managedHistory) return;
-            committedEntry = makeEntry(current.route, 0, win.location.hash);
+            committedEntry = readEntry() || makeEntry(current.route, 0, win.location.hash);
+            if (current.key === 'cyber_security') committedEntry.location = cyberLocation;
             observedEntry = committedEntry;
             win.history.replaceState(stateWith(committedEntry), '', win.location.hash || '#' + current.route);
             committedEntry.hash = win.location.hash;
@@ -195,11 +236,11 @@
             win.history.go(entry.position - observedEntry.position);
             return promise;
         }
-        function commitNavigation(route, changeLocation, focus, initialAssessmentId, sourceAssessment) {
+        function commitNavigation(route, changeLocation, focus, initialAssessmentId, sourceAssessment, historyTarget) {
             if (!active()) return;
             const requested = registry.resolveRoute(route, permitted);
             const target = requested || first;
-            if (child && current.key === target.key) {
+            if (child && current.key === target.key && !historyTarget) {
                 if (focus) main.querySelector('h1').focus();
                 return;
             }
@@ -207,8 +248,10 @@
             current = target;
             if (doc && current && current.label) doc.title = current.label + ' · No Fries Dashboard';
             status.hidden = !!requested || !route;
-            status.textContent = requested || !route ? '' : 'That view is not available for this organisation. Showing ' + target.label + '.';
+            status.textContent = requested || !route ? '' : 'We could not find that view, so we have taken you to ' + target.label + '.';
             if (changeLocation && !repeatedRoute) pushEntry(current.route);
+            if (historyTarget) cyberLocation = historyTarget.location || null;
+            else if (committedEntry || current.key !== 'cyber_security') cyberLocation = null;
             render(initialAssessmentId, sourceAssessment); updateNavigation();
             if (focus) main.querySelector('h1').focus();
         }
@@ -231,7 +274,7 @@
                     if (!await travelTo(transition.target) || !active() || navigation !== transition) return false;
                     committedEntry = transition.target;
                 }
-                commitNavigation(transition.route, !transition.target && changeLocation, true, transition.assessmentId, transition.sourceAssessment);
+                commitNavigation(transition.route, !transition.target && changeLocation, true, transition.assessmentId, transition.sourceAssessment, transition.target);
                 return true;
             }
             async function decide() {
@@ -256,12 +299,14 @@
             return promise;
         }
         function render(initialAssessmentId, sourceAssessment) {
+            planBaselineToken += 1;
             if (child) { child.destroy(); child = null; }
             main.replaceChildren();
             const head = element('header', 'dashboard-page-heading');
             const title = element('h1', '', current.label); title.tabIndex = -1;
-            head.append(element('p', 'dashboard-eyebrow', 'Your organisation / ' + current.label), title,
-                badge(moduleStates[stateFor(current.key)]));
+            head.append(element('p', 'dashboard-eyebrow', 'Your organisation / ' + current.label), title);
+            // Navigation already labels a planned module "Coming next". Do not repeat it in the page badge.
+            if (stateFor(current.key) !== 'planned') head.append(badge(moduleStates[stateFor(current.key)]));
             main.append(head);
             const siblings = primary.filter(function (item) { return item.group === current.group; });
             if (siblings.length > 1) {
@@ -274,13 +319,28 @@
             else if (current.key === 'services') renderServices();
             else if (current.key === 'cyber_security' && stateFor(current.key) === 'ready' && typeof options.mountCyber === 'function') renderCyber(initialAssessmentId);
             else if (current.key === 'improvement_plan' && stateFor(current.key) === 'ready' && typeof options.mountImprovement === 'function') renderImprovement(sourceAssessment);
-            else renderModule();
+            else renderModule(planBaselineToken);
             const footer = element('footer', 'dashboard-provenance');
-            const stamp = element('time', '', model.generatedAt.replace('T', ' ').replace('.000Z', ' UTC'));
-            stamp.dateTime = model.generatedAt;
-            footer.append(element('span', '', 'Display snapshot · '), stamp,
+            const stamp = element('time');
+            informationStamp = stamp; showInformationTime();
+            footer.append(element('span', '', 'Information as at '), stamp,
                 element('p', '', 'Assessment indicators are not audit, assurance or certification.'));
             main.append(footer);
+        }
+        // People read local time; keep the exact instant in the datetime attribute.
+        function showInformationTime() {
+            if (!informationStamp) return;
+            let shown;
+            try { shown = new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(informationAt)) + ' NZ time'; }
+            catch (_) { shown = informationAt.replace('T', ' ').replace('.000Z', ' UTC'); }
+            informationStamp.textContent = shown;
+            informationStamp.dateTime = informationAt;
+        }
+        // The host reports each successful read of saved information. This
+        // only moves the displayed time forward; it grants nothing.
+        function informationRead(value) {
+            if (disposed || !canonicalInstant(value) || Date.parse(value) <= Date.parse(informationAt)) return;
+            informationAt = value; showInformationTime();
         }
         function renderOverview() {
             const connectedPicture = pictureAvailable;
@@ -289,11 +349,12 @@
                 const notice = panel('This snapshot needs a refresh', 'These figures are historical. Reopen through the authenticated dashboard before relying on them.');
                 notice.classList.add('dashboard-warning'); main.append(notice);
             }
-            const grid = element('div', 'dashboard-overview-grid');
+            // The organisation picture replaces the metric cards; it shows only real attention items.
+            if (connectedPicture && !model.summary.attention.length) return;
             const attention = panel('Needs attention', 'Named owners. Clear next steps.');
             attention.classList.add('dashboard-attention');
             if (!model.summary.attention.length) {
-                attention.append(element('h3', '', 'Build your first baseline'), element('p', '', 'No assessment or improvement record has been shared with this view yet.'));
+                attention.append(element('h3', '', 'Start your cyber check'), element('p', '', 'No assessment or improvement record has been shared with this view yet.'));
                 const assessment = available.find(function (item) { return item.group === 'Assess' && stateFor(item.key) === 'ready'; });
                 if (assessment) attention.append(button('View ' + assessment.label, function () { navigate(assessment.route, true); }));
                 else attention.append(element('p', 'dashboard-muted', 'An organisation administrator can confirm your assessment scope.'));
@@ -314,6 +375,7 @@
                     const next = attention.querySelectorAll('[data-attention]')[3]; if (next) next.focus();
                 }, 'dashboard-button dashboard-view-all'));
             }
+            if (connectedPicture) { main.append(attention); return; }
             const posture = panel('The current picture', 'Separate measures, with their evidence.');
             const metrics = element('div', 'dashboard-metrics');
             Object.keys(metricLabels).forEach(function (kind) {
@@ -331,17 +393,8 @@
                     metrics.append(card);
                 });
             });
-            posture.append(metrics); grid.append(attention, posture);
-            if (!connectedPicture) main.append(grid);
-            else if (model.summary.attention.length) main.append(attention);
-            const modules = element('details', 'dashboard-panel dashboard-availability');
-            modules.append(element('summary', '', 'Other dashboard areas and availability'),
-                element('p', 'dashboard-muted', 'Use the dashboard navigation to open an area. Planned areas have no connected assessment data.'));
-            const list = element('ul');
-            available.filter(function (item) { return item.key !== 'overview'; }).forEach(function (item) {
-                list.append(element('li', '', item.label + ' · ' + moduleStates[stateFor(item.key)]));
-            });
-            modules.append(list); main.append(modules);
+            posture.append(metrics);
+            const grid = element('div', 'dashboard-overview-grid'); grid.append(attention, posture); main.append(grid);
         }
         function renderPicture() {
             const childRoot = element('div', 'dashboard-picture-workspace'); main.append(childRoot);
@@ -353,9 +406,10 @@
             try {
                 const result = options.mountPicture(childRoot, { generation: generation,
                     displayName: model.context.displayName,
-                    openCyber: cyber ? function (assessmentId) {
+                    openCyber: cyber ? function (assessmentId, intent) {
                         if (!active() || !pictureChild || child !== pictureChild) return Promise.resolve(false);
-                        return navigate(cyber.route, true, undefined, assessmentId);
+                        // The first-use action opens the new-assessment step directly.
+                        return navigate(cyber.route, true, undefined, assessmentId === undefined && intent && intent.startNew === true ? START_NEW_ASSESSMENT : assessmentId);
                     } : undefined,
                     openImprovement: improvement ? function (sourceAssessment) {
                         if (!active() || !pictureChild || child !== pictureChild) return Promise.resolve(false);
@@ -388,10 +442,25 @@
             const childRoot = element('div', 'dashboard-cyber-workspace'); main.append(childRoot);
             try {
                 const presentation = { generation: generation };
-                if (initialAssessmentId !== undefined) presentation.initialAssessmentId = initialAssessmentId;
+                if (initialAssessmentId === undefined && validCyberLocation(cyberLocation)) {
+                    presentation.initialAssessmentId = cyberLocation.assessmentId;
+                    presentation.initialQuestionIndex = cyberLocation.questionIndex;
+                }
+                if (initialAssessmentId === START_NEW_ASSESSMENT) presentation.startNew = true;
+                else if (initialAssessmentId !== undefined) presentation.initialAssessmentId = initialAssessmentId;
+                let mountedChild;
+                presentation.onLocation = function (location) {
+                    if (!active() || child !== mountedChild || !managedHistory || navigation || travelling || !committedEntry ||
+                        location !== null && !validCyberLocation(location)) return;
+                    const next = location ? { assessmentId: location.assessmentId, questionIndex: location.questionIndex } : null;
+                    if (JSON.stringify(committedEntry.location || null) === JSON.stringify(next)) return;
+                    pushEntry('cyber-security');
+                    committedEntry.location = next;
+                    win.history.replaceState(stateWith(committedEntry), '', committedEntry.hash);
+                };
                 const result = options.mountCyber(childRoot, presentation);
                 if (!result || typeof result.destroy !== 'function' || typeof result.requestLeave !== 'function') throw new Error('invalid_child');
-                child = result;
+                mountedChild = result; child = result;
             } catch (error) {
                 childRoot.replaceChildren();
                 childRoot.append(element('p', '', 'The Cyber workspace could not load. Reopen it through your authenticated dashboard.'));
@@ -410,17 +479,63 @@
                 childRoot.append(element('p', '', 'The Improvement Plan could not load. Reopen it through your authenticated dashboard.'));
             }
         }
-        function renderModule() {
-            const section = panel('Your ' + current.label.toLowerCase() + ' workspace is coming next',
-                'This tool is included for your organisation and is not available yet.');
-            section.append(element('p', '', 'No assessment is started, evidence uploaded or report issued from this screen.'));
+        function renderModule(baselineToken) {
+            const plan = current.key === 'improvement_plan';
+            const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
             const home = available.find(function (item) { return item.key === 'overview'; });
-            if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
+            if (!plan) {
+                const section = panel('This workspace is not open yet.', 'For now, use the parts of the dashboard that are available.');
+                if (cyber) section.append(button('Review saved assessment', function () { navigate(cyber.route, true); }));
+                if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
+                main.append(section);
+                return;
+            }
+            const section = panel('Your improvement plan appears after you submit your first assessment.',
+                cyber && typeof options.readBaseline === 'function' ? 'Checking your saved assessments…'
+                    : cyber ? 'Submit an assessment in Cyber Security. This page does not list gaps until then.'
+                    : 'For now, use the parts of the dashboard that are available.');
+            function homeButton() {
+                if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
+            }
+            if (cyber && typeof options.readBaseline === 'function') {
+                const token = baselineToken;
+                Promise.resolve().then(function () { return options.readBaseline(); }).then(function (baseline) {
+                    if (!active() || token !== planBaselineToken || current.key !== 'improvement_plan') return;
+                    const title = section.querySelector('h2');
+                    const copy = section.querySelector('p');
+                    if (baseline && baseline.submittedId) {
+                        title.textContent = 'Review the gaps in your submitted assessment';
+                        copy.textContent = 'Your improvement plan will be built from a submitted baseline. Open the results to see the gaps.';
+                        section.append(button('Review gaps in your results', function () { navigate(cyber.route, true, undefined, baseline.submittedId); }));
+                    } else if (baseline && baseline.complete === false) {
+                        title.textContent = 'Your improvement plan appears after you submit your first assessment';
+                        copy.textContent = 'We could not check every saved assessment from here. Open Cyber Security to see a submitted result or continue a draft.';
+                        section.append(button('Open Cyber Security', function () { navigate(cyber.route, true); }));
+                    } else if (baseline && baseline.draftId) {
+                        title.textContent = 'Your improvement plan appears after you submit your first assessment';
+                        copy.textContent = 'You have a draft assessment. Submit it to create your baseline. This page does not list gaps yet.';
+                        section.append(button('Continue your draft', function () { navigate(cyber.route, true, undefined, baseline.draftId); }));
+                    } else {
+                        copy.textContent = 'There is no submitted assessment yet. Start one in Cyber Security, then come back here after you submit it.';
+                        section.append(button('Open assessment', function () { navigate(cyber.route, true); }));
+                    }
+                    homeButton();
+                }, function () {
+                    if (!active() || token !== planBaselineToken || current.key !== 'improvement_plan') return;
+                    const copy = section.querySelector('p');
+                    if (copy) copy.textContent = 'We could not check your saved assessments just now. Open Cyber Security to continue a draft or read a submitted result.';
+                    section.append(button('Open Cyber Security', function () { navigate(cyber.route, true); }));
+                    homeButton();
+                });
+            } else {
+                if (cyber) section.append(button('Open assessment', function () { navigate(cyber.route, true); }));
+                homeButton();
+            }
             main.append(section);
         }
         function renderServices() {
             main.append(element('p', 'dashboard-intro', 'What is included, what needs setup and what can be scoped separately?'));
-            const subscription = panel('No Fries ' + model.subscription, 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
+            const subscription = panel('Your plan: ' + planNames[model.subscription], 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
             subscription.classList.add('dashboard-subscription-panel'); main.append(subscription);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {
@@ -431,7 +546,7 @@
                 detail.append(element('p', '', service.state === 'not_included'
                     ? 'Next step: agree the organisation, coverage, deliverables, term and commercial scope with No Fries.'
                     : service.state === 'disabled'
-                    ? 'This included service is disabled in the current build. No Fries must confirm readiness before enabling it; a provider connection alone will not activate it.'
+                    ? 'This included service is not available yet. Contact No Fries if you need it.'
                     : 'Next step: verify the agreed assignment, coverage and any required provider connection before activation.'),
                     element('p', 'dashboard-muted', 'This is information only. No request, purchase, assignment or activation has been submitted.'));
                 const control = button(service.state === 'not_included' ? 'How to scope this service'
@@ -446,6 +561,29 @@
         }
         function handleLocation(eventType) {
             if (!active()) return;
+            if (win.location.hash === '#organisations' && typeof options.onOpenOrganisations === 'function') {
+                // The organisation chooser belongs to the authenticated host,
+                // not the module registry. Restore this view while its normal
+                // unsaved-work guard decides whether navigation can proceed.
+                if (managedHistory && committedEntry) {
+                    let entry = readEntry();
+                    if (!entry && eventType === 'hashchange' && observedEntry) {
+                        entry = makeEntry(current.route, observedEntry.position + 1, win.location.hash);
+                        win.history.replaceState(stateWith(entry), '', win.location.hash);
+                    }
+                    if (entry) {
+                        observedEntry = entry;
+                        travelTo(committedEntry).then(function (arrived) {
+                            if (arrived && active()) options.onOpenOrganisations();
+                        });
+                        return;
+                    }
+                    managedHistory = false; observedEntry = null; committedEntry = null;
+                }
+                win.history.replaceState(null, '', '#' + current.route);
+                options.onOpenOrganisations();
+                return;
+            }
             if (unmanagedBoundaryHash !== null && win.location.hash === unmanagedBoundaryHash) { unmanagedBoundaryHash = null; return; }
             unmanagedBoundaryHash = null;
             if (!managedHistory) { navigate(win.location.hash, false); main.querySelector('h1').focus(); return; }
@@ -479,6 +617,11 @@
                 return;
             }
             if (committedEntry && entry.id === committedEntry.id) return;
+            if (current.key === 'cyber_security' && entry.route === 'cyber-security' && validCyberLocation(entry.location) &&
+                child && typeof child.showQuestion === 'function' && child.showQuestion(entry.location)) {
+                committedEntry = entry;
+                return;
+            }
             navigate(entry.route, false, entry);
         }
         function locationChanged(event) {
@@ -492,7 +635,7 @@
                 if (active()) handleLocation(eventType);
             });
         }
-        const controller = { navigate: function (route) { return navigate(route, true); }, requestLeave: function (commit) {
+        const controller = { informationRead: informationRead, navigate: function (route) { return navigate(route, true); }, requestLeave: function (commit) {
             if (disposed) return Promise.resolve(false);
             if (child) return child.requestLeave(commit);
             if (typeof commit === 'function') commit();

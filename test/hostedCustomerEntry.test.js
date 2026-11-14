@@ -24,17 +24,14 @@ const settle = async page => {
         await new Promise(setImmediate);
     }
 };
-let builtRuntime, builtHelpRuntime, builtConfig, builtLoginSource, builtLoginHtml;
+let builtRuntime, builtConfig, builtLoginSource, builtLoginHtml;
 beforeAll(() => {
     execFileSync(process.execPath, ['scripts/build-static.js'], { cwd: root, stdio: 'pipe' });
     const html = fs.readFileSync(path.join(root, 'dist/app/signup.html'), 'utf8');
     const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
-    expect(scripts.map(script => script[1])).toEqual(['', ' id="nofriesPublicHelpRuntime"']);
+    expect(scripts.map(script => script[1])).toEqual(['']);
     builtRuntime = scripts[0][2];
-    builtHelpRuntime = scripts[1][2];
     expect(builtRuntime).toBe(prepared.runtime);
-    expect(builtHelpRuntime).toBe(fs.readFileSync(path.join(root, 'js/prospect-assistant.js'), 'utf8') +
-        '\n;\n' + fs.readFileSync(path.join(root, 'js/shared-assistant.js'), 'utf8'));
     builtConfig = JSON.parse(fs.readFileSync(path.join(root, 'dist/staticwebapp.config.json')));
     builtLoginHtml = fs.readFileSync(path.join(root, 'dist/login.html'), 'utf8');
     builtLoginSource = fs.readFileSync(path.join(root, 'dist/js/organisation-setup.js'), 'utf8');
@@ -300,15 +297,17 @@ test('an external customer with old valid setup bypasses unavailable legacy read
     } finally { page.close(); store.getBlockBlobClient = original; }
 });
 
-function execute({ runtime = prepared.runtime, search = '', hash = '', fetch = jest.fn(async () => response({ status: 'create_account' })) } = {}) {
+function execute({ runtime = prepared.runtime, search = '', hash = '', fetch = jest.fn(async () => response({ status: 'create_account' })),
+    timers = { setTimeout, clearTimeout }, sessionStorage } = {}) {
     const dom = createDom(), create = dom.document.createElement;
     dom.document.createElement = tag => Object.assign(create(tag), { style: {}, reportValidity: () => true });
     const help = dom.document.createElement('a'); help.setAttribute('href', '/login');
     dom.document.getElementById = id => id === 'signup' ? dom.root : id === 'signup-return-to-login' ? help : null;
     const listeners = {}, assign = jest.fn(), replace = jest.fn(), replaceState = jest.fn();
     const window = { fetch, location: { search, hash, assign, replace }, history: { replaceState },
-        addEventListener(name, fn) { listeners[name] = fn; } };
-    vm.runInNewContext(runtime, { document: dom.document, window, URLSearchParams, AbortController, TextDecoder, setTimeout, clearTimeout });
+        addEventListener(name, fn) { listeners[name] = fn; }, ...(sessionStorage ? { sessionStorage } : {}) };
+    vm.runInNewContext(runtime, { document: dom.document, window, URLSearchParams, AbortController, TextDecoder,
+        setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
     return { ...dom, fetch, help, assign, replace, replaceState, close() { listeners.pagehide?.(); } };
 }
 function response(state, token) {
@@ -320,14 +319,32 @@ function response(state, token) {
 const entryRuntime = kind => kind === 'hosted' ? builtRuntime : buildSignupDocument({ ...sources,
     customerLogin: true, customerTransport: 'external' }).runtime;
 test.each(['dynamic', 'hosted'].flatMap(kind => ['login', 'create'].map(intent => [kind, intent])))(
-    '%s public %s starts once after the initial fresh state without a second click', async (kind, intent) => {
+    '%s public %s keeps signup explanation visible and only auto-starts returning login', async (kind, intent) => {
         const fetch = jest.fn(async () => response({ status: 'create_account' }));
         const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=' + intent, fetch });
         try {
             await settle();
             expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/external-customer-signup/state']);
-            expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login' + (intent === 'create' ? '?intent=create' : '')]]);
-            expect(page.assign).not.toHaveBeenCalled();
+            if (intent === 'login') {
+                expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login']]);
+                expect(page.assign).not.toHaveBeenCalled();
+                expect(page.root.textContent).not.toContain('What happens on the Microsoft pages');
+            } else {
+                expect(page.replace).not.toHaveBeenCalled();
+                expect(page.assign).not.toHaveBeenCalled();
+                expect(page.root.textContent).toContain('Microsoft’s secure sign-in page');
+                expect(page.root.textContent).toContain('Company to assess your own organisation');
+                // Round 2: say what the Microsoft-hosted pages look like, after the button.
+                const guide = page.root.querySelector('section');
+                expect(guide.querySelector('h2').textContent).toBe('What happens on the Microsoft pages');
+                for (const text of ['nofriescustomers.ciamlogin.com', '“No Fries Customers (via Microsoft)”', 'can take a few minutes',
+                    'junk or spam', 'resend option', 'hello@nofries.nz', '“not published by Microsoft”']) expect(guide.textContent).toContain(text);
+                const children = [...page.root.children];
+                expect(children.indexOf(page.root.querySelector('button'))).toBeLessThan(children.indexOf(guide));
+                page.root.querySelectorAll('button').find(node => node.textContent === 'Create account').click();
+                await settle();
+                expect(page.assign.mock.calls).toEqual([['/api/external-customer-auth/login?intent=create']]);
+            }
         } finally { page.close(); await settle(); }
     });
 
@@ -337,7 +354,7 @@ test.each(['dynamic', 'hosted'].flatMap(kind => ['login', 'create'].flatMap(inte
         const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=' + intent,
             fetch: jest.fn(async () => response({ status: 'continue_to_dashboard', accountType })) });
         try {
-            await settle(); expect(page.replace.mock.calls).toEqual([[accountType === 'consultant' ? '/dashboard#organisations' : '/dashboard']]);
+            await settle(); expect(page.replace.mock.calls).toEqual([['/dashboard']]);
             expect(page.assign).not.toHaveBeenCalled();
         } finally { page.close(); }
     });
@@ -351,6 +368,43 @@ test.each(['dynamic', 'hosted'].flatMap(kind => ['login', 'create'].map(intent =
             await settle(); expect(page.assign).not.toHaveBeenCalled();
             if (intent === 'login') expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login']]);
             else { expect(page.replace).not.toHaveBeenCalled(); expect(page.root.textContent).toContain('Sign in again'); }
+        } finally { page.close(); await settle(); }
+    });
+
+// UX log: a returning customer's first "Log in" showed "Signup is unavailable"
+// (NF-SIGNUP-UNCONFIRMED), then a spinner, and a second try worked. The page
+// stays open until Microsoft sign-in loads, so the state read's 30-second view
+// backstop must not apply to that redirect.
+function manualTimers() {
+    const pending = new Map(); let next = 0;
+    return { pending, setTimeout(fn, ms) { pending.set(++next, { fn, ms }); return next; },
+        clearTimeout(id) { pending.delete(id); },
+        fire(minimum) { for (const [id, timer] of [...pending]) if (timer.ms >= minimum) { pending.delete(id); timer.fn(); } } };
+}
+test.each(['dynamic', 'hosted'].flatMap(kind => [['create_account', response({ status: 'create_account' })],
+    ['signin_required', new Response(JSON.stringify({ error: 'Signup is unavailable', code: 'signup_signin_required' }),
+        { status: 401, headers: { 'content-type': 'application/json' } })]].map(([state, reply]) => [kind, state, reply])))(
+    '%s automatic login after %s shows no error while Microsoft sign-in is still loading', async (kind, state, reply) => {
+        const timers = manualTimers();
+        const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=login',
+            fetch: jest.fn(async () => reply), timers });
+        try {
+            await settle();
+            expect(page.replace.mock.calls).toEqual([['/api/external-customer-auth/login']]);
+            // The navigation has not committed yet: run the 30-second view backstop.
+            timers.fire(30000); await settle();
+            expect(page.root.textContent).not.toContain('Signup is unavailable');
+            expect(page.root.textContent).not.toContain('NF-SIGNUP-UNCONFIRMED');
+            expect(page.replace).toHaveBeenCalledTimes(1); expect(page.assign).not.toHaveBeenCalled();
+            // If the redirect never completes, the visitor can still start sign-in by hand.
+            if (state === 'create_account') {
+                const entry = [...page.root.querySelectorAll('button')].find(node => node.textContent === 'Log in');
+                expect(entry.disabled).not.toBe(true); entry.click(); await settle();
+                expect(page.assign.mock.calls).toEqual([['/api/external-customer-auth/login']]);
+            } else {
+                const link = [...page.root.querySelectorAll('a')].find(node => node.textContent === 'Sign in again');
+                expect(link.href).toBe('/api/external-customer-auth/login');
+            }
         } finally { page.close(); await settle(); }
     });
 
@@ -373,9 +427,12 @@ test.each(['dynamic', 'hosted'])('%s initial failure stays unconfirmed and fresh
     const fetch = jest.fn().mockResolvedValueOnce(new Response('{}', { status: 503, headers: { 'content-type': 'application/json' } }));
     const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=login', fetch }); let fresh;
     try {
-        await settle(); expect(page.root.textContent).toContain('Signup is unavailable');
-        expect(page.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
-        expect(page.root.querySelector('button')).toBeNull();
+        // A-001: an opening read failure is a sign-in check failure with a
+        // manual retry, never an automatic navigation or signup verdict.
+        await settle(); expect(page.root.textContent).toContain('We could not open your account');
+        expect(page.root.textContent).toContain('Error code: NF-SIGNIN-UNCONFIRMED');
+        expect(page.root.textContent).not.toContain('Signup is unavailable');
+        expect(page.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
         expect(fetch).toHaveBeenCalledTimes(1); expect(page.assign).not.toHaveBeenCalled(); expect(page.replace).not.toHaveBeenCalled();
         page.close(); fetch.mockResolvedValueOnce(response({ status: 'create_account' }));
         fresh = execute({ runtime: entryRuntime(kind), search: '?provider=external&signin=retry', fetch }); await settle();
@@ -389,7 +446,7 @@ test.each(['dynamic', 'hosted'])('%s initial failure stays unconfirmed and fresh
 test.each(['dynamic', 'hosted'])('%s unrecognized401 never triggers automatic login', async kind => {
     const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=login',
         fetch: jest.fn(async () => new Response(JSON.stringify({ code: 'unknown' }), { status: 401, headers: { 'content-type': 'application/json' } })) });
-    try { await settle(); expect(page.root.textContent).toContain('Signup is unavailable'); expect(page.replace).not.toHaveBeenCalled(); }
+    try { await settle(); expect(page.root.textContent).toContain('We could not open your account'); expect(page.replace).not.toHaveBeenCalled(); }
     finally { page.close(); }
 });
 
@@ -400,7 +457,7 @@ test.each(['login', 'create'])('explicit public %s preserves required setup and 
         const page = execute({ search: '?provider=external&intent=' + intent, fetch: jest.fn(async () => response(state, csrf)) });
         try {
             await settle(); expect(page.assign).not.toHaveBeenCalled(); expect(page.replace).not.toHaveBeenCalled();
-            if (state.status === 'terms') { expect(page.root.querySelector('input').checked).toBe(false); expect(page.root.querySelector('button').disabled).toBe(true); }
+            if (state.status === 'terms') { expect(page.root.querySelector('input').checked).toBe(false); expect(page.root.querySelector('button').disabled).toBeFalsy(); }
         } finally { page.close(); }
     }
 });
@@ -558,7 +615,7 @@ test.each(['company', 'consultant'].flatMap(accountType =>
                 ['GET', '/api/external-customer-signup/state']
             ]);
             if (outcome === 'failed submission') {
-                expect(page.root.textContent).toContain('Set up your workspace');
+                expect(page.root.textContent).toContain('Set up your organisation');
                 expect(page.root.querySelector('form')).not.toBe(form);
                 expect(page.root.querySelector('select').value).toBe(accountType);
                 expect(page.root.querySelector('select').disabled).toBe(true);
@@ -572,7 +629,7 @@ test.each(['company', 'consultant'].flatMap(accountType =>
                 }
                 expect(page.replace).not.toHaveBeenCalled();
             } else {
-                expect(page.root.textContent).toContain('Continuing account setup');
+                expect(page.root.textContent).toContain('Finishing your sign-in');
                 expect(page.replace).toHaveBeenCalledTimes(1);
                 expect(page.replace).toHaveBeenCalledWith('/api/external-customer-auth/login');
             }
@@ -622,13 +679,12 @@ test.each([
     expect(replace).toHaveBeenCalledWith(destination); expect(fetch).not.toHaveBeenCalled();
 });
 
-test('the real static build authorizes only its hosted selector and exact public helper', () => {
+test('the real static build authorizes only its hosted selector', () => {
     const hash = crypto.createHash('sha256').update(builtRuntime).digest('base64');
-    const helperHash = crypto.createHash('sha256').update(builtHelpRuntime).digest('base64');
     const route = builtConfig.routes.find(item => item.route === '/signup');
     expect(route.headers['Content-Security-Policy'].split(';').map(value => value.trim())
         .filter(value => /^script-src(?:\s|$)/.test(value)))
-        .toEqual(["script-src 'sha256-" + hash + "' 'sha256-" + helperHash + "'"]);
+        .toEqual(["script-src 'sha256-" + hash + "'"]);
     expect(route.headers['Content-Security-Policy']).not.toContain('unsafe-inline');
     expect(fs.readFileSync(path.join(root, 'dist/staticwebapp.config.json')).length).toBeLessThanOrEqual(20000);
 });
@@ -644,7 +700,7 @@ test('a real synthetic external callback opens its setup state through the actua
     const page = execute({ runtime: builtRuntime, search: new URL(login.response.headers.location, 'https://synthetic.invalid').search, fetch });
     await settle(page);
     expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/external-customer-signup/state']);
-    expect(page.root.textContent).toContain('Set up your workspace');
+    expect(page.root.textContent).toContain('Set up your organisation');
     expect(page.assign).not.toHaveBeenCalled(); expect(page.replace).not.toHaveBeenCalled();
     page.close();
 });
@@ -708,7 +764,8 @@ test.each(['dynamic', 'hosted'])('%s a fresh authentication-needed observation k
     const fetch = jest.fn().mockResolvedValueOnce(new Response('{}', { status: 503, headers: { 'content-type': 'application/json' } }));
     const page = execute({ runtime: entryRuntime(kind), search: '?provider=external&intent=login', fetch }); let fresh;
     try {
-        await settle(); expect(page.root.querySelector('button')).toBeNull(); expect(fetch).toHaveBeenCalledTimes(1);
+        await settle(); expect(page.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
+        expect(fetch).toHaveBeenCalledTimes(1);
         page.close();
         fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Signup is unavailable', code: 'signup_signin_required' }),
             { status: 401, headers: { 'content-type': 'application/json' } }));
@@ -733,7 +790,7 @@ test.each(['dynamic', 'hosted'])('%s legacy invitation fragment consumes only it
             ['/api/customer-signup/bootstrap', 'POST'], ['/api/customer-signup/state', 'GET']]);
         expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ invitationToken: 'a'.repeat(43) });
         expect(page.replace).not.toHaveBeenCalled(); expect(page.assign).not.toHaveBeenCalled();
-        expect(page.root.querySelector('button').textContent).toBe('Login');
+        expect(page.root.querySelector('button').textContent).toBe('Sign up or sign in');
         page.root.querySelector('button').click();
         expect(page.assign).toHaveBeenCalledWith('/api/customer-auth/login');
     } finally { page.close(); await settle(); }
@@ -789,4 +846,30 @@ test.each([false, true])('production registration requires the SDK to retain its
         expect(requests).toHaveLength(2); expect(snapshot()).toEqual(after);
     }
     expect(server.state.delivered).toEqual([]); expect(server.pool.registrations.size).toBe(0); expect(server.pool.receipts.size).toBe(0);
+});
+
+// Round 2: after signing out from #cyber-security and back in, Alex landed on Overview.
+function memoryStorage(value) {
+    const items = new Map(value === undefined ? [] : [['nofries-return-route', value]]);
+    return { items, getItem: key => items.has(key) ? items.get(key) : null, setItem: (key, item) => items.set(key, String(item)),
+        removeItem: key => items.delete(key) };
+}
+test.each(['dynamic', 'hosted'].flatMap(kind => [
+    [kind, JSON.stringify({ route: '#cyber-security', at: Date.now() - 1000 }), '/dashboard#cyber-security'],
+    [kind, JSON.stringify({ route: '#improvement-plan', at: Date.now() }), '/dashboard#improvement-plan'],
+    [kind, JSON.stringify({ route: '#cyber-security', at: Date.now() - 2 * 3600000 }), '/dashboard'],
+    [kind, JSON.stringify({ route: '//evil.invalid/#cyber-security', at: Date.now() }), '/dashboard'],
+    [kind, JSON.stringify({ route: 'https://evil.invalid', at: Date.now() }), '/dashboard'],
+    [kind, JSON.stringify({ route: '#cyber-security?next=https://evil.invalid', at: Date.now() }), '/dashboard'],
+    [kind, JSON.stringify({ route: '#cyber-security', at: Date.now() + 60000 }), '/dashboard'],
+    [kind, '{not json', '/dashboard'],
+    [kind, undefined, '/dashboard']
+]))('%s sign-in returns only to an allowlisted, recent dashboard page (%s)', async (kind, saved, destination) => {
+    const sessionStorage = memoryStorage(saved);
+    const page = execute({ runtime: entryRuntime(kind), search: '?provider=external', sessionStorage,
+        fetch: jest.fn(async () => response({ status: 'continue_to_dashboard', accountType: 'company' })) });
+    try {
+        await settle(); expect(page.replace.mock.calls).toEqual([[destination]]);
+        expect(sessionStorage.items.has('nofries-return-route')).toBe(false);
+    } finally { page.close(); }
 });

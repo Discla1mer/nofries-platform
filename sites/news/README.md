@@ -4,6 +4,17 @@ This directory holds the static source mirror for `https://news.nofries.nz/`.
 It is separate from the No Fries dashboard's public asset registry and is not
 served or deployed by the dashboard application build.
 
+## 10 November 2026: matches the live page; News is being retired
+
+`dist/index.html` is the live page as published on 26 October 2026 (SHA256
+`b16f2f6e1d3bb1d4cd7ad4f8b32c3babb611392195026fa9166027e5634311ef`, with the
+hosting provider's injected challenge script removed). `dist/style.css` is
+the live stylesheet. The unpublished "What's new." edit proposed on
+9 November was withdrawn: the owner decided to retire News, and nofries.nz
+no longer links to it. Do not publish this directory as an update.
+
+## Earlier history
+
 The 21 October 2026 mirror includes Joel's approved enquiry-first NCSC-aligned
 review offer and explicitly optional dashboard access. Its HTML matches the
 published News version 9 (Site source

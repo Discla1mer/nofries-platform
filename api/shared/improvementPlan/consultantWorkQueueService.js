@@ -47,7 +47,7 @@ function queueRow(binding, plan, day) {
     return action => ({ bindingId: binding.bindingId, organisationLabel: binding.organisationLabel,
         planId: plan.scope.planId, planRevision: plan.planRevision, actionId: action.actionId,
         suggestedAction: action.rationale.suggestedAction, status: action.status,
-        assigned: action.ownerSubjectKey !== null, ownerEligibility: 'not_checked', dueDate: action.dueDate,
+        assigned: action.ownerSubjectKey !== null || Object.hasOwn(action, 'ownerLabel'), ownerEligibility: 'not_checked', dueDate: action.dueDate,
         isOverdue: action.status !== 'completed' && action.dueDate !== null && action.dueDate < day,
         blockedReason: action.blockedReason,
         source: { assessmentId: plan.source.assessmentId, assessmentRevision: plan.source.assessmentRevision } });

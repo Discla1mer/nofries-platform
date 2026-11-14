@@ -172,10 +172,10 @@ async function requestState(page) {
             await page.keyboard.press('Enter');
             await status(page, /^Loading the selected assessment\.$/); await headingFocus(page, 'Second keyboard retry');
             await settle(page, 'success');
-            await status(page, /^Saved revision /); await headingFocus(page, 'Successful recovery');
-            assert.equal(await page.locator('.ncsc-result-provenance dt').filter({ hasText: /^Assessment$/ })
-                .evaluate(node => node.nextElementSibling.textContent), selectedId);
-            assert.match(await page.locator('.ncsc-status').textContent(), new RegExp('Saved revision ' + selected.revision + '\\.'));
+            await status(page, /^Last saved /); await headingFocus(page, 'Successful recovery');
+            assert.equal(await page.locator('.ncsc-results').count(), 1);
+            assert.equal(await page.locator('.ncsc-result-provenance').count(), 0, 'Calculation provenance is not shown to customers');
+            assert.match(await page.locator('.ncsc-status').textContent(), /^Last saved .+ NZ time\./);
             assert.deepEqual(await requestState(page), { lists: [null, 'assessment-b'],
                 reads: [selectedId, selectedId, selectedId], aborted: [], writes: 0 });
             await tabTo(page, back(page), 'Recovered saved record offers keyboard Back');
@@ -206,7 +206,7 @@ async function requestState(page) {
             const changes = await page.evaluate(() => fixture.statusChanges);
             assert.ok(changes.some(text => text === 'Loading the selected assessment.'));
             assert.ok(changes.filter(text => text.startsWith('The saved assessment could not be loaded.')).length >= 2);
-            assert.ok(changes.some(text => text.startsWith('Saved revision ')));
+            assert.ok(changes.some(text => text.startsWith('Last saved ')));
             results.push({ width, failFailSuccess: true, exactIdBeyondFirstPage: true, keyboardRetryAndBack: true,
                 headingFocusAndTabOrder: true, persistentPoliteAtomicStatus: true, abortAndIgnoreLateSuccessOrDenial: true,
                 detailReads: finalState.reads.length, listReads: finalState.lists.length, writes: finalState.writes,

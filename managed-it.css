@@ -2,33 +2,6 @@ body[data-page="managed-it-information"] {
     min-height: 100dvh;
 }
 
-body[data-page="managed-it-information"] .site-header {
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 20px 28px;
-    padding-block: 18px;
-}
-
-body[data-page="managed-it-information"] .site-header nav {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 4px 8px;
-}
-
-body[data-page="managed-it-information"] .site-header nav a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    padding: 8px 10px;
-    font-size: .78rem;
-}
-
-body[data-page="managed-it-information"] .site-header nav a[aria-current="page"] {
-    border-radius: 8px;
-    color: var(--ink);
-    background: var(--yellow-soft);
-}
-
 .managed-it-main {
     padding-bottom: 64px;
 }
@@ -326,15 +299,6 @@ body[data-page="managed-it-information"] .home-footer nav a {
 }
 
 @media (max-width: 980px) {
-    body[data-page="managed-it-information"] .site-header {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 12px;
-    }
-
-    body[data-page="managed-it-information"] .site-header nav {
-        justify-content: flex-start;
-    }
-
     .managed-it-hero {
         grid-template-columns: minmax(0, 1fr);
         gap: 36px;
@@ -371,14 +335,6 @@ body[data-page="managed-it-information"] .home-footer nav a {
 }
 
 @media (max-width: 620px) {
-    body[data-page="managed-it-information"] .site-header nav {
-        gap: 2px 4px;
-    }
-
-    body[data-page="managed-it-information"] .site-header nav a {
-        padding-inline: 8px;
-    }
-
     .managed-it-hero {
         padding-top: 26px;
     }
@@ -450,3 +406,113 @@ body[data-page="managed-it-information"] .home-footer nav a {
 }
 
 .managed-it-main { overflow-wrap: anywhere; }
+
+/* Plans & pricing — three-tier managed IT */
+.managed-it-tiers {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
+    align-items: stretch;
+}
+
+.managed-it-tier {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 28px 24px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 18px;
+    background: #fff;
+}
+
+.managed-it-tier.is-recommended {
+    border-color: var(--accent, #1f6feb);
+    box-shadow: 0 12px 32px rgba(31, 111, 235, 0.14);
+}
+
+.managed-it-tier-head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.managed-it-main .managed-it-tier-badge {
+    align-self: flex-start;
+    margin: 0;
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #fff;
+    background: var(--accent, #1f6feb);
+    border-radius: 999px;
+}
+
+.managed-it-tier h3 {
+    margin: 0;
+    font-size: 1.4rem;
+}
+
+.managed-it-tier-tagline {
+    margin: 0;
+    color: rgba(15, 23, 42, 0.7);
+}
+
+.managed-it-tier-price {
+    margin: 8px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.managed-it-tier-amount {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.managed-it-tier-basis {
+    color: rgba(15, 23, 42, 0.6);
+    font-size: 0.95rem;
+}
+
+.managed-it-tier-inherits {
+    margin: 0;
+    font-weight: 600;
+}
+
+.managed-it-tier-features {
+    margin: 0;
+    padding-left: 1.1em;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1 1 auto;
+}
+
+.managed-it-tier .button {
+    margin-top: auto;
+    width: 100%;
+    justify-content: center;
+}
+
+.managed-it-tier .button-secondary {
+    background: transparent;
+    color: var(--accent, #1f6feb);
+    border: 1px solid currentColor;
+}
+
+.managed-it-tier-note {
+    margin: 24px 0 0;
+    color: rgba(15, 23, 42, 0.7);
+}
+
+@media (max-width: 860px) {
+    .managed-it-tiers {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

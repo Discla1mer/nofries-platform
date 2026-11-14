@@ -15,9 +15,7 @@ const CURRENT_PROPOSAL_PRICING = Object.freeze({
     includedLocations: MANAGED_IT_POLICY.pricing.includedLocations,
     onboardingFrom: MANAGED_IT_POLICY.pricing.onboardingFrom,
     additionalEndpointMonthly: MANAGED_IT_POLICY.pricing.additionalEndpointMonthly,
-    additionalLocationMonthly: MANAGED_IT_POLICY.pricing.additionalLocationMonthly,
-    additionalEndpointOnboarding: MANAGED_IT_POLICY.pricing.additionalEndpointOnboarding,
-    additionalLocationOnboarding: MANAGED_IT_POLICY.pricing.additionalLocationOnboarding
+    additionalLocationMonthly: MANAGED_IT_POLICY.pricing.additionalLocationMonthly
 });
 
 const CURRENT_COMMERCIAL_POLICY = Object.freeze({
@@ -27,13 +25,23 @@ const CURRENT_COMMERCIAL_POLICY = Object.freeze({
     serviceName: MANAGED_IT_POLICY.customerFacingServiceName
 });
 
+// The managed-IT service now has three tiers (Essentials/Managed/Secure). A
+// proposal written at any published tier's per-user rate is current, so the
+// commercial-policy check accepts the whole set rather than only the mirrored
+// recommended rate in CURRENT_PROPOSAL_PRICING.perUserMonthly.
+const CURRENT_TIER_PER_USER_RATES = Object.freeze(
+    (MANAGED_IT_POLICY.pricing.tiers || []).map((tier) => tier.perUserMonthly)
+);
+
 function assessProposalCommercialPolicy(proposalValue = {}) {
     const proposal = object(proposalValue);
     const pricing = object(proposal.pricing);
     const commercialPolicy = object(proposal.commercialPolicy);
     const mismatchedFields = [];
 
-    comparePolicyFields('pricing', pricing, CURRENT_PROPOSAL_PRICING, mismatchedFields);
+    comparePolicyFields('pricing', pricing, CURRENT_PROPOSAL_PRICING, mismatchedFields, {
+        perUserMonthly: CURRENT_TIER_PER_USER_RATES
+    });
     comparePolicyFields('commercialPolicy', commercialPolicy, CURRENT_COMMERCIAL_POLICY, mismatchedFields);
 
     const current = mismatchedFields.length === 0;
@@ -226,9 +234,16 @@ function validateProposalDraft(input = {}) {
     return uniqueWarnings(warnings);
 }
 
-function comparePolicyFields(prefix, actual, expected, mismatchedFields) {
+function comparePolicyFields(prefix, actual, expected, mismatchedFields, allowedValues = {}) {
     Object.keys(expected).forEach((field) => {
-        if (!Object.prototype.hasOwnProperty.call(actual, field) || actual[field] !== expected[field]) {
+        const has = Object.prototype.hasOwnProperty.call(actual, field);
+        const allowed = allowedValues[field];
+        if (allowed) {
+            // Field accepts any value from a current set (e.g. the tier rates).
+            if (!has || !allowed.includes(actual[field])) mismatchedFields.push(`${prefix}.${field}`);
+            return;
+        }
+        if (!has || actual[field] !== expected[field]) {
             mismatchedFields.push(`${prefix}.${field}`);
         }
     });

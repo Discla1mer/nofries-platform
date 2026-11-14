@@ -22,6 +22,11 @@ function usesUnlimitedConsultantPolicy(input) {
     return !!input && input.accountType === 'consultant' &&
         input.consultantOrganisationPolicy === CONSULTANT_ORGANISATION_POLICY;
 }
+// Owner decision, 10 November 2026: access has no fixed end date. Like the
+// consultant policy above this is additive: schedules compiled without it keep
+// their exact retained text and digest; new schedules select it in trusted
+// server composition and state the access terms in the new wording.
+const ACCESS_POLICY = 'no-fixed-end-v1';
 const preparations = new WeakMap();
 const sha = value => crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 const fail = () => { throw new Error('starter_plan_invalid'); };
@@ -104,7 +109,10 @@ function starterAuthorityExpiry(offerExpiresAt, planId = LEGACY_PLAN_ID) {
 function compileStarterSchedule(input) {
     const value = fields(copy(input, 16384), ['tenantId', 'organisationId', 'organisationName',
         'accountType', 'kind', 'grantId', 'scheduleId', 'contact', 'framework', ...(Object.hasOwn(input, 'planId') ? ['planId'] : []),
-        ...(Object.hasOwn(input, 'consultantOrganisationPolicy') ? ['consultantOrganisationPolicy'] : [])]);
+        ...(Object.hasOwn(input, 'consultantOrganisationPolicy') ? ['consultantOrganisationPolicy'] : []),
+        ...(Object.hasOwn(input, 'accessPolicy') ? ['accessPolicy'] : [])]);
+    const open = Object.hasOwn(value, 'accessPolicy');
+    if (open && value.accessPolicy !== ACCESS_POLICY) fail();
     uuid(value.tenantId); uuid(value.organisationId); uuid(value.grantId); uuid(value.scheduleId);
     if (new Set([value.tenantId, value.organisationId, value.grantId, value.scheduleId]).size !== 4) fail();
     text(value.organisationName, 120); selectedType(value.accountType);
@@ -136,13 +144,15 @@ function compileStarterSchedule(input) {
         `Principal address: ${quote(contact.address)}`,
         `Representative: ${quote(contact.name)}; role: ${quote(contact.role)}; verified email: ${quote(contact.email)}`,
         `Representative authority evidence: ${quote(contact.authorityEvidenceId)}`,
-        legacy ? `Access period: ${plan.durationDays} days from account activation, as recorded in the canonical activation receipt.` :
-            'Access period: 3 calendar months from account activation at the same UTC time, clamped to the final day of the target month, as recorded in the canonical activation receipt.',
-        'Client organisations share the original account expiry; adding a client does not start another period.',
+        open ? 'Access period: no fixed end date. Access continues until it is suspended or the agreement ends.' :
+            legacy ? `Access period: ${plan.durationDays} days from account activation, as recorded in the canonical activation receipt.` :
+                'Access period: 3 calendar months from account activation at the same UTC time, clamped to the final day of the target month, as recorded in the canonical activation receipt.',
+        open ? 'Client organisations can be added at any time.' :
+            'Client organisations share the original account expiry; adding a client does not start another period.',
         `Included: Overview, manual Cyber Security assessment and Improvement Plan.`,
         `Assessment: ${quote(framework.profileId)}; version: ${quote(framework.version)}; scoring: ${quote(framework.scoringVersion)}.`,
-        legacy ? `Allowance: ${plan.assessmentSubmissionsPerOrganisation} assessment submissions and ${plan.usersPerOrganisation} user per organisation for this access period.` :
-            `Allowance: no assessment or submission cap; ${plan.usersPerOrganisation} user per organisation for this access period. Editing the same assessment consumes no additional assessment run.`,
+        legacy ? `Allowance: ${plan.assessmentSubmissionsPerOrganisation} assessment submissions and ${plan.usersPerOrganisation} user per organisation${open ? '' : ' for this access period'}.` :
+            `Allowance: no assessment or submission cap; ${plan.usersPerOrganisation} user per organisation${open ? '' : ' for this access period'}. Editing the same assessment consumes no additional assessment run.`,
         value.accountType === 'company' ? `Company allowance: ${plan.companyOrganisations} organisation.` :
             unlimited ? `Consultant organisation policy: ${CONSULTANT_ORGANISATION_POLICY}. No product limit on the number of client organisations managed. This replaces the organisation-count allowance for this schedule; each organisation still requires its own authority, accepted scope and active access.` :
                 `Consultant allowance: ${plan.consultantWorkspaces} workspace plus up to ${plan.consultantClientOrganisations} client organisations.`,
@@ -150,8 +160,9 @@ function compileStarterSchedule(input) {
         'AI, evidence uploads and report exports: disabled. Extra services require separate express agreement.',
         'Excluded: managed IT, monitoring, incident response, remediation, audit and certification.',
         'Support, availability and recovery: the standard dashboard agreement applies; no additional commitment.',
-        legacy ? 'Expiry ends this allowance; it does not delete saved work. Existing retention and lawful-hold rules apply.' :
-            'Expiry ends creating, editing and submitting assessments. Authorised users retain read-only access to saved results. Existing retention and lawful-hold rules apply.',
+        open ? 'Suspension or the end of the agreement does not delete saved work. Existing retention and lawful-hold rules apply.' :
+            legacy ? 'Expiry ends this allowance; it does not delete saved work. Existing retention and lawful-hold rules apply.' :
+                'Expiry ends creating, editing and submitting assessments. Authorised users retain read-only access to saved results. Existing retention and lawful-hold rules apply.',
         'Providers: application/assessment data — Microsoft Azure, New Zealand North; authentication sessions,',
         'invitations and agreement/access archives — private Azure Storage, Australia East; identity — Microsoft Entra ID;',
         'invitation messages — Microsoft Entra B2B through Microsoft Graph; verification email — Resend.',
@@ -169,13 +180,20 @@ function compileStarterSchedule(input) {
 
 // IDs, actual activation time and profile come from trusted durable records.
 // The accepted offer's bytes remain identical when the term is fixed later.
-function compileStarterOrganisation(input) {
+function compileStarterOrganisation(input, occurredAt = input.activatedAt) {
     const value = fields(copy(input, 16384), ['tenantId', 'organisationId', 'organisationName',
         'accountType', 'kind', 'activatedAt', 'grantId', 'scheduleId', 'contact', 'framework', ...(Object.hasOwn(input, 'planId') ? ['planId'] : []),
-        ...(Object.hasOwn(input, 'consultantOrganisationPolicy') ? ['consultantOrganisationPolicy'] : [])]);
+        ...(Object.hasOwn(input, 'consultantOrganisationPolicy') ? ['consultantOrganisationPolicy'] : []),
+        ...(Object.hasOwn(input, 'accessPolicy') ? ['accessPolicy'] : [])]);
     const { activatedAt, ...scheduleInput } = value;
     const offer = compileStarterSchedule(scheduleInput);
-    const plan = starterOfferPlan(value), window = accountWindow(activatedAt, plan.planId), framework = value.framework;
+    const plan = starterOfferPlan(value), shared = accountWindow(activatedAt, plan.planId), framework = value.framework;
+    // A client organisation activated inside the account's recorded period
+    // records that shared end, exactly as before. One activated after it can no
+    // longer do so (its records would end before they start), so it records
+    // the plan's period from its own activation. Neither date is enforced.
+    const window = instant(occurredAt) < shared.validUntil ? shared
+        : freeze({ validFrom: shared.validFrom, validUntil: accountWindow(occurredAt, plan.planId).validUntil });
     const scope = { tenantId: value.tenantId, organisationId: value.organisationId };
     const tenantAggregate = createTenantAggregate({ tenant: { tenantId: scope.tenantId, displayName: value.organisationName },
         organisations: [{ ...scope, displayName: value.organisationName }] });
@@ -244,7 +262,7 @@ function compileStarterActivation(input) {
         activatedAt = instant(value.accountActivatedAt);
         if (activatedAt > value.occurredAt) fail();
     }
-    const organisation = compileStarterOrganisation({ ...prepared.offerInput, activatedAt });
+    const organisation = compileStarterOrganisation({ ...prepared.offerInput, activatedAt }, value.occurredAt);
     if (value.occurredAt >= organisation.validUntil) fail();
     const scope = preparation.scope, at = value.occurredAt, aggregate = preparation.initialState.tenantAggregate;
     const invited = applyMembershipCommand(preparation.initialState.membershipState, aggregate, {
@@ -272,5 +290,5 @@ function compileStarterActivation(input) {
     return freeze({ nextState, activationIntent });
 }
 
-module.exports = { LEGACY_PLAN_ID, THREE_MONTH_PLAN_ID, CONSULTANT_ORGANISATION_POLICY, usesUnlimitedConsultantPolicy, approvedStarterPlan, starterOfferPlan, accountWindow,
+module.exports = { LEGACY_PLAN_ID, THREE_MONTH_PLAN_ID, CONSULTANT_ORGANISATION_POLICY, ACCESS_POLICY, usesUnlimitedConsultantPolicy, approvedStarterPlan, starterOfferPlan, accountWindow,
     starterAuthorityExpiry, compileStarterSchedule, compileStarterPreparation, compileStarterActivation };

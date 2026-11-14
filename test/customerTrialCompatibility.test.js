@@ -86,14 +86,15 @@ test('new version has separate offer bytes and genuine consent fixes one replay-
     assert.throws(() => compileStarterPreparation({ ...f.source, createdAt: '2026-10-14T23:59:59.999Z' }));
 });
 
-test('consultant clients inherit the original clamped account end and cannot restart the term', () => {
+test('consultant clients inherit the original clamped account end while inside it, and record their own period after it', () => {
     const f = prepared(THREE_MONTH_PLAN_ID, '2026-11-01T00:00:00.000Z', '2026-12-01T00:00:00.000Z', { accountType: 'consultant', kind: 'client' });
     const result = compileStarterActivation({ ...f.input, accountActivatedAt: '2026-10-31T12:34:56.789Z' });
     assert.equal(result.activationIntent.accountActivatedAt, '2026-10-31T12:34:56.789Z');
     assert.equal(result.activationIntent.validUntil, '2027-01-31T12:34:56.789Z');
     assert.equal(result.nextState.membershipState.memberships[0].validFrom, f.input.occurredAt);
-    assert.throws(() => compileStarterActivation({ ...f.input, accountActivatedAt: result.activationIntent.accountActivatedAt,
-        occurredAt: result.activationIntent.validUntil }));
+    const late = compileStarterActivation({ ...f.input, accountActivatedAt: result.activationIntent.accountActivatedAt,
+        occurredAt: result.activationIntent.validUntil });
+    assert.equal(late.activationIntent.validUntil, accountWindow(result.activationIntent.validUntil, THREE_MONTH_PLAN_ID).validUntil);
 });
 
 test('new grants permit sixth and later submissions while seats and usage integrity stay bounded', () => {

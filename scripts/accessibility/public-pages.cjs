@@ -19,7 +19,6 @@ const server = http.createServer((req, res) => {
     if (req.method !== 'GET') { unexpected.push(req.method + ' ' + url.pathname); res.writeHead(405); return res.end(); }
     if (url.pathname.startsWith('/api/')) {
         res.setHeader('Content-Type', 'application/json');
-        if (url.pathname === '/api/prospect/session') return res.end(JSON.stringify({ assistant: { publicHelpOnly: true, publicHelpProtocol: 'public-help-v1', runtime: { mode: 'mock' } } }));
         if (url.pathname === '/api/organisation-setup/state') {
             res.setHeader('x-nofries-customer-entry', 'legacy');
             return res.end(JSON.stringify({ state: 'start' }));
@@ -31,7 +30,9 @@ const server = http.createServer((req, res) => {
         }
         unexpected.push(req.method + ' ' + url.pathname); res.writeHead(404); return res.end('{}');
     }
-    const relative = url.pathname === '/' ? 'index.html' : url.pathname === '/login' ? 'login.html' : url.pathname.slice(1);
+    // Follow the deployed rewrites (e.g. /try -> /app/try.html) so linked routes are scanned as served.
+    const rewrite = config.routes.find(entry => entry.route === url.pathname && typeof entry.rewrite === 'string');
+    const relative = rewrite ? rewrite.rewrite.slice(1) : url.pathname === '/' ? 'index.html' : url.pathname === '/login' ? 'login.html' : url.pathname.slice(1);
     const file = path.resolve(dist, relative);
     if (!file.startsWith(dist + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
         unexpected.push(req.method + ' ' + url.pathname); res.writeHead(404); return res.end();
@@ -101,7 +102,7 @@ async function doubleText(page) {
     // Snapshot every computed size first; do not compound inherited sizes.
     const count = await page.evaluate(() => {
         const sizes = [...document.querySelectorAll('body, body *')].map(el => [el, parseFloat(getComputedStyle(el).fontSize)]).filter(([, n]) => Number.isFinite(n));
-        sizes.forEach(([el, n]) => { el.style.fontSize = n * 2 + 'px'; });
+        sizes.forEach(([el, n]) => { el.style.setProperty('font-size', n * 2 + 'px', 'important'); });
         if (sizes.some(([el, n]) => Math.abs(parseFloat(getComputedStyle(el).fontSize) - n * 2) > .1)) throw new Error('Text did not double');
         return sizes.length;
     });
@@ -112,7 +113,9 @@ async function layout(page) {
     return page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
         overflow: [...document.querySelectorAll('h1,h2,h3,p,label,input,textarea,select,button,a')].filter(el => {
             const r = el.getBoundingClientRect(), s = getComputedStyle(el);
-            return r.width && r.height && s.visibility !== 'hidden' && !el.matches('.skip-link,.report-skip') &&
+            // Visually hidden status text (1px, clipped) is read by screen readers only, so it is not overflow.
+            const visuallyHidden = r.width <= 1 && r.height <= 1 && s.overflow === 'hidden';
+            return r.width && r.height && !visuallyHidden && s.visibility !== 'hidden' && !el.matches('.skip-link,.report-skip') &&
                 (r.right > innerWidth + 1 || r.left < -1 ||
                     el.scrollWidth > el.clientWidth + 1 && ['hidden', 'clip'].includes(s.overflowX) ||
                     el.scrollHeight > el.clientHeight + 1 && ['hidden', 'clip'].includes(s.overflowY));
@@ -125,7 +128,7 @@ async function layout(page) {
     try {
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined, args: ['--no-sandbox'] });
         console.log('Chromium ' + browser.version());
-        const routes = ['/', '/login', '/managed-it.html', '/privacy.html', '/terms.html', '/roadmap.html', '/report.html'];
+        const routes = ['/', '/login', '/managed-it.html', '/privacy.html', '/terms.html', '/roadmap.html', '/pricing.html', '/sample-result.html', '/report.html', '/try'];
         if (fs.existsSync(path.join(dist, 'contact.html'))) routes.push('/contact.html');
         else console.log('Contact form absent: deferred to #42/#43, not a passing contact-form check.');
         for (const route of routes) for (const width of [1280, 320]) for (const scale of [1, 2]) {
@@ -140,24 +143,16 @@ async function layout(page) {
                 await page.goto(base + route);
                 await page.locator('h1').first().waitFor();
                 if (route === '/login') await page.locator('#organisation-email').waitFor();
-                const launcher = page.locator('[data-assistant-launcher]');
-                await launcher.waitFor();
-                // Reveal help before resizing so its text is measured too; no message is sent.
-                await launcher.press('Enter');
-                await page.locator('#assistant-input').waitFor();
-                await page.waitForFunction(() => !document.querySelector('#assistant-input').disabled);
                 const doubled = scale === 2 ? await doubleText(page) : 0;
-                const help = { axe: await scan(page), layout: await layout(page) };
-                await page.getByRole('button', { name: 'Close No Fries chat', exact: true }).press('Enter');
-                const closed = { axe: await scan(page), layout: await layout(page) };
+                const pageState = { axe: await scan(page), layout: await layout(page) };
                 const probe = route === '/login' ? await signupContrast(page) : null;
                 const hint = route === '/report.html' ? await reportHint(page) : null;
-                const entry = { route, width, scale, doubled, closed, help, probe, hint };
+                const entry = { route, width, scale, doubled, page: pageState, probe, hint };
                 if (probe && (probe.candidate.ratio < 4.5 || probe.candidateScan.violations.length)) failures.push({ route, width, scale, state: 'signup-error-contrast' });
                 if (hint && !hint.pass) failures.push({ route, width, scale, state: 'persistent-report-hint' });
                 results.push(entry);
                 console.log(JSON.stringify(entry));
-                for (const [state, observation] of Object.entries({ closed, help })) {
+                for (const [state, observation] of Object.entries({ page: pageState })) {
                     if (observation.axe.violations.length || observation.layout.scrollWidth > width + 1 || observation.layout.overflow.length) failures.push({ route, width, scale, state });
                 }
             } finally { await context.close(); }
@@ -169,7 +164,7 @@ async function layout(page) {
         fs.writeFileSync(evidence, JSON.stringify({ summary, results }, null, 2));
         console.log(JSON.stringify({ ...summary, evidence }));
         if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '## Public accessibility\n' +
-            `${results.length} cases (1280/320 CSS pixels × 100/200% measured text; help open/closed).\n\n` +
+            `${results.length} cases (1280/320 CSS pixels × 100/200% measured text).\n\n` +
             '| Page | Width | Text | Failing state |\n| --- | ---: | ---: | --- |\n' +
             failures.map(f => `| ${f.route} | ${f.width} | ${f.scale * 100}% | ${f.state} |`).join('\n') + '\n');
         if (browser) await browser.close();

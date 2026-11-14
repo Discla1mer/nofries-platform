@@ -95,7 +95,6 @@ const server = http.createServer(async (request, response) => {
         else if (url.pathname === '/api/dashboard/modules/cyber_security') body = moduleView;
         else if (url.pathname === '/roadmap.html') { body = '<!doctype html><title>Synthetic destination</title>'; type = 'text/html'; }
         else if (['/js/home.js', '/js/organisation-setup.js'].includes(url.pathname)) { body = read(url.pathname.slice(1)); type = 'text/javascript'; }
-        else if (url.pathname === '/js/prospect-assistant.js') { body = pinned('js/prospect-assistant.js'); type = 'text/javascript'; }
         else if (assets[url.pathname]) [type, body] = assets[url.pathname];
         else { unexpected.push(request.method + ' ' + url.pathname); status = 404; body = {}; }
         response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -306,7 +305,7 @@ async function doubleText(page) {
             assert.equal(await page.locator('.ncsc-answer input[value="partial"]').isChecked(), true, 'Native cancel retains the exact local answer');
             holdWrites = true; const startWrites = operations.length;
             await button(page, 'Save progress').click();
-            await page.waitForFunction(() => document.querySelector('.ncsc-warning')?.textContent.includes('Operation in progress'));
+            await page.waitForFunction(() => document.querySelector('.ncsc-warning')?.textContent.includes('Saving your answers'));
             assert.equal(await listenerCount(page), 1, 'Pending acknowledgement retains native protection');
             await button(page, 'Save progress').evaluate(element => { element.click(); element.click(); });
             assert.equal(operations.length, startWrites + 1, 'Repeated pending Save activations send one operation');
@@ -383,11 +382,11 @@ async function doubleText(page) {
             // acknowledges it and the current saved version is reconciled.
             await dirty(page, 'no'); expectedLoss = { path: '/api/dashboard/ncsc/assessments/assessment-a/save', remaining: 1 }; transport.setScenario('lost');
             const lostStart = operations.length; await button(page, 'Save progress').click();
-            await page.getByRole('heading', { name: 'Operation unconfirmed', exact: true }).waitFor();
+            await page.getByRole('heading', { name: 'We could not confirm the save', exact: true }).waitFor();
             assert.equal(await listenerCount(page), 1);
             await cancelReload(page);
             const lostCommand = operations.at(-1).body;
-            await button(page, 'Retry same operation').click();
+            await button(page, 'Try the save again').click();
             await page.waitForFunction(() => document.querySelector('.ncsc-status')?.textContent.includes('The operation is confirmed'));
             assert.equal(operations.length, lostStart + 2); assert.equal(expectedLoss.remaining, 0);
             assert.deepEqual(operations.at(-1).body, lostCommand, 'Retry retains exact revision, payload and idempotency key');

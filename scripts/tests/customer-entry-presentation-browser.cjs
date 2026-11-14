@@ -48,7 +48,7 @@ const legal = { status: 'terms', termsVersion: 'synthetic-version-2026-10-15', t
 const requestId = '10000000-0000-4000-8000-000000000002';
 const bindings = [{ bindingId: '10000000-0000-4000-8000-000000000001', organisationLabel: 'Synthetic consultancy' }];
 const assets = Object.fromEntries(['style.css', 'home.css', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png',
-    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js'].map(file => ['/' + file, file]));
+    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js'].map(file => ['/' + file, file]));
 const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), 'nofries-customer-entry-presentation-'));
 fs.chmodSync(artifacts, 0o700);
 const requests = [], blocked = [], errors = [], csp = [], results = [];
@@ -170,7 +170,7 @@ async function main() {
                 'Legal review should use the wider reading layout');
             await page.screenshot({ path: path.join(artifacts, 'organisation-legal-' + suffix + '.png'), fullPage: true });
             mode = 'consultant'; await visit('/dashboard#organisations');
-            await page.getByRole('button', { name: 'Continue setup: Synthetic client', exact: true }).click();
+            await page.getByRole('button', { name: 'Resume setup: Synthetic client', exact: true }).click();
             await page.getByText('Review the schedule and terms for Synthetic client', { exact: true }).waitFor();
             await legalText(page, 'section.client-terms-section .client-signup-terms', 'details.client-terms-section .client-signup-terms');
             const details = page.locator('details.client-terms-section');

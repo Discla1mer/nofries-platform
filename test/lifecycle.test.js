@@ -577,7 +577,7 @@ describe('shared customer lifecycle and prospect agent', () => {
         });
         const created = await service.createInternalPilotCustomer(operator, {
             displayName: 'No Fries Headquarters',
-            primaryContactName: 'Joel Harvey',
+            primaryContactName: 'Test Owner',
             primaryEmail: 'joel@nofries.nz',
             expectedUsers: 1,
             expectedEndpoints: 2,
@@ -1002,7 +1002,7 @@ describe('shared customer lifecycle and prospect agent', () => {
         expect(result.identities).toMatchObject({
             promptVersion: 'prospect-v5',
             toolSchemaVersion: 'prospect-tools-v1',
-            policyId: 'managed_it_2026_08_4',
+            policyId: 'managed_it_2026_11_1',
             model: 'gpt-5.6-luna',
             releaseSha: 'a'.repeat(40)
         });
@@ -1013,7 +1013,7 @@ describe('shared customer lifecycle and prospect agent', () => {
                 providerModel: 'gpt-5.6-luna-2026-08-01',
                 promptVersion: 'prospect-v5',
                 toolSchemaVersion: 'prospect-tools-v1',
-                policyId: 'managed_it_2026_08_4',
+                policyId: 'managed_it_2026_11_1',
                 releaseSha: 'a'.repeat(40),
                 cachedInputTokens: 50,
                 cacheWriteTokens: 20,
@@ -1059,7 +1059,7 @@ describe('shared customer lifecycle and prospect agent', () => {
         });
 
         expect(result.text).toContain('day-to-day support');
-        expect(result.text).toContain('business email and shared work tools');
+        expect(result.text).toContain('AI-assisted email helpdesk');
         expect(deltas.join('')).toBe(result.text);
         expect(stream).not.toHaveBeenCalled();
         expect(result.organisation.fieldStates['company.summary'].status).toBe('unknown');

@@ -244,13 +244,18 @@ test.each(['dynamic', 'hosted'].flatMap(kind => ['retry', 'expired', undefined].
     const f = runDocument(document, { search: '?provider=external' + (hint ? '&signin=' + hint : ''),
         state: { status: 'continue_authentication' } });
     try {
-        await flush(); expect(f.root.querySelector('h1').textContent).toBe('Continuing account setup');
-        expect(f.root.querySelector('a').textContent).toBe('Continue securely');
+        await flush(); expect(f.root.querySelector('h1').textContent).toBe('Finishing your sign-in');
+        expect(f.root.querySelector('a').textContent).toBe('Continue to Microsoft');
         expect(f.root.querySelector('a').href).toBe('/api/external-customer-auth/login');
         expect(f.root.querySelector('button').textContent).toBe('Sign out and change account');
         expect(f.root.querySelector('button').type).toBe('submit'); expect(f.assign).not.toHaveBeenCalled();
-        if (hint) expect(f.replace).not.toHaveBeenCalled();
-        else { expect(f.replace).toHaveBeenCalledTimes(1); expect(f.replace).toHaveBeenCalledWith('/api/external-customer-auth/login'); }
+        if (hint) { expect(f.replace).not.toHaveBeenCalled(); expect(f.root.textContent).not.toContain('Taking you to Microsoft now'); }
+        else {
+            expect(f.replace).toHaveBeenCalledTimes(1); expect(f.replace).toHaveBeenCalledWith('/api/external-customer-auth/login');
+            // Round 2: say why this step exists and that it is automatic.
+            expect(f.root.textContent).toContain('Your details are saved. Microsoft now checks your sign-in once more');
+            expect(f.root.textContent).toContain('Taking you to Microsoft now. This can take up to 30 seconds.');
+        }
         expect(f.fetch.mock.calls.map(([url]) => url)).toEqual(['/api/external-customer-signup/state']);
     } finally { f.dispose(); }
 });
@@ -316,12 +321,15 @@ test.each([{ status: 503, state: { status: 'create_account' } }, { status: 200, 
 ('a recovery hint cannot manufacture account state after an unavailable read %j', async failure => {
     const f = runDocument(buildHostedSignupDocument(sources()), { ...failure, search: '?provider=external&signin=expired' });
     try {
-        await flush(); expect(f.root.querySelector('h1').textContent).toBe('Signup is unavailable');
+        // A-001: an unavailable opening read is a sign-in check failure with
+        // only a manual state re-read; the hint still manufactures nothing.
+        await flush(); expect(f.root.querySelector('h1').textContent).toBe('We could not open your account');
         expect(f.root.textContent).not.toContain('If you finished creating');
+        expect(f.root.textContent).not.toContain('Signup is unavailable');
         expect(f.assign).not.toHaveBeenCalled(); expect(f.replace).not.toHaveBeenCalled();
-        expect(f.root.querySelector('button')).toBeNull();
-        expect(f.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
-        expect(f.root.textContent).toContain('Do not create another account or submit your details again.');
+        expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
+        expect(f.root.textContent).toContain('Error code: NF-SIGNIN-UNCONFIRMED');
+        expect(f.root.textContent).toContain('If you already have an account, it and your saved work are kept.');
         expect(f.fetch).toHaveBeenCalledTimes(1);
     } finally { f.dispose(); }
 });
@@ -340,4 +348,14 @@ test.each([
         window: { location: { search, hash, replace } }, URLSearchParams, fetch });
     expect(replace).toHaveBeenCalledTimes(1); expect(replace).toHaveBeenCalledWith(target);
     expect(fetch).not.toHaveBeenCalled(); expect(JSON.stringify(replace.mock.calls)).not.toMatch(/private|evil|code=/);
+});
+
+test('a plain visit to the external callback returns to sign-in recovery without touching sign-in state', async () => {
+    const h = customerProductionHarness({ starter: true, external: true, now: Date.now(), customerClientId: uid(105) });
+    const visit = await request(h.app).get('/api/external-customer-auth/callback?error=access_denied&error_description=cancelled')
+        .set('Accept', 'text/html');
+    expect(visit.status).toBe(303);
+    expect(visit.headers.location).toBe('/login?signin=retry&provider=external');
+    expect(visit.headers['cache-control']).toBe('no-store');
+    expect(visit.headers['set-cookie']).toBeUndefined();
 });
