@@ -14,12 +14,11 @@ function edgeRule(pathname, method) {
         (rule.route === pathname || rule.route.endsWith('*') && pathname.startsWith(rule.route.slice(0, -1))));
 }
 
-test('POST /api/telemetry reaches App Service anonymously', () => {
-    const rule = edgeRule('/api/telemetry', 'POST');
-    expect(rule.route).toBe('/api/telemetry');
-    expect(rule.allowedRoles).toEqual(['anonymous']);
-});
-
-test('GET /api/telemetry still needs an SWA user at the edge', () => {
-    expect(edgeRule('/api/telemetry', 'GET').route).toBe('/api/*');
+test('/api/telemetry reaches App Service anonymously, pinned to the minimal rule', () => {
+    // No methods or headers at the edge (SWA config budget): App Service sends
+    // private, no-store headers and answers every method except POST with 405
+    // (flag on) or 410 (flag off) before anything is stored (funnelBeacons.test.js).
+    for (const method of ['POST', 'GET', 'PUT', 'DELETE']) {
+        expect(edgeRule('/api/telemetry', method)).toEqual({ route: '/api/telemetry', allowedRoles: ['anonymous'] });
+    }
 });

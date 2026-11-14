@@ -59,7 +59,7 @@ const { createEnquiryService, isHoneypotEnquiry } = require('./api/shared/enquir
 const { errorResult: enquiryErrorResult } = require('./api/enquiry');
 const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
-const { createFunnelCountWriter, createServerFunnelCounter, funnelCountsEnabled, handleFunnelCountRequest,
+const { createFunnelCountReader, createFunnelCountWriter, createServerFunnelCounter, funnelCountsEnabled, handleFunnelCountRequest,
     isAssessmentSubmit } = require('./api/shared/funnelCounts');
 const { PATH: UNSUBSCRIBE_PATH, MAX_BODY_BYTES: UNSUBSCRIBE_BODY_BYTES, createUnsubscribeWriter, handleUnsubscribeRequest } = require('./api/shared/lifecycleEmail/unsubscribeEndpoint');
 const { PATH: EMAIL_SETTINGS_PATH, MAX_BODY_BYTES: EMAIL_SETTINGS_BODY_BYTES, handleEmailSettingsRequest } = require('./api/shared/lifecycleEmail/emailSettings');
@@ -246,6 +246,8 @@ function createNoFriesApp(configuration = {}) {
         signupListService: dashboardAdminSignupListService,
         accountLookupReader: dashboardAdminAccountLookup,
         readOperatorSession: dashboard ? cookie => dashboard.authServices.session.readSessionDetails(cookie) : null,
+        // #151 F5: aggregate counts only; the handler adds the route only with the flag on.
+        funnelReader: funnelPool ? createFunnelCountReader({ pool: funnelPool }) : null,
         env: apiEnvironment, requestBudgetMs: dashboardAdminRequestBudgetMs });
 
 const app = express();
@@ -499,7 +501,7 @@ async function sendDashboardAdmin(req, res, route) {
     }));
     app.use('/api/dashboard-admin', asyncRoute(async (req, res) => {
     const route = /^\/(?:app\.js|app\.css|capabilities|lookup|suspend|restore|approve-suspend|approve-restore|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
-        dashboardAdminSignupListService && req.path === '/signups' ? req.path.slice(1) : null;
+        dashboardAdminSignupListService && req.path === '/signups' || req.path === '/funnel' ? req.path.slice(1) : null;
     await sendDashboardAdmin(req, res, route);
 }));
 app.all(['/dashboard-admin', '/dashboard-admin/'], asyncRoute(async (req, res) => {
