@@ -12,12 +12,19 @@
     let sequence = 0;
     const node = (tag, text) => { const item = document.createElement(tag); if (text !== undefined) item.textContent = text; return item; };
     function clear() { result.replaceChildren(); result.hidden = true; }
+    function revoke(code) {
+        hide();
+        if (typeof window.dispatchEvent === 'function' && typeof window.CustomEvent === 'function') {
+            window.dispatchEvent(new window.CustomEvent('dashboard-admin-revoked', { detail: code }));
+        }
+    }
     function hide() { sequence += 1; clear(); panel.hidden = true; load.disabled = true; status.textContent = 'No funnel counts have been loaded.'; }
     async function read(path, request) {
         const response = await fetch('/api/dashboard-admin/' + path, { method: 'GET', credentials: 'same-origin', cache: 'no-store',
             redirect: 'error', headers: { Accept: 'application/json' } });
+        // A lost session clears every protected panel, even for a superseded request.
+        if ([401, 403].includes(response.status)) { revoke(response.status); return null; }
         if (request !== sequence) return null;
-        if ([401, 403].includes(response.status)) { hide(); return null; }
         if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') || '')) throw new Error();
         return response.json();
     }

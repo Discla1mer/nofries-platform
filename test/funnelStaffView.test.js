@@ -158,10 +158,13 @@ describe('staff funnel table', () => {
             const [status, body] = responses[url.split('/').pop()];
             return { status, ok: status === 200, headers: { get: () => 'application/json' }, json: async () => body };
         });
-        const window = { addEventListener() {} };
+        const listeners = {}, dispatched = [];
+        const window = { addEventListener(name, fn) { (listeners[name] ||= []).push(fn); },
+            CustomEvent: function (type, init) { this.type = type; this.detail = init.detail; },
+            dispatchEvent(event) { dispatched.push([event.type, event.detail]); for (const fn of listeners[event.type] || []) fn(event); } };
         vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/funnelCountsView.js'), 'utf8'),
             { document: { getElementById: id => ids[id], createElement: element }, fetch, window });
-        return { ids, fetch };
+        return { ids, fetch, listeners, dispatched };
     }
     const flush = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve(); };
     const text = node => node.textContent + node.children.map(text).join('');
@@ -196,6 +199,51 @@ describe('staff funnel table', () => {
         await flush();
         expect(ids.funnelResult.hidden).toBe(true);
         expect(ids.funnelStatus.textContent).toBe('Funnel counts could not be loaded. Try again.');
+    });
+
+    test.each([401, 403])('a %s while loading clears the table and tells the other panels', async status => {
+        const view = projectFunnelView([], funnelWindow(new Date('2026-11-12T11:30:00Z')));
+        const responses = { capabilities: [200, { funnel: true }], funnel: [200, view] };
+        const { ids, dispatched } = mount(responses);
+        await flush();
+        ids.funnelLoad.listeners.click(); await flush();
+        expect(ids.funnelResult.hidden).toBe(false);
+        responses.funnel = [status, {}];
+        ids.funnelLoad.listeners.click(); await flush();
+        expect(dispatched).toEqual([['dashboard-admin-revoked', status]]);
+        expect(ids.funnelResult.hidden).toBe(true);
+        expect(ids.funnelResult.children).toEqual([]);
+        expect(ids.funnelPanel.hidden).toBe(true);
+    });
+
+    test('a superseded request that comes back 401 still broadcasts the revocation', async () => {
+        let release;
+        const ids = { funnelPanel: element('section'), funnelLoad: element('button'), funnelStatus: element('p'), funnelResult: element('div') };
+        const dispatched = [];
+        const fetch = jest.fn(url => url.endsWith('capabilities')
+            ? Promise.resolve({ status: 200, ok: true, headers: { get: () => 'application/json' }, json: async () => ({ funnel: true }) })
+            : new Promise(resolve => { release = () => resolve({ status: 401, ok: false, headers: { get: () => 'application/json' }, json: async () => ({}) }); }));
+        const window = { addEventListener() {}, CustomEvent: function (type, init) { this.type = type; this.detail = init.detail; },
+            dispatchEvent(event) { dispatched.push([event.type, event.detail]); } };
+        vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/funnelCountsView.js'), 'utf8'),
+            { document: { getElementById: id => ids[id], createElement: element }, fetch, window });
+        await flush();
+        ids.funnelLoad.listeners.click(); await flush();
+        ids.funnelLoad.listeners.click(); await flush();
+        release(); await flush();
+        expect(dispatched).toEqual([['dashboard-admin-revoked', 401]]);
+    });
+
+    test('a revocation broadcast by another panel clears the funnel table', async () => {
+        const view = projectFunnelView([], funnelWindow(new Date('2026-11-12T11:30:00Z')));
+        const { ids, listeners } = mount({ capabilities: [200, { funnel: true }], funnel: [200, view] });
+        await flush();
+        ids.funnelLoad.listeners.click(); await flush();
+        expect(ids.funnelResult.hidden).toBe(false);
+        for (const fn of listeners['dashboard-admin-revoked']) fn({ detail: 401 });
+        expect(ids.funnelResult.hidden).toBe(true);
+        expect(ids.funnelResult.children).toEqual([]);
+        expect(ids.funnelPanel.hidden).toBe(true);
     });
 
     test('document panel uses a labelled region, live status and an explicit button', () => {
