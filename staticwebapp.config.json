@@ -1145,11 +1145,6 @@
       "allowedRoles": ["anonymous"]
     },
     {
-      "route": "/api/dashboard-admin/accounts/list",
-      "methods": ["POST"],
-      "allowedRoles": ["anonymous"]
-    },
-    {
       "route": "/api/emailPreferences",
       "methods": ["GET", "POST"],
       "allowedRoles": ["anonymous"]

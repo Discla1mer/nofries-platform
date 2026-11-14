@@ -150,7 +150,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
 
     async function execute(request, route, checked, signal) {
         try {
-            if (['accounts/lookup', 'accounts/list', 'accounts/app.js'].includes(route)) {
+            if (['accounts/lookup', 'accounts/app.js'].includes(route)) {
                 if (!accountLookup) fail(404, 'dashboard_admin_not_found');
                 return await accountLookup(request, route, async () => {
                     const actor = await checked(() => principal(request));

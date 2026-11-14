@@ -100,7 +100,7 @@ test('the signup list loads after the staff session, shows formed date and organ
     form.requestSubmit = jest.fn(); h.nodes.get('accountLookupPanel').scrollIntoView = jest.fn();
     expect(h.nodes.get('accountListPanel').hidden).toBe(false);
     await [...load.events.click][0]();
-    expect(fetch.mock.calls.map(([url, options]) => url + ' ' + options.method)).toEqual(['/api/dashboard/session GET', '/api/dashboard-admin/accounts/list POST']);
+    expect(fetch.mock.calls.map(([url, options]) => url + ' ' + options.method)).toEqual(['/api/dashboard/session GET', '/api/dashboard-admin/accounts/lookup POST']);
     expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({});
     const text = h.nodes.get('accountListResults').textContent;
     expect(text).toContain('listed@example.test'); expect(text).toContain('Listed Ltd'); expect(text).toContain('Client Co (client)');

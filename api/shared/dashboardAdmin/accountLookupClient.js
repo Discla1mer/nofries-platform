@@ -155,7 +155,7 @@
             await ready(controller.signal);
             if (listActive !== controller) return;
             listStatus.textContent = 'Loading signups…';
-            const response = await request('/api/dashboard-admin/accounts/list', {}, controller.signal);
+            const response = await request('/api/dashboard-admin/accounts/lookup', {}, controller.signal);
             // A pagehide or newer load abandons this response unrendered.
             if (listActive !== controller) return;
             if (response.status !== 200) throw Object.assign(new Error('refused'), { status: response.status });

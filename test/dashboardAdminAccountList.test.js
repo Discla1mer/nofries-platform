@@ -116,7 +116,7 @@ test('the legacy admin store is not scanned, unreadable records are flagged and 
 const origin = 'https://operator.example.test';
 const identity = { provider: 'entra-bff', isAuthenticated: true, subjectKey: STAFF, tenantId: uid(1), principalId: uid(2) };
 const wire = (input = {}, method = 'POST') => Object.assign(Readable.from([Buffer.from(JSON.stringify(input))]), {
-    method, url: '/api/dashboard-admin/accounts/list', headers: { 'content-type': 'application/json', origin, 'sec-fetch-site': 'same-origin' } });
+    method, url: '/api/dashboard-admin/accounts/lookup', headers: { 'content-type': 'application/json', origin, 'sec-fetch-site': 'same-origin' } });
 function handler({ list = jest.fn(async () => ({ rows: [], truncated: false })), authorise = jest.fn(async actor => actor), env = {} } = {}) {
     const audit = jest.fn(async () => {}), read = jest.fn();
     const service = { authorise, capabilities: async () => ({}), lookup: async () => ({}) };
@@ -129,7 +129,7 @@ afterEach(() => jest.restoreAllMocks());
 
 test('an authorised list returns rows and writes one list audit record without a target', async () => {
     const h = handler({ list: jest.fn(async () => ({ rows: [{ email: 'customer@example.test' }], truncated: false })) });
-    const result = await h.handler.handle(wire(), 'accounts/list');
+    const result = await h.handler.handle(wire(), 'accounts/lookup');
     expect(result.status).toBe(200); expect(result.body.rows).toHaveLength(1);
     expect(h.list).toHaveBeenCalledWith(expect.anything(), false); expect(h.read).not.toHaveBeenCalled();
     expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ category: 'dashboard_admin_account_list', targetSha256: null, status: 200, count: 1 }));
@@ -138,34 +138,41 @@ test('an authorised list returns rows and writes one list audit record without a
 
 test('the list passes the selector switch only when account actions are on', async () => {
     const h = handler({ env: { NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS: 'true' } });
-    await h.handler.handle(wire(), 'accounts/list');
+    await h.handler.handle(wire(), 'accounts/lookup');
     expect(h.list).toHaveBeenCalledWith(expect.anything(), true);
 });
 
-test.each([[{ email: 'x@example.test' }], [[]], [{ cursor: 'x' }]])('a non-empty body %j is refused before storage', async input => {
+test.each([[[]], [{ cursor: 'x' }], [{ email: 'x@example.test', extra: 1 }]])('a malformed body %j is refused before storage', async input => {
     const h = handler();
-    expect((await h.handler.handle(wire(input), 'accounts/list')).status).toBe(400);
-    expect(h.list).not.toHaveBeenCalled();
+    expect((await h.handler.handle(wire(input), 'accounts/lookup')).status).toBe(400);
+    expect(h.list).not.toHaveBeenCalled(); expect(h.read).not.toHaveBeenCalled();
+});
+
+test('an email body is still an email lookup, never the list', async () => {
+    const h = handler(); h.read.mockResolvedValue({ rows: [], truncated: false });
+    expect((await h.handler.handle(wire({ email: 'x@example.test' }), 'accounts/lookup')).status).toBe(200);
+    expect(h.read).toHaveBeenCalled(); expect(h.list).not.toHaveBeenCalled();
+    expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ category: 'dashboard_admin_account_lookup' }));
 });
 
 test('GET, foreign origin and denied staff authority are refused before storage', async () => {
     let h = handler();
-    expect((await h.handler.handle(wire({}, 'GET'), 'accounts/list')).status).toBe(405);
+    expect((await h.handler.handle(wire({}, 'GET'), 'accounts/lookup')).status).toBe(405);
     const foreign = wire(); foreign.headers.origin = 'https://evil.example';
-    expect((await h.handler.handle(foreign, 'accounts/list')).status).toBe(403);
+    expect((await h.handler.handle(foreign, 'accounts/lookup')).status).toBe(403);
     h = handler({ authorise: jest.fn(async () => { throw Object.assign(new Error(), { statusCode: 403 }); }) });
-    expect((await h.handler.handle(wire(), 'accounts/list')).status).toBe(403);
+    expect((await h.handler.handle(wire(), 'accounts/lookup')).status).toBe(403);
     expect(h.list).not.toHaveBeenCalled();
 });
 
-test('a failed audit write withholds the list; no list reader means not found', async () => {
+test('a failed audit write withholds the list; no list reader refuses an empty body', async () => {
     const h = handler({ list: jest.fn(async () => ({ rows: [{ email: 'customer@example.test' }], truncated: false })) });
     h.audit.mockRejectedValue(new Error('down'));
-    const result = await h.handler.handle(wire(), 'accounts/list');
+    const result = await h.handler.handle(wire(), 'accounts/lookup');
     expect(result.status).toBe(503); expect(JSON.stringify(result)).not.toContain('customer@example.test');
     const none = createDashboardAdminHandlers({ service: { authorise: async a => a, capabilities: async () => ({}), lookup: async () => ({}) },
         accountLookupReader: { read: jest.fn(), audit: jest.fn(async () => {}), targetDigest: () => '0'.repeat(64) }, readOperatorSession: async () => ({ identity }),
         env: { NOFRIES_PUBLIC_URL: origin, NOFRIES_REQUIRE_AUTH: 'true', NOFRIES_ENTRA_TENANT_ID: uid(1), NOFRIES_ALLOWED_SUBJECTS: STAFF,
             NOFRIES_ADMIN_SUBJECTS: STAFF, NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: 'true' } });
-    expect((await none.handle(wire(), 'accounts/list')).status).toBe(404);
+    expect((await none.handle(wire(), 'accounts/lookup')).status).toBe(400);
 });
