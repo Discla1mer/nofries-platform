@@ -142,18 +142,47 @@ describe('managed signup document', () => {
     });
 });
 
-test('SWA lets anonymous visitors POST counts, and only POST, to the exact telemetry path', () => {
+test('SWA passes the exact telemetry path to App Service anonymously, with no edge headers or methods', () => {
     const config = JSON.parse(read('staticwebapp.config.json'));
     const edgeRule = (pathname, method) => config.routes.find(rule => (!rule.methods || rule.methods.includes(method)) &&
         (rule.route === pathname || rule.route.endsWith('*') && pathname.startsWith(rule.route.slice(0, -1))));
-    const rule = edgeRule('/api/telemetry', 'POST');
-    // No edge headers block (20,000-byte SWA config budget): App Service sends
-    // private, no-store API headers on every /api answer (proved below).
-    expect(rule).toEqual({ route: '/api/telemetry', methods: ['POST'], allowedRoles: ['anonymous'] });
-    expect(config.routes.indexOf(rule)).toBeLessThan(config.routes.findIndex(item => item.route === '/api/*'));
+    // Minimal for the 20,000-byte SWA config budget (customerStaticBuild keeps
+    // 300 bytes free). App Service sends private, no-store headers on every
+    // /api answer and refuses every method except POST before storing anything
+    // (both proved below).
+    for (const method of ['POST', 'GET', 'PUT', 'DELETE']) {
+        expect(edgeRule('/api/telemetry', method)).toEqual({ route: '/api/telemetry', allowedRoles: ['anonymous'] });
+    }
+    expect(config.routes.indexOf(edgeRule('/api/telemetry', 'POST'))).toBeLessThan(config.routes.findIndex(item => item.route === '/api/*'));
     expect(config.routes.filter(item => item.route === '/api/telemetry')).toHaveLength(1);
-    for (const method of ['GET', 'PUT', 'DELETE']) expect(edgeRule('/api/telemetry', method)).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
     expect(edgeRule('/api/telemetry/x', 'POST')).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
+});
+
+describe('App Service refuses non-POST telemetry before anything is stored', () => {
+    const request = require('supertest');
+    const { handleFunnelCountRequest } = require('../api/shared/funnelCounts');
+    afterEach(() => { delete process.env.NOFRIES_FUNNEL_COUNTS_ENABLED; });
+
+    test.each(['GET', 'PUT', 'DELETE'])('%s: 405 Allow POST with the flag on, 410 with it off', async method => {
+        const app = require('../server').createNoFriesApp();
+        const call = () => request(app)[method.toLowerCase()]('/api/telemetry').set('Sec-Fetch-Site', 'same-origin');
+        process.env.NOFRIES_FUNNEL_COUNTS_ENABLED = 'true';
+        const on = await call();
+        expect(on.status).toBe(405);
+        expect(on.headers.allow).toBe('POST');
+        delete process.env.NOFRIES_FUNNEL_COUNTS_ENABLED;
+        const off = await call();
+        expect(off.status).toBe(410);
+        expect(off.body.code).toBe('telemetry_disabled');
+    });
+
+    test.each(['GET', 'PUT', 'DELETE'])('%s never reaches the writer', async method => {
+        const record = jest.fn(async () => {});
+        const req = { method, body: { event: 'visit' }, headers: { 'sec-fetch-site': 'same-origin' } };
+        expect(await handleFunnelCountRequest(req, { env: { NOFRIES_FUNNEL_COUNTS_ENABLED: 'true' }, record })).toMatchObject({ status: 405 });
+        expect(await handleFunnelCountRequest(req, { env: {}, record })).toMatchObject({ status: 410 });
+        expect(record).not.toHaveBeenCalled();
+    });
 });
 
 test.each([['POST', '/api/telemetry']])('App Service itself marks %s %s private and no-store', async (method, url) => {

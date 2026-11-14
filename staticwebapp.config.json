@@ -127,9 +127,6 @@
     },
     {
       "route": "/api/telemetry",
-      "methods": [
-        "POST"
-      ],
       "allowedRoles": [
         "anonymous"
       ]
