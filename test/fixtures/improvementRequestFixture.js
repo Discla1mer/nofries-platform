@@ -184,6 +184,10 @@ function createImprovementRequestFixture(fixtureOptions = {}) {
         if (/FROM nofries\.dashboard_improvement_heads\b/i.test(sql)) {
             scoped(params); return { rows: clone(staged.heads.filter(row => matching(row, params))) };
         }
+        if (sql.startsWith('SELECT p.plan_id FROM nofries.dashboard_improvement_revisions p')) {
+            // Carry-forward lookup. No assessment rows here, so no same-scope plan.
+            scoped(params); return { rows: [] };
+        }
         if (/FROM nofries\.dashboard_improvement_revisions\b/i.test(sql)) {
             scoped(params); return { rows: clone(staged.revisions.filter(row => matching(row, params))) };
         }

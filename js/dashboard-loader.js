@@ -46,6 +46,7 @@
     const accountActions = document.getElementById('dashboardAccountActions');
     const accountToggle = document.getElementById('dashboardAccountToggle');
     const accountSwitch = document.getElementById('dashboardSwitchAccount');
+    const emailSettings = document.getElementById('dashboardEmailSettings');
     if (accountSwitch) accountSwitch.setAttribute('href', externalCustomer ? '/api/external-customer-auth/login?account=choose'
         : customerProvider === 'legacy' ? '/api/customer-auth/login' : '/login');
     function setAccountMenuOpen(open) {
@@ -295,6 +296,7 @@
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
         if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
+        if (emailSettings) emailSettings.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
         if (accountToggle) accountToggle.textContent = cycle.session?.accountLabel ? 'Account: ' + cycle.session.accountLabel : 'Account';
         if (accountMenu) {
             accountMenu.hidden = elements.signOut.hidden;
@@ -1325,6 +1327,33 @@
         show(cycle, 'queue');
         load(null, false);
     }
+    // Anonymous funnel count (#151 F4): sent only after an API response this
+    // page already makes carries X-NoFries-Funnel: on (the flag is on). One
+    // same-origin POST per step per page view, with no cookies, referrer or
+    // identifiers. After any refusal or error this page sends nothing more.
+    let funnelOn = false, funnelOff = false;
+    const funnelSent = new Set();
+    function funnelMarked(response) {
+        try { if (response && response.headers && response.headers.get('x-nofries-funnel') === 'on') funnelOn = true; } catch (_) { /* no marker */ }
+    }
+    function funnelPrivacySignal() {
+        try {
+            const nav = window.navigator;
+            return Boolean(nav && (nav.globalPrivacyControl === true || nav.doNotTrack === '1') || window.doNotTrack === '1');
+        } catch (_) { return true; }
+    }
+    function funnelStep(step) {
+        if (!funnelOn || funnelOff || funnelSent.has(step) || typeof window !== 'object' || !window || typeof window.fetch !== 'function') return;
+        // Owner decision: Global Privacy Control or Do Not Track means no count.
+        if (funnelPrivacySignal()) return;
+        funnelSent.add(step);
+        try {
+            window.fetch('/api/telemetry', { method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
+                cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
+                headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: step }) })
+                .then(function (response) { if (!response || !response.ok) funnelOff = true; }, function () { funnelOff = true; });
+        } catch (_) { funnelOff = true; }
+    }
     async function cyberOptions(cycle, snapshot, organisationId, preparedValue) {
         const value = preparedValue || requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
         if (!current(cycle)) throw invalid();
@@ -1342,6 +1371,7 @@
             // cannot replace the dashboard snapshot.
             const result = await fetch(path, Object.assign({}, options, { headers: Object.assign({}, options.headers,
                 { 'X-NoFries-Dashboard-Generation': snapshot.generation }) }));
+            funnelMarked(result);
             if (!current(cycle)) throw invalid();
             if (result && [401, 403].includes(result.status)) {
                 const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
@@ -1358,7 +1388,7 @@
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
-                onLocation: presentation && presentation.onLocation,
+                onLocation: presentation && presentation.onLocation, onFunnelStep: funnelStep,
                 // Overview's first-use action opens the new-assessment step directly.
                 startNew: !!(presentation && presentation.startNew === true) });
         };

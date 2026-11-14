@@ -29,10 +29,10 @@
                 <h2 id="glance-title">At a glance</h2>
                 <ul>
                     <li><strong>Who we are:</strong> No Fries Limited is the agency that collects and holds this information. Email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>.</li>
-                    <li><strong>What we collect:</strong> your name, role and email; your organisation’s name and business address; any NZBN you choose to give; assessment scope and answers; terms acceptance; and limited security records.</li>
-                    <li><strong>Why:</strong> to create and secure your account, record your organisation’s agreement, and save and calculate your assessment. We do not sell it, use it for marketing without asking, or use it to train AI. The manual assessment does not use AI.</li>
+                    <li><strong>What we collect:</strong> your name, role and email; your organisation’s name and business address; any NZBN you choose to give; assessment scope and answers; names you enter as action owners in your improvement plan; terms acceptance; and limited security records.</li>
+                    <li><strong>Why:</strong> to create and secure your account, record your organisation’s agreement, save and calculate your assessment, and send service emails about your account. We do not sell it, use it for marketing without asking, or use it to train AI. The manual assessment does not use AI.</li>
                     <li><strong>Where it is stored:</strong> the dashboard and its assessment database run in Microsoft Azure New Zealand North. Sign-in sessions, signup invitations, agreement archives and related access-control records are in private Azure Storage in Australia East. Microsoft Entra ID handles sign-in and sends your verification code.</li>
-                    <li><strong>Who we share it with:</strong> people your organisation authorises, No Fries staff who need it to run the service, and our service providers (Microsoft, and Resend for email).</li>
+                    <li><strong>Who we share it with:</strong> people your organisation authorises, No Fries staff who need it to run the service, and our service providers (Microsoft, and Resend for email, including service emails).</li>
                     <li><strong>How long we keep it:</strong> while your account is active and as set out in your agreement. Your access ending does not delete your saved work. You can ask us to delete it. See <a href="#retention">How long we keep information</a>.</li>
                     <li><strong>Access, correction and complaints:</strong> under the <a href="https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23223.html">Privacy Act 2020</a> you can ask to see and correct personal information we hold about you. If you are not satisfied, you can complain to the <a href="https://www.privacy.org.nz/">Office of the Privacy Commissioner</a> (privacy.org.nz). If a privacy breach is likely to cause serious harm, we notify affected people and the Commissioner. See <a href="#requests">Access, correction and complaints</a>.</li>
                 </ul>
@@ -47,6 +47,7 @@
                     <li><a href="#enquiries">Website enquiries</a></li>
                     <li><a href="#signup">Account setup</a></li>
                     <li><a href="#representative">Organisation details</a></li>
+                    <li><a href="#service-emails">Service emails</a></li>
                     <li><a href="#scope">Managed IT scope</a></li>
                     <li><a href="#tracking">Website visitor tracking</a></li>
                     <li><a href="#indirect-collection">Information about other people</a></li>
@@ -113,6 +114,14 @@
                 <p>These representative, account and client-setup records are stored durably in separate private Azure storage; accepted access and assessment records also use the dashboard database. They are not deleted when a verification code or its 24-hour request expires, or when an earlier offer’s access period ends. There is no automatic deletion timer for these durable starter records, including unfinished setup. You can request access, correction or deletion using the contact details below; expiry alone is not account deletion. Recoverable storage versions and backups may remain for the configured infrastructure-retention period described below.</p>
             </section>
 
+            <section id="service-emails">
+                <h2>Service emails</h2>
+                <p>Once you activate an account, we may send you four service emails: a welcome; a reminder about 7 days later if you have not submitted an assessment; a note when your results are ready; and a reminder about 90 days after you submit an assessment, asking you to check again. If you submit another assessment, the earlier reminder to check again is cancelled and a new one is set.</p>
+                <p>Resend delivers them. They are plain text and do not greet you by name. The only links are a sign-in link and an unsubscribe link. They do not contain your answers, gap titles, results or scores.</p>
+                <p>For each email we keep a delivery record in the dashboard database: which email it is, when it was queued and sent, its delivery status, any error code, and Resend’s message id. The record for a results email also notes which assessment it is about and how many gaps it found. The record does not hold the text of the email or your email address. We look up your address when the email is sent.</p>
+                <p>Each email has an unsubscribe link that stops that type of email. The link opens a page with one Unsubscribe button. Email apps that offer one-click unsubscribe can do it without opening the page. We record that you unsubscribed and when. Unsubscribing is permanent: we will not send you that type of email again.</p>
+            </section>
+
             <section id="scope">
                 <h2>Managed IT scope access</h2>
                 <p>When you request the detailed managed IT scope, No Fries processes the email address you provide, a short-lived verification challenge, limited delivery and security metadata, and the time verification succeeds. The code and confirmation link expire after 15 minutes and can be used once. Verified browser access expires after 24 hours. The email is used to deliver and secure the requested scope and to record genuine interest; it does not by itself subscribe you to a marketing list.</p>
@@ -122,11 +131,13 @@
             <section id="tracking">
                 <h2>Website visitor tracking</h2>
                 <p>The public managed IT overview does not load a third-party visitor-tracking script. Standard hosting and security logs may process limited request metadata such as IP address, time, requested path, browser type and response status to operate and protect the service. For a blocked instruction-manipulation attempt, the application records the signed session identifier, detector category and a one-way keyed identifier derived from the network address; it does not store the raw address or rejected message in that security-event record. The website assistant creates its signed session only when the assistant is opened or messaged, as described above.</p>
+                <p>When enabled, No Fries keeps anonymous daily totals of a few steps: home page visits, signups started, signup codes confirmed, first answers in an assessment, assessments submitted, results viewed and contact enquiries sent. Each total is only a date, the step and a number. No identifiers, cookies or IP addresses are stored with them, and they are not used to identify you or your organisation. If your browser sends a Global Privacy Control or Do Not Track signal, your visit is not counted.</p>
             </section>
 
             <section id="indirect-collection">
                 <h2>Information about other people</h2>
                 <p>Your assessment scope, answers and contact details may mention other people, such as staff, suppliers or your IT provider. Only enter what the assessment needs, and only where you are allowed to share it. Tell people when you include their details, and do not enter sensitive personal information. Your organisation remains responsible for its own collection and use of that information. A consultant’s agreement does not remove No Fries’ own duties under the Privacy Act.</p>
+                <p>If you name someone as the owner of an improvement action, we keep the name you enter. It is free text of up to 80 characters and cannot be an email address. Enter only the name you need. It stays in the plan’s history, even if you later change the owner.</p>
                 <p>Where principle 3A requires us to notify a person we did not collect the information from, we must do that as the Act requires. For questions about a notice like this, email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>.</p>
             </section>
 
@@ -147,13 +158,14 @@
             <section id="sharing">
                 <h2>Who we share it with</h2>
                 <p>We share personal information with people your organisation authorises, and with No Fries staff who need it to run the service. We do not sell it. We do not use it for marketing without asking. We may disclose it where the law permits or requires it. Each legal request is assessed on its own; this notice is not blanket access for every request.</p>
-                <p>Microsoft Azure provides dashboard hosting, PostgreSQL and private storage in the locations described above, and Microsoft Entra ID provides identity authentication. Microsoft Entra B2B, through Microsoft Graph, sends customer-invitation messages when onboarding is enabled. Resend may provide transactional scope-verification email, and Resend delivers contact-form enquiries. When enabled, Resend delivers signup codes. The manual customer assessment and deterministic results do not require OpenAI. OpenAI processes assistant requests only when a separately identified live model feature is enabled. The labelled deterministic preview does not call OpenAI. No public subscription billing is active.</p>
+                <p>Microsoft Azure provides dashboard hosting, PostgreSQL and private storage in the locations described above, and Microsoft Entra ID provides identity authentication. Microsoft Entra B2B, through Microsoft Graph, sends customer-invitation messages when onboarding is enabled. Resend may provide transactional scope-verification email, and Resend delivers contact-form enquiries. When enabled, Resend delivers signup codes and service emails. The manual customer assessment and deterministic results do not require OpenAI. OpenAI processes assistant requests only when a separately identified live model feature is enabled. The labelled deterministic preview does not call OpenAI. No public subscription billing is active.</p>
                 <p>Under principle 12, a disclosure outside New Zealand has to meet the Act: for example, the person is authorised, the recipient is subject to comparable safeguards, or the recipient is processing only for us under an agreement with comparable protections. Some information is stored in Australia East. Microsoft Entra ID, Resend and OpenAI may process information outside New Zealand. To ask which countries they use, email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>.</p>
             </section>
 
             <section id="retention">
                 <h2>How long we keep information</h2>
                 <p>For the dashboard, we keep information while your account is active and for the periods in your accepted agreement. Ending your access does not delete saved work. You can ask us to delete it. Expiry of a code, a setup request or an earlier offer’s access period is not account deletion. Your accepted agreement sets how long dashboard accounts, assessments and acceptance records are kept.</p>
+                <p>Names you enter as action owners stay in the improvement plan’s history for as long as the plan record is kept. Service-email delivery records and unsubscribe records are kept for as long as your account record is kept.</p>
                 <p>Platform backups or recoverable storage versions may remain for the configured infrastructure-retention period. Retention for website assistant conversations and staff workspace records is in <a href="#staff-workspaces">Staff and Managed IT service workspaces</a>.</p>
             </section>
 

@@ -362,6 +362,12 @@
             throw new Error('ncsc_composition_required');
         }
         const editable = options.presentationMode === 'editable';
+        // Optional anonymous funnel hook (#151 F4): the composer sends at most
+        // one count per step per page view. Never affects the questionnaire.
+        const funnelStep = function (step) {
+            if (typeof options.onFunnelStep !== 'function') return;
+            try { options.onFunnelStep(step); } catch (_) { /* counts are best-effort */ }
+        };
         const questions = metadata.questions;
         const optionById = new Map(metadata.responseOptions.map(function (item) { return [item.id, item]; }));
         const questionById = new Map(questions.map(function (item) { return [item.id, item]; }));
@@ -1024,6 +1030,8 @@
                 const sealedNote = node('p', 'ncsc-sealed', 'Submitted ' + localDate(acknowledged.submission.submittedAt) + '. Your results are below, followed by your read-only answers.');
                 sealedNote.id = 'ncsc-sealed'; content.append(sealedNote);
                 renderResults(acknowledged.submission.results);
+                // Only a result that actually rendered counts; "Results are unavailable" does not.
+                if (acknowledged.submission.results) funnelStep('result_viewed');
                 if (dirtyEntries().length) {
                     const unsent = node('details', 'ncsc-warning'); unsent.append(node('summary', '', 'Unsaved changes on this device (' + dirtyEntries().length + ')'));
                     unsent.append(node('p', '', 'These unsaved changes on this device were not part of the submission. The question form shows the saved submission separately.'));
@@ -1446,8 +1454,10 @@
                 input.addEventListener('change', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit() || !input.checked) return;
                     const old = drafts.get(question.id).value;
+                    const firstAnswer = questions.every(function (item) { return displayedAnswer(item).optionId === null; });
                     drafts.set(question.id, { value: { itemId: question.id, optionId: id, rationale: option.applicable ? null : { text: old.rationale ? old.rationale.text : '' } }, generation: ++editGeneration });
                     renderQuestion(); edited();
+                    if (firstAnswer) funnelStep('first_answer');
                     const current = questionRegion.querySelector('[id="' + input.id + '"]'); if (current) current.focus();
                 });
                 fieldset.append(label);
