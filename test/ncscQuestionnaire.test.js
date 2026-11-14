@@ -1024,7 +1024,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         try {
             const nav = ui.root.querySelector('.ncsc-question-navigation');
             expect(nav.querySelectorAll('button').map(item => item.textContent))
-                .toEqual(['Previous question', 'Next question', 'More', 'Next unanswered question', 'Next unresolved question']);
+                .toEqual(['Previous question', 'Next question', 'More', 'Next unanswered question', 'Next question still to confirm']);
             const toggle = byId(ui, 'ncsc-navigation-more-toggle'), more = byId(ui, 'ncsc-navigation-more');
             expect(toggle.getAttribute('aria-controls')).toBe(more.id); expect(toggle.getAttribute('aria-expanded')).toBe('false');
             expect(more.classList.contains('ncsc-navigation-collapsed')).toBe(true);
@@ -1125,19 +1125,19 @@ describe('questionnaire draft progress and unanswered navigation', () => {
     test('next unresolved includes missing, Unknown and pending N/A, skips resolved answers and wraps without saving', async () => {
         const h = await backend(), ui = await createInUi(h);
         metadata().questions.forEach((_, index) => choose(ui, index, ['yes', 'partial', 'no'][index % 3]));
-        expect(control(ui, 'Next unresolved question').disabled).toBe(true);
+        expect(control(ui, 'Next question still to confirm').disabled).toBe(true);
         choose(ui, 1, 'unknown'); choose(ui, 3, 'not_applicable', 'Synthetic pending claim');
         choose(ui, 5, 'yes'); control(ui, 'Clear answer').click();
         const picker = byId(ui, 'ncsc-question-index');
         picker.value = '0'; event(picker, 'change');
         for (const target of ['1', '3', '5', '1']) {
-            control(ui, 'Next unresolved question').click();
+            control(ui, 'Next question still to confirm').click();
             expect(picker.value).toBe(target);
             expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
         }
-        const detached = control(ui, 'Next unresolved question');
+        const detached = control(ui, 'Next question still to confirm');
         choose(ui, 1, 'yes'); detached.click(); expect(picker.value).toBe('1');
-        control(ui, 'Next unresolved question').click(); expect(picker.value).toBe('3');
+        control(ui, 'Next question still to confirm').click(); expect(picker.value).toBe('3');
         expect(h.records).toHaveLength(1);
         expect(ui.root.textContent).toContain('You can still submit with Unknown and Not applicable answers.');
         ui.controller.destroy(); detached.click(); expect(ui.root.textContent).toBe('');
@@ -1153,7 +1153,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         const ui = await resumeUi(h, { presentationMode: 'read-only' });
         const before = ui.root.querySelector('.ncsc-results').textContent;
         for (const target of ['1', '3', '1']) {
-            control(ui, 'Next unresolved question').click();
+            control(ui, 'Next question still to confirm').click();
             expect(byId(ui, 'ncsc-question-index').value).toBe(target);
             expect(ui.root.querySelectorAll('input').filter(input => input.type === 'radio').every(input => input.disabled)).toBe(true);
         }
@@ -3171,6 +3171,10 @@ describe('final submission review step', () => {
         try {
             metadata().questions.forEach((_question, index) => { if (index > 2) choose(ui, index, 'unknown'); });
             control(ui, 'Review and submit').click();
+            // A-015: the finish path says how many answers are still to confirm in plain words.
+            const readiness = byId(ui, 'ncsc-review-readiness').textContent;
+            expect(readiness).toMatch(/^Every question has an answer\.( [^.]+ explanation\.)? \d+ answers are still to confirm \(\d+ Unknown( and \d+ not applicable)?\)\. You can submit with them, but they do not count as in place\.$/);
+            expect(readiness).not.toMatch(/unresolved/i);
             const confirm = control(ui, 'Save and submit assessment'); confirm.click(); confirm.click();
             expect(ui.root.querySelectorAll('.ncsc-submit-dialog')).toHaveLength(1);
             expect(posts(h)).toHaveLength(0);

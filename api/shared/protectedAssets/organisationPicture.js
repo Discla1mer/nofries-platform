@@ -730,7 +730,7 @@
             const awaitingReview = result.pending + (result.pending === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm';
             const implementationMetric = metric('Reported implementation', result.attainment,
                 'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm. It is not a performance score.', true);
-            const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
+            const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             root.append(metrics, informationSection(result));
             const domains = node('section', 'picture-domains');
             domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm. The range is not a performance score.'));
@@ -777,7 +777,7 @@
             const ordered = metadata.questions.map(question => indexed.get(question.id));
             const categories = [
                 ['Unresolved answers', ordered.filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId)),
-                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. Not applicable answers count as not yet met until a reviewer confirms them. Reviews are coming soon.'
+                    result.unknown ? result.unknown + ' answers still to confirm: check the position. Not applicable answers count as not yet met until a reviewer confirms them. Reviews are coming soon.'
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
                 ['Reported implementation gaps', ordered.filter(question => ['partial', 'no'].includes(question.responseOptionId)),
                     result.partial || result.no ? result.partial + ' partial and ' + result.no + ' absent implementations: review the relevant questions before agreeing improvements.'

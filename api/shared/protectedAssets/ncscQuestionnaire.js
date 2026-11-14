@@ -1231,7 +1231,7 @@
             // results.unknown already includes answers marked not applicable, so state one total.
             panel.append(node('p', '', results.unknown ? 'Answers still to confirm: ' + results.unknown + ' (' + confirmBreakdown(results.unknown - results.pending, results.pending) + ').'
                 : 'Every answer is confirmed as Yes, Partial or No.'));
-            panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives unresolved answers 0; the upper end gives them 1. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries calculation, not an NCSC score.'));
+            panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives answers still to confirm 0; the upper end gives them 1. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries calculation, not an NCSC score.'));
             panel.append(node('h3', '', 'Explore NCSC functions and assessment topics'));
             results.domains.forEach(function (domain) {
                 const detail = node('details', 'ncsc-result-domain'); detail.append(node('summary', '', domain.title + ' — ' + domain.attainment));
@@ -1436,14 +1436,14 @@
                 }, 'dashboard-text-button');
                 nextUnanswered = jump; more.append(jump);
             }
-            const unresolved = button('Next unresolved question', function () {
+            const unresolved = button('Next question still to confirm', function () {
                 if (!questionRegion.contains(unresolved)) return;
                 const index = unresolvedIndex(activeQuestion);
                 if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
             }, 'dashboard-text-button');
             nextUnresolved = unresolved; more.append(unresolved);
             nav.append(navigationSummary, navigationActions); questionRegion.append(nav); updateQuestionNavigation();
-            questionRegion.append(node('p', 'dashboard-muted', 'Unresolved means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
+            questionRegion.append(node('p', 'dashboard-muted', 'Still to confirm means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
             applyInlineErrors();
             restoreFocus(questionRegion, focused, fieldset.querySelector('legend'));
         }
