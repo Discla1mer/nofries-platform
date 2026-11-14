@@ -4,11 +4,18 @@
 // email type for the signed-in customer's own starter account; a native form
 // POST turns one type off or back on through emailSettingsStore, which keeps a
 // link unsubscribe off. Answers are generic and nothing identifying is logged.
+const crypto = require('node:crypto');
 const { apiSecurityHeaders } = require('../securityHeaders');
 
 const PATH = '/api/account/email';
 const MAX_BODY_BYTES = 256;
 const MAX_IN_FLIGHT = 4;
+// Each signed-in subject may make SUBJECT_WRITE_MAX changes per window, so one
+// session cannot hold the shared MAX_IN_FLIGHT slots with a write loop. Keys
+// are SHA-256 hashes, so subject keys are never held in memory here.
+const SUBJECT_WINDOW_MS = 10 * 60 * 1000;
+const SUBJECT_WRITE_MAX = 20;
+const MAX_SUBJECT_BUCKETS = 2000;
 const SUBJECT_KEY = /^[a-f0-9-]{36}:[a-f0-9-]{36}$/;
 // Welcome is sent once at activation, before this page can be reached, so it
 // is shown for information only and has no control.
@@ -100,8 +107,27 @@ function readCommand(req) {
     return { type: body.type, action: body.action };
 }
 
+const subjectWrites = new Map();
+// Returns 0 when the write may go ahead, otherwise the seconds until it may.
+function subjectWriteWait(subjectKey, nowMs = Date.now()) {
+    const key = crypto.createHash('sha256').update(subjectKey).digest('base64url');
+    let bucket = subjectWrites.get(key);
+    if (!bucket || nowMs - bucket.start >= SUBJECT_WINDOW_MS) {
+        subjectWrites.delete(key);
+        if (subjectWrites.size >= MAX_SUBJECT_BUCKETS) {
+            for (const [oldKey, old] of subjectWrites) if (nowMs - old.start >= SUBJECT_WINDOW_MS) subjectWrites.delete(oldKey);
+            if (subjectWrites.size >= MAX_SUBJECT_BUCKETS) subjectWrites.delete(subjectWrites.keys().next().value);
+        }
+        bucket = { start: nowMs, count: 0 };
+        subjectWrites.set(key, bucket);
+    }
+    if (bucket.count >= SUBJECT_WRITE_MAX) return Math.max(1, Math.ceil((bucket.start + SUBJECT_WINDOW_MS - nowMs) / 1000));
+    bucket.count += 1;
+    return 0;
+}
+
 let inFlight = 0;
-function resetEmailSettingsForTests() { inFlight = 0; }
+function resetEmailSettingsForTests() { inFlight = 0; subjectWrites.clear(); }
 
 /**
  * readSubject(cookieHeader) returns the signed-in customer's subject key, null
@@ -130,6 +156,13 @@ async function handleEmailSettingsRequest(req, { env = process.env, readSubject 
     }
     if (subjectKey === null || subjectKey === undefined) return signIn();
     if (typeof subjectKey !== 'string' || !SUBJECT_KEY.test(subjectKey)) return unavailable();
+    if (command) {
+        const wait = subjectWriteWait(subjectKey);
+        if (wait) {
+            const limited = message(429, 'Too many changes', 'Please wait a few minutes before changing your email settings again.');
+            return { ...limited, headers: { ...limited.headers, 'Retry-After': String(wait) } };
+        }
+    }
     if (inFlight >= MAX_IN_FLIGHT) return unavailable();
     inFlight += 1;
     try {
@@ -153,4 +186,4 @@ async function handleEmailSettingsRequest(req, { env = process.env, readSubject 
     }
 }
 
-module.exports = { PATH, MAX_BODY_BYTES, MAX_IN_FLIGHT, TYPES, handleEmailSettingsRequest, resetEmailSettingsForTests };
+module.exports = { PATH, MAX_BODY_BYTES, MAX_IN_FLIGHT, SUBJECT_WRITE_MAX, SUBJECT_WINDOW_MS, MAX_SUBJECT_BUCKETS, TYPES, handleEmailSettingsRequest, resetEmailSettingsForTests };
