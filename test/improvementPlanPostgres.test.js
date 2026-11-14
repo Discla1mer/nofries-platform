@@ -705,4 +705,70 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             expect(await businessRows(example)).toEqual(before);
         });
     });
+
+    describe('reassessment carry-forward', () => {
+        async function reassessed() {
+            const adapters = createNcscAdapters(clock, { amount: 2 });
+            ncsc = createPostgresDashboardRepository({ database, clock: clock.now, authoriseAdministration: () => true,
+                ncsc: { audit: adapters.audit, resolveSubmissionQuota: adapters.resolveSubmissionQuota } });
+            const { example, initial } = await generated();
+            const [a, b, c, d] = initial.plan.actions.map(action => action.actionId);
+            let plan = initial.plan;
+            const run = async (actionId, type, payload) => {
+                clock.advance(1000);
+                plan = (await repository.executeImprovementPlan(example.context, { planId: plan.planId, type,
+                    operationId: `${type}-${plan.revision}`, expectedRevision: plan.revision, actionId, payload })).plan;
+            };
+            const label = { ownerLabel: 'Ops lead', dueDate: '2026-10-01' }, owner = { ownerSubjectKey: OWNER, dueDate: '2026-11-01' };
+            await run(a, 'assign', label);
+            await run(b, 'assign', owner); await run(b, 'start', {});
+            await run(c, 'assign', label); await run(c, 'start', {}); await run(c, 'block', { reason: 'Waiting on supplier.' });
+            await run(d, 'assign', owner); await run(d, 'start', {});
+            await run(d, 'complete', { note: 'Synthetic work done.', evidenceReference: 'evidence:synthetic-1' });
+            const before = await planRows(example, plan.planId);
+            clock.advance(60000);
+            await ncsc.executeNcscAssessment(example.context, createCommand('assessment-b', 'create-b'));
+            await ncsc.executeNcscAssessment(example.context, saveCommand('assessment-b', 0, 'save-b', allResponses('no')));
+            const second = await ncsc.executeNcscAssessment(example.context, submitCommand('assessment-b', 1, 'submit-b'));
+            clock.advance(1000);
+            return { example, previous: plan, before, second, generate: { planId: 'plan-b', type: 'generate', operationId: 'generate-b',
+                expectedRevision: null, actionId: null, payload: { assessmentId: 'assessment-b',
+                    assessmentRevision: second.assessment.revision, assessmentRevisionSha256: second.assessment.revisionSha256 } } };
+        }
+        async function planRows(example, planId) {
+            return (await ownerPool.query('SELECT * FROM nofries.dashboard_improvement_revisions WHERE tenant_id=$1 AND organisation_id=$2 AND plan_id=$3 ORDER BY revision',
+                [example.scope.tenantId, example.scope.organisationId, planId])).rows;
+        }
+
+        test('a new plan carries owners, due dates and open work by question as ordinary appended commands', async () => {
+            const { example, previous, before, generate } = await reassessed();
+            const created = await repository.executeImprovementPlan(example.context, generate);
+            expect(created.plan.revision).toBe(0);
+            const read = await makeRepository({ database, clock: clock.now }).readImprovementPlan(example.context, { planId: 'plan-b' });
+            const byItem = new Map(previous.actions.map(action => [action.itemId, action]));
+            expect(read.plan.actions.slice(0, 5).map(action => [byItem.get(action.itemId).actionId !== action.actionId,
+                action.status, action.ownerLabel ?? action.ownerSubjectKey, action.dueDate, action.blockedReason]))
+                .toEqual([[true, 'open', 'Ops lead', '2026-10-01', null], [true, 'in_progress', OWNER, '2026-11-01', null],
+                    [true, 'blocked', 'Ops lead', '2026-10-01', 'Waiting on supplier.'], [true, 'open', OWNER, '2026-11-01', null],
+                    [true, 'open', null, null, null]]);
+            expect(read.history.map(entry => entry.type)).toEqual(['generate', 'assign', 'assign', 'start', 'assign', 'start', 'block', 'assign']);
+            const stored = await planRows(example, 'plan-b'), sourceHead = before.at(-1).payload_sha256;
+            expect(stored.slice(1).map(row => row.operation_id)).toEqual(stored.slice(1).map(row => `carry:${sourceHead}:${row.revision}`));
+            expect(stored.slice(1).every(row => row.payload.intent.actorSubjectKey === SUBJECT && row.assessment_id === 'assessment-b')).toBe(true);
+            // The previous plan is read, never changed; an identical retry adds nothing.
+            expect(await planRows(example, previous.planId)).toEqual(before);
+            expect(await repository.executeImprovementPlan(example.context, generate)).toEqual(created);
+            expect(await planRows(example, 'plan-b')).toEqual(stored);
+        });
+
+        test('an owner who is no longer a member is not carried, and labelled owners still are', async () => {
+            const { example, generate } = await reassessed();
+            await removeMember(example, OWNER);
+            await repository.executeImprovementPlan(example.context, generate);
+            const read = await repository.readImprovementPlan(example.context, { planId: 'plan-b' });
+            expect(read.plan.actions.slice(0, 4).map(action => [action.status, action.ownerLabel ?? action.ownerSubjectKey]))
+                .toEqual([['open', 'Ops lead'], ['open', null], ['blocked', 'Ops lead'], ['open', null]]);
+            expect(read.history).toHaveLength(5);
+        });
+    });
 });

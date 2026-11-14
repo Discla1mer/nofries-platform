@@ -99,6 +99,13 @@ async function loadHistory(tx, scope, aggregate, operationId = null) {
         head.revision !== rows.length - 1 || head.payload_sha256 !== parentSha256) fail();
     return { state, source, history, result: output, revision: rows.length - 1, payloadSha256: parentSha256, replay };
 }
+// The organisation's most recently created other plan from another assessment.
+async function previousPlanId(tx, scope, assessmentId) {
+    const found = (await tx.query(`SELECT plan_id FROM ${TABLE} WHERE tenant_id=$1 AND organisation_id=$2 AND plan_id<>$3 AND revision=0 AND assessment_id<>$4 ORDER BY payload->>'at' DESC, plan_id DESC LIMIT 1`,
+        [...values(scope), assessmentId])).rows;
+    if (found.length > 1 || (found.length && typeof found[0].plan_id !== 'string')) fail();
+    return found.length ? found[0].plan_id : null;
+}
 async function append(tx, scope, record) {
     const { payload, revision, payloadSha256, parentSha256 } = record, source = payload.source;
     const inserted = await tx.query(`INSERT INTO ${TABLE} (tenant_id, organisation_id, plan_id, revision, operation_id, payload_sha256, parent_revision, parent_sha256, assessment_id, assessment_revision, assessment_sha256, payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)`,
@@ -112,4 +119,4 @@ async function append(tx, scope, record) {
     if (moved.rowCount !== 1) fail();
 }
 module.exports = Object.freeze({ stableIntent, domainCommand, readSource, seed, sourceOf,
-    makeRecord, loadHistory, append, same, digest, result });
+    makeRecord, loadHistory, previousPlanId, append, same, digest, result });
