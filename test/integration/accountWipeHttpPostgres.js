@@ -93,7 +93,9 @@ module.exports = function registerAccountWipeHttpPostgres({ improvementHttpSetup
             const result = await createAccountWipeRepository(wipePool).delete(wipeTarget(target));
             expect(result).toMatchObject({ mode: 'delete', tenants: 1 });
             const after = split(await dump(), target);
-            expect(Object.values(counts(after.mine)).every(n => n === 0)).toBe(true);
+            const left = Object.entries(after.mine).flatMap(([table, list]) => list.map(row => ({ table, kind: row.kind ?? row.anchor_kind ?? null,
+                tenant: row.tenant_id ?? null, action: row.payload?.action ?? row.operation_type ?? null })));
+            expect(left).toEqual([]);
             expect(after.others).toEqual(before.others);
             const session = await h.get('session');
             expect(session.status).not.toBe(200);
