@@ -2289,8 +2289,8 @@ describe('ready Cyber composition', () => {
         expect(stored.read('assessment-home')).toEqual(saved); expect(h.window.location.assign.mock.calls).toEqual([['/']]);
         const reopened = harness({ cyber: true, hash: '#cyber-security' }); await openedRecord(reopened, stored);
         expect(reopened.elements.dashboardApp.querySelectorAll('input').find(item => item.type === 'radio' && item.checked).value).toBe('yes');
-        expect(reopened.elements.dashboardApp.textContent).toContain('Saved revision 1');
-        expect(reopened.elements.dashboardApp.querySelector('.ncsc-status').textContent).not.toContain('unsaved changes');
+        expect(reopened.elements.dashboardApp.textContent).toMatch(/Last saved .+ NZ time\./);
+        expect(reopened.elements.dashboardApp.querySelector('.ncsc-status').textContent).not.toContain('not saved yet');
         expect(reopened.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).not.toContain('unsaved changes');
         expect(reopened.document.getElementById('ncsc-question-index').children.every(option => !/\*$/.test(option.textContent))).toBe(true);
         expect(reopened.document.getElementById('ncsc-question-index-help').textContent).toContain('* marks unsaved changes');

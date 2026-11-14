@@ -704,18 +704,23 @@
             syncUnloadWarning();
             if (!live() || !status) return;
             // A submitted assessment is read-only; saving progress no longer applies.
-            const saved = acknowledged && acknowledged.status !== 'submitted' ? 'Saved revision ' + acknowledged.revision + '. ' : '';
+            const saved = acknowledged && acknowledged.status !== 'submitted' ? savedText() : '';
             const dirty = dirtyEntries().length;
             // Keep draft feedback beside Save so changing status text cannot move its pointer target.
             status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
             status.textContent = statusText || (busy ? 'Saving your answers. ' + saved : loading ?
                 view === 'assessment' && !acknowledged ? 'Loading the selected assessment.' : 'Loading assessments.'
-                : savingNow() ? 'Saving…' : saved + (dirty ? dirty + (dirty === 1 ? ' answer has' : ' answers have') + ' unsaved changes.' : ''));
+                : savingNow() ? 'Saving…' : saved + (dirty ? 'Newer changes are not saved yet.' : ''));
             if (saveStatus && root.contains(saveStatus)) saveStatus.textContent = status.textContent;
             if (controls) controls.querySelectorAll('button').forEach(function (control) {
                 if (control.dataset.mutation === 'true') control.disabled = busy || !!pending || conflict || !currentChecked;
             });
             updateQuestionNavigation();
+        }
+        // Plain saved status: when the draft was last saved, in NZ time. The
+        // per-answer counts live only in the progress line above the question.
+        function savedText() {
+            return acknowledged ? 'Last saved ' + localDate(acknowledged.updatedAt) + '. ' : '';
         }
         function edited() {
             if (!pending && !busy && !conflict) statusText = '';
@@ -1029,7 +1034,11 @@
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
             if (editable && !sealed) {
-                const save = button('Save progress', function () { saveAll(false); }); save.id = 'ncsc-save'; save.dataset.mutation = 'true';
+                // Autosave covers most edits, so the manual Save is secondary. It
+                // stays because autosave skips drafts with an N/A that has no
+                // explanation, stops near the save limit and can be turned off.
+                const save = button('Save progress', function () { saveAll(false); }, autosaveEnabled ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button');
+                save.id = 'ncsc-save'; save.dataset.mutation = 'true';
                 if (!saveStatus) saveStatus = node('p', 'ncsc-save-status'); else saveStatus.remove();
                 saveStatus.id = 'ncsc-save-status'; saveStatus.setAttribute('role', 'status'); saveStatus.setAttribute('aria-live', 'polite'); saveStatus.setAttribute('aria-atomic', 'true');
                 const final = node('section', 'ncsc-final-submission'); final.setAttribute('aria-labelledby', 'ncsc-submit-title');
@@ -1729,7 +1738,7 @@
                 }
                 pending = null; busy = false; errors = [];
                 statusText = acknowledged.status === 'submitted' ? 'Assessment submitted. Your answers are now read-only.'
-                    : 'Saved revision ' + acknowledged.revision + '. ' + (dirtyEntries().length ? 'Newer edits are still unsaved.' : 'Your progress is saved.');
+                    : dirtyEntries().length ? savedText() + 'Newer changes are not saved yet.' : 'Your progress is saved. ' + savedText().trim();
                 // The read-only answers start from question 1, not the last question edited.
                 if (command.action === 'submit' && acknowledged.status === 'submitted') activeQuestion = 0;
                 if (operation.uncertain) {

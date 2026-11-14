@@ -254,10 +254,12 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             expect(id(ui, `ncsc-rationale-${metadata.questions[0].id}`).value).toBe(rationale);
             expect(ui.root.textContent).toContain(declaration);
             button(ui, 'Clear answer').click(); button(ui, 'Save progress').click();
-            await until(() => ui.root.textContent.includes('Saved revision 2'));
-            expect((await restarted.client.read(assessmentId)).assessment.responses).toEqual([]);
+            await until(() => ui.root.textContent.includes('Your progress is saved. Last saved '));
+            expect((await restarted.client.read(assessmentId)).assessment).toMatchObject({ revision: 2, responses: [] });
             metadata.questions.forEach((_question, index) => answer(ui, index, index === 0 ? 'not_applicable' : 'unknown', index === 0 ? rationale : undefined));
-            button(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 3'));
+            expect(ui.root.textContent).not.toContain('Your progress is saved.');
+            button(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved. Last saved '));
+            expect((await restarted.client.read(assessmentId)).assessment.revision).toBe(3);
             ui.controller.destroy(); const finalTransport = composed(first); ui = await resume(finalTransport);
             button(ui, 'Review and submit').click(); button(ui, 'Save and submit assessment').click();
             button(ui, 'Submit').click();

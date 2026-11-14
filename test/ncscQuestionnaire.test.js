@@ -278,6 +278,12 @@ function event(element, name) {
     for (const handler of element.events[name] || []) handler({ currentTarget: element, target: element, preventDefault() {} });
 }
 function enter(element, value) { element.value = value; event(element, 'input'); }
+// The save status names a time, not a revision, so wait for the save command
+// that produces revision n to be recorded and acknowledged in the UI.
+function savedRevision(ui, h, n) {
+    return until(() => h.records.some(row => row.action === 'save' && row.expectedRevision === n - 1) &&
+        ui.root.textContent.includes('Your progress is saved. Last saved '), 'saved revision ' + n);
+}
 async function until(predicate, label = 'UI state') {
     const end = Date.now() + 4000;
     while (!predicate() && Date.now() < end) await pause();
@@ -441,7 +447,7 @@ describe('saved assessment list pagination and resume', () => {
         const h = await backend(), ui = await createInUi(h);
         try {
             choose(ui, 0, 'yes'); choose(ui, 1, 'partial');
-            control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 1.'));
+            control(ui, 'Save progress').click(); await savedRevision(ui, h, 1);
             const saved = clone(h.records), assessmentId = h.records[0].assessmentId;
             submitUi(ui);
             expect(ui.root.querySelector('.ncsc-errors').querySelectorAll('a')).toHaveLength(12);
@@ -617,7 +623,7 @@ describe('saved assessment list pagination and resume', () => {
             retry.click(); await pause(); expect(read).toHaveBeenCalledTimes(2);
             expect(ui.root.textContent).toContain('Synthetic exact retry scope.');
             expect(ui.root.textContent).not.toContain('Synthetic other scope.');
-            expect(ui.root.textContent).toContain('Saved revision 0.');
+            expect(ui.root.textContent).toMatch(/Last saved \d+ \w+ \d{4}, .+ NZ time\./); expect(ui.root.textContent).not.toMatch(/revision/i);
             expect(list).not.toHaveBeenCalled();
             expect(h.calls.map(call => call.url)).toEqual([PREFIX + '/' + id]);
             expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
@@ -650,7 +656,7 @@ describe('saved assessment list pagination and resume', () => {
             expect(read.mock.calls.map(args => args[0])).toEqual([id, id, id]);
             expect(ui.root.textContent).toContain('Synthetic twice-unavailable saved scope.');
             expect(ui.root.textContent).not.toContain('Synthetic unrelated saved scope.');
-            expect(ui.root.textContent).toContain('Saved revision 0.');
+            expect(ui.root.textContent).toMatch(/Last saved \d+ \w+ \d{4}, .+ NZ time\./); expect(ui.root.textContent).not.toMatch(/revision/i);
             expect(list).not.toHaveBeenCalled();
             expect(h.calls.map(call => call.url)).toEqual([PREFIX + '/' + id]);
             expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
@@ -980,9 +986,9 @@ describe('questionnaire draft progress and unanswered navigation', () => {
     test('local answer, rationale and clear update navigation while saved counts wait for acknowledgement', async () => {
         const h = await backend(), ui = await createInUi(h);
         choose(ui, 0, 'unknown');
-        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
+        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('Newer changes are not saved yet.');
         choose(ui, 1, 'not_applicable', 'Initial claim');
-        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('2 answers have unsaved changes.');
+        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('Newer changes are not saved yet.');
         const rationale = byId(ui, 'ncsc-rationale-' + metadata().questions[1].id);
         rationale.focus(); rationale.setSelectionRange(3, 7); enter(rationale, 'Changed pending claim');
         expect(byId(ui, rationale.id)).toBe(rationale); expect(ui.document.activeElement).toBe(rationale);
@@ -991,7 +997,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(byId(ui, 'ncsc-question-index').children[1].textContent).toContain('Not applicable, to confirm *');
         control(ui, 'Clear answer').click();
         expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('1 of 14 answered · 13 to go · 1 to check later (unknown, or marked not applicable, to confirm) · 1 not saved yet');
-        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
+        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('Newer changes are not saved yet.');
         expect(byId(ui, 'ncsc-question-index').children[1].textContent).not.toContain('*');
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
         expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · 1 to check later (unknown, or marked not applicable, to confirm) · all saved.');
@@ -1879,7 +1885,7 @@ describe('questionnaire public controls and retained mutation intent', () => {
         expect(h.records.at(-1).payload.responses).toEqual([{ itemId: question.id, optionId: null, rationale: null }]);
         resumed.controller.destroy(); const final = await resumeUi(h);
         expect(final.root.querySelectorAll('input').filter(input => input.type === 'radio').every(input => !input.checked)).toBe(true);
-        expect(final.root.textContent).toMatch(/Saved revision 2/); final.controller.destroy();
+        expect(final.root.textContent).toMatch(/Last saved .+ NZ time\./); expect((await h.client.read(h.records[0].assessmentId)).assessment.revision).toBe(2); final.controller.destroy();
     });
 
     test.each([undefined, 'read-only', 'unknown', true])('missing or unknown presentation mode remains read-only: %s', async presentationMode => {
@@ -1998,7 +2004,7 @@ describe('questionnaire public controls and retained mutation intent', () => {
         choose(ui, 0, 'not_applicable', 'Captured draft'); control(ui, 'Save progress').click(); control(ui, 'Save progress').click();
         await until(() => entered); const id = `ncsc-rationale-${metadata().questions[0].id}`;
         enter(byId(ui, id), 'Newer typing must survive'); byId(ui, id).focus(); byId(ui, id).setSelectionRange(4, 8);
-        wait.resolve(); await until(() => ui.root.textContent.includes('Newer edits are still unsaved'));
+        wait.resolve(); await until(() => ui.root.textContent.includes('Newer changes are not saved yet'));
         expect(save).toHaveBeenCalledTimes(1); expect(byId(ui, id).value).toBe('Newer typing must survive');
         expect(ui.document.activeElement.id).toBe(id); expect(ui.document.activeElement.selectionStart).toBe(4);
         expect(h.records.at(-1).payload.responses[0].rationale.text).toBe('Captured draft');
@@ -2197,7 +2203,7 @@ describe('questionnaire boundary and navigation regressions', () => {
             expect(byId(ui, `ncsc-rationale-${metadata().questions[index].id}`).value).toBe(rows[index].rationale.text);
             enter(byId(ui, `ncsc-rationale-${metadata().questions[index].id}`), 'Shortened unsent claim.');
         }
-        control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 6.'));
+        control(ui, 'Save progress').click(); await savedRevision(ui, h, 6);
         expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[1][0].idempotencyKey).not.toBe(rejected.idempotencyKey);
         expect(save.mock.calls[1][0].expectedRevision).toBe(rejected.expectedRevision);
         const saved = (await h.client.read('assessment-a')).assessment;
@@ -2217,7 +2223,7 @@ describe('questionnaire boundary and navigation regressions', () => {
         expect(h.records).toHaveLength(8); const rejected = submit.mock.calls[0][0]; control(ui, 'Back to questions').click();
         expect(byId(ui, `ncsc-rationale-${metadata().questions[0].id}`).value).toBe(rows[0].rationale.text);
         choose(ui, 0, 'not_applicable', 'Shortened first claim.'); choose(ui, 1, 'not_applicable', 'Shortened second claim.');
-        control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 8.'));
+        control(ui, 'Save progress').click(); await savedRevision(ui, h, 8);
         submitUi(ui); await until(() => ui.root.textContent.includes('Your results are below, followed by your read-only answers.'));
         await until(() => ui.document.activeElement === byId(ui, 'ncsc-sealed'));
         expect(byId(ui, 'ncsc-sealed').textContent).toMatch(/^Submitted .+ NZ time\./);
@@ -2731,9 +2737,29 @@ describe('batched automatic save', () => {
         const off = await resumeUi(h, { autosaveIdleMs: 0 });
         try {
             expect(byId(off, 'ncsc-question-index-help').textContent).toBe('The full question is below. * marks unsaved changes.');
+            expect(byId(off, 'ncsc-save').className).toBe('dashboard-button');
             choose(off, 0, 'yes'); await settle();
             expect(h.records).toHaveLength(before);
         } finally { off.controller.destroy(); }
+    });
+    // A-017: plain saved status with a local time, counts only in the progress
+    // line, and a secondary manual Save while autosave is on.
+    test('save status names the local saved time, not a revision, and Save is secondary while autosave is on', async () => {
+        const h = await backend(), ui = await createInUi(h, { autosaveIdleMs: idle });
+        try {
+            const save = byId(ui, 'ncsc-save');
+            expect(save.textContent).toBe('Save progress'); expect(save.className).toBe('dashboard-button dashboard-button-secondary');
+            const status = () => byId(ui, 'ncsc-save-status').textContent;
+            expect(status()).toMatch(/Last saved \d+ \w+ \d{4}, .+ NZ time\.$/);
+            choose(ui, 0, 'yes');
+            // During the autosave pause the status reads as saving (#328).
+            expect(status()).toBe('Saving…');
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · saving….');
+            await until(() => status().startsWith('Your progress is saved. Last saved '));
+            expect(status()).toMatch(/^Your progress is saved\. Last saved .+ NZ time\.$/);
+            expect(ui.root.textContent).not.toMatch(/revision \d/i);
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · all saved.');
+        } finally { ui.controller.destroy(); }
     });
 });
 
@@ -2842,7 +2868,7 @@ describe('questionnaire native unload lifecycle and task hierarchy', () => {
             control(ui, 'Save progress').click(); await until(() => save.mock.calls.length === 1);
             expect(unload.fire().defaultPrevented).toBe(true);
             enter(byId(ui, `ncsc-rationale-${metadata().questions[0].id}`), 'New typing during save');
-            gate.resolve(); await until(() => ui.root.textContent.includes('Newer edits are still unsaved.'));
+            gate.resolve(); await until(() => ui.root.textContent.includes('Newer changes are not saved yet.'));
             expect(unload.handlers.size).toBe(1);
             expect(h.records.at(-1).payload.responses[0].rationale.text).toBe('Captured pending claim');
             control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
@@ -3024,7 +3050,7 @@ describe('final submission review step', () => {
             expect(ui.document.activeElement.tagName).toBe('LEGEND');
             expect(byId(ui, `ncsc-answer-${questions[1].id}-partial`)).toBeUndefined();
             expect(h.calls.length).toBe(before); expect(posts(h)).toHaveLength(0);
-            expect(ui.root.textContent).toMatch(/2 answers have unsaved changes/);
+            expect(ui.root.textContent).toMatch(/Newer changes are not saved yet\./);
         } finally { ui.controller.destroy(); }
     });
 
