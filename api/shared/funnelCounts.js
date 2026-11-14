@@ -99,6 +99,61 @@ function createFunnelCountWriter({ pool }) {
     };
 }
 
+// Staff view (#151 F5): the last 30 Pacific/Auckland days, oldest first,
+// with a zero for every allow-listed event that has no row.
+const FUNNEL_VIEW_DAYS = 30;
+const READ_SQL = `SELECT to_char(day, 'YYYY-MM-DD') AS day, event, count FROM nofries.funnel_daily_counts
+    WHERE day BETWEEN $1::date AND $2::date ORDER BY day, event`;
+
+function funnelWindow(now = new Date()) {
+    const to = aucklandDay(now);
+    const [year, month, date] = to.split('-').map(Number);
+    const days = [];
+    for (let offset = FUNNEL_VIEW_DAYS - 1; offset >= 0; offset -= 1) {
+        days.push(new Date(Date.UTC(year, month - 1, date - offset)).toISOString().slice(0, 10));
+    }
+    return Object.freeze({ from: days[0], to, days: Object.freeze(days) });
+}
+
+function projectFunnelView(rows, window) {
+    const byDay = new Map(window.days.map(day => [day, Object.fromEntries(FUNNEL_EVENTS.map(event => [event, 0]))]));
+    for (const row of Array.isArray(rows) ? rows : []) {
+        const counts = row && byDay.get(row.day);
+        const value = Number(row && row.count);
+        if (!counts || !FUNNEL_EVENTS.includes(row.event) || !Number.isSafeInteger(value) || value < 0 || value > 10000000) {
+            throw new Error('funnel_counts_row_invalid');
+        }
+        counts[row.event] = value;
+    }
+    return { from: window.from, to: window.to, events: [...FUNNEL_EVENTS],
+        days: window.days.map(day => ({ day, counts: byDay.get(day) })) };
+}
+
+// Read-only, under the runtime role, with the same short timeouts as writes.
+function createFunnelCountReader({ pool, now = () => new Date() }) {
+    if (!pool || typeof pool.connect !== 'function') throw new Error('funnel_counts_pool_invalid');
+    return async function readFunnelView() {
+        const window = funnelWindow(now());
+        const client = await pool.connect();
+        let discard = false;
+        try {
+            await client.query('BEGIN READ ONLY');
+            try {
+                await client.query('SET LOCAL ROLE nofries_runtime');
+                await client.query("SET LOCAL statement_timeout = '1000ms'");
+                const result = await client.query(READ_SQL, [window.from, window.to]);
+                await client.query('COMMIT');
+                return projectFunnelView(result.rows, window);
+            } catch (error) {
+                try { await client.query('ROLLBACK'); } catch (_) { discard = true; }
+                throw error;
+            }
+        } finally {
+            client.release(discard);
+        }
+    };
+}
+
 function retired() {
     return result(410, { error: 'Public acquisition telemetry is disabled', code: 'telemetry_disabled' });
 }
@@ -149,6 +204,11 @@ function result(status, body, extraHeaders = {}) {
 }
 
 module.exports = {
+    FUNNEL_VIEW_DAYS,
+    READ_SQL,
+    createFunnelCountReader,
+    funnelWindow,
+    projectFunnelView,
     resetTelemetryRateLimitForTests,
     telemetryKey,
     FUNNEL_EVENTS,

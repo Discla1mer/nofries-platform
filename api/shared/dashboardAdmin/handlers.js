@@ -12,6 +12,7 @@ const { buildDashboardAdminDocument, dashboardAdminCss, contentSecurityPolicy } 
 const { buildDashboardAdminEntryDocument } = require('../../../lib/dashboardAdminEntryDocument');
 
 const { createAccountLookup } = require('./accountLookup');
+const { funnelCountsEnabled } = require('../funnelCounts');
 
 const MAX_BODY_BYTES = 2048;
 const SUBJECT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -89,16 +90,21 @@ async function readJson(request, signal) {
 
 // Trusted source-only composition: the host binds its genuine staff session
 // reader. No request header/body identity, environment grant or default reader.
-function createDashboardAdminHandlers({ service = null, signupListService = null, accountActions = null, accountLookupReader = null, readOperatorSession = null, env = {}, requestBudgetMs = 10000 } = {}) {
+function createDashboardAdminHandlers({ service = null, signupListService = null, accountActions = null, accountLookupReader = null, readOperatorSession = null, funnelReader = null, env = {}, requestBudgetMs = 10000 } = {}) {
     if (service !== null && (!service || ['authorise', 'capabilities', 'lookup'].some(key => typeof service[key] !== 'function')) ||
         signupListService !== null && (!signupListService || ['authorise', 'capabilities', 'list', 'authoriseDisclosure'].some(key => typeof signupListService[key] !== 'function')) ||
         readOperatorSession !== null && typeof readOperatorSession !== 'function' ||
+        funnelReader !== null && typeof funnelReader !== 'function' ||
         !Number.isSafeInteger(requestBudgetMs) || requestBudgetMs <= 0 || requestBudgetMs > 60000) throw new Error('dashboard_admin_configuration_invalid');
 
     // The route flag stays required; the reader and its durable audit writer
     // come only from the host's environment composition, never from a header.
     const accountLookup = env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP === 'true' && accountLookupReader
         ? createAccountLookup({ read: accountLookupReader.read, audit: accountLookupReader.audit, targetDigest: accountLookupReader.targetDigest, readJson, env }) : null;
+
+    // Anonymous daily funnel totals (#151 F5): only with the flag on and a
+    // reader composed by the host. Same staff checks as the other read routes.
+    const funnelAvailable = () => funnelCountsEnabled(env) && funnelReader !== null;
 
     async function principal(request, expected = null) {
         if ((!service && !signupListService) || !readOperatorSession) fail(503, 'dashboard_admin_unavailable');
@@ -139,6 +145,10 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
         throw error;
     }
     async function capabilities(actor, checked) {
+        const granted = await baseCapabilities(actor, checked);
+        return funnelAvailable() ? { ...granted, funnel: true } : granted;
+    }
+    async function baseCapabilities(actor, checked) {
         if (!signupListService) return service.capabilities(actor);
         let lookup = false, signupList = false;
         if (service) {
@@ -164,7 +174,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             }
             const methods = { document: 'GET', 'app.js': 'GET', 'app.css': 'GET', capabilities: 'GET', lookup: 'POST', signups: 'POST',
                 suspend: 'POST', restore: 'POST', 'approve-suspend': 'POST', 'approve-restore': 'POST',
-                entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET' };
+                entry: 'GET', 'entry.js': 'GET', 'entry-capabilities': 'GET', ...(funnelAvailable() ? { funnel: 'GET' } : {}) };
             const action = isAccountAction(route);
             if (action && env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS !== 'true') fail(404, 'dashboard_admin_not_found');
             if (!Object.hasOwn(methods, route)) fail(404, 'dashboard_admin_not_found');
@@ -203,9 +213,10 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 contentType = 'application/javascript; charset=utf-8';
             }
             else if (route === 'capabilities') body = await checked(() => capabilities(actor, checked));
-            else if (route === 'document') { body = buildDashboardAdminDocument(); contentType = 'text/html; charset=utf-8'; }
+            else if (route === 'funnel') body = await checked(() => funnelReader());
+            else if (route === 'document') { body = buildDashboardAdminDocument({ funnel: funnelAvailable() }); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'app.css') { body = dashboardAdminCss; contentType = 'text/css; charset=utf-8'; }
-            else { body = ['dashboardAdmin.js', 'signupQueue.js'].map(file => fs.readFileSync(path.join(__dirname, '../protectedAssets', file), 'utf8')).join('\n'); contentType = 'application/javascript; charset=utf-8'; }
+            else { body = ['dashboardAdmin.js', 'signupQueue.js', ...(funnelAvailable() ? ['funnelCountsView.js'] : [])].map(file => fs.readFileSync(path.join(__dirname, '../protectedAssets', file), 'utf8')).join('\n'); contentType = 'application/javascript; charset=utf-8'; }
             // A parent session or role may have been revoked during source I/O.
             // Re-read it before releasing even already-buffered results/assets.
             const current = await checked(() => principal(request, actor));
