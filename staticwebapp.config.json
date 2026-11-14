@@ -1145,6 +1145,11 @@
       "allowedRoles": ["anonymous"]
     },
     {
+      "route": "/api/telemetry",
+      "methods": ["POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": [
         "authenticated"
