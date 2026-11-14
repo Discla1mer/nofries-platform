@@ -209,3 +209,19 @@ test('an invited but unactivated account takes its subject from the retained con
     await storage.delete(found, signal());
     expect(blobs.size).toBe(0);
 });
+
+test('delete refuses any inventory it did not produce, including a copy or a hand-built list', async () => {
+    const blobs = new Map(), email = 'forged@example.test', a = account(1, email, 'company'); seed(a, blobs, email);
+    const storage = createAccountWipeStorage(container(blobs).value, container(new Map()).value);
+    const real = await storage.inventory(email, signal());
+    for (const forged of [{ ...real }, { session: [], subject: [], exact: [''], prefixes: [''], accountRecord: 'customer-starter/x.json' }, null])
+        await expect(storage.delete(forged, signal())).rejects.toMatchObject({ code: 'account_wipe_target_invalid' });
+    expect(blobs.size).toBe(6);
+});
+
+test('store failures surface as one account_wipe error code', async () => {
+    const broken = { listBlobsFlat: () => { throw new Error('x'); }, getBlobClient: () => ({}),
+        getBlockBlobClient: () => ({ download: async () => { throw Object.assign(new Error('PRIVATE'), { statusCode: 500 }); } }) };
+    const storage = createAccountWipeStorage(broken, container(new Map()).value);
+    await expect(storage.inventory('x@example.test', signal())).rejects.toMatchObject({ code: 'account_wipe_storage_unavailable' });
+});

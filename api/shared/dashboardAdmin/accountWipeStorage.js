@@ -19,6 +19,9 @@ const MAX_CLIENT_PAGES = 20;
 const MAX_RECORD_BYTES = 16384;
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
 const sha256 = value => createHash('sha256').update(value).digest('hex');
+// delete() accepts only an inventory this module produced, never a hand-built list.
+const issued = new WeakSet();
+const issue = value => { const frozen = Object.freeze(value); issued.add(frozen); return frozen; };
 
 async function readJson(container, name, signal) {
     try {
@@ -39,7 +42,9 @@ async function readJson(container, name, signal) {
 async function inventory(container, email, signal) {
     const store = new AzureStarterAccountStore(container);
     const accountName = `customer-starter/${starterAccountKey(email)}.json`;
-    const loaded = await store.load(starterAccountKey(email));
+    let loaded;
+    try { loaded = await store.load(starterAccountKey(email)); }
+    catch (_) { signal.throwIfAborted(); fail('account_wipe_storage_unavailable'); }
     if (!loaded) {
         // An earlier attempt may have removed the account record but not all its
         // versions. Its name comes from the email alone, so offer just that.
@@ -48,7 +53,7 @@ async function inventory(container, email, signal) {
             for await (const item of container.listBlobsFlat({ prefix: accountName, includeVersions: true, abortSignal: signal }))
                 if (item.name === accountName) { leftover = true; break; }
         } catch (_) { fail('account_wipe_storage_unavailable'); }
-        return leftover ? Object.freeze({ account: null, subjectKey: null, tenantIds: Object.freeze([]), subject: Object.freeze([]), exact: Object.freeze([]),
+        return leftover ? issue({ account: null, subjectKey: null, tenantIds: Object.freeze([]), subject: Object.freeze([]), exact: Object.freeze([]),
             session: Object.freeze([]), prefixes: Object.freeze([]), accountRecord: accountName }) : null;
     }
     const account = loaded.record;
@@ -56,7 +61,9 @@ async function inventory(container, email, signal) {
     if (account.accountType === 'consultant') {
         let cursor = null;
         for (let page = 0; page < MAX_CLIENT_PAGES; page += 1) {
-            const result = await store.listClients(account.accountId, { cursor, limit: 50 });
+            let result;
+            try { result = await store.listClients(account.accountId, { cursor, limit: 50 }); }
+            catch (_) { signal.throwIfAborted(); fail('account_wipe_storage_unavailable'); }
             slots.push(...result.clients);
             if (!result.nextCursor) break;
             if (page === MAX_CLIENT_PAGES - 1) fail('account_wipe_storage_too_many_clients');
@@ -88,7 +95,7 @@ async function inventory(container, email, signal) {
     // The legacy signup index (NOFRIES_DASHBOARD_ADMIN_BINDING) is not touched:
     // removing only its writer ticket would leave a stale reference. Delete is
     // refused while that listing is configured (see docs/staff-admin.md).
-    return Object.freeze({ account, subjectKey, tenantIds: Object.freeze([...new Set(slots.map(slot => slot.tenantId))]),
+    return issue({ account, subjectKey, tenantIds: Object.freeze([...new Set(slots.map(slot => slot.tenantId))]),
         subject: Object.freeze(subjectRecords), exact: Object.freeze([...new Set(exact)]), session: Object.freeze(session), prefixes: Object.freeze(prefixes), accountRecord: accountName });
 }
 
@@ -119,6 +126,7 @@ function createAccountWipeStorage(container, sessionContainer) {
     return Object.freeze({
         inventory: (email, signal) => inventory(container, email, signal),
         async delete(found, signal) {
+            if (!issued.has(found)) fail('account_wipe_target_invalid');
             const counts = { blobs: 0, versions: 0, versionsRemaining: 0, versionsUnverified: 0 };
             // Each stage must be confirmed complete, versions included, before the
             // records a retry needs to rediscover it are removed:
