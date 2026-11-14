@@ -29,10 +29,11 @@ const TYPE_LABELS = Object.freeze({ welcome: 'welcome emails', result_summary: '
 // - Failed token checks are limited per client (IPv6 clients share their /64).
 // - Valid tokens are never limited per client, because one-click POSTs arrive
 //   from shared mail-provider addresses and a lost unsubscribe is a compliance
-//   failure. Instead each account and email type is limited on its own, a
-//   recorded unsubscribe is answered from memory (it is permanent, so the answer
-//   stays true), and at most MAX_IN_FLIGHT writes may hold pool connections, so
-//   a replayed token cannot starve the shared dashboard pool.
+//   failure. Instead each account and email type is limited on its own and at
+//   most MAX_IN_FLIGHT writes may hold pool connections, so a replayed token
+//   cannot starve the shared dashboard pool. Every allowed POST runs the
+//   idempotent write: an answer is never served from process memory, so it is
+//   always the database's, on every instance and after any restart.
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX = 30;
 const TOKEN_RATE_MAX = 5;
@@ -62,20 +63,11 @@ function createLimiter(max) {
 
 const clientLimiter = createLimiter(RATE_MAX);
 const tokenLimiter = createLimiter(TOKEN_RATE_MAX);
-// Bounded memory of recorded unsubscribes; oldest entries fall out first and a
-// later replay then simply re-runs the idempotent write.
-const recorded = new Set();
 let inFlight = 0;
-
-function remember(key) {
-    recorded.delete(key);
-    if (recorded.size >= MAX_BUCKETS) recorded.delete(recorded.values().next().value);
-    recorded.add(key);
-}
 
 const allow = clientKey => clientLimiter.allow(telemetryKey(clientKey));
 
-function resetUnsubscribeRateLimitForTests() { clientLimiter.clear(); tokenLimiter.clear(); recorded.clear(); inFlight = 0; }
+function resetUnsubscribeRateLimitForTests() { clientLimiter.clear(); tokenLimiter.clear(); inFlight = 0; }
 
 // Runs as nofries_runtime with the account's subject as the RLS context, the
 // same transaction shape as the funnel-count writer. The email_preferences_subject
@@ -161,7 +153,6 @@ async function handleUnsubscribeRequest(req, { env = process.env, record = null,
     const done = page(200, 'You are unsubscribed', [`We will not send you ${label} again.`]);
     const busy = () => withHeaders(page(503, 'Please try again later', ['We could not update your email settings just now.']), { 'Retry-After': '60' });
     const key = `${claims.accountId}:${claims.emailType}`;
-    if (recorded.has(key)) return done;
     if (!tokenLimiter.allow(key)) {
         return withHeaders(page(429, 'Too many requests', ['Please wait a few minutes and try again.']), { 'Retry-After': '600' });
     }
@@ -176,7 +167,6 @@ async function handleUnsubscribeRequest(req, { env = process.env, record = null,
     } finally {
         inFlight -= 1;
     }
-    remember(key);
     return done;
 }
 
