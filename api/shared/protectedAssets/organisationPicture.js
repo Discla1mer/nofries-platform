@@ -738,10 +738,12 @@
             }
             const awaitingReview = result.pending + (result.pending === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm';
             const rangeHelp = 'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm. It is not a performance score.';
+            // A submitted result is read-only, so do not ask the customer to confirm answers here.
             const implementationMetric = questionnaire.enoughAnswersToEstimate(result)
                 ? metric('Reported implementation', result.attainment, rangeHelp, true)
                 : metric('Reported implementation', 'Not enough answers to estimate yet', 'Only ' + result.completed + ' of ' + result.total +
-                    ' answers are resolved (Yes, Partial or No). Confirm the Unknown answers first. Range so far: ' + result.attainment + '. ' + rangeHelp, true);
+                    ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
+                    (typeof options.openCyber === 'function' ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp, true);
             const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             root.append(metrics, informationSection(result));
             const domains = node('section', 'picture-domains');

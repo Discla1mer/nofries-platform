@@ -69,7 +69,6 @@ test('an explanation that cannot start leaves the saved results in place', async
 test('connected view preserves golden server range, uncertainty and completion without an always-empty evidence measure', async () => {
     const dom = setup(); await flush();
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
-    assert.equal(dom.root.querySelector('.picture-primary').querySelector('.picture-large').textContent, '46.4%–60.7%');
     assert.match(dom.root.textContent, /85\.7%/);
     const reported = dom.root.querySelector('.picture-primary');
     assert.equal(reported.querySelector('.picture-large').textContent, '46.4% in place');
@@ -240,15 +239,20 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     dom.controller.destroy();
 });
 
-// A-019: under half resolved, Overview does not lead with the range.
-test('Overview leads with not enough answers when fewer than half are resolved, keeping the range as detail', async () => {
+// A-019: under half answered Yes, Partial or No, Overview does not lead with the range.
+// #266's lead-with-lower rewrite is skipped, so the headline stays "Not enough answers".
+test.each([[false], [true]])('Overview leads with not enough answers when fewer than half are answered Yes, Partial or No (start action: %s)', async (canStart) => {
     const record = submittedWithResponses(allResponses().map((row, index) => ({ ...row, optionId: index < 1 ? 'yes' : 'unknown' })));
-    const dom = setup({ records: [record] }); await flush();
+    const dom = setup({ records: [record], options: canStart ? { openCyber: () => {} } : {} }); await flush();
     const primary = dom.root.querySelector('.picture-primary');
     assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
     assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet');
-    assert.match(primary.textContent, /Only 1 of 14 answers are resolved \(Yes, Partial or No\)\. Confirm the Unknown answers first\./);
-    assert.match(primary.textContent, /Range so far: 7\.1%–100\.0%\./);
+    assert.equal(primary.querySelector('.picture-metric-upper'), null);
+    assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or waiting for review, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
+    // A submitted result is read-only: do not ask the customer to confirm answers.
+    assert.doesNotMatch(primary.textContent, /Confirm the Unknown answers|resolved/i);
+    if (canStart) assert.match(primary.textContent, /Range so far: 7\.1%–100\.0%\. Start a new assessment once more answers are known\./);
+    else assert.doesNotMatch(primary.textContent, /Start a new assessment/);
     dom.controller.destroy();
 });
 
