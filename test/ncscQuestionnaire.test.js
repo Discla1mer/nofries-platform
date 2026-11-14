@@ -1472,6 +1472,45 @@ describe('submitted assessment results', () => {
         expect(model.domains.flatMap(domain => domain.controls.flatMap(control => control.questions))).toHaveLength(14);
         expect(assessment).toEqual(before);
     });
+    // A-019: under half answered Yes, Partial or No, the range is not the headline; it stays below as detail.
+    // With enough answers, #266's lead-with-lower headline applies; without, its rewrite is skipped.
+    test.each([[6, null, null], [7, '50.0% in place', 'Up to 100.0%'], [14, '100.0%', null]])('with %i of 14 answered Yes, Partial or No, the range leads only when enough answers are known', async (answered, headline, upTo) => {
+        const h = await backend(); await h.execute(createCommand());
+        const rows = allResponses('unknown'); rows.slice(0, answered).forEach(row => { row.optionId = 'yes'; });
+        await h.execute(saveCommand('assessment-a', 0, 'save-a', rows)); await h.execute(submitCommand());
+        const ui = await resumeUi(h);
+        try {
+            const card = ui.root.querySelector('.ncsc-results').querySelectorAll('.ncsc-result-metric')
+                .find(item => item.querySelector('h3').textContent === 'Reported implementation');
+            const model = resultModel((await h.client.read('assessment-a')).assessment, metadata(), h.organisationId);
+            const shown = card.querySelector('.ncsc-result-value').textContent;
+            if (headline) {
+                expect(shown).toBe(headline); expect(card.textContent).not.toContain('Not enough answers');
+                if (upTo) expect(card.querySelector('.ncsc-result-upper').textContent).toContain(upTo);
+                else expect(card.querySelector('.ncsc-result-upper')).toBeNull();
+            } else {
+                expect(shown).toBe('Not enough answers to estimate yet');
+                expect(card.querySelector('.ncsc-result-upper')).toBeNull();
+                expect(card.textContent).toContain('Only 6 of 14 answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + model.attainment + '. Start a new assessment once more answers are known.');
+                // Submitted answers cannot be changed, so the customer is not asked to confirm them.
+                expect(card.textContent).not.toContain('Confirm the Unknown answers');
+                expect(card.textContent).not.toMatch(/resolved/i);
+            }
+        } finally { ui.controller.destroy(); }
+    });
+    test('without an action to start a new assessment, not enough answers does not suggest one', async () => {
+        const h = await backend(); await h.execute(createCommand());
+        const rows = allResponses('unknown'); rows[0].optionId = 'yes';
+        await h.execute(saveCommand('assessment-a', 0, 'save-a', rows)); await h.execute(submitCommand());
+        const ui = await resumeUi(h, { presentationMode: 'read-only' });
+        try {
+            const card = ui.root.querySelector('.ncsc-results').querySelectorAll('.ncsc-result-metric')
+                .find(item => item.querySelector('h3').textContent === 'Reported implementation');
+            expect(card.querySelector('.ncsc-result-value').textContent).toBe('Not enough answers to estimate yet');
+            expect(card.textContent).toContain('Only 1 of 14 answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ');
+            expect(card.textContent).not.toContain('Start a new assessment');
+        } finally { ui.controller.destroy(); }
+    });
     test.each([['outputSha256'], ['responseSetSha256']])('rejects a malformed %s even though provenance is not displayed', async field => {
         const { h, assessment } = await submitted();
         if (field === 'outputSha256') assessment.submission.evaluation.outputSha256 = 'not-a-digest';
@@ -3172,7 +3211,9 @@ describe('final submission review step', () => {
             control(ui, 'Save and submit assessment').click(); confirmSubmit(ui);
             await until(() => ui.root.querySelector('.ncsc-result-metric'));
             // The server evaluator's submitted result matches the preview.
-            expect(ui.root.querySelector('.ncsc-result-value').textContent).toBe('64.3%–78.6%');
+            // The headline leads with the lower figure (#266); the upper figure follows.
+            expect(ui.root.querySelector('.ncsc-result-value').textContent).toBe('64.3% in place');
+            expect(ui.root.querySelector('.ncsc-result-upper').textContent).toBe('Up to 78.6% if every answer still to confirm turns out to be in place.');
         } finally { ui.controller.destroy(); }
     });
 
