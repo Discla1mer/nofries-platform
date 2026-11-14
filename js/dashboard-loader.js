@@ -786,6 +786,8 @@
                     listCursor = selectedCursor;
                 }
                 csrf = response.csrfToken; render(response.state, body && body.requestId);
+                // A new client setup is now a saved draft: say so before the terms.
+                if (body?.action === 'create' && response.state?.status === 'terms') status.textContent = 'Draft saved. Two steps left before this client dashboard is created.';
                 if (refusal) status.textContent = refusal;
                 if (!body && cursor !== undefined) {
                     const firstRow = Array.from(elements.choices.children).find(function (row) {
@@ -965,7 +967,12 @@
             } else if (state?.status === 'terms' && typeof state.termsText === 'string' && typeof state.scheduleText === 'string' &&
                 DIGEST.test(state.termsDigest) && DIGEST.test(state.scheduleDigest) && typeof state.scheduleId === 'string' && UUID.test(responseRequestId)) {
                 content.append(element('h3', 'Review the schedule and terms for ' + (clientNames.get(responseRequestId) || 'this client')));
-                content.append(element('p', 'This client setup is saved. Acceptance has not been confirmed. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.'));
+                content.append(element('p', 'This client setup is saved as a draft. Acceptance has not been confirmed, so the client dashboard is not created yet.'));
+                const steps = element('ol'); steps.className = 'client-draft-steps';
+                steps.append(element('li', 'Read the client schedule and dashboard terms below.'),
+                    element('li', 'Tick that you accept them, then choose Accept and create client dashboard. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.'));
+                content.append(element('p', 'Steps left:'), steps,
+                    element('p', 'If you leave now, the draft stays in your organisation list as “Draft, not yet set up”. Choose Resume to return to it.'));
                 const schedule = element('section'); schedule.className = 'client-terms-section';
                 const scheduleHeading = element('h4', 'Client schedule'); scheduleHeading.id = 'clientScheduleHeading';
                 schedule.setAttribute('aria-labelledby', scheduleHeading.id);
