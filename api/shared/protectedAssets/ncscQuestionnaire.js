@@ -1030,7 +1030,8 @@
                 const sealedNote = node('p', 'ncsc-sealed', 'Submitted ' + localDate(acknowledged.submission.submittedAt) + '. Your results are below, followed by your read-only answers.');
                 sealedNote.id = 'ncsc-sealed'; content.append(sealedNote);
                 renderResults(acknowledged.submission.results);
-                funnelStep('result_viewed');
+                // Only a result that actually rendered counts; "Results are unavailable" does not.
+                if (acknowledged.submission.results) funnelStep('result_viewed');
                 if (dirtyEntries().length) {
                     const unsent = node('details', 'ncsc-warning'); unsent.append(node('summary', '', 'Unsaved changes on this device (' + dirtyEntries().length + ')'));
                     unsent.append(node('p', '', 'These unsaved changes on this device were not part of the submission. The question form shows the saved submission separately.'));

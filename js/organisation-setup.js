@@ -271,8 +271,6 @@
                 ...(body ? { body: JSON.stringify(body) } : {})
             });
             funnelMarked(response);
-            // Choosing Create account is the start of signup on either provider.
-            if (entryIntent === 'create') funnelStep('signup_started');
             if (disposed || serial !== sequence) return;
             if (response.redirected || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') || '')) throw new Error('setup_unavailable');
             const signInAvailable = response.headers.get('x-nofries-customer-sign-in') === 'available';
@@ -307,6 +305,9 @@
                 }
                 entryChosen = true;
             }
+            // Choosing Create account starts signup. An automatic hand-off to the
+            // external /signup page returned above, so that page owns the count.
+            if (entryIntent === 'create') funnelStep('signup_started');
             if (stateRead) { ready = true; returningAvailable = signInAvailable; byId('organisation-returning').hidden = !signInAvailable; }
             if (route === 'request' && body) { emailRecord = { requestId: value.requestId, email: body.email.trim() }; funnelStep('signup_started'); }
             if (render(value) || body) focus = byId('organisation-title');

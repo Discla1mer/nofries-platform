@@ -997,6 +997,14 @@ describe('anonymous signup_started count (#151 F4)', () => {
         expect(beacon).toHaveBeenCalledTimes(1);
     });
 
+    test('flag on: an automatic hand-off to external signup leaves the count to that page', async () => {
+        const beacon = beaconReply(204);
+        const h = fixture({ search: '?intent=create', beacon });
+        await h.reply(0, 200, { state: 'start' }, true, { ...ON, 'x-nofries-customer-entry': 'external' });
+        expect(h.window.location.replace).toHaveBeenCalledWith('/signup?provider=external&intent=create');
+        expect(beacon).not.toHaveBeenCalled();
+    });
+
     test('flag on: an accepted code request counts once', async () => {
         const beacon = beaconReply(204);
         const h = fixture({ beacon });

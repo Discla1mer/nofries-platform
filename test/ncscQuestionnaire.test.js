@@ -3833,6 +3833,28 @@ describe('anonymous funnel steps (#151 F4)', () => {
         ui.controller.destroy();
     });
 
+    test('an unavailable result does not count result_viewed; a later rendered result does', async () => {
+        const h = await backend(), first = await createInUi(h);
+        metadata().questions.forEach((_question, index) => choose(first, index, 'yes'));
+        control(first, 'Save progress').click(); await savedRevision(first, h, 1);
+        submitUi(first); await until(() => first.root.textContent.includes('Your results are below'));
+        first.controller.destroy();
+        const sent = new Set(), steps = [];
+        const onFunnelStep = step => { if (!sent.has(step)) { sent.add(step); steps.push(step); } };
+        const broken = { ...h.client, read: async (...args) => {
+            const result = clone(await h.client.read(...args)); result.assessment.submission.evaluation.evidence = null; return result;
+        } };
+        const unavailable = await resumeUi(h, { client: broken, onFunnelStep });
+        expect(unavailable.root.textContent).toContain('Results are unavailable for this submission');
+        expect(steps).toEqual([]);
+        unavailable.controller.destroy();
+        const shown = await resumeUi(h, { onFunnelStep });
+        await until(() => shown.root.textContent.includes('Your results are below'));
+        expect(shown.root.querySelector('.ncsc-results')).not.toBeNull();
+        expect(steps).toEqual(['result_viewed']);
+        shown.controller.destroy();
+    });
+
     test('a resumed assessment with saved answers does not count first_answer, and a throwing hook changes nothing', async () => {
         const h = await backend(), first = await createInUi(h);
         choose(first, 0, 'partial'); control(first, 'Save progress').click(); await savedRevision(first, h, 1);
