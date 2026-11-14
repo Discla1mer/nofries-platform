@@ -1334,8 +1334,16 @@
     function funnelMarked(response) {
         try { if (response && response.headers && response.headers.get('x-nofries-funnel') === 'on') funnelOn = true; } catch (_) { /* no marker */ }
     }
+    function funnelPrivacySignal() {
+        try {
+            const nav = window.navigator;
+            return Boolean(nav && (nav.globalPrivacyControl === true || nav.doNotTrack === '1') || window.doNotTrack === '1');
+        } catch (_) { return true; }
+    }
     function funnelStep(step) {
         if (!funnelOn || funnelOff || funnelSent.has(step) || typeof window !== 'object' || !window || typeof window.fetch !== 'function') return;
+        // Owner decision: Global Privacy Control or Do Not Track means no count.
+        if (funnelPrivacySignal()) return;
         funnelSent.add(step);
         try {
             window.fetch('/api/telemetry', { method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',

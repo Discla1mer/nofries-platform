@@ -14,10 +14,10 @@ const BROWSER_EVENTS = ['visit', 'signup_started', 'first_answer', 'result_viewe
 // Counted by their own server handlers instead (slice F3).
 const SERVER_EVENTS = ['code_confirmed', 'submitted', 'enquiry_sent'];
 
-function runHome({ funnel, fetch }) {
+function runHome({ funnel, fetch, navigator, doNotTrack }) {
     const enquiry = { hidden: true };
     const document = { body: { dataset: { page: 'dashboard-home' } }, getElementById: id => id === 'homepageEnquiry' ? enquiry : null };
-    const window = { fetch, enquiryAvailability: async () => ({ available: true, promote: false, ...(funnel ? { funnel: true } : {}) }) };
+    const window = { fetch, navigator, doNotTrack, enquiryAvailability: async () => ({ available: true, promote: false, ...(funnel ? { funnel: true } : {}) }) };
     vm.runInNewContext(read('js/enquiry-home.js'), { document, window });
 }
 test('browser and server steps together cover the allow-list exactly once', () => {
@@ -40,6 +40,27 @@ test('flag on: the homepage sends one visit count to the same origin without coo
     expect(url).toBe('/api/telemetry');
     expect(options).toEqual({ method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin', cache: 'no-store',
         redirect: 'error', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: '{"event":"visit"}' });
+});
+
+test.each([
+    ['Global Privacy Control', { navigator: { globalPrivacyControl: true } }],
+    ['navigator Do Not Track', { navigator: { doNotTrack: '1' } }],
+    ['window Do Not Track', { doNotTrack: '1' }]
+])('flag on with %s: the homepage sends no visit count', async (_name, signal) => {
+    const fetch = jest.fn(async () => ({ ok: true, status: 204 }));
+    runHome({ funnel: true, fetch, ...signal });
+    await flush();
+    expect(fetch).not.toHaveBeenCalled();
+    runHome({ funnel: true, fetch, navigator: { globalPrivacyControl: false, doNotTrack: '0' } });
+    await flush();
+    expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test('the dashboard and signup helpers check Global Privacy Control and Do Not Track before sending', () => {
+    for (const file of ['js/dashboard-loader.js', 'js/organisation-setup.js']) {
+        expect(read(file)).toMatch(/if \(funnelPrivacySignal\(\)\) return;/);
+        expect(read(file)).toContain("nav.globalPrivacyControl === true || nav.doNotTrack === '1') || window.doNotTrack === '1'");
+    }
 });
 
 test('the homepage still works when fetch is missing, throws or rejects', async () => {
@@ -91,7 +112,7 @@ describe('managed signup document', () => {
     const { createDom } = require('./fixtures/dashboardDom');
     const sources = () => ({ clientSource: read('api/shared/customerSignup/signupClient.js'),
         journeySource: read('api/shared/customerSignup/signupJourney.js') });
-    async function run(search, marker) {
+    async function run(search, marker, navigator = {}) {
         const { runtime } = buildSignupDocument({ ...sources(), customerLogin: true, customerTransport: 'external' });
         const dom = createDom(), create = dom.document.createElement;
         dom.document.createElement = tag => Object.assign(create(tag), { style: {} });
@@ -100,7 +121,7 @@ describe('managed signup document', () => {
             new Response(JSON.stringify({ state: { status: 'create_account' }, csrfToken: 'x'.repeat(43) }),
                 { status: 200, headers: { 'content-type': 'application/json', ...(marker ? { 'x-nofries-funnel': 'on' } : {}) } }));
         const replace = jest.fn();
-        vm.runInNewContext(runtime, { document: dom.document, window: { fetch, location: { search, hash: '', assign: jest.fn(), replace },
+        vm.runInNewContext(runtime, { document: dom.document, window: { fetch, navigator, location: { search, hash: '', assign: jest.fn(), replace },
             history: { replaceState() {} }, addEventListener() {} }, AbortController, URLSearchParams, TextDecoder, setTimeout, clearTimeout });
         for (let i = 0; i < 5; i += 1) await new Promise(setImmediate);
         return { fetch, replace };
@@ -113,10 +134,25 @@ describe('managed signup document', () => {
         expect(counts[0][1]).toMatchObject({ method: 'POST', keepalive: true, credentials: 'omit', body: '{"event":"signup_started"}' });
     });
 
-    test.each([['flag off', '?intent=create', false], ['no create intent', '', true]])('%s: no count', async (_name, search, marker) => {
-        const { fetch } = await run(search, marker);
+    test.each([['flag off', '?intent=create', false, {}], ['no create intent', '', true, {}],
+        ['Global Privacy Control', '?intent=create', true, { globalPrivacyControl: true }],
+        ['Do Not Track', '?intent=create', true, { doNotTrack: '1' }]])('%s: no count', async (_name, search, marker, navigator) => {
+        const { fetch } = await run(search, marker, navigator);
         expect(fetch.mock.calls.map(([url]) => url)).not.toContain('/api/telemetry');
     });
+});
+
+test('SWA lets anonymous visitors POST counts, and only POST, to the exact telemetry path', () => {
+    const config = JSON.parse(read('staticwebapp.config.json'));
+    const edgeRule = (pathname, method) => config.routes.find(rule => (!rule.methods || rule.methods.includes(method)) &&
+        (rule.route === pathname || rule.route.endsWith('*') && pathname.startsWith(rule.route.slice(0, -1))));
+    const rule = edgeRule('/api/telemetry', 'POST');
+    expect(rule).toEqual({ route: '/api/telemetry', methods: ['POST'], allowedRoles: ['anonymous'], headers: {
+        'Cache-Control': 'private, no-store, max-age=0', 'X-Robots-Tag': 'noindex, nofollow',
+        'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" } });
+    expect(config.routes.indexOf(rule)).toBeLessThan(config.routes.findIndex(item => item.route === '/api/*'));
+    for (const method of ['GET', 'PUT', 'DELETE']) expect(edgeRule('/api/telemetry', method)).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
+    expect(edgeRule('/api/telemetry/x', 'POST')).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
 });
 
 test('connect-src allows the same origin on the public pages and the dashboard', () => {

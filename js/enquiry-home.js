@@ -4,6 +4,11 @@
     // referrer or identifiers; failures are ignored.
     function homeVisit() {
         if (typeof window.fetch !== 'function') return;
+        // Owner decision: Global Privacy Control or Do Not Track means no count.
+        try {
+            const nav = window.navigator;
+            if (nav && (nav.globalPrivacyControl === true || nav.doNotTrack === '1') || window.doNotTrack === '1') return;
+        } catch (_) { return; }
         try {
             window.fetch('/api/telemetry', { method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
                 cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',

@@ -5,9 +5,10 @@ const path = require('node:path');
 const { createDom } = require('./fixtures/dashboardDom');
 const source = fs.readFileSync(path.join(__dirname, '../js/organisation-setup.js'), 'utf8');
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
-function fixture({ external = false, search = '', hash = '', beacon } = {}) {
+function fixture({ external = false, search = '', hash = '', beacon, navigator } = {}) {
     const { document, window } = createDom();
     if (beacon) window.fetch = beacon;
+    if (navigator) window.navigator = navigator;
     Object.assign(window.location, { search, hash, replace: jest.fn() });
     if (external) document.body = { dataset: { customerProvider: 'external' } };
     const pageEvents = {};
@@ -1002,6 +1003,15 @@ describe('anonymous signup_started count (#151 F4)', () => {
         const h = fixture({ search: '?intent=create', beacon });
         await h.reply(0, 200, { state: 'start' }, true, { ...ON, 'x-nofries-customer-entry': 'external' });
         expect(h.window.location.replace).toHaveBeenCalledWith('/signup?provider=external&intent=create');
+        expect(beacon).not.toHaveBeenCalled();
+    });
+
+    test.each([{ globalPrivacyControl: true }, { doNotTrack: '1' }])('flag on with privacy signal %o: no count', async navigator => {
+        const beacon = beaconReply(204);
+        const h = fixture({ search: '?intent=create', beacon, navigator });
+        await h.reply(0, 200, { state: 'start' }, true, ON);
+        h.submit('form');
+        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' }, true, ON);
         expect(beacon).not.toHaveBeenCalled();
     });
 
