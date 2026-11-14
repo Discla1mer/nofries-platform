@@ -246,6 +246,31 @@ describe('staff funnel table', () => {
         expect(ids.funnelPanel.hidden).toBe(true);
     });
 
+    test.each(['capabilities', 'funnel'])('a revocation while the %s body is read leaves everything cleared', async which => {
+        const view = projectFunnelView([], funnelWindow(new Date('2026-11-12T11:30:00Z')));
+        const ids = { funnelPanel: element('section'), funnelLoad: element('button'), funnelStatus: element('p'), funnelResult: element('div') };
+        ids.funnelPanel.hidden = true; ids.funnelResult.hidden = true;
+        let releaseBody;
+        const listeners = {};
+        const fetch = jest.fn(async url => {
+            const name = url.split('/').pop();
+            const body = name === 'capabilities' ? { funnel: true } : view;
+            return { status: 200, ok: true, headers: { get: () => 'application/json' },
+                json: () => name === which ? new Promise(resolve => { releaseBody = () => resolve(body); }) : Promise.resolve(body) };
+        });
+        const window = { addEventListener(name, fn) { (listeners[name] ||= []).push(fn); } };
+        vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/funnelCountsView.js'), 'utf8'),
+            { document: { getElementById: id => ids[id], createElement: element }, fetch, window });
+        await flush();
+        if (which === 'funnel') { ids.funnelLoad.listeners.click(); await flush(); }
+        for (const fn of listeners['dashboard-admin-revoked']) fn({ detail: 401 });
+        releaseBody(); await flush();
+        expect(ids.funnelPanel.hidden).toBe(true);
+        expect(ids.funnelLoad.disabled).toBe(true);
+        expect(ids.funnelResult.hidden).toBe(true);
+        expect(ids.funnelResult.children).toEqual([]);
+    });
+
     test('document panel uses a labelled region, live status and an explicit button', () => {
         const html = buildDashboardAdminDocument({ funnel: true });
         expect(html).toMatch(/<section id="funnelPanel" class="admin-panel" aria-labelledby="funnelHeading" hidden>/);

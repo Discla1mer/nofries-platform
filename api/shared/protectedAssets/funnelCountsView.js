@@ -26,7 +26,9 @@
         if ([401, 403].includes(response.status)) { revoke(response.status); return null; }
         if (request !== sequence) return null;
         if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') || '')) throw new Error();
-        return response.json();
+        const body = await response.json();
+        // A revocation or newer request while the body was read wins.
+        return request === sequence ? body : null;
     }
     function validate(body) {
         if (!body || !Array.isArray(body.days) || body.days.length !== 30 || !DAY.test(body.from) || !DAY.test(body.to) ||
@@ -59,7 +61,7 @@
         const request = ++sequence;
         try {
             const body = await read('capabilities', request);
-            if (body === null) return;
+            if (body === null || request !== sequence) return;
             if (body.funnel === true) { panel.hidden = false; load.disabled = false; } else hide();
         } catch (_) { if (request === sequence) hide(); }
     }
@@ -68,7 +70,7 @@
         load.disabled = true; clear(); status.textContent = 'Loading funnel counts…';
         try {
             const body = await read('funnel', request);
-            if (body !== null) render(body);
+            if (body !== null && request === sequence) render(body);
         } catch (_) { if (request === sequence) status.textContent = 'Funnel counts could not be loaded. Try again.'; }
         finally { if (request === sequence && !panel.hidden) load.disabled = false; }
     }
