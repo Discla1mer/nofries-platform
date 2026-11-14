@@ -2,82 +2,18 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { verifyVendor } = require('./verify-adm-zip-memory-only');
 
 const ROOT = path.resolve(__dirname, '..');
 const EXCEPTIONS_PATH = path.join(ROOT, 'security', 'dependency-audit-exceptions.json');
 const ALLOWED_SEVERITIES = new Set(['info', 'low', 'moderate', 'high', 'critical']);
 const BLOCKING_SEVERITIES = new Set(['high', 'critical']);
-// Owner-approved, release-specific risk acceptance. These are the complete
-// observed npm audit chains, including the development-only parent findings.
-// A changed advisory, version, installed path or source surface must be reviewed
-// anew; this is deliberately separate from the Moderate build-only registry.
+// GHSA-xcx6-jx8p-x3h5 is remediated: every locked @azure/msal-node copy is a
+// fixed release (docs/msal-dependency-compatibility.md). Its temporary High
+// acceptance expired on 2026-10-27 and is retired, so no audit finding is
+// filtered here. The lock check below still fails closed if a vulnerable copy
+// returns, even when the advisory database does not report it.
 const MSAL_ADVISORY = 'GHSA-XCX6-JX8P-X3H5';
-const MSAL_ACCEPTED_UNTIL = Date.parse('2026-10-27T00:00:00Z');
-const MSAL_REVIEWED_BASE = '80b2f1805e8428118b9e49b5d618a31ea2111a45';
-const MSAL_REVIEWED_FILES = new Set([
-    '.agent/plans/2026-10-24-msal-temporary-audit-exception.md',
-    'AGENTS.md', 'SECURITY.md', 'package.json', 'package-lock.json',
-    'scripts/check-dependency-audit.js',
-    'scripts/release/build-unified-packages.sh',
-    'scripts/validate-unified-production-release.js',
-    'test/dependencyAuditPolicy.test.js',
-    'test/unifiedProductionRelease.test.js'
-]);
-const MSAL_DIRECT = Object.freeze({
-    '@azure/msal-node': Object.freeze({
-        nodes: Object.freeze({ 'node_modules/@azure/msal-node': '5.6.0' }),
-        via: Object.freeze([MSAL_ADVISORY])
-    }),
-    '@azure/identity': Object.freeze({
-        nodes: Object.freeze({ 'node_modules/@azure/identity': '4.13.1' }),
-        via: Object.freeze(['@azure/msal-node'])
-    })
-});
-const MSAL_ROOT_ALL = Object.freeze({
-    '@azure/msal-node': Object.freeze({
-        nodes: Object.freeze({
-            'node_modules/@azure/msal-node': '5.6.0',
-            'node_modules/promptfoo/node_modules/@azure/identity/node_modules/@azure/msal-node': '6.0.1',
-            'node_modules/promptfoo/node_modules/@azure/msal-node': '7.0.1'
-        }),
-        via: Object.freeze([MSAL_ADVISORY])
-    }),
-    '@azure/identity': Object.freeze({
-        nodes: Object.freeze({
-            'node_modules/@azure/identity': '4.13.1',
-            'node_modules/promptfoo/node_modules/@azure/identity': '4.13.3'
-        }),
-        via: Object.freeze(['@azure/msal-node'])
-    }),
-    '@azure/ai-projects': Object.freeze({
-        nodes: Object.freeze({ 'node_modules/@azure/ai-projects': '2.5.0' }),
-        via: Object.freeze(['@azure/identity'])
-    }),
-    promptfoo: Object.freeze({
-        nodes: Object.freeze({ 'node_modules/promptfoo': '0.124.0' }),
-        via: Object.freeze(['@azure/ai-projects', '@azure/identity', '@azure/msal-node'])
-    })
-});
-// npm 10.9.4 omits the optional AI Projects meta-finding from this same
-// lockfile closure. npm 11.9.0 reports it and a longer promptfoo via chain.
-// Each audited tool version has one complete, exact accepted report shape.
-const MSAL_ROOT_ALL_NPM10 = Object.freeze({
-    '@azure/msal-node': MSAL_ROOT_ALL['@azure/msal-node'],
-    '@azure/identity': MSAL_ROOT_ALL['@azure/identity'],
-    promptfoo: Object.freeze({
-        nodes: MSAL_ROOT_ALL.promptfoo.nodes,
-        via: Object.freeze(['@azure/identity'])
-    })
-});
-const MSAL_EXPECTED = Object.freeze({
-    'root-all': MSAL_ROOT_ALL,
-    'api-runtime': MSAL_DIRECT,
-    'root-optional': MSAL_DIRECT,
-    'root-runtime': MSAL_DIRECT,
-    'api-production': MSAL_DIRECT
-});
 const SURFACES = Object.freeze([
     {
         id: 'root-all',
@@ -113,18 +49,6 @@ function readJson(filePath) {
 
 function uniqueSorted(values) {
     return [...new Set(values)].sort();
-}
-
-function validateReviewedSourceScope(changedPaths) {
-    if (!Array.isArray(changedPaths) ||
-        changedPaths.some((changedPath) => typeof changedPath !== 'string' ||
-            !MSAL_REVIEWED_FILES.has(changedPath))) {
-        throw new Error('temporary MSAL exception source exposure changed from the reviewed scope');
-    }
-}
-
-function assertReviewedSourceScope() {
-    require('./verify-public-source-baseline').verify();
 }
 
 // npm aliases can install MSAL under an arbitrary package path. Use both
@@ -169,7 +93,7 @@ function lockedMsalNodes(lock) {
 }
 
 // Fail closed on unknown or prerelease declarations. Only canonical stable
-// versions conclusively outside GHSA-xcx6-jx8p-x3h5 can retire the exception.
+// versions conclusively outside GHSA-xcx6-jx8p-x3h5 count as remediated.
 function hasRemediatedMsalClosure(lock) {
     return lockedMsalNodes(lock).every(([, entry]) => {
         const match = typeof entry?.version === 'string' &&
@@ -182,91 +106,16 @@ function hasRemediatedMsalClosure(lock) {
     });
 }
 
-function stripTemporaryMsalFindings(surfaceId, report, lock, now = new Date(), npmVersion = null) {
-    if (!report || report.auditReportVersion !== 2 || report.error ||
-        !report.vulnerabilities || typeof report.vulnerabilities !== 'object' ||
-        Array.isArray(report.vulnerabilities) || !lock || !lock.packages) {
-        throw new Error(`${surfaceId}: unsupported or failed npm audit JSON response`);
+function assertRemediatedMsalClosure(surfaceId, lock) {
+    if (!lock || !lock.packages || typeof lock.packages !== 'object') {
+        throw new Error(`${surfaceId}: package lock does not expose an audited packages map`);
     }
-    const reviewed = MSAL_EXPECTED[surfaceId];
-    if (!reviewed) throw new Error(`${surfaceId}: unsupported temporary MSAL audit surface`);
-    const vulnerabilities = report.vulnerabilities;
-    const observed = Object.keys(reviewed).filter((packageName) =>
-        Object.hasOwn(vulnerabilities, packageName));
-    if (observed.length === 0) {
-        if (!hasRemediatedMsalClosure(lock)) {
-            throw new Error(`${surfaceId}: temporary ${MSAL_ADVISORY} finding missing for the vulnerable locked closure`);
-        }
-        return { report, accepted: [] };
+    if (!hasRemediatedMsalClosure(lock)) {
+        throw new Error(
+            `${surfaceId}: locked @azure/msal-node closure is not remediated for ${MSAL_ADVISORY}; ` +
+            'its temporary acceptance expired and is retired'
+        );
     }
-    if (!Number.isFinite(now.getTime()) || now.getTime() >= MSAL_ACCEPTED_UNTIL) {
-        throw new Error(`${surfaceId}: temporary ${MSAL_ADVISORY} acceptance expired`);
-    }
-    let expected = reviewed;
-    if (surfaceId === 'root-all') {
-        // The full reviewed dependency closure remains pinned even when npm 10
-        // omits an optional meta-finding from its vulnerability projection.
-        for (const requirement of Object.values(MSAL_ROOT_ALL)) {
-            for (const [nodePath, version] of Object.entries(requirement.nodes)) {
-                if (lock.packages[nodePath]?.version !== version) {
-                    throw new Error(`${surfaceId}: temporary ${MSAL_ADVISORY} locked version changed for ${nodePath}`);
-                }
-            }
-        }
-        const version = npmVersion === null ? execFileSync('npm', ['--version'], {
-            cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000
-        }).trim() : npmVersion;
-        if (version === '10.9.4') {
-            const optionalMetaPackage = lock.packages['node_modules/@azure/ai-projects'];
-            if (optionalMetaPackage?.dev !== true || optionalMetaPackage.optional !== true) {
-                throw new Error(`${surfaceId}: temporary ${MSAL_ADVISORY} optional lock classification changed`);
-            }
-            expected = MSAL_ROOT_ALL_NPM10;
-        }
-        else if (version !== '11.9.0') {
-            throw new Error(`${surfaceId}: unreviewed npm audit client version`);
-        }
-    }
-    for (const [packageName, requirement] of Object.entries(expected)) {
-        const vulnerability = vulnerabilities[packageName];
-        if (!vulnerability || vulnerability.name !== packageName ||
-            vulnerability.severity !== 'high' || !Array.isArray(vulnerability.nodes) ||
-            !Array.isArray(vulnerability.via)) {
-            throw new Error(`${surfaceId}: temporary ${MSAL_ADVISORY} finding shape changed for ${packageName}`);
-        }
-        const nodes = vulnerability.nodes;
-        const exactPaths = Object.keys(requirement.nodes).sort();
-        if (nodes.length !== exactPaths.length ||
-            JSON.stringify(uniqueSorted(nodes)) !== JSON.stringify(exactPaths)) {
-            throw new Error(`${surfaceId}: temporary ${MSAL_ADVISORY} installed paths changed for ${packageName}`);
-        }
-        for (const nodePath of exactPaths) {
-            if (lock.packages[nodePath]?.version !== requirement.nodes[nodePath]) {
-                throw new Error(`${surfaceId}: temporary ${MSAL_ADVISORY} locked version changed for ${packageName}`);
-            }
-        }
-        const observedVia = vulnerability.via.map((via) => {
-            if (typeof via === 'string') return via;
-            if (via && typeof via === 'object' &&
-                via.url === 'https://github.com/advisories/GHSA-xcx6-jx8p-x3h5' &&
-                via.source === 1243111 && via.severity === 'high') return MSAL_ADVISORY;
-            return '<unreviewed-advisory>';
-        });
-        if (JSON.stringify(uniqueSorted(observedVia)) !==
-            JSON.stringify(uniqueSorted(requirement.via)) ||
-            observedVia.length !== requirement.via.length) {
-            throw new Error(`${surfaceId}: temporary ${MSAL_ADVISORY} advisory chain changed for ${packageName}`);
-        }
-    }
-    const remaining = Object.fromEntries(Object.entries(vulnerabilities)
-        .filter(([packageName]) => !Object.hasOwn(expected, packageName)));
-    return {
-        report: { ...report, vulnerabilities: remaining },
-        accepted: Object.entries(expected).map(([packageName, requirement]) => ({
-            surface: surfaceId, package: packageName,
-            nodes: Object.keys(requirement.nodes).sort()
-        }))
-    };
 }
 
 function advisoryIdentity(advisory) {
@@ -541,17 +390,12 @@ function validateConnectorClosure(rootLock, connectorManifest) {
     }
 }
 
-function loadAuditFindings(surface, reportPath, now = new Date()) {
+function loadAuditFindings(surface, reportPath) {
     if (!reportPath) throw new Error(`${surface.id}: an audit report path is required`);
     try {
         const lock = readJson(surface.lockPath);
-        const filtered = stripTemporaryMsalFindings(
-            surface.id, readJson(reportPath), lock, now
-        );
-        return {
-            findings: normaliseAuditReport(surface.id, filtered.report, lock),
-            accepted: filtered.accepted
-        };
+        assertRemediatedMsalClosure(surface.id, lock);
+        return normaliseAuditReport(surface.id, readJson(reportPath), lock);
     } catch (error) {
         throw new Error(`${surface.id}: ${error.message}`);
     }
@@ -650,22 +494,10 @@ function main() {
         { id: 'root-runtime', lockPath: SURFACES[0].lockPath },
         { id: 'api-production', lockPath: SURFACES[1].lockPath }
     ] : SURFACES;
-    const results = auditedSurfaces.map((surface) =>
+    const findings = auditedSurfaces.flatMap((surface) =>
         loadAuditFindings(surface,
             releaseReports ? releaseReports[surface.id] : reports[surface.id])
     );
-    const findings = results.flatMap((result) => result.findings);
-    const temporaryAccepted = results.flatMap((result) => result.accepted);
-    if (temporaryAccepted.length > 0) {
-        assertReviewedSourceScope();
-        for (const item of temporaryAccepted) {
-            process.stdout.write(
-                `WARNING TEMPORARY HIGH ${MSAL_ADVISORY} accepted until ` +
-                `2026-10-27T00:00:00Z: ${item.surface}/${item.package} ` +
-                `(${item.nodes.join(', ')})\n`
-            );
-        }
-    }
 
     for (const finding of findings) {
         process.stdout.write(
@@ -673,7 +505,7 @@ function main() {
             `${finding.advisoryIds.join(', ')} (${finding.nodePaths.join(', ')})\n`
         );
     }
-    if (findings.length === 0 && temporaryAccepted.length === 0) {
+    if (findings.length === 0) {
         process.stdout.write('No dependency vulnerabilities reported.\n');
     }
 
@@ -707,8 +539,8 @@ function main() {
         return;
     }
     process.stdout.write(releaseReports
-        ? 'Frozen release dependency audit passed with any temporary High risk printed above.\n'
-        : 'Dependency-changing build passed: other High/Critical are clear and every Moderate is exactly dispositioned; any temporary High risk is printed above.\n');
+        ? 'Frozen release dependency audit passed: no Moderate, High or Critical findings.\n'
+        : 'Dependency-changing build passed: no High/Critical findings and every Moderate is exactly dispositioned.\n');
 }
 
 if (require.main === module) {
@@ -721,6 +553,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+    assertRemediatedMsalClosure,
     collectAdvisoryIds,
     evaluateFindings,
     exceptionMatches,
@@ -728,8 +561,6 @@ module.exports = {
     normaliseAuditReport,
     parseArguments,
     rejectUnsupportedShrinkwrap,
-    stripTemporaryMsalFindings,
-    validateReviewedSourceScope,
     validateConnectorClosure,
     validateExceptionRegistry,
     validateManifestLock

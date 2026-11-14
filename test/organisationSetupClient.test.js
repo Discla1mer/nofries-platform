@@ -21,7 +21,7 @@ function fixture({ external = false, search = '', hash = '' } = {}) {
     window.history.back = () => { if (historyIndex > 0) lifecycle('popstate', { state: historyStates[--historyIndex] }); };
     window.history.forward = () => { if (historyIndex < historyStates.length - 1) lifecycle('popstate', { state: historyStates[++historyIndex] }); };
     const representativeNames = ['representative-name', 'representative-role', 'representative-address', 'representative-registration', 'representative-authority'];
-    const names = ['form', 'code-form', 'profile-form', 'details-form', 'verified', 'verified-title', 'status', 'email-hint', 'verified-name', 'name', 'email', 'code', 'restart', 'refresh', 'continue', 'choice', 'company', 'consultant', 'back', 'title', 'intro', 'name-label', 'switch', 'leave', 'returning', 'returning-sign-in', 'errors', 'verify', 'details-summary', 'name-count', 'step-email', 'step-account', 'step-continue', ...representativeNames, ...['email', 'name', 'code', ...representativeNames].map(name => name + '-error')];
+    const names = ['form', 'code-form', 'profile-form', 'details-form', 'verified', 'verified-title', 'status', 'email-hint', 'verified-name', 'name', 'email', 'code', 'restart', 'refresh', 'continue', 'choice', 'company', 'consultant', 'back', 'title', 'intro', 'name-label', 'switch', 'leave', 'returning', 'returning-sign-in', 'errors', 'verify', 'details-summary', 'name-count', 'step-email', 'step-code', 'step-account', 'step-signin', 'step-organisation', ...representativeNames, ...['email', 'name', 'code', ...representativeNames].map(name => name + '-error')];
     const nodes = Object.fromEntries(names.map(name => [name, document.createElement(name.includes('form') ? 'form' : ['name','email','code', ...representativeNames].includes(name) ? 'input' : 'div')]));
     document.getElementById = id => nodes[id.replace('organisation-', '')];
     document.querySelectorAll = () => [nodes.name, nodes.email, nodes.code, nodes.restart, nodes.refresh, nodes.company, nodes.consultant, nodes.back, nodes.leave, ...representativeNames.map(name => nodes[name])];
@@ -71,6 +71,27 @@ test('default entry waits for an effective provider before permitting any email 
     h.nodes.email.value = 'synthetic@example.test'; h.submit('form');
     expect(h.requests[1].options.method).toBe('POST');
     expect(h.requests[1].options.headers['X-NoFries-Customer-Entry']).toBeUndefined();
+    h.lifecycle('pagehide');
+});
+
+test('homepage create entry shows an explicit opening state instead of a disabled Check progress (F1-R03)', async () => {
+    const h = fixture({ search: '?intent=create' });
+    expect(h.nodes.refresh.hidden).toBe(true);
+    expect(h.nodes.status.textContent).toBe('Opening account setup…');
+    expect(h.nodes.form.getAttribute('aria-busy')).toBe('true');
+    await h.reply(0, 200, { state: 'start' });
+    expect(h.nodes.refresh.hidden).toBe(false);
+    expect(h.nodes.refresh.disabled).toBe(false);
+    expect(h.nodes.status.textContent).toBe('');
+    h.lifecycle('pagehide');
+});
+
+test('a failed first read still offers Check progress (F1-R03)', async () => {
+    const h = fixture({ search: '?intent=create' });
+    expect(h.nodes.refresh.hidden).toBe(true);
+    await h.reply(0, 503, { error: 'setup_unavailable' });
+    expect(h.nodes.refresh.hidden).toBe(false);
+    expect(h.nodes.status.textContent).toContain('Check progress');
     h.lifecycle('pagehide');
 });
 
@@ -392,11 +413,11 @@ test.each(['company', 'consultant'])('email comes before the new %s account choi
 test('reload uses the server-stored consultant choice and rejects unknown account types', async () => {
     const h = fixture();
     await h.reply(0, 200, { state: 'verified', accountType: 'consultant', organisationName: 'My workspace', accessGranted: false });
-    expect(h.nodes['verified-name'].textContent).toBe('Consultant workspace: My workspace');
+    expect(h.nodes['verified-name'].textContent).toBe('Consultancy: My workspace');
     h.nodes.refresh.click();
     await h.reply(1, 200, { state: 'verified', accountType: 'staff', organisationName: 'Other', accessGranted: false });
     expect(h.nodes.status.textContent).toContain('could not confirm your progress');
-    expect(h.nodes['verified-name'].textContent).toBe('Consultant workspace: My workspace');
+    expect(h.nodes['verified-name'].textContent).toBe('Consultancy: My workspace');
 });
 test('returning users proceed to the saved account without account choice or details', async () => {
     const h = fixture();
@@ -548,7 +569,7 @@ test('details are bound to the displayed request and discarded when another veri
     const nextId = '10000000-0000-4000-8000-000000000002';
     await h.reply(2, 200, { ...state, requestId: nextId, organisationName: 'New consultancy', accountType: 'consultant' });
     expect(h.nodes['representative-name'].value).toBe(''); expect(h.nodes['representative-authority'].checked).toBe(false);
-    expect(h.nodes['verified-name'].textContent).toBe('Consultant workspace: New consultancy');
+    expect(h.nodes['verified-name'].textContent).toBe('Consultancy: New consultancy');
     h.fillDetails(); h.submit('details-form');
     expect(h.requests[3].options.headers['X-NoFries-Setup-Request']).toBe(nextId);
     await h.reply(3, 200, { ...state, requestId: nextId, organisationName: 'New consultancy', accountType: 'consultant', nextStep: 'check_invitation' });
@@ -772,6 +793,19 @@ test.each([
     h.lifecycle('pagehide');
 });
 
+test('create intent on the public entry shows the external setup journey before handover', async () => {
+    const h = fixture({ search: '?intent=create' });
+    expect(h.nodes.title.textContent).toBe('Create your account');
+    expect(h.nodes.intro.textContent).toContain('email and password');
+    expect(h.nodes.intro.textContent).toContain('Microsoft’s secure sign-in');
+    expect(h.nodes.intro.textContent).toContain('Company or Consultant');
+    expect(h.nodes.form.hidden).toBe(true);
+    await h.reply(0, 200, { state: 'start' }, true, { 'x-nofries-customer-entry': 'external' });
+    expect(h.window.location.replace).toHaveBeenCalledWith('/signup?provider=external&intent=create');
+    expect(h.nodes.intro.textContent).not.toContain('Email');
+    h.lifecycle('pagehide');
+});
+
 test('create intent has one primary action and follows the chosen account step with heading focus', async () => {
     const h = fixture({ search: '?provider=legacy&intent=create' });
     await h.reply(0, 200, { state: 'start' }, false, { 'x-nofries-customer-sign-in': 'available' });
@@ -910,4 +944,26 @@ test('navigation warnings apply to unsaved details and stop once account setup i
     h.submit('details-form');
     await h.reply(1, 200, { state: 'verified', accountType: 'company', organisationName: 'Example', accessGranted: false, nextStep: 'secure_sign_in' });
     const saved = { preventDefault: jest.fn() }; h.lifecycle('beforeunload', saved); expect(saved.preventDefault).not.toHaveBeenCalled();
+});
+
+test('step indicator marks one current step for each sign-up state', async () => {
+    const h = fixture({ search: '?provider=legacy&intent=create' });
+    const current = () => ['email', 'code', 'account', 'signin', 'organisation']
+        .filter(name => h.nodes['step-' + name].getAttribute('aria-current') === 'step');
+    await h.reply(0, 200, { state: 'start' });
+    expect(current()).toEqual(['email']);
+    expect(h.nodes.intro.textContent).toBe('New here or coming back, start with your email.');
+    h.submit('form');
+    await h.reply(1, 202, { state: 'awaiting_code', accountType: null, emailHint: 'o***@acme.example' });
+    expect(current()).toEqual(['code']);
+    h.submit('code-form');
+    await h.reply(2, 200, { state: 'verified', accountType: null, organisationName: null, accessGranted: false, nextStep: 'choose_account' });
+    expect(current()).toEqual(['account']);
+    h.nodes.refresh.click();
+    await h.reply(3, 200, { state: 'verified', organisationName: 'Example', accessGranted: false, nextStep: 'details_required' });
+    expect(current()).toEqual(['account']);
+    h.nodes.refresh.click();
+    await h.reply(4, 200, { state: 'verified', organisationName: 'Example', accessGranted: false, nextStep: 'secure_sign_in' });
+    expect(current()).toEqual(['signin']);
+    h.lifecycle('pagehide');
 });

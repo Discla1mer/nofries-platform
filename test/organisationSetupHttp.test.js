@@ -25,12 +25,14 @@ test('root serves the real dashboard loader and index canonicalises to root with
     const accountCard = root.text.match(/<div class="homepage-actions"[\s\S]*?<\/div>/)[0];
     expect([...accountCard.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)]
         .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]))
-        .toEqual([['/login?intent=create', 'Create account'], ['#dashboard-benefits', 'How it works']]);
+        .toEqual([['/login?intent=create', 'Create account'], ['/sample-result.html', 'See an example result'], ['/try', 'Try the demo'], ['#dashboard-benefits', 'How it works']]);
     expect(root.text).toContain('class="homepage-login" href="/login?intent=login"');
     expect(root.text).not.toContain('id="organisation-company"');
     const login = await request(app).get('/login');
     expect(login.status).toBe(200); expect(login.headers['cache-control']).toContain('no-store');
-    expect(login.text).toContain('<form id="organisation-form" novalidate>');
+    expect(login.text).toContain('<form id="organisation-form" hidden novalidate>');
+    expect(login.text).toContain('id="organisation-steps"');
+    expect(login.text).toContain('Opening account setup');
     expect(login.text).toContain('Personal and work email');
     expect(login.text).not.toContain('Operator account');
     expect(root.text).not.toContain('NoFriesDashboard = factory');

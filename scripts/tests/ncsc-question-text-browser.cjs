@@ -75,7 +75,7 @@ async function measure(page, questionIndex) {
             field: { left: field.left, right: field.right }, textRects, characterRects,
             choices: [...picker.options].map(option => ({ text: option.textContent, width: context.measureText(option.textContent).width })),
             available, pageWidth: innerWidth, scrollWidth: document.documentElement.scrollWidth };
-    }, { questionIndex, expected: metadata.questions[questionIndex].prompt });
+    }, { questionIndex, expected: metadata.questions[questionIndex].smallBusiness.question });
 }
 
 function check(metric, prefix) {
@@ -124,7 +124,7 @@ function check(metric, prefix) {
             }
             await picker.selectOption('0'); await picker.focus(); await page.keyboard.press('ArrowDown');
             assert.equal(await picker.inputValue(), '1');
-            assert.equal(await page.locator('.ncsc-question legend').textContent(), metadata.questions[1].prompt);
+            assert.equal(await page.locator('.ncsc-question legend').textContent(), metadata.questions[1].smallBusiness.question);
             const no = page.locator('.ncsc-question input[value="no"]');
             await no.focus(); await page.keyboard.press('Space');
             await picker.selectOption('2'); await picker.selectOption('1');

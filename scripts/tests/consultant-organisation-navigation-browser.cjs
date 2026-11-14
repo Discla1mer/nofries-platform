@@ -29,8 +29,7 @@ const bundleFiles = ['dashboardRegistry.js', 'dashboardShell.js', 'ncscAssessmen
     'ncscQuestionnaire.js', 'organisationPicture.js'];
 const sourceFiles = ['js/dashboard-loader.js', 'app/dashboard.html', 'index.html', 'home.css', 'style.css',
     'app/dashboard.css', 'lib/dashboardDocument.js', 'lib/gatewayDocument.js', 'test/fixtures/dashboardFixture.js',
-    'js/home.js', 'js/organisation-setup.js', 'js/prospect-assistant.js',
-    'api/shared/appLifecycle/dashboardProjection.js',
+    'js/home.js', 'js/organisation-setup.js', 'api/shared/appLifecycle/dashboardProjection.js',
     ...bundleFiles.map(file => 'api/shared/protectedAssets/' + file),
     'scripts/tests/consultant-organisation-navigation-browser.cjs'];
 const hashes = () => Object.fromEntries(sourceFiles.map(file => [file, hash(read(file))]));
@@ -56,7 +55,7 @@ const staticAssets = { '/style.css': ['text/css', read('style.css')], '/home.css
     '/favicon.svg': ['image/svg+xml', read('favicon.svg')],
     '/favicon.ico': ['image/x-icon', read('favicon.ico')],
     '/apple-touch-icon.png': ['image/png', read('apple-touch-icon.png')],
-    ...Object.fromEntries(['home.js', 'organisation-setup.js', 'prospect-assistant.js']
+    ...Object.fromEntries(['home.js', 'organisation-setup.js']
         .map(file => ['/js/' + file, ['text/javascript', read('js/' + file)]])),
     '/images/nofrieslogo.png': ['image/png', read('images/nofrieslogo.png')] };
 const requests = [], blocked = [], errors = [], results = [];
@@ -203,7 +202,7 @@ async function keyboardFocus(page, selector) {
             await checkGeometry(page, 'consultant-selected-' + width);
             await page.keyboard.press('Enter');
             await page.waitForFunction(() => document.body.dataset.dashboardState === 'selection');
-            await page.getByRole('button', { name: 'Continue setup: Synthetic pending client' }).waitFor();
+            await page.getByRole('button', { name: 'Resume setup: Synthetic pending client' }).waitFor();
             assert.equal(await page.locator('#dashboardChoices > .consultant-organisation-ready').count(), 2);
             assert.deepEqual(await page.locator('#dashboardChoices > .consultant-organisation-ready').evaluateAll(rows =>
                 rows.map(row => ({ label: row.getAttribute('aria-label'), badge: getComputedStyle(row, '::after').content }))), [
@@ -244,7 +243,7 @@ async function keyboardFocus(page, selector) {
             await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
             await search.fill('pending');
             assert.equal(await visibleRows.count(), 1);
-            await page.getByRole('button', { name: 'Continue setup: Synthetic pending client' }).click();
+            await page.getByRole('button', { name: 'Resume setup: Synthetic pending client' }).click();
             await page.getByRole('button', { name: 'Check and resume saved setup' }).waitFor();
             assert.equal(await page.locator('#dashboardChoices .client-workspace-row button').count(), 0,
                 'uncertain setup leaves only same-client recovery action');

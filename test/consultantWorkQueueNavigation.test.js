@@ -132,7 +132,7 @@ test('new client negotiates the optional field on every session read, not queue 
     for (const item of h.requests) {
         expect(item.init.method).toBe('GET');
         if (item.url === '/api/dashboard/session') {
-            expect(item.init.headers['X-NoFries-Dashboard-Capabilities']).toBe('work-queue-v1');
+            expect(item.init.headers['X-NoFries-Dashboard-Capabilities']).toBe('work-queue-v1 account-label-v1');
         } else expect(item.init.headers).not.toHaveProperty('X-NoFries-Dashboard-Capabilities');
     }
 });
@@ -144,7 +144,7 @@ test.each(['#organisations', '#work-queue'])('unadvertised queue at %s returns t
     expect(h.window.location.hash).toBe('#organisations');
     expect(h.requests.map(item => item.url)).toEqual(['/api/dashboard/session', '/api/dashboard/organisations?limit=50']);
     expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
-    expect(h.requests[0].init.headers['X-NoFries-Dashboard-Capabilities']).toBe('work-queue-v1');
+    expect(h.requests[0].init.headers['X-NoFries-Dashboard-Capabilities']).toBe('work-queue-v1 account-label-v1');
 });
 
 test.each([true, false])('selected organisation keeps its overview with queue availability %s independent of module readiness', async enabled => {

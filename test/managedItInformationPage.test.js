@@ -48,8 +48,21 @@ testCase('scale add-ons stay aligned with the effective policy and read as price
 
 testCase('separately scoped extras retain every public policy exclusion', () => {
     assert.deepEqual(policyItems('excluded', false), MANAGED_IT_POLICY.exclusions);
-    assert.match(text(html), /Agreed separately Large projects/);
+    assert.match(text(html), /Available by arrangement Large projects/);
     assert.match(text(html), /Additional needs are scoped and priced before acceptance\./);
+});
+
+testCase('on-site work is offered by arrangement and is not listed as an exclusion', () => {
+    assert.ok(!MANAGED_IT_POLICY.exclusions.some(item => /on-site/i.test(item)));
+    assert.ok(!policyItems('excluded', false).some(item => /on-site/i.test(item)));
+    assert.ok(policyItems('optional', true).includes('On-site work by arrangement, quoted separately'));
+    assert.match(text(html), /A No Fries technician can come to your site when the work needs it\./);
+});
+
+testCase('the public page and policy name no individual person', () => {
+    assert.doesNotMatch(html, /\bJoel\b|\bfounder\b/i);
+    assert.doesNotMatch(JSON.stringify(MANAGED_IT_POLICY), /\bJoel\b|\bfounder\b/i);
+    assert.match(text(html), /AI-assisted email helpdesk, with a person approving every change before it is made/);
 });
 
 testCase('separate service-page links survive the dashboard-focused homepage and removed Luna promotion', () => {
@@ -57,7 +70,7 @@ testCase('separate service-page links survive the dashboard-focused homepage and
     for (const href of ['/roadmap.html', '/privacy.html', '/terms.html']) {
         assert.ok(home.includes(`href="${href}"`), `homepage footer lost ${href}`);
     }
-    for (const href of ['/', '/roadmap.html', '/contact.html', '/portal', '/privacy.html', '/terms.html']) {
+    for (const href of ['/', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html']) {
         assert.ok(html.includes(`href="${href}"`), `information page lost ${href}`);
     }
     assert.match(html, /href="\/managed-it\.html" aria-current="page"/);
@@ -65,31 +78,37 @@ testCase('separate service-page links survive the dashboard-focused homepage and
     assert.doesNotMatch(html, /href="https:\/\/luna\.nofries\.nz\//);
 });
 
-testCase('the enquiry action reuses the click-only shared assistant and verified contact paths', () => {
-    const buttons = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
-    // Two "Ask about Managed IT" launchers plus one CTA per pricing tier.
-    assert.equal(buttons.length, 5);
-    const tierButtons = [];
-    for (const button of buttons) {
-        assert.match(button[1], /type="button"/);
-        assert.match(button[1], /\bdata-assistant-open\b/);
-        assert.match(button[1], /data-assistant-topic="managed-it"/);
-        assert.doesNotMatch(button[1], /data-message|onclick|formaction/);
-        const tier = button[1].match(/data-managed-it-tier="([^"]+)"/);
-        if (tier) tierButtons.push(tier[1]);
-        else assert.equal(text(button[2]), 'Ask about Managed IT →');
-    }
-    assert.deepEqual(tierButtons, ['essentials', 'managed', 'secure']);
+testCase('the enquiry actions link to the contact form and verified contact paths', () => {
+    assert.doesNotMatch(html, /<button\b|data-assistant-/);
+    const actions = [...html.matchAll(/<a class="button[^"]*" href="([^"]+)">([\s\S]*?)<\/a>/g)];
+    assert.deepEqual(actions.map(action => [action[1], text(action[2])]), [
+        ['/contact.html', 'Ask about Managed IT →'], ['/contact.html', 'Enquire about Essentials →'],
+        ['/contact.html', 'Enquire about Managed →'], ['/contact.html', 'Enquire about Secure →'],
+        ['/contact.html', 'Ask about Managed IT →']
+    ]);
     assert.match(existingScope, /href="mailto:hello@nofries\.nz"/);
     assert.match(html, /href="mailto:hello@nofries\.nz">Email hello@nofries\.nz/);
-    assert.match(html, /href="\/scoping">Staff scoping workspace <span aria-hidden="true">→<\/span><\/a>/);
+    assert.doesNotMatch(html, /href="\/(?:scoping|portal)"|Staff scoping workspace|Managed-service portal/);
     assert.match(text(html), /Ask about Managed IT or discuss your service needs\./);
     assert.match(text(html), /Indicative prices are confirmed with the service scope before acceptance\./);
 });
 
+testCase('hours, backup and on-site wording agree across the page', () => {
+    const page = text(html);
+    assert.match(page, /during NZ business hours, Monday to Friday\./);
+    assert.match(page, /Microsoft 365 backup is included in Managed and Secure, and available as an add-on for Essentials\./);
+    assert.match(page, /Microsoft 365 backup is available as an add-on, quoted on request\./);
+    assert.doesNotMatch(page, /agreed business hours/);
+    assert.doesNotMatch(page, /\bme\b/);
+});
+
 testCase('pricing navigation describes the enquiry destination without promising a price list', () => {
+    // The header carries only the shared public links; the in-page links sit with the hero actions.
     const navigation = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
-    assert.match(navigation, /<a href="#enquire">Discuss pricing<\/a>/);
+    assert.doesNotMatch(navigation, /href="#/);
+    const actions = html.match(/<div class="managed-it-actions">([\s\S]*?)<\/div>/)[1];
+    assert.match(actions, /<a class="text-link" href="#plans">Plans and prices <span aria-hidden="true">↓<\/span><\/a>/);
+    assert.match(actions, /<a class="text-link" href="#enquire">Discuss pricing <span aria-hidden="true">↓<\/span><\/a>/);
     assert.match(html, /<section class="managed-it-enquiry" id="enquire" aria-labelledby="enquiry-title">/);
     assert.doesNotMatch(html, /Service pricing|Plan your managed service|Open the existing scoping workspace/);
 });
@@ -117,7 +136,6 @@ testCase('the plans and pricing section renders the three tiers with GST-inclusi
     // Managed is the recommended tier and carries a visible badge.
     assert.match(html, /<li class="managed-it-tier is-recommended" data-tier="managed">/);
     assert.match(html, /class="managed-it-tier-badge">Recommended</);
-    assert.match(html, /data-managed-it-tier="managed"/);
     // Managed and Secure inherit from the tier below them.
     assert.match(plansText, /Everything in Essentials, plus:/);
     assert.match(plansText, /Everything in Managed, plus:/);

@@ -1,4 +1,5 @@
 const { apiSecurityHeaders } = require('./securityHeaders');
+const { handleFunnelCountRequest } = require('./funnelCounts');
 
 async function runFunction(context, req, handler) {
     try {
@@ -34,6 +35,12 @@ async function telemetryRetired() {
     });
 }
 
+// The Functions host has no database pool: with the flag on it validates and
+// answers 503; the App Service route in server.js does the write.
+async function telemetryFunnelCounts(context, req) {
+    return handleFunnelCountRequest(req, { env: process.env, log: context && context.log });
+}
+
 async function parseMultipart() {
     return {
         fields: {},
@@ -66,7 +73,7 @@ module.exports = {
         billingCheckout: billingDisabled,
         billingConfirm: billingDisabled,
         billingWebhook: billingDisabled,
-        telemetry: telemetryRetired,
+        telemetry: telemetryFunnelCounts,
         founderSummary: telemetryRetired
     },
     parseMultipart,
