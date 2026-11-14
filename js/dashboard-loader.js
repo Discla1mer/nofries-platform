@@ -46,6 +46,7 @@
     const accountActions = document.getElementById('dashboardAccountActions');
     const accountToggle = document.getElementById('dashboardAccountToggle');
     const accountSwitch = document.getElementById('dashboardSwitchAccount');
+    const emailSettings = document.getElementById('dashboardEmailSettings');
     if (accountSwitch) accountSwitch.setAttribute('href', externalCustomer ? '/api/external-customer-auth/login?account=choose'
         : customerProvider === 'legacy' ? '/api/customer-auth/login' : '/login');
     function setAccountMenuOpen(open) {
@@ -295,6 +296,7 @@
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
         if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
+        if (emailSettings) emailSettings.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
         if (accountToggle) accountToggle.textContent = cycle.session?.accountLabel ? 'Account: ' + cycle.session.accountLabel : 'Account';
         if (accountMenu) {
             accountMenu.hidden = elements.signOut.hidden;
