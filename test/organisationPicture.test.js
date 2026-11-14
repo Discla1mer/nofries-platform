@@ -68,10 +68,14 @@ test('connected view preserves golden server range, uncertainty and completion w
     const dom = setup(); await flush();
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
     assert.match(dom.root.textContent, /85\.7%/);
+    const reported = dom.root.querySelector('.picture-primary');
+    assert.equal(reported.querySelector('.picture-large').textContent, '46.4% in place');
+    assert.equal(reported.querySelector('.picture-metric-upper').textContent, 'Up to 60.7% if every answer still to confirm turns out to be in place.');
+    assert.match(reported.textContent, /The first figure is what you reported as in place\. The higher figure adds answers still to confirm/);
     assert.match(dom.root.textContent, /12 of 14/);
     assert.match(dom.root.textContent, /7 partial and 2 absent/);
-    assert.match(dom.root.textContent, /2 unknown or unresolved/);
-    assert.match(dom.root.textContent, /1 answer marked not applicable, to confirm/);
+    assert.match(dom.root.textContent, /2 still to confirm/);
+    assert.match(dom.root.textContent, /including 1 answer marked not applicable, to confirm/);
     assert.match(dom.root.textContent, /not a performance score/);
     assert.doesNotMatch(dom.root.textContent, /Supporting evidence|Tested or observed coverage|evidence upload/i);
     assert.equal(dom.root.querySelectorAll('meter').length, dom.fixtures.metadata.domains.length);
@@ -158,6 +162,22 @@ test('same-day choices remain unambiguous without changing exact selected IDs or
     assert.ok(provenance.textContent.includes(ids[2]));
     assert.ok(provenance.textContent.includes(template.updatedAt));
     assert.equal(dom.root.querySelector('.picture-source').textContent.includes(ids[2]), false);
+    dom.controller.destroy();
+});
+
+test('a long scope is shortened in the selector so status and date stay visible, with the full label as a tooltip', async () => {
+    const record = clone(buildFixtures().tenants[0].assessments[0]);
+    const long = 'Synthetic head office, two retail sites,\n  the warehouse laptops and every cloud service we pay for each month';
+    record.scopePopulation.description = long;
+    const dom = setup({ records: [record] }); await flush();
+    const picker = dom.root.querySelector('.picture-toolbar').querySelector('select');
+    const option = picker.querySelector('option');
+    const flat = long.replace(/\s+/g, ' ');
+    assert.ok(option.textContent.startsWith(flat.slice(0, 59).trimEnd() + '… · In progress · '));
+    assert.ok(option.textContent.endsWith(' NZ time'));
+    assert.equal(option.title, flat + option.textContent.slice(option.textContent.indexOf(' · In progress · ')));
+    assert.equal(picker.title, option.title);
+    assert.ok(dom.root.textContent.includes(long));
     dom.controller.destroy();
 });
 
@@ -639,7 +659,7 @@ test('domain categories explicitly show no matches without presenting empty list
         const empty = category.querySelector('.picture-follow-up-empty');
         assert.equal(empty.hidden, false); assert.match(empty.textContent, /No follow-up items in this function for this category/);
     }
-    assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 unknown or unresolved/);
+    assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 still to confirm, including 1 answer marked not applicable, to confirm/);
     const before = follow.textContent, visibility = follow.querySelectorAll('article').map(article => article.hidden);
     change(filter, 'unrecognised-domain');
     assert.equal(follow.textContent, before); assert.deepEqual(follow.querySelectorAll('article').map(article => article.hidden), visibility);

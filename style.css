@@ -44,6 +44,24 @@
     --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --font-serif: "Iowan Old Style", "Charter", "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
     --font-display: "Fraunces", "Didot", "Bodoni 72", "Bodoni MT", "Iowan Old Style", "Charter", "Bitstream Charter", Georgia, serif;
+    /* One primary-button treatment for public pages and the dashboard (F1-R08).
+       dashboard.css repeats these values as fallbacks for its standalone previews. */
+    --button-font: var(--font-sans);
+    --button-weight: 600;
+    --button-size: 1rem;
+    --button-size-large: 1.0625rem;
+    --button-size-small: .875rem;
+    --button-radius: 999px;
+    --button-fill: var(--yellow);
+    --button-fill-hover: var(--yellow-hover);
+    --button-ink: var(--ink);
+    --button-focus-ring: 3px solid var(--focus);
+    --button-focus-offset: 4px;
+    /* Saved-result card surface, shared by the dashboard results and the public example (F1-R06). */
+    --result-card-surface: var(--paper);
+    --result-card-line: #d3c9b7;
+    --result-card-radius: 1rem;
+    --result-card-shadow: 0 1px 2px rgb(23 20 15 / 6%), 0 8px 24px rgb(23 20 15 / 6%);
 }
 
 * { box-sizing: border-box; }
@@ -112,18 +130,20 @@ button { cursor: pointer; }
     gap: 18px;
     min-height: 50px;
     border: 1px solid var(--yellow);
-    border-radius: var(--radius-small);
-    padding: 11px 18px;
-    color: var(--ink);
-    background: var(--yellow);
-    font-size: .84rem;
-    font-weight: 700;
+    border-radius: var(--button-radius);
+    padding: 11px 22px;
+    color: var(--button-ink);
+    background: var(--button-fill);
+    font-family: var(--button-font);
+    font-size: var(--button-size);
+    font-weight: var(--button-weight);
     box-shadow: 0 8px 22px rgba(120, 86, 18, .16);
     transition: background .18s ease, border-color .18s ease, transform .18s ease;
 }
-.button:hover { color: var(--ink); border-color: var(--yellow-hover); background: var(--yellow-hover); transform: translateY(-1px); }
+.button:hover { color: var(--button-ink); border-color: var(--button-fill-hover); background: var(--button-fill-hover); transform: translateY(-1px); }
+.button:focus-visible { outline: var(--button-focus-ring); outline-offset: var(--button-focus-offset); }
 .button:disabled { cursor: wait; opacity: .68; transform: none; }
-.button-small { min-height: 42px; padding: 9px 14px; font-size: .76rem; }
+.button-small { min-height: 42px; padding: 9px 16px; font-size: var(--button-size-small); }
 .text-link { display: inline-flex; gap: 12px; align-items: center; color: var(--green); font-size: .84rem; font-weight: 850; }
 .text-link:hover { color: var(--green-dark); }
 .button-row { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; }

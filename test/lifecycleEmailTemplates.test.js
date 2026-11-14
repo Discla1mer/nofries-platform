@@ -73,3 +73,16 @@ test('the Resend client passes only the RFC 8058 unsubscribe headers', async () 
     }
     expect(fetchImpl).toHaveBeenCalledTimes(1);
 });
+
+describe('nudge_unfinished wording', () => {
+    const { renderTemplate } = require('../api/shared/lifecycleEmail/templates');
+    const { TEMPLATE_VERSIONS } = require('../api/shared/lifecycleEmail/templateVersions');
+    const links = { signInUrl: 'https://nofries.nz/dashboard', unsubscribeUrl: 'https://nofries.nz/api/emailPreferences?t=x' };
+
+    test('the current nudge does not claim an assessment was started', () => {
+        expect(TEMPLATE_VERSIONS.nudge_unfinished).toBe('nudge-unfinished-v2');
+        const { text } = renderTemplate('nudge_unfinished', TEMPLATE_VERSIONS.nudge_unfinished, links);
+        expect(text).not.toMatch(/You started/);
+        expect(text).toContain('https://nofries.nz/dashboard');
+    });
+});

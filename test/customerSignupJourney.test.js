@@ -465,6 +465,10 @@ test.each([503, 200])('actual client/view carries only the original %s unavailab
     } })).mockResolvedValueOnce(new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
     const createAccount = jest.fn(), client = createSignupClient({ fetch, createAccount, customerTransport: 'external' });
     const f = setup(undefined, externalOptions, client); let fresh, freshClient;
+    // A failed opening read (503) is the A-001 sign-in check view with a manual
+    // retry; an explicit 'unavailable' state (200) stays the signup message.
+    const code = status === 503 ? 'Error code: NF-SIGNIN-UNCONFIRMED' : 'Error code: NF-SIGNUP-UNCONFIRMED';
+    const buttons = status === 503 ? ['Try again'] : [];
     try {
         await f.view.ready;
         const first = unavailableReport(f);
@@ -478,8 +482,8 @@ test.each([503, 200])('actual client/view carries only the original %s unavailab
         expect(draft.body).toContain('Original API release run: ' + apiReleaseRunId);
         expect(draft.body + first.link.href + f.root.textContent).not.toMatch(/synthetic-private|FFFFFFFFFFFFFFFF|bbbbbbbb|Failed step:/);
         expect(fetch).toHaveBeenCalledTimes(1);
-        expect(f.root.querySelector('button')).toBeNull();
-        expect(f.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
+        expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(buttons);
+        expect(f.root.textContent).toContain(code);
         await flush(); expect(fetch).toHaveBeenCalledTimes(1);
         f.view.dispose(); client.dispose();
         freshClient = createSignupClient({ fetch, createAccount, customerTransport: 'external' });
@@ -489,9 +493,10 @@ test.each([503, 200])('actual client/view carries only the original %s unavailab
             ['/api/external-customer-signup/state', 'GET'], ['/api/external-customer-signup/state', 'GET']
         ]);
         expect(createAccount).not.toHaveBeenCalled();
-        expect(fresh.root.textContent).toContain('Do not create another account or submit your details again.');
-        expect(fresh.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
-        expect(fresh.root.querySelector('button')).toBeNull();
+        expect(fresh.root.textContent).toContain(status === 503 ? 'You do not need to sign up again.'
+            : 'Do not create another account or submit your details again.');
+        expect(fresh.root.textContent).toContain(code);
+        expect(fresh.root.querySelectorAll('button').map(node => node.textContent)).toEqual(buttons);
     } finally { fresh?.view.dispose(); freshClient?.dispose(); f.view.dispose(); client.dispose(); }
 });
 
@@ -551,7 +556,51 @@ test.each(['register', '', null, ['login']])('invalid entry intent %j is refused
 });
 
 
-test.each(['network', '503', 'timeout', 'unavailable', 'malformed'])(
+// A-001: a failed first read is a sign-in/access check failure with a working
+// retry; an explicit server 'unavailable' state remains the signup message.
+test.each(['network', '503', 'timeout', 'malformed'])(
+    'external %s opening failure offers one manual retry without private error reflection', async kind => {
+        if (kind === 'timeout') jest.useFakeTimers();
+        const canary = 'synthetic-private-provider-or-account-detail';
+        let failing = true;
+        const fetch = jest.fn(() => {
+            if (!failing) return Promise.resolve(new Response(JSON.stringify({ state: { status: 'pending_admission' } }),
+                { status: 200, headers: { 'content-type': 'application/json' } }));
+            if (kind === 'network') return Promise.reject(new Error(canary));
+            if (kind === 'timeout') return new Promise(() => {});
+            const body = kind === 'malformed' ? '{invalid-json:' + canary : JSON.stringify({ error: canary });
+            return Promise.resolve(new Response(body, { status: kind === '503' ? 503 : 200,
+                headers: { 'content-type': 'application/json' } }));
+        });
+        const createAccount = jest.fn(), client = createSignupClient({ fetch, createAccount, customerTransport: 'external' });
+        const f = setup(undefined, externalOptions, client);
+        try {
+            if (kind === 'timeout') await jest.advanceTimersByTimeAsync(15000);
+            await f.view.ready; await flush();
+            expect(f.root.querySelector('h1').textContent).toBe('We could not open your account');
+            expect(f.root.textContent).toContain('You do not need to sign up again.');
+            expect(f.root.textContent).toContain('Error code: NF-SIGNIN-UNCONFIRMED');
+            expect(f.root.textContent).not.toContain('Signup is unavailable');
+            expect(f.root.textContent).not.toContain('NF-SIGNUP-UNCONFIRMED');
+            expect(f.root.textContent).not.toContain(canary);
+            expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
+            expect(f.root.querySelector('form')).toBeNull();
+            expect(f.root.getAttribute('aria-busy')).toBe('false'); expect(f.document.activeElement.tagName).toBe('H1');
+            expect(f.root.querySelectorAll('a').map(link => link.href)).toEqual([
+                '/api/external-customer-auth/login', '/api/external-customer-auth/login?account=choose',
+                '/report.html#kind=error&screen=signup&code=signup_unavailable'
+            ]);
+            expect(fetch.mock.calls.map(([url, options]) => [url, options.method])).toEqual([['/api/external-customer-signup/state', 'GET']]);
+            failing = false;
+            f.root.querySelector('button').click(); await flush();
+            expect(f.root.querySelector('h1').textContent).toBe('Account setup received');
+            expect(fetch.mock.calls.map(([url, options]) => [url, options.method])).toEqual([
+                ['/api/external-customer-signup/state', 'GET'], ['/api/external-customer-signup/state', 'GET']]);
+            expect(createAccount).not.toHaveBeenCalled();
+        } finally { f.view.dispose(); client.dispose(); if (kind === 'timeout') jest.useRealTimers(); }
+    });
+
+test.each(['unavailable'])(
     'external %s observation is unconfirmed without a retry action or private error reflection', async kind => {
         if (kind === 'timeout') jest.useFakeTimers();
         const canary = 'synthetic-private-provider-or-account-detail';
@@ -694,4 +743,52 @@ test('setup text fields show a count near their limit and say when text is cut o
         input.value = 'x'.repeat(160); for (const fn of input.events.input) fn();
         expect(count.textContent).toBe('160 of 160 characters. This is the limit, so anything longer is cut off.');
     } finally { f.view.dispose(); }
+});
+
+describe('named progress while setup and acceptance run (F1 / D-013)', () => {
+    test('saving workspace details says so in a live status while the request runs', async () => {
+        const state = { status: 'setup_details', email: retained.email, reservation: { ...savedAccount } };
+        const f = setup(state, externalOptions); await f.view.ready;
+        let finish; f.client.completeSetup.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        try {
+            const form = f.root.querySelector('form');
+            const inputs = Object.fromEntries(form.querySelectorAll('input').map(input => [input.name, input]));
+            Object.assign(inputs.name, { value: 'Synthetic name' }); Object.assign(inputs.role, { value: 'Owner' });
+            Object.assign(inputs.address, { value: 'Synthetic address' }); Object.assign(inputs.registrationId, { value: '' });
+            inputs.authorityConfirmed.checked = true; form.reportValidity = () => true;
+            for (const submit of form.events.submit) submit({ preventDefault() {} });
+            await flush();
+            const progress = f.root.querySelector('.signup-progress');
+            expect(progress.getAttribute('role')).toBe('status');
+            expect(progress.textContent).toBe('Saving your details. This can take up to 20 seconds. Please keep this page open.');
+            expect(f.root.getAttribute('aria-busy')).toBe('true');
+            finish({ status: 'continue_authentication' }); await flush();
+            expect(f.root.textContent).not.toContain('Saving your details.');
+        } finally { f.view.dispose(); }
+    });
+
+    test('accepting terms names the acceptance and dashboard preparation', async () => {
+        const f = setup(TERMS); await f.view.ready;
+        let finish; f.client.acceptTerms.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        const box = f.root.querySelector('input'), submit = f.root.querySelector('button');
+        box.checked = true; for (const fn of box.events.change) fn();
+        submit.click(); await flush();
+        const progress = f.root.querySelector('.signup-progress');
+        expect(progress.getAttribute('role')).toBe('status');
+        expect(progress.textContent).toBe('Saving your acceptance and preparing your dashboard. This can take up to 20 seconds. Please keep this page open.');
+        finish({ status: 'continue_to_dashboard', accountType: 'company' }); await flush();
+        const opening = f.root.querySelector('.signup-progress');
+        expect(opening.getAttribute('role')).toBe('status');
+        expect(opening.textContent).toBe('Preparing your dashboard. Please keep this page open.');
+        expect(f.root.querySelector('a').getAttribute('href') || f.root.querySelector('a').href).toBe('/dashboard');
+        f.view.dispose();
+    });
+
+    test('other waits keep the general progress message', async () => {
+        const f = setup(); await f.view.ready;
+        let finish; f.client.createAccount.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        f.root.querySelector('button').click(); await flush();
+        expect(f.root.querySelector('.signup-progress').textContent).toBe('Working on it. This can take up to 20 seconds. Please keep this page open.');
+        finish(TERMS); await flush(); f.view.dispose();
+    });
 });
