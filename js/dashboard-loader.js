@@ -1325,6 +1325,20 @@
         show(cycle, 'queue');
         load(null, false);
     }
+    // Anonymous funnel count (#151 F4): one same-origin POST per step per page
+    // view, with no cookies, referrer or identifiers. The server answers 410
+    // while counts are off; after any refusal this page sends nothing more.
+    const funnelSent = new Set(); let funnelOff = false;
+    function funnelStep(step) {
+        if (funnelOff || funnelSent.has(step) || typeof window !== 'object' || !window || typeof window.fetch !== 'function') return;
+        funnelSent.add(step);
+        try {
+            window.fetch('/api/telemetry', { method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
+                cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
+                headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: step }) })
+                .then(function (response) { if (!response || !response.ok) funnelOff = true; }, function () { funnelOff = true; });
+        } catch (_) { funnelOff = true; }
+    }
     async function cyberOptions(cycle, snapshot, organisationId, preparedValue) {
         const value = preparedValue || requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
         if (!current(cycle)) throw invalid();
@@ -1358,7 +1372,7 @@
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
-                onLocation: presentation && presentation.onLocation,
+                onLocation: presentation && presentation.onLocation, onFunnelStep: funnelStep,
                 // Overview's first-use action opens the new-assessment step directly.
                 startNew: !!(presentation && presentation.startNew === true) });
         };

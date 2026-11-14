@@ -1,4 +1,20 @@
 (function () {
+    // Anonymous funnel count (#151 F4): one same-origin POST per step per page
+    // view, with no cookies, referrer or identifiers. The server answers 410
+    // while counts are off; after any refusal this page sends nothing more.
+    const funnelSent = new Set(); let funnelOff = false;
+    function funnelStep(step) {
+        if (funnelOff || funnelSent.has(step) || typeof window !== 'object' || !window || typeof window.fetch !== 'function') return;
+        funnelSent.add(step);
+        try {
+            window.fetch('/api/telemetry', { method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
+                cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
+                headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: step }) })
+                .then(function (response) { if (!response || !response.ok) funnelOff = true; }, function () { funnelOff = true; });
+        } catch (_) { funnelOff = true; }
+    }
+    funnelStep('visit');
+
     function selectDetailTab(dialog, tab, focus) {
         const tabs = Array.from(dialog.querySelectorAll('[data-detail-tab]'));
         const panels = Array.from(dialog.querySelectorAll('[data-detail-panel]'));

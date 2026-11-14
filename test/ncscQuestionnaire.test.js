@@ -3818,3 +3818,30 @@ describe('automatic save retry after an unconfirmed outcome', () => {
         expect(save).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('anonymous funnel steps (#151 F4)', () => {
+    test('first_answer fires on the first answer of an empty assessment and result_viewed on the submitted result', async () => {
+        const steps = [];
+        const h = await backend(), ui = await createInUi(h, { onFunnelStep: step => steps.push(step) });
+        expect(steps).toEqual([]);
+        choose(ui, 0, 'yes'); choose(ui, 1, 'no');
+        expect(steps).toEqual(['first_answer']);
+        metadata().questions.forEach((_question, index) => choose(ui, index, 'yes'));
+        control(ui, 'Save progress').click(); await savedRevision(ui, h, 1);
+        submitUi(ui); await until(() => ui.root.textContent.includes('Your results are below'));
+        expect(steps).toEqual(['first_answer', 'result_viewed']);
+        ui.controller.destroy();
+    });
+
+    test('a resumed assessment with saved answers does not count first_answer, and a throwing hook changes nothing', async () => {
+        const h = await backend(), first = await createInUi(h);
+        choose(first, 0, 'partial'); control(first, 'Save progress').click(); await savedRevision(first, h, 1);
+        first.controller.destroy();
+        const steps = [];
+        const ui = await resumeUi(h, { onFunnelStep: step => { steps.push(step); throw new Error('hook'); } });
+        choose(ui, 1, 'yes');
+        expect(steps).toEqual([]);
+        expect(byId(ui, `ncsc-answer-${metadata().questions[1].id}-yes`).checked).toBe(true);
+        ui.controller.destroy();
+    });
+});

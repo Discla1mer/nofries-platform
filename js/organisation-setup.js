@@ -3,6 +3,20 @@
     const byId = id => document.getElementById(id);
     const form = byId('organisation-form');
     if (!form) return;
+    // Anonymous funnel count (#151 F4): one same-origin POST per step per page
+    // view, with no cookies, referrer or identifiers. The server answers 410
+    // while counts are off; after any refusal this page sends nothing more.
+    const funnelSent = new Set(); let funnelOff = false;
+    function funnelStep(step) {
+        if (funnelOff || funnelSent.has(step) || typeof window !== 'object' || !window || typeof window.fetch !== 'function') return;
+        funnelSent.add(step);
+        try {
+            window.fetch('/api/telemetry', { method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
+                cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
+                headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: step }) })
+                .then(function (response) { if (!response || !response.ok) funnelOff = true; }, function () { funnelOff = true; });
+        } catch (_) { funnelOff = true; }
+    }
     const query = window.location?.search ? new URLSearchParams(window.location.search) : null;
     const providers = query ? query.getAll('provider') : [];
     const reauthentications = query ? query.getAll('reauthenticate') : [];
@@ -23,6 +37,8 @@
     const entryIntent = intents.length === 1 && ['login', 'create'].includes(intents[0]) &&
         !recoveries.length && !accounts.length && !reauthentications.length && !window.location.hash ? intents[0] : undefined;
     const intentSuffix = entryIntent ? '&intent=' + entryIntent : '';
+    // Choosing Create account is the start of signup on either provider.
+    if (entryIntent === 'create') funnelStep('signup_started');
     if (providers.length > 1 || providers.length === 1 && providers[0] !== 'legacy') {
         // A managed signup never starts the separate legacy email-code flow.
         // Only fixed local destinations are possible; fragments are not relayed.
@@ -286,7 +302,7 @@
                 entryChosen = true;
             }
             if (stateRead) { ready = true; returningAvailable = signInAvailable; byId('organisation-returning').hidden = !signInAvailable; }
-            if (route === 'request' && body) emailRecord = { requestId: value.requestId, email: body.email.trim() };
+            if (route === 'request' && body) { emailRecord = { requestId: value.requestId, email: body.email.trim() }; funnelStep('signup_started'); }
             if (render(value) || body) focus = byId('organisation-title');
             if (body?.action === 'leave') {
                 form.reset(); byId('organisation-verified-name').textContent = ''; byId('organisation-email-hint').textContent = '';
