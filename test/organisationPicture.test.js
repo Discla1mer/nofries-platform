@@ -179,7 +179,8 @@ test('a long scope is shortened in the selector so status and date stay visible,
     assert.ok(option.textContent.endsWith(' NZ time'));
     assert.equal(option.title, flat + option.textContent.slice(option.textContent.indexOf(' · In progress · ')));
     assert.equal(picker.title, option.title);
-    assert.ok(dom.root.textContent.includes(long));
+    // The full scope is still shown on the page (one list item per line since #268).
+    long.split('\n').map(line => line.trim()).forEach(line => assert.ok(dom.root.textContent.includes(line)));
     dom.controller.destroy();
 });
 
@@ -501,6 +502,24 @@ test('revoked access clears results and record names; retry does not disclose ca
     assert.doesNotMatch(dom.root.textContent, /46\.4%|assessment-mixed|Synthetic office/);
     assert.match(dom.root.textContent, /unavailable/);
     assert.equal(dom.root.querySelectorAll('button').length, 0);
+});
+
+test('D-004: a scope written one item per line is shown as a readable list without changing the saved text', async () => {
+    const record = clone(buildFixtures().tenants[0].assessments[0]);
+    record.scopePopulation.description = 'Included: 12 staff and their laptops\n- Included: Auckland office\n\nExcluded: warehouse systems';
+    const dom = setup({ records: [record] }); await flush();
+    const items = dom.root.querySelector('.picture-scope').querySelectorAll('li').map(item => item.textContent);
+    assert.deepEqual(items, ['Included: 12 staff and their laptops', 'Included: Auckland office', 'Excluded: warehouse systems']);
+    assert.equal(record.scopePopulation.description, 'Included: 12 staff and their laptops\n- Included: Auckland office\n\nExcluded: warehouse systems');
+});
+
+test('D-004: a one-line scope stays a single paragraph', async () => {
+    const record = clone(buildFixtures().tenants[0].assessments[0]);
+    record.scopePopulation.description = 'Whole organisation';
+    const dom = setup({ records: [record] }); await flush();
+    const scope = dom.root.querySelector('.picture-scope');
+    assert.equal(scope.querySelectorAll('li').length, 0);
+    assert.ok(scope.querySelectorAll('p').some(item => item.textContent === 'Whole organisation'));
 });
 
 test('scope text is rendered as text and leaving a destroyed picture is inert', async () => {
