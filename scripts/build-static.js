@@ -69,7 +69,7 @@ const gatewayDocument = buildGatewayDocument({
     protectedStyleSource: fs.readFileSync(path.join(rootDir, 'app', 'dashboard.css'), 'utf8')
 });
 fs.writeFileSync(path.join(distDir, 'index.html'), gatewayDocument.html);
-// Fictional sales demo (#29): an unlisted, noindex link with no assistant or network access.
+// Fictional demo (#29), linked from the homepage: noindex, with no assistant or network access.
 const tryDemoDocument = require('../demo/try/document').buildTryDemoDocument();
 fs.writeFileSync(path.join(distDir, 'app', 'try.html'), tryDemoDocument.html);
 for (const fileName of PUBLIC_ROOT_FILES.filter(file => file.endsWith('.html'))) {
