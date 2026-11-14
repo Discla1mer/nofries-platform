@@ -3343,6 +3343,40 @@ function createLifecycleService(options = {}) {
             };
         },
 
+        async recordProspectSelectedTier(access, sessionHash, tier) {
+            const selectedTier = cleanText(tier, 40);
+            if (!selectedTier) {
+                return null;
+            }
+            const at = now().toISOString();
+            const auditEvents = [];
+            const result = await repository.mutate(access, { auditEvents }, async (state) => {
+                const conversation = findConversationBySession(state, sessionHash);
+                const organisation = findOrganisation(state, conversation.organisationId);
+                if (!organisation.context.commercial || typeof organisation.context.commercial !== 'object') {
+                    organisation.context.commercial = { preferredTiming: '', decisionProcess: '', notes: '' };
+                }
+                if (organisation.context.commercial.selectedTier !== selectedTier) {
+                    organisation.context.commercial.selectedTier = selectedTier;
+                    organisation.updatedAt = at;
+                    organisation.updatedBy = 'prospect_agent';
+                    auditEvents.push(audit(
+                        access,
+                        'conversation.tier_selected',
+                        organisation,
+                        'Prospect selected a managed-IT tier',
+                        conversation.id
+                    ));
+                }
+                return { conversation, organisation };
+            });
+            return {
+                revision: result.state.revision,
+                conversation: publicConversation(result.result.conversation),
+                organisation: buildContextSnapshot(result.result.organisation)
+            };
+        },
+
         async executeProspectTool(access, sessionHash, toolName, args = {}, metadata = {}) {
             const at = now().toISOString();
             const auditEvents = [];

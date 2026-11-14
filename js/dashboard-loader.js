@@ -14,7 +14,19 @@
     const publicGateway = gateway ? document.getElementById('gatewayPublic') : null;
 
     const REQUEST_MS = 12000;
+    // Fast 5xx and network failures on the opening session reads. Timeouts
+    // already waited REQUEST_MS, so they are not tried again here.
+    const SESSION_RETRY_MS = [1000, 2000, 4000];
+    const ACTION_PLAN_LIMIT = 5;
+    // One steady message while the dashboard opens (round 2: three changing
+    // lines over 6 to 16 seconds read as separate waits). Retries still say so.
+    const OPENING_MESSAGE = 'Getting your dashboard ready. This can take up to 20 seconds.';
+    const OPENING_DETAIL = 'Please keep this page open.';
     const MAX_RECONCILIATIONS = 2;
+    const ADD_ORG_RETURN = 'nofries-return-add-organisation';
+    // Customer sign-in returns through /signup, which reads this once. Only a
+    // listed dashboard fragment is stored; /signup checks it against its own list.
+    const SIGNIN_RETURN = 'nofries-return-route';
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
     const DIGEST = /^[0-9a-f]{64}$/;
     const ROUTES = ['overview', 'ai-governance', 'cyber-security', 'it-optimisation', 'improvement-plan', 'evidence', 'board-reports', 'services'];
@@ -25,7 +37,31 @@
     Object.keys(ids).forEach(function (key) { elements[key] = document.getElementById(ids[key]); });
     if (Object.keys(elements).some(function (key) { return !elements[key]; })) return;
     const accountMenu = document.getElementById('dashboardAccountMenu');
+    // Escape closes the account menu and returns focus to its summary.
+    if (accountMenu && typeof accountMenu.addEventListener === 'function') accountMenu.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || !accountMenu.open) return;
+        accountMenu.open = false;
+        const summary = accountMenu.querySelector && accountMenu.querySelector('summary'); if (summary) summary.focus();
+    });
     const accountActions = document.getElementById('dashboardAccountActions');
+    const accountToggle = document.getElementById('dashboardAccountToggle');
+    const accountSwitch = document.getElementById('dashboardSwitchAccount');
+    if (accountSwitch) accountSwitch.setAttribute('href', externalCustomer ? '/api/external-customer-auth/login?account=choose'
+        : customerProvider === 'legacy' ? '/api/customer-auth/login' : '/login');
+    function setAccountMenuOpen(open) {
+        if (accountToggle) accountToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (accountActions) accountActions.hidden = !open;
+    }
+    if (accountToggle) accountToggle.addEventListener('click', function () {
+        if (!accountMenu || accountMenu.hidden) return;
+        setAccountMenuOpen(accountToggle.getAttribute('aria-expanded') !== 'true');
+    });
+    if (accountMenu) accountMenu.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || !accountToggle || accountToggle.getAttribute('aria-expanded') !== 'true') return;
+        event.preventDefault();
+        setAccountMenuOpen(false);
+        accountToggle.focus();
+    });
     const directorySearch = document.getElementById('dashboardOrganisationSearch');
     const directoryStatus = document.getElementById('dashboardOrganisationStatus');
     const directorySearchControls = document.getElementById('dashboardOrganisationSearchControls');
@@ -45,6 +81,7 @@
     let active = null;
     let controller = null;
     let portfolioButton = null;
+    let lastOrganisationRoute = '#overview';
     let portfolioNavigation = null;
     let hadSession = false;
     let linkExit = null;
@@ -52,6 +89,28 @@
     // Retain one immutable command until an acknowledgement or definite denial.
     let unresolved = null;
     const commandContinuations = new WeakMap();
+    // Only the last opened organisation's binding ID is kept on this browser.
+    // It is a hint: a fresh directory read and the server selection check
+    // decide whether it can be reopened.
+    const LAST_ORGANISATION_KEY = 'nofries-dashboard-last-organisation';
+    let resumeOffered = false;
+    function lastOrganisationStore() {
+        try { return window.localStorage || null; } catch (_) { return null; }
+    }
+    function lastOrganisation() {
+        const store = lastOrganisationStore();
+        let value = null;
+        try { value = store ? store.getItem(LAST_ORGANISATION_KEY) : null; } catch (_) { return null; }
+        return typeof value === 'string' && UUID.test(value) ? value : null;
+    }
+    function saveLastOrganisation(bindingId) {
+        const store = lastOrganisationStore();
+        try { if (store && UUID.test(bindingId)) store.setItem(LAST_ORGANISATION_KEY, bindingId); } catch (_) { /* optional */ }
+    }
+    function forgetLastOrganisation() {
+        const store = lastOrganisationStore();
+        try { if (store) store.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
+    }
     if (hasDirectorySearch) {
         directorySearch.addEventListener('input', function () {
             if (!active || !current(active) || active.authorityPending || active.session?.accountType !== 'consultant') return;
@@ -105,7 +164,17 @@
     }
     elements.signIn.href = customerProvider === 'staff'
         ? '/api/auth/login?returnTo=' + encodeURIComponent('/dashboard' + currentRoute()) : customerEntry;
+    // A signed-out visitor may be new. Offer account creation beside sign-in.
+    const createAccount = document.getElementById('dashboardCreateAccount');
+    const createAccountLink = document.getElementById('dashboardCreateAccountLink');
+    if (createAccountLink) createAccountLink.href = customerEntry + (customerEntry.indexOf('?') === -1 ? '?' : '&') + 'intent=create';
 
+    function rememberReturnRoute() {
+        if (customerProvider === 'staff' || gateway) return;
+        const route = currentRoute();
+        if (!route) return;
+        try { window.sessionStorage.setItem(SIGNIN_RETURN, JSON.stringify({ route: route, at: Date.now() })); } catch (_) {}
+    }
     function current(cycle) { return active === cycle && !cycle.closed; }
     function dispose(cycle) {
         if (!cycle || cycle.closed) return;
@@ -115,7 +184,9 @@
     function clearContent() {
         if (portfolioButton) { portfolioButton.hidden = true; portfolioButton.onclick = null; }
         if (portfolioNavigation) { portfolioNavigation.remove(); portfolioNavigation = null; }
-        if (accountMenu) { accountMenu.open = false; accountMenu.hidden = true; }
+        if (accountMenu) { setAccountMenuOpen(false); accountMenu.hidden = true; }
+        if (accountToggle) accountToggle.textContent = 'Account';
+        if (accountSwitch) accountSwitch.hidden = true;
         delete elements.status.dataset.accessWarning;
         const activation = document.getElementById('customerActivationControls');
         if (activation) activation.remove();
@@ -158,6 +229,11 @@
         return !clientDraft(cycle)?.dirty || window.confirm('Discard unsaved organisation details?');
     }
     function begin(draft) {
+        // Content is about to be cleared. If the keyboard user was in it, keep
+        // focus on the loading heading instead of letting it fall to the page.
+        const focused = document.activeElement;
+        const keepFocus = !!focused && focused !== document.body && [elements.app, elements.chooser, elements.panel]
+            .some(function (region) { return region && typeof region.contains === 'function' && region.contains(focused); });
         dispose(active);
         linkExit = null;
         const cycle = { closed: false, cleanup: [], session: null, busy: true, clientDraft: draft || null, directoryPageCount: 0 };
@@ -165,19 +241,20 @@
         active = cycle;
         clearContent();
         show(cycle, 'loading');
+        if (keepFocus && !elements.panel.hidden) elements.heading.focus();
         return cycle;
     }
     function show(cycle, state, focusHeading) {
         if (!current(cycle)) return;
         const copy = {
-            loading: ['Opening your dashboard', 'Checking your current access.', 'Please wait.'],
+            loading: ['Opening your dashboard', OPENING_MESSAGE, OPENING_DETAIL],
             selection: ['Choose an organisation', 'Select the organisation you want to view.', 'Your selection will be checked before the dashboard opens.'],
             ready: ['Your dashboard', 'Choose another organisation or sign out when finished.', 'Dashboard ready.'],
             queue: ['Work queue', 'Follow up on saved improvement actions across your organisations.', 'Each organisation is checked before its actions are shown.'],
-            unauthenticated: ['Sign in to your dashboard', 'Use the email address for your No Fries account.', 'You are not signed in.'],
-            expired: ['Your session has expired', 'Sign in again to continue.', 'Dashboard content has been cleared.'],
+            unauthenticated: ['Please sign in', 'Use the email address for your No Fries account.', 'You are not signed in.'],
+            expired: ['Please sign in again', 'Your sign-in has ended. Sign in to continue.', 'This is not a service outage.'],
             denied: ['Dashboard access is unavailable', 'Your current identity does not have the required access.', 'No dashboard content is displayed.'],
-            unavailable: ['The dashboard could not load', 'Please try again when the service is available.', 'The request could not be confirmed.'],
+            unavailable: ['No Fries is having a temporary problem', 'We could not open your dashboard just now. Try again in a moment. You do not need to sign in again.', 'This is a temporary service problem, not a lost sign-in.'],
             signout: ['Sign-out is not confirmed', 'The request may still complete. Retry to check sign-out.', 'Dashboard content has been cleared.']
         }[state];
         if (state === 'ready' && cycle.session?.purpose === 'customer') {
@@ -200,9 +277,9 @@
             const owner = cycle.session.clientSetupAvailable === true;
             copy[0] = 'Your consultant account';
             copy[1] = owner ? 'Choose your own or a client organisation, or add an organisation.'
-                : 'Choose an organisation workspace you can access.';
-            copy[2] = owner ? 'Account owner · Organisation access is checked separately.'
-                : 'Only organisation workspaces available to your account are listed.';
+                : 'Choose an organisation you can access.';
+            copy[2] = owner ? 'Account owner. Access is checked when you open an organisation.'
+                : 'Only organisations available to your account are listed.';
             if (cycle.session.clientSetupAvailable && !document.getElementById('clientSetupControls')) clientSetupControls(cycle);
         }
         elements.heading.textContent = copy[0];
@@ -211,11 +288,17 @@
         elements.retry.hidden = !['unavailable', 'signout', 'denied'].includes(state);
         elements.retry.disabled = false;
         elements.signIn.hidden = !['unauthenticated', 'expired', 'denied'].includes(state);
+        if (!elements.signIn.dataset.restingLabel) elements.signIn.dataset.restingLabel = elements.signIn.textContent;
+        elements.signIn.textContent = state === 'expired' ? 'Sign in again' : elements.signIn.dataset.restingLabel;
+        if (state === 'unauthenticated' || state === 'expired') rememberReturnRoute();
+        if (createAccount) createAccount.hidden = customerProvider === 'staff' || gateway || state !== 'unauthenticated';
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
+        if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
+        if (accountToggle) accountToggle.textContent = cycle.session?.accountLabel ? 'Account: ' + cycle.session.accountLabel : 'Account';
         if (accountMenu) {
             accountMenu.hidden = elements.signOut.hidden;
-            if (accountMenu.hidden) accountMenu.open = false;
+            if (accountMenu.hidden) setAccountMenuOpen(false);
         }
         if (['ready', 'selection', 'queue'].includes(state) && cycle.session?.accountType === 'consultant') consultantNavigation(cycle, state);
         if (focusHeading !== false && state !== 'loading' && !(gateway && !hadSession)) elements.heading.focus();
@@ -227,6 +310,8 @@
         cycle.busy = false;
         if (error && (error.status === 401 || error.expired)) {
             unresolved = null;
+            // A later sign-in may be a different person; do not reopen this one's organisation.
+            forgetLastOrganisation();
             show(cycle, hadSession ? 'expired' : 'unauthenticated');
         } else if (unresolved && unresolved.kind === 'logout') show(cycle, 'signout');
         else show(cycle, error && error.status === 403 ? 'denied' : 'unavailable');
@@ -242,10 +327,12 @@
     }
     function session(value) {
         if (!fields(value, ['schemaVersion', 'authenticated', 'purpose', 'expiresAt', 'generation', 'selectedBindingId',
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountLabel') ? ['accountLabel'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
+            Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
             value.schemaVersion !== 1 || value.authenticated !== true || !['operator_dashboard', 'customer'].includes(value.purpose) ||
             Object.prototype.hasOwnProperty.call(value, 'activationAvailable') && (value.activationAvailable !== true || value.purpose !== 'operator_dashboard') ||
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
@@ -258,10 +345,11 @@
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
-            ...(value.accountType ? { accountType: value.accountType } : {}) });
+            ...(value.accountType ? { accountType: value.accountType } : {}),
+            ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType', 'accountLabel']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -282,6 +370,7 @@
             if (!current(cycle)) return;
             const expired = begin();
             expired.busy = false;
+            forgetLastOrganisation();
             show(expired, 'expired');
         }, Math.min(2147483647, Math.max(0, Date.parse(value.expiresAt) - Date.now())));
     }
@@ -357,14 +446,16 @@
             };
             const cancel = function () {
                 if (abort) abort.abort();
-                finish(reject, invalid(true));
+                const error = invalid(true);
+                error.timeout = true;
+                finish(reject, error);
             };
             const timer = window.setTimeout(cancel, REQUEST_MS);
             if (refresh) refresh.requests.add(cancel);
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
@@ -387,9 +478,67 @@
             }).catch(function (error) { finish(reject, error); });
         });
     }
+    // Move the dashboard's "Information as at" time forward after a
+    // successful read for the current cycle. Display only.
+    function informationRead(cycle) {
+        if (current(cycle) && controller && typeof controller.informationRead === 'function') controller.informationRead(new Date().toISOString());
+    }
     function requireSuccess(result) {
         if (result.status !== 200) { const error = invalid(); error.status = result.status; throw error; }
         return result.value;
+    }
+    function transientSessionFailure(error) {
+        if (!error || unresolved || error.timeout || error.validation || error.expired) return false;
+        if (typeof error.status === 'number') return error.status >= 500;
+        return true;
+    }
+    function loadingStage(cycle, message, detail) {
+        if (!current(cycle) || document.body.dataset.dashboardState !== 'loading') return;
+        elements.heading.textContent = 'Opening your dashboard';
+        elements.message.textContent = message;
+        elements.status.textContent = detail;
+    }
+    function waitForRetry(cycle, ms) {
+        if (current(cycle) && document.body.dataset.dashboardState === 'loading') {
+            elements.heading.textContent = 'No Fries is having a temporary problem';
+            elements.message.textContent = 'We\'ll keep trying…';
+            elements.status.textContent = 'This is a temporary service problem. You do not need to sign in again.';
+        }
+        return new Promise(function (resolve) {
+            const timer = window.setTimeout(resolve, ms);
+            cycle.cleanup.push(function () { window.clearTimeout(timer); resolve(); });
+        });
+    }
+    // Opening read and the closing witness. A focus refresh uses readSession
+    // and keeps its own single-try behaviour.
+    async function sessionForReconcile(cycle, message, detail) {
+        for (let attempt = 0; ; attempt += 1) {
+            if (!current(cycle)) throw invalid();
+            loadingStage(cycle, attempt ? 'Checking your sign-in again…' : message, attempt ? 'We\'ll keep trying…' : detail);
+            let result;
+            try { result = await request(cycle, '/api/dashboard/session'); }
+            catch (error) {
+                if (!current(cycle) || !transientSessionFailure(error) || attempt >= SESSION_RETRY_MS.length) throw error;
+                await waitForRetry(cycle, SESSION_RETRY_MS[attempt]);
+                continue;
+            }
+            if (!current(cycle)) throw invalid();
+            if (result.status >= 500 && transientSessionFailure({ status: result.status }) && attempt < SESSION_RETRY_MS.length) {
+                await waitForRetry(cycle, SESSION_RETRY_MS[attempt]);
+                continue;
+            }
+            return result;
+        }
+    }
+    function rememberAddOrganisation() {
+        try { window.sessionStorage.setItem(ADD_ORG_RETURN, '1'); } catch (_) {}
+    }
+    function takeAddOrganisationReturn() {
+        try {
+            if (window.sessionStorage.getItem(ADD_ORG_RETURN) !== '1') return false;
+            window.sessionStorage.removeItem(ADD_ORG_RETURN);
+            return true;
+        } catch (_) { return false; }
     }
     async function readSession(cycle, refresh) {
         return session(requireSuccess(await request(cycle, '/api/dashboard/session', undefined, undefined, undefined, refresh)));
@@ -408,6 +557,7 @@
         // uncertainty retains its exact identity and fields for explicit retry.
         if (result.status >= 400 && result.status < 500) {
             if (unresolved === pending) unresolved = null;
+            if (pending.kind === 'selection' && pending.body.bindingId === lastOrganisation()) forgetLastOrganisation();
             requireSuccess(result);
         }
         const value = requireSuccess(result);
@@ -417,10 +567,39 @@
                 typeof value.selectedBindingId === 'string' && UUID.test(value.selectedBindingId) && value.selectedBindingId === pending.body.bindingId;
         if (!valid || value.schemaVersion !== 1) throw invalid();
         if (unresolved === pending) unresolved = null;
-        if (pending.kind === 'logout') { window.location.assign(externalCustomer ? '/login?provider=external' : '/'); return; }
+        if (pending.kind === 'logout') { forgetLastOrganisation(); window.location.assign(externalCustomer ? '/login?provider=external' : '/'); return; }
         if (pending.kind === 'selection') cycle.openSelection = true;
         // Original receipts acknowledge commands; they never supply current authority.
         await reconcile(cycle, 0, false);
+    }
+    function resumeLastOrganisation(cycle, value) {
+        // Offer this once per page load, only on a plain /dashboard visit.
+        // Organisations, Return to organisations and Retry keep the chooser.
+        // The reopen is automatic, so an uncertain (5xx/network) failure is not
+        // kept for Retry to resend: Retry rereads the session and shows the chooser.
+        const offered = resumeOffered;
+        resumeOffered = true;
+        if (offered || value.purpose !== 'customer' || cycle.forcePortfolio || cycle.openSelection || unresolved ||
+            String(window.location.hash || '') !== '' || clientDraft(cycle)) return false;
+        const bindingId = lastOrganisation();
+        if (!bindingId || !(cycle.directoryRows || []).some(function (row) { return row.bindingId === bindingId; })) return false;
+        const next = begin();
+        try {
+            const pending = command('selection', { bindingId: bindingId, expectedGeneration: value.generation, operationId: secureId() });
+            execute(next, pending).catch(function (error) {
+                if (unresolved === pending) unresolved = null;
+                // A definite refusal (other than sign-in) shows the chooser instead.
+                if (!current(next) || !error || !(error.status >= 400 && error.status < 500) || error.status === 401) { failure(next, error); return; }
+                const chooser = begin();
+                reconcile(chooser, 0, false).catch(function (again) { failure(chooser, again); });
+            });
+        } catch (error) { failure(next, error); }
+        return true;
+    }
+    function cyberListedReady(projection) {
+        return Array.isArray(projection?.modules) && projection.modules.some(function (item) {
+            return item && item.key === 'cyber_security' && item.state === 'ready';
+        });
     }
     function reconcile(cycle, transitions, initializeAllowed) {
         // Initialisation can reconcile again within the same cycle. Track the
@@ -429,7 +608,7 @@
         return reconcileCurrent(cycle, transitions, initializeAllowed).finally(function () { cycle.reconciling -= 1; });
     }
     async function reconcileCurrent(cycle, transitions, initializeAllowed) {
-        const result = await request(cycle, '/api/dashboard/session');
+        const result = await sessionForReconcile(cycle, OPENING_MESSAGE, OPENING_DETAIL);
         if (!current(cycle)) return;
         if (result.status === 409 && initializeAllowed && fields(result.value, ['code']) && result.value.code === 'dashboard_initialization_required') {
             const pending = command('initialize', { operationId: secureId() });
@@ -439,11 +618,13 @@
         const value = session(requireSuccess(result));
         if (cycle.workQueueTarget && value.selectedBindingId !== cycle.workQueueTarget.bindingId) throw invalid();
         remember(cycle, value);
+        if (cycle.openSelection && value.purpose === 'customer' && value.selectedBindingId) saveLastOrganisation(value.selectedBindingId);
         // Navigation records the chosen view, never authority. Keep it across
         // focus/pageshow rechecks after a consultant selects a client.
         if (cycle.openSelection && value.accountType === 'consultant' && !currentRoute()) {
-            window.history.replaceState(null, '', '#overview');
+            window.history.replaceState(null, '', lastOrganisationRoute);
         }
+        loadingStage(cycle, OPENING_MESSAGE, OPENING_DETAIL);
         const snapshot = Object.freeze({ generation: value.generation, selectedBindingId: value.selectedBindingId });
         if (value.accountType === 'consultant' && window.location.hash === '#work-queue' && !cycle.openSelection) {
             if (value.workQueueAvailable === true) { mountWorkQueue(cycle); return; }
@@ -451,21 +632,41 @@
             cycle.forcePortfolio = true;
         }
         const prefetchProjection = value.selectedBindingId !== null && !(value.accountType === 'consultant' &&
-            !cycle.openSelection && (cycle.forcePortfolio || !currentRoute()));
+            !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations'));
+        // The Cyber Security module read starts as soon as the projection lists
+        // that module as ready, without waiting for the directory. The fixed
+        // protected assets still wait for both reads and the route decision,
+        // and nothing mounts before the closing session witness.
+        const early = prefetchProjection ? {} : null;
+        const listed = directory(cycle, value, [], null);
+        if (early) {
+            early.projection = request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess);
+            early.cyber = early.projection.then(function (projection) {
+                return current(cycle) && cyberListedReady(projection)
+                    ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess) : null;
+            });
+            [early.projection, early.cyber, listed].forEach(function (work) { work.catch(function () {}); });
+        }
         // Both reads depend only on this fresh session. Reconciliation failure
         // disposes the cycle and cancels siblings; neither response admits the protected shell.
-        const middle = prefetchProjection ? await Promise.all([
-            directory(cycle, value, [], null),
-            request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess)
-        ]) : [await directory(cycle, value, [], null)];
+        const middle = early ? await Promise.all([listed, early.projection]) : [await listed];
         if (!current(cycle)) return;
-        if (value.selectedBindingId === null || value.accountType === 'consultant' && !cycle.openSelection && (cycle.forcePortfolio || !currentRoute())) { cycle.busy = false; show(cycle, 'selection'); return; }
+        if (value.selectedBindingId === null || value.accountType === 'consultant' && !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations')) {
+            if (resumeLastOrganisation(cycle, value)) return;
+            cycle.busy = false; show(cycle, 'selection'); return;
+        }
         // Navigation may change while directory reads are pending. Keep the
         // existing final route decision and fetch if it now opens an organisation.
         const projection = prefetchProjection ? middle[1] :
             requireSuccess(await request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation));
         if (!current(cycle)) return;
-        await assets(cycle);
+        // These generation-bound reads are independent. Wait for both before
+        // validating or mounting; the final session witness still gates display.
+        const prefetchCyber = cyberListedReady(projection);
+        loadingStage(cycle, OPENING_MESSAGE, OPENING_DETAIL);
+        const prepared = await Promise.all([assets(cycle), early ? early.cyber : prefetchCyber
+            ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess)
+            : Promise.resolve(null)]);
         if (!current(cycle)) return;
         const factory = window.NoFriesDashboard;
         if (!factory || typeof factory.validate !== 'function' || typeof factory.mount !== 'function') throw invalid();
@@ -473,10 +674,11 @@
         if (model.admissionGranted !== false || model.providerAccessGranted !== false) throw invalid();
         cycle.selectedOrganisationName = model.context.displayName;
         const cyberReady = model.modules.some(function (item) { return item.key === 'cyber_security' && item.state === 'ready'; });
-        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId) : null;
+        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1]) : null;
         const improvementReady = model.modules.some(function (item) { return item.key === 'improvement_plan' && item.state === 'ready'; });
-        const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId) : null;
-        const fresh = await readSession(cycle);
+        const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId, cyber) : null;
+        const witnessed = await sessionForReconcile(cycle, OPENING_MESSAGE, OPENING_DETAIL);
+        const fresh = session(requireSuccess(witnessed));
         if (!current(cycle)) return;
         if (!sameSession(value, fresh)) {
             if (transitions >= MAX_RECONCILIATIONS) throw invalid();
@@ -495,8 +697,11 @@
         cycle.improvement = !!improvement;
         cycle.displayContract = displayContract(model);
         controller = factory.mount(elements.app, model, { window: window, initialRoute: currentRoute(),
+            ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
+            ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
+            ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}) });
         if (!controller || typeof controller.destroy !== 'function') throw invalid();
         elements.app.hidden = false;
@@ -537,11 +742,33 @@
                         state.remaining > Number.MAX_SAFE_INTEGER - state.clients.length)) throw invalid();
             const ids = new Set();
             state.clients.forEach(function (client) {
-                if (!fields(client, ['requestId','organisationName','status']) || !UUID.test(client.requestId) || !validLabel(client.organisationName) ||
+                // discardable is sent only when the server can discard drafts (#151).
+                const discard = Object.prototype.hasOwnProperty.call(client, 'discardable');
+                if (!fields(client, ['requestId','organisationName','status'].concat(discard ? ['discardable'] : [])) || !UUID.test(client.requestId) ||
+                    !validLabel(client.organisationName) || discard && typeof client.discardable !== 'boolean' ||
                     !['ready','pending','details_required'].includes(client.status) || ids.has(client.requestId)) throw invalid();
                 ids.add(client.requestId);
             });
             return state.clients;
+        }
+        const REFUSALS = { starter_client_limit: 'All client slots are in use, so this client was not set up. You can discard drafts you no longer need.',
+            starter_client_discarded: 'This draft has been discarded.', starter_client_not_draft: 'This organisation is not a draft, so it was not discarded.' };
+        // Discard asks once more in the row itself before sending anything.
+        function discardAction(row, client) {
+            const discard = button('Discard draft', function () {
+                if (!available()) return;
+                const question = element('p', 'Discard this draft? It will be removed from your list. This cannot be undone.');
+                question.className = 'client-discard-confirm';
+                // Unsent details in an open form are guarded exactly as Resume and Cancel do.
+                const yes = button('Yes, discard draft', function () {
+                    if (available() && confirmClientDiscard(cycle)) run({ action: 'discard', requestId: client.requestId });
+                });
+                const keep = button('Keep draft', function () { question.remove(); yes.remove(); keep.remove(); discard.hidden = false; discard.focus(); });
+                yes.setAttribute('aria-label', 'Yes, discard draft: ' + client.organisationName);
+                discard.hidden = true; row.append(question, yes, keep); keep.focus();
+            });
+            discard.setAttribute('aria-label', 'Discard draft: ' + client.organisationName);
+            return discard;
         }
         function hideSavedActions() {
             elements.choices.querySelectorAll('.client-workspace-row').forEach(function (row) {
@@ -592,15 +819,16 @@
                 submitted = !!body;
                 const selectedCursor = cursor === undefined ? listCursor : cursor;
                 let result = await request(cycle, '/api/customer-signup/clients' +
-                    (!body && selectedCursor ? '?cursor=' + encodeURIComponent(selectedCursor) : ''), body, undefined, csrf);
+                    (!body && selectedCursor ? '?cursor=' + encodeURIComponent(selectedCursor) : ''), body, undefined, csrf), refusal = null;
                 if (!current(cycle)) return;
                 if (result.status === 409 && fields(result.value, ['code']) &&
-                    ['starter_client_limit', 'starter_details_locked'].includes(result.value.code)) {
+                    ['starter_client_limit', 'starter_details_locked', 'starter_client_discarded', 'starter_client_not_draft'].includes(result.value.code)) {
                     // These closed responses definitively reject this command.
                     // Reconcile with GET; never repeat it or restore its form.
                     pending = null; captureForm = null; cycle.clientDraft = null;
                     listCursor = null;
                     content.replaceChildren(); status.textContent = 'Client setup changed. Checking your current client organisations…';
+                    refusal = REFUSALS[result.value.code] || null;
                     result = await request(cycle, '/api/customer-signup/clients', undefined, undefined, csrf);
                 }
                 const response = envelope(result);
@@ -612,6 +840,9 @@
                     listCursor = selectedCursor;
                 }
                 csrf = response.csrfToken; render(response.state, body && body.requestId);
+                // A new client setup is now a saved draft: say so before the terms.
+                if (body?.action === 'create' && response.state?.status === 'terms') status.textContent = 'Draft saved. Two steps left before this client dashboard is created.';
+                if (refusal) status.textContent = refusal;
                 if (!body && cursor !== undefined) {
                     const firstRow = Array.from(elements.choices.children).find(function (row) {
                         return row.classList.contains('client-workspace-row') && !row.hidden && row.querySelector('button');
@@ -629,13 +860,20 @@
                     filterDirectory(cycle);
                 }
                 if (error.status === 401) {
+                    const adding = !body || body.action === 'create';
                     const confirmation = element('h3', 'Confirm your sign-in to continue'); confirmation.tabIndex = -1; content.append(confirmation);
                     status.textContent = body?.action === 'accept'
                         ? submitted ? 'Acceptance is not confirmed. Sign in again, then check the same saved client before accepting again.'
                             : 'This attempt has not submitted acceptance. Sign in again, then open the same saved client to check its status and continue.'
+                        : adding ? 'Adding an organisation needs a fresh sign-in to protect your account.'
                         : 'Sign in again to confirm your identity before setting up clients. Open the saved client afterwards to check its recorded progress.';
+                    content.append(element('p', adding
+                        ? 'After you sign in, you come back to this step to add the organisation.'
+                        : 'You will be asked to sign in again. Afterwards you come back to your organisations to resume this step.'));
                     const link = element('a', 'Sign in again to continue');
-                    link.href = customerReauthentication; link.className = 'client-action client-action-primary'; content.append(link);
+                    link.href = customerReauthentication; link.className = 'client-action client-action-primary';
+                    if (adding) link.addEventListener('click', rememberAddOrganisation);
+                    content.append(link);
                     confirmation.focus();
                     return;
                 }
@@ -713,12 +951,13 @@
                 if (readOnly) csrf = null;
                 heading.textContent = readOnly ? 'Saved organisation setups' : 'Add organisation';
                 unlimitedList = state.remaining === null;
-                content.append(element('p', 'Organisations added here share your account’s original access period.'));
                 // Only the directory grants ready workspaces. Saved setup
                 // records contribute incomplete rows to the same list.
                 elements.choices.querySelectorAll('.client-workspace-row').forEach(function (row) { row.remove(); });
                 elements.choices.querySelectorAll('.consultant-organisation-empty').forEach(function (row) { row.remove(); });
                 let incomplete = 0;
+                const slotRule = clients.some(function (client) { return Object.prototype.hasOwnProperty.call(client, 'discardable'); })
+                    ? ' A slot is used when a client’s terms are accepted. Drafts do not use one. You can add up to 12 client organisations in total, including discarded drafts.' : '';
                 clientNames.clear();
                 clients.forEach(function (client) {
                     clientNames.set(client.requestId, client.organisationName);
@@ -726,14 +965,16 @@
                     incomplete += 1;
                     const row = element('div'); row.className = 'client-workspace-row';
                     row.dataset.requestId = client.requestId;
-                    row.append(element('h3', client.organisationName), element('p', client.status === 'details_required' ? 'Client details needed' : 'Setup saved · check terms and completion status'));
+                    row.append(element('h3', client.organisationName), element('p', 'Draft, not yet set up · ' +
+                        (client.status === 'details_required' ? 'client details needed' : 'check terms and completion status')));
                     let action;
-                    if (!readOnly && client.status === 'details_required') action = button('Continue details', function () { if (available()) form(client); });
-                    if (!readOnly && client.status === 'pending') action = button('Continue setup', function () {
+                    if (!readOnly && client.status === 'details_required') action = button('Resume', function () { if (available()) form(client); });
+                    if (!readOnly && client.status === 'pending') action = button('Resume', function () {
                         if (!available() || !confirmClientDiscard(cycle)) return;
                         run({ action: 'resume', requestId: client.requestId });
                     });
-                    if (action) { action.setAttribute('aria-label', (client.status === 'pending' ? 'Continue setup: ' : 'Continue details: ') + client.organisationName); row.append(action); }
+                    if (action) { action.setAttribute('aria-label', (client.status === 'pending' ? 'Resume setup: ' : 'Resume details: ') + client.organisationName); row.append(action); }
+                    if (!readOnly && client.discardable === true) row.append(discardAction(row, client));
                     elements.choices.append(row);
                 });
                 if (!cycle.directoryRows?.length && !incomplete) {
@@ -745,10 +986,10 @@
                 if (readOnly) content.append(element('p', 'Your saved organisation setups have been kept. Further setup steps are currently unavailable.'));
                 else if (unlimitedList || state.remaining > 0) {
                     content.append(element('p', unlimitedList ? 'There is no product limit on the number of organisations you can manage. Each organisation needs its own authorised access and agreed scope.'
-                        : state.remaining + (state.remaining === 1 ? ' client slot remains.' : ' client slots remain.')));
+                        : state.remaining + (state.remaining === 1 ? ' client slot remains.' : ' client slots remain.') + slotRule));
                     const add = button('Add organisation', function () { if (available()) form(); });
                     add.classList.add('client-action-primary'); content.append(add);
-                } else content.append(element('p', 'No client slots remain.'));
+                } else content.append(element('p', 'No client slots remain.' + slotRule));
                 if (unlimitedList && state.nextCursor !== null) content.append(button('More saved setups', function () { run(undefined, state.nextCursor); }));
                 if (unlimitedList && listCursor !== null) content.append(button('First saved setups', function () { run(undefined, null); }));
                 // A routine focus/cache refresh retains inputs or the exact
@@ -770,7 +1011,7 @@
                     const existing = state.clients.find(function (client) { return client.requestId === draft.requestId; });
                     if (draft.existing ? existing?.status === 'details_required' && existing.organisationName === draft.values.organisationName
                         : !existing && (unlimitedList || state.remaining > 0)) form(existing, draft);
-                }
+                } else if (takeAddOrganisationReturn() && !readOnly && (unlimitedList || state.remaining > 0)) form();
             } else if (state?.status === 'setup_read_only' && fields(state, ['status'])) {
                 writesClosed = true; csrf = null; heading.textContent = 'Saved organisation setups';
                 pending = null; cycle.clientDraft = null;
@@ -780,7 +1021,12 @@
             } else if (state?.status === 'terms' && typeof state.termsText === 'string' && typeof state.scheduleText === 'string' &&
                 DIGEST.test(state.termsDigest) && DIGEST.test(state.scheduleDigest) && typeof state.scheduleId === 'string' && UUID.test(responseRequestId)) {
                 content.append(element('h3', 'Review the schedule and terms for ' + (clientNames.get(responseRequestId) || 'this client')));
-                content.append(element('p', 'This client setup is saved. Acceptance has not been confirmed. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.'));
+                content.append(element('p', 'This client setup is saved as a draft. Acceptance has not been confirmed, so the client dashboard is not created yet.'));
+                const steps = element('ol'); steps.className = 'client-draft-steps';
+                steps.append(element('li', 'Read the client schedule and dashboard terms below.'),
+                    element('li', 'Tick that you accept them, then choose Accept and create client dashboard. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.'));
+                content.append(element('p', 'Steps left:'), steps,
+                    element('p', 'If you leave now, the draft stays in your organisation list as “Draft, not yet set up”. Choose Resume to return to it.'));
                 const schedule = element('section'); schedule.className = 'client-terms-section';
                 const scheduleHeading = element('h4', 'Client schedule'); scheduleHeading.id = 'clientScheduleHeading';
                 schedule.setAttribute('aria-labelledby', scheduleHeading.id);
@@ -817,6 +1063,15 @@
         // its current turn; every response remains bound to this same cycle.
         Promise.resolve().then(function () { if (current(cycle)) run(); });
     }
+    function openOrganisations(cycle) {
+        if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved) return Promise.resolve(false);
+        return leave(cycle, function () {
+            lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
+            window.history.replaceState(null, '', '#organisations');
+            const next = begin(); next.forcePortfolio = true;
+            reconcile(next, 0, false).catch(function (error) { failure(next, error); });
+        });
+    }
     function portfolioControls(cycle) {
         if (!portfolioButton) {
             portfolioButton = document.createElement('button');
@@ -829,18 +1084,13 @@
         }
         portfolioButton.hidden = false;
         portfolioButton.onclick = function () {
-            if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved) return;
-            leave(cycle, function () {
-                window.history.replaceState(null, '', '#organisations');
-                const next = begin(); next.forcePortfolio = true;
-                reconcile(next, 0, false).catch(function (error) { failure(next, error); });
-            });
+            return openOrganisations(cycle);
         };
     }
     function consultantNavigation(cycle, state) {
         if (portfolioNavigation) portfolioNavigation.remove();
         const nav = document.createElement('nav'); nav.className = 'consultant-navigation';
-        nav.setAttribute('aria-label', 'Consultant workspace');
+        nav.setAttribute('aria-label', 'Consultant Dashboard');
         const items = [['Organisations', '#organisations', state === 'selection']];
         if (cycle.session.workQueueAvailable === true) items.push(['Work queue', '#work-queue', state === 'queue']);
         items.forEach(function (item) {
@@ -849,6 +1099,7 @@
             button.addEventListener('click', function () {
                 if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved || item[2]) return;
                 leave(cycle, function () {
+                    lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
                     window.history.replaceState(null, '', item[1]);
                     const next = begin(); next.forcePortfolio = true;
                     next.workQueueFilters = cycle.workQueueFilters;
@@ -1074,8 +1325,8 @@
         show(cycle, 'queue');
         load(null, false);
     }
-    async function cyberOptions(cycle, snapshot, organisationId) {
-        const value = requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
+    async function cyberOptions(cycle, snapshot, organisationId, preparedValue) {
+        const value = preparedValue || requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
         if (!current(cycle)) throw invalid();
         const contract = cyberContract(value);
         if (value.context?.organisationId !== organisationId) throw invalid();
@@ -1096,12 +1347,95 @@
                 const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
             }
             return result;
+        }, onAccepted: function () {
+            // Only after the client has read and validated the body: a 2xx
+            // whose body then stalls, is cut short or is invalid moves nothing.
+            informationRead(cycle);
         } });
         const mountCyber = function (root, presentation) {
             if (!current(cycle)) throw invalid();
             return questionnaire.mount(root, { window: window, metadata: value.metadata, client: client,
                 presentationMode: value.presentationMode, organisationId: organisationId,
-                initialAssessmentId: presentation && presentation.initialAssessmentId });
+                initialAssessmentId: presentation && presentation.initialAssessmentId,
+                initialQuestionIndex: presentation && presentation.initialQuestionIndex,
+                onLocation: presentation && presentation.onLocation,
+                // Overview's first-use action opens the new-assessment step directly.
+                startNew: !!(presentation && presentation.startNew === true) });
+        };
+        mountCyber.readBaseline = async function () {
+            if (!current(cycle) || cycle.authorityPending) throw invalid();
+            // The list is ordered by assessment id and a page can be shorter than
+            // the requested limit. Keep following the cursor before saying that
+            // no submitted baseline exists. Stop after a few pages and say the
+            // check is incomplete rather than inventing an empty result.
+            let after = null, submitted = null, draft = null, complete = false;
+            for (let page = 0; page < 4; page += 1) {
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                // A null prototype satisfies the assessment client's plain-object
+                // check in the browser and in the loader test realm.
+                const query = Object.create(null);
+                query.limit = 50;
+                if (after !== null) query.afterAssessmentId = after;
+                const listed = await client.list(query);
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                const rows = Array.isArray(listed.assessments) ? listed.assessments : [];
+                rows.forEach(function (row) {
+                    if (row.status === 'submitted') {
+                        if (!submitted || row.updatedAt > submitted.updatedAt) submitted = row;
+                    } else if (!draft || row.updatedAt > draft.updatedAt) draft = row;
+                });
+                const next = listed.nextAfterAssessmentId;
+                if (next === null) { complete = true; break; }
+                if (typeof next !== 'string' || next === after) throw invalid();
+                after = next;
+            }
+            return {
+                submittedId: submitted ? submitted.assessmentId : null,
+                draftId: complete && !submitted && draft ? draft.assessmentId : null,
+                complete: complete
+            };
+        };
+        // Plain topic titles let the Improvement Plan name actions in words.
+        mountCyber.controlTitles = Object.assign(Object.create(null), Object.fromEntries(value.metadata.controls.map(function (control) {
+            return [control.id, control.title];
+        })));
+        // Each question's concrete follow-up, worded as on the results page, so a
+        // plan gap names the actual work (F1-R10). Plan actions are per question,
+        // so this is keyed by question id, not control. Display only.
+        mountCyber.itemFollowUps = Object.create(null);
+        value.metadata.questions.forEach(function (question) {
+            const followUp = question.smallBusiness && question.smallBusiness.checks.join(' ') ||
+                question.guidance && question.guidance.startingActions && question.guidance.startingActions[0];
+            if (typeof followUp === 'string' && followUp.trim() && followUp.length <= 1000) {
+                mountCyber.itemFollowUps[question.id] = followUp;
+            }
+        });
+        // The Improvement Plan's empty state offers the latest submitted
+        // assessment. This reads the same validated, bounded list as Overview.
+        mountCyber.latestSubmitted = async function () {
+            // Plain null-prototype records: both bounded clients accept them.
+            const plain = function (value) { return Object.assign(Object.create(null), value); };
+            // The list is ordered by assessment id, not by date, so the latest
+            // submitted one is only known once every page has been read. A very
+            // large safety bound stops a runaway cursor; reaching it means the
+            // answer is unknown (the plan tab says it could not check), never
+            // "none" and never an older assessment presented as the latest.
+            let after = null, latest = null, complete = false;
+            for (let pageCount = 0; pageCount < 100; pageCount++) {
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                const listed = await client.list(plain(after === null ? { limit: 100 } : { limit: 100, afterAssessmentId: after }));
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                listed.assessments.forEach(function (row) {
+                    if (row.status === 'submitted' && (!latest || row.updatedAt > latest.updatedAt)) latest = row;
+                });
+                const nextAfter = listed.nextAfterAssessmentId;
+                if (nextAfter === null) { complete = true; break; }
+                if (typeof nextAfter !== 'string' || nextAfter === after) throw invalid();
+                after = nextAfter;
+            }
+            if (!complete || !current(cycle) || cycle.authorityPending) throw invalid();
+            return latest && plain({ assessmentId: latest.assessmentId, revision: latest.revision, revisionSha256: latest.revisionSha256,
+                profileRef: plain(latest.profileRef), submittedAt: latest.updatedAt });
         };
         const picture = window.NoFriesOrganisationPicture;
         let pictureSelection = null;
@@ -1110,18 +1444,48 @@
                 if (!current(cycle)) throw invalid();
                 return picture.mount(root, { metadata: value.metadata, client: client, organisationId: organisationId,
                     displayName: presentation.displayName,
-                    initialAssessmentId: pictureSelection,
-                    onSelection: function (assessmentId) { if (current(cycle)) pictureSelection = assessmentId; },
+                    ...(pictureSelection ? { initialAssessmentId: pictureSelection } : {}),
+                    onSelection: function (assessmentId, source) {
+                        if (current(cycle) && source === 'user') pictureSelection = assessmentId;
+                    },
                     openCyber: presentation.openCyber,
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
                         return presentation.openImprovement(sourceAssessment);
-                    } } : {}) });
+                    } } : {}),
+                    ...(typeof presentation.openImprovement === 'function' ? { planGap: function (sourceAssessment, itemId, stillCurrent) {
+                        return openGapPlan(cycle, snapshot, presentation, sourceAssessment, itemId, stillCurrent);
+                    } } : {}),
+                    ...(typeof presentation.openImprovement === 'function' && cycle.improvement
+                        ? { readActions: function () { return improvementActions(cycle, snapshot); } } : {}) });
             };
         }
         return mountCyber;
     }
-    function improvementOptions(cycle, snapshot, organisationId) {
+    // Overview's Actions card. Reads only the existing plan index and list
+    // routes; any failure leaves the card absent and the rest of Overview intact.
+    async function improvementActions(cycle, snapshot) {
+        const read = async function (path) {
+            if (!current(cycle) || cycle.authorityPending) throw invalid();
+            const value = requireSuccess(await request(cycle, path, undefined, snapshot.generation));
+            if (!current(cycle) || cycle.authorityPending) throw invalid();
+            return value;
+        };
+        const page = await read('/api/dashboard/improvement/plans?limit=' + ACTION_PLAN_LIMIT);
+        if (!page || !Array.isArray(page.plans) || page.plans.length > ACTION_PLAN_LIMIT) throw invalid();
+        const lists = await Promise.all(page.plans.map(function (plan) {
+            if (!plan || typeof plan.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(plan.planId)) throw invalid();
+            return read('/api/dashboard/improvement/list?planId=' + encodeURIComponent(plan.planId));
+        }));
+        const result = { lists: lists, more: page.nextAfterPlanId !== null };
+        // Advance "Information as at" only when the Actions card will accept
+        // every list it was given; an invalid list leaves the time unchanged.
+        const picture = window.NoFriesOrganisationPicture;
+        if (current(cycle) && !cycle.authorityPending && picture && typeof picture.actionSummary === 'function' &&
+            picture.actionSummary(result) !== null) informationRead(cycle);
+        return result;
+    }
+    function improvementOptions(cycle, snapshot, organisationId, cyber) {
         const factory = window.NoFriesImprovementActionPlanClient;
         if (!factory || typeof factory.mount !== 'function') throw invalid();
         return function (root, presentation) {
@@ -1132,6 +1496,9 @@
                     ? { initialTarget: { planId: cycle.workQueueTarget.planId, actionId: cycle.workQueueTarget.actionId,
                         planRevision: cycle.workQueueTarget.planRevision } } : {}),
                 sourceAssessment: presentation && presentation.sourceAssessment,
+                ...(cyber && cyber.controlTitles ? { controlTitles: cyber.controlTitles } : {}),
+                ...(cyber && cyber.itemFollowUps ? { itemFollowUps: cyber.itemFollowUps } : {}),
+                ...(cyber && typeof cyber.latestSubmitted === 'function' ? { latestSource: cyber.latestSubmitted } : {}),
                 newId: secureId,
                 isCurrent: function () { return current(cycle) && !cycle.authorityPending; },
                 request: async function (path, body) {
@@ -1144,11 +1511,59 @@
                         const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
                     }
                     return result;
-                }
+                },
+                // Only after the plan client has validated the response.
+                onAccepted: function () { informationRead(cycle); }
             });
             cycle.workQueueTarget = null;
             return result;
         };
+    }
+    // Overview "Plan this": open the improvement editor at one gap's action.
+    // The plan and generate operation IDs derive from the submitted revision
+    // digest, so a repeat or concurrent create replays through the existing
+    // generate idempotency instead of making a second plan for that revision.
+    async function openGapPlan(cycle, snapshot, presentation, source, itemId, stillCurrent) {
+        const live = function () { return current(cycle) && !cycle.authorityPending; };
+        // The Overview selection can change while this runs. Stop silently,
+        // before creating or opening, once the clicked selection is stale.
+        const selected = function () { return live() && typeof stillCurrent === 'function' && stillCurrent() === true; };
+        if (!selected() || !source || typeof itemId !== 'string' || typeof source.revisionSha256 !== 'string' ||
+            !/^[a-f0-9]{64}$/.test(source.revisionSha256)) return false;
+        const planId = 'overview-plan-' + source.revisionSha256;
+        async function send(path, body) {
+            const result = await request(cycle, path, body, snapshot.generation);
+            if (!live()) throw invalid();
+            if (result.status === 401) { const error = invalid(); error.status = 401; failure(cycle, error); throw error; }
+            return result;
+        }
+        function view() { return send('/api/dashboard/improvement/view?planId=' + encodeURIComponent(planId)); }
+        let target = null, opened = false;
+        try {
+            let result = await view();
+            if (result.status === 404) {
+                if (!selected()) return false;
+                const created = await send('/api/dashboard/improvement/execute', { planId: planId, type: 'generate',
+                    operationId: 'overview-plan-generate-' + source.revisionSha256, expectedRevision: null, actionId: null,
+                    payload: { assessmentId: source.assessmentId, assessmentRevision: source.revision,
+                        assessmentRevisionSha256: source.revisionSha256 } });
+                // 409 can mean another session created it meanwhile: read it again.
+                if (created.status !== 200 && created.status !== 409) return false;
+                result = await view();
+            }
+            const value = result.value;
+            if (result.status !== 200 || !value || !value.scope || value.scope.planId !== planId || !value.source ||
+                value.source.assessmentId !== source.assessmentId || value.source.evaluationOutputSha256 !== source.outputSha256 ||
+                !Number.isSafeInteger(value.planRevision) || !Array.isArray(value.actions)) return false;
+            const action = value.actions.find(function (row) { return row && row.itemId === itemId; });
+            if (!action || typeof action.actionId !== 'string' || !selected()) return false;
+            target = Object.freeze({ bindingId: snapshot.selectedBindingId, planId: planId, actionId: action.actionId,
+                planRevision: value.planRevision });
+            cycle.workQueueTarget = target;
+            opened = await presentation.openImprovement(source) === true;
+        } catch (_) { opened = false; }
+        if (!opened && target && cycle.workQueueTarget === target) cycle.workQueueTarget = null;
+        return opened;
     }
     function cyberContract(value) {
         if (!fields(value, ['schemaVersion', 'context', 'generatedAt', 'module', 'summary', 'services',
@@ -1176,14 +1591,17 @@
             const destination = link.getAttribute('href');
             if (!destination) return;
             if (linkExit) { event.preventDefault(); return; }
+            // Signing in with another account must not reopen this account's last organisation.
+            const switching = link === accountSwitch;
             const cycle = active;
-            if (!current(cycle) || !controller && !clientDraft(cycle)) return;
+            if (!current(cycle) || !controller && !clientDraft(cycle)) { if (switching) forgetLastOrganisation(); return; }
             event.preventDefault();
             if (cycle.busy || cycle.authorityPending || unresolved) return;
             const exit = { cycle: cycle, committed: false };
             linkExit = exit;
             Promise.resolve(leave(cycle, function () {
                 exit.committed = true;
+                if (switching) forgetLastOrganisation();
                 dispose(cycle);
                 clearContent();
                 window.location.assign(destination);
@@ -1253,7 +1671,9 @@
                 button.addEventListener('click', function () {
                     if (!current(cycle) || cycle.busy || cycle.authorityPending || unresolved || blockPendingClientNavigation(cycle)) return;
                     leave(cycle, function () {
+                        lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
                         const next = begin();
+                        elements.status.textContent = 'Opening ' + binding.organisationLabel + '…';
                         try {
                             const pending = command('selection', { bindingId: binding.bindingId, expectedGeneration: value.generation, operationId: secureId() });
                             execute(next, pending).catch(function (error) { failure(next, error); });
@@ -1266,7 +1686,7 @@
                 // Discovery retains bindings even when current membership denies
                 // access. Selection and resource reads establish current access.
                 button.className = 'consultant-organisation-ready';
-                button.setAttribute('aria-label', binding.organisationLabel + ' · Open to check access');
+                button.setAttribute('aria-label', binding.organisationLabel + ' · Open organisation');
             }
             button.setAttribute('aria-pressed', String(binding.bindingId === value.selectedBindingId));
             return button;
@@ -1384,6 +1804,7 @@
     elements.signOut.addEventListener('click', function () {
         if (!active || active.busy || active.authorityPending || unresolved || blockPendingClientNavigation(active)) return;
         leave(active, function () {
+            rememberReturnRoute();
             const cycle = begin();
             const pending = command('logout', {});
             execute(cycle, pending).catch(function (error) { failure(cycle, error); });
@@ -1456,6 +1877,7 @@
             if (!sameSession(fresh, confirmed)) { restore(); return; }
             remember(cycle, confirmed);
             renderDirectory(cycle, confirmed, middle[0].rows, middle[0].nextAfterBindingId, middle[0].pageCount);
+            informationRead(cycle);
             elements.status.textContent = previousStatus;
             delete elements.status.dataset.accessWarning;
             elements.retry.hidden = true;

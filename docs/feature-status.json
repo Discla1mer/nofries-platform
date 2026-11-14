@@ -1,0 +1,83 @@
+{
+  "description": "What the public site may present as available. Only live capabilities may be described as available on index.html, in the Live section of roadmap.html or in the free plan on pricing.html. test/publicFeatureStatus.test.js enforces this.",
+  "statuses": ["live", "coming-next", "planned"],
+  "capabilities": [
+    {
+      "id": "company-account",
+      "name": "Company account creation and sign-in",
+      "status": "live",
+      "knowledgeKey": "accountEntry"
+    },
+    {
+      "id": "ncsc-assessment",
+      "name": "NCSC-aligned assessment with save and resume",
+      "status": "live",
+      "knowledgeKey": "assessmentProgress"
+    },
+    {
+      "id": "ncsc-results",
+      "name": "Results comparing answers with NCSC guidance",
+      "status": "live",
+      "knowledgeKey": "savedResults"
+    },
+    {
+      "id": "shareable-summary",
+      "name": "Shareable summary",
+      "status": "live"
+    },
+    {
+      "id": "change-over-time",
+      "name": "Change over time between submitted assessments",
+      "status": "live"
+    },
+    {
+      "id": "priority-ordering",
+      "name": "Risk-based priority ordering of gaps",
+      "status": "coming-next",
+      "availabilityClaims": ["needs? attention", "what to fix first", "fix (?:these|this|it) first", "prioriti[sz]", "where to focus", "risk rank"]
+    },
+    {
+      "id": "improvement-plan",
+      "name": "Improvement plan with owners and due dates",
+      "status": "live",
+      "roadmapTitle": "Improvement actions",
+      "availabilityClaims": ["improvement plans?", "action plans?", "plan the way forward", "start improving", "track (?:your )?(?:improvements|remediation)"]
+    },
+    {
+      "id": "edit-submitted-answers",
+      "name": "Edit a submitted assessment and refresh scores",
+      "status": "coming-next",
+      "roadmapTitle": "Update submitted answers",
+      "availabilityClaims": ["edit (?:a |your )?submitted"]
+    },
+    {
+      "id": "evidence-and-board-reports",
+      "name": "Evidence uploads and downloadable board reports",
+      "status": "coming-next",
+      "roadmapTitle": "Evidence and board reporting",
+      "knowledgeKey": "futureDashboard",
+      "availabilityClaims": ["upload (?:your )?evidence", "evidence uploads?", "board reports?", "download (?:a |your )?report"]
+    },
+    {
+      "id": "connected-evidence",
+      "name": "Connected data feeds and continuous checks",
+      "status": "planned",
+      "roadmapTitle": "Connected evidence and continuous checks",
+      "availabilityClaims": ["in real time", "continuous monitoring", "automatically updated", "connected data"]
+    },
+    {
+      "id": "other-frameworks",
+      "name": "Other assessment frameworks (NIST CSF, CIS, ISO 27001, Essential Eight)",
+      "status": "planned",
+      "roadmapTitle": "Separate assessment types",
+      "availabilityClaims": ["NIST", "ISO 27001", "Essential Eight", "SOC 2"]
+    },
+    {
+      "id": "ai-governance",
+      "name": "AI governance and IT optimisation",
+      "status": "planned",
+      "roadmapTitle": "AI governance and IT optimisation",
+      "availabilityClaims": ["AI governance", "IT optimisation"]
+    }
+  ]
+}

@@ -31,7 +31,7 @@ async function openCyber(page) {
     await page.locator('.ncsc-assessment-list button').first().waitFor();
 }
 async function jump(page, index) {
-    const control = page.getByRole('button', { name: 'Next unresolved question', exact: true });
+    const control = page.getByRole('button', { name: 'Next question still to confirm', exact: true });
     await control.focus(); await page.keyboard.press('Enter');
     assert.equal(await page.locator('#ncsc-question-index').inputValue(), String(index));
     const legend = page.locator('.ncsc-question legend');
@@ -111,6 +111,7 @@ async function screenshot(page, name, selector = '.ncsc-questionnaire') {
             await openCyber(page); await rows.nth(1).locator('button').click();
             await page.getByRole('button', { name: 'Review and submit', exact: true }).click();
             await page.getByRole('button', { name: 'Save and submit assessment', exact: true }).click();
+            await page.getByRole('button', { name: 'Submit', exact: true }).click();
             await page.locator('.ncsc-sealed').waitFor();
             await jump(page, 1); // Submitted Unknown answers remain available read-only.
             assert.equal(await page.getByRole('button', { name: 'Save progress', exact: true }).count(), 0);
@@ -119,7 +120,7 @@ async function screenshot(page, name, selector = '.ncsc-questionnaire') {
             await page.getByRole('button', { name: 'Back to assessments', exact: true }).click();
             await page.getByRole('button', { name: 'Load more assessments', exact: true }).click();
             await rows.nth(2).locator('button').click();
-            assert.equal(await page.getByRole('button', { name: 'Next unresolved question', exact: true }).isDisabled(), true);
+            assert.equal(await page.getByRole('button', { name: 'Next question still to confirm', exact: true }).isDisabled(), true);
             await layout(page);
             assert.deepEqual(await page.evaluate(() => window.violations), []);
             results.push({ width, savedReferences: true, keyboardDraftAndSubmittedNavigation: true,

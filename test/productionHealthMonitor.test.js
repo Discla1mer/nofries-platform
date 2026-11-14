@@ -4,14 +4,11 @@ const fs = require('node:fs');
 const { EventEmitter } = require('node:events');
 const { PATHS, checkHealth, request, run, main, formatReport, smokeReport } = require('../scripts/production-health-monitor');
 const { buildSignupDocument, buildHostedSignupDocument, buildSignupUnavailableDocument } = require('../lib/signupDocument');
-const { withHashBoundSharedAssistantDocument } = require('../lib/withHashBoundSharedAssistantDocument');
 const sources = { clientSource: fs.readFileSync(require.resolve('../api/shared/customerSignup/signupClient.js'), 'utf8'),
     journeySource: fs.readFileSync(require.resolve('../api/shared/customerSignup/signupJourney.js'), 'utf8') };
 const legacyDocument = buildSignupDocument({ ...sources, customerLogin: true }).html;
 const externalDocument = buildSignupDocument({ ...sources, customerLogin: true, customerTransport: 'external' }).html;
-const hostedDocument = withHashBoundSharedAssistantDocument(buildHostedSignupDocument(sources), {
-    prospectSource: fs.readFileSync(require.resolve('../js/prospect-assistant.js'), 'utf8'),
-    sharedSource: fs.readFileSync(require.resolve('../js/shared-assistant.js'), 'utf8') }).html;
+const hostedDocument = buildHostedSignupDocument(sources).html;
 const NOW = Date.parse('2026-11-05T00:00:00Z');
 const validTo = new Date(NOW + 60 * 86400000).toUTCString();
 const env = { NOFRIES_MONITOR_ENABLED: 'true', NOFRIES_MONITOR_ALERT_WEBHOOK: 'https://alerts.invalid/path?token=canary' };

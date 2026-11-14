@@ -95,9 +95,13 @@ test('command and selector envelopes are closed at every nested boundary', () =>
         command('start', { ownerSubjectKey: OWNER }), command('block', { reason: 'Blocked.', admin: true }),
         command('complete', { note: 'Done.' }), command('reopen', { reason: 'Again.', at: NOW }),
         command('assign', { ownerSubjectKey: OWNER, dueDate: '2026-02-30' }),
-        command('assign', { ownerSubjectKey: 'untrusted-user', dueDate: '2026-10-01' })]) {
+        command('assign', { ownerSubjectKey: 'untrusted-user', dueDate: '2026-10-01' }),
+        command('assign', { ownerLabel: 'ops@example.invalid', dueDate: '2026-10-01' }),
+        command('assign', { ownerLabel: 'Ops', ownerSubjectKey: OWNER, dueDate: '2026-10-01' })]) {
         expectInputInvalid(() => normaliseImprovementCommand(input));
     }
+    expect(normaliseImprovementCommand(command('assign', { ownerLabel: ' Ops\nlead ', dueDate: '2026-10-01' })).payload)
+        .toEqual({ ownerLabel: 'Ops lead', dueDate: '2026-10-01' });
     for (const key of Object.keys(generate())) {
         const input = generate(); delete input[key];
         expectInputInvalid(() => normaliseImprovementCommand(input));
@@ -249,17 +253,15 @@ test('access uses existing improvement roles and Score entitlement without requi
     expectDenied(() => resolveImprovementAccess(authority(), context, 'assessment.write', NOW));
 });
 
-test.each(['suspended', 'removed', 'expired', 'foreign-tenant', 'foreign-organisation', 'past-context',
-    'product-revoked', 'product-expired', 'module-not-ordered', 'module-disabled', 'dashboard-disabled',
+test.each(['suspended', 'removed', 'foreign-tenant', 'foreign-organisation', 'past-context',
+    'product-revoked', 'module-not-ordered', 'module-disabled', 'dashboard-disabled',
     'organisation-suspended', 'tenant-suspended'])('current %s denies improvement access', async kind => {
     const snapshot = authority(); let selectedScope = scope, at = NOW;
     if (kind === 'suspended' || kind === 'removed') changeMember(snapshot, kind === 'suspended' ? 'suspend' : 'remove');
-    else if (kind === 'expired') at = snapshot.membershipState.memberships[0].validUntil;
     else if (kind === 'foreign-tenant') selectedScope = { ...scope, tenantId: 'other-tenant' };
     else if (kind === 'foreign-organisation') selectedScope = { ...scope, organisationId: 'other-organisation' };
     else if (kind === 'past-context') at = '2026-09-06T08:59:59.999Z';
     else if (kind === 'product-revoked') snapshot.entitlementState.grants[0].status = 'revoked';
-    else if (kind === 'product-expired') snapshot.entitlementState.grants[0].validUntil = NOW;
     else if (kind === 'module-not-ordered') snapshot.entitlementState.grants[0].modules = ['overview'];
     else if (kind === 'module-disabled') snapshot.flags.enabled.improvement_plan = false;
     else if (kind === 'dashboard-disabled') snapshot.flags.enabled.dashboard = false;
@@ -298,7 +300,8 @@ test('owner eligibility is current organisation membership, not a supplied subje
         const changed = clone(snapshot); changeMember(changed, action, OWNER);
         expect(() => resolveEligibleOwner(changed, context, OWNER, NOW)).toThrow();
     }
-    expect(() => resolveEligibleOwner(snapshot, context, OWNER, owner.validUntil)).toThrow();
+    // Accounts do not expire: a recorded end alone does not end owner eligibility.
+    expect(() => resolveEligibleOwner(snapshot, context, OWNER, owner.validUntil)).not.toThrow();
     const foreign = await resolver({ ...scope, organisationId: 'other-organisation' }).resolve({});
     expect(() => resolveEligibleOwner(snapshot, foreign, OWNER, NOW)).toThrow();
 });

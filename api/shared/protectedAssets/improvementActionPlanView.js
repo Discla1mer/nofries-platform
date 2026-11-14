@@ -24,6 +24,21 @@
         owner: 'Owner references do not confirm current membership or permission.'
     };
     const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+    // People read times in New Zealand time. Due and review dates are calendar
+    // days, shown as written without moving them between time zones.
+    function nzDateTime(value) {
+        try {
+            return new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short', year: 'numeric',
+                hour: 'numeric', minute: '2-digit' }).format(new Date(value));
+        } catch (_) { return value.slice(0, 10) + ' ' + value.slice(11, 16) + ' UTC'; }
+    }
+    function calendarDay(value) {
+        if (value === null || value === undefined) return 'Not set';
+        try {
+            return new Intl.DateTimeFormat('en-NZ', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' })
+                .format(new Date(value + 'T00:00:00.000Z'));
+        } catch (_) { return value; }
+    }
     function invalid() { throw new Error('improvement_view_unavailable'); }
     function fields(value, names) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) invalid();
@@ -52,11 +67,25 @@
     function subject(value) {
         if (value !== null && (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value))) invalid();
     }
+    // Mirrors the server's owner label rule: one NFKC line of 1-80 characters,
+    // no email address and never a reserved owner filter word.
+    function normaliseOwnerLabel(value) {
+        if (typeof value !== 'string') invalid();
+        const result = value.normalize('NFKC')
+            .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]+/g, ' ')
+            .replace(/\s+/g, ' ').trim();
+        if (!result || result.length > 80 || result.includes('@') || ['all', 'unassigned'].includes(result.toLowerCase())) invalid();
+        return result;
+    }
+    function ownerLabel(value) { if (normaliseOwnerLabel(value) !== value) invalid(); }
+    const labelled = value => own(value, 'ownerLabel');
+    const assigned = action => action.ownerSubjectKey !== null || labelled(action);
     function label(map, key, actual) { if (!own(map, key) || actual !== map[key]) invalid(); }
     function nextStep(action) {
-        if (action.status === 'completed') return 'Review the completion note and action history.';
+        if (action.status === 'completed') return 'Review the completion note and action history. If your answers have changed, submit a new assessment in Cyber Security. ' +
+            'Then use Change over time on Overview to compare saved results and answer coverage, not verified improvement. Completing this action does not change your saved score.';
         if (action.status === 'blocked') return 'Review the block reason and agree how to move forward.';
-        if (action.ownerSubjectKey === null) return 'Agree an owner and due date before starting this action.';
+        if (!assigned(action)) return 'Agree an owner and due date before starting this action.';
         if (action.status === 'in_progress') return 'Review progress with the action owner against the due date.';
         return 'Confirm the owner and due date, then review the suggested work.';
     }
@@ -93,6 +122,13 @@
         }
         return result;
     }
+    function reviewFields(value, at) {
+        if (!own(value || {}, 'nextReviewDate')) return [];
+        if (value.nextReviewDate === null) invalid();
+        date(value.nextReviewDate);
+        if (value.nextReviewDate < at.slice(0, 10)) invalid();
+        return ['nextReviewDate'];
+    }
     function count(value) {
         fields(value, ['total', 'unassigned', 'overdue', 'byStatus']);
         number(value.total, 4096); number(value.unassigned, value.total); number(value.overdue, value.total);
@@ -117,25 +153,28 @@
         fields(value.notices, Object.keys(notices)); Object.keys(notices).forEach(key => { if (value.notices[key] !== notices[key]) invalid(); });
         fields(value.filters, ['status', 'owner', 'overdueOnly']);
         if (value.filters.status !== 'all' && !own(statuses, value.filters.status) || typeof value.filters.overdueOnly !== 'boolean') invalid();
-        if (!['all', 'unassigned'].includes(value.filters.owner)) subject(value.filters.owner);
+        if (!['all', 'unassigned'].includes(value.filters.owner)) {
+            try { subject(value.filters.owner); } catch (_) { ownerLabel(value.filters.owner); }
+        }
         fields(value.counts, ['all', 'visible']); count(value.counts.all); count(value.counts.visible);
         if (!Array.isArray(value.actions) || value.actions.length > 4096 || value.counts.visible.total !== value.actions.length ||
             value.counts.all.total < value.counts.visible.total) invalid();
         const ids = new Set(), revisions = new Set(); let historyCount = 0;
         value.actions.forEach(action => {
-            fields(action, ['actionId', 'itemId', 'controlId', 'domainId', 'status', 'ownerSubjectKey', 'ownerEligibility', 'dueDate',
-                'isOverdue', 'blockedReason', 'rationale', 'completion', 'evidence', 'history', 'labels']);
+            fields(action, ['actionId', 'itemId', 'controlId', 'domainId', 'status', 'ownerSubjectKey', ...(labelled(action) ? ['ownerLabel'] : []),
+                'ownerEligibility', 'dueDate', 'isOverdue', 'blockedReason', 'rationale', 'completion', 'evidence', 'history', 'labels']);
             ['actionId', 'itemId', 'controlId', 'domainId'].forEach(key => text(action[key], 180));
             if (ids.has(action.actionId)) invalid(); ids.add(action.actionId);
             subject(action.ownerSubjectKey); date(action.dueDate);
+            if (labelled(action)) { ownerLabel(action.ownerLabel); if (action.ownerSubjectKey !== null || action.dueDate === null) invalid(); }
             if (action.ownerEligibility !== 'not_checked' || typeof action.isOverdue !== 'boolean') invalid();
             if (action.blockedReason !== null) text(action.blockedReason);
             fields(action.rationale, ['kind', 'response', 'responseOrigin', 'suggestedAction']); text(action.rationale.suggestedAction);
             fields(action.labels, ['status', 'kind', 'response', 'responseOrigin', 'evidenceState', 'owner']);
             label(statuses, action.status, action.labels.status); label(kinds, action.rationale.kind, action.labels.kind);
             label(responses, action.rationale.response, action.labels.response); label(origins, action.rationale.responseOrigin, action.labels.responseOrigin);
-            if (action.labels.owner !== (action.ownerSubjectKey === null ? 'Unassigned' : 'Assigned (eligibility not checked)')) invalid();
-            if (action.completion !== null) { fields(action.completion, ['at', 'note']); instant(action.completion.at); text(action.completion.note); }
+            if (action.labels.owner !== (!assigned(action) ? 'Unassigned' : 'Assigned (eligibility not checked)')) invalid();
+            if (action.completion !== null) { fields(action.completion, ['at', 'note', ...reviewFields(action.completion, action.completion.at)]); instant(action.completion.at); text(action.completion.note); }
             if ((action.status === 'completed') !== (action.completion !== null) || (action.status === 'blocked') !== (action.blockedReason !== null)) invalid();
             fields(action.evidence, ['assessmentState', 'completionReference', 'completionVerification', 'durableLinkStatus', 'downloadAllowed', 'scoreEffect']);
             label(evidenceStates, action.evidence.assessmentState, action.labels.evidenceState);
@@ -148,10 +187,14 @@
                 fields(event, ['revision', 'at', 'type', 'details', 'label']);
                 number(event.revision, value.planRevision); instant(event.at); label(events, event.type, event.label);
                 if (event.revision <= previous || revisions.has(event.revision)) invalid(); previous = event.revision; revisions.add(event.revision);
-                if (event.type === 'assign') { fields(event.details, ['ownerSubjectKey', 'dueDate']); subject(event.details.ownerSubjectKey); date(event.details.dueDate); }
+                if (event.type === 'assign') {
+                    if (labelled(event.details)) { fields(event.details, ['ownerLabel', 'dueDate']); ownerLabel(event.details.ownerLabel); }
+                    else { fields(event.details, ['ownerSubjectKey', 'dueDate']); subject(event.details.ownerSubjectKey); }
+                    date(event.details.dueDate);
+                }
                 else if (event.type === 'block' || event.type === 'reopen') { fields(event.details, ['reason']); text(event.details.reason); }
                 else if (event.type === 'complete') {
-                    fields(event.details, ['note', 'evidenceReference', 'evidenceVerification', 'durableLinkStatus']); text(event.details.note);
+                    fields(event.details, ['note', 'evidenceReference', 'evidenceVerification', 'durableLinkStatus', ...reviewFields(event.details, event.at)]); text(event.details.note);
                     if (event.details.evidenceReference !== null) text(event.details.evidenceReference, 180);
                     if (event.details.evidenceVerification !== 'not_verified' || event.details.durableLinkStatus !== 'not_established') invalid();
                 } else fields(event.details, []);
@@ -160,9 +203,45 @@
         return value;
     }
 
+    // Plain names for people. Codes stay in each action's identifiers.
+    const plainKinds = { implementation: 'Gap to fix', assessment: 'Answer to check', applicability: 'Answer to check', evidence: 'Evidence to add' };
+    function actionTitle(action, titles) {
+        const title = titles && typeof titles === 'object' && own(titles, action.controlId) && typeof titles[action.controlId] === 'string' &&
+            titles[action.controlId].trim() && titles[action.controlId].length <= 200 ? titles[action.controlId] : action.controlId;
+        return title + ' · ' + (own(plainKinds, action.rationale.kind) ? plainKinds[action.rationale.kind] : action.labels.kind);
+    }
+    // A gap's concrete follow-up for its topic, as the results show it (F1-R10).
+    // The retained rationale stays the record; this is display wording only.
+    function actionWork(action, followUps) {
+        const followUp = action.rationale.kind === 'implementation' && followUps && typeof followUps === 'object' &&
+            own(followUps, action.itemId) && typeof followUps[action.itemId] === 'string' &&
+            followUps[action.itemId].trim() && followUps[action.itemId].length <= 1000 ? followUps[action.itemId] : null;
+        return followUp || action.rationale.suggestedAction;
+    }
+    function ownerText(action, currentOwner) {
+        if (labelled(action)) return action.ownerLabel + ' (named owner)';
+        if (!assigned(action)) return 'Unassigned';
+        // Without the signed-in person, say plainly that someone is assigned;
+        // the raw owner reference stays in the closed Action identifiers.
+        if (typeof currentOwner !== 'string') return 'Assigned to someone in your organisation';
+        return action.ownerSubjectKey === currentOwner ? 'You' : 'Someone else in your organisation';
+    }
+    function planSummary(actions) {
+        const gaps = actions.filter(action => action.rationale.kind === 'implementation').length;
+        const checks = actions.filter(action => ['assessment', 'applicability'].includes(action.rationale.kind)).length;
+        const evidence = actions.filter(action => action.rationale.kind === 'evidence').length;
+        const parts = [[gaps, 'gap to fix', 'gaps to fix'], [checks, 'answer to check', 'answers to check'],
+            [evidence, 'answer that needs supporting evidence', 'answers that need supporting evidence']]
+            .filter(part => part[0] > 0).map(part => part[0] + ' ' + (part[0] === 1 ? part[1] : part[2]));
+        const list = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts.join('');
+        return 'This plan has ' + actions.length + (actions.length === 1 ? ' action' : ' actions') + (list ? ': ' + list + '.' : '.');
+    }
+
     // A trusted host supplies a current authorised presentation. This component
     // grants no access, reads no clock and performs no requests or commands.
     function mount(root, presentation, options) {
+        const titles = options && options.controlTitles, currentOwner = options && options.currentOwner;
+        const followUps = options && options.itemFollowUps;
         if (!root || !root.ownerDocument || typeof root.replaceChildren !== 'function') throw new Error('improvement_view_root_required');
         if (mounted.has(root)) mounted.get(root).destroy();
         const doc = root.ownerDocument, actionCards = new Map();
@@ -195,8 +274,10 @@
             const model = validate(presentation), panel = node('section', 'dashboard-panel');
             panel.setAttribute('aria-label', 'Improvement action plan');
             panel.append(node('h2', '', 'Improvement action plan'));
-            panel.append(node('p', 'dashboard-muted', 'Assessment ' + model.source.assessmentId + ' · revision ' + model.source.assessmentRevision +
-                ' · As of ' + model.asOf + ' (UTC)'));
+            panel.append(node('p', 'dashboard-muted', 'From the assessment submitted ' + nzDateTime(model.source.scoreAsOf) +
+                ' · Plan last updated ' + nzDateTime(model.updatedAt) + ' (NZ time)'));
+            const unfiltered = model.filters.status === 'all' && model.filters.owner === 'all' && model.filters.overdueOnly === false;
+            if (unfiltered && model.actions.length) panel.append(node('p', '', planSummary(model.actions)));
             panel.append(node('p', '', 'Showing ' + model.counts.visible.total + ' of ' + model.counts.all.total + ' actions. ' +
                 'Visible overdue: ' + model.counts.visible.overdue + ' · Unassigned: ' + model.counts.visible.unassigned + '.'));
             panel.append(node('p', 'dashboard-muted', model.notices.priority + ' ' + model.notices.order),
@@ -207,7 +288,7 @@
                 'Read-only plan. Review each action’s next step, owner and due date. ' +
                     'Open Action history for earlier updates. Changes cannot be made in this view.';
             panel.append(node('p', '', guidance));
-            const sourceDetails = disclosure('Source and plan metadata');
+            const sourceDetails = disclosure('Technical details for support');
             sourceDetails.append(record('Retained source', [
                 ['Plan ID', model.scope.planId], ['Plan revision', String(model.planRevision)], ['Plan last updated (UTC)', model.updatedAt],
                 ['As of (UTC)', model.asOf], ['Assessment ID', model.source.assessmentId],
@@ -226,25 +307,71 @@
             const filters = node('p', 'dashboard-muted', 'Filters: status ' + (model.filters.status === 'all' ? 'All' : statuses[model.filters.status]) +
                 '; owner ' + model.filters.owner + '; overdue only ' + (model.filters.overdueOnly ? 'Yes' : 'No') + '.');
             countDetails.append(filters); panel.append(countDetails);
+            // Use only this already validated selection, never a second plan read.
+            // Global revisions provide save order even when timestamps are equal.
+            if (model.actions.length) {
+                const updates = model.actions.flatMap(action => action.history.map(event => ({ action, event })))
+                    .sort((left, right) => right.event.revision - left.event.revision);
+                const recent = node('section', 'dashboard-panel');
+                recent.setAttribute('aria-label', 'Latest saved action updates');
+                recent.append(node('h3', '', 'Latest saved action updates'));
+                recent.append(node('p', 'dashboard-muted', 'Only actions shown in this view are included; current filters apply. ' +
+                    'Workflow updates do not verify evidence or change assessment scores. Full records remain in each action’s Action history below.'));
+                if (!updates.length) recent.append(node('p', '', 'No saved updates for the actions shown.'));
+                else {
+                    recent.append(node('p', 'dashboard-muted', 'Latest ' + Math.min(5, updates.length) + ' of ' + updates.length +
+                        ' saved updates for the actions shown. Newest first.'));
+                    const list = node('ol');
+                    updates.slice(0, 5).forEach(({ action, event }) => {
+                        const entry = node('li');
+                        const work = Array.from(actionWork(action, followUps));
+                        entry.append(node('strong', 'ncsc-preserve-text', (event.type === 'complete' ? 'Workflow completed' : event.label) +
+                            ' · ' + work.slice(0, 100).join('') + (work.length > 100 ? '…' : '')));
+                        entry.append(node('div', 'dashboard-muted', actionTitle(action, titles) +
+                            ' · ' + nzDateTime(event.at)));
+                        if (event.type === 'assign') entry.append(node('div', '', 'Assignment updated · Due date: ' + calendarDay(event.details.dueDate)));
+                        const note = event.type === 'complete' ? event.details.note :
+                            event.type === 'block' || event.type === 'reopen' ? event.details.reason : null;
+                        if (note !== null) {
+                            const characters = Array.from(note), preview = characters.slice(0, 160).join('') + (characters.length > 160 ? '…' : '');
+                            entry.append(node('div', 'ncsc-preserve-text', (event.type === 'complete' ? 'Completion note' : 'Reason') +
+                                (characters.length > 160 ? ' (preview)' : '') + ': ' + preview));
+                        }
+                        list.append(entry);
+                    });
+                    recent.append(list);
+                }
+                panel.append(recent);
+            }
             if (!model.actions.length) panel.append(node('p', 'dashboard-muted', model.counts.all.total ?
                 'No actions match these filters. Review the selection in Counts and filters to see what is included.' :
                 'No retained improvement actions. Check that this is the assessment version you intended to review.'));
             model.actions.forEach(action => {
                 const card = node('article', 'dashboard-panel');
                 card.setAttribute('tabindex', '-1'); actionCards.set(action.actionId, card);
-                card.append(node('h3', '', action.controlId + ' · ' + action.labels.kind), node('span', 'dashboard-badge', action.labels.status),
-                    node('p', 'ncsc-preserve-text', action.rationale.suggestedAction));
-                const facts = node('dl');
-                [['Next step', nextStep(action)], ['Owner', action.labels.owner],
-                    ['Due date (UTC calendar day)', action.dueDate === null ? 'Not set' : action.dueDate],
-                    ['Overdue at supplied as-of date (UTC)', action.isOverdue ? 'Yes' : 'No'], ['Assessment response', action.labels.response],
-                    ['Response origin', action.labels.responseOrigin], ['Assessment evidence', action.labels.evidenceState]].forEach(pair => fact(facts, pair[0], pair[1]));
+                const work = actionWork(action, followUps);
+                card.append(node('h3', '', actionTitle(action, titles)), node('span', 'dashboard-badge', action.labels.status),
+                    node('p', 'ncsc-preserve-text improvement-action-work', work));
+                // Owner and due date lead, so they can be scanned down the plan;
+                // assessment metadata sits in a closed disclosure below.
+                const facts = node('dl', 'improvement-action-key');
+                [['Owner', ownerText(action, currentOwner)],
+                    ['Due date', calendarDay(action.dueDate)]].forEach(pair => fact(facts, pair[0], pair[1]));
+                if (action.isOverdue) fact(facts, 'Overdue', 'Yes');
+                fact(facts, 'Next step', nextStep(action));
                 if (action.blockedReason !== null) fact(facts, 'Block reason', action.blockedReason);
                 if (action.completion !== null) {
-                    fact(facts, 'Workflow completed at (UTC)', action.completion.at); fact(facts, 'Completion note', action.completion.note);
+                    fact(facts, 'Completed', nzDateTime(action.completion.at)); fact(facts, 'Completion note', action.completion.note);
+                    fact(facts, 'Next review date', calendarDay(action.completion.nextReviewDate));
                     fact(facts, 'Completion meaning', 'Workflow completed; control implementation has not been verified.');
                 }
                 card.append(facts);
+                const more = disclosure('Assessment details'), moreFacts = node('dl');
+                [['Assessment response', action.labels.response],
+                    ['Response origin', action.labels.responseOrigin], ['Assessment evidence', action.labels.evidenceState]]
+                    .forEach(pair => fact(moreFacts, pair[0], pair[1]));
+                if (work !== action.rationale.suggestedAction) fact(moreFacts, 'Plan record wording', action.rationale.suggestedAction);
+                more.append(moreFacts); card.append(more);
                 const evidence = disclosure('Supporting evidence'), evidenceFacts = node('dl');
                 evidence.append(node('p', 'dashboard-muted', 'The assessment claim and completion reference are self-reported. No supporting document version is linked to this action; its date and version are unknown.'));
                 fact(evidenceFacts, 'Assessment evidence claim', action.labels.evidenceState);
@@ -252,18 +379,17 @@
                     evidence.append(node('p', '', 'No completion evidence reference is recorded for the current action. Review the assessment claim and Action history for earlier records.'));
                 } else {
                     fact(evidenceFacts, 'Completion evidence reference (unverified)', action.evidence.completionReference);
-                    fact(evidenceFacts, 'Completion reference recorded at (UTC)', action.completion === null ? 'Unknown' : action.completion.at);
+                    fact(evidenceFacts, 'Completion reference recorded', action.completion === null ? 'Unknown' : nzDateTime(action.completion.at));
                 }
                 fact(evidenceFacts, 'Verification', action.evidence.completionVerification === 'not_verified' ? 'Not verified' : 'No verification recorded');
                 evidence.append(evidenceFacts, node('p', 'dashboard-muted', 'Completing an action does not verify a control or change scores.'));
                 evidence.append(node('h4', '', 'Assessment source'));
                 const assessmentFacts = node('dl');
-                [['Assessment ID', model.source.assessmentId], ['Assessment revision', model.source.assessmentRevision],
-                    ['Assessment scored at (UTC)', model.source.scoreAsOf]]
+                [['Assessment submitted', nzDateTime(model.source.scoreAsOf)]]
                     .forEach(pair => fact(assessmentFacts, pair[0], pair[1]));
                 evidence.append(assessmentFacts); card.append(evidence);
                 const identifiers = disclosure('Action identifiers'), idFacts = node('dl');
-                [['Owner ID', action.ownerSubjectKey === null ? 'Unassigned' : action.ownerSubjectKey],
+                [['Owner ID', labelled(action) ? 'Named owner without a platform account' : action.ownerSubjectKey === null ? 'Unassigned' : action.ownerSubjectKey],
                     ['Owner eligibility', 'Current eligibility not checked'], ['Action ID', action.actionId],
                     ['Control ID', action.controlId], ['Item ID', action.itemId], ['Domain ID', action.domainId]]
                     .forEach(pair => fact(idFacts, pair[0], pair[1])); identifiers.append(idFacts); card.append(identifiers);
@@ -271,11 +397,14 @@
                 if (!action.history.length) history.append(node('p', 'dashboard-muted', 'No updates recorded for this action.'));
                 const timeline = node('ol');
                 action.history.forEach(event => {
-                    const entry = node('li'); entry.append(node('h4', '', 'Plan revision ' + event.revision + ' · ' + event.label), node('p', '', event.at + ' (UTC)'));
+                    const entry = node('li'); entry.append(node('h4', '', event.label + ' · ' + nzDateTime(event.at)));
                     const details = node('dl');
-                    if (event.type === 'assign') { fact(details, 'Owner ID (current eligibility not checked)', event.details.ownerSubjectKey === null ? 'Unassigned' : event.details.ownerSubjectKey); fact(details, 'Due date (UTC calendar day)', event.details.dueDate === null ? 'Not set' : event.details.dueDate); }
+                    if (event.type === 'assign' && labelled(event.details)) { fact(details, 'Owner name', event.details.ownerLabel); fact(details, 'Due date', calendarDay(event.details.dueDate)); }
+                    else if (event.type === 'assign') { fact(details, 'Owner', event.details.ownerSubjectKey === null ? 'Unassigned' :
+                        typeof currentOwner !== 'string' ? 'Assigned to someone in your organisation' :
+                        event.details.ownerSubjectKey === currentOwner ? 'You' : 'Someone else in your organisation'); fact(details, 'Due date', calendarDay(event.details.dueDate)); }
                     if (event.type === 'block' || event.type === 'reopen') fact(details, 'Reason', event.details.reason);
-                    if (event.type === 'complete') { fact(details, 'Completion note', event.details.note); fact(details, 'Evidence reference (unverified)', event.details.evidenceReference === null ? 'Not recorded' : event.details.evidenceReference); fact(details, 'Evidence status', 'Unverified; durable link not established.'); }
+                    if (event.type === 'complete') { fact(details, 'Completion note', event.details.note); fact(details, 'Evidence reference (unverified)', event.details.evidenceReference === null ? 'Not recorded' : event.details.evidenceReference); fact(details, 'Evidence status', 'Unverified; durable link not established.'); fact(details, 'Next review date', calendarDay(event.details.nextReviewDate)); }
                     entry.append(details); timeline.append(entry);
                 });
                 history.append(timeline); card.append(history); panel.append(card);
@@ -291,5 +420,5 @@
     // The trusted host decides when a read is pending and when to replace this
     // status with mount(). This component starts no request or automatic retry.
     function mountLoading(root) { return mount(root, loadingState); }
-    return Object.freeze({ mount, mountLoading });
+    return Object.freeze({ mount, mountLoading, normaliseOwnerLabel, actionTitle, actionWork, nzDateTime, calendarDay });
 }));

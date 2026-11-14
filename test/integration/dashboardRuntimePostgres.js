@@ -685,6 +685,7 @@ function registerRealPostgresTests() {
         }
         afterEach(async () => {
             mockResourceAfterWork = null; mockRuntimeAfterReconcile = null; mockAfterHostDecision = null;
+            delete process.env.NOFRIES_LIFECYCLE_EMAIL_ENQUEUE_ENABLED;
             if (fixture) fixture.state.hook = null;
             const closed = await Promise.allSettled(reconstructionPoolClosers.splice(0).map(close => close()));
             const failure = closed.find(result => result.status === 'rejected');
@@ -699,12 +700,13 @@ function registerRealPostgresTests() {
                 'dashboard_ncsc_assessments', 'dashboard_ncsc_assessment_receipts',
                 'dashboard_evidence_revisions', 'dashboard_evidence_heads', 'dashboard_evidence_receipts',
                 'signup_acceptance_receipts', 'signup_registrations', 'dashboard_starter_scopes', 'dashboard_starter_accounts',
-                'dashboard_improvement_revisions', 'dashboard_improvement_heads'];
+                'dashboard_improvement_revisions', 'dashboard_improvement_heads', 'email_outbox', 'email_preferences'];
             await ownerPool.query('TRUNCATE ' + tables.map(table => 'nofries.' + table).join(', '));
             fixture = harness();
         });
-        test.each([false, true])('new starter signup atomically grants fixed allowances and replays after lost COMMIT=%s', async loseCommit => {
+        test.each([[false, false], [true, false], [false, true], [true, true]])('new starter signup atomically grants fixed allowances and replays after lost COMMIT=%s (lifecycle email enqueue: %s)', async (loseCommit, enqueue) => {
             const f = fixture; f.state.now = new Date().toISOString(); await f.initialize();
+            if (enqueue) process.env.NOFRIES_LIFECYCLE_EMAIL_ENQUEUE_ENABLED = 'true';
             const { createStarterAccountAllocator } = require('../../api/shared/customerSignup/starterAccountAllocation');
             const { compileStarterProvisioning } = require('../../api/shared/customerSignup/starterProvisioning');
             const { createPostgresSignupAcceptanceJournal } = require('../../api/shared/customerSignup/postgresSignupAcceptanceJournal');
@@ -747,6 +749,17 @@ function registerRealPostgresTests() {
                 scheduleId: p.schedule.scheduleId, scheduleDigest: p.schedule.scheduleDigest, acceptedAt: Date.now(), status: 'pending_admission', dashboardAccess: false };
             await createPostgresSignupAcceptanceJournal({ database }).persist(receipt);
             await createPostgresSignupRegistrationStore({ database }).registerAcceptance(receipt);
+            if (enqueue && !loseCommit) {
+                // A failed enqueue fails the activation and rolls back every activation write.
+                f.state.hook = event => {
+                    if (event.phase === 'before' && event.sql.startsWith('INSERT INTO nofries.email_outbox')) throw new Error('Synthetic outbox write failure');
+                };
+                await expect(runtime.starterProvisioning(request, { requestId, phase: 'activate' })).rejects.toThrow();
+                f.state.hook = null;
+                expect((await ownerPool.query('SELECT activation FROM nofries.dashboard_starter_scopes')).rows).toEqual([{ activation: null }]);
+                expect((await ownerPool.query('SELECT activated_at FROM nofries.dashboard_starter_accounts')).rows[0].activated_at).toBeNull();
+                expect((await ownerPool.query('SELECT count(*)::int AS n FROM nofries.email_outbox')).rows[0].n).toBe(0);
+            }
             let activationPid, lost = false;
             if (loseCommit) f.state.hook = event => {
                 if (event.phase === 'after' && event.sql.startsWith('UPDATE nofries.dashboard_starter_scopes SET activation=')) activationPid = event.backendPid;
@@ -764,6 +777,36 @@ function registerRealPostgresTests() {
             expect(usages.rows[0].payload.counters).toEqual({ memberships: 1, assessment_runs: 0, ai_requests: 0, evidence_bytes: 0, report_exports: 0 });
             expect((await ownerPool.query('SELECT count(*) FROM nofries.dashboard_identity_bindings WHERE tenant_id=$1', [slot.tenantId])).rows[0].count).toBe('1');
             await expect(runtime.starterProvisioning(f.operator(), { requestId, phase: 'activate' })).rejects.toThrow();
+            const outboxRows = async () => (await ownerPool.query(`SELECT tenant_id, organisation_id, account_id, email_type, dedupe_key,
+                template_version, params, status, not_before FROM nofries.email_outbox ORDER BY not_before`)).rows;
+            if (!enqueue) {
+                expect(await outboxRows()).toEqual([]);
+                expect(f.state.trace.some(event => event.sql.includes('email_outbox'))).toBe(false);
+                return;
+            }
+            // One welcome now and one nudge at +7 days, written by the runtime role
+            // under RLS, and the replay above queued nothing more.
+            const activatedAt = (await ownerPool.query('SELECT activated_at FROM nofries.dashboard_starter_accounts')).rows[0].activated_at;
+            const queued = await outboxRows(), ids = { tenant_id: slot.tenantId, organisation_id: slot.organisationId,
+                account_id: p.accountId, dedupe_key: p.accountId, params: {}, status: 'pending' };
+            expect(queued.map(({ not_before, ...row }) => row)).toEqual([{ ...ids, email_type: 'welcome', template_version: 'welcome-v1' },
+                { ...ids, email_type: 'nudge_unfinished', template_version: 'nudge-unfinished-v2' }]);
+            expect(queued[0].not_before.getTime()).toBe(activatedAt.getTime());
+            expect(queued[1].not_before.getTime() - activatedAt.getTime()).toBe(7 * 86400000);
+            // The submit path's cancel, as the runtime role under the account's
+            // subject, cancels this nudge; a later activation replay never requeues it.
+            const outbox = require('../../api/shared/lifecycleEmail/outboxWriter');
+            const client = await runtimePool.connect();
+            try {
+                await client.query('BEGIN'); await client.query('SET LOCAL ROLE nofries_runtime');
+                await client.query(`SELECT set_config('nofries.tenant_id',$1,true), set_config('nofries.organisation_id',$2,true),
+                    set_config('nofries.subject_key',$3,true)`, [slot.tenantId, slot.organisationId, customer]);
+                expect(await outbox.cancelPending(client, { tenantId: slot.tenantId, organisationId: slot.organisationId,
+                    accountId: p.accountId, types: ['nudge_unfinished', 'reassess_reminder'] })).toBe(1);
+                await client.query('COMMIT');
+            } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+            expect(await runtime.starterProvisioning(request, { requestId, phase: 'activate' })).toEqual(result);
+            expect((await outboxRows()).map(row => [row.email_type, row.status])).toEqual([['welcome', 'pending'], ['nudge_unfinished', 'cancelled']]);
         });
         test.each([false, true])('client saved acceptance explicitly completes its original registration after interruption (lost acknowledgement: %s)', async loseAcknowledgement => {
             const f = fixture; f.state.now = new Date().toISOString(); await f.initialize();
@@ -1152,8 +1195,9 @@ function registerRealPostgresTests() {
                 productGrantId: ownSlot.grantId, agreementRef: ownSlot.scheduleId,
                 expectedRevision: 1, submissionRevision: 2, at: retainedAccount.activation.activatedAt };
             expect(await quota(quotaSelection)).toMatchObject({ policyId: ownSlot.activationId,
-                validFrom: retainedAccount.activation.activatedAt, validUntil: retainedAccount.activation.validUntil });
-            await expect(quota({ ...quotaSelection, at: retainedAccount.activation.validUntil })).rejects.toThrow();
+                validFrom: retainedAccount.activation.activatedAt, validUntil: '9999-12-31T23:59:59.999Z' });
+            // Accounts do not expire: the fixed starter allowance still resolves after the recorded end.
+            expect(await quota({ ...quotaSelection, at: retainedAccount.activation.validUntil })).toMatchObject({ policyId: ownSlot.activationId, amount: 1 });
             for (const replacement of [{ productGrantId: nextId() }, { agreementRef: nextId() },
                 { productGrantId: nextId(), agreementRef: nextId() }]) {
                 expect(await quota({ ...quotaSelection, ...replacement, at: retainedAccount.activation.validUntil })).toBeNull();
@@ -1205,7 +1249,7 @@ function registerRealPostgresTests() {
                 const { servedDashboard } = require('../helpers/servedDashboard');
                 const rendered = await servedDashboard({ app: h.app, cookie: login.cookie,
                     now: new Date(h.state.now).toISOString(), origin: h.env.NOFRIES_PUBLIC_URL,
-                    ...(accountType === 'consultant' ? { chooseOrganisationLabel: directory.body.bindings[0].organisationLabel } : {}) });
+                    ...(accountType === 'consultant' ? { hash: '#organisations', chooseOrganisationLabel: directory.body.bindings[0].organisationLabel } : {}) });
                 expect({ state: rendered.state, hidden: rendered.hidden }).toEqual({ state: 'ready', hidden: false });
                 expect(rendered.trace).toEqual(expect.arrayContaining([
                     { url: '/api/dashboard/session', method: 'get', status: 409 },
@@ -1316,6 +1360,55 @@ function registerRealPostgresTests() {
                 }
                 const full = await clientPost({ action: 'create', requestId: nextId(), organisationName: 'Fourth synthetic client', details });
                 expect(full.status).toBe(409); expect(full.body.code).toBe('starter_client_limit');
+                // #151 with migration 0019 and the default-off flag turned on: drafts
+                // can be discarded and a place is used only when terms are accepted.
+                h.env.NOFRIES_STARTER_CLIENT_DISCARD_ENABLED = 'true';
+                h.recomposeWithApplication(require('../../lib/productionApplication').createProductionApplication);
+                list = await request(h.app).get('/api/customer-signup/clients').set('Cookie', login.cookie);
+                expect(list.body.state.remaining).toBe(2);
+                const ready = list.body.state.clients.find(c => c.status === 'ready'), drafts = list.body.state.clients.filter(c => c.status !== 'ready');
+                expect(ready.discardable).toBe(false); expect(drafts.map(c => c.discardable)).toEqual([true, true]);
+                for (const draft of drafts) {
+                    const gone = await clientPost({ action: 'discard', requestId: draft.requestId });
+                    expect(gone.status).toBe(200); expect(gone.body.state.clients.map(c => c.requestId)).not.toContain(draft.requestId);
+                }
+                expect((await clientPost({ action: 'discard', requestId: drafts[0].requestId })).status).toBe(200);
+                for (const [body, code] of [[{ action: 'discard', requestId: ready.requestId }, 'starter_client_not_draft'],
+                    [{ action: 'resume', requestId: drafts[0].requestId }, 'starter_client_discarded']]) {
+                    const refused = await clientPost(body); expect(refused.status).toBe(409); expect(refused.body.code).toBe(code);
+                }
+                const offer = async name => { const id = nextId(), made = await clientPost({ action: 'create', requestId: id, organisationName: name, details });
+                    expect(made.body.state.status).toBe('terms'); return { id, terms: { accepted: true, ...Object.fromEntries(['termsVersion', 'termsDigest', 'scheduleId', 'scheduleDigest'].map(k => [k, made.body.state[k]])) } }; };
+                const accept = draft => clientPost({ action: 'accept', requestId: draft.id, terms: draft.terms });
+                const fourth = await offer('Fourth synthetic client');
+                expect((await accept(fourth)).body.state.status).toBe('ready');
+                const nameless = await clientPost({ action: 'discard', requestId: nextId() });  // Not this account's draft.
+                expect(nameless.status).toBe(409); expect(nameless.body.code).toBe('starter_client_not_draft');
+                // Two tabs accept the last place at once. One is set up. The other is refused
+                // definitively (409), or meets the existing retryable registration conflict (503)
+                // and is refused definitively when retried.
+                const fifth = await offer('Fifth synthetic client'), sixth = await offer('Sixth synthetic client');
+                const race = await Promise.all([accept(fifth), accept(sixth)]), won = race.findIndex(r => r.status === 200);
+                expect(race.filter(r => r.status === 200)).toHaveLength(1);
+                const lost = won === 0 ? sixth : fifth, first = race[1 - won];
+                const refusal = first.status === 409 ? first : await accept(lost);
+                expect(refusal.status).toBe(409); expect(refusal.body).toEqual({ code: 'starter_client_limit' });
+                const again = await clientPost({ action: 'resume', requestId: lost.id });
+                expect(again.status === 409 ? again.body : again.body.state.status).toEqual(again.status === 409 ? { code: 'starter_client_limit' } : 'terms');
+                list = await request(h.app).get('/api/customer-signup/clients').set('Cookie', login.cookie);
+                expect(list.body.state.remaining).toBe(0); expect(list.body.state.clients.filter(c => c.status === 'ready')).toHaveLength(3);
+                expect((await clientPost({ action: 'create', requestId: nextId(), organisationName: 'Seventh synthetic client', details })).status).toBe(409);
+                // A slot whose saved setup reads as reader-only (here: altered) is never discarded; restored, it can be.
+                const lostOrg = (await ownerPool.query("SELECT organisation_id FROM nofries.dashboard_starter_scopes WHERE preparation#>>'{slot,requestId}'=$1", [lost.id])).rows[0].organisation_id;
+                const contextKey = `customer-starter/contexts/${lostOrg}.json`, original = authorityContainer.records.get(contextKey), context = JSON.parse(original);
+                context.source.offerInput.consultantOrganisationPolicy = 'unlimited-v1';
+                authorityContainer.records.set(contextKey, Buffer.from(JSON.stringify(context)));
+                const readerOnly = await clientPost({ action: 'discard', requestId: lost.id });
+                expect(readerOnly.status === 200 ? readerOnly.body.state : readerOnly.status).toEqual(readerOnly.status === 200 ? { status: 'setup_read_only' } : 503);
+                expect((await ownerPool.query('SELECT discarded_at FROM nofries.dashboard_starter_scopes WHERE organisation_id=$1', [lostOrg])).rows[0].discarded_at).toBeNull();
+                authorityContainer.records.set(contextKey, original);
+                expect((await clientPost({ action: 'discard', requestId: lost.id })).status).toBe(200);
+                expect((await ownerPool.query('SELECT count(*)::int AS n FROM nofries.dashboard_starter_scopes WHERE ordinal>0 AND activation IS NOT NULL AND subject_key=$1', [current.subjectKey])).rows[0].n).toBe(3);
                 // The real membership state, not a BFF or immutable plan, governs
                 // further client operations after an owner revocation.
                 await createPostgresDatabase({ pool: ownerPool }).withTenantTransaction(current.tenantId, async tx => {
@@ -1855,14 +1948,11 @@ function registerRealPostgresTests() {
             await loginClean();
             } finally { manifest.mockRestore(); }
         });
-        test.each(['approval', 'authority'])('new customer preparation withholds COMMIT when %s expires during final timeout setup', async cutoffKind => {
-            const a = await newCustomerActivationSetup({ shortWindow: true }), { f, h, user, approval, action, codec } = a;
-            if (cutoffKind === 'authority') {
-                user.authority.expiresAt = Date.parse(NOW) + 10000; user.save();
-                const changed = { ...approval, authoritySha256: hash(user.authority) };
-                h.getContainer('customer-authority').records.set(codec.activationKey(approval.activationId), Buffer.from(JSON.stringify(changed)));
-            }
-            const cutoff = cutoffKind === 'authority' ? user.authority.expiresAt : Date.parse(approval.expiresAt);
+        // The staff approval still expires. The customer authority's recorded end
+        // date no longer caps activation (accounts do not expire), so it has no case here.
+        test('new customer preparation withholds COMMIT when approval expires during final timeout setup', async () => {
+            const a = await newCustomerActivationSetup({ shortWindow: true }), { f, h, approval, action } = a;
+            const cutoff = Date.parse(approval.expiresAt);
             const before = await exportAll(); let final = false, expired = 0, commits = 0;
             mockResourceAfterWork = () => { final = true; };
             f.state.hook = event => {
@@ -1939,8 +2029,9 @@ function registerRealPostgresTests() {
             expect((await request(h.app).get('/api/dashboard/session').set('Cookie', login.cookie)).status).toBe(409);
             const landing = await servedDashboard({ app: h.app, cookie: login.cookie, now: f.state.now, origin: h.env.NOFRIES_PUBLIC_URL });
             if (accountType === 'consultant') {
-                expect(landing.state).toBe('selection'); expect(landing.hidden).toBe(true);
-                expect(landing.trace.some(item => item.url === '/api/dashboard/bootstrap')).toBe(false);
+                expect(landing.state).toBe('ready'); expect(landing.hidden).toBe(false);
+                expect(landing.trace.some(item => item.url === '/api/dashboard/bootstrap')).toBe(true);
+                expect(landing.trace.some(item => item.url === '/api/dashboard/selection')).toBe(false);
             }
             const rendered = accountType === 'consultant' ? await servedDashboard({ app: h.app, cookie: login.cookie,
                 now: f.state.now, origin: h.env.NOFRIES_PUBLIC_URL, hash: '#overview' }) : landing;
@@ -2578,10 +2669,11 @@ function registerRealPostgresTests() {
                 wire(await call.invoke(), 'dashboard_unavailable', 503); mockResourceAfterWork = null; f.state.hook = null;
                 expect(completed).toBe(1); noBusinessCommit(observed); expect(await exportAll()).toEqual(before); await loginClean();
             });
-            test('HP03 product cutoff after acknowledged COMMIT retains event and withholds body', async () => {
-                const f = await resourceSetup({ prepareExample: prepareTiming('product') }), call = host(f), before = await exportAll(), observed = observeHost(f, call);
+            test('HP03 session cutoff after acknowledged COMMIT retains event and withholds body', async () => {
+                // A product no longer ends at its recorded validUntil; the session gate still does.
+                const f = await resourceSetup(); await shortSession(f); const call = host(f), before = await exportAll(), observed = observeHost(f, call);
                 observed.onCommit = () => { f.state.now = cutoff; };
-                wire(await call.invoke(), 'dashboard_unavailable', 503); f.state.hook = null;
+                wire(await call.invoke(), 'dashboard_access_denied', 403); f.state.hook = null;
                 expect(observed.commits).toBe(1); expect(observed.trace.filter(row => row.sql === 'ROLLBACK')).toEqual([]);
                 await onlyEvent(before, call, 'readDashboardBootstrap', 'bootstrap'); await loginClean();
             });
@@ -2623,7 +2715,7 @@ function registerRealPostgresTests() {
             test('HP06 known COMMIT product failure then deadline never renews its event slot', () => knownCommitThenDeadline(false));
             test('HP07 known COMMIT base denial then deadline keeps persistent503 priority', () => knownCommitThenDeadline(true));
             test('HP08 proved success can become denied only at a fresh late recovery sample', async () => {
-                const f = await resourceSetup({ prepareExample: prepareTiming('product') }), call = host(f), before = await exportAll(), observed = observeHost(f, call);
+                const f = await resourceSetup(); await shortSession(f); const call = host(f), before = await exportAll(), observed = observeHost(f, call);
                 let recovery = false, recoveryDecisions = 0;
                 observed.onCommit = () => { recovery = true; throw new Error('driver-private lost host COMMIT'); };
                 mockAfterHostDecision = value => { if (recovery && ++recoveryDecisions === 1) { expect(value.outcome).toBe('succeeded'); f.state.now = cutoff; } };
@@ -2821,7 +2913,8 @@ function registerRealPostgresTests() {
                 expect(stored.dashboard_runtime_audit.find(row => row.event_id === receipt.audit_event_id)).toBeDefined();
             });
             test.each(['admission', 'binding and member'])(
-                'FP03 selected session %s expiry at actual helper COMMIT preparation rolls back its audit', async variant => {
+                'FP03 a selected session reads on when its %s recorded end passes at actual helper COMMIT preparation', async variant => {
+                    // Accounts do not expire: these recorded ends used to refuse with onboarding_access_denied.
                     const f = fixture; await f.initialize(); const selected = template(f.scope, nextId());
                     if (variant === 'binding and member') selected.membership.validUntil = cutoff;
                     const example = await preparedAcceptance(f, { selected, admissionUntil: variant === 'admission' ? cutoff : END });
@@ -2829,15 +2922,16 @@ function registerRealPostgresTests() {
                     await f.repository.acceptStagedOnboarding(f.request(example.discoverySeed, example.proof), command);
                     const seed = f.session('customer', f.customerIdentity);
                     await f.repository.activateCustomerSession(f.request(seed), { operationId: nextId(), bindingId: selected.bindingId });
-                    const before = await exportAll(), start = f.state.trace.length; let callbacks = 0;
+                    const start = f.state.trace.length; let callbacks = 0;
                     mockResourceAfterWork = () => { callbacks++; f.state.now = cutoff; };
-                    await rejectsCode(() => f.repository.readSession(f.request(seed)), 'onboarding_access_denied', 403);
+                    const read = await f.repository.readSession(f.request(seed));
                     mockResourceAfterWork = null;
-                    expect(callbacks).toBe(1); expect(await exportAll()).toEqual(before);
-                    const trace = f.state.trace.slice(start);
-                    expect(trace.filter(row => row.sql === 'COMMIT')).toHaveLength(1); // completed locator only
-                    expect(trace.filter(row => row.sql === 'ROLLBACK')).toHaveLength(1);
-                    expect(trace.filter(row => /INSERT INTO nofries\.dashboard_runtime_audit\b/.test(row.sql))).toHaveLength(1);
+                    expect(callbacks).toBe(1); expect(read.selectedBindingId).toBe(selected.bindingId);
+                    expect(f.state.trace.slice(start).filter(row => row.sql === 'ROLLBACK')).toEqual([]);
+                    // A session wholly after the recorded end is issued and read as well.
+                    const later = f.session('customer', f.customerIdentity);
+                    await f.repository.activateCustomerSession(f.request(later), { operationId: nextId(), bindingId: selected.bindingId });
+                    expect((await f.repository.readSession(f.request(later))).selectedBindingId).toBe(selected.bindingId);
                 });
             test('FP04 accepted status checks its lawful proof/discovery cutoff after actual final receipt reconciliation', async () => {
                 const f = fixture; await f.initialize(); const example = await preparedAcceptance(f, { proofUntil: cutoff });
@@ -2889,11 +2983,12 @@ function registerRealPostgresTests() {
                 const published = await control.repository.publishExistingMembershipBinding(control.operator(), valid.command);
                 await verifyReplay(control, () => control.repository.publishExistingMembershipBinding(control.operator(), valid.command), published, await exportAll());
                 const f = harness(); await f.initialize(); const example = await f.publicationSetup(cutoff);
-                const before = await exportAll(), observed = observeOperation(f, example.command.operationId); let callbacks = 0;
+                // The approved target's recorded end passing during publication no longer refuses it (accounts do not expire).
+                let callbacks = 0;
                 mockResourceAfterWork = () => { callbacks++; f.state.now = cutoff; };
-                await rejectsCode(() => f.repository.publishExistingMembershipBinding(f.operator(), example.command), 'onboarding_access_denied', 403);
+                const late = await f.repository.publishExistingMembershipBinding(f.operator(), example.command);
                 mockResourceAfterWork = null; f.state.hook = null;
-                expect(callbacks).toBe(1); expectUnsent(observed, 1); expect(await exportAll()).toEqual(before);
+                expect(callbacks).toBe(1); expect(late).toBeDefined();
             });
             test('FP07 unaccepted compound discovery retains its case deadline after its proof and gate have committed', async () => {
                 const f = fixture; await f.initialize();
@@ -3421,7 +3516,7 @@ function registerRealPostgresTests() {
                 await unchangedResourceFailure(() => next.facade.ncsc.listNcscAssessments(next.context, { limit: 1, afterAssessmentId: null }), 'ncsc_unavailable', 503);
                 await loginClean();
             });
-            test.each(['membership and binding', 'product', 'advisor service', 'fresh quota'])
+            test.each(['advisor service', 'fresh quota'])
             ('final awaited authority check denies %s expiry after business writes', async kind => {
                 const cutoff = '2026-09-07T01:00:01.000Z';
                 const f = await resourceSetup({ role: kind === 'advisor service' ? 'fractional_advisor' : 'admin', service: kind === 'advisor service',
@@ -3452,7 +3547,7 @@ function registerRealPostgresTests() {
                 await unchangedResourceFailure(() => bound.facade.ncsc.executeNcscAssessment(bound.context, command), 'ncsc_access_denied', 403);
                 expect(advanced).toBe(1); f.state.hook = null; await loginClean();
             });
-            test.each(['product', 'advisor service', 'quota'].flatMap(kind => ['before COMMIT', 'after acknowledged COMMIT'].map(boundary => [kind, boundary])))
+            test.each(['advisor service', 'quota'].flatMap(kind => ['before COMMIT', 'after acknowledged COMMIT'].map(boundary => [kind, boundary])))
             ('%s expiry %s preserves actual restricted transaction outcomes', async (kind, boundary) => {
                 const cutoff = '2026-09-07T01:00:01.000Z';
                 const f = await resourceSetup({ role: kind === 'advisor service' ? 'fractional_advisor' : 'admin', service: kind === 'advisor service',
@@ -3561,7 +3656,8 @@ function registerRealPostgresTests() {
                     } };
                 } };
                 try {
-                    f = await resourceSetup({ rawRuntimePool: observedPool, exampleOptions: { grantEndsAt: cutoff } });
+                    // A fractional-advisory service grant still ends at its window; the dashboard product does not.
+                    f = await resourceSetup({ rawRuntimePool: observedPool, role: 'fractional_advisor', service: true, exampleOptions: { serviceEndsAt: cutoff } });
                     const bound = await f.bindResource({ selectedSeed: { ...f.seed, deadline: '2026-09-07T01:00:02.000Z' } });
                     const baselineClient = await runtimePool.connect(); let baseline, baselinePid;
                     try { baselinePid = baselineClient.processID; baseline = (await baselineClient.query(settingsSql)).rows[0]; }
@@ -4334,16 +4430,15 @@ function registerRealPostgresTests() {
                 httpJson(await h.ncscPost(saveCommand()), 403, 'ncsc_access_denied');
                 expect(await exportAll()).toEqual(before); await loginClean();
             });
-            test('HTTP NCSC membership expiry withdraws editable metadata and mutation access', async () => {
+            test('HTTP NCSC editable metadata and mutation access continue past the recorded membership end', async () => {
                 const cutoff = '2026-09-07T01:00:01.000Z';
                 const h = await ncscHttpSetup({ membershipValidUntil: cutoff });
                 const detail = await h.get('modules/cyber_security', h.generation); httpJson(detail, 200);
                 expect(detail.body.presentationMode).toBe('editable');
-                h.state.now = cutoff; h.f.state.now = cutoff;
-                const before = await exportAll();
-                httpJson(await h.get('modules/cyber_security', h.generation), 403, 'dashboard_access_denied');
-                httpJson(await h.ncscPost(createCommand()), 403, 'ncsc_access_denied');
-                expect(await exportAll()).toEqual(before); await loginClean();
+                h.state.now = cutoff; h.f.state.now = cutoff; // Accounts do not expire.
+                const later = await h.get('modules/cyber_security', h.generation); httpJson(later, 200);
+                expect(later.body.presentationMode).toBe('editable');
+                httpJson(await h.ncscPost(createCommand()), 201); await loginClean();
             });
             test('HTTP unconfigured NCSC stays planned without questionnaire metadata or installed routes', async () => {
                 const h = await ncscHttpSetup({ configured: false });

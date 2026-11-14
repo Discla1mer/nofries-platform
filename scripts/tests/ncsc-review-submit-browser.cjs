@@ -153,7 +153,8 @@ async function layout(page, name, width) {
             assert.match(await page.locator('#ncsc-review-consequence').textContent(), /1 unsaved answer is saved first/);
             const complete = await layout(page, 'review-complete', width);
             assert.deepEqual(await writes(page), []);
-            await button(page, 'Save and submit assessment').evaluate(element => { element.click(); element.click(); });
+            await button(page, 'Save and submit assessment').click();
+            await button(page, 'Submit').evaluate(element => { element.click(); element.click(); });
             await page.locator('.ncsc-sealed').waitFor();
             await page.getByRole('heading', { name: 'Assessment results', exact: true }).waitFor();
             assert.equal(await page.locator('.ncsc-results .ncsc-result-metric').count(), 3, 'Calculated results render after confirmation');

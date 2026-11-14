@@ -5,18 +5,15 @@ const { createDashboardOperatorSession } = require('../dashboardOperatorSession'
 const { createPostgresDashboardAdministrationRepository } = require('../appLifecycle/postgresDashboardRuntimeRepository');
 const { createMembershipAction } = require('./accountActionsMembership');
 const { createAccountActionsRepository } = require('./accountActionsRepository');
-const { createExpiryAction } = require('./accountActionsExpiry');
 const { accountActionsPool } = require('./accountActionsPool');
-const { createExpiryApproval } = require('./accountActionsApproval');
 
 function createAccountActionsRuntime(configuration, dashboard, authorise) {
     if (Object.hasOwn(configuration, 'sources')) return require('./accountActionsSources')
         .createAccountActionsSources(configuration, dashboard, authorise, createAccountActionsRuntime);
-    const hasMembership = ['readApprovedAction', 'auditPolicy'].some(key => Object.hasOwn(configuration, key));
-    fields(configuration, ['source', 'authorityContainer', 'auditContainer',
-        ...(hasMembership ? ['auditPolicy'] : []), ...(Object.hasOwn(configuration, 'readApprovedAction') ? ['readApprovedAction'] : []),
-        ...(Object.hasOwn(configuration, 'readApprovedExtension') ? ['readApprovedExtension'] : [])]);
-    if (Object.hasOwn(configuration, 'readApprovedExtension') && typeof configuration.readApprovedExtension !== 'function') throw new Error('dashboard_admin_configuration_invalid');
+    // Suspend and restore are the only account actions. Approvals are issued
+    // and read by the built-in store unless a trusted reader is also supplied.
+    fields(configuration, ['source', 'authorityContainer', 'auditContainer', 'auditPolicy',
+        ...(Object.hasOwn(configuration, 'readApprovedAction') ? ['readApprovedAction'] : [])]);
     if (Object.hasOwn(configuration, 'readApprovedAction') && typeof configuration.readApprovedAction !== 'function') throw new Error('dashboard_admin_configuration_invalid');
     const select = names => Object.fromEntries(names.map(key => [key, dashboard[key]]));
     const pool = accountActionsPool(dashboard.pool);
@@ -38,15 +35,11 @@ function createAccountActionsRuntime(configuration, dashboard, authorise) {
                 sessionSha256: capture.sessionSha256, instanceId: capture.instanceId, restoreEpoch: capture.restoreEpoch,
                 identityPolicySha256: hash(dashboard.identityPolicy) };
         } };
-    const issuer = configuration.readApprovedExtension ? null : createExpiryApproval(options);
-    const expiry = createExpiryAction({ ...options, readApprovedExtension: configuration.readApprovedExtension || issuer.readApprovedExtension });
-    const membership = hasMembership ? createMembershipAction({ ...options, identityPolicy: dashboard.identityPolicy,
-        createRepository: (guard, allowed, context) => createAccountActionsRepository(pool, dashboard.clock, guard, allowed, context) }) : null;
+    const membership = createMembershipAction({ ...options, identityPolicy: dashboard.identityPolicy,
+        createRepository: (guard, allowed, context) => createAccountActionsRepository(pool, dashboard.clock, guard, allowed, context) });
     return Object.freeze({ execute(actor, input, invocation, action) {
-        if (action === 'extend-expired-access') return expiry.execute(actor, input, invocation);
-        if (!membership || !['suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(action)) throw new Error('dashboard_admin_unavailable');
+        if (!['suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(action)) throw new Error('dashboard_admin_unavailable');
         return membership.execute(actor, input, invocation, action);
-    },
-        ...(issuer ? { approve: issuer.approve } : {}) });
+    } });
 }
 module.exports = { createAccountActionsRuntime };

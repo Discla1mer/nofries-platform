@@ -55,6 +55,8 @@ function harness(hash = '#organisations') {
     document.querySelector = selector => document.body.querySelector(selector);
     const leaveLink = document.createElement('a'); leaveLink.dataset.dashboardLeave = '';
     leaveLink.setAttribute('href', '/roadmap.html'); document.body.append(leaveLink);
+    const switchAccount = document.createElement('a'); switchAccount.id = 'dashboardSwitchAccount'; switchAccount.dataset.dashboardLeave = '';
+    switchAccount.setAttribute('href', '/login?account=choose'); document.body.append(switchAccount);
     elements.dashboardEntry.append(elements.dashboardStatusPanel, elements.dashboardChooser, elements.dashboardApp);
     document.head = document.createElement('head'); const native = [];
     document.head.append = node => { native.push(node); document.head.children.push(node); };
@@ -79,7 +81,7 @@ function harness(hash = '#organisations') {
         native.slice(-2).forEach(node => node.onload()); await flush();
         await reply(index + 1, 200, value);
     }
-    return { document, window, elements, requests, reply, mount, leaveLink, unload,
+    return { document, window, elements, requests, reply, mount, leaveLink, switchAccount, unload,
         get status() { return document.body.dataset.dashboardState; },
         get back() { return document.getElementById('consultantPortfolioControls'); } };
 }
@@ -219,7 +221,7 @@ test('consultant sees both distinct ready binding IDs, pending setup once, and n
     expect(choices).toHaveLength(3);
     expect(choices.slice(0, 2).map(item => item.textContent)).toEqual(['Shared name', 'Shared name']);
     expect(choices.slice(0, 2).map(item => item.getAttribute('aria-label'))).toEqual([
-        'Shared name · Open to check access', 'Shared name · Open to check access']);
+        'Shared name · Open organisation', 'Shared name · Open organisation']);
     expect(choices[2].textContent).toContain('Draft client');
     expect(h.document.getElementById('clientSetupControls').textContent).toContain('Add organisation');
     choices[1].click(); await flush();
@@ -308,10 +310,10 @@ test.each([null, A])('discovery does not claim access for a retained suspended b
     await h.reply(0, 200, state(selected));
     await h.reply(1, 200, listing([row(A, 'Retained client')]));
     const choice = h.elements.dashboardChoices.children[0];
-    expect(choice.getAttribute('aria-label')).toBe('Retained client · Open to check access');
+    expect(choice.getAttribute('aria-label')).toBe('Retained client · Open organisation');
     expect(choice.getAttribute('aria-pressed')).toBe(String(selected === A));
     const css = fs.readFileSync(path.join(__dirname, '../home.css'), 'utf8');
-    expect(css).toMatch(/\.consultant-organisation-ready::after\s*\{\s*content: 'Open to check access'/);
+    expect(css).toMatch(/\.consultant-organisation-ready::after\s*\{\s*content: 'Open organisation'/);
     expect(h.requests).toHaveLength(2);
     choice.click(); await flush();
     expect(h.requests[2].url).toBe('/api/dashboard/selection');
@@ -450,6 +452,18 @@ test.each(['pending', 'details_required'])('switching to %s saved setup protects
     }
 });
 
+test('discarding another saved draft protects the unsent form until the consultant confirms', async () => {
+    const h = await addClientForm([{ ...client(B, 'Saved client', 'pending'), discardable: true }]); h.input('address').value = 'Synthetic address';
+    const row = h.elements.dashboardChoices.children[1], find = text => row.querySelectorAll('button').find(node => node.textContent === text);
+    find('Discard draft').click(); await flush();
+    find('Yes, discard draft').click(); await flush();
+    expect(h.window.confirm).toHaveBeenCalledWith('Discard unsaved organisation details?');
+    expect(h.requests.length).toBe(3); expect(h.section.querySelector('form') === h.form).toBe(true);
+    expect(h.input('address').value).toBe('Synthetic address');
+    h.window.confirm.mockReturnValue(true); find('Yes, discard draft').click(); await flush();
+    expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'discard', requestId: B });
+});
+
 test('the read-only saved organisation name alone does not make its details form dirty', async () => {
     const h = await addClientForm([client(B, 'Saved client', 'details_required')]);
     h.elements.dashboardChoices.children[1].querySelector('button').click();
@@ -504,4 +518,97 @@ test('access revocation clears an unsent client draft without a discard prompt',
     await h.reply(3, 403, { code: 'dashboard_access_denied' });
     expect(h.status).toBe('denied'); expect(h.document.getElementById('clientSetupControls')).toBeNull();
     expect(h.window.confirm).not.toHaveBeenCalled();
+});
+
+function memoryStorage(initial) {
+    const values = new Map(initial === undefined ? [] : [['nofries-dashboard-last-organisation', initial]]);
+    return { values, getItem: key => values.has(key) ? values.get(key) : null,
+        setItem: (key, value) => { values.set(key, String(value)); }, removeItem: key => { values.delete(key); } };
+}
+function lastOpened(h, store) { h.window.localStorage = store; return h; }
+
+test('the last opened organisation ID is remembered and reopened on the next plain visit through a fresh selection check', async () => {
+    const store = memoryStorage();
+    const first = lastOpened(harness(), store); await flush();
+    await first.reply(0, 200, state()); await first.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    first.elements.dashboardChoices.children[1].click(); await flush();
+    await first.reply(2, 200, { schemaVersion: 1, generation: GB, selectedBindingId: B });
+    await first.reply(3, 200, state(B, GB));
+    expect([...store.values.entries()]).toEqual([['nofries-dashboard-last-organisation', B]]);
+
+    const next = lastOpened(harness(''), store); await flush();
+    await next.reply(0, 200, state()); await next.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    expect(next.requests[2].url).toBe('/api/dashboard/selection');
+    expect(JSON.parse(next.requests[2].init.body)).toEqual({ bindingId: B, expectedGeneration: GA, operationId: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+    await next.reply(2, 200, { schemaVersion: 1, generation: GB, selectedBindingId: B });
+    expect(next.requests[3].url).toBe('/api/dashboard/session');
+});
+
+test('a remembered organisation is not reopened when unlisted, malformed or Organisations was asked for', async () => {
+    for (const [hash, stored, rows] of [['', B, [row(A, 'Own consultancy')]], ['', 'not-an-id', [row(A, 'Own consultancy')]],
+        ['#organisations', B, [row(A, 'Own consultancy'), row(B, 'Client')]]]) {
+        const h = lastOpened(harness(hash), memoryStorage(stored)); await flush();
+        await h.reply(0, 200, state()); await h.reply(1, 200, listing(rows));
+        expect(h.status).toBe('selection'); expect(h.requests).toHaveLength(2);
+    }
+});
+
+test('a refused reopen forgets the remembered organisation and shows the chooser', async () => {
+    const store = memoryStorage(B);
+    const h = lastOpened(harness(''), store); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    await h.reply(2, 403, { code: 'dashboard_binding_denied' });
+    expect(store.values.size).toBe(0);
+    expect(h.requests[3].url).toBe('/api/dashboard/session');
+    await h.reply(3, 200, state()); await h.reply(4, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    expect(h.status).toBe('selection'); expect(h.requests).toHaveLength(5);
+});
+
+test('signing out forgets the remembered organisation', async () => {
+    const store = memoryStorage(B);
+    const h = lastOpened(harness(), store); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    h.elements.dashboardSignOut.click(); await flush();
+    expect(h.requests[2].url).toBe('/api/dashboard/logout');
+    await h.reply(2, 200, { schemaVersion: 1, loggedOut: true });
+    expect(store.values.size).toBe(0);
+});
+
+test('a 5xx or network failure on the automatic reopen shows unavailable, and Retry shows the chooser without reopening', async () => {
+    for (const fail of [h => h.reply(2, 503, { code: 'dashboard_unavailable' }), async h => { h.requests[2].resolve(Promise.reject(new TypeError('network'))); await flush(); }]) {
+        const store = memoryStorage(B);
+        const h = lastOpened(harness(''), store); await flush();
+        await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+        expect(h.requests[2].url).toBe('/api/dashboard/selection');
+        await fail(h);
+        expect(h.status).toBe('unavailable'); expect(h.requests).toHaveLength(3);
+        h.elements.dashboardRetry.click(); await flush();
+        expect(h.requests[3].url).toBe('/api/dashboard/session');
+        await h.reply(3, 200, state()); await h.reply(4, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+        expect(h.status).toBe('selection'); expect(h.requests).toHaveLength(5);
+    }
+});
+
+test('sign-in expiry or a 401 forgets the remembered organisation', async () => {
+    const expired = memoryStorage(B);
+    const h = lastOpened(harness(), expired); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    expect(h.status).toBe('selection'); expect(expired.values.size).toBe(1);
+    jest.advanceTimersByTime(60 * 60 * 1000); await flush();
+    expect(h.status).toBe('expired'); expect(expired.values.size).toBe(0);
+
+    const refused = memoryStorage(B);
+    const signedOut = lastOpened(harness(''), refused); await flush();
+    await signedOut.reply(0, 401, { code: 'dashboard_session_required' });
+    expect(signedOut.status).toBe('unauthenticated'); expect(refused.values.size).toBe(0);
+});
+
+test('Sign in with another account forgets the remembered organisation, but a new-tab click keeps it', async () => {
+    const store = memoryStorage(B);
+    const h = lastOpened(harness(), store); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    const click = event => { for (const fn of h.switchAccount.events.click) fn(event); };
+    click({ ctrlKey: true, preventDefault: jest.fn() }); expect(store.values.size).toBe(1);
+    const event = { preventDefault: jest.fn() }; click(event);
+    expect(event.preventDefault).not.toHaveBeenCalled(); expect(store.values.size).toBe(0);
 });

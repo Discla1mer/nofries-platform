@@ -411,7 +411,7 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
     emailReceivers: [
       {
         emailAddress: notificationEmail
-        name: 'Joel Harvey'
+        name: 'No Fries alerts'
         useCommonAlertSchema: true
       }
     ]

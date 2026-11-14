@@ -73,7 +73,7 @@ async function run() {
             assert.equal(await browser.evaluate('document.querySelectorAll(".ncsc-review-item").length'),14);
             assert.match(await browser.evaluate('document.querySelector(".ncsc-review-scope").textContent'),/Synthetic population A/);
             const writes=await browser.evaluate('window.personaWrites.length'); await button('Back to questions'); assert.equal(await browser.evaluate('window.personaWrites.length'),writes);
-            await button('Review and submit'); await button('Save and submit assessment'); await browser.wait('document.querySelector(".ncsc-next-steps")'); await scaleAndLayout('submitted-next-steps');
+            await button('Review and submit'); await button('Save and submit assessment'); await button('Submit'); await browser.wait('document.querySelector(".ncsc-next-steps")'); await scaleAndLayout('submitted-next-steps');
             assert.equal(await browser.evaluate('window.personaWrites.filter(c=>c.action==="submit").length'),1);
             assert.equal(await browser.evaluate('document.getElementById("ncsc-provider-summary").readOnly'),true);
             await button('Retry loading results'); await browser.wait('!document.querySelector(".ncsc-status").textContent.includes("Loading")');

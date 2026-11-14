@@ -29,15 +29,18 @@ for (const client of [false, true]) for (const code of ['managed_it_core', 'tier
             normaliseEntitlementState(fact.snapshot.entitlementState, fact.snapshot.tenantAggregate);
             const current = resolveEntitlements(fact.snapshot.entitlementState, fact.snapshot.tenantAggregate,
                 fact.binding.scope, NOW, fact.snapshot.flags);
-            assert.equal(current.product, null); assert.equal(current.providerAccessGranted, false);
+            assert.equal(current.product.code, 'dashboard_score'); // The lapsed starter product still applies.
+            assert.equal(current.providerAccessGranted, false);
             assert.equal(current.services[code].entitled, code !== 'managed_it_core');
         }
         const before = JSON.stringify({ account: f.state.account, scopes: [...f.scopes] });
         const result = await createRetainedTrialAssessmentReader(f.options).read({}, f.input);
         assert.deepEqual(result.assessment, ncsc.projectNcscDetail(f.versions[2])); assert.equal(result.readOnly, true);
         assert.equal(JSON.stringify({ account: f.state.account, scopes: [...f.scopes] }), before);
-        assert.throws(() => resolveNcscAccess(f.selected.snapshot, { scope: f.selected.binding.scope,
-            identity: { subjectKey: f.actor }, resolvedAt: NOW }, 'assessment.write', NOW), /ncsc_access_denied/);
+        // Accounts do not expire: ordinary write access continues after the
+        // recorded end, while this lane itself remains strictly read-only.
+        assert.doesNotThrow(() => resolveNcscAccess(f.selected.snapshot, { scope: f.selected.binding.scope,
+            identity: { subjectKey: f.actor }, resolvedAt: NOW }, 'assessment.write', NOW));
     });
 
 for (const code of ['dashboard_score', 'dashboard_govern']) test(`a current ${code} product still routes away from retained-only reads`, async () => {
@@ -69,14 +72,14 @@ for (const client of [false, true]) test(`one submitted result remains read-only
     const f = await retainedTrialFixture({ client }), reader = createRetainedTrialAssessmentReader(f.options);
     const before = JSON.stringify({ account: f.state.account, scopes: [...f.scopes], versions: f.versionRows });
     const result = await reader.read({}, f.input);
-    assert.equal(result.readOnly, true); assert.equal(result.trialEndedAt, f.account.activation.validUntil);
+    assert.equal(result.readOnly, true); assert.equal(Object.hasOwn(result, 'trialEndedAt'), false);
     assert.deepEqual(result.assessment, ncsc.projectNcscDetail(f.versions[2]));
     assert.deepEqual(Object.keys(reader), ['read']);
     assert.equal(JSON.stringify({ account: f.state.account, scopes: [...f.scopes], versions: f.versionRows }), before);
     assert.ok(f.queries.every(({ sql }) => /^SELECT\b/.test(sql.trim())));
     assert.ok(!f.queries.some(({ sql }) => /INSERT|UPDATE\s+nofries|DELETE|usage\.reserve/.test(sql)));
-    assert.throws(() => resolveNcscAccess(f.selected.snapshot, { scope: f.selected.binding.scope,
-        identity: { subjectKey: f.actor }, resolvedAt: NOW }, 'assessment.write', NOW), /ncsc_access_denied/);
+    assert.doesNotThrow(() => resolveNcscAccess(f.selected.snapshot, { scope: f.selected.binding.scope,
+        identity: { subjectKey: f.actor }, resolvedAt: NOW }, 'assessment.write', NOW)); // Ordinary access no longer ends.
 });
 
 test('reads require fresh trusted capture rather than caller identity, plan, tenant or a write action', async () => {

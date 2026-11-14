@@ -11,7 +11,3 @@ body { margin: 0; background: var(--dashboard-paper, #ece6da); }
 .try-demo-banner a.try-demo-cta { padding: 0 1rem; border-radius: .6rem; background: var(--dashboard-ink, #17140f); color: var(--dashboard-surface, #f6f2ea); text-decoration: none; font-weight: 600; }
 .try-demo-banner :focus-visible { outline: 3px solid var(--dashboard-focus, #17140f); outline-offset: 3px; }
 .try-demo-status { flex-basis: 100%; font-weight: 600; } .try-demo-status:empty { display: none; }
-.try-demo-actions-list { display: grid; gap: 1rem; padding-left: 1.25rem; }
-.try-demo-actions-list li p { margin: .4rem 0 0; }
-.try-demo-actions-list [data-priority="High"] { background: var(--dashboard-navy); border-color: var(--dashboard-control-border); color: var(--dashboard-ink); }
-.try-demo-assessment a.dashboard-button { text-decoration: none; }

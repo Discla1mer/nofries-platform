@@ -6,10 +6,10 @@ const { buildSupportDocument } = require('./lib/supportDocument');
 const { buildPortalDocument } = require('./lib/portalDocument');
 const { buildDashboardDocument, withCustomerProvider } = require('./lib/dashboardDocument');
 const { buildGatewayDocument } = require('./lib/gatewayDocument');
-const { withSharedAssistantDocument, publicAssistantPage } = require('./lib/withSharedAssistantDocument');
-const { withHashBoundSharedAssistantDocument } = require('./lib/withHashBoundSharedAssistantDocument');
+const { withFrontendReleaseInformation } = require('./lib/frontendReleaseInfo');
 const {
     checkRateLimit,
+    getVerifiedDashboardSessionKey,
     getClientKeyFromHeaders,
     isBlockedUserAgent,
     rateLimitHeaders
@@ -59,6 +59,8 @@ const { createEnquiryService } = require('./api/shared/enquiry');
 const { errorResult: enquiryErrorResult } = require('./api/enquiry');
 const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
+const { createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest } = require('./api/shared/funnelCounts');
+const { PATH: UNSUBSCRIBE_PATH, MAX_BODY_BYTES: UNSUBSCRIBE_BODY_BYTES, createUnsubscribeWriter, handleUnsubscribeRequest } = require('./api/shared/lifecycleEmail/unsubscribeEndpoint');
 const { logSafeFailure: logStaffAuthFailure } = require('./api/shared/browserAuthDiagnostics');
 const { createAuthLoginFunction } = require('./api/authLogin');
 const { createAuthCallbackFunction } = require('./api/authCallback');
@@ -116,7 +118,7 @@ function createNoFriesApp(configuration = {}) {
         return Object.freeze({ request: invocation.request, signal: AbortSignal.any([signal, invocation.signal]) });
     };
     let dashboardAdminSignupListService = null, dashboardAdminAccountActions = null, dashboardAdminAccountLookup = null;
-    let dashboard = null, customerSignup = null, externalCustomerSignup = null, authEnvironment = null, retainedTrialRead = null, dashboardAdminService = null, dashboardAdminRequestBudgetMs = 10000;
+    let funnelPool = null, dashboard = null, customerSignup = null, externalCustomerSignup = null, authEnvironment = null, retainedTrialRead = null, dashboardAdminService = null, dashboardAdminRequestBudgetMs = 10000;
     try {
         if (!configuration || typeof configuration !== 'object' || isProxy(configuration)) throw new Error();
         const keys = Reflect.ownKeys(configuration);
@@ -140,6 +142,7 @@ function createNoFriesApp(configuration = {}) {
             if (!authKeys.includes('env')) throw new Error();
             authEnvironment = dashboardEnvironmentSnapshot(auth.env);
             snapshot.browserAuthOptions = Object.freeze({ ...auth, env: authEnvironment });
+            funnelPool = snapshot.pool || null;
             dashboard = createDashboardRuntimeHandlers(Object.freeze(snapshot));
         }
         if (keys.includes('dashboardAdmin') && configuration.dashboardAdmin !== null) {
@@ -296,20 +299,16 @@ const gatewayInputs = {
 };
 const gatewayDocument = buildGatewayDocument(gatewayInputs);
 const externalGatewayDocument = buildGatewayDocument({ ...gatewayInputs, customerTransport: 'external' });
-const signupAssistantSources = Object.freeze({
-    prospectSource: fs.readFileSync(path.join(__dirname, 'js/prospect-assistant.js'), 'utf8'),
-    sharedSource: fs.readFileSync(path.join(__dirname, 'js/shared-assistant.js'), 'utf8')
-});
-const signupDocument = withHashBoundSharedAssistantDocument(buildSignupDocument({
+const signupDocument = buildSignupDocument({
     clientSource: fs.readFileSync(path.join(__dirname, 'api/shared/customerSignup/signupClient.js'), 'utf8'),
     journeySource: fs.readFileSync(path.join(__dirname, 'api/shared/customerSignup/signupJourney.js'), 'utf8'),
     customerLogin: !!dashboard?.authServices.customer
-}), signupAssistantSources);
-const externalSignupDocument = externalCustomerSignup ? withHashBoundSharedAssistantDocument(buildSignupDocument({
+});
+const externalSignupDocument = externalCustomerSignup ? buildSignupDocument({
     clientSource: fs.readFileSync(path.join(__dirname, 'api/shared/customerSignup/signupClient.js'), 'utf8'),
     journeySource: fs.readFileSync(path.join(__dirname, 'api/shared/customerSignup/signupJourney.js'), 'utf8'),
     customerLogin: true, customerTransport: 'external'
-}), signupAssistantSources) : null;
+}) : null;
 function signupSelection(req, res) {
     const cookie = req.headers.cookie || '';
     const legacy = /(?:^|;)\s*__Host-nofries-customer=/.test(cookie);
@@ -372,7 +371,7 @@ app.get('/login', (req, res) => {
         if (!configuration.externalOrganisationSetup) return sendSignupPage(res, selected);
         const html = withCustomerProvider(fs.readFileSync(path.join(__dirname, 'login.html'), 'utf8'), 'external')
             .replaceAll('href="/api/customer-auth/login"', 'href="/api/external-customer-auth/login"');
-        return res.type('html').send(withSharedAssistantDocument(html));
+        return res.type('html').send(html);
     }
     // Legacy deployments may allow customer sign-in while new email setup is
     // disabled. Reuse the authenticated signup-state document, whose explicit
@@ -382,7 +381,7 @@ app.get('/login', (req, res) => {
         res.setHeader('Content-Security-Policy', signupDocument.contentSecurityPolicy);
         return res.type('html').send(signupDocument.html);
     }
-    res.type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, 'login.html'), 'utf8')));
+    res.type('html').send(fs.readFileSync(path.join(__dirname, 'login.html'), 'utf8'));
 });
 for (const [key, route, clearTransactionCookie] of [
     ['customer', '/api/customer-auth', require('./api/shared/browserAuth').clearCustomerTransactionCookie],
@@ -413,6 +412,13 @@ for (const [key, route, clearTransactionCookie] of [
             } } });
         await sendFunctionResponse(callback, req, res);
     }));
+    // The provider answers with form_post. A plain browser visit (for example
+    // after Cancel on a hosted sign-in page) carries no usable result, so
+    // send it to the same friendly sign-in recovery page without reading it.
+    app.get(route + '/callback', (req, res) => {
+        res.set('Cache-Control', 'no-store');
+        res.redirect(303, key === 'externalCustomer' ? '/login?signin=retry&provider=external' : '/login?signin=retry&provider=legacy');
+    });
     if (key === 'externalCustomer') {
         const setupLogout = createAuthLogoutFunction({ env: authEnvironment, service: customerAuth.setupLogout, setupAccountChange: true });
         app.post(route + '/logout', express.urlencoded({ extended: false, limit: '16kb' }), asyncRoute(async (req, res) => {
@@ -482,7 +488,7 @@ async function sendDashboardAdmin(req, res, route) {
         await sendDashboardAdmin(req, res, 'entry');
     }));
     app.use('/api/dashboard-admin', asyncRoute(async (req, res) => {
-    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|extend-expired-access|approve-extension|suspend|restore|approve-suspend|approve-restore|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
+    const route = /^\/(?:app\.js|app\.css|capabilities|lookup|suspend|restore|approve-suspend|approve-restore|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
         dashboardAdminSignupListService && req.path === '/signups' ? req.path.slice(1) : null;
     await sendDashboardAdmin(req, res, route);
 }));
@@ -612,6 +618,28 @@ for (const [prefix, setup, customerAuth, signup] of [
         clientKey: getClientKeyFromHeaders(req.headers, req.ip) });
     entryResponse(result);
 }));
+// Flag off keeps the retired 410 before any body is read. Flag on accepts only
+// a 64-byte {event} POST and writes one aggregate daily count (issue #151).
+const recordFunnelCount = funnelPool ? createFunnelCountWriter({ pool: funnelPool }) : null;
+app.all('/api/telemetry', (req, res, next) => funnelCountsEnabled(apiEnvironment) ? next()
+    : sendResult(res, { status: 410, body: { error: 'Public acquisition telemetry is disabled', code: 'telemetry_disabled' } }),
+express.json({ limit: 64 }), asyncRoute(async (req, res) => {
+    const result = await handleFunnelCountRequest(req, { env: apiEnvironment, record: recordFunnelCount,
+        clientKey: req.ip || req.socket.remoteAddress, log: console });
+    if (result.status === 204) {
+        Object.entries(result.headers).forEach(([name, value]) => res.setHeader(name, value));
+        return res.status(204).end();
+    }
+    sendResult(res, result);
+}));
+// Lifecycle email unsubscribe (#151 E6): live whenever its secret is set, even
+// with sending off, so an already-delivered link keeps working. Form or RFC 8058
+// one-click bodies are small; the token itself may also arrive in the query.
+const recordUnsubscribe = funnelPool ? createUnsubscribeWriter({ pool: funnelPool }) : null;
+app.all(UNSUBSCRIBE_PATH, express.urlencoded({ extended: false, limit: UNSUBSCRIBE_BODY_BYTES, parameterLimit: 4 }), asyncRoute(async (req, res) => {
+    sendResult(res, await handleUnsubscribeRequest(req, { env: apiEnvironment, record: recordUnsubscribe,
+        clientKey: req.ip || req.socket.remoteAddress, log: console }));
+}));
 app.use(express.json({ limit: '3mb' }));
 if (configuration.signupBootstrap) {
     if (typeof configuration.signupBootstrap !== 'function') throw new Error('signup_bootstrap_invalid');
@@ -643,7 +671,7 @@ if (configuration.starterClients || configuration.externalStarterClients) app.al
         if (['starter_reauthentication_required', 'signup_identity_required'].includes(error?.code || error?.message)) {
             return res.status(401).set('Cache-Control', 'no-store').json({ code: 'starter_reauthentication_required' });
         }
-        const code = ['starter_client_limit', 'starter_details_locked'].includes(error?.code || error?.message)
+        const code = ['starter_client_limit', 'starter_details_locked', 'starter_client_discarded', 'starter_client_not_draft'].includes(error?.code || error?.message)
             ? error.code || error.message : 'starter_signup_unavailable';
         res.status(code === 'starter_signup_unavailable' ? 503 : 409).set('Cache-Control', 'no-store').json({ code });
     }
@@ -880,21 +908,21 @@ app.get(['/scoping', '/scoping/'], (req, res) => {
     res.setHeader('Content-Security-Policy', scopingDocument.contentSecurityPolicy);
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.status(200).type('html').send(withSharedAssistantDocument(scopingDocument.html));
+    res.status(200).type('html').send(scopingDocument.html);
 });
 
 app.get(['/support', '/support/'], (req, res) => {
     res.setHeader('Content-Security-Policy', supportDocument.contentSecurityPolicy);
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.status(200).type('html').send(withSharedAssistantDocument(supportDocument.html));
+    res.status(200).type('html').send(supportDocument.html);
 });
 
 app.get(['/portal', '/portal/'], (req, res) => {
     res.setHeader('Content-Security-Policy', portalDocument.contentSecurityPolicy);
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.status(200).type('html').send(withSharedAssistantDocument(portalDocument.html));
+    res.status(200).type('html').send(portalDocument.html);
 });
 
 app.get(['/dashboard', '/dashboard/'], (req, res) => {
@@ -903,7 +931,7 @@ app.get(['/dashboard', '/dashboard/'], (req, res) => {
     const selected = signupSelection(req, res); if (!selected) return;
     const document = selected.external ? externalDashboardDocument : dashboardDocument;
     res.setHeader('Content-Security-Policy', document.contentSecurityPolicy);
-    res.status(200).type('html').send(withSharedAssistantDocument(document.html));
+    res.status(200).type('html').send(document.html);
 });
 
 app.get(['/signup', '/signup/'], (req, res) => {
@@ -915,7 +943,14 @@ app.get(['/signup', '/signup/'], (req, res) => {
 app.get(['/operator', '/operator/'], (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, 'app', 'operator.html'), 'utf8')));
+    res.type('html').send(fs.readFileSync(path.join(__dirname, 'app', 'operator.html'), 'utf8'));
+});
+
+app.get(['/forgot-password', '/forgot-password/'], (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    // Explain the provider-owned reset path without collecting credentials.
+    res.redirect(302, '/account-help.html');
 });
 
 app.get(['/service-desk', '/service-desk/'], (req, res) => {
@@ -965,7 +1000,7 @@ app.get('/', (req, res) => {
     const selected = signupSelection(req, res); if (!selected) return;
     const document = selected.external ? externalGatewayDocument : gatewayDocument;
     res.setHeader('Content-Security-Policy', document.contentSecurityPolicy);
-    res.status(200).type('html').send(withSharedAssistantDocument(document.html, 'home'));
+    res.status(200).type('html').send(document.html);
 });
 // Default-off fictional demo (#29). Only the local demo/try/serve.js sets tryDemo.
 if (configuration.tryDemo === true) {
@@ -980,7 +1015,7 @@ if (configuration.tryDemo === true) {
 mountPublicAssets(app);
 
 app.use((req, res) => {
-    res.status(404).type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, '404.html'), 'utf8')));
+    res.status(404).type('html').send(fs.readFileSync(path.join(__dirname, '404.html'), 'utf8'));
 });
 
 app.use((error, req, res, next) => {
@@ -993,7 +1028,7 @@ app.use((error, req, res, next) => {
         }
         return res.status(500).json({ error: 'No Fries could not complete that request' });
     }
-    return res.status(500).type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, 'error.html'), 'utf8')));
+    return res.status(500).type('html').send(fs.readFileSync(path.join(__dirname, 'error.html'), 'utf8'));
 });
 
 
@@ -1031,17 +1066,35 @@ function blockSuspiciousUserAgents(req, res, next) {
 }
 
 function rateLimitApiRequests(req, res, next) {
+    // Anonymous funnel counts use their own isolated limiter, so they never
+    // spend the shared write budget that signup and enquiries depend on.
+    // The unsubscribe route likewise has its own limiter: one-click POSTs come
+    // from shared mail-provider addresses.
+    if (req.path === '/telemetry' || req.path === '/emailPreferences') return next();
     const method = String(req.method || 'GET').toUpperCase();
-    const bucket = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? 'apiWrite' : 'apiRead';
+    const write = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
     const clientKey = getClientKeyFromHeaders(req.headers, req.ip || req.socket.remoteAddress);
-    const result = checkRateLimit(bucket, clientKey, apiEnvironment);
+    // Only a session the server has already issued or verified selects the
+    // dashboard allowance; a fabricated cookie stays on the address limit.
+    const sessionKey = req.path.startsWith('/dashboard/') ? getVerifiedDashboardSessionKey(req.headers) : null;
+    let result;
+    if (sessionKey) {
+        // Verified dashboard sessions: a generous per-address ceiling first,
+        // then the per-session allowance that ordinary use stays within.
+        result = checkRateLimit(write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey, apiEnvironment);
+        if (result.allowed) {
+            result = checkRateLimit(write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey, apiEnvironment);
+        }
+    } else {
+        result = checkRateLimit(write ? 'apiWrite' : 'apiRead', clientKey, apiEnvironment);
+    }
     Object.entries(rateLimitHeaders(result)).forEach(([name, value]) => {
         if (value) {
             res.setHeader(name, value);
         }
     });
     if (!result.allowed) {
-        return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+        return res.status(429).json({ error: 'Too many requests. Please try again later.', retryAfterSeconds: result.retryAfterSeconds });
     }
     return next();
 }
@@ -1088,7 +1141,7 @@ function mountPublicAssets(application) {
     rootRoutes.forEach(([route, fileName]) => {
         application.get(route, (req, res) => {
             if (fileName.endsWith('.html')) {
-                return res.type('html').send(withSharedAssistantDocument(fs.readFileSync(path.join(__dirname, fileName), 'utf8'), publicAssistantPage(fileName)));
+                return res.type('html').send(withFrontendReleaseInformation(fs.readFileSync(path.join(__dirname, fileName), 'utf8')));
             }
             res.sendFile(path.join(__dirname, fileName));
         });

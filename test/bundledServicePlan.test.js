@@ -58,7 +58,7 @@ describe('bundled Lean Managed IT service plan', () => {
 
         expect(view.available).toBe(true);
         expect(view.counts).toEqual({ users: 2, endpoints: 2, locations: 1 });
-        expect(view.pricing).toMatchObject({ monthly: 238, onboarding: 750 });
+        expect(view.pricing).toMatchObject({ monthly: 198, onboarding: 750 });
         expect(view.components.map((item) => [item.serviceKey, item.status])).toEqual([
             ['ai-service-desk', 'included'],
             ['endpoint-backup', 'needs_confirmation']
@@ -74,15 +74,15 @@ describe('bundled Lean Managed IT service plan', () => {
                 { serviceKey: 'ai-service-desk', status: 'included' },
                 { serviceKey: 'endpoint-backup', status: 'needs_confirmation' }
             ],
-            owner: 'Joel Harvey',
+            owner: 'Test Owner',
             consultantRationale: 'One accountable service is the clearest fit.',
             nextAction: 'Review the draft proposal with Joel.'
         }, access);
 
-        expect(record.bundleReview.pricing).toMatchObject({ monthly: 238, onboarding: 750 });
+        expect(record.bundleReview.pricing).toMatchObject({ monthly: 198, onboarding: 750 });
         expect(record.recommendations.find((item) => item.serviceKey === 'managed-it-core').review).toMatchObject({
             decision: 'accepted',
-            estimatedMrr: 238,
+            estimatedMrr: 198,
             oneOffRevenue: 750
         });
         expect(record.recommendations.find((item) => item.serviceKey === 'ai-service-desk').review.estimatedMrr).toBe(40);
@@ -97,7 +97,7 @@ describe('bundled Lean Managed IT service plan', () => {
         expect(proposal.recommendations).toHaveLength(1);
         expect(proposal.bundle.includedComponents.map((item) => item.serviceKey)).toEqual(['ai-service-desk']);
         expect(proposal.bundle.validationComponents.map((item) => item.serviceKey)).toEqual(['endpoint-backup']);
-        expect(proposal.pricing).toMatchObject({ users: 2, endpoints: 2, locations: 1, monthly: 238, onboarding: 750 });
+        expect(proposal.pricing).toMatchObject({ users: 2, endpoints: 2, locations: 1, monthly: 198, onboarding: 750 });
 
         const payload = buildDynamicsPayload({ tenant: { key: 'nofries' } }, {
             id: 'customer_bundle',
@@ -112,9 +112,9 @@ describe('bundled Lean Managed IT service plan', () => {
         expect(payload.opportunities).toHaveLength(1);
         expect(payload.opportunities[0]).toMatchObject({
             serviceKey: 'managed-it-core',
-            estimatedMonthlyRevenue: 238,
+            estimatedMonthlyRevenue: 198,
             estimatedOneOffRevenue: 750,
-            owner: 'Joel Harvey'
+            owner: 'Test Owner'
         });
         expect(payload.opportunities[0].includedComponents).toEqual([
             { serviceKey: 'ai-service-desk', serviceName: 'Phone, chat and email support' }

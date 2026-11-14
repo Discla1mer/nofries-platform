@@ -40,6 +40,7 @@ for (const builder of ['build-static.js', 'build-app-service.js']) {
             if (name === 'fs') return fakeFs;
             if (name === 'path' || name === 'crypto') return require(name);
             if (name === '../lib/publicAssets') return require('../lib/publicAssets');
+            if (name === '../lib/frontendReleaseInfo') return require('../lib/frontendReleaseInfo');
             if (name.endsWith('Document') || name === '../demo/try/document') return new Proxy({}, { get: () => () => ({ html: '<html></html>', contentSecurityPolicy: "default-src 'none'" }) });
             throw new Error('Unexpected build dependency: ' + name);
         }
@@ -113,7 +114,6 @@ test('real static and App Service builds bind their distinct customer entry mode
         const serviceRoot = path.join(directory, 'app-service-dist');
         const read = (base, file) => fs.readFileSync(path.join(base, file), 'utf8');
         const { buildDashboardDocument } = require('../lib/dashboardDocument');
-        const { withSharedAssistantDocument } = require('../lib/withSharedAssistantDocument');
         const documentInputs = {
             customerLogin: true,
             template: read(serviceRoot, 'app/dashboard.html'),
@@ -124,7 +124,7 @@ test('real static and App Service builds bind their distinct customer entry mode
         };
         const expected = buildDashboardDocument({ ...documentInputs, customerTransport: 'auto' });
         const dynamic = buildDashboardDocument(documentInputs);
-        assert.equal(read(staticRoot, 'app/dashboard.html'), withSharedAssistantDocument(expected.html, 'dashboard'));
+        assert.equal(read(staticRoot, 'app/dashboard.html'), expected.html);
         const config = JSON.parse(read(staticRoot, 'staticwebapp.config.json'));
         for (const alias of ['/dashboard']) {
             const routes = config.routes.filter(route => route.route === alias);
@@ -174,7 +174,7 @@ test('real static and App Service builds bind their distinct customer entry mode
             assert.equal(response.headers['cache-control'], 'private, no-store, max-age=0');
             assert.equal(response.headers['x-content-type-options'], 'nosniff');
             assert.match(response.headers['x-robots-tag'], /noindex/);
-            assert.equal(response.text, withSharedAssistantDocument(dynamic.html, 'dashboard'));
+            assert.equal(response.text, dynamic.html);
         }
         for (const endpoint of ['/api/dashboard/session', '/api/dashboard/bootstrap', '/api/dashboard/app.js', '/api/dashboard/dashboard.css']) {
             const response = await request(app).get(endpoint);
@@ -641,6 +641,11 @@ test('the public dashboard login redirects to the single customer entry while st
     assert.match(operator.text, /operator/i);
     assert.equal(response.headers['set-cookie'], undefined);
     assert.match(response.headers['cache-control'], /no-store/);
+    const reset = await require('supertest')(require('../server.js')).get('/forgot-password');
+    assert.equal(reset.status, 302);
+    assert.equal(reset.headers.location, '/account-help.html');
+    assert.match(reset.headers['cache-control'], /no-store/);
+    assert.equal(reset.headers['x-robots-tag'], 'noindex, nofollow');
 }, 20000);
 
 test('the real App Service build fails when the required dashboard document is missing', async () => {

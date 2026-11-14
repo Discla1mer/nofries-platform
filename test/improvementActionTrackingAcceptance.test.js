@@ -99,6 +99,19 @@ test('completing and reopening genuine retained work never calculates priority o
     expect(evaluateAssessment(input, { registry: acceptedRegistry })).toEqual(evaluationBefore);
 });
 
+test('an owner named by label completes genuine work with no member eligibility and no priority effect', () => {
+    const { state: initial } = seed(), labelled = step(initial, 'assign', { ownerLabel: 'IT\tcontractor', dueDate: '2026-10-01' });
+    const completed = step(step(labelled, 'start', {}), 'complete', { note: 'Synthetic contractor work completed.',
+        evidenceReference: 'synthetic:unverified-reference' });
+    const list = listOf(completed, { ...FILTERS, owner: 'IT contractor' });
+    expect(list.actions.map(action => action.actionId)).toEqual([initial.proposals[0].actionId]);
+    expect(list.actions[0]).toMatchObject({ ownerSubjectKey: null, ownerLabel: 'IT contractor', status: 'completed',
+        ownerEligibility: 'not_checked', evidence: { completionVerification: 'not_verified', scoreEffect: 'none' } });
+    expect(list.actions[0].history.map(event => event.type)).toEqual(['assign', 'start', 'complete']);
+    expect(diagnose(list).priority).toEqual(PRIORITY);
+    expect(listOf(completed, { ...FILTERS, owner: OWNER }).actions).toEqual([]);
+});
+
 test('an overdue boundary changes scheduling facts without becoming a risk-priority signal', () => {
     const state = step(seed().state, 'assign', { ownerSubjectKey: OWNER, dueDate: '2026-10-01' });
     const before = listOf(state, FILTERS, '2026-10-01T23:59:59.999Z');

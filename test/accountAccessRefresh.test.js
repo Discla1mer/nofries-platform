@@ -77,10 +77,11 @@ function harness(options = {}) {
     document.querySelector = selector => document.body.querySelector(selector);
     elements.dashboardEntry.append(elements.dashboardStatusPanel, elements.dashboardChooser, elements.dashboardApp);
     if (options.accountMenu) {
-        const menu = document.createElement('details'); menu.id = 'dashboardAccountMenu';
-        const summary = document.createElement('summary'); summary.textContent = 'Account';
-        const actions = document.createElement('div'); actions.id = 'dashboardAccountActions';
-        actions.append(elements.dashboardSignOut); menu.append(summary, actions); elements.dashboardStatusPanel.append(menu);
+        const menu = document.createElement('div'); menu.id = 'dashboardAccountMenu';
+        const toggle = document.createElement('button'); toggle.id = 'dashboardAccountToggle'; toggle.type = 'button';
+        toggle.textContent = 'Account'; toggle.setAttribute('aria-expanded', 'false');
+        const actions = document.createElement('div'); actions.id = 'dashboardAccountActions'; actions.hidden = true;
+        actions.append(elements.dashboardSignOut); menu.append(toggle, actions); elements.dashboardStatusPanel.append(menu);
     }
     document.head = document.createElement('head');
     const native = [];
@@ -275,6 +276,17 @@ test('ready workspace exposes refresh failure without replacing content, then cl
     expect(h.mounts[0].destroy).not.toHaveBeenCalled();
 });
 
+test('Account shows only the authenticated session label and clears it when access expires', async () => {
+    const h = harness({ hash: '#overview', accountMenu: true }); await flush();
+    await h.open(state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test' }));
+    const toggle = h.document.getElementById('dashboardAccountToggle');
+    expect(toggle.textContent).toBe('Account: synthetic@example.test');
+    h.window.dispatch('focus'); await flush();
+    await h.reply(4, 401, { code: 'dashboard_authentication_required' });
+    expect(toggle.textContent).toBe('Account');
+    expect(h.document.getElementById('dashboardAccountMenu').hidden).toBe(true);
+});
+
 test('native Account actions retain guarded consultant return and disappear after session expiry', async () => {
     const h = harness({ hash: '#overview', accountMenu: true }); await flush();
     const value = state(A, GA, { purpose: 'customer', accountType: 'consultant' });
@@ -286,8 +298,21 @@ test('native Account actions retain guarded consultant return and disappear afte
     expect(h.elements.dashboardSignOut.parentElement).toBe(actions);
     expect(actions.children).toEqual([back, h.elements.dashboardSignOut]);
     expect(h.document.body.dataset.dashboardAccountType).toBe('consultant');
-    menu.open = true; back.onclick(); await flush();
-    expect(menu.open).toBe(false); expect(back.hidden).toBe(true);
+    h.document.getElementById('dashboardAccountToggle').click();
+    expect(actions.hidden).toBe(false);
+    expect(h.document.getElementById('dashboardAccountToggle').getAttribute('aria-expanded')).toBe('true');
+    // Escape closes the open menu and returns focus to the Account button.
+    const toggle = h.document.getElementById('dashboardAccountToggle');
+    const escape = { key: 'Escape', preventDefault: jest.fn() };
+    menu.events.keydown.forEach(listener => listener(escape));
+    expect(actions.hidden).toBe(true); expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(escape.preventDefault).toHaveBeenCalledTimes(1); expect(h.document.activeElement).toBe(toggle);
+    const other = { key: 'Tab', preventDefault: jest.fn() };
+    menu.events.keydown.forEach(listener => listener(other)); expect(other.preventDefault).not.toHaveBeenCalled();
+    toggle.click(); expect(actions.hidden).toBe(false);
+    back.onclick(); await flush();
+    expect(h.document.getElementById('dashboardAccountToggle').getAttribute('aria-expanded')).toBe('false');
+    expect(actions.hidden).toBe(true); expect(back.hidden).toBe(true);
     await h.reply(4, 200, value); await h.reply(5, 200, listing());
     expect(h.status).toBe('selection'); expect(menu.hidden).toBe(false);
     expect(h.window.location.hash).toBe('#organisations');
@@ -296,10 +321,12 @@ test('native Account actions retain guarded consultant return and disappear afte
     expect(h.elements.dashboardSignIn.hidden).toBe(false);
 });
 
-test.each(['index.html', 'app/dashboard.html'])('%s keeps one sign-out inside native Account details and recovery outside', file => {
+test.each(['index.html', 'app/dashboard.html'])('%s keeps one sign-out inside the Account button menu and recovery outside', file => {
     const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-    const menu = html.match(/<details[^>]*id="dashboardAccountMenu"[^>]*>[\s\S]*?<\/details>/)[0];
-    expect(menu).toContain('<summary>Account</summary>');
+    const menu = html.match(/<div[^>]*id="dashboardAccountMenu"[^>]*>[\s\S]*?id="dashboardSignOut"[\s\S]*?<\/button>\s*<\/div>\s*<\/div>/)[0];
+    expect(menu).toContain('<button class="dashboard-account-toggle" id="dashboardAccountToggle" type="button"');
+    expect(menu).toContain('>Account</button>');
+    expect(menu).not.toContain('<summary>');
     expect(menu).toContain('id="dashboardSignOut"');
     expect(html.match(/id="dashboardSignOut"/g)).toHaveLength(1);
     expect(menu).not.toMatch(/id="dashboard(?:Retry|SignIn)"/);

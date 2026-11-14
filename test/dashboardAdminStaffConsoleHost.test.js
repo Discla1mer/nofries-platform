@@ -12,8 +12,7 @@ afterEach(() => { expect(JSON.stringify(warning.mock.calls)).not.toMatch(/PRIVAT
 
 function staffHost() {
     const h = fixture('legacy_starter');
-    delete h.env.NOFRIES_DASHBOARD_ADMIN_BINDING; delete h.env.NOFRIES_DASHBOARD_ADMIN_ENABLED;
-    Object.assign(h.env, { NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS: 'false', NOFRIES_STAFF_CONSOLE: 'true', NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: 'true' });
+    h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS = 'false';
     const Client = h.sdk.BlobServiceClient, original = Client.prototype.getContainerClient;
     // Bounded prefix listing over the synthetic bucket; the fixture otherwise refuses scans.
     Client.prototype.getContainerClient = function (name) {

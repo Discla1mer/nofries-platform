@@ -15,7 +15,7 @@ const { fixture } = require('./fixtures/dashboardFixture');
 const { projectDashboard } = require('../api/shared/appLifecycle/dashboardProjection');
 const { normaliseNcscCommand, projectNcscDetail, projectNcscSummary } = require('../api/shared/ncscAssessmentService');
 const { makeVersion, stableIntent } = require('../api/shared/assessmentLifecycle/postgresNcscAssessmentStore');
-const { ncscFixture, createClock, createContext, createCommand, saveCommand, allResponses } = require('./fixtures/ncscAssessmentFixture');
+const { ncscFixture, createClock, createContext, createCommand, saveCommand, submitCommand, allResponses } = require('./fixtures/ncscAssessmentFixture');
 
 const SOURCE = fs.readFileSync(process.env.NOFRIES_DASHBOARD_LOADER_TEST_SOURCE ||
     path.join(__dirname, '../js/dashboard-loader.js'), 'utf8');
@@ -31,7 +31,7 @@ const GB = 'b'.repeat(64);
 const GC = 'c'.repeat(64);
 const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dashboardMessage', 'dashboardStatus', 'dashboardRetry',
     'dashboardSignIn', 'dashboardSignOut', 'dashboardChooser', 'dashboardChoices', 'dashboardMore', 'dashboardApp',
-    'dashboardApplicationIntegrity', 'dashboardStyleIntegrity', 'dashboardSkipLink'];
+    'dashboardApplicationIntegrity', 'dashboardStyleIntegrity', 'dashboardSkipLink', 'dashboardCreateAccount', 'dashboardCreateAccountLink'];
 
 function state(selectedBindingId = A, generation = GA, extra = {}) {
     return { schemaVersion: 1, authenticated: true, purpose: 'operator_dashboard', expiresAt: '2026-09-09T00:30:00.000Z',
@@ -106,7 +106,7 @@ function harness(options = {}) {
         });
     }
     const headerLinks = links(homeEntry.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)[1], header);
-    const homeLinks = headerLinks.filter(link => link.href === '/');
+    const homeLinks = headerLinks.filter(link => link.getAttribute('data-dashboard-home') !== null);
     const footer = document.createElement('footer');
     const footerLinks = links(homeEntry.match(/<footer\b[^>]*>([\s\S]*?)<\/footer>/)[1], footer);
     document.body.append(header, elements.dashboardEntry, footer);
@@ -163,12 +163,14 @@ function harness(options = {}) {
                 const controller = require('../api/shared/protectedAssets/improvementActionPlanClient').mount(root, { ...input,
                     request: async (path, body) => { const result = await input.request(path, body);
                         return { status: result.status, value: JSON.parse(JSON.stringify(result.value)) }; },
-                    ...(input.sourceAssessment ? { sourceAssessment: JSON.parse(JSON.stringify(input.sourceAssessment)) } : {}) });
+                    ...(input.sourceAssessment ? { sourceAssessment: JSON.parse(JSON.stringify(input.sourceAssessment)) } : {}),
+                    ...(input.initialTarget ? { initialTarget: JSON.parse(JSON.stringify(input.initialTarget)) } : {}) });
                 improvementMounts.push({ root, input, controller }); return controller;
             } };
             if (options.cyber) {
                 window.NoFriesNcscAssessmentClient = { createClient: input => ncscClient.createClient({
-                    metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch }) };
+                    metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch,
+                    ...(input.onAccepted ? { onAccepted: input.onAccepted } : {}) }) };
                 window.NoFriesNcscQuestionnaire = { mount: (...args) => { ncscMounts.push(args); return questionnaire.mount(...args); } };
                 if (options.picture) window.NoFriesOrganisationPicture = require('../api/shared/protectedAssets/organisationPicture');
             }
@@ -250,6 +252,17 @@ describe('mounted retained Improvement Plan', () => {
         expect(h.elements.dashboardApp.children).toHaveLength(0);
         expect(h.requests).toHaveLength(5);
     });
+    test.each([['valid', true], ['invalid', false]])('a 200 plan index with a %s body moves the footer information time only when accepted', async (_, valid) => {
+        const h = harness({ improvement: true, hash: '#improvement-plan' }), model = await ready(h);
+        await h.reply(3, 200, state());
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:49:00.000Z'));
+        await h.reply(4, 200, valid ? empty(model) : { ...empty(model), schemaVersion: 2 });
+        await h.improvementMounts[0].controller.ready;
+        expect(stamp().dateTime).toBe(valid ? '2026-09-08T23:49:00.000Z' : before);
+        h.window.dispatch('pagehide');
+    });
     test('an unready module never installs the controller or requests retained plan data', async () => {
         const h = harness({ improvement: true, hash: '#improvement-plan' }); await flush(); await h.open();
         expect(h.mounts[0].config.mountImprovement).toBeUndefined();
@@ -293,7 +306,7 @@ describe('consultant client setup', () => {
             { requestId: C, organisationName: 'Saved client', status: 'pending' },
             { requestId: B, organisationName: 'Other client', status: 'pending' }
         ] } });
-        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Continue setup: Saved client').click(); await flush();
+        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Resume setup: Saved client').click(); await flush();
         expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'resume', requestId: C });
         return h;
     }
@@ -303,6 +316,9 @@ describe('consultant client setup', () => {
         clients: [{ requestId, organisationName: 'Saved client', status: 'pending' }] } });
     async function acceptingClient() {
         const h = await savedAcceptance(); await h.reply(3, 200, offeredTerms());
+        // Resuming an existing draft shows the steps but no new "Draft saved" announcement.
+        expect(h.document.getElementById('clientSetupControls').querySelector('.client-workspace-status').textContent).toBe('');
+        expect(h.document.getElementById('clientSetupControls').querySelector('.client-draft-steps')).not.toBeNull();
         h.document.getElementById('clientSetupControls').querySelector('input').checked = true;
         buttons(h).find(b => b.textContent === 'Accept and create client dashboard').click(); await flush();
         expect(h.requests[4].init.method).toBe('GET'); return h;
@@ -327,7 +343,7 @@ describe('consultant client setup', () => {
         expect(controls.textContent).not.toContain('Your starter account includes up to');
         if (remaining > 0) expect(controls.textContent).toContain(remaining +
             (remaining === 1 ? ' client slot remains.' : ' client slots remain.'));
-        expect(controls.textContent).toContain('Organisations added here share your account’s original access period.');
+        expect(controls.textContent).not.toMatch(/access period|expir|trial/i); // Nothing tells a customer the account ends.
         const incomplete = clientQuota(used, remaining).state.clients.filter(client => client.status !== 'ready');
         const savedRows = h.elements.dashboardChoices.querySelectorAll('.client-workspace-row');
         expect(savedRows).toHaveLength(incomplete.length);
@@ -411,7 +427,7 @@ describe('consultant client setup', () => {
         const ready=h.elements.dashboardChoices.children.find(node=>node.getAttribute('data-binding-id')===A);
         const rows=h.elements.dashboardChoices.querySelectorAll('.client-workspace-row');
         expect(rows).toHaveLength(2);expect(rows.flatMap(row=>row.querySelectorAll('button'))).toHaveLength(2);
-        buttons(h).find(button=>button.getAttribute('aria-label')==='Continue setup: Saved pending client').click();await flush();
+        buttons(h).find(button=>button.getAttribute('aria-label')==='Resume setup: Saved pending client').click();await flush();
         await h.reply(3,200,{csrfToken,state:{status:'setup_read_only'}});
         expect(h.elements.dashboardChoices.querySelectorAll('.client-workspace-row')).toHaveLength(2);
         expect(rows.flatMap(row=>row.querySelectorAll('button'))).toHaveLength(0);
@@ -439,6 +455,9 @@ describe('consultant client setup', () => {
         expect(h.requests).toHaveLength(5);
         expect(h.requests.filter(request=>request.init.method==='POST')).toHaveLength(1);
         expect(buttons(h).some(button=>button.textContent==='Accept and create client dashboard')).toBe(false);
+        const text=h.document.getElementById('clientSetupControls').textContent;
+        expect(text).not.toContain('cannot be added'); // Nothing closes additions by date; read-only lists say nothing about it.
+        expect(text).not.toMatch(/access period|expir|trial/i);
     });
     test('setup read-only response prevents a detached old form from resubmitting its lifecycle command',async()=>{
         const {h}=await unfinished(),form=h.document.getElementById('clientSetupControls').querySelector('form');
@@ -459,7 +478,7 @@ describe('consultant client setup', () => {
     });
     test('saved actions beyond three rows use only their authoritative request IDs', async () => {
         const h = await portfolio(), value = clientQuota(5, 3); await h.reply(2, 200, value);
-        buttons(h).find(b => b.getAttribute('aria-label') === 'Continue setup: Synthetic quota client 5').click(); await flush();
+        buttons(h).find(b => b.getAttribute('aria-label') === 'Resume setup: Synthetic quota client 5').click(); await flush();
         expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'resume', requestId: value.state.clients[4].requestId });
         await h.reply(3, 200, { csrfToken, state: { status: 'resume_acceptance' } });
         expect(h.document.getElementById('clientSetupControls').textContent).toContain('Your terms acceptance is saved');
@@ -620,7 +639,7 @@ describe('consultant client setup', () => {
     });
     test('saved client acceptance requires explicit completion bound to the response despite another busy selection', async () => {
         const h = await savedAcceptance();
-        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Continue setup: Other client').click(); await flush();
+        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Resume setup: Other client').click(); await flush();
         buttons(h).find(b => b.textContent === 'Add organisation').click(); await flush();
         expect(h.requests).toHaveLength(4);
         expect(h.document.getElementById('clientSetupControls').querySelector('form')).toBeNull();
@@ -714,8 +733,19 @@ describe('consultant client setup', () => {
         expect(h.requests[4].init.body).toBe(original);
         await h.reply(4, 200, { csrfToken, state: { status: 'terms', termsText: 'Synthetic terms', scheduleText: 'Synthetic schedule',
             termsVersion: 'synthetic', termsDigest: GA, scheduleId: 'synthetic-schedule', scheduleDigest: GB } });
+        // O-002: the saved draft and the remaining steps are stated before the terms.
+        const setup = h.document.getElementById('clientSetupControls');
+        const status = setup.querySelector('.client-workspace-status');
+        expect(status.getAttribute('role')).toBe('status');
+        expect(status.textContent).toBe('Draft saved. Two steps left before this client dashboard is created.');
+        expect(setup.textContent).toContain('This client setup is saved as a draft. Acceptance has not been confirmed, so the client dashboard is not created yet.');
+        expect(setup.querySelector('.client-draft-steps').querySelectorAll('li').map(item => item.textContent)).toEqual([
+            'Read the client schedule and dashboard terms below.',
+            'Tick that you accept them, then choose Accept and create client dashboard. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.']);
+        expect(setup.textContent).toContain('If you leave now, the draft stays in your organisation list as “Draft, not yet set up”. Choose Resume to return to it.');
         const accept = buttons(h).find(b => b.textContent === 'Accept and create client dashboard');
         accept.click(); await flush(); expect(h.requests).toHaveLength(5);
+        expect(status.textContent).toBe('Read and accept the terms to continue.');
         h.document.getElementById('clientSetupControls').querySelector('input').checked = true;
         accept.click(); await flush(); await h.reply(5, 200, pendingClient(JSON.parse(original).requestId));
         expect(JSON.parse(h.requests[6].init.body)).toMatchObject({ action: 'accept', requestId: JSON.parse(original).requestId,
@@ -728,6 +758,38 @@ describe('consultant client setup', () => {
         const controls = h.document.getElementById('clientSetupControls');
         expect(controls.querySelector('a').href).toBe('/login?reauthenticate=1');
         expect(controls.textContent).toContain('Sign in again'); expect(buttons(h)).toHaveLength(0);
+        expect(controls.textContent).toContain('Adding an organisation needs a fresh sign-in to protect your account.');
+        expect(controls.textContent).toContain('After you sign in, you come back to this step to add the organisation.');
+    });
+    test('add-organisation sign-in remembers the return and opens the add step afterwards', async () => {
+        const storage = new Map();
+        const sessionStorage = {
+            setItem: (key, value) => storage.set(key, value),
+            getItem: key => storage.has(key) ? storage.get(key) : null,
+            removeItem: key => storage.delete(key)
+        };
+        const h = await portfolio();
+        h.window.sessionStorage = sessionStorage;
+        await h.reply(2, 401, { code: 'starter_reauthentication_required' });
+        h.document.getElementById('clientSetupControls').querySelector('a').click();
+        expect(sessionStorage.getItem('nofries-return-add-organisation')).toBe('1');
+        const back = await portfolio();
+        back.window.sessionStorage = sessionStorage;
+        await back.reply(2, 200, { csrfToken, state: { status: 'clients', remaining: 3, clients: [] } });
+        expect(back.document.getElementById('clientSetupControls').querySelector('form')).not.toBeNull();
+        expect(sessionStorage.getItem('nofries-return-add-organisation')).toBeNull();
+    });
+    test('draft client organisations are labelled and offer Resume', async () => {
+        const h = await portfolio();
+        await h.reply(2, 200, { csrfToken, state: { status: 'clients', remaining: 1, clients: [
+            { requestId: C, organisationName: 'Saved client', status: 'pending' },
+            { requestId: B, organisationName: 'Details client', status: 'details_required' }
+        ] } });
+        const text = h.elements.dashboardChoices.textContent;
+        expect(text).toContain('Draft, not yet set up · check terms and completion status');
+        expect(text).toContain('Draft, not yet set up · client details needed');
+        const resume = buttons(h).filter(b => b.textContent === 'Resume').map(b => b.getAttribute('aria-label'));
+        expect(resume).toEqual(['Resume setup: Saved client', 'Resume details: Details client']);
     });
     test('external consent reauthentication keeps the selected provider', async () => {
         const h = await portfolio({ external: true });
@@ -830,7 +892,7 @@ describe('consultant client setup', () => {
         const h = harness({ hash: '#organisations', provider: undefined }); await flush();
         await h.reply(0, 200, consultant()); await h.reply(1, 200, listing([A], A));
         await h.reply(2, 200, pendingClient());
-        buttons(h).find(button => button.getAttribute('aria-label') === 'Continue setup: Saved client').click(); await flush();
+        buttons(h).find(button => button.getAttribute('aria-label') === 'Resume setup: Saved client').click(); await flush();
         const original = h.requests[3].init.body;
         h.click('dashboardMore'); await flush(); expect(h.requests).toHaveLength(4);
         await h.reply(3, 503, { code: 'starter_signup_unavailable' });
@@ -868,6 +930,7 @@ describe('consultant client setup', () => {
         expect(h.document.getElementById('clientSetupControls').querySelector('form')).toBeNull();
         await h.reply(4, 200, fullClients());
         expect(h.document.getElementById('clientSetupControls').textContent).toContain('No client slots remain.');
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain('All client slots are in use, so this client was not set up.');
         expect(buttons(h).some(b => /Retry|Add client/.test(b.textContent))).toBe(false);
         h.window.dispatch('focus'); await flush();
         await h.reply(5, 200, consultant()); await h.reply(6, 200, listing([A])); await h.reply(7, 200, consultant());
@@ -883,7 +946,7 @@ describe('consultant client setup', () => {
             clients: [{ requestId: C, organisationName: 'Saved client', status: 'pending' }] } });
         expect(h.document.getElementById('clientSetupControls').querySelector('form')).toBeNull();
         expect(buttons(h).some(b => /Retry/.test(b.textContent))).toBe(false);
-        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Continue setup: Saved client').click(); await flush();
+        buttons(h).find(b => (b.getAttribute('aria-label') || b.textContent) === 'Resume setup: Saved client').click(); await flush();
         expect(JSON.parse(h.requests[5].init.body)).toEqual({ action: 'resume', requestId: C });
         expect(h.requests[5].init.headers['X-CSRF-Token']).toBe(freshCsrf);
         await h.reply(5, 200, { csrfToken: freshCsrf, state: { status: 'terms', termsText: 'Current terms', scheduleText: 'Current schedule',
@@ -931,6 +994,53 @@ describe('consultant client setup', () => {
             buttons(h).find(b => b.textContent === 'Retry').click(); await flush();
             expect(h.requests[4].init.method).toBe('POST'); expect(h.requests[4].init.body).toBe(original);
         });
+    const drafts = (discardable, remaining = 2) => ({ csrfToken, state: { status: 'clients', remaining, clients: [
+        { requestId: C, organisationName: 'Draft client', status: 'pending', ...(discardable === undefined ? {} : { discardable }) },
+        { requestId: B, organisationName: 'Ready client', status: 'ready', ...(discardable === undefined ? {} : { discardable: false }) }] } });
+    const label = b => b.getAttribute('aria-label') || b.textContent;
+    test('a discardable draft is discarded only after a confirm step, and the list is redrawn from the server', async () => {
+        const h = await portfolio(); await h.reply(2, 200, drafts(true));
+        const controls = h.document.getElementById('clientSetupControls');
+        expect(controls.textContent).toContain('2 client slots remain. A slot is used when a client’s terms are accepted. Drafts do not use one. You can add up to 12 client organisations in total, including discarded drafts.');
+        expect(buttons(h).filter(b => label(b).startsWith('Discard draft')).map(label)).toEqual(['Discard draft: Draft client']);
+        buttons(h).find(b => label(b) === 'Discard draft: Draft client').click(); await flush();
+        expect(h.requests).toHaveLength(3);
+        const row = h.elements.dashboardChoices.querySelectorAll('.client-workspace-row')[0];
+        expect(row.textContent).toContain('Discard this draft? It will be removed from your list. This cannot be undone.');
+        buttons(h).find(b => b.textContent === 'Keep draft').click(); await flush();
+        expect(h.requests).toHaveLength(3); expect(row.textContent).not.toContain('Discard this draft?');
+        buttons(h).find(b => label(b) === 'Discard draft: Draft client').click(); await flush();
+        buttons(h).find(b => label(b) === 'Yes, discard draft: Draft client').click(); await flush();
+        expect(h.requests[3]).toMatchObject({ url: '/api/customer-signup/clients', init: { method: 'POST' } });
+        expect(JSON.parse(h.requests[3].init.body)).toEqual({ action: 'discard', requestId: C });
+        await h.reply(3, 200, { csrfToken, state: { status: 'clients', remaining: 2, clients: [
+            { requestId: B, organisationName: 'Ready client', status: 'ready', discardable: false }] } });
+        expect(h.elements.dashboardChoices.querySelectorAll('.client-workspace-row')).toHaveLength(0);
+        expect(buttons(h).some(b => /Discard/.test(label(b)))).toBe(false);
+    });
+    test.each([undefined, false])('no discard action or slot rule is shown when discardable is %p', async discardable => {
+        const h = await portfolio(); await h.reply(2, 200, drafts(discardable, 0));
+        expect(buttons(h).some(b => /Discard/.test(label(b)))).toBe(false);
+        const text = h.document.getElementById('clientSetupControls').textContent;
+        expect(text).toContain('No client slots remain.');
+        if (discardable === undefined) expect(text).not.toContain('Drafts do not use one.');
+    });
+    test('a non-boolean discardable value is refused as an invalid client list', async () => {
+        const h = await portfolio(); await h.reply(2, 200, drafts('yes'));
+        expect(buttons(h).some(b => /Discard/.test(label(b)))).toBe(false);
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain('Retry to refresh the list.');
+    });
+    test.each(['starter_client_not_draft', 'starter_client_discarded'])('a %s refusal reloads the list without repeating the discard', async code => {
+        const h = await portfolio(); await h.reply(2, 200, drafts(true));
+        buttons(h).find(b => label(b) === 'Discard draft: Draft client').click(); await flush();
+        buttons(h).find(b => label(b) === 'Yes, discard draft: Draft client').click(); await flush();
+        await h.reply(3, 409, { code });
+        expect(h.requests[4].init.method).toBe('GET'); expect(h.requests[4].init).not.toHaveProperty('body');
+        await h.reply(4, 200, drafts(false));
+        expect(h.requests.filter(r => r.init.method === 'POST')).toHaveLength(1);
+        expect(h.document.getElementById('clientSetupControls').textContent).toContain(code === 'starter_client_discarded'
+            ? 'This draft has been discarded.' : 'This organisation is not a draft, so it was not discarded.');
+    });
     test('late definitive client rejection from an abandoned cycle cannot clear the current unresolved request', async () => {
         const { h, original } = await submittedClient();
         h.window.dispatch('focus'); await flush(); await recheck(h, 4);
@@ -1150,11 +1260,42 @@ describe('internal dashboard loader protocol', () => {
         expect(h.status).toBe('unavailable'); expect(h.requests).toHaveLength(1); expect(h.native).toHaveLength(0);
     });
 
+    async function exhaustSessionRetries(h, status, body) {
+        for (const delay of [1000, 2000, 4000]) {
+            expect(h.status).toBe('loading');
+            expect(h.elements.dashboardHeading.textContent).toBe('No Fries is having a temporary problem');
+            expect(h.elements.dashboardMessage.textContent).toBe('We\'ll keep trying…');
+            expect(h.elements.dashboardSignIn.hidden).toBe(true);
+            jest.advanceTimersByTime(delay); await flush();
+            await h.reply(h.requests.length - 1, status, body);
+        }
+    }
     test.each([401, 403, 410, 503])('shows fixed safe state for HTTP %s without initializing or redirect loops', async status => {
-        const h = harness(); await flush(); await h.reply(0, status, { code: 'private_subject', error: '<private provider record>' });
+        const h = harness(); await flush(); const body = { code: 'private_subject', error: '<private provider record>' };
+        await h.reply(0, status, body);
+        if (status === 503) await exhaustSessionRetries(h, status, body);
         expect(h.status).toBe(status === 401 ? 'unauthenticated' : status === 403 ? 'denied' : 'unavailable');
         expect(h.elements.dashboardStatus.textContent).not.toMatch(/private|provider/);
-        expect(h.requests).toHaveLength(1); expect(h.window.location.assign).not.toHaveBeenCalled();
+        if (status === 401) expect(h.elements.dashboardHeading.textContent).toBe('Please sign in');
+        if (status === 503) {
+            expect(h.elements.dashboardHeading.textContent).toBe('No Fries is having a temporary problem');
+            expect(h.elements.dashboardStatus.textContent).toContain('not a lost sign-in');
+            expect(h.elements.dashboardSignIn.hidden).toBe(true);
+            expect(h.requests).toHaveLength(4);
+        } else expect(h.requests).toHaveLength(1);
+        expect(h.window.location.assign).not.toHaveBeenCalled();
+    });
+    test('a temporary session failure retries with backoff and then opens', async () => {
+        const h = harness(); await flush();
+        await h.reply(0, 503, { code: 'dashboard_unavailable' });
+        expect(h.elements.dashboardMessage.textContent).toBe('We\'ll keep trying…');
+        jest.advanceTimersByTime(1000); await flush();
+        expect(h.requests).toHaveLength(2);
+        expect(h.requests[1].url).toBe('/api/dashboard/session');
+        await h.open(state(), 'Recovered organisation', 1);
+        expect(h.status).toBe('ready');
+        expect(h.elements.dashboardApp.textContent).toContain('Recovered organisation');
+        expect(h.requests.filter(item => item.url === '/api/dashboard/session')).toHaveLength(3);
     });
 
     test.each([
@@ -1403,6 +1544,24 @@ describe('dashboard asynchronous ownership and sign-out', () => {
         expect(h.document.head.children).toHaveLength(2);
     });
 
+    test('a reload that clears the focused dashboard keeps focus on the announced loading heading', async () => {
+        const h = harness(); await flush(); await h.open();
+        expect(fs.readFileSync(path.join(__dirname, '../app/dashboard.html'), 'utf8')).toMatch(/<p id="dashboardMessage" aria-live="polite">/);
+        h.elements.dashboardApp.querySelector('main').focus();
+        h.event('pageshow', { persisted: true }); await flush();
+        expect(h.status).toBe('loading');
+        expect(h.elements.dashboardApp.children).toHaveLength(0);
+        expect(h.document.activeElement).toBe(h.elements.dashboardHeading);
+        expect(h.elements.dashboardMessage.textContent).toBe('Getting your dashboard ready. This can take up to 20 seconds.');
+    });
+
+    test('a reload does not move focus that was outside the dashboard', async () => {
+        const h = harness(); await flush(); await h.open();
+        const outside = h.document.createElement('a'); h.document.body.append(outside); outside.focus();
+        h.event('pageshow', { persisted: true }); await flush();
+        expect(h.status).toBe('loading'); expect(h.document.activeElement).toBe(outside);
+    });
+
     test('a stale error and delayed focus revalidation cannot erase or focus over a current mount', async () => {
         const h = harness(); await flush(); await h.open();
         h.window.dispatch('focus'); await flush(); const old = h.requests[4];
@@ -1443,7 +1602,7 @@ describe('dashboard asynchronous ownership and sign-out', () => {
         await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
         expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
         await h.reply(3, 404, { code: 'dashboard_not_found' });
-        expect(h.factory.validate).toHaveBeenCalledTimes(1); expect(h.mounts).toHaveLength(0); expect(h.status).toBe('unavailable');
+        expect(h.factory.validate).not.toHaveBeenCalled(); expect(h.mounts).toHaveLength(0); expect(h.status).toBe('unavailable');
     });
 
     test('preserves a genuine disabled Cyber projection while mounting its ready Overview', async () => {
@@ -1528,6 +1687,39 @@ describe('ready Cyber composition', () => {
         h.window.dispatch('pagehide');
         expect(h.elements.dashboardApp.children).toHaveLength(0);
     });
+    test('a successful saved-assessment read moves the footer information time forward', async () => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:47:00.000Z'));
+        const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+        await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(before).not.toBe('2026-09-08T23:47:00.000Z');
+        expect(stamp().dateTime).toBe('2026-09-08T23:47:00.000Z');
+        expect(stamp().textContent).toContain('NZ time');
+        h.window.dispatch('pagehide');
+    });
+    test.each([['truncated', '{'], ['invalid', JSON.stringify({ schemaVersion: 2, assessments: [], nextAfterAssessmentId: null })]])
+    ('a 2xx saved-assessment read with a %s body leaves the footer information time unchanged', async (_, body) => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:48:00.000Z'));
+        await h.reply(5, 200, {}, { text: async () => body });
+        expect(stamp().dateTime).toBe(before);
+        h.window.dispatch('pagehide');
+    });
+    test('Overview first-use action reaches the production questionnaire as a new-assessment start', async () => {
+        const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+        const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+        await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(h.ncscMounts).toHaveLength(0);
+        control(h, 'Start your cyber check').click(); await flush();
+        expect(h.ncscMounts).toHaveLength(1);
+        expect(h.ncscMounts[0][1]).toMatchObject({ startNew: true, initialAssessmentId: undefined,
+            organisationId: h.cyberProjection.context.organisationId });
+        h.window.dispatch('pagehide');
+    });
     test.each([200, 403])('Overview continues its exact saved record through a fresh generation-bound read (%s), without another list or write', async status => {
         const stored = await records();
         stored.execute(createCommand('assessment-direct', 'seed-direct', 'Synthetic Overview selected scope.'));
@@ -1564,6 +1756,213 @@ describe('ready Cyber composition', () => {
         await h.reply(5, 403, { code: 'ncsc_access_denied' });
         expect(h.status).toBe('denied'); expect(h.elements.dashboardApp.children).toHaveLength(0);
     });
+    describe('Overview Plan this', () => {
+        async function planReady(h, stored) {
+            await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
+            const model = JSON.parse(JSON.stringify(projection()));
+            ['cyber_security', 'improvement_plan'].forEach(key => { model.modules.find(item => item.key === key).state = 'ready'; });
+            await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
+            h.cyberProjection = { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' };
+            await h.reply(3, 200, h.cyberProjection); await h.reply(4, 200, state());
+            // With improvement actions on, Overview also reads the plan index for its Actions card.
+            const atUrl = pattern => h.requests.findIndex(item => pattern.test(item.url));
+            const index = atUrl(/^\/api\/dashboard\/improvement\/plans\?limit=/), assessments = atUrl(/^\/api\/dashboard\/ncsc\/assessments/);
+            await h.reply(index, 200, { schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId, organisationId: model.context.organisationId },
+                asOf: NOW, plans: [], nextAfterPlanId: null });
+            await ncscReply(h, assessments, 200, stored.list()); await ncscReply(h, 7, 200, stored.read('assessment-plan'));
+            const record = stored.read('assessment-plan').assessment;
+            const itemId = h.elements.dashboardApp.querySelector('.picture-top-gap').dataset.gapItem;
+            const planId = 'overview-plan-' + record.revisionSha256;
+            const view = { schemaVersion: 1, scope: { planId }, planRevision: 2,
+                source: { assessmentId: record.assessmentId, evaluationOutputSha256: record.submission.evaluation.outputSha256 },
+                actions: [{ actionId: 'action:other', itemId: 'other-item' }, { actionId: 'action:gap', itemId }] };
+            return { record, itemId, planId, view, model };
+        }
+        async function submitted() {
+            const stored = await records();
+            stored.execute(createCommand('assessment-plan', 'create-plan', 'Synthetic plan scope.'));
+            stored.execute(saveCommand('assessment-plan', 0, 'save-plan', allResponses().map((row, index) => ({ ...row, optionId: index < 2 ? 'no' : 'yes' }))));
+            stored.execute(submitCommand('assessment-plan', 1, 'submit-plan'));
+            return stored;
+        }
+        const target = planId => ({ planId, actionId: 'action:gap', planRevision: 2 });
+        test('is absent when improvement actions are off', async () => {
+            const stored = await submitted();
+            const h = harness({ cyber: true, picture: true, hash: '#overview' }); await ready(h);
+            await ncscReply(h, 5, 200, stored.list()); await ncscReply(h, 6, 200, stored.read('assessment-plan'));
+            expect(h.elements.dashboardApp.querySelector('.picture-top-gap')).not.toBeNull();
+            expect(control(h, 'Plan this')).toBeUndefined();
+            h.window.dispatch('pagehide');
+        });
+        async function emptyPlanTab() {
+            const h = harness({ cyber: true, improvement: true, hash: '#improvement-plan' });
+            await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
+            const model = JSON.parse(JSON.stringify(projection()));
+            ['cyber_security', 'improvement_plan'].forEach(key => { model.modules.find(item => item.key === key).state = 'ready'; });
+            await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
+            await h.reply(3, 200, { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'),
+                summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false,
+                metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' });
+            await h.reply(4, 200, state());
+            const atUrl = pattern => h.requests.findIndex(item => pattern.test(item.url));
+            await h.reply(atUrl(/^\/api\/dashboard\/improvement\/plans\?limit=/), 200, { schemaVersion: 1,
+                scope: { tenantId: fixture().scope.tenantId, organisationId: model.context.organisationId }, asOf: NOW, plans: [], nextAfterPlanId: null });
+            return { h, atUrl };
+        }
+        test('an empty Improvement Plan tab offers the latest submitted assessment from the validated list', async () => {
+            const stored = await submitted();
+            const { h, atUrl } = await emptyPlanTab();
+            const list = atUrl(/^\/api\/dashboard\/ncsc\/assessments\?limit=100$/);
+            expect(list).toBeGreaterThan(0);
+            expect(h.requests[list].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+            await ncscReply(h, list, 200, stored.list()); await flush();
+            expect(h.improvementMounts).toHaveLength(1);
+            expect(h.elements.dashboardApp.textContent).toContain('No improvement plan yet');
+            expect(h.elements.dashboardApp.textContent).toContain('Create a plan from your latest submitted assessment');
+            expect(control(h, 'Create improvement plan from latest assessment')).toBeDefined();
+            h.window.dispatch('pagehide');
+        });
+        test('the empty Improvement Plan tab reads every assessment page before choosing the latest submitted one', async () => {
+            const stored = await records();
+            const drafts = [1, 2, 3, 4, 5, 6].map(n => {
+                stored.execute(createCommand('assessment-a' + n, 'create-a' + n, 'Draft scope ' + n + '.'));
+                return projectNcscSummary(stored.versions.get('assessment-a' + n));
+            });
+            stored.execute(createCommand('assessment-b', 'create-b', 'Submitted scope.'));
+            stored.execute(saveCommand('assessment-b', 0, 'save-b', allResponses('yes')));
+            stored.execute(submitCommand('assessment-b', 1, 'submit-b'));
+            const submittedRow = projectNcscSummary(stored.versions.get('assessment-b'));
+            const { h, atUrl } = await emptyPlanTab();
+            let after = null;
+            for (const draft of drafts) {
+                const index = atUrl(new RegExp('^/api/dashboard/ncsc/assessments\\?limit=100' + (after ? '&afterAssessmentId=' + after : '') + '$'));
+                expect(index).toBeGreaterThan(0);
+                await ncscReply(h, index, 200, { schemaVersion: 1, assessments: [draft], nextAfterAssessmentId: draft.assessmentId });
+                after = draft.assessmentId;
+            }
+            const last = atUrl(new RegExp('^/api/dashboard/ncsc/assessments\\?limit=100&afterAssessmentId=' + after + '$'));
+            expect(last).toBeGreaterThan(0);
+            await ncscReply(h, last, 200, { schemaVersion: 1, assessments: [submittedRow], nextAfterAssessmentId: null }); await flush();
+            expect(h.elements.dashboardApp.textContent).toContain('Create a plan from your latest submitted assessment');
+            expect(h.elements.dashboardApp.textContent).not.toContain('Submit an assessment first');
+            expect(control(h, 'Create improvement plan from latest assessment')).toBeDefined();
+            h.window.dispatch('pagehide');
+        });
+        test('the empty Improvement Plan tab says it could not check when the assessment cursor does not advance', async () => {
+            const stored = await records();
+            stored.execute(createCommand('assessment-a', 'create-a', 'Draft scope only.'));
+            const draft = projectNcscSummary(stored.versions.get('assessment-a'));
+            const { h, atUrl } = await emptyPlanTab();
+            await ncscReply(h, atUrl(/^\/api\/dashboard\/ncsc\/assessments\?limit=100$/), 200,
+                { schemaVersion: 1, assessments: [draft], nextAfterAssessmentId: draft.assessmentId });
+            const again = atUrl(new RegExp('^/api/dashboard/ncsc/assessments\\?limit=100&afterAssessmentId=' + draft.assessmentId + '$'));
+            expect(again).toBeGreaterThan(0);
+            await ncscReply(h, again, 200, { schemaVersion: 1, assessments: [], nextAfterAssessmentId: draft.assessmentId }); await flush();
+            expect(h.elements.dashboardApp.textContent).toContain('We could not check your submitted assessments just now.');
+            expect(h.elements.dashboardApp.textContent).not.toContain('Submit an assessment first');
+            expect(control(h, 'Create improvement plan from latest assessment')).toBeUndefined();
+            h.window.dispatch('pagehide');
+        });
+        test('creates the plan for the submitted revision, then opens the editor at that gap', async () => {
+            const stored = await submitted();
+            const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { record, planId, view } = await planReady(h, stored);
+            control(h, 'Plan this').click(); await flush();
+            expect(h.elements.dashboardApp.textContent).toContain('Opening plan…');
+            expect(h.requests[8].url).toBe('/api/dashboard/improvement/view?planId=' + planId);
+            expect(h.requests[8].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+            await h.reply(8, 404, { code: 'improvement_not_found' });
+            expect(h.requests[9].url).toBe('/api/dashboard/improvement/execute');
+            expect(h.requests[9].init.method).toBe('POST');
+            expect(JSON.parse(h.requests[9].init.body)).toEqual({ planId, type: 'generate', operationId: 'overview-plan-generate-' + record.revisionSha256,
+                expectedRevision: null, actionId: null, payload: { assessmentId: record.assessmentId,
+                    assessmentRevision: record.revision, assessmentRevisionSha256: record.revisionSha256 } });
+            await h.reply(9, 200, { schemaVersion: 1, plan: { planId } });
+            expect(h.requests[10].url).toBe('/api/dashboard/improvement/view?planId=' + planId);
+            await h.reply(10, 200, view);
+            expect(h.improvementMounts).toHaveLength(1);
+            expect(h.improvementMounts[0].input.initialTarget).toEqual(target(planId));
+            // Plain topic titles come from the same validated Cyber metadata.
+            const titles = h.improvementMounts[0].input.controlTitles;
+            h.cyberProjection.metadata.controls.forEach(item => expect(titles[item.id]).toBe(item.title));
+            expect(Object.keys(titles)).toHaveLength(h.cyberProjection.metadata.controls.length);
+            // Each topic's concrete follow-up uses the results page wording (F1-R10).
+            const followUps = h.improvementMounts[0].input.itemFollowUps;
+            h.cyberProjection.metadata.questions.forEach(question => expect(followUps[question.id]).toBe(question.smallBusiness
+                ? question.smallBusiness.checks.join(' ') : question.guidance.startingActions[0]));
+            expect(h.window.location.hash).toBe('#improvement-plan');
+            expect(h.requests[11].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
+            h.window.dispatch('pagehide');
+        });
+        test('Plan this and the older create button create the same revision-derived plan ID', async () => {
+            const stored = await submitted();
+            const first = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { record, planId } = await planReady(first, stored);
+            control(first, 'Plan this').click(); await flush();
+            await first.reply(8, 404, { code: 'improvement_not_found' });
+            const fromGap = JSON.parse(first.requests[9].init.body);
+            first.window.dispatch('pagehide');
+            const second = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { model } = await planReady(second, stored);
+            control(second, 'Plan improvements for this assessment').click(); await flush();
+            expect(second.requests[8].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
+            await second.reply(8, 200, { schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId,
+                organisationId: model.context.organisationId }, asOf: NOW, plans: [], nextAfterPlanId: null });
+            control(second, 'Create improvement plan for this assessment').click(); await flush();
+            expect(second.requests[9].url).toBe('/api/dashboard/improvement/execute');
+            const fromButton = JSON.parse(second.requests[9].init.body);
+            expect(fromButton.planId).toBe(planId); expect(fromGap.planId).toBe(planId);
+            expect(fromButton.operationId).toBe(fromGap.operationId);
+            expect(planId).toBe('overview-plan-' + record.revisionSha256);
+            second.window.dispatch('pagehide');
+        });
+        test.each([404, 200])('a selection change while Plan this is pending (%s) creates and opens nothing', async status => {
+            const stored = await submitted();
+            stored.execute(createCommand('assessment-zeta', 'create-zeta', 'Synthetic second scope.'));
+            stored.execute(saveCommand('assessment-zeta', 0, 'save-zeta', allResponses().map((row, index) => ({ ...row, optionId: index < 3 ? 'partial' : 'yes' }))));
+            stored.execute(submitCommand('assessment-zeta', 1, 'submit-zeta'));
+            const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { view } = await planReady(h, stored);
+            control(h, 'Plan this').click(); await flush();
+            const picker = h.elements.dashboardApp.querySelector('.picture-toolbar').querySelector('select');
+            picker.value = 'assessment-zeta'; for (const callback of picker.events.change) callback(); await flush();
+            expect(h.requests[9].url).toBe('/api/dashboard/ncsc/assessments/assessment-zeta');
+            await h.reply(8, status, status === 200 ? view : { code: 'improvement_not_found' });
+            await ncscReply(h, 9, 200, stored.read('assessment-zeta'));
+            expect(h.requests.filter(item => item.init.method === 'POST')).toHaveLength(0);
+            expect(h.requests).toHaveLength(10);
+            expect(h.improvementMounts).toHaveLength(0);
+            expect(h.window.location.hash).toBe('#overview');
+            expect(h.elements.dashboardApp.textContent).not.toContain('Couldn\'t open the plan');
+            h.window.dispatch('pagehide');
+        });
+        test('opens an existing plan at that gap without creating another', async () => {
+            const stored = await submitted();
+            const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { planId, view } = await planReady(h, stored);
+            control(h, 'Plan this').click(); await flush();
+            await h.reply(8, 200, view);
+            expect(h.requests.filter(item => item.init.method === 'POST')).toHaveLength(0);
+            expect(h.improvementMounts).toHaveLength(1);
+            expect(h.improvementMounts[0].input.initialTarget).toEqual(target(planId));
+            h.window.dispatch('pagehide');
+        });
+        test.each([[503, null], [404, 403], [200, 'mismatch']])('a failed open (%s, %s) keeps Overview and offers a retry', async (first, second) => {
+            const stored = await submitted();
+            const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { view } = await planReady(h, stored);
+            control(h, 'Plan this').click(); await flush();
+            await h.reply(8, first, second === 'mismatch' ? { ...view, source: { ...view.source, assessmentId: 'other' } } : { code: 'improvement_unavailable' });
+            if (first === 404) { expect(h.requests[9].init.method).toBe('POST'); await h.reply(9, second, { code: 'improvement_access_denied' }); }
+            expect(h.improvementMounts).toHaveLength(0);
+            expect(h.status).toBe('ready');
+            expect(h.window.location.hash).toBe('#overview');
+            expect(h.elements.dashboardApp.textContent).toContain('Couldn\'t open the plan. Try again.');
+            expect(h.elements.dashboardApp.textContent).toContain('Your top');
+            expect(control(h, 'Plan this').disabled).toBe(false);
+            h.window.dispatch('pagehide');
+        });
+    });
     const control = (h, label) => h.elements.dashboardApp.querySelectorAll('button').find(button => button.textContent === label);
     function inputEvent(input, event = 'input') { for (const callback of input.events[event] || []) callback(); }
     function unsavedScope(h) {
@@ -1599,6 +1998,27 @@ describe('ready Cyber composition', () => {
             read(id) { return { schemaVersion: 1, assessment: projectNcscDetail(versions.get(id)) }; }
         };
     }
+    test('the coming-next plan follows a later assessment page before saying there is no baseline', async () => {
+        const h = harness({ cyber: true, hash: '#improvement-plan' });
+        const stored = await records();
+        stored.execute(createCommand('assessment-a', 'create-a', 'Draft scope only.'));
+        stored.execute(createCommand('assessment-b', 'create-b', 'Submitted scope.'));
+        stored.execute(saveCommand('assessment-b', 0, 'save-b', allResponses('yes')));
+        stored.execute(submitCommand('assessment-b', 1, 'submit-b'));
+        const draft = projectNcscSummary(stored.versions.get('assessment-a'));
+        const submitted = projectNcscSummary(stored.versions.get('assessment-b'));
+        await ready(h);
+        expect(h.requests[5].url).toBe('/api/dashboard/ncsc/assessments?limit=50');
+        await ncscReply(h, 5, 200, { schemaVersion: 1, assessments: [draft], nextAfterAssessmentId: draft.assessmentId });
+        expect(h.requests[6].url).toBe('/api/dashboard/ncsc/assessments?limit=50&afterAssessmentId=' + draft.assessmentId);
+        await ncscReply(h, 6, 200, { schemaVersion: 1, assessments: [submitted], nextAfterAssessmentId: null });
+        expect(h.elements.dashboardApp.textContent).toContain('Review the gaps in your submitted assessment');
+        expect(h.elements.dashboardApp.textContent).not.toContain('There is no submitted assessment yet');
+        const review = h.elements.dashboardApp.querySelectorAll('button').find(button => button.textContent === 'Review gaps in your results');
+        expect(review).toBeDefined();
+        review.click();
+        expect(h.ncscMounts.at(-1)[1].initialAssessmentId).toBe('assessment-b');
+    });
     async function openedRecord(h, stored) {
         await ready(h); await ncscReply(h, 5, 200, stored.list());
         const row = h.elements.dashboardApp.querySelector('.ncsc-assessment-list').querySelector('button');
@@ -1609,9 +2029,9 @@ describe('ready Cyber composition', () => {
         input.checked = true; inputEvent(input, 'change');
     }
     const footerTargets = [
-        [false, 0, '/roadmap.html'], [false, 1, 'https://news.nofries.nz/'],
-        [true, 0, 'https://news.nofries.nz/'], [true, 1, '/roadmap.html'],
-        [true, 2, '/contact.html'], [true, 3, '/privacy.html'], [true, 4, '/terms.html']
+        [false, 0, '/roadmap.html'],
+        [true, 0, '/'], [true, 1, '/pricing.html'], [true, 2, '/managed-it.html'], [true, 3, '/roadmap.html'],
+        [true, 4, '/contact.html'], [true, 5, '/privacy.html'], [true, 6, '/terms.html']
     ];
     test.each(footerTargets)('footer gateway=%s link=%s preserves draft, focus and first destination %s', async (gateway, index, target) => {
         const h = harness({ gateway, cyber: true, hash: '#cyber-security' }); await ready(h);
@@ -1860,16 +2280,17 @@ describe('ready Cyber composition', () => {
         const saved = stored.read('assessment-home');
         const h = harness({ cyber: true, hash: '#cyber-security' }); await openedRecord(h, stored);
         selectAnswer(h);
-        expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
-        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('1 with unsaved changes');
+        // Automatic saving is on here, so the short wait before it sends reads as saving.
+        expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toBe('Saving…');
+        expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('· saving…');
         expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/\*$/);
         h.homeClick(); control(h, 'Discard unsent changes').click(); await flush();
         expect(h.requests.filter(request => request.init.method === 'POST')).toHaveLength(0);
         expect(stored.read('assessment-home')).toEqual(saved); expect(h.window.location.assign.mock.calls).toEqual([['/']]);
         const reopened = harness({ cyber: true, hash: '#cyber-security' }); await openedRecord(reopened, stored);
         expect(reopened.elements.dashboardApp.querySelectorAll('input').find(item => item.type === 'radio' && item.checked).value).toBe('yes');
-        expect(reopened.elements.dashboardApp.textContent).toContain('Saved revision 1');
-        expect(reopened.elements.dashboardApp.querySelector('.ncsc-status').textContent).not.toContain('unsaved changes');
+        expect(reopened.elements.dashboardApp.textContent).toMatch(/Last saved .+ NZ time\./);
+        expect(reopened.elements.dashboardApp.querySelector('.ncsc-status').textContent).not.toContain('not saved yet');
         expect(reopened.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).not.toContain('unsaved changes');
         expect(reopened.document.getElementById('ncsc-question-index').children.every(option => !/\*$/.test(option.textContent))).toBe(true);
         expect(reopened.document.getElementById('ncsc-question-index-help').textContent).toContain('* marks unsaved changes');
@@ -2033,12 +2454,12 @@ describe('ready Cyber composition', () => {
         const bytes = h.requests[6].init.body;
         const unavailable = { code: 'ncsc_unavailable' };
         await h.reply(6, 503, unavailable, { headers: { get: key => key.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null }, text: async () => JSON.stringify(unavailable) });
-        expect(app.textContent).toContain('Operation unconfirmed');
+        expect(app.textContent).toContain('We could not confirm the save');
         h.window.dispatch('focus'); await flush(); await h.reply(7, 503, { code: 'dashboard_unavailable' });
         expect(app.hidden).toBe(false); expect(h.mounts[0].destroy).not.toHaveBeenCalled();
         h.click('dashboardRetry'); await flush(); await refresh(h, 8);
-        expect(app.textContent).toContain('Operation unconfirmed');
-        button('Retry same operation').click(); await flush();
+        expect(app.textContent).toContain('We could not confirm the save');
+        button('Try the save again').click(); await flush();
         expect(h.requests[13].init.body).toBe(bytes);
         expect(h.requests[13].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
     });
@@ -2113,12 +2534,12 @@ describe('root dashboard gateway', () => {
     });
 });
 
-test('consultant completion opens the portfolio first, selects a client and returns to the portfolio', async () => {
+test.each(['button', 'hash'])('consultant completion opens the portfolio first, selects a client and returns via %s', async entry => {
     const h = harness({ hash: '#organisations' }); await flush();
     const customer = state(A, GA, { purpose: 'customer', accountType: 'consultant' });
     await h.reply(0, 200, customer); await h.reply(1, 200, listing());
     expect(h.status).toBe('selection'); expect(h.elements.dashboardHeading.textContent).toBe('Your consultant account');
-    expect(h.elements.dashboardMessage.textContent).toBe('Choose an organisation workspace you can access.');
+    expect(h.elements.dashboardMessage.textContent).toBe('Choose an organisation you can access.');
     expect(h.elements.dashboardStatus.textContent).not.toContain('Account owner');
     expect(h.mounts).toHaveLength(0); expect(h.requests).toHaveLength(2);
     h.elements.dashboardChoices.children[1].click(); await flush();
@@ -2133,7 +2554,10 @@ test('consultant completion opens the portfolio first, selects a client and retu
     h.event('focus'); await flush(); await h.open(selected, 'Selected client', 7);
     expect(h.status).toBe('ready'); expect(h.elements.dashboardApp.textContent).toContain('Selected client');
     const back = h.elements.dashboardStatusPanel.children.find(node => node.id === 'consultantPortfolioControls');
-    expect(back.hidden).toBe(false); back.onclick(); await flush();
+    expect(back.hidden).toBe(false);
+    if (entry === 'button') back.onclick();
+    else h.mounts.at(-1).config.onOpenOrganisations();
+    await flush();
     await h.reply(11, 200, selected); await h.reply(12, 200, listing());
     expect(h.status).toBe('selection'); expect(h.elements.dashboardApp.hidden).toBe(true);
     expect(back.hidden).toBe(true); expect(h.window.location.hash).toBe('#organisations');
@@ -2151,6 +2575,28 @@ test('company completion opens its organisation and an operator cannot claim a c
     expect(invalid.status).toBe('unavailable'); expect(invalid.requests).toHaveLength(1);
 });
 
+test.each(['return', 'navigation'])('a consultant resumes the selected organisation and keeps the module through %s', async path => {
+    const h = harness(); await flush();
+    const selected = state(A, GA, { purpose: 'customer', accountType: 'consultant' });
+    await h.open(selected, 'First client');
+    expect(h.status).toBe('ready');
+    h.window.location.hash = '#cyber-security';
+    const back = h.elements.dashboardStatusPanel.children.find(node => node.id === 'consultantPortfolioControls');
+    const first = h.requests.length;
+    if (path === 'return') back.onclick();
+    else h.elements.dashboardStatusPanel.querySelector('.consultant-navigation').querySelector('button').click();
+    await flush();
+    await h.reply(first, 200, selected); await h.reply(first + 1, 200, listing());
+    expect(h.status).toBe('selection');
+    h.elements.dashboardChoices.children[1].click(); await flush();
+    expect(h.elements.dashboardStatus.textContent).toContain('Opening ');
+    await h.reply(first + 2, 200, { schemaVersion: 1, generation: GB, selectedBindingId: B });
+    await h.open(state(B, GB, { purpose: 'customer', accountType: 'consultant' }), 'Second client', first + 3);
+    expect(h.status).toBe('ready');
+    expect(h.window.location.hash).toBe('#cyber-security');
+    expect(h.mounts.at(-1).config.initialRoute).toBe('#cyber-security');
+});
+
 
 describe('unmounted authority refresh coalescing', () => {
     const paths = ['/api/dashboard/session', '/api/dashboard/organisations?limit=50',
@@ -2166,6 +2612,74 @@ describe('unmounted authority refresh coalescing', () => {
             summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false,
             providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' };
     }
+    test.each(['metadata first', 'assets first', 'metadata denied'])('startup overlaps independent asset and metadata reads: %s', async order => {
+        const h = harness({ hash: '#cyber-security', cyber: true }); await flush();
+        const model = cyberProjection();
+        await h.reply(0, 200, state()); await h.reply(1, 200, listing()); await h.reply(2, 200, model);
+        // Neither asset has loaded, but metadata is already in flight.
+        expect(h.native).toHaveLength(2);
+        expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
+        expect(h.requests[3].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        expect(h.mounts).toHaveLength(0);
+        if (order === 'metadata denied') {
+            await h.reply(3, 403, { code: 'dashboard_access_denied' });
+            expect(h.status).toBe('denied'); expect(h.mounts).toHaveLength(0);
+            h.load(0); h.load(1); await flush(); expect(h.mounts).toHaveLength(0);
+            return;
+        }
+        if (order === 'metadata first') {
+            await h.reply(3, 200, moduleProjection(model));
+            expect(h.requests).toHaveLength(4); expect(h.mounts).toHaveLength(0);
+            h.load(0); h.load(1); await flush();
+        } else {
+            h.load(0); h.load(1); await flush();
+            expect(h.requests).toHaveLength(4); expect(h.mounts).toHaveLength(0);
+            await h.reply(3, 200, moduleProjection(model));
+        }
+        expect(h.requests[4].url).toBe('/api/dashboard/session');
+        expect(h.mounts).toHaveLength(0);
+        await h.reply(4, 200, state());
+        expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
+        expect(h.requests.filter(item => item.url === '/api/dashboard/modules/cyber_security')).toHaveLength(1);
+    });
+
+    test('the Cyber Security read starts once the projection lists it ready, before the directory answers', async () => {
+        // F1 / D-013: the module read no longer waits for the directory. Protected
+        // assets still wait for both reads, and nothing mounts before the witness.
+        const h = harness({ hash: '#cyber-security', cyber: true }); await flush();
+        const model = cyberProjection();
+        await h.reply(0, 200, state());
+        expect(h.requests.map(item => item.url)).toEqual(paths.slice(0, 3));
+        await h.reply(2, 200, model);
+        expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
+        expect(h.requests[3].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        await h.reply(3, 200, moduleProjection(model));
+        expect(h.native).toHaveLength(0); expect(h.requests).toHaveLength(4); expect(h.mounts).toHaveLength(0);
+        await h.reply(1, 200, listing());
+        expect(h.native.map(n => n.src || n.href)).toEqual(['/api/dashboard/app.js', '/api/dashboard/dashboard.css']);
+        h.load(0); h.load(1); await flush();
+        expect(h.requests[4].url).toBe('/api/dashboard/session'); expect(h.mounts).toHaveLength(0);
+        await h.reply(4, 200, state());
+        expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
+        expect(h.requests.filter(item => item.url === '/api/dashboard/modules/cyber_security')).toHaveLength(1);
+    });
+    test('a projection without a ready Cyber Security module sends no module read', async () => {
+        const h = harness({ hash: '#overview' }); await flush();
+        await h.reply(0, 200, state()); await h.reply(2, 200, projection()); await h.reply(1, 200, listing());
+        h.load(0); h.load(1); await flush();
+        expect(h.requests.map(item => item.url)).toEqual([...paths.slice(0, 3), '/api/dashboard/session']);
+        await h.reply(3, 200, state());
+        expect(h.status).toBe('ready');
+    });
+    test('a directory failure cancels a module read already started from the projection', async () => {
+        const h = harness({ hash: '#cyber-security', cyber: true }); await flush();
+        await h.reply(0, 200, state()); await h.reply(2, 200, cyberProjection());
+        expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
+        await h.reply(1, 503, { code: 'synthetic_failure' });
+        expect(h.requests[3].init.signal.aborted).toBe(true);
+        expect(h.status).toBe('unavailable'); expect(h.native).toHaveLength(0); expect(h.mounts).toHaveLength(0);
+    });
+
     async function finish(h, first, asset, model) {
         await h.reply(first, 200, state()); await h.reply(first + 1, 200, listing());
         await h.reply(first + 2, 200, model);
@@ -2223,9 +2737,15 @@ describe('unmounted authority refresh coalescing', () => {
 
     test('failed initial reconciliation releases sharing so the next focus can retry fresh reads', async () => {
         const h = harness(); await flush(); await h.reply(0, 503, { code: 'dashboard_unavailable' });
+        for (const delay of [1000, 2000, 4000]) {
+            expect(h.status).toBe('loading');
+            jest.advanceTimersByTime(delay); await flush();
+            await h.reply(h.requests.length - 1, 503, { code: 'dashboard_unavailable' });
+        }
         expect(h.status).toBe('unavailable');
-        h.window.dispatch('focus'); await flush(); await h.open(state(), 'Recovered after unavailable', 1);
-        expect(h.status).toBe('ready'); expect(h.requests).toHaveLength(5);
+        const next = h.requests.length;
+        h.window.dispatch('focus'); await flush(); await h.open(state(), 'Recovered after unavailable', next);
+        expect(h.status).toBe('ready'); expect(h.requests).toHaveLength(next + 4);
     });
 
     test('pagehide invalidates a pending chain and overlapping return events share the new tenant checks', async () => {
@@ -2281,6 +2801,18 @@ describe('concurrent mounted authority refresh', () => {
         expect(h.requests[final].url).toBe('/api/dashboard/session'); await h.reply(final, 200, state());
         expect(h.status).toBe('ready');
     }
+    test('a confirmed return-to-tab refresh moves the footer information time forward', async () => {
+        const h = await mounted(false);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:50:00.000Z'));
+        const first = await beginRefresh(h, false);
+        await h.reply(first + 2, 200, payload(h, 2)); await h.reply(first + 1, 200, payload(h, 1));
+        expect(stamp().dateTime).toBe(before);
+        await h.reply(first + 3, 200, state());
+        expect(h.status).toBe('ready');
+        expect(stamp().dateTime).toBe('2026-09-08T23:50:00.000Z');
+    });
     test.each([false, true])('parallel middle GETs accept reverse completion with Cyber=%s and retain the final witness fence', async cyber => {
         const h = await mounted(cyber), main = h.elements.dashboardApp.querySelector('main');
         const first = await beginRefresh(h, cyber), middleCount = cyber ? 3 : 2;
@@ -3143,4 +3675,115 @@ describe('Consultant paging view', () => {
         expect(h.status).toBe('expired'); expect(readyRows(h)).toHaveLength(0);
         expect(h.document.activeElement === h.elements.dashboardHeading).toBe(true); expect(h.requests).toHaveLength(first + 1);
     });
+});
+
+describe('Overview Actions card', () => {
+    async function ready(h, improvement = true) {
+        await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
+        const model = JSON.parse(JSON.stringify(projection()));
+        model.modules.find(item => item.key === 'cyber_security').state = 'ready';
+        if (improvement) model.modules.find(item => item.key === 'improvement_plan').state = 'ready';
+        await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
+        await h.reply(3, 200, { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt,
+            module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] },
+            services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' });
+        await h.reply(4, 200, state());
+        return model;
+    }
+    const at = (h, pattern) => h.requests.findIndex(item => pattern.test(item.url));
+    const card = h => h.elements.dashboardApp.querySelector('.picture-actions');
+    const empty = { schemaVersion: 1, assessments: [], nextAfterAssessmentId: null };
+    const plans = model => ({ schemaVersion: 1, scope: { tenantId: fixture().scope.tenantId, organisationId: model.context.organisationId },
+        asOf: NOW, plans: [{ planId: 'plan-a', planRevision: 2 }], nextAfterPlanId: null });
+    const list = { schemaVersion: 1, asOf: NOW, actions: [
+        { actionId: 'a1', status: 'open', dueDate: '2026-09-01', isOverdue: true, ownerSubjectKey: null, ownerLabel: 'Synthetic owner',
+            rationale: { suggestedAction: 'Synthetic overdue action' } },
+        { actionId: 'a2', status: 'open', dueDate: '2026-09-10', isOverdue: false, ownerSubjectKey: null,
+            rationale: { suggestedAction: 'Synthetic upcoming action' } }] };
+    test('reads plans in parallel with the assessment list through the selected generation and renders the card', async () => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        const assessments = at(h, /^\/api\/dashboard\/ncsc\/assessments/), index = at(h, /^\/api\/dashboard\/improvement\/plans\?limit=5$/);
+        expect(assessments).toBeGreaterThan(4); expect(index).toBeGreaterThan(4);
+        expect(h.requests).toHaveLength(7);
+        expect(h.requests[index].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        await h.reply(index, 200, plans(model));
+        const read = at(h, /^\/api\/dashboard\/improvement\/list\?planId=plan-a$/);
+        expect(read).toBe(7); expect(h.requests[read].init.method).toBe('GET');
+        await h.reply(read, 200, list);
+        expect(card(h).textContent).toMatch(/Overdue \(1\).*Synthetic overdue action.*Owner: Synthetic owner.*Due in the next 14 days \(1\).*Synthetic upcoming action/s);
+        await h.reply(assessments, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
+        expect(card(h)).not.toBeNull();
+        expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
+        h.window.dispatch('pagehide');
+    });
+    test.each([[503, null], [403, null], [200, 503], [200, 403]])('plans %s / list %s leaves no card and Overview intact', async (first, second) => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        const index = at(h, /improvement\/plans/);
+        await h.reply(index, first, first === 200 ? plans(model) : { code: 'improvement_list_unavailable' });
+        if (second !== null) await h.reply(at(h, /improvement\/list/), second, { code: 'improvement_list_unavailable' });
+        await h.reply(at(h, /ncsc\/assessments/), 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(card(h)).toBeNull();
+        expect(h.status).toBe('ready');
+        expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
+        expect(h.mounts[0].destroy).not.toHaveBeenCalled();
+        h.window.dispatch('pagehide');
+    });
+    test.each([['valid', true], ['invalid', false]])('Actions card lists with a %s body move the footer information time only when accepted', async (_, valid) => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        const stamp = () => h.elements.dashboardApp.querySelector('.dashboard-provenance').querySelector('time');
+        const before = stamp().dateTime;
+        jest.setSystemTime(new Date('2026-09-08T23:51:00.000Z'));
+        await h.reply(at(h, /improvement\/plans/), 200, plans(model));
+        expect(stamp().dateTime).toBe(before);
+        await h.reply(at(h, /improvement\/list/), 200, valid ? list : { schemaVersion: 1, asOf: NOW });
+        expect(stamp().dateTime).toBe(valid ? '2026-09-08T23:51:00.000Z' : before);
+        h.window.dispatch('pagehide');
+    });
+    test('with improvement actions off, Overview makes no improvement reads and shows no card', async () => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }); await ready(h, false);
+        expect(h.requests).toHaveLength(6);
+        expect(h.requests.some(item => item.url.includes('/improvement/'))).toBe(false);
+        await h.reply(5, 200, empty, { text: async () => JSON.stringify(empty) });
+        expect(card(h)).toBeNull();
+        expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet');
+        h.window.dispatch('pagehide');
+    });
+});
+
+test.each([[{ external: true }, '#cyber-security', '#cyber-security'], [{ external: true }, '#not-a-route', undefined],
+    [{}, '#cyber-security', undefined]])('a signed-out dashboard remembers only a listed customer page for sign-in (%j %s)', async (options, hash, saved) => {
+    // Round 2: after signing out and back in, Alex landed on Overview, not the assessment he left.
+    const storage = new Map();
+    const h = harness({ ...options, hash });
+    h.window.sessionStorage = { setItem: (key, value) => storage.set(key, value), getItem: key => storage.get(key) ?? null,
+        removeItem: key => storage.delete(key) };
+    await flush();
+    await h.reply(0, 401, { code: 'dashboard_session_required' });
+    expect(h.status).toBe('unauthenticated');
+    const value = storage.get('nofries-return-route');
+    if (saved === undefined) expect(value).toBeUndefined();
+    else { const parsed = JSON.parse(value); expect(Object.keys(parsed).sort()).toEqual(['at', 'route']); expect(parsed.route).toBe(saved); }
+});
+
+test.each([['external', '/login?provider=external&intent=create', false], ['staff', null, true]])(
+    'a signed-out %s visitor to /dashboard is offered account creation only on customer entry', async (provider, href, hidden) => {
+        // Round 2: typing /dashboard while signed out showed only "Please sign in".
+        const h = harness(provider === 'external' ? { external: true } : {}); await flush();
+        await h.reply(0, 401, { code: 'dashboard_session_required' });
+        expect(h.status).toBe('unauthenticated');
+        expect(h.elements.dashboardCreateAccount.hidden).toBe(hidden);
+        if (href) expect(h.elements.dashboardCreateAccountLink.href).toBe(href);
+        expect(ENTRY_HTML).toContain('New here? <a id="dashboardCreateAccountLink" href="/login?intent=create">Create an account</a>');
+    });
+
+test('dashboard startup shows one steady progress message instead of changing stages', () => {
+    // Round 2: "Checking your sign-in…", "Preparing your dashboard…" and
+    // "Confirming your access…" over 6 to 16 seconds read as separate waits.
+    for (const stage of ['Checking your sign-in…', 'Loading your organisation…', 'Preparing your dashboard…', 'Confirming your access…']) {
+        expect(SOURCE).not.toContain("'" + stage + "'");
+    }
+    expect(SOURCE).toContain("const OPENING_MESSAGE = 'Getting your dashboard ready. This can take up to 20 seconds.';");
+    expect(SOURCE.match(/loadingStage\(cycle, OPENING_MESSAGE, OPENING_DETAIL\)/g)).toHaveLength(2);
+    expect(SOURCE.match(/sessionForReconcile\(cycle, OPENING_MESSAGE, OPENING_DETAIL\)/g)).toHaveLength(2);
 });

@@ -75,7 +75,9 @@ async function handleProspectSessionRequest(req, options = {}) {
                 onboardingFrom: STANDARD_PRICE.onboardingFrom,
                 additionalEndpointMonthly: STANDARD_PRICE.additionalEndpointMonthly,
                 additionalLocationMonthly: STANDARD_PRICE.additionalLocationMonthly,
-                gstExclusive: STANDARD_PRICE.gstExclusive
+                gstExclusive: STANDARD_PRICE.gstExclusive,
+                recommendedTierId: MANAGED_IT_POLICY.pricing.recommendedTierId,
+                tiers: MANAGED_IT_POLICY.pricing.tiers
             }
         },
         conversation: session.conversation,
@@ -106,6 +108,9 @@ async function handleProspectChatRequest(req, options = {}) {
         throw prospectError(400, 'The public help mode is invalid', 'invalid_public_help_mode');
     }
     const visitorMessage = guardVisitorMessage(publicHelpOnly ? body.publicHelpMessage : body.message);
+    // Optional tier chosen from a managed-IT plan card. The estimator normalises
+    // and falls back to the recommended tier, so an unknown value is harmless.
+    const visitorTier = clean(body && body.tier, 40);
     const rateLimit = prospectRateLimit(req, 'apiProspectChat', env);
     const runtime = resolveProspectRuntime(env);
     const prepared = await prepareSession(req, env, Object.assign({}, options, { persistSession: false }));
@@ -248,6 +253,7 @@ async function handleProspectChatRequest(req, options = {}) {
             message: visitorMessage,
             channel: 'text',
             safetyIdentifier: prepared.browserSession.sessionHash.slice(0, 64),
+            tier: visitorTier,
             onDelta: async (delta) => emit('delta', { delta })
         });
 
@@ -255,7 +261,23 @@ async function handleProspectChatRequest(req, options = {}) {
         let pricing = null;
         let responseConversation = result.conversation;
         let responseOrganisation = result.organisation;
-        const organisationContext = result.organisation && result.organisation.context || {};
+        let organisationContext = result.organisation && result.organisation.context || {};
+
+        // Persist the chosen tier into durable prospect context so a later
+        // follow-up turn (for example contact details) still quotes that tier.
+        if (visitorTier && typeof prepared.lifecycleService.recordProspectSelectedTier === 'function') {
+            const persistedTier = await prepared.lifecycleService.recordProspectSelectedTier(
+                prepared.access,
+                prepared.browserSession.sessionHash,
+                visitorTier
+            ).catch(() => null);
+            if (persistedTier) {
+                responseConversation = persistedTier.conversation;
+                responseOrganisation = persistedTier.organisation;
+                organisationContext = persistedTier.organisation && persistedTier.organisation.context || organisationContext;
+            }
+        }
+        const storedSelectedTier = (organisationContext.commercial && organisationContext.commercial.selectedTier) || '';
         const conversationMessages = result.conversation && result.conversation.messages || [];
         const priorConversationMessages = conversationMessages.length
             && conversationMessages[conversationMessages.length - 1].role === 'assistant'
@@ -271,22 +293,38 @@ async function handleProspectChatRequest(req, options = {}) {
         const pricingJourneyActive = explicitPricingIntent || (priorPricingIntent && !finalQuoteAlreadyProvided);
 
         if (pricingJourneyActive) {
-            pricing = estimateManagedItPrice(organisationContext);
+            const effectiveTier = visitorTier || storedSelectedTier;
+            pricing = estimateManagedItPrice(Object.assign({}, organisationContext, effectiveTier ? { tier: effectiveTier } : {}));
             const shouldAppendPricing = pricing.status !== 'needs_more_info' || explicitPricingIntent;
             const pricingText = shouldAppendPricing ? priceReply(pricing) : '';
-            const alreadyContainsThisTurnPrice = /NZ\$[\d,]+/i.test(finalText);
-            if (pricingText && !alreadyContainsThisTurnPrice) {
-                finalText = `${finalText}\n\n${pricingText}`;
-                await emit('delta', { delta: `\n\n${pricingText}` });
-                const persistedPrice = await prepared.lifecycleService.appendProspectMessage(
-                    prepared.access,
-                    prepared.browserSession.sessionHash,
-                    'assistant',
-                    pricingText
-                ).catch(() => null);
-                if (persistedPrice) {
-                    responseConversation = persistedPrice.conversation;
-                    responseOrganisation = persistedPrice.organisation;
+            if (pricingText) {
+                const correctMonthly = pricing.status !== 'needs_more_info'
+                    ? `NZ$${pricing.monthly.toLocaleString('en-NZ')} + GST per month`
+                    : '';
+                const alreadyCorrect = !!correctMonthly && finalText.includes(correctMonthly);
+                // A full server-format estimate sentence the agent may have produced for another tier.
+                const staleEstimate = /On the .+? plan, based on [\s\S]*?current No Fries estimate is NZ\$[\d,]+/i.test(finalText);
+                let corrected = null;
+                if (alreadyCorrect) {
+                    corrected = null;
+                } else if (staleEstimate) {
+                    corrected = finalText.replace(/On the .+? plan, based on [\s\S]*$/i, pricingText);
+                } else if (!/NZ\$[\d,]+/i.test(finalText)) {
+                    corrected = `${finalText}\n\n${pricingText}`;
+                }
+                if (corrected !== null) {
+                    finalText = corrected;
+                    await emit('delta', { delta: `\n\n${pricingText}` });
+                    const persistedPrice = await prepared.lifecycleService.appendProspectMessage(
+                        prepared.access,
+                        prepared.browserSession.sessionHash,
+                        'assistant',
+                        pricingText
+                    ).catch(() => null);
+                    if (persistedPrice) {
+                        responseConversation = persistedPrice.conversation;
+                        responseOrganisation = persistedPrice.organisation;
+                    }
                 }
             }
         }

@@ -656,6 +656,28 @@ describe('NCSC assessment durable facade contract', () => {
         expect(h.memory.rows(RECEIPT).filter(row => row.payload.action === 'submit')).toHaveLength(1);
     });
 
+    test('the list reports this organisation\'s submission allowance read-only, without charging or writing', async () => {
+        const memory = memoryDatabase(), h = await setup({ capacity: 2 }, memory),
+            other = await setup({ tenantId: 'tenant-other', organisationId: 'org-other', capacity: 5 }, memory);
+        await h.create(); await h.save();
+        expect((await h.list()).submissionAllowance).toEqual({ used: 0, limit: 2 });
+        await h.submit();
+        const before = h.memory.snapshot(), start = h.memory.queries.length;
+        expect((await h.list()).submissionAllowance).toEqual({ used: 1, limit: 2 });
+        onlyReadsSince(h, start); expect(h.memory.snapshot()).toEqual(before);
+        expect((await other.list()).submissionAllowance).toEqual({ used: 0, limit: 5 });
+        const foreign = await createContext({ ...h.fixture.scope, organisationId: 'foreign-org' }, h.clock);
+        await expectCode(h.repository.listNcscAssessments(foreign, { limit: 1, afterAssessmentId: null }), 'ncsc_access_denied');
+    });
+
+    test('a product with no assessment submissions reports a zero allowance on the list', async () => {
+        const h = await setup({ capacity: 0 });
+        await h.create();
+        const page = await h.list();
+        expect(page.assessments.map(row => row.assessmentId)).toEqual(['assessment-a']);
+        expect(page.submissionAllowance).toEqual({ used: 0, limit: 0 });
+    });
+
     test('an asynchronous approved policy charges once and exact replay never reloads it', async () => {
         const h = await ready(), before = h.memory.snapshot(); let release, entered;
         const started = new Promise(resolve => { entered = resolve; });
@@ -671,17 +693,21 @@ describe('NCSC assessment durable facade contract', () => {
         expect(h.policy).toHaveBeenCalledTimes(1);
         expect(h.memory.rows(USAGE)[0].payload.counters.assessment_runs).toBe(1);
     });
-    test('authority expiring during asynchronous policy read rolls back before any assessment write', async () => {
+    // Membership and product no longer expire. The separately approved submission
+    // policy still has a window, so it carries these mid-transaction expiry checks.
+    const POLICY_END = '2026-09-08T09:00:00.000Z';
+    const endingPolicy = h => selection => ({ ...h.adapters.resolveSubmissionQuota(selection), validUntil: POLICY_END });
+    test('submission policy expiring during its asynchronous read rolls back with no retained assessment write', async () => {
         const h = await ready(), before = h.memory.snapshot(); let release, entered;
         const started = new Promise(resolve => { entered = resolve; });
         h.policy.mockImplementation(selection => new Promise(resolve => {
-            const retained = h.adapters.resolveSubmissionQuota(selection);
+            const retained = endingPolicy(h)(selection);
             release = () => resolve(retained); entered();
         }));
-        const queries = h.memory.queries.length, pending = h.submit(); await started;
+        const pending = h.submit(); await started;
         h.clock.set('2026-09-08T09:00:00.000Z'); release();
         await expectCode(pending, 'ncsc_access_denied');
-        expect(h.memory.snapshot()).toEqual(before); onlyReadsSince(h, queries);
+        expect(h.memory.snapshot()).toEqual(before); // Rolled back: nothing is retained.
     });
     test('asynchronous missing policy is a no-write refusal and does not seal the draft', async () => {
         const h = await ready(), before = h.memory.snapshot();
@@ -749,14 +775,15 @@ describe('NCSC assessment durable facade contract', () => {
         expect(h.memory.snapshot()).toEqual(before);
     });
 
-    test('read awaits its audit sink and rechecks expiry afterward', async () => {
+    test('read awaits its audit sink; a recorded account end passing meanwhile does not deny it', async () => {
         const h = await ready(); let release;
         h.auditWrite.mockImplementation(() => new Promise(resolve => { release = resolve; }));
         let finished = false; const pending = h.read().finally(() => { finished = true; });
         for (let i = 0; i < 100 && !release; i += 1) await new Promise(resolve => setImmediate(resolve));
         expect(release).toEqual(expect.any(Function)); expect(finished).toBe(false);
         h.clock.set('2026-09-08T09:00:00.000Z'); release();
-        await expectCode(pending, 'ncsc_access_denied');
+        expect((await pending).assessment.assessmentId).toEqual(expect.any(String)); // Accounts do not expire.
+        expect(finished).toBe(true);
     });
 
     test.each(['postgres_commit_failed', 'postgres_rollback_failed'])('lost committed response %s reconciles the exact original result without another write', async code => {
@@ -785,22 +812,24 @@ describe('NCSC assessment durable facade contract', () => {
         expect(h.memory.queries.slice(queryStart).some(row => row.sql.includes(`FROM nofries.${RECEIPT}`))).toBe(false);
     });
 
-    test.each(['lock', 'receipt-read', 'last-write'])('expiry crossing at %s denies before the authorization linearization point', async when => {
-        const h = await ready(), before = h.memory.snapshot();
+    test.each(['lock', 'receipt-read', 'last-write'])('policy expiry crossing at %s denies before the authorization linearization point', async when => {
+        const h = await ready(), before = h.memory.snapshot(); h.policy.mockImplementation(endingPolicy(h));
         h.memory.hooks.afterQuery = async ({ sql }) => {
             if ((when === 'lock' && sql.endsWith('FOR UPDATE')) ||
                 (when === 'receipt-read' && sql.startsWith(`SELECT * FROM nofries.${RECEIPT}`)) ||
                 (when === 'last-write' && sql.startsWith(`INSERT INTO nofries.${RECEIPT}`))) h.clock.set('2026-09-08T09:00:00.000Z');
         };
-        await expectCode(h.submit(), 'ncsc_access_denied');
+        // Before selection an ended policy is unavailable; after it, the final recheck denies.
+        await expectCode(h.submit(), when === 'last-write' ? 'ncsc_access_denied' : 'ncsc_unavailable');
         expect(h.memory.snapshot()).toEqual(before);
     });
 
-    test('expiry beginning during successful COMMIT does not alter the already checked original result', async () => {
-        const h = await ready();
+    test('policy expiry beginning during successful COMMIT does not alter the already checked original result', async () => {
+        const h = await ready(); h.policy.mockImplementation(endingPolicy(h));
         h.memory.hooks.beforeCommit = async () => { h.clock.set('2026-09-08T09:00:00.000Z'); };
         const result = await h.submit(); expect(result.assessment.status).toBe('submitted');
-        await expectCode(h.submit(), 'ncsc_access_denied');
+        // An exact replay returns the retained result; it is not charged or re-authorised against the ended policy.
+        expect((await h.submit()).assessment).toEqual(result.assessment);
         expect(h.memory.rows(USAGE)[0].payload.counters.assessment_runs).toBe(1);
     });
 
@@ -837,7 +866,8 @@ describe('NCSC assessment durable facade contract', () => {
         const retained = clone(receipt(h)), entitlement = clone(h.fixture.state.entitlementState);
         entitlement.revision += 1;
         const prior = entitlement.grants.find(row => row.grantId === 'synthetic-product');
-        const renewed = { ...clone(prior), grantId: 'renewed-product', agreementRef: 'synthetic-renewed-agreement' };
+        const renewed = { ...clone(prior), grantId: 'renewed-product', agreementRef: 'synthetic-renewed-agreement',
+            validFrom: new Date(Date.parse(prior.validFrom) + 1).toISOString() }; // A new product needs its own start.
         prior.status = 'revoked'; entitlement.grants.push(renewed);
         entitlement.grants.sort((a, b) => a.grantId < b.grantId ? -1 : 1);
         await authorityCommand(h, 'entitlement.update', entitlement, 'renew-product');
@@ -972,4 +1002,69 @@ describe('NCSC assessment durable facade contract', () => {
         expect(h.memory.rows(VERSION)).toHaveLength(258);
         expect((await h.list(1)).nextAfterAssessmentId).toBe('assessment-a');
     }, 90000);
+});
+
+describe('lifecycle email enqueue at submit (#151)', () => {
+    const outbox = require('../api/shared/lifecycleEmail/outboxWriter');
+    const ACCOUNT = '20000000-0000-4000-8000-000000000001';
+    const FLAG = 'NOFRIES_LIFECYCLE_EMAIL_ENQUEUE_ENABLED';
+    let enqueue, cancel;
+    beforeEach(() => {
+        enqueue = jest.spyOn(outbox, 'enqueue').mockResolvedValue(true);
+        cancel = jest.spyOn(outbox, 'cancelPending').mockResolvedValue(0);
+    });
+    afterEach(() => { delete process.env[FLAG]; jest.restoreAllMocks(); });
+    const starter = () => memoryDatabase({ dashboard_starter_scopes: [{ tenant_id: 'synthetic-ncsc-tenant',
+        organisation_id: 'shared-organisation', account_id: ACCOUNT, activation: { synthetic: true } }] });
+    const starterReads = h => h.memory.queries.filter(row => row.sql.includes('dashboard_starter_scopes'));
+
+    test.each([undefined, 'TRUE', '1', 'true '])('flag %p leaves submit with no outbox calls', async value => {
+        if (value !== undefined) process.env[FLAG] = value;
+        const h = await ready({}, starter());
+        await h.submit();
+        expect(enqueue).not.toHaveBeenCalled(); expect(cancel).not.toHaveBeenCalled();
+        expect(starterReads(h)).toEqual([]);
+    });
+
+    test('flag on queues the result summary now and a 90-day reminder, after cancelling pending nudges and reminders', async () => {
+        process.env[FLAG] = 'true';
+        const h = await ready({}, starter());
+        const submitted = await h.submit();
+        const version = h.memory.rows(VERSION).find(row => row.revision === submitted.assessment.revision);
+        const counts = submitted.assessment.submission.evaluation.countsCompletion;
+        const scope = { tenantId: 'synthetic-ncsc-tenant', organisationId: 'shared-organisation', accountId: ACCOUNT };
+        expect(cancel.mock.calls.map(call => call[1])).toEqual([{ ...scope, types: ['nudge_unfinished', 'reassess_reminder'] }]);
+        expect(enqueue.mock.calls.map(call => call[1])).toEqual([
+            { ...scope, type: 'result_summary', dedupeKey: version.payload_sha256, notBefore: NOW,
+                params: { assessmentId: 'assessment-a', gapCount: counts.no + counts.partial } },
+            { ...scope, type: 'reassess_reminder', dedupeKey: version.payload_sha256, notBefore: '2026-12-06T09:00:00.000Z', params: {} }]);
+        expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(enqueue.mock.invocationCallOrder[0]);
+        // Only identifiers and an integer leave the submit; never free text.
+        for (const [, row] of enqueue.mock.calls) {
+            expect(Object.keys(row.params).every(key => ['assessmentId', 'gapCount'].includes(key))).toBe(true);
+            if ('gapCount' in row.params) expect(Number.isInteger(row.params.gapCount)).toBe(true);
+            expect(JSON.stringify(row)).not.toMatch(/Synthetic|@|\s/);
+        }
+        // An exact retry replays the receipt and queues nothing more.
+        expect(await h.submit()).toEqual(submitted);
+        expect(enqueue).toHaveBeenCalledTimes(2);
+    });
+
+    test('flag on queues nothing for a scope with no activated starter account of the signed-in subject', async () => {
+        process.env[FLAG] = 'true';
+        const h = await ready();
+        await h.submit();
+        expect(starterReads(h)).toHaveLength(1);
+        expect(enqueue).not.toHaveBeenCalled(); expect(cancel).not.toHaveBeenCalled();
+    });
+
+    test('a failed enqueue fails the submit and rolls back every assessment write', async () => {
+        process.env[FLAG] = 'true';
+        const h = await ready({}, starter());
+        enqueue.mockRejectedValueOnce(new outbox.OutboxWriteError());
+        const before = h.memory.snapshot();
+        await expectCode(h.submit(), 'ncsc_unavailable');
+        expect(h.memory.snapshot()).toEqual(before);
+        expect((await h.read()).assessment.status).toBe('in-progress');
+    });
 });

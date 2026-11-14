@@ -81,14 +81,17 @@ test('delayed consent starts a full fourteen-day term at activation and binds th
     assert.deepEqual(normaliseMembershipState(s.membershipState), s.membershipState);
     assert.ok(Object.isFrozen(r)); assert.ok(Object.isFrozen(s));
 });
-test('starter eligibility has no staff/adviser/provider, evidence, export or AI expansion and expiry preserves the record', () => {
+test('starter eligibility has no staff/adviser/provider, evidence, export or AI expansion and continues past the recorded end', () => {
     const f = fixture(), { nextState: s, activationIntent: r } = f.activate();
     const e = resolveEntitlements(s.entitlementState, s.tenantAggregate, f.preparation.scope, LATER, s.flags);
     assert.equal(e.product.code, 'dashboard_score'); assert.equal(e.modules.cyber_security.eligible, true);
     for (const module of ['evidence', 'board_reports', 'ai_governance', 'it_optimisation', 'services']) assert.equal(e.modules[module].eligible, false);
     assert.equal(e.admissionGranted, false); assert.equal(e.providerAccessGranted, false);
     assert.equal(e.governanceWorkflowEligible, false);
-    assert.equal(resolveEntitlements(s.entitlementState, s.tenantAggregate, f.preparation.scope, r.validUntil, s.flags).product, null);
+    // Accounts do not expire: the same product and limits apply after the recorded 14 days.
+    const later = resolveEntitlements(s.entitlementState, s.tenantAggregate, f.preparation.scope, '2027-01-01T00:00:00.000Z', s.flags);
+    assert.deepEqual(later.product, e.product); assert.equal(later.product.validUntil, r.validUntil);
+    assert.equal(later.product.limits.assessment_runs, 5);
     assert.equal(s.tenantAggregate.organisations[0].recordStatus, 'active');
 });
 test('consultant client activation shares the original term and creates no backdated membership', () => {
@@ -100,7 +103,40 @@ test('consultant client activation shares the original term and creates no backd
     assert.throws(() => fixture({ accountType: 'company', kind: 'client' }));
     assert.throws(() => compileStarterActivation({ ...f.input, accountActivatedAt: null }));
     assert.throws(() => compileStarterActivation({ ...f.input, accountActivatedAt: '2026-10-05T00:00:00.000Z' }));
-    assert.throws(() => compileStarterActivation({ ...f.input, occurredAt: r.validUntil }));
+    // A client activated at or after the account's recorded end records the plan's period
+    // from its own activation: the shared end would precede its own start.
+    const late = '2026-12-25T08:00:00.000Z';
+    for (const occurredAt of [r.validUntil, late]) {
+        const result = compileStarterActivation({ ...f.input, occurredAt });
+        assert.equal(result.activationIntent.accountActivatedAt, AT); assert.equal(result.activationIntent.validUntil, accountWindow(occurredAt).validUntil);
+        const grant = result.nextState.entitlementState.grants[0], member = result.nextState.membershipState.memberships[0];
+        assert.deepEqual([grant.validFrom, grant.validUntil], [AT, accountWindow(occurredAt).validUntil]);
+        assert.deepEqual([member.validFrom, member.validUntil], [occurredAt, accountWindow(occurredAt).validUntil]);
+        assert.equal(grant.limits.assessment_runs, 5); assert.equal(grant.limits.memberships, 1);
+    }
+    const lastInside = new Date(Date.parse(r.validUntil) - 1).toISOString();
+    assert.equal(compileStarterActivation({ ...f.input, occurredAt: lastInside }).activationIntent.validUntil, r.validUntil);
+});
+test('the no-fixed-end access policy changes only new schedule wording; retained schedules, limits, price and terms are unchanged', () => {
+    for (const options of [{}, { accountType: 'consultant', kind: 'client' }]) {
+        const old = fixture(options), f = fixture({ ...options, accessPolicy: 'no-fixed-end-v1' }), text = f.preparation.schedule.scheduleText;
+        assert.match(text, /\nAccess period: no fixed end date\. Access continues until it is suspended or the agreement ends\.\n/);
+        assert.match(text, /\nClient organisations can be added at any time\.\n/);
+        assert.match(text, /\nAllowance: 5 assessment submissions and 1 user per organisation\.\n/);
+        assert.match(text, /\nSuspension or the end of the agreement does not delete saved work\. Existing retention and lawful-hold rules apply\.\n/);
+        assert.doesNotMatch(text, /14 days|[Ee]xpir|for this access period|does not start another period/);
+        // Everything else in the schedule is the retained text, line for line.
+        const changed = (a, b) => a.split('\n').filter((line, i) => line !== b.split('\n')[i]).length;
+        assert.equal(text.split('\n').length, old.preparation.schedule.scheduleText.split('\n').length);
+        assert.ok(changed(text, old.preparation.schedule.scheduleText) <= 6);
+        assert.match(old.preparation.schedule.scheduleText, /Access period: 14 days from account activation/);
+        assert.deepEqual(f.preparation.terms, old.preparation.terms);
+        assert.deepEqual(f.activate().nextState.entitlementState.grants[0].limits,
+            { assessment_runs: 5, memberships: 1, ai_requests: 0, evidence_bytes: 0, report_exports: 0 });
+        for (const accessPolicy of [null, false, '', 'no-fixed-end', 'unlimited-v1']) {
+            assert.throws(() => compileStarterSchedule({ ...f.source.offerInput, accessPolicy }));
+        }
+    }
 });
 test('the new consultant count policy changes only new schedule wording and preserves price, term, seats and consent', () => {
     const f = fixture({ accountType: 'consultant', kind: 'client', consultantOrganisationPolicy: 'unlimited-v1' });

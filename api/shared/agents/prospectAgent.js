@@ -62,6 +62,7 @@ function createProspectAgent(options = {}) {
                         model,
                         releaseIdentity,
                         message,
+                        tier: input.tier,
                         onDelta: input.onDelta,
                         safetyIdentifier: input.safetyIdentifier
                     })
@@ -73,6 +74,7 @@ function createProspectAgent(options = {}) {
                         model,
                         releaseIdentity,
                         message,
+                        tier: input.tier,
                         onDelta: input.onDelta
                     });
 
@@ -195,7 +197,7 @@ async function runOpenAITurn(options) {
     }
     const session = await options.lifecycleService.getProspectSession(options.access, options.sessionHash);
     const stableInstructions = prospectStableInstructions();
-    const dynamicInstructions = prospectDynamicInstructions(session.organisation, session.conversation);
+    const dynamicInstructions = prospectDynamicInstructions(session.organisation, session.conversation, options.tier);
     const promptPrefix = buildPromptPrefix({
         model: options.model.model,
         promptCacheKey: prospectPromptCacheKey(),
@@ -300,7 +302,8 @@ async function runOpenAITurn(options) {
     const groundedReply = groundedFaqReply(
         groundedSession.organisation,
         options.message,
-        groundedSession.conversation
+        groundedSession.conversation,
+        options.tier
     ) || (followUp ? humanFollowUpReply(groundedSession.organisation) : '');
     if (groundedReply) {
         if (typeof options.onDelta === 'function') {
@@ -410,8 +413,8 @@ async function runMockTurn(options) {
     }
 
     const latest = await options.lifecycleService.getProspectSession(options.access, options.sessionHash);
-    const text = groundedFaqReply(latest.organisation, options.message, latest.conversation)
-        || mockReply(latest.organisation, options.message);
+    const text = groundedFaqReply(latest.organisation, options.message, latest.conversation, options.tier)
+        || mockReply(latest.organisation, options.message, options.tier);
     if (typeof options.onDelta === 'function') {
         for (const delta of text.match(/\S+\s*/g) || [text]) {
             await options.onDelta(delta);
@@ -451,13 +454,26 @@ function prospectStableInstructions() {
     ].join('\n');
 }
 
-function prospectDynamicInstructions(organisation, conversation) {
+function prospectDynamicInstructions(organisation, conversation, tier) {
     const missing = organisation.discovery.missingFields.map((item) => item.label);
-    return [
+    const lines = [
         `Known structured context (unknown means not yet provided): ${JSON.stringify(organisation.context)}`,
         `Current lifecycle: ${organisation.lifecycleState}. Current summary: ${conversation.summary || 'unknown'}.`,
         `Highest-value discovery gaps: ${missing.slice(0, 8).join(', ') || 'none'}.`
-    ].join('\n');
+    ];
+    const selectedTier = resolveSelectedTier(tier);
+    if (selectedTier) {
+        lines.push(`The visitor is currently looking at the ${selectedTier.name} plan.`);
+    }
+    return lines.join('\n');
+}
+
+function resolveSelectedTier(tier) {
+    const text = String(tier == null ? '' : tier).trim().toLowerCase();
+    if (!text) return null;
+    return MANAGED_IT_POLICY.pricing.tiers.find(
+        (item) => item.id === text || item.name.toLowerCase() === text
+    ) || null;
 }
 
 function prospectInstructions(organisation, conversation) {
@@ -656,17 +672,20 @@ function shouldAdvanceToDiscovery(organisation) {
         organisation.fieldStates['company.summary'].status === 'known';
 }
 
-function mockReply(organisation, message) {
+function mockReply(organisation, message, tier) {
     const context = organisation.context;
     const lower = message.toLowerCase();
     const pricingIntent = /\b(?:price|pricing|cost|quote|how much|monthly|per user|setup fee|set-up fee|onboarding fee)\b/.test(lower);
     let answer = '';
     if (/\b(?:what|which).*(?:include|cover|do you do)\b/.test(lower)) {
-        answer = `${MANAGED_IT_POLICY.customerFacingServiceName} includes day-to-day support, help with business email and shared work tools, care for your computers, supplier follow-up and Proof every month. Threat protection, after-hours security help and backup are added when you choose them.`;
+        answer = `${MANAGED_IT_POLICY.customerFacingServiceName} starts with day-to-day support during NZ business hours, Monday to Friday, the No Fries dashboard, an AI-assisted email helpdesk with a person approving every change before it is made, Microsoft 365 admin and help with business email and shared work tools, plus a plain-English monthly summary and Proof every month. The Managed tier adds patching, Microsoft 365 backup and dealing with your other IT vendors, and the Secure tier adds security hardening and alerts.`;
     } else if (pricingIntent) {
-        answer = `${MANAGED_IT_POLICY.customerFacingServiceName} is NZ$${MANAGED_IT_POLICY.pricing.perUserMonthly} + GST per user each month and includes one main work computer per user. Initial set-up starts at NZ$${MANAGED_IT_POLICY.pricing.onboardingFrom} + GST. I can prepare an indicative total once we confirm the user and device counts.`;
+        const selectedTier = resolveSelectedTier(tier);
+        const perUser = selectedTier ? selectedTier.perUserMonthly : MANAGED_IT_POLICY.pricing.perUserMonthly;
+        const planLabel = selectedTier ? ` ${selectedTier.name}` : '';
+        answer = `${MANAGED_IT_POLICY.customerFacingServiceName}${planLabel} is NZ$${perUser} + GST per user each month and includes one main work computer per user. Initial set-up starts at NZ$${MANAGED_IT_POLICY.pricing.onboardingFrom} + GST. I can prepare an indicative total once we confirm the user and device counts.`;
     } else if (/\b(?:24\/7|after hours|overnight)\b/.test(lower)) {
-        answer = 'Requests can be logged at any time. Staffed user support is during agreed business hours, and after-hours security help is included only when selected.';
+        answer = 'Requests can be logged at any time. Staffed user support is during NZ business hours, Monday to Friday, and after-hours security help is included only when selected.';
     } else if (/\b(?:ai|agent)\b/.test(lower)) {
         answer = 'No Fries handles common low-risk requests through approved steps. Higher-risk or disruptive changes need human approval, and you receive a record of what was done.';
     } else {
@@ -711,7 +730,7 @@ function isInformationalProspectTurn(message) {
         /\b(?:need|want|would like|(?:are )?looking for)\s+(?:(?:to\s+)?(?:know|understand|learn|find out)\b|(?:(?:some|more)\s+)?(?:information|info|details|advice)\b)/i.test(text);
 }
 
-function groundedFaqReply(organisation, message, conversation = {}) {
+function groundedFaqReply(organisation, message, conversation = {}, tier) {
     const publicHelp = publicHelpReply(message);
     if (publicHelp) return publicHelp.text;
     const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
@@ -722,10 +741,14 @@ function groundedFaqReply(organisation, message, conversation = {}) {
         item && item.role === 'assistant' && /current No Fries estimate is NZ\$[\d,]+/i.test(String(item.text || ''))
     ));
     if (pricingJourneyActive && !finalQuoteAlreadyProvided) {
-        const estimate = estimateManagedItPrice(organisation && organisation.context || {});
+        const estimate = estimateManagedItPrice(Object.assign(
+            {},
+            organisation && organisation.context || {},
+            tier ? { tier } : {}
+        ));
         if (estimate.status !== 'needs_more_info') return priceReply(estimate);
     }
-    return isGroundedProspectQuestion(message) ? mockReply(organisation, message) : '';
+    return isGroundedProspectQuestion(message) ? mockReply(organisation, message, tier) : '';
 }
 
 function publicError(statusCode, message, code) {

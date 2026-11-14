@@ -21,14 +21,16 @@ test('saved result document renders original accepted-profile results and escape
     assert.ok(!html.includes(f.identity.oid));
 });
 
-test('saved result identifies the returned assessment and precise submission and expiry in UTC', async () => {
+test('saved result identifies the returned assessment and precise submission in UTC', async () => {
     const f = await retainedTrialFixture();
     const result = await createRetainedTrialAssessmentReader(f.options).read({}, f.input);
     const html = buildRetainedTrialReadDocument({ selection: { ...f.input, assessmentId: 'other-selection' }, result, status: 'result' });
     assert.ok(html.includes('Assessment reference: <strong>saved-assessment</strong>'));
     assert.ok(!html.includes('other-selection'));
     assert.ok(html.includes('<time datetime="2026-11-02T12:00:02.000Z">2026-11-02 12:00:02.000 UTC</time>'));
-    assert.ok(html.includes('<time datetime="2027-02-01T12:00:00.000Z">2027-02-01 12:00:00.000 UTC</time>'));
+    // Accounts do not expire: the page no longer announces a trial end date.
+    assert.ok(!html.includes('2027-02-01T12:00:00.000Z')); assert.ok(!/trial|expir/i.test(html.replace(/<head>.*?<\/head>/s, '')));
+    assert.ok(html.includes('This saved assessment is read only.'));
     assert.ok(html.includes('You cannot change answers or submit another assessment from this page.'));
     const later = JSON.parse(JSON.stringify(result));
     later.assessment.assessmentId = 'later-assessment';
@@ -52,7 +54,7 @@ test.each(['signin', 'unavailable'])('%s explains retained access without exposi
     const f = await retainedTrialFixture();
     for (const selection of [null, f.input]) {
         const html = buildRetainedTrialReadDocument({ selection, status });
-        assert.ok(html.includes('Saved results are read only. Signing in here does not restart your trial.'));
+        assert.ok(html.includes('Saved results are read only.')); assert.ok(!/restart your trial/.test(html));
         assert.doesNotMatch(html, /Assessment reference:|Reported attainment:|<time\b|14[ -]days?/i);
         assert.ok(html.includes('<h1 id="saved-results-title" tabindex="-1">'));
         assert.doesNotMatch(html, /<(?:script|form|input|textarea|select)\b/i);

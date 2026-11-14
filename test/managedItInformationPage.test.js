@@ -18,9 +18,9 @@ function policyItems(section, headings) {
     return items.map(item => text(headings ? item[1].match(/<h3>([\s\S]*?)<\/h3>/)[1] : item[1]));
 }
 
-testCase('the standalone Managed IT page is linked only from the compact homepage service section', () => {
+testCase('the standalone Managed IT page is linked from the shared navigation and the compact homepage service section', () => {
     const mainNav = home.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
-    assert.doesNotMatch(mainNav, /managed-it|Managed IT/);
+    assert.match(mainNav, /href="\/managed-it\.html" data-dashboard-leave>Managed IT</);
     assert.match(home, /id="other-services"[\s\S]*href="\/managed-it\.html"/);
     assert.match(html, /<title>No Fries Managed IT<\/title>/);
     assert.match(html, /<link rel="canonical" href="https:\/\/nofries\.nz\/managed-it\.html">/);
@@ -40,24 +40,37 @@ testCase('the public included-service summary stays aligned with the effective p
     assert.match(text(html), /The agreed scope sets out your people, computers, tools and service coverage\./);
 });
 
-testCase('protection and backup remain explicitly optional and selected separately', () => {
+testCase('scale add-ons stay aligned with the effective policy and read as priced per use', () => {
     assert.deepEqual(policyItems('optional', true), MANAGED_IT_POLICY.optionalServices);
-    assert.match(text(html), /Optional · selected separately Protect & Recover\./);
-    assert.match(text(html), /These options are included only when selected in your agreed scope\./);
+    assert.match(text(html), /Optional · priced per use Add-ons when you need them\./);
+    assert.match(text(html), /These add-ons are priced on top of your per-user plan when your agreed scope needs them\./);
 });
 
 testCase('separately scoped extras retain every public policy exclusion', () => {
     assert.deepEqual(policyItems('excluded', false), MANAGED_IT_POLICY.exclusions);
-    assert.match(text(html), /Agreed separately Large projects/);
+    assert.match(text(html), /Available by arrangement Large projects/);
     assert.match(text(html), /Additional needs are scoped and priced before acceptance\./);
+});
+
+testCase('on-site work is offered by arrangement and is not listed as an exclusion', () => {
+    assert.ok(!MANAGED_IT_POLICY.exclusions.some(item => /on-site/i.test(item)));
+    assert.ok(!policyItems('excluded', false).some(item => /on-site/i.test(item)));
+    assert.ok(policyItems('optional', true).includes('On-site work by arrangement, quoted separately'));
+    assert.match(text(html), /A No Fries technician can come to your site when the work needs it\./);
+});
+
+testCase('the public page and policy name no individual person', () => {
+    assert.doesNotMatch(html, /\bJoel\b|\bfounder\b/i);
+    assert.doesNotMatch(JSON.stringify(MANAGED_IT_POLICY), /\bJoel\b|\bfounder\b/i);
+    assert.match(text(html), /AI-assisted email helpdesk, with a person approving every change before it is made/);
 });
 
 testCase('separate service-page links survive the dashboard-focused homepage and removed Luna promotion', () => {
     assert.doesNotMatch(home, /Product and services|id="service-dialog"|id="discovery-dialog"|id="pricing-dialog"/);
-    for (const href of ['https://news.nofries.nz/', '/roadmap.html', '/privacy.html', '/terms.html']) {
+    for (const href of ['/roadmap.html', '/privacy.html', '/terms.html']) {
         assert.ok(home.includes(`href="${href}"`), `homepage footer lost ${href}`);
     }
-    for (const href of ['/', 'https://news.nofries.nz/', 'https://sales.nofries.nz/', '/roadmap.html', '/portal', '/privacy.html', '/terms.html']) {
+    for (const href of ['/', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html']) {
         assert.ok(html.includes(`href="${href}"`), `information page lost ${href}`);
     }
     assert.match(html, /href="\/managed-it\.html" aria-current="page"/);
@@ -65,26 +78,37 @@ testCase('separate service-page links survive the dashboard-focused homepage and
     assert.doesNotMatch(html, /href="https:\/\/luna\.nofries\.nz\//);
 });
 
-testCase('the enquiry action reuses the click-only shared assistant and verified contact paths', () => {
-    const buttons = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
-    assert.equal(buttons.length, 2);
-    for (const button of buttons) {
-        assert.match(button[1], /type="button"/);
-        assert.match(button[1], /\bdata-assistant-open\b/);
-        assert.match(button[1], /data-assistant-topic="managed-it"/);
-        assert.equal(text(button[2]), 'Ask about Managed IT →');
-        assert.doesNotMatch(button[1], /data-message|onclick|formaction/);
-    }
+testCase('the enquiry actions link to the contact form and verified contact paths', () => {
+    assert.doesNotMatch(html, /<button\b|data-assistant-/);
+    const actions = [...html.matchAll(/<a class="button[^"]*" href="([^"]+)">([\s\S]*?)<\/a>/g)];
+    assert.deepEqual(actions.map(action => [action[1], text(action[2])]), [
+        ['/contact.html', 'Ask about Managed IT →'], ['/contact.html', 'Enquire about Essentials →'],
+        ['/contact.html', 'Enquire about Managed →'], ['/contact.html', 'Enquire about Secure →'],
+        ['/contact.html', 'Ask about Managed IT →']
+    ]);
     assert.match(existingScope, /href="mailto:hello@nofries\.nz"/);
     assert.match(html, /href="mailto:hello@nofries\.nz">Email hello@nofries\.nz/);
-    assert.match(html, /href="\/scoping">Staff scoping workspace <span aria-hidden="true">→<\/span><\/a>/);
+    assert.doesNotMatch(html, /href="\/(?:scoping|portal)"|Staff scoping workspace|Managed-service portal/);
     assert.match(text(html), /Ask about Managed IT or discuss your service needs\./);
     assert.match(text(html), /Indicative prices are confirmed with the service scope before acceptance\./);
 });
 
+testCase('hours, backup and on-site wording agree across the page', () => {
+    const page = text(html);
+    assert.match(page, /during NZ business hours, Monday to Friday\./);
+    assert.match(page, /Microsoft 365 backup is included in Managed and Secure, and available as an add-on for Essentials\./);
+    assert.match(page, /Microsoft 365 backup is available as an add-on, quoted on request\./);
+    assert.doesNotMatch(page, /agreed business hours/);
+    assert.doesNotMatch(page, /\bme\b/);
+});
+
 testCase('pricing navigation describes the enquiry destination without promising a price list', () => {
-    const navigation = html.match(/<nav aria-label="Product and services">([\s\S]*?)<\/nav>/)[1];
-    assert.match(navigation, /<a href="#enquire">Discuss pricing<\/a>/);
+    // The header carries only the shared public links; the in-page links sit with the hero actions.
+    const navigation = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
+    assert.doesNotMatch(navigation, /href="#/);
+    const actions = html.match(/<div class="managed-it-actions">([\s\S]*?)<\/div>/)[1];
+    assert.match(actions, /<a class="text-link" href="#plans">Plans and prices <span aria-hidden="true">↓<\/span><\/a>/);
+    assert.match(actions, /<a class="text-link" href="#enquire">Discuss pricing <span aria-hidden="true">↓<\/span><\/a>/);
     assert.match(html, /<section class="managed-it-enquiry" id="enquire" aria-labelledby="enquiry-title">/);
     assert.doesNotMatch(html, /Service pricing|Plan your managed service|Open the existing scoping workspace/);
 });
@@ -93,7 +117,35 @@ testCase('dashboard access and planned automation are stated without new service
     assert.match(text(html), /view results calculated from submitted answers\. Access depends on your organisation’s permissions\./);
     assert.match(text(html), /Managed IT is a separate, optional service\./);
     assert.match(text(html), /Automatic updates and connected data feeds are planned\./);
-    assert.doesNotMatch(text(html), /NZ\$|\$\d|24\/7|guaranteed|unlimited|certified|response time|service-level agreement/i);
+    // The page must now show the real tier prices customers sign against (Fair
+    // Trading), each carrying "+ GST", but still make no over-reaching claims.
+    assert.doesNotMatch(text(html), /24\/7|guaranteed|unlimited|certified|response time|service-level agreement/i);
+});
+
+testCase('the plans and pricing section renders the three tiers with GST-inclusive copy and a recommended badge', () => {
+    const plansText = text(html);
+    const policyTiers = MANAGED_IT_POLICY.pricing.tiers;
+    for (const tier of policyTiers) {
+        assert.match(plansText, new RegExp(`NZ\\$${tier.perUserMonthly} \\+ GST`),
+            `tier ${tier.id} price must render with + GST`);
+        assert.ok(plansText.includes(tier.tagline), `tier ${tier.id} tagline must render`);
+        for (const feature of tier.additionalFeatures) {
+            assert.ok(plansText.includes(feature), `missing tier feature: ${feature}`);
+        }
+    }
+    // Managed is the recommended tier and carries a visible badge.
+    assert.match(html, /<li class="managed-it-tier is-recommended" data-tier="managed">/);
+    assert.match(html, /class="managed-it-tier-badge">Recommended</);
+    // Managed and Secure inherit from the tier below them.
+    assert.match(plansText, /Everything in Essentials, plus:/);
+    assert.match(plansText, /Everything in Managed, plus:/);
+    // Add-on note keeps every price GST-qualified.
+    assert.match(plansText, /Set-up from NZ\$750 \+ GST\. Extra computers NZ\$20 \+ GST each per month, extra locations NZ\$125 \+ GST each per month\./);
+    // Every NZ$ figure on the page is immediately followed by "+ GST".
+    for (const match of html.matchAll(/NZ\$[\d,]+/g)) {
+        const after = text(html.slice(match.index, match.index + match[0].length + 60));
+        assert.match(after, /^NZ\$[\d,]+ \+ GST/, `price without + GST near: ${after.slice(0, 40)}`);
+    }
 });
 
 testCase('viewing the source page introduces no form, independent bot or background side effect', () => {

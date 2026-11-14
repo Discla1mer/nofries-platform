@@ -1,38 +1,82 @@
 const MANAGED_IT_POLICY = deepFreeze({
     schemaVersion: 1,
-    policyId: 'managed_it_2026_08_4',
-    legacyPriceVersion: '2026.08.4',
-    effectiveFrom: '2026-08-23',
+    policyId: 'managed_it_2026_11_1',
+    legacyPriceVersion: '2026.11.1',
+    effectiveFrom: '2026-11-09',
     currency: 'NZD',
     gstExclusive: true,
     customerFacingServiceName: 'No Fries Managed IT',
     legacyServiceNames: ['No Fries Lean Managed IT', 'Lean Managed IT'],
     tagline: 'No frills. Proof every month.',
     pricing: {
-        perUserMonthly: 119,
+        // Mirrors the recommended tier (Managed) so existing single-rate
+        // consumers keep working; see `tiers` for the full three-tier model.
+        perUserMonthly: 99,
         includedEndpointsPerUser: 1,
         includedLocations: 1,
         onboardingFrom: 750,
         additionalEndpointMonthly: 20,
         additionalLocationMonthly: 125,
-        additionalEndpointOnboarding: 30,
-        additionalLocationOnboarding: 250
+        recommendedTierId: 'managed',
+        tiers: [
+            {
+                id: 'essentials',
+                name: 'Essentials',
+                perUserMonthly: 59,
+                tagline: 'Everyday support',
+                recommended: false,
+                inheritsFromTierId: null,
+                additionalFeatures: [
+                    'No Fries dashboard (users, devices, licences, security)',
+                    'AI-assisted email helpdesk, with a person approving every change before it is made',
+                    'Microsoft 365 admin (new starters, leavers, passwords, licences)',
+                    'A monthly plain-English summary and to-do list'
+                ]
+            },
+            {
+                id: 'managed',
+                name: 'Managed',
+                perUserMonthly: 99,
+                tagline: 'Devices and Microsoft 365 backup',
+                recommended: true,
+                inheritsFromTierId: 'essentials',
+                additionalFeatures: [
+                    'Device updates and patching',
+                    'Microsoft 365 backup set up and checked',
+                    'Dealing with your other IT vendors',
+                    'A quarterly check-in'
+                ]
+            },
+            {
+                id: 'secure',
+                name: 'Secure',
+                perUserMonthly: 139,
+                tagline: 'Security hardening and alert review',
+                recommended: false,
+                inheritsFromTierId: 'managed',
+                additionalFeatures: [
+                    'Security hardening (MFA, sign-in and device policies)',
+                    'Security alerts reviewed and acted on',
+                    'Staff phishing and scam awareness tips'
+                ]
+            }
+        ]
     },
     includedServices: [
-        'Day-to-day user support during agreed business hours',
-        'Phone, chat and email support',
-        'Care for one main work computer per user',
-        'Administration of agreed business email and shared work tools',
-        'Supplier follow-up for agreed services',
-        'Monthly service reporting and review'
+        'Day-to-day support during NZ business hours, Monday to Friday',
+        'No Fries dashboard (users, devices, licences, security)',
+        'AI-assisted email helpdesk, with a person approving every change before it is made',
+        'Microsoft 365 admin (new starters, leavers, passwords, licences)',
+        'A monthly plain-English summary and to-do list'
     ],
     optionalServices: [
-        'Threat protection and after-hours security help',
-        'Backup of agreed work files'
+        'Extra work computers beyond the one included per user',
+        'Extra business locations',
+        'Microsoft 365 backup on Essentials, available as an add-on, quoted on request',
+        'On-site work by arrangement, quoted separately'
     ],
     exclusions: [
         'Large projects',
-        'On-site work',
         'Hardware',
         'Supplier charges',
         'Extra phone usage'
@@ -65,7 +109,12 @@ function managedItPolicyIdentity() {
 function managedItPolicyCustomerSummary() {
     const policy = MANAGED_IT_POLICY;
     const price = policy.pricing;
-    return `${policy.customerFacingServiceName} is NZ$${price.perUserMonthly} + GST per user each month, including one main work computer per user. Initial set-up starts at NZ$${price.onboardingFrom} + GST. Extra computers are NZ$${price.additionalEndpointMonthly} + GST each per month and extra locations are NZ$${price.additionalLocationMonthly} + GST each per month. ${policy.approvedCustomerLanguage.estimateBoundary}`;
+    const tierPhrase = price.tiers.map((tier, index) => {
+        const marker = tier.recommended ? ' (recommended)' : '';
+        const prefix = index === 0 ? '' : index === price.tiers.length - 1 ? ', and ' : ', ';
+        return `${prefix}${tier.name} at NZ$${tier.perUserMonthly}${marker}`;
+    }).join('');
+    return `${policy.customerFacingServiceName} comes in three tiers, each + GST per user each month: ${tierPhrase}, including one main work computer per user. Initial set-up starts at NZ$${price.onboardingFrom} + GST. Extra computers are NZ$${price.additionalEndpointMonthly} + GST each per month and extra locations are NZ$${price.additionalLocationMonthly} + GST each per month. ${policy.approvedCustomerLanguage.estimateBoundary}`;
 }
 
 function managedItPolicyPromptSummary() {

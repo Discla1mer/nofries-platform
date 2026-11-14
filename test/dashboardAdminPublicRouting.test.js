@@ -15,8 +15,7 @@ const apiRoutes = [
     ['GET', '/api/dashboard-admin/entry.js'], ['GET', '/api/dashboard-admin/entry-capabilities'],
     ['GET', '/api/dashboard-admin/app.js'], ['GET', '/api/dashboard-admin/app.css'],
     ['GET', '/api/dashboard-admin/capabilities'], ['POST', '/api/dashboard-admin/lookup'],
-    ['POST', '/api/dashboard-admin/signups'], ['POST', '/api/dashboard-admin/approve-extension'],
-    ['POST', '/api/dashboard-admin/extend-expired-access'],
+    ['POST', '/api/dashboard-admin/signups'],
     ['POST', '/api/dashboard-admin/approve-suspend'], ['POST', '/api/dashboard-admin/approve-restore'],
     ['POST', '/api/dashboard-admin/suspend'], ['POST', '/api/dashboard-admin/restore']
 ];
@@ -80,7 +79,7 @@ test.each(apiRoutes)('disabled composition stays private503 for forwarded %s %s'
     const response = await request(createNoFriesApp())[method.toLowerCase()](url)
         .set('X-MS-Client-Principal', 'forged').set('Cookie', '__Host-nofries-auth=forged');
     // The optional signups route remains unknown without its trusted service.
-    expect(response.status).toBe(['/signups', '/approve-extension', '/extend-expired-access', '/suspend', '/restore', '/approve-suspend', '/approve-restore'].some(tail => url.endsWith(tail)) ? 404 : 503);
+    expect(response.status).toBe(['/signups', '/suspend', '/restore', '/approve-suspend', '/approve-restore'].some(tail => url.endsWith(tail)) ? 404 : 503);
     expect(response.headers.location).toBeUndefined();
     expect(response.headers['cache-control']).toBe('private, no-store, max-age=0');
     expect(response.type).toBe('application/json');

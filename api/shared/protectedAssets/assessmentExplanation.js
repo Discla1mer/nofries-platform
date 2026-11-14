@@ -5,6 +5,7 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
     const mounted = new WeakMap();
+    const LOAD_TIMEOUT_MS = 30000;
     const TOPICS = Object.freeze({ range: 'Saved range', unresolved: 'Unresolved answers', actions: 'Framework starting actions' });
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
     const copy = value => JSON.parse(JSON.stringify(value));
@@ -61,12 +62,12 @@
                 saved('submission.responseSetSha256'), saved(prefix + 'outputSha256'), catalogue('profileRef')]);
             if (topic === 'range') {
                 block('Reported implementation', 'The saved implementation range is ' + result.attainment +
-                    '. The endpoints are supplied by the saved server calculation. Unknown answers and pending N/A claims remain unresolved and can widen the range; they do not confirm implementation.',
+                    '. The endpoints are supplied by the saved server calculation. Unknown answers and answers marked not applicable are still to confirm and can widen the range; they do not confirm implementation.',
                 [saved(prefix + 'attainment.lowerDisplay'), saved(prefix + 'attainment.upperDisplay'),
                     saved(prefix + 'attainment.lowerCreditUnits'), saved(prefix + 'attainment.upperCreditUnits'),
                     saved(prefix + 'attainment.denominatorWeight'), saved(prefix + 'countsCompletion.unknown'),
                     saved(prefix + 'countsCompletion.claimedNotApplicableAtoms')]);
-                block('Resolved answers and supporting evidence', result.completed + ' of ' + result.total + ' answers are resolved (' + result.completion +
+                block('Answers confirmed and supporting evidence', result.completed + ' of ' + result.total + ' answers are confirmed (' + result.completion +
                     '). Resolved means Yes, Partial or No; it does not mean implemented. Saved substantiated evidence coverage: ' + result.substantiated +
                     '. Saved tested evidence coverage: ' + result.tested + '. Answers alone do not demonstrate effectiveness; this explanation verifies no evidence.',
                 [saved(prefix + 'countsCompletion.completionNumerator'), saved(prefix + 'countsCompletion.completionDenominator'),
@@ -74,7 +75,8 @@
                     saved(prefix + 'evidence.testedCoverage.display'), catalogue('responseOptions')]);
             } else if (topic === 'unresolved') {
                 block('Unresolved answers', 'The saved result contains ' + result.unknown + ' unresolved answers, including ' + result.pending +
-                    ' pending N/A claims. A pending N/A claim remains in the calculation; it is not an approved exclusion.',
+                    (result.pending === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm' +
+                    '. Answers marked not applicable, to confirm, stay in the calculation; they are not an approved exclusion.',
                 [saved(prefix + 'countsCompletion.unknown'), saved(prefix + 'countsCompletion.claimedNotApplicableAtoms'),
                     saved(prefix + 'countsCompletion.approvedNotApplicableAtoms')]);
             } else {
@@ -130,7 +132,15 @@
         let hostSelection = summary(options.assessment, options.metadata), selected = hostSelection;
         let topic = 'range', detail = null, refreshSelection = null;
         let generation = 0, controller = null, destroyed = false, busy = false, message = '', clearanceFrame = null;
+        let loadTimer = null, retry = false;
         function node(tag, text) { const item = document.createElement(tag); if (text !== undefined) item.textContent = text; return item; }
+        // The status region persists across renders so assistive technology
+        // announces loading, ready and failed states. Only head and tail are rebuilt.
+        const head = node('div'), live = node('div'), tail = node('div');
+        live.className = 'ncsc-explanation-status'; live.dataset.explanationStatus = 'true';
+        live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite'); live.setAttribute('aria-atomic', 'true');
+        function announce(text) { if (live.textContent !== text) live.textContent = text; }
+        function state() { return busy ? 'loading' : retry ? 'failed' : detail ? 'ready' : 'idle'; }
         function button(label, action, key) {
             const item = node('button', label); item.type = 'button'; item.className = 'dashboard-button';
             item.dataset.explanationControl = key;
@@ -190,32 +200,41 @@
             const control = Array.from(root.querySelectorAll('[data-explanation-control]')).find(item => item.dataset.explanationControl === key);
             if (control && !control.disabled) control.focus();
         }
-        function cancel() { generation += 1; if (controller) controller.abort(); controller = null; busy = false; }
-        function clear() { cancel(); detail = null; refreshSelection = null; message = ''; }
+        function clearLoadTimer() { if (loadTimer !== null) clearTimeout(loadTimer); loadTimer = null; }
+        function cancel() { generation += 1; clearLoadTimer(); if (controller) controller.abort(); controller = null; busy = false; }
+        function clear() { cancel(); detail = null; refreshSelection = null; message = ''; retry = false; }
         function denied(error) { return error && (error.statusCode === 401 || error.statusCode === 403 || error.status === 401 || error.status === 403 || error.code === 'ncsc_access_denied'); }
         function render() {
             if (destroyed) return;
             const focus = focusedControl();
-            root.replaceChildren(); root.setAttribute('aria-label', 'Saved assessment explanation');
-            root.append(node('h3', 'Ask Fry · Saved result'), node('p', 'Choose a topic, then load the selected saved submission. This uses saved assessment data and the accepted catalogue.'));
+            if (live.parentElement !== root) root.replaceChildren(head, live, tail);
+            head.replaceChildren(); tail.replaceChildren();
+            root.setAttribute('aria-label', 'Saved assessment explanation');
+            const current = state(); root.dataset.explanationState = current;
+            live.className = current === 'failed' ? 'ncsc-explanation-status ncsc-warning' : 'ncsc-explanation-status';
+            // Busy marks only the explanation content. The status region must stay
+            // outside any busy subtree so the loading message is announced.
+            tail.setAttribute('aria-busy', String(current === 'loading'));
+            announce(busy ? 'Loading the saved submission…' : message || (current === 'ready' ? 'The saved explanation has loaded.' : ''));
+            head.append(node('h3', 'Explain this saved result'), node('p', 'This explains the saved assessment you have open. Choose a topic, then load the selected saved submission.'));
             const topics = node('div'); topics.className = 'ncsc-actions';
             Object.keys(TOPICS).forEach(function (key) {
                 const item = button(TOPICS[key], function () { if (busy || destroyed) return; topic = key; render(); }, 'topic-' + key);
                 item.setAttribute('aria-pressed', String(topic === key)); topics.append(item);
-            }); root.append(topics);
+            }); head.append(topics);
             if (!selected || selected.status !== 'submitted') {
-                root.append(node('p', message || 'A saved submitted result must be selected before an explanation can be loaded.')); restoreFocus(focus); return;
+                if (!message) head.append(node('p', 'A saved submitted result must be selected before an explanation can be loaded.'));
+                restoreFocus(focus); return;
             }
-            root.append(button(refreshSelection ? 'Refresh saved explanation' : detail ? 'Reload saved explanation' : 'Explain this saved result', load, 'load'));
+            head.append(button(retry ? 'Retry saved explanation' : refreshSelection ? 'Refresh saved explanation' : detail ? 'Reload saved explanation' : 'Explain this saved result', load, 'load'));
             const clearButton = button('Clear saved explanation', function () { if (destroyed) return; clear(); render(); }, 'clear');
-            clearButton.disabled = false; clearButton.setAttribute('aria-disabled', 'false'); root.append(clearButton);
-            if (busy || message) { const status = node('p', busy ? 'Loading the saved submission…' : message); status.setAttribute('role', 'status'); root.append(status); }
+            clearButton.disabled = false; clearButton.setAttribute('aria-disabled', 'false'); head.append(clearButton);
             if (!detail) { restoreFocus(focus); return; }
             const projected = explain(detail, { metadata: options.metadata, organisationId: options.organisationId, resultModel: options.resultModel, topic });
             if (projected.status === 'ready' && hostSelection &&
                 (selected.revision !== hostSelection.revision || selected.revisionSha256 !== hostSelection.revisionSha256)) {
                 const notice = node('p', 'Cyber baseline and this explanation show different saved versions. Use the baseline’s Refresh control to reload it.');
-                notice.className = 'ncsc-warning'; notice.dataset.explanationVersionNotice = 'true'; notice.setAttribute('role', 'status'); root.append(notice);
+                notice.className = 'ncsc-warning'; notice.dataset.explanationVersionNotice = 'true'; notice.setAttribute('role', 'status'); tail.append(notice);
             }
             const region = node('section'); region.setAttribute('aria-label', 'Saved explanation'); region.append(node('h4', projected.title));
             projected.blocks.forEach(function (block) {
@@ -231,13 +250,21 @@
                             ' · ' + citation.profileRef.catalogueSha256 + ' · metadata.' + citation.field));
                     }); sources.append(references); region.append(sources);
                 }
-            }); root.append(region); restoreFocus(focus);
+            }); tail.append(region); restoreFocus(focus);
         }
         async function load() {
             if (destroyed || busy || !selected || selected.status !== 'submitted') return;
             const expected = refreshSelection || selected;
             cancel(); const token = generation; controller = new AbortController(); const signal = controller.signal;
-            detail = null; busy = true; message = ''; render();
+            detail = null; busy = true; message = ''; retry = false; render();
+            loadTimer = setTimeout(function () {
+                if (destroyed || token !== generation) return;
+                // Invalidate the read even when its transport ignores abort.
+                // Keep observing its rejection so a late denial still tears down access.
+                cancel(); retry = true;
+                message = 'Loading the saved explanation took too long. Your saved answers are unchanged. Choose Retry saved explanation to try again.';
+                render();
+            }, LOAD_TIMEOUT_MS);
             try {
                 const response = await options.client.read(expected.assessmentId, { signal });
                 if (destroyed || token !== generation) return;
@@ -262,10 +289,11 @@
                     }
                     if (typeof options.onDenied === 'function') options.onDenied();
                 } else if (!destroyed && token === generation) {
-                    detail = null; message = 'The saved explanation is unavailable. Choose the load button to try again.';
+                    detail = null; retry = true;
+                    message = 'The saved explanation is unavailable. Your saved answers are unchanged. Choose Retry saved explanation to try again.';
                 }
             } finally {
-                if (!destroyed && token === generation) { controller = null; busy = false; render(); }
+                if (!destroyed && token === generation) { clearLoadTimer(); controller = null; busy = false; render(); }
             }
         }
         // Text reflow need not emit a window resize. Observe only this module

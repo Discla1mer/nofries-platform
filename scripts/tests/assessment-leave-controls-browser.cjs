@@ -128,7 +128,7 @@ async function geometry(page, label) {
             await keyboardClick(page, button(page, 'Save and leave'));
             await openAssessment(page);
             assert.equal(await page.locator('.ncsc-question input[value="no"]').isChecked(), true);
-            assert.match(await page.locator('.ncsc-status').textContent(), /Saved revision 2/);
+            assert.match(await page.locator('.ncsc-status').textContent(), /Last saved .+ NZ time\./);
             // Interrupt a delayed save with Stay. Existing in-flight operation must finish safely.
             await choose(page, 'partial'); await arm(page, 'delay'); await leave(page);
             await keyboardClick(page, button(page, 'Save and leave'));
@@ -139,18 +139,18 @@ async function geometry(page, label) {
             await page.waitForFunction(() => document.querySelector('.ncsc-status')?.textContent.includes('Resolve the running'));
             assert.equal(await page.locator('dialog').count(), 0);
             await page.waitForFunction(() => document.querySelector('.ncsc-status')?.textContent.includes('Your progress is saved.'));
-            assert.match(await page.locator('.ncsc-status').textContent(), /Saved revision 3/);
+            assert.match(await page.locator('.ncsc-status').textContent(), /Last saved .+ NZ time\./);
             // A lost response leaves an unconfirmed operation; retry acknowledges the same revision.
             await choose(page, 'yes'); await arm(page, 'lost'); await leave(page);
             await keyboardClick(page, button(page, 'Save and leave'));
-            await button(page, 'Retry same operation').waitFor();
+            await button(page, 'Try the save again').waitFor();
             await keyboardClick(page, button(page, 'Back to assessments'));
             assert.equal(await page.locator('dialog').count(), 0);
-            await keyboardClick(page, button(page, 'Retry same operation'));
+            await keyboardClick(page, button(page, 'Try the save again'));
             await page.waitForFunction(() => document.querySelector('.ncsc-status')?.textContent.includes('The operation is confirmed'));
             await keyboardClick(page, button(page, 'Back to assessments')); await openAssessment(page);
             assert.equal(await page.locator('.ncsc-question input[value="yes"]').isChecked(), true);
-            assert.match(await page.locator('.ncsc-status').textContent(), /Saved revision 4/);
+            assert.match(await page.locator('.ncsc-status').textContent(), /Last saved .+ NZ time\./);
             // Short viewport/reflow and forced colors retain keyboard-reachable controls.
             await choose(page, 'no'); await leave(page);
             await page.setViewportSize({ width, height: 480 });

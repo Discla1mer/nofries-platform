@@ -45,7 +45,9 @@ async function provisionCustomerInvitation({ requestId, expectedAuthorityRevisio
         'termsVersion', 'termsDigest', 'scheduleId', 'scheduleDigest', 'expiresAt', 'authorityExpiresAt',
         ...(Object.hasOwn(input, 'accountType') ? ['accountType'] : [])]);
     if (Object.hasOwn(approval, 'accountType') && !['company', 'consultant'].includes(approval.accountType)) conflict();
-    if (!Number.isSafeInteger(approval.authorityExpiresAt) || approval.authorityExpiresAt <= now()) conflict();
+    // authorityExpiresAt is the account end date to record, not an approval
+    // deadline: it is written, never enforced. approval.expiresAt still bounds the invitation.
+    if (!Number.isSafeInteger(approval.authorityExpiresAt)) conflict();
     const intent = canonicalDigest({ approval, identityTenantId, identityPolicyId, publicOrigin, expectedAuthorityRevision,
         ...(initialBindingId !== null ? { initialBindingId } : {}) });
     const attemptBlob = authorityContainer.getBlockBlobClient(`customer-invitation-attempts/${requestId}.json`);

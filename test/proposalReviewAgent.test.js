@@ -199,7 +199,7 @@ describe('proposal review agent', () => {
         expect(result.identities).toMatchObject({
             promptVersion: 'proposal-review-v2',
             outputSchemaVersion: 'proposal-review-schema-v1',
-            policyId: 'managed_it_2026_08_4',
+            policyId: 'managed_it_2026_11_1',
             releaseSha: 'b'.repeat(40)
         });
     });

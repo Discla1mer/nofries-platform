@@ -193,20 +193,26 @@ test('re-invitation after removal creates fresh IDs and does not reactivate old 
     assert.equal(resolve(state).membershipId, 'member-2');
 });
 
-test('validity is half-open and requires explicit finite grant end', () => {
+test('validity starts inclusively, records an explicit finite end and does not expire', () => {
     const state = accepted({ validFrom: LATER });
     rejects(() => resolve(state), 'not_found');
     assert.equal(resolve(state, {}, LATER).status, 'active');
-    rejects(() => resolve(state, {}, END), 'not_found');
+    // Accounts do not expire: the recorded validUntil is kept, not enforced.
+    for (const at of [END, '2031-01-01T00:00:00.000Z']) {
+        assert.equal(resolve(state, {}, at).status, 'active'); assert.equal(resolve(state, {}, at).validUntil, END);
+    }
     for (const validUntil of [null, undefined, START]) {
         assert.throws(() => invited({ validUntil }), MembershipDomainError);
     }
 });
 
-test('expired membership cannot be resumed but can be removed', () => {
-    const suspended = act(accepted(), 'suspend', { membershipId: 'member-1' });
-    rejects(() => act(suspended, 'resume', { membershipId: 'member-1' }, { now: END }), 'grant_expired');
+test('after its recorded end a membership can be suspended, restored or removed; only status blocks it', () => {
+    const suspended = act(accepted(), 'suspend', { membershipId: 'member-1' }, { now: END });
+    rejects(() => resolve(suspended, {}, END), 'not_found');
+    const restored = act(suspended, 'resume', { membershipId: 'member-1' }, { now: END });
+    assert.equal(resolve(restored, {}, END).status, 'active');
     assert.equal(act(suspended, 'remove', { membershipId: 'member-1' }, { now: END }).memberships[0].status, 'removed');
+    rejects(() => resolve(act(restored, 'remove', { membershipId: 'member-1' }, { now: END }), {}, END), 'not_found');
 });
 
 for (const target of ['tenant', 'organisation']) {

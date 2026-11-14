@@ -366,9 +366,9 @@ async function main() {
         await link.focus(); await page.keyboard.press('Enter');
     }
     async function reviewAndOpen(page) {
-        const review = page.getByRole('button', { name: 'Review supporting-evidence gaps', exact: true });
+        const review = page.getByRole('button', { name: /^Review \d+ implementation gaps?$/ });
         await review.focus(); await page.keyboard.press('Enter');
-        const category = page.locator('.picture-follow-up > details').filter({ has: page.locator('summary', { hasText: /^Supporting-evidence gaps/ }) });
+        const category = page.locator('.picture-follow-up > details').filter({ has: page.locator('summary', { hasText: /^Reported implementation gaps/ }) });
         assert.equal(await category.evaluate(node => node.open), true, 'The existing saved-gap category opens');
         assert.equal(await category.locator(':scope > summary').evaluate(node => node === document.activeElement), true,
             'Keyboard gap action focuses its existing category summary');
@@ -425,7 +425,7 @@ async function main() {
     }
     async function fillAssignment(page, dueDate) {
         const form = await openAction(page, 'assign');
-        const due = form.getByLabel('Due date (UTC)', { exact: true });
+        const due = form.getByLabel('Due date', { exact: true });
         assert.equal(await due.evaluate(node => node === document.activeElement), true, 'Assignment opens on its labelled UTC date field');
         await due.fill(dueDate); return form;
     }
@@ -460,7 +460,7 @@ async function main() {
                 assert.equal(await page.getByRole('combobox', { name: 'Saved improvement plans', exact: true }).inputValue(), planId);
                 assert.ok(await page.locator('[aria-label="Improvement action plan"] article').count());
                 await page.locator('[aria-label="Improvement action plan"] summary')
-                    .filter({ hasText: /^Source and plan metadata$/ }).click();
+                    .filter({ hasText: /^Technical details for support$/ }).click();
                 const rendered = await page.locator('[aria-label="Improvement action plan"]').innerText();
                 assert.ok(rendered.includes(SELECTED));
                 assert.ok(rendered.includes(selectedSource.outputSha256));
@@ -481,7 +481,7 @@ async function main() {
                 await assigned.locator('summary').filter({ hasText: /^Action identifiers$/ }).click();
                 await assigned.locator('summary').filter({ hasText: /^Action history \(1 events\)$/ }).click();
                 const refreshed = await page.locator('[aria-label="Improvement action plan"]').innerText();
-                assert.match(refreshed, /Assigned \(eligibility not checked\)/);
+                assert.match(refreshed, /Owner\s*You/);
                 assert.ok(refreshed.includes('Assigned'));
                 assert.ok(refreshed.includes(SUBJECT));
                 assert.equal(fixture.requests.filter(row => row.method === 'POST').length, 1, 'Browser made only the intentional generation command');
@@ -514,7 +514,7 @@ async function main() {
             run = await openPage(width, false, 'no-capability');
             try {
                 assert.equal(await run.page.getByRole('button', { name: 'Plan improvements for this assessment', exact: true }).count(), 0);
-                assert.equal(await run.page.getByRole('button', { name: 'Review supporting-evidence gaps', exact: true }).count(), 1,
+                assert.equal(await run.page.getByRole('button', { name: /^Review \d+ implementation gaps?$/ }).count(), 1,
                     'Saved gap review remains usable without the new action tables or Improvement capability');
                 assert.equal(run.fixture.requests.filter(row => row.path.startsWith('/api/dashboard/improvement/')).length, 0);
                 results.push({ width, case: 'no-capability', noPlanButton: true, savedGapsAvailable: true, improvementRequests: 0 });
@@ -570,7 +570,7 @@ async function main() {
             assert.equal(fixture.requests.filter(row => row.method === 'POST').length, 1, 'An ambiguous response does not automatically repeat the command');
             await navigate(page, 'services');
             assert.equal(await page.locator('#dashboard-content > header h1').innerText(), 'Improvement Plan');
-            await page.locator('#dashboardAccountMenu > summary').focus(); await page.keyboard.press('Enter');
+            await page.locator('#dashboardAccountToggle').focus(); await page.keyboard.press('Enter');
             await page.locator('#dashboardSignOut').click();
             assert.equal(await retry.isVisible(), true, 'Logout respects the pending child leave lifecycle');
             await page.locator('#dashboardChooser > summary').click();
@@ -757,7 +757,7 @@ async function main() {
             await submitAction(page, 'assign');
             await editorSection(page).getByText('Plan changed; cancel these changes and refresh.', { exact: true }).waitFor();
             const form = updateForm(page);
-            assert.equal(await form.getByLabel('Due date (UTC)', { exact: true }).inputValue(), DUE_DATE, '409 preserves the user draft for review');
+            assert.equal(await form.getByLabel('Due date', { exact: true }).inputValue(), DUE_DATE, '409 preserves the user draft for review');
             assert.equal(await form.getByRole('button', { name: 'Save assignment', exact: true }).isDisabled(), true);
             assert.equal(fixture.requests.filter(row => ['/api/dashboard/improvement/view', '/api/dashboard/improvement/editor'].includes(row.path)).length,
                 beforeReads, '409 performs no hidden read/rebase/resubmit');
@@ -785,7 +785,7 @@ async function main() {
             const retry = page.getByRole('button', { name: 'Retry pending improvement command', exact: true }); await retry.waitFor();
             assert.equal(await updateForm(page).getByRole('button', { name: 'Cancel changes', exact: true }).isDisabled(), true,
                 'An unknown write outcome cannot be discarded as a clean cancellation');
-            assert.equal(await updateForm(page).getByLabel('Due date (UTC)', { exact: true }).isDisabled(), true);
+            assert.equal(await updateForm(page).getByLabel('Due date', { exact: true }).isDisabled(), true);
             await navigate(page, 'services');
             assert.equal(await page.locator('#dashboard-content > header h1').innerText(), 'Improvement Plan');
             const pendingPosts = fixture.requests.filter(row => row.method === 'POST');

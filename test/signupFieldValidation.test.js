@@ -79,7 +79,7 @@ test.each(Object.keys(text).flatMap(name => ['   ', '\u00a0\u00a0'].map(value =>
             expect(f.fields()[name].validationMessage).toBe(messages[name]);
             expect(f.document.activeElement).toBe(f.fields()[name]);
             expect(f.root.querySelector('form')).toBe(form);
-            expect(f.root.querySelector('h1').textContent).toBe('Set up your workspace');
+            expect(f.root.querySelector('h1').textContent).toBe('Set up your organisation');
             expect(f.fields().authorityConfirmed.checked).toBe(true);
             expect(f.root.getAttribute('aria-busy')).toBe('false');
         } finally { f.close(); }
@@ -340,7 +340,7 @@ test('existing runtime and normalizer accept corrected text without entering the
         f.input('role', 'Director'); await f.submit();
         expect(results.map(result => [result.method, result.status])).toEqual([['GET', 200], ['POST', 200]]);
         expect(accepted).toBe(1);
-        expect(f.root.querySelector('h1').textContent).toBe('Continuing account setup');
+        expect(f.root.querySelector('h1').textContent).toBe('Finishing your sign-in');
     } finally { f.close(); }
 });
 

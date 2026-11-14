@@ -102,6 +102,23 @@ test('owner and overdue filters combine, including unassigned and valid empty se
     expect(select({ owner: 'unassigned', overdueOnly: true }).actions).toEqual([]);
 });
 
+test('ownerLabel rows carry the label, count as assigned and match the owner filter', () => {
+    let state = step(mixed(), 5, 'assign', { ownerLabel: 'Ops lead', dueDate: '2026-10-03' });
+    state = step(state, 6, 'assign', { ownerLabel: 'Finance', dueDate: '2026-10-03' });
+    const select = filters => projectImprovementActionList(state, { ...options(), filters: { ...options().filters, ...filters } });
+    const all = select({});
+    expect(row(all, state, 5)).toMatchObject({ ownerSubjectKey: null, ownerLabel: 'Ops lead', ownerEligibility: 'not_checked' });
+    expect(row(all, state, 5).history[0].details).toEqual({ ownerLabel: 'Ops lead', dueDate: '2026-10-03' });
+    expect(row(all, state)).not.toHaveProperty('ownerLabel');
+    expect(row(all, state).history[0].details).toEqual({ ownerSubjectKey: OWNER, dueDate: '2026-10-01' });
+    expect(all.counts.all.unassigned).toBe(7);
+    expect(select({ owner: 'Ops lead' }).actions.map(action => action.actionId)).toEqual([state.proposals[5].actionId]);
+    expect(select({ owner: 'Ops lead' }).counts.visible).toMatchObject({ total: 1, unassigned: 0 });
+    expect(select({ owner: 'ops lead' }).actions).toEqual([]);
+    expect(select({ owner: 'unassigned' }).actions).toHaveLength(7);
+    expect(select({ owner: OWNER }).actions.every(action => action.ownerSubjectKey === OWNER)).toBe(true);
+});
+
 test.each(['tenantId', 'organisationId', 'planId'])('requires exact retained %s consistency without granting authority', key => {
     expect(() => projectImprovementActionList(seed(), { ...options(), scope: { ...scope, [key]: 'foreign' } }))
         .toThrow(expect.objectContaining({ code: 'improvement_list_scope_mismatch', statusCode: 404 }));
@@ -122,7 +139,8 @@ test('rejects noncanonical, invalid or pre-update asOf, unknown filters and supp
     }
     expect(() => projectImprovementActionList(state, { ...options(), asOf: '2026-09-14T09:00:00.000Z' }))
         .toThrow(expect.objectContaining({ statusCode: 409 }));
-    for (const filters of [{ ...options().filters, status: 'accepted_risk' }, { ...options().filters, owner: 'forged' },
+    for (const filters of [{ ...options().filters, status: 'accepted_risk' }, { ...options().filters, owner: 'forged@example.invalid' },
+        { ...options().filters, owner: ' Ops ' }, { ...options().filters, owner: '' },
         { ...options().filters, overdueOnly: 'true' }, { ...options().filters, score: 100 }]) {
         expect(() => projectImprovementActionList(state, { ...options(), filters })).toThrow();
     }

@@ -26,18 +26,20 @@
         <section id="dashboardStatusPanel" aria-labelledby="dashboardHeading">
             <p class="eyebrow">Account</p>
             <h1 id="dashboardHeading" tabindex="-1">Opening your dashboard</h1>
-            <p id="dashboardMessage">We are checking your session before showing organisation information.</p>
+            <p id="dashboardMessage" aria-live="polite">We are checking your session before showing organisation information.</p>
             <p id="dashboardStatus" role="status" aria-live="polite">No organisation information is shown until access is confirmed.</p>
             <div class="dashboard-recovery-actions">
                 <button class="button" id="dashboardRetry" type="button" hidden>Retry</button>
                 <a class="button" id="dashboardSignIn" href="/api/auth/login?returnTo=%2Fdashboard" hidden>Sign in</a>
             </div>
-            <details class="dashboard-account-menu" id="dashboardAccountMenu" hidden>
-                <summary>Account</summary>
-                <div class="dashboard-account-actions" id="dashboardAccountActions">
+            <p class="dashboard-create-account" id="dashboardCreateAccount" hidden>New here? <a id="dashboardCreateAccountLink" href="/login?intent=create">Create an account</a></p>
+            <div class="dashboard-account-menu" id="dashboardAccountMenu" hidden>
+                <button class="dashboard-account-toggle" id="dashboardAccountToggle" type="button" aria-expanded="false" aria-controls="dashboardAccountActions">Account</button>
+                <div class="dashboard-account-actions" id="dashboardAccountActions" hidden>
+                    <a class="button" id="dashboardSwitchAccount" data-dashboard-leave href="/login?account=choose" hidden>Sign in with another account</a>
                     <button class="button" id="dashboardSignOut" type="button" hidden>Sign out</button>
                 </div>
-            </details>
+            </div>
         </section>
         <details id="dashboardChooser" aria-labelledby="dashboardChooserHeading" hidden>
             <summary id="dashboardChooserHeading">Your organisations</summary>
@@ -66,9 +68,12 @@
         <noscript><p>JavaScript is required to check your session and open the dashboard.</p></noscript>
     </div>
     <footer class="home-footer dashboard-release-footer">
-        <div><!-- FRONTEND_RELEASE_INFO --></div>
-        <nav aria-label="Product links"><a href="/roadmap.html" data-dashboard-leave>Roadmap</a><a href="https://news.nofries.nz/" data-dashboard-leave>News</a></nav>
+        <nav aria-label="Product links"><a href="/roadmap.html" data-dashboard-leave>Roadmap</a></nav>
     </footer>
+    <details class="site-details">
+        <summary>About this site</summary>
+        <!-- FRONTEND_RELEASE_INFO -->
+    </details>
     <!-- DASHBOARD_RUNTIME -->
 </body>
 </html>

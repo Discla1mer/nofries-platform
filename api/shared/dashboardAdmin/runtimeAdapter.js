@@ -1,7 +1,6 @@
 'use strict';
 
-// Uninstalled composition only. The resolver reads an existing approved private
-// binding; constructing this adapter creates no permission, route or SQL role.
+// Constructing this adapter creates no permission, route or SQL role.
 const { IncomingMessage } = require('node:http');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { isProxy } = require('node:util').types;
@@ -10,7 +9,6 @@ const { createPostgresDashboardAdministrationRepository } = require('../appLifec
 const { copy, fields, freeze, equal, uuid, instant, subject } = require('../appLifecycle/dashboardRuntimeRecords');
 const { DashboardAdminError, normaliseSelector } = require('./service');
 const { createAuditEnvelope, verifyAuditPhasePair } = require('./auditEnvelope');
-const { approvedBinding } = require('./approvalRecords');
 
 const denied = () => { throw new DashboardAdminError(403, 'dashboard_admin_access_denied'); };
 const unavailable = () => { throw new DashboardAdminError(503, 'dashboard_admin_unavailable'); };
@@ -45,29 +43,23 @@ function readOnlyCaptureOptions(config) {
 }
 
 
-// Two policies share this adapter. With `readApprovedBinding`, every read needs
-// a current per-customer approval record. Without it (the staff console), the
-// authority is the allowlisted staff admin's own native operator session: the
-// host has already checked subject allowlist and admin role, and the native
-// repository checks the session gate, issuance proof and restore epoch. This
-// adapter then pins actor and identity policy for the whole request.
+// Staff policy: the authority is the allowlisted staff admin's own native
+// operator session. The host has already checked subject allowlist and admin
+// role; the native repository checks the session gate, issuance proof and
+// restore epoch; this adapter pins actor and identity policy for the request.
 function createDashboardAdminRuntime(input) {
     let config, session, repository;
     const requests = new WeakMap(), invocations = new AsyncLocalStorage();
     try {
-        const approvals = !isProxy(input) && Object.hasOwn(input, 'readApprovedBinding');
         fields(input, ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
-            'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', ...(approvals ? ['readApprovedBinding'] : [])]);
+            'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId']);
         config = { ...input };
         if (![config.clock, config.readExternalRuntimeEpoch, config.newRequestId, config.newId].every(fn) ||
-            approvals && !fn(config.readApprovedBinding) ||
             !Number.isSafeInteger(config.requestBudgetMs) || config.requestBudgetMs < 1 || config.requestBudgetMs > 60000) unavailable();
-        if (!approvals) {
-            fields(config.identityPolicy, Reflect.ownKeys(config.identityPolicy));
-            if (typeof config.identityPolicy.policyId !== 'string' || !config.identityPolicy.policyId ||
-                !Number.isSafeInteger(config.identityPolicy.policyRevision) || config.identityPolicy.policyRevision < 0) unavailable();
-            config.staffPolicy = freeze({ policyId: config.identityPolicy.policyId, policyRevision: config.identityPolicy.policyRevision });
-        }
+        fields(config.identityPolicy, Reflect.ownKeys(config.identityPolicy));
+        if (typeof config.identityPolicy.policyId !== 'string' || !config.identityPolicy.policyId ||
+            !Number.isSafeInteger(config.identityPolicy.policyRevision) || config.identityPolicy.policyRevision < 0) unavailable();
+        config.staffPolicy = freeze({ policyId: config.identityPolicy.policyId, policyRevision: config.identityPolicy.policyRevision });
         uuid(config.instanceId);
         // Genuine validation can normally clean up invalid parents. This
         // uninstalled read-only composition refuses every backing-store write,
@@ -90,7 +82,7 @@ function createDashboardAdminRuntime(input) {
         let entry = requests.get(request);
         if (!entry) {
             entry = { request, started: Date.now(), lastAt: null, expiresAt: null, failed: false,
-                actor: null, binding: null, selector: null, capture: null, lookupId: null, snapshotStarted: false,
+                actor: null, selector: null, capture: null, lookupId: null, snapshotStarted: false,
                 attempt: null, terminal: null };
             requests.set(request, entry);
         }
@@ -103,7 +95,6 @@ function createDashboardAdminRuntime(input) {
                 entry.lastAt !== null && at < entry.lastAt || entry.expiresAt !== null && at >= entry.expiresAt) denied();
             entry.lastAt = at;
             if (entry.expiresAt === null) entry.expiresAt = new Date(Date.parse(at) + config.requestBudgetMs).toISOString();
-            if (entry.binding && (at < entry.binding.validFrom || at >= entry.binding.validUntil)) denied();
             return at;
         } catch (error) { entry.failed = true; throw error instanceof DashboardAdminError ? error : new DashboardAdminError(503, 'dashboard_admin_unavailable'); }
     }
@@ -114,27 +105,15 @@ function createDashboardAdminRuntime(input) {
         if (!entry.selector) entry.selector = value;
         return value;
     }
-    async function currentBinding(entry, actor, selector, capture) {
+    function staffPolicy(entry, actor, capture) {
         try {
             check(entry); subject(actor);
             if (entry.actor !== null && entry.actor !== actor) denied();
             entry.actor = actor;
-            let policy;
-            if (config.staffPolicy) {
-                // The staff admin is the authority. Only the configured identity
-                // policy captured by the native gate may stand behind this actor.
-                if (actorOf(capture) !== actor) denied();
-                policy = config.staffPolicy;
-            } else {
-                const raw = await config.readApprovedBinding(freeze({ operatorSubjectKey: actor, purpose: 'signup_support' }));
-                check(entry);
-                const value = approvedBinding(raw), at = check(entry);
-                if (value.operatorSubjectKey !== actor || value.instanceId !== config.instanceId || at < value.validFrom || at >= value.validUntil ||
-                    entry.binding && !equal(entry.binding, value) || selector && !equal(value.selector, selector)) denied();
-                if (!entry.binding) entry.binding = value;
-                policy = value.identityPolicy;
-            }
-            if (policy.policyId !== capture.identityPayload.policyId || policy.policyRevision !== capture.identityPayload.policyRevision) denied();
+            // Only the configured identity policy captured by the native gate
+            // may stand behind this actor.
+            if (actorOf(capture) !== actor || config.staffPolicy.policyId !== capture.identityPayload.policyId ||
+                config.staffPolicy.policyRevision !== capture.identityPayload.policyRevision) denied();
             check(entry); return true;
         } catch (_) { entry.failed = true; denied(); }
     }
@@ -143,7 +122,7 @@ function createDashboardAdminRuntime(input) {
             const entry = entryFor(context.request), selector = pinSelector(entry, context.selector);
             const capture = context.capture;
             if (capture.kind !== 'operator_dashboard' || !capture.operatorIssuanceProof || capture.instanceId !== config.instanceId) denied();
-            await currentBinding(entry, actorOf(capture), selector, capture);
+            staffPolicy(entry, actorOf(capture), capture);
             check(entry); return true;
         } catch (_) { return false; }
     }
@@ -162,7 +141,7 @@ function createDashboardAdminRuntime(input) {
                 result.capture.kind !== 'operator_dashboard' || !result.capture.operatorIssuanceProof ||
                 result.capture.instanceId !== config.instanceId || actor !== null && actorOf(result.capture) !== actor ||
                 entry.capture && !equal(entry.capture, result.capture)) denied();
-            await currentBinding(entry, actorOf(result.capture), selector, result.capture); check(entry);
+            staffPolicy(entry, actorOf(result.capture), result.capture); check(entry);
             if (!entry.capture) entry.capture = freeze(copy(result.capture, 16384));
             return entry.capture;
         } catch (error) {

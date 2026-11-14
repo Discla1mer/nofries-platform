@@ -2000,7 +2000,7 @@ function buildServicePlanView(assessment, lifecycleOrganisation, access = {}) {
         endpoints: firstWholeNumber(saved.counts && saved.counts.endpoints, lifecycleContext.endpoints && lifecycleContext.endpoints.estimatedCount),
         locations: firstWholeNumber(saved.counts && saved.counts.locations, Array.isArray(lifecycleLocations) && lifecycleLocations.length || 1) || 1
     };
-    const pricing = managedItPricing(counts);
+    const pricing = managedItPricing(counts, saved.tier);
     const components = recommendations
         .filter((item) => item.serviceKey !== MANAGED_IT_BUNDLE_KEY)
         .filter((item) => (
@@ -2091,7 +2091,8 @@ function applyServicePlanReview(assessment, body, access) {
         endpoints: requiredWholeNumber(countsInput.endpoints, 'devices', 10000),
         locations: requiredWholeNumber(countsInput.locations, 'locations', 50)
     };
-    const pricing = managedItPricing(counts);
+    const tier = cleanText(body.tier, 40);
+    const pricing = managedItPricing(counts, tier);
     if (pricing.status === 'needs_more_info') {
         throw salesError(400, 'Confirmed user, device and location counts are required for bundle pricing', {
             code: 'service_plan_counts_required'
@@ -2110,6 +2111,7 @@ function applyServicePlanReview(assessment, body, access) {
         model: 'bundled_managed_it',
         status: 'reviewed',
         counts,
+        tier: pricing.selectedTierId,
         pricing,
         components: componentStatuses,
         owner,
@@ -2156,8 +2158,8 @@ function componentStatusFromRecommendation(recommendation) {
     return recommendation && recommendation.fit === 'strong_fit' ? 'included' : 'needs_confirmation';
 }
 
-function managedItPricing(counts) {
-    const estimate = estimateManagedItPrice({
+function managedItPricing(counts, tier) {
+    const estimate = estimateManagedItPrice(Object.assign({
         users: { estimatedCount: counts.users },
         endpoints: { estimatedCount: counts.endpoints },
         locations: {
@@ -2165,8 +2167,12 @@ function managedItPricing(counts) {
                 ? []
                 : Array.from({ length: counts.locations }, (_item, index) => `Location ${index + 1}`)
         }
-    });
-    return Object.assign(standardPricingSummary(), estimate);
+    }, tier ? { tier } : {}));
+    // For a resolved estimate, carry the selected tier's per-user rate so the
+    // downstream commercial math (calculateMonthlyTotal) uses the tier rate
+    // rather than the mirrored recommended rate from standardPricingSummary().
+    const tierOverride = estimate.status === 'needs_more_info' ? {} : { perUserMonthly: estimate.perUser };
+    return Object.assign(standardPricingSummary(), estimate, tierOverride);
 }
 
 function firstWholeNumber(...values) {
@@ -2765,9 +2771,7 @@ function standardPricingSummary() {
         includedLocations: STANDARD_PRICE.includedLocations,
         onboardingFrom: STANDARD_PRICE.onboardingFrom,
         additionalEndpointMonthly: STANDARD_PRICE.additionalEndpointMonthly,
-        additionalLocationMonthly: STANDARD_PRICE.additionalLocationMonthly,
-        additionalEndpointOnboarding: STANDARD_PRICE.additionalEndpointOnboarding,
-        additionalLocationOnboarding: STANDARD_PRICE.additionalLocationOnboarding
+        additionalLocationMonthly: STANDARD_PRICE.additionalLocationMonthly
     };
 }
 

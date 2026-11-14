@@ -34,8 +34,7 @@ assert.ok(!recordBaseline || !baseline, 'Do not relax candidate comparison check
 const homeCss = process.env.NOFRIES_SELECTION_HOME_CSS ? fs.readFileSync(process.env.NOFRIES_SELECTION_HOME_CSS) : read('home.css');
 const protectedFiles = ['dashboardRegistry.js', 'dashboardShell.js', 'ncscAssessmentClient.js', 'ncscQuestionnaire.js', 'organisationPicture.js'];
 const sourceFiles = ['home.css', 'style.css', 'app/dashboard.css', 'app/dashboard.html', 'index.html', 'js/dashboard-loader.js',
-    'lib/dashboardDocument.js', 'lib/gatewayDocument.js', 'lib/signupDocument.js', 'js/home.js', 'js/organisation-setup.js', 'js/prospect-assistant.js',
-    'api/shared/customerSignup/signupClient.js', 'api/shared/customerSignup/signupJourney.js',
+    'lib/dashboardDocument.js', 'lib/gatewayDocument.js', 'lib/signupDocument.js', 'js/home.js', 'js/organisation-setup.js', 'api/shared/customerSignup/signupClient.js', 'api/shared/customerSignup/signupJourney.js',
     ...protectedFiles.map(file => 'api/shared/protectedAssets/' + file), 'scripts/tests/selection-wrapper-browser.cjs'];
 const hashes = () => Object.fromEntries(sourceFiles.map(file => [file, sha256(read(file))]));
 const before = hashes();
@@ -50,7 +49,7 @@ const names = { normal: ['Synthetic Harbour Workshop', 'Synthetic Kauri Studio']
     'Synthetic regional organisation with offices and shared cloud services '.repeat(3).slice(0, 200),
     'SyntheticUnbrokenOrganisationName'.repeat(7).slice(0, 200)] };
 const assets = Object.fromEntries(['style.css', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png', 'images/nofrieslogo.png',
-    'js/home.js', 'js/organisation-setup.js', 'js/prospect-assistant.js'].map(file => ['/' + file, file]));
+    'js/home.js', 'js/organisation-setup.js'].map(file => ['/' + file, file]));
 const requests = [], blocked = [], errors = [], results = [], baselineFailures = [];
 let state = 'selection', variant = 'normal';
 const server = http.createServer((req, res) => {

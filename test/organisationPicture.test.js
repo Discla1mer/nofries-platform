@@ -13,10 +13,12 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const flush = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
 
 function mixed() {
-    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
-    const responses = allResponses().map((row, index) => ({ ...row,
+    return submittedWithResponses(allResponses().map((row, index) => ({ ...row,
         optionId: index < 3 ? 'yes' : index < 10 ? 'partial' : index < 12 ? 'no' : index === 12 ? 'unknown' : 'not_applicable',
-        rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null }));
+        rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null })));
+}
+function submittedWithResponses(responses) {
+    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
     let version = null;
     for (const command of [createCommand('assessment-mixed', 'create-mixed', 'Synthetic office and cloud scope.'),
         saveCommand('assessment-mixed', 0, 'save-mixed', responses), submitCommand('assessment-mixed', 1, 'submit-mixed')]) {
@@ -45,33 +47,57 @@ function followUp(dom) {
 }
 function metricReviews(dom) { return dom.root.querySelector('.picture-metrics').querySelectorAll('button'); }
 
-test('connected view preserves golden server range, uncertainty and distinct evidence/completion', async () => {
+test('an explanation that cannot start leaves the saved results in place', async () => {
+    let isolated;
+    jest.isolateModules(() => {
+        jest.doMock('../api/shared/protectedAssets/assessmentExplanation', () => ({
+            explain() { return { status: 'unavailable' }; },
+            mount() { throw new Error('synthetic_mount_failure'); }
+        }));
+        isolated = require('../api/shared/protectedAssets/organisationPicture');
+    });
+    const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
+    const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures), dom = createDom();
+    isolated.mount(dom.root, { metadata: fixtures.metadata, organisationId: seed.model.context.organisationId,
+        client: createClient({ metadata: fixtures.metadata, fetch: transport.fetch }), displayName: 'Synthetic organisation A' });
+    await flush();
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    assert.match(dom.root.querySelector('.picture-explanation').textContent, /The explanation is unavailable right now\. Your results above are unchanged\./);
+    jest.dontMock('../api/shared/protectedAssets/assessmentExplanation');
+});
+
+test('connected view preserves golden server range, uncertainty and completion without an always-empty evidence measure', async () => {
     const dom = setup(); await flush();
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
     assert.match(dom.root.textContent, /85\.7%/);
+    const reported = dom.root.querySelector('.picture-primary');
+    assert.equal(reported.querySelector('.picture-large').textContent, '46.4% in place');
+    assert.equal(reported.querySelector('.picture-metric-upper').textContent, 'Up to 60.7% if every answer still to confirm turns out to be in place.');
+    assert.match(reported.textContent, /The first figure is what you reported as in place\. The higher figure adds answers still to confirm/);
     assert.match(dom.root.textContent, /12 of 14/);
     assert.match(dom.root.textContent, /7 partial and 2 absent/);
-    assert.match(dom.root.textContent, /2 unknown or unresolved/);
-    assert.match(dom.root.textContent, /1 pending N\/A/);
-    assert.match(dom.root.textContent, /not achieved performance/);
-    assert.match(dom.root.textContent, /Tested or observed coverage: 0\.0%/);
+    assert.match(dom.root.textContent, /2 still to confirm/);
+    assert.match(dom.root.textContent, /including 1 answer marked not applicable, to confirm/);
+    assert.match(dom.root.textContent, /not a performance score/);
+    assert.doesNotMatch(dom.root.textContent, /Supporting evidence|Tested or observed coverage|evidence upload/i);
     assert.equal(dom.root.querySelectorAll('meter').length, dom.fixtures.metadata.domains.length);
     assert.match(dom.root.textContent, /Risk priority: not calculated/);
-    assert.equal(dom.root.querySelectorAll('.picture-metric').length, 3);
+    assert.equal(dom.root.querySelectorAll('.picture-metric').length, 2);
     assert.match(dom.root.textContent, /All 14 responses are saved/);
     assert.match(dom.root.textContent, /6.5–8.5 reported or possible credits ÷ 14/);
     assert.match(dom.root.textContent, /overall result weights questions, not the five function percentages/);
-    assert.match(dom.root.textContent, /0.*evidence|evidence has not been supplied/);
-    assert.match(dom.root.textContent, /approval is not available in this journey/);
+    assert.match(dom.root.textContent, /Reviews are coming soon/);
     assert.equal(dom.root.querySelectorAll('.picture-domain-detail').length, 5);
 });
 
-test('saved Overview identifies source, scope, framework, revision and output digest', async () => {
+test('saved Overview identifies source, scope, framework and revision without internal calculation digests', async () => {
     const record = mixed(), dom = setup({ records: [record] }); await flush();
     for (const value of ['Cyber baseline', 'Synthetic organisation A', record.scopePopulation.description,
         dom.fixtures.metadata.title, dom.fixtures.metadata.profileRef.profileVersion,
-        'Saved revision', record.assessmentId, record.submission.evaluation.outputSha256, 'What to do next',
+        'Saved revision', record.assessmentId, 'What to do next',
         'CC BY 4.0']) assert.ok(dom.root.textContent.includes(value), value);
+    for (const hidden of [record.submission.evaluation.outputSha256, record.submission.responseSetSha256,
+        'SHA-256', 'evaluatorSourceSha256', 'Evaluator', 'Score contract']) assert.ok(!dom.root.textContent.includes(hidden), hidden);
     assert.equal(dom.root.querySelectorAll('input').length, 0);
     assert.doesNotMatch(dom.root.textContent, /board snapshot|draft presentation|PDF export|management review/i);
     assert.ok(!dom.root.querySelectorAll('button').some(b => /board|download|export|issue/i.test(b.textContent)));
@@ -82,7 +108,6 @@ test('freshness copy distinguishes the saved baseline from a live organisation c
     assert.match(dom.root.textContent, /saved assessment of the selected scope, not a live check of connected systems/);
     assert.match(dom.root.textContent, /Refresh reloads saved assessments/);
     assert.match(dom.root.textContent, /does not check whether answers still reflect the organisation today/);
-    assert.match(dom.root.textContent, /Coverage recorded in this saved assessment/);
     assert.doesNotMatch(dom.root.textContent, /Current substantiated coverage/);
     assert.match(dom.root.querySelector('.picture-source').textContent, /Submitted .*NZ time/);
     assert.doesNotMatch(dom.root.querySelector('.picture-source').textContent, /revision|T\d\d:/);
@@ -103,9 +128,11 @@ test('the primary saved summary is concise and exact source details remain acces
     assert.equal(provenance.querySelector('summary').textContent, 'Source and calculation details');
     assert.equal(provenance.getAttribute('open'), null);
     for (const value of [record.assessmentId, record.updatedAt, 'Synthetic organisation A',
-        dom.fixtures.metadata.title, dom.fixtures.metadata.profileRef.profileVersion,
-        record.submission.evaluation.outputSha256, record.submission.responseSetSha256]) {
+        dom.fixtures.metadata.title, dom.fixtures.metadata.profileRef.profileVersion]) {
         assert.ok(provenance.textContent.includes(value), value);
+    }
+    for (const hidden of [record.submission.evaluation.outputSha256, record.submission.responseSetSha256, 'SHA-256']) {
+        assert.ok(!provenance.textContent.includes(hidden), hidden);
     }
     assert.match(provenance.textContent, /does not check whether answers still reflect the organisation today/);
     assert.match(provenance.textContent, /Scores from different scopes are not combined/);
@@ -140,6 +167,23 @@ test('same-day choices remain unambiguous without changing exact selected IDs or
     dom.controller.destroy();
 });
 
+test('a long scope is shortened in the selector so status and date stay visible, with the full label as a tooltip', async () => {
+    const record = clone(buildFixtures().tenants[0].assessments[0]);
+    const long = 'Synthetic head office, two retail sites,\n  the warehouse laptops and every cloud service we pay for each month';
+    record.scopePopulation.description = long;
+    const dom = setup({ records: [record] }); await flush();
+    const picker = dom.root.querySelector('.picture-toolbar').querySelector('select');
+    const option = picker.querySelector('option');
+    const flat = long.replace(/\s+/g, ' ');
+    assert.ok(option.textContent.startsWith(flat.slice(0, 59).trimEnd() + '… · In progress · '));
+    assert.ok(option.textContent.endsWith(' NZ time'));
+    assert.equal(option.title, flat + option.textContent.slice(option.textContent.indexOf(' · In progress · ')));
+    assert.equal(picker.title, option.title);
+    // The full scope is still shown on the page (one list item per line since #268).
+    long.split('\n').map(line => line.trim()).forEach(line => assert.ok(dom.root.textContent.includes(line)));
+    dom.controller.destroy();
+});
+
 test('a single saved choice omits its technical ID while the draft source disclosure preserves it', async () => {
     const record = buildFixtures().tenants[0].assessments[0];
     const dom = setup({ records: [record] }); await flush();
@@ -154,7 +198,7 @@ test('a single saved choice omits its technical ID while the draft source disclo
         dom.fixtures.metadata.profileRef.profileVersion, 'Synthetic organisation A']) {
         assert.ok(provenance.textContent.includes(value), value);
     }
-    assert.match(dom.root.textContent, /Baseline in progress/);
+    assert.match(dom.root.textContent, /In progress/);
     assert.match(dom.root.textContent, /Saved progress is not a score/);
     assert.equal(dom.root.querySelector('.picture-metrics'), null);
     dom.controller.destroy();
@@ -174,12 +218,12 @@ test('same-time assessments with different scopes have recognisable picker label
     dom.controller.destroy();
 });
 
-test('three follow-up categories preserve unknown/N/A, overlapping evidence gaps and profile-ordered saved detail', async () => {
+test('two follow-up categories preserve unknown/N/A and profile-ordered saved detail without an always-full evidence list', async () => {
     const record = mixed(), dom = setup({ records: [record] }); await flush();
     const follow = dom.root.querySelector('.picture-follow-up');
     const categories = follow.children.filter(node => node.tagName === 'DETAILS');
     assert.deepEqual(categories.map(node => node.querySelector('summary').textContent),
-        ['Unresolved answers · 2', 'Reported implementation gaps · 9', 'Supporting-evidence gaps · 14']);
+        ['Unresolved answers · 2', 'Reported implementation gaps · 9']);
     const expected = options => dom.fixtures.metadata.questions.filter(question => {
         const response = record.responses.find(response => response.itemId === question.id);
         return options.includes(response.optionId);
@@ -187,14 +231,29 @@ test('three follow-up categories preserve unknown/N/A, overlapping evidence gaps
     const ids = category => category.querySelectorAll('article').map(node => node.getAttribute('data-question-id'));
     assert.deepEqual(ids(categories[0]), expected(['unknown', 'not_applicable']));
     assert.deepEqual(ids(categories[1]), expected(['partial', 'no']));
-    assert.deepEqual(ids(categories[2]), dom.fixtures.metadata.questions.map(question => question.id));
-    assert.ok(ids(categories[0]).every(id => ids(categories[2]).includes(id)));
-    assert.match(categories[0].textContent, /N\/A claims remain unresolved/);
-    assert.match(categories[2].textContent, /Evidence upload and review are not available/);
+    assert.match(categories[0].textContent, /Not applicable answers count as not yet met until a reviewer confirms them/);
+    assert.doesNotMatch(follow.textContent, /Supporting-evidence gaps|Supporting evidence:|upload/);
     assert.match(follow.textContent, /not a combined total or a risk ranking/);
-    assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:|Supporting evidence:/.test(article.textContent)));
+    assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
     assert.equal(follow.querySelectorAll('input').length, 0);
     assert.equal(follow.querySelectorAll('button').length, 0);
+    dom.controller.destroy();
+});
+
+// A-019: under half answered Yes, Partial or No, Overview does not lead with the range.
+// #266's lead-with-lower rewrite is skipped, so the headline stays "Not enough answers".
+test.each([[false], [true]])('Overview leads with not enough answers when fewer than half are answered Yes, Partial or No (start action: %s)', async (canStart) => {
+    const record = submittedWithResponses(allResponses().map((row, index) => ({ ...row, optionId: index < 1 ? 'yes' : 'unknown' })));
+    const dom = setup({ records: [record], options: canStart ? { openCyber: () => {} } : {} }); await flush();
+    const primary = dom.root.querySelector('.picture-primary');
+    assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
+    assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet');
+    assert.equal(primary.querySelector('.picture-metric-upper'), null);
+    assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or waiting for review, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
+    // A submitted result is read-only: do not ask the customer to confirm answers.
+    assert.doesNotMatch(primary.textContent, /Confirm the Unknown answers|resolved/i);
+    if (canStart) assert.match(primary.textContent, /Range so far: 7\.1%–100\.0%\. Start a new assessment once more answers are known\./);
+    else assert.doesNotMatch(primary.textContent, /Start a new assessment/);
     dom.controller.destroy();
 });
 
@@ -204,15 +263,14 @@ test('zero reported gaps are explicit and do not imply substantiated evidence or
     const follow = dom.root.querySelector('.picture-follow-up');
     const categories = follow.children.filter(node => node.tagName === 'DETAILS');
     assert.deepEqual(categories.map(node => node.querySelector('summary').textContent),
-        ['Unresolved answers · 0', 'Reported implementation gaps · 0', 'Supporting-evidence gaps · 14']);
+        ['Unresolved answers · 0', 'Reported implementation gaps · 0']);
     assert.match(categories[1].textContent, /does not establish control effectiveness/);
-    assert.match(categories[2].textContent, /confidence is not assessed/);
     const metrics = dom.root.querySelector('.picture-metrics').children;
     assert.equal(metrics[0].querySelector('button'), null);
     assert.equal(metrics[1].querySelector('button'), null);
     assert.match(metrics[0].textContent, /No reported implementation gaps in this saved assessment/);
     assert.match(metrics[1].textContent, /No unresolved answers in this saved assessment/);
-    assert.deepEqual(metricReviews(dom).map(button => button.textContent), ['Review supporting-evidence gaps']);
+    assert.deepEqual(metricReviews(dom).map(button => button.textContent), []);
     dom.controller.destroy();
 });
 
@@ -236,7 +294,8 @@ test('follow-up guidance separates next actions from evidence without changing c
     }
     assert.equal(follow.querySelectorAll('button').length, 0);
     assert.equal(follow.querySelectorAll('input').length, 0);
-    assert.match(follow.textContent, /no action is assigned or evidence uploaded here/);
+    assert.match(follow.textContent, /Questions follow the profile order\./);
+    assert.doesNotMatch(follow.textContent, /uploaded here/);
     dom.controller.destroy();
 });
 
@@ -251,14 +310,47 @@ test('legacy Board options cannot expose another presentation mode or navigation
     assert.equal(dom.root.querySelector('.picture-follow-up-filter').querySelectorAll('select').length, 1);
     assert.equal(dom.root.querySelector('label').textContent, 'Saved assessment');
     assert.deepEqual(dom.root.querySelectorAll('button').map(button => button.textContent),
-        ['Refresh', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Review supporting-evidence gaps', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
+        ['Refresh', 'Copy summary', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
     assert.equal(opened, 0);
+});
+
+test('a blank saved assessment is Not started, while a newer unfinished record does not hide the latest submission', async () => {
+    const draft = clone(buildFixtures().tenants[0].assessments[0]);
+    draft.assessmentId = 'assessment-newer-draft';
+    draft.updatedAt = '2099-01-01T00:00:00.000Z';
+    draft.status = 'created'; draft.revision = 0; draft.responses = []; draft.submission = null;
+    draft.createdAt = draft.updatedAt;
+    draft.progress = { total: draft.progress.total, answered: 0, missing: draft.progress.total, unknown: 0, notApplicableClaims: 0 };
+    const submitted = mixed();
+    const summary = row => { const copy = clone(row); delete copy.responses; delete copy.submission; return copy; };
+    const submittedSummary = summary(submitted); submittedSummary.updatedAt = '2020-01-01T00:00:00.000Z';
+    let source;
+    const client = {
+        list: async () => ({ assessments: [summary(draft), submittedSummary], nextAfterAssessmentId: null }),
+        read: async id => ({ assessment: clone(id === submitted.assessmentId ? submitted : draft) })
+    };
+    const dom = setup({ client, options: { onSelection: (_id, kind) => { source = kind; } } });
+    await flush();
+    assert.equal(dom.root.querySelector('select').value, submitted.assessmentId);
+    assert.equal(source, undefined);
+    const blank = setup({ client: {
+        list: async () => ({ assessments: [summary(draft)], nextAfterAssessmentId: null }),
+        read: async () => ({ assessment: clone(draft) })
+    } });
+    await flush();
+    assert.match(blank.root.querySelector('.picture-resume').textContent, /Not started/);
+    assert.equal(blank.root.querySelector('option').textContent.includes('Not started'), true);
+    const picker = dom.root.querySelector('select');
+    change(picker, draft.assessmentId); await flush();
+    assert.equal(source, 'user');
+    assert.equal(dom.root.querySelector('select').value, draft.assessmentId);
+    dom.controller.destroy(); blank.controller.destroy();
 });
 
 test('a saved draft shows progress with no submitted score', async () => {
     const record = buildFixtures().tenants[0].assessments[0];
     const dom = setup({ records: [record] }); await flush();
-    assert.match(dom.root.textContent, /Baseline in progress/);
+    assert.match(dom.root.textContent, /In progress/);
     assert.match(dom.root.textContent, /Saved progress is not a score/);
     assert.equal(dom.root.querySelectorAll('meter').length, 0);
     assert.doesNotMatch(dom.root.textContent, /Reported implementation|100\.0%/);
@@ -302,10 +394,15 @@ test('an old saved-record action cannot open after a refresh or destruction', as
 test('empty organisation has an actionable baseline state and no invented zero score', async () => {
     let opened = 0; const dom = setup({ records: [], options: { openCyber: () => opened++ } }); await flush();
     assert.match(dom.root.textContent, /No saved assessments yet/); assert.doesNotMatch(dom.root.textContent, /0\.0%/);
-    assert.match(dom.root.textContent, /Build your first baseline/);
+    assert.match(dom.root.textContent, /Start your cyber check/);
+    assert.doesNotMatch(dom.root.textContent, /baseline/i);
     assert.equal(dom.root.querySelectorAll('.picture-first-use-step').length, 3);
     const action = dom.root.querySelector('.picture-first-use-action');
-    click(dom, 'Open assessment'); assert.equal(opened, 1);
+    // The one action comes straight after the introduction, before the steps.
+    const section = dom.root.querySelector('.picture-first-use');
+    assert.ok(section.children.indexOf(action) < section.children.indexOf(section.querySelector('.picture-first-use-steps')));
+    assert.equal(dom.root.querySelectorAll('button').length, 1);
+    click(dom, 'Start your cyber check'); assert.equal(opened, 1);
     dom.root.replaceChildren(); action.click(); assert.equal(opened, 1);
     dom.controller.destroy(); action.click(); assert.equal(opened, 1);
 });
@@ -405,6 +502,24 @@ test('revoked access clears results and record names; retry does not disclose ca
     assert.doesNotMatch(dom.root.textContent, /46\.4%|assessment-mixed|Synthetic office/);
     assert.match(dom.root.textContent, /unavailable/);
     assert.equal(dom.root.querySelectorAll('button').length, 0);
+});
+
+test('D-004: a scope written one item per line is shown as a readable list without changing the saved text', async () => {
+    const record = clone(buildFixtures().tenants[0].assessments[0]);
+    record.scopePopulation.description = 'Included: 12 staff and their laptops\n- Included: Auckland office\n\nExcluded: warehouse systems';
+    const dom = setup({ records: [record] }); await flush();
+    const items = dom.root.querySelector('.picture-scope').querySelectorAll('li').map(item => item.textContent);
+    assert.deepEqual(items, ['Included: 12 staff and their laptops', 'Included: Auckland office', 'Excluded: warehouse systems']);
+    assert.equal(record.scopePopulation.description, 'Included: 12 staff and their laptops\n- Included: Auckland office\n\nExcluded: warehouse systems');
+});
+
+test('D-004: a one-line scope stays a single paragraph', async () => {
+    const record = clone(buildFixtures().tenants[0].assessments[0]);
+    record.scopePopulation.description = 'Whole organisation';
+    const dom = setup({ records: [record] }); await flush();
+    const scope = dom.root.querySelector('.picture-scope');
+    assert.equal(scope.querySelectorAll('li').length, 0);
+    assert.ok(scope.querySelectorAll('p').some(item => item.textContent === 'Whole organisation'));
 });
 
 test('scope text is rendered as text and leaving a destroyed picture is inert', async () => {
@@ -523,7 +638,7 @@ test('a denied list retry clears saved results and remains inert after destructi
     assert.equal(lists, 3); assert.equal(reads, 1); assert.equal(dom.root.textContent, '');
 });
 
-test('follow-up domain filtering preserves saved scores, profile order, category overlap and keyboard focus without reads or writes', async () => {
+test('follow-up domain filtering preserves saved scores, profile order and keyboard focus without reads or writes', async () => {
     const record = mixed(), saved = clone(record); let lists = 0, reads = 0, writes = 0;
     const client = { list: async () => { lists++; return { assessments: [record], nextAfterAssessmentId: null }; },
         read: async () => { reads++; return { assessment: record }; },
@@ -546,7 +661,7 @@ test('follow-up domain filtering preserves saved scores, profile order, category
     const controls = new Map(dom.fixtures.metadata.controls.map(control => [control.id, control.domainId]));
     const questionDomains = new Map(dom.fixtures.metadata.questions.map(question => [question.id, controls.get(question.controlId)]));
     categories.forEach(category => { category.open = true; });
-    originals[2][0].querySelector('details').open = true;
+    originals[1][0].querySelector('details').open = true;
     filter.focus();
     for (const domain of dom.fixtures.metadata.domains) {
         change(filter, domain.id);
@@ -558,8 +673,6 @@ test('follow-up domain filtering preserves saved scores, profile order, category
             assert.deepEqual(ids, originals[index].map(article => article.getAttribute('data-question-id')).filter(id => questionDomains.get(id) === domain.id));
             assert.equal(category.querySelector('summary').textContent, originalSummaries[index].split(' · ')[0] + ' · ' + ids.length + ' of ' + articles.length + ' shown');
         });
-        const ids = category => category.querySelectorAll('article').filter(article => !article.hidden).map(article => article.getAttribute('data-question-id'));
-        assert.ok(ids(categories[0]).every(id => ids(categories[2]).includes(id)));
         assert.ok(status.textContent.includes(domain.title));
         assert.equal(dom.root.querySelector('.picture-metrics'), metrics); assert.equal(metrics.textContent, metricText);
         assert.deepEqual(dom.root.querySelectorAll('meter').map(meter => [meter.value, meter.getAttribute('aria-valuetext')]), meters);
@@ -567,7 +680,7 @@ test('follow-up domain filtering preserves saved scores, profile order, category
     change(filter, '');
     assert.deepEqual(categories.map(category => category.querySelector('summary').textContent), originalSummaries);
     assert.ok(follow.querySelectorAll('article').every(article => !article.hidden));
-    assert.equal(originals[2][0].querySelector('details').open, true);
+    assert.equal(originals[1][0].querySelector('details').open, true);
     assert.equal(status.textContent, 'Showing all functions.');
     assert.equal(lists, 1); assert.equal(reads, 1); assert.equal(writes, 0); assert.deepEqual(record, saved);
     dom.controller.destroy();
@@ -579,13 +692,12 @@ test('domain categories explicitly show no matches without presenting empty list
     change(filter, 'guide-govern');
     assert.equal(categories[0].querySelector('summary').textContent, 'Unresolved answers · 0 of 2 shown');
     assert.equal(categories[1].querySelector('summary').textContent, 'Reported implementation gaps · 0 of 9 shown');
-    assert.equal(categories[2].querySelector('summary').textContent, 'Supporting-evidence gaps · 2 of 14 shown');
-    for (const category of categories.slice(0, 2)) {
+    assert.equal(categories.length, 2);
+    for (const category of categories) {
         const empty = category.querySelector('.picture-follow-up-empty');
         assert.equal(empty.hidden, false); assert.match(empty.textContent, /No follow-up items in this function for this category/);
     }
-    assert.equal(categories[2].querySelector('.picture-follow-up-empty').hidden, true);
-    assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 unknown or unresolved/);
+    assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 still to confirm, including 1 answer marked not applicable, to confirm/);
     const before = follow.textContent, visibility = follow.querySelectorAll('article').map(article => article.hidden);
     change(filter, 'unrecognised-domain');
     assert.equal(follow.textContent, before); assert.deepEqual(follow.querySelectorAll('article').map(article => article.hidden), visibility);
@@ -668,12 +780,12 @@ test('metric review actions reveal all matching items and focus the correct nati
     const questionIds = categories.map(category => category.querySelectorAll('article').map(article => article.getAttribute('data-question-id')));
     const actions = metricReviews(dom);
     assert.deepEqual(actions.map(control => control.textContent),
-        ['Review 9 implementation gaps', 'Review 2 unresolved answers', 'Review supporting-evidence gaps']);
+        ['Review 9 implementation gaps', 'Review 2 unresolved answers']);
     let changeEvents = 0; filter.addEventListener('change', () => changeEvents++);
-    for (const [index, categoryIndex] of [[0, 1], [1, 0], [2, 2]]) {
+    for (const [index, categoryIndex] of [[0, 1], [1, 0]]) {
         const control = actions[index], category = categories[categoryIndex];
         assert.equal(control.parentElement.querySelector('h3').textContent,
-            ['Reported implementation', 'Resolved answers', 'Supporting evidence'][index]);
+            ['Reported implementation', 'Answers confirmed'][index]);
         assert.equal(control.tagName, 'BUTTON'); assert.equal(control.type, 'button');
         assert.equal(control.classList.contains('dashboard-button-secondary'), true);
         assert.equal(control.getAttribute('aria-controls'), category.id);
@@ -689,7 +801,7 @@ test('metric review actions reveal all matching items and focus the correct nati
             .map(article => article.getAttribute('data-question-id'))), questionIds);
         assert.ok(categories.every(item => item.querySelector('.picture-follow-up-empty').hidden));
         assert.deepEqual(categories.map(item => item.querySelector('summary').textContent),
-            ['Unresolved answers · 2', 'Reported implementation gaps · 9', 'Supporting-evidence gaps · 14']);
+            ['Unresolved answers · 2', 'Reported implementation gaps · 9']);
         assert.equal(dom.root.querySelector('.picture-metrics').textContent, metricText);
     }
     assert.equal(lists, 1); assert.equal(reads, 1); assert.equal(writes, 0); dom.controller.destroy();
@@ -767,7 +879,7 @@ test('planning stays absent without the host callback and cannot be enabled by l
     const dom = setup(); await flush(); assert.equal(planButton(dom), undefined);
     let opened = 0; dom.options.openImprovement = () => opened++;
     click(dom, 'Refresh'); await flush(); assert.equal(planButton(dom), undefined); assert.equal(opened, 0);
-    assert.ok(dom.root.querySelectorAll('button').some(button => button.textContent === 'Review supporting-evidence gaps'));
+    assert.ok(dom.root.querySelectorAll('button').some(button => button.textContent === 'Review 2 unresolved answers'));
     dom.controller.destroy();
 });
 
@@ -825,4 +937,727 @@ test('denial and detached result controls cannot open a plan or change follow-up
         if (stop === 'denial') assert.match(dom.root.textContent, /unavailable/);
         dom.controller.destroy();
     }
+});
+
+// "Plan this" on each top gap, present only when the host enables improvement actions.
+function gapPlanButtons(dom) { return dom.root.querySelectorAll('button').filter(button => button.textContent === 'Plan this'); }
+function gapPlanStatus(dom, index) { return dom.root.querySelectorAll('.picture-top-gap')[index].querySelector('.picture-gap-plan-status'); }
+
+test('Plan this appears on each top gap only when the host enables improvement actions', async () => {
+    const off = setup({ options: { openImprovement: () => true } }); await flush();
+    assert.equal(gapPlanButtons(off).length, 0); off.controller.destroy();
+    const dom = setup({ options: { planGap: async () => true } }); await flush();
+    const buttons = gapPlanButtons(dom), items = dom.root.querySelectorAll('.picture-top-gap');
+    assert.equal(buttons.length, 3);
+    buttons.forEach((button, index) => {
+        assert.equal(button.tagName, 'BUTTON'); assert.equal(button.type, 'button');
+        assert.ok(button.classList.contains('picture-gap-plan')); assert.equal(button.parentElement, items[index]);
+        assert.equal(button.getAttribute('aria-label'), 'Plan this: ' + items[index].querySelector('h4').textContent);
+        assert.equal(gapPlanStatus(dom, index).hidden, true);
+    });
+    dom.controller.destroy();
+});
+
+test('Plan this sends the exact submitted selection and the gap item, and shows progress once', async () => {
+    const record = mixed(), calls = []; let finish;
+    const client = { list: async () => ({ assessments: [record], nextAfterAssessmentId: null }), read: async () => ({ assessment: record }) };
+    const dom = setup({ client, options: { planGap: (selection, itemId, stillCurrent) => { calls.push([selection, itemId]);
+        assert.equal(stillCurrent(), true); return new Promise(done => { finish = done; }); } } });
+    await flush();
+    const items = dom.root.querySelectorAll('.picture-top-gap'), buttons = gapPlanButtons(dom);
+    buttons[1].click(); await flush();
+    assert.deepEqual(calls, [[expectedImprovementSelection(record), items[1].dataset.gapItem]]);
+    assert.equal(gapPlanStatus(dom, 1).textContent, 'Opening plan…'); assert.equal(gapPlanStatus(dom, 1).getAttribute('role'), 'status');
+    assert.equal(buttons[1].disabled, true);
+    buttons[1].click(); buttons[0].click(); await flush(); assert.equal(calls.length, 1);
+    finish(true); await flush();
+    assert.equal(gapPlanStatus(dom, 1).hidden, true); assert.equal(buttons[1].disabled, false);
+    dom.controller.destroy();
+});
+
+test('Plan this goes stale silently when the selection changes while it is pending', async () => {
+    const first = mixed(), second = buildFixtures().tenants[0].assessments.find(record => record.status === 'submitted');
+    let finish, stillCurrent;
+    const client = { list: async () => ({ assessments: [first, second], nextAfterAssessmentId: null }),
+        read: async id => ({ assessment: id === first.assessmentId ? first : second }) };
+    const dom = setup({ client, options: { initialAssessmentId: first.assessmentId,
+        planGap: (_selection, _itemId, current) => { stillCurrent = current; return new Promise(done => { finish = done; }); } } });
+    await flush(); gapPlanButtons(dom)[0].click(); await flush(); assert.equal(stillCurrent(), true);
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), second.assessmentId); await flush();
+    assert.equal(stillCurrent(), false);
+    finish(false); await flush();
+    assert.doesNotMatch(dom.root.textContent, /Couldn't open the plan|Opening plan/);
+    dom.controller.destroy();
+});
+
+test('a Plan this failure says so, keeps Overview working and can be retried', async () => {
+    for (const outcome of [false, 'reject']) {
+        let attempts = 0;
+        const dom = setup({ options: { planGap: async () => { attempts++; if (outcome === 'reject') throw new Error('synthetic'); return false; } } });
+        await flush();
+        const button = gapPlanButtons(dom)[0]; button.click(); await flush();
+        assert.equal(gapPlanStatus(dom, 0).textContent, 'Couldn\'t open the plan. Try again.');
+        assert.equal(gapPlanStatus(dom, 0).hidden, false); assert.equal(button.disabled, false);
+        assert.match(dom.root.textContent, /Your top three gaps/); assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+        assert.equal(gapPlanButtons(dom).length, 3);
+        button.click(); await flush(); assert.equal(attempts, 2);
+        dom.controller.destroy();
+    }
+});
+
+// Change over time: submitted results of the same profile, compared on request.
+function submittedAt(assessmentId, at, responses, scope = 'Synthetic office and cloud scope.') {
+    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
+    let version = null;
+    for (const command of [createCommand(assessmentId, 'create-' + assessmentId, scope),
+        saveCommand(assessmentId, 0, 'save-' + assessmentId, responses), submitCommand(assessmentId, 1, 'submit-' + assessmentId)]) {
+        version = makeVersion({ ...tenant.scope, actorSubjectKey: SUBJECT, assessmentId, action: command.action,
+            expectedRevision: command.expectedRevision, payload: command.payload },
+        command.idempotencyKey, version, tenant.state.tenantAggregate, at);
+    }
+    return projectNcscDetail(version);
+}
+function mixedResponses() {
+    return allResponses().map((row, index) => ({ ...row,
+        optionId: index < 3 ? 'yes' : index < 10 ? 'partial' : index < 12 ? 'no' : index === 12 ? 'unknown' : 'not_applicable',
+        rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null }));
+}
+function trendClient(records, settings = {}) {
+    const reads = []; let writes = 0;
+    const summary = row => { const value = clone(row); delete value.responses; delete value.submission; return value; };
+    const client = { list: async () => ({ assessments: records.map(summary), nextAfterAssessmentId: settings.after || null }),
+        read: async id => { reads.push(id); if (settings.fail && settings.fail(id)) throw settings.fail(id);
+            return { assessment: clone(records.find(row => row.assessmentId === id)) }; },
+        create: () => writes++, save: () => writes++, submit: () => writes++ };
+    return { client, reads, writes: () => writes };
+}
+const trendSection = dom => dom.root.querySelector('.picture-trend');
+const trendRows = dom => trendSection(dom).querySelector('tbody').querySelectorAll('tr')
+    .map(row => row.children.map(cell => cell.textContent));
+
+test('a single submitted assessment explains that there is nothing to compare yet and makes no extra reads', async () => {
+    const only = submittedAt('assessment-only', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const draft = clone(buildFixtures().tenants[0].assessments[0]);
+    const { client, reads } = trendClient([only, draft]);
+    const dom = setup({ client, options: { initialAssessmentId: only.assessmentId } }); await flush();
+    const section = trendSection(dom);
+    assert.equal(section.querySelector('h3').textContent, 'Change over time');
+    assert.match(section.textContent, /This is the only submitted assessment so far\. Another submitted assessment is needed/);
+    assert.equal(section.querySelectorAll('button').length, 0);
+    assert.equal(section.querySelector('table'), null);
+    assert.deepEqual(reads, [only.assessmentId]);
+    assert.match(dom.root.textContent, /Change over time compares submitted answers only; it is not a risk trend/);
+    dom.controller.destroy();
+});
+
+test('comparing submitted assessments shows saved ranges and coverage without directional claims or writes', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('no'));
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    const draft = clone(buildFixtures().tenants[0].assessments[0]);
+    const before = clone([earlier, later]);
+    const { client, reads, writes } = trendClient([earlier, later, draft]);
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
+    let section = trendSection(dom);
+    assert.match(section.textContent, /There is 1 other submitted assessment\. Compare saved results and answer coverage\./);
+    assert.deepEqual(reads, [later.assessmentId]);
+    const compare = section.querySelectorAll('button').find(button => button.textContent === 'Compare with previous assessment');
+    compare.focus(); compare.click(); await flush();
+    assert.deepEqual(reads, [later.assessmentId, earlier.assessmentId]);
+    section = trendSection(dom);
+    assert.match(section.textContent, /Compared with the previous assessment, submitted 10 Sept 2026/);
+    assert.match(section.querySelector('.ncsc-warning').textContent, /matching saved scope descriptions do not establish the same real-world population/);
+    const rows = trendRows(dom);
+    assert.deepEqual(rows[0], ['Overall', '0.0%', '100.0%']);
+    assert.equal(rows.length, 1 + dom.fixtures.metadata.domains.length);
+    assert.deepEqual(rows.slice(1).map(row => row[0]), dom.fixtures.metadata.domains.map(domain => domain.title));
+    assert.ok(rows.slice(1).every(row => row[2] === '100.0%' && row.length === 3));
+    assert.match(section.textContent, /Question coverage: Previous 14 of 14; selected 14 of 14 answered Yes, Partial or No/);
+    assert.doesNotMatch(section.textContent, /Up \d|Down \d|No change/);
+    const history = section.querySelector('.picture-trend-history').querySelectorAll('li');
+    assert.equal(history.length, 2);
+    assert.match(history[0].textContent, /100\.0% reported implementation .*\(shown above\)/);
+    assert.equal(history[0].getAttribute('aria-current'), 'true');
+    assert.match(history[1].textContent, /0\.0% reported implementation/);
+    // The replaced Compare button hands focus to the section heading.
+    assert.ok(dom.document.activeElement === section.querySelector('h3'));
+    // The main saved result is unchanged by the comparison.
+    assert.match(dom.root.querySelector('.picture-metrics').textContent, /100\.0%/);
+    assert.equal(writes(), 0); assert.deepEqual([earlier, later], before);
+    dom.controller.destroy();
+});
+
+function pendingTrend() {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    const { client } = trendClient([earlier, later]);
+    const base = client.read; let release;
+    client.read = (id, settings) => id === earlier.assessmentId
+        ? new Promise(done => { release = () => done(base(id, settings)); }) : base(id, settings);
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } });
+    return { dom, release: () => release() };
+}
+
+test('completing a comparison does not pull focus back after the user moved to another dashboard control', async () => {
+    const { dom, release } = pendingTrend(); await flush();
+    const compare = trendSection(dom).querySelectorAll('button').find(button => button.textContent === 'Compare with previous assessment');
+    compare.focus(); compare.click(); await flush();
+    const elsewhere = dom.document.createElement('button'); elsewhere.focus();
+    release(); await flush();
+    assert.ok(trendSection(dom).querySelector('table'));
+    assert.ok(dom.document.activeElement === elsewhere);
+    dom.controller.destroy();
+});
+
+test('completing a comparison moves focus from the removed Compare button to the trend heading', async () => {
+    const { dom, release } = pendingTrend(); await flush();
+    const compare = trendSection(dom).querySelectorAll('button').find(button => button.textContent === 'Compare with previous assessment');
+    compare.focus(); compare.click(); await flush();
+    release(); await flush();
+    assert.ok(trendSection(dom).querySelector('table'));
+    assert.ok(dom.document.activeElement === trendSection(dom).querySelector('h3'));
+    dom.controller.destroy();
+});
+
+test('different scopes suppress change, and the earliest record has no previous result', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('yes'), 'Head office only.');
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());
+    const { client, reads } = trendClient([earlier, later]);
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
+    click(dom, 'Compare with previous assessment'); await flush();
+    assert.deepEqual(trendRows(dom)[0], ['Overall', '100.0%', '46.4%–60.7%']);
+    assert.match(trendSection(dom).querySelector('.ncsc-warning').textContent, /saved scope declarations differ/);
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), earlier.assessmentId); await flush();
+    assert.equal(reads.length, 3);
+    assert.equal(trendSection(dom).querySelectorAll('button').map(button => button.textContent).join(), 'Compare with later assessments');
+    click(dom, 'Compare with later assessments'); await flush();
+    assert.equal(reads.length, 4);
+    assert.match(trendSection(dom).textContent, /earliest submitted assessment shown, so there is nothing earlier to compare/);
+    assert.equal(trendSection(dom).querySelector('table'), null);
+    assert.equal(trendSection(dom).querySelectorAll('li').length, 2);
+    dom.controller.destroy();
+});
+
+test('identical ranges do not claim unchanged implementation and history is bounded to five assessments', async () => {
+    const records = Array.from({ length: 7 }, (_, index) => submittedAt('assessment-' + index,
+        new Date(Date.parse(NOW) + (index + 1) * 86400000).toISOString(), allResponses('yes')));
+    const { client, reads } = trendClient(records);
+    const dom = setup({ client, options: { initialAssessmentId: 'assessment-6' } }); await flush();
+    assert.match(trendSection(dom).textContent, /There are 4 other submitted assessments/);
+    click(dom, 'Compare with previous assessment'); await flush();
+    assert.equal(reads.length, 5);
+    assert.ok(trendRows(dom).every(row => row.length === 3));
+    assert.doesNotMatch(trendSection(dom).textContent, /No change/);
+    assert.equal(trendSection(dom).querySelector('.picture-trend-history').querySelectorAll('li').length, 5);
+    assert.match(trendSection(dom).textContent, /Showing 5 of 7 loaded submitted assessments, newest first\./);
+    dom.controller.destroy();
+});
+
+test('a failed earlier read leaves the selected result intact, and a denied read clears the picture', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    let status = 503;
+    const { client } = trendClient([earlier, later], { fail: id => id === earlier.assessmentId ? { statusCode: status } : null });
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
+    click(dom, 'Compare with previous assessment'); await flush();
+    assert.match(trendSection(dom).textContent, /Earlier results could not be loaded, so no change is shown/);
+    assert.match(dom.root.querySelector('.picture-metrics').textContent, /100\.0%/);
+    status = 403; click(dom, 'Refresh'); await flush();
+    click(dom, 'Compare with previous assessment'); await flush();
+    assert.match(dom.root.textContent, /This organisation picture is unavailable/);
+    assert.equal(dom.root.querySelector('.picture-trend'), null);
+    assert.doesNotMatch(dom.root.textContent, /100\.0%|46\.4%/);
+    dom.controller.destroy();
+});
+
+test('a denied earlier read clears the picture even when another read fails first', async () => {
+    const oldest = submittedAt('assessment-oldest', '2026-09-08T00:00:00.000Z', allResponses('yes'));
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    let releaseDenial;
+    const denial = new Promise(resolve => { releaseDenial = resolve; });
+    const { client, reads } = trendClient([oldest, earlier, later]);
+    const base = client.read;
+    client.read = async (id, options) => {
+        if (id === earlier.assessmentId) { reads.push(id); throw { statusCode: 503 }; }
+        if (id === oldest.assessmentId) { reads.push(id); await denial; throw { statusCode: 403 }; }
+        return base(id, options);
+    };
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
+    click(dom, 'Compare with previous assessment'); await flush();
+    assert.deepEqual(reads.slice().sort(), [earlier.assessmentId, later.assessmentId, oldest.assessmentId].sort());
+    releaseDenial(); await flush();
+    assert.match(dom.root.textContent, /This organisation picture is unavailable/);
+    assert.equal(dom.root.querySelector('.picture-trend'), null);
+    assert.equal(dom.root.querySelector('.picture-metrics'), null);
+    assert.doesNotMatch(dom.root.textContent, /100\.0%|46\.4%|Earlier results could not be loaded/);
+    dom.controller.destroy();
+});
+
+test('a stale Compare button cannot start reads after the selection changes', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', mixedResponses());
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    const { client, reads } = trendClient([earlier, later]);
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
+    const stale = dom.root.querySelectorAll('button').find(button => button.textContent === 'Compare with previous assessment');
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), earlier.assessmentId); await flush();
+    const count = reads.length; stale.click(); await flush();
+    assert.equal(reads.length, count);
+    assert.equal(trendSection(dom).querySelector('table'), null);
+    dom.controller.destroy();
+    const late = dom.root.textContent; stale.click(); await flush();
+    assert.equal(reads.length, count); assert.equal(dom.root.textContent, late);
+});
+
+test('with assessments still unloaded, the comparison is labelled as against the most recent earlier loaded assessment', async () => {
+    // The list pages by assessment ID, not by submission time. The first page
+    // holds November and September; October sits on an unloaded later page.
+    const november = submittedAt('assessment-a', '2026-11-10T00:00:00.000Z', mixedResponses());
+    const september = submittedAt('assessment-b', '2026-09-10T00:00:00.000Z', allResponses('no'));
+    const october = submittedAt('assessment-c', '2026-10-10T00:00:00.000Z', allResponses('yes'));
+    const all = [november, september, october], reads = [];
+    const summary = row => { const value = clone(row); delete value.responses; delete value.submission; return value; };
+    const client = {
+        list: async input => input.afterAssessmentId === null
+            ? { assessments: [november, september].map(summary), nextAfterAssessmentId: september.assessmentId }
+            : { assessments: [october].map(summary), nextAfterAssessmentId: null },
+        read: async id => { reads.push(id); return { assessment: clone(all.find(row => row.assessmentId === id)) }; }
+    };
+    const dom = setup({ client, options: { initialAssessmentId: november.assessmentId } }); await flush();
+    assert.deepEqual(trendSection(dom).querySelectorAll('button').map(button => button.textContent), ['Compare with an earlier assessment']);
+    click(dom, 'Compare with an earlier assessment'); await flush();
+    let section = trendSection(dom);
+    // Chronological among loaded rows: September is the nearest earlier loaded result.
+    assert.deepEqual(trendRows(dom)[0], ['Overall', '0.0%', '46.4%–60.7%']);
+    assert.match(section.textContent, /Compared with the most recent earlier assessment loaded so far, submitted 10 Sept 2026, [^.]+\. Other saved assessments are not loaded yet, so there may be one in between\. Load more to check\./);
+    assert.doesNotMatch(section.textContent, /the previous assessment|Previous/);
+    assert.equal(section.querySelector('caption').textContent, 'Reported implementation, earlier and selected');
+    assert.doesNotMatch(section.textContent, /older ones/);
+    assert.match(section.textContent, /Other saved assessments are not loaded yet and may be from any date\. Load more to include them\./);
+    // Once every page is loaded, October is the true previous submission.
+    click(dom, 'Load more'); await flush();
+    click(dom, 'Compare with previous assessment'); await flush();
+    section = trendSection(dom);
+    assert.deepEqual(trendRows(dom)[0], ['Overall', '100.0%', '46.4%–60.7%']);
+    assert.match(section.textContent, /Compared with the previous assessment, submitted 10 Oct 2026, [^.]+\./);
+    assert.deepEqual(section.querySelector('.picture-trend-history').querySelectorAll('li')
+        .map(item => item.textContent.slice(0, 11)), ['10 Nov 2026', '10 Oct 2026', '10 Sept 202']);
+    dom.controller.destroy();
+});
+
+test('the Overview states plan submission usage in plain English, and a contact path once it is used up', async () => {
+    const record = mixed(), summary = clone(record);
+    delete summary.responses; delete summary.submission;
+    for (const [allowance, expected, exhausted] of [[{ used: 3, limit: 5 }, '3 of 5 assessment submissions used on your plan.', false],
+        [{ used: 5, limit: 5 }, '5 of 5 assessment submissions used on your plan.', true]]) {
+        const client = { list: async () => ({ assessments: [summary], nextAfterAssessmentId: null, submissionAllowance: allowance }),
+            read: async () => ({ assessment: clone(record) }) };
+        const dom = setup({ client }); await flush();
+        const usage = dom.root.querySelector('.picture-allowance');
+        assert.ok(usage); assert.ok(usage.textContent.startsWith(expected));
+        const link = usage.querySelector('a');
+        assert.equal(!!link, exhausted);
+        if (exhausted) { assert.equal(link.href, '/contact.html'); assert.match(usage.textContent, /cannot submit another assessment/); }
+        assert.doesNotMatch(usage.textContent, /\$|NZD|price|upgrade/i);
+        dom.controller.destroy();
+    }
+    const dom = setup(); await flush();
+    assert.equal(dom.root.querySelector('.picture-allowance'), null);
+});
+
+test('the Overview loads through the real client when the plan includes no assessment submissions', async () => {
+    const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]);
+    seed.assessments = [mixed()];
+    const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures);
+    // The server reports a zero-capacity product grant as { used: 0, limit: 0 } on the list.
+    const fetch = async (url, init) => {
+        const response = await transport.fetch(url, init), text = await response.text(), body = JSON.parse(text);
+        const patched = Object.hasOwn(body, 'nextAfterAssessmentId') ? JSON.stringify({ ...body, submissionAllowance: { used: 0, limit: 0 } }) : text;
+        return { ...response, text: async () => patched };
+    };
+    const dom = setup({ client: createClient({ metadata: fixtures.metadata, fetch }) }); await flush();
+    assert.doesNotMatch(dom.root.textContent, /unavailable/i);
+    assert.ok(dom.root.querySelector('select'));
+    const usage = dom.root.querySelector('.picture-allowance');
+    assert.ok(usage);
+    assert.equal(usage.textContent, 'Your plan does not include assessment submissions. ' +
+        'You can still read your saved assessments. Contact No Fries about more submissions');
+    assert.equal(usage.querySelector('a').href, '/contact.html');
+    dom.controller.destroy();
+});
+
+function submittedWith(optionFor) {
+    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
+    const responses = allResponses().map((row, index) => {
+        const optionId = optionFor(index);
+        return { ...row, optionId, rationale: optionId === 'not_applicable' ? { text: 'Synthetic exclusion.' } : null };
+    });
+    let version = null;
+    for (const command of [createCommand('assessment-gaps', 'create-gaps', 'Synthetic office scope.'),
+        saveCommand('assessment-gaps', 0, 'save-gaps', responses), submitCommand('assessment-gaps', 1, 'submit-gaps')]) {
+        version = makeVersion({ ...tenant.scope, actorSubjectKey: SUBJECT, assessmentId: command.assessmentId,
+            action: command.action, expectedRevision: command.expectedRevision, payload: command.payload },
+        command.idempotencyKey, version, tenant.state.tenantAggregate, NOW);
+    }
+    return projectNcscDetail(version);
+}
+function gapView(dom) {
+    const section = dom.root.querySelector('.picture-top-gaps');
+    return { section, heading: section.querySelector('h3').textContent,
+        items: section.querySelectorAll('li').map(item => ({ id: item.dataset.gapItem, title: item.querySelector('h4').textContent, text: item.textContent })) };
+}
+
+test('top three gaps put not-in-place answers first, then partial, in profile order, above the metrics', async () => {
+    const dom = setup(); await flush();
+    const { section, heading, items } = gapView(dom), questions = dom.fixtures.metadata.questions;
+    assert.equal(heading, 'Your top three gaps');
+    assert.deepEqual(items.map(item => item.id), [questions[10].id, questions[11].id, questions[3].id]);
+    assert.deepEqual(items.map(item => item.title), ['Provide and use a password manager', 'Sensitive-request verification check', 'Secure Configuration of Software']);
+    items.forEach((item, index) => {
+        const question = questions[[10, 11, 3][index]];
+        assert.ok(item.text.includes('Why it matters:') && item.text.includes(question.guidance.summary));
+        assert.ok(item.text.includes('What to do next:') && item.text.includes(question.smallBusiness.meaning));
+        assert.match(item.text, /You can start this with your team\.|Ask your IT provider to help with this\./);
+    });
+    assert.match(items[0].text, /Your answer: No/);
+    assert.match(items[2].text, /Your answer: Partial/);
+    const panel = dom.root.querySelector('.organisation-picture') || dom.root;
+    const order = panel.querySelectorAll('section').map(node => node.className);
+    assert.ok(order.indexOf('picture-top-gaps') < order.indexOf('picture-metric picture-primary'));
+    assert.equal(section.getAttribute('aria-labelledby'), section.querySelector('h3').id);
+    // The print-only copy of the shared provider summary carries the results
+    // view's own disclaimer ("not a risk ranking or certification"), so check
+    // that text exactly and the rest of the section for any such claim.
+    const printed = section.querySelector('.picture-summary-print');
+    assert.match(printed.textContent, /\nSelf-reported gaps; not a risk ranking or certification\.\n/);
+    assert.equal(printed.textContent.match(/certif|complian/gi).length, 1);
+    assert.doesNotMatch(section.textContent.replace(printed.textContent, ''), /certif|complian/i);
+});
+
+test('top gaps show fewer than three when that is all there is', async () => {
+    const dom = setup({ records: [submittedWith(index => index === 5 ? 'partial' : index === 8 ? 'no' : 'yes')] }); await flush();
+    const { heading, items } = gapView(dom), questions = dom.fixtures.metadata.questions;
+    assert.equal(heading, 'Your top gaps');
+    assert.deepEqual(items.map(item => item.id), [questions[8].id, questions[5].id]);
+});
+
+test('top gaps say so plainly when there are none, and point to unknown answers', async () => {
+    const dom = setup({ records: [submittedWith(index => index === 2 ? 'unknown' : index === 4 ? 'not_applicable' : 'yes')] }); await flush();
+    const { section, heading, items } = gapView(dom);
+    assert.equal(heading, 'Your top gaps'); assert.equal(items.length, 0);
+    assert.match(section.textContent, /You did not report any controls as not in place or partly in place\./);
+    assert.match(section.textContent, /2 answers are still unknown or to confirm\. Confirm them to check for gaps\./);
+});
+
+test('top gap selection uses existing weights before answer and profile order, with careful fallbacks', () => {
+    const metadata = { controls: [{ id: 'c1', title: 'First' }, { id: 'c2', title: 'Second' }],
+        questions: [{ id: 'q1', controlId: 'c1', guidance: {} }, { id: 'q2', controlId: 'c2', guidance: { startingActions: ['Start here.'] } },
+            { id: 'q3', controlId: 'c2', prompt: 'Third prompt', guidance: {} }] };
+    const row = (itemId, responseOptionId, weight) => ({ itemId, responseOptionId, weight, answer: responseOptionId });
+    const result = { domains: [{ controls: [{ questions: [row('q1', 'no', 1), row('q2', 'partial', 2), row('q3', 'yes', 3)] }] }] };
+    const gaps = picture.topGaps(result, metadata);
+    assert.deepEqual(gaps.map(gap => gap.itemId), ['q2', 'q1']);
+    assert.equal(gaps[0].next, 'Start here.');
+    assert.equal(gaps[1].why, 'This control helps lower the chance or impact of a cyber incident for your business.');
+    assert.equal(gaps[1].next, 'Agree who will look at this control and when you will check it again.');
+    assert.deepEqual(picture.topGaps(null, metadata), []);
+    assert.deepEqual(picture.topGaps(result, metadata, 1).map(gap => gap.itemId), ['q2']);
+});
+
+function summarySource() {
+    const fixtures = buildFixtures();
+    return { questionnaire: require('../api/shared/protectedAssets/ncscQuestionnaire'), record: mixed(), metadata: fixtures.metadata };
+}
+describe('next step under the top gaps', () => {
+    const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+    async function withEnquiry(fetch) {
+        const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
+        const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures), dom = createDom();
+        if (fetch !== undefined) { dom.window.fetch = fetch; dom.window.AbortController = AbortController; }
+        const controller = picture.mount(dom.root, { metadata: fixtures.metadata, organisationId: seed.model.context.organisationId,
+            client: createClient({ metadata: fixtures.metadata, fetch: transport.fetch }), displayName: 'Synthetic organisation A' });
+        await flush();
+        const panel = dom.root.querySelector('.picture-top-gaps').querySelector('.picture-next-steps');
+        return { dom, controller, panel, help: panel.querySelector('.picture-next-steps-help'), link: panel.querySelector('a') };
+    }
+    test('shows a fixed contact link when enquiries are available', async () => {
+        const fetch = jest.fn(async () => reply(200, { available: true, promote: false }));
+        const { panel, help, link, controller } = await withEnquiry(fetch);
+        assert.equal(panel.hidden, false); assert.equal(help.hidden, false);
+        assert.equal(link.textContent, 'Get help closing these gaps');
+        assert.equal(link.href, '/contact.html');
+        assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
+        controller.destroy();
+    });
+    test('reads availability with a bare same-origin GET and sends nothing about the assessment', async () => {
+        const fetch = jest.fn(async () => reply(200, { available: true }));
+        const { controller } = await withEnquiry(fetch);
+        assert.equal(fetch.mock.calls.length, 1);
+        const [url, init] = fetch.mock.calls[0];
+        assert.equal(url, '/api/enquiry');
+        assert.equal(init.method, 'GET'); assert.equal(init.body, undefined);
+        assert.equal(init.credentials, 'same-origin'); assert.equal(init.cache, 'no-store');
+        assert.equal(JSON.stringify(init.headers), JSON.stringify({ Accept: 'application/json' }));
+        assert.ok(init.signal);
+        controller.destroy();
+    });
+    test.each([
+        ['unavailable', async () => reply(200, { available: false, promote: false })],
+        ['not OK', async () => reply(503, { available: true })],
+        ['an error', async () => { throw new Error('synthetic'); }],
+        ['missing', undefined]
+    ])('hides the help link when the enquiry status is %s', async (_name, fetch) => {
+        const { panel, help, controller } = await withEnquiry(fetch);
+        assert.equal(help.hidden, true);
+        assert.equal(panel.hidden, false);
+        assert.equal(panel.querySelector('summary').textContent, 'Copy or print this summary');
+        controller.destroy();
+    });
+    test('hides the help link and aborts when the status read takes longer than 5 seconds', async () => {
+        let signal;
+        const fetch = jest.fn((_url, init) => { signal = init.signal; return new Promise(() => {}); });
+        jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
+        try {
+            const { help, controller } = await withEnquiry(fetch);
+            await jest.advanceTimersByTimeAsync(4999);
+            assert.equal(signal.aborted, false);
+            await jest.advanceTimersByTimeAsync(1); await flush();
+            assert.equal(signal.aborted, true); assert.equal(help.hidden, true);
+            controller.destroy();
+        } finally { jest.useRealTimers(); }
+    });
+    test('offers Copy or print this summary with the same text as the results view', async () => {
+        const fetch = jest.fn(async () => reply(200, { available: false }));
+        const { dom, panel, controller } = await withEnquiry(fetch);
+        const handoff = panel.querySelector('details');
+        assert.equal(handoff.className, 'picture-summary');
+        assert.equal(handoff.querySelector('summary').textContent, 'Copy or print this summary');
+        const input = handoff.querySelector('textarea'), label = handoff.querySelector('label');
+        assert.equal(label.htmlFor, input.id); assert.equal(input.readOnly, true);
+        const { questionnaire, record, metadata } = summarySource();
+        assert.equal(input.value, questionnaire.providerSummary(record, metadata).text);
+        assert.match(input.value, /^Cyber security assessment\nScope: Synthetic office and cloud scope\./);
+        assert.doesNotMatch(input.value, /Synthetic organisation A|shared-preview-organisation|46\.4%/);
+        assert.equal(handoff.querySelectorAll('a').length, 0);
+        // The scrolling field is swapped for the full text on paper, so every follow-up prints.
+        const printed = handoff.querySelector('pre');
+        assert.equal(printed.className, 'picture-summary-print'); assert.equal(printed.textContent, input.value);
+        assert.equal(printed.getAttribute('aria-hidden'), 'true');
+        const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../app/dashboard.css'), 'utf8');
+        assert.match(css, /\.picture-summary-print \{ display: none;[^}]*white-space: pre-wrap;/);
+        assert.match(css, /@media print \{ \.picture-summary textarea \{ display: none; \} \.picture-summary-print \{ display: block; \} \}/);
+        assert.equal(dom.window.print, undefined);
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary']);
+        controller.destroy();
+    });
+    test('copies with the shared clipboard behaviour, falls back to selecting, prints, and calls no new endpoint', async () => {
+        const writeText = jest.fn(async () => undefined), print = jest.fn();
+        const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
+        const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures), dom = createDom();
+        const fetch = jest.fn(async () => reply(200, { available: true }));
+        Object.assign(dom.window, { fetch, AbortController, print, navigator: { clipboard: { writeText } } });
+        const controller = picture.mount(dom.root, { metadata: fixtures.metadata, organisationId: seed.model.context.organisationId,
+            client: createClient({ metadata: fixtures.metadata, fetch: transport.fetch }), displayName: 'Synthetic organisation A' });
+        await flush();
+        const handoff = dom.root.querySelector('.picture-next-steps').querySelector('details');
+        const input = handoff.querySelector('textarea'), status = handoff.querySelector('[role="status"]');
+        const press = label => handoff.querySelectorAll('button').find(button => button.textContent === label).click();
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Print these results']);
+        press('Copy summary'); await flush();
+        expect(writeText).toHaveBeenCalledWith(input.value); assert.equal(status.textContent, 'Summary copied.');
+        writeText.mockRejectedValueOnce(new Error('denied'));
+        press('Copy summary'); await flush();
+        assert.equal(status.textContent, 'Summary selected. Press Ctrl+C or Cmd+C to copy it.');
+        assert.equal(dom.document.activeElement, input);
+        press('Print these results'); assert.equal(print.mock.calls.length, 1);
+        expect(fetch.mock.calls.map(call => call[0])).toEqual(['/api/enquiry']);
+        controller.destroy();
+    });
+    test('a late availability answer after teardown changes nothing', async () => {
+        let resolve; const fetch = () => new Promise(done => { resolve = done; });
+        const { help, controller } = await withEnquiry(fetch);
+        controller.destroy(); resolve(reply(200, { available: true })); await flush();
+        assert.equal(help.hidden, true);
+    });
+});
+
+// Overview "Actions" card (I4): display-only over improvement/list responses.
+const ACTIONS_AS_OF = '2026-11-12T03:00:00.000Z';
+const SUBJECT_KEY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+function planAction(actionId, status, dueDate, extra = {}) {
+    return { actionId, status, dueDate, ownerSubjectKey: null, ...extra,
+        isOverdue: status !== 'completed' && dueDate !== null && dueDate < ACTIONS_AS_OF.slice(0, 10),
+        rationale: { suggestedAction: 'Synthetic action ' + actionId } };
+}
+const planList = actions => ({ schemaVersion: 1, asOf: ACTIONS_AS_OF, actions });
+function actionsCard(settings = {}) {
+    const opened = [], reads = [];
+    const readActions = settings.readActions || (() => { reads.push(1); return Promise.resolve(settings.value); });
+    const dom = setup({ ...settings, options: { openImprovement: value => opened.push(value), readActions, ...settings.options } });
+    return { ...dom, opened, reads };
+}
+
+test('Actions card shows overdue and next-14-day counts with up to three titles and label owners only', async () => {
+    const value = { more: false, lists: [planList([
+        planAction('o1', 'open', '2026-11-01', { ownerLabel: 'Aroha (office manager)' }),
+        planAction('o2', 'blocked', '2026-11-02', { ownerSubjectKey: SUBJECT_KEY }),
+        planAction('o3', 'in_progress', '2026-11-03'), planAction('o4', 'open', '2026-11-04'),
+        planAction('done', 'completed', '2026-10-01'), planAction('none', 'open', null)
+    ]), planList([
+        planAction('s1', 'open', '2026-11-12'), planAction('s2', 'open', '2026-11-26', { ownerLabel: '<b>Kiri</b>' }),
+        planAction('late', 'open', '2026-11-27')
+    ])] };
+    value.lists[0].actions[2].rationale.suggestedAction = '<img src=x onerror=alert(1)>';
+    const dom = actionsCard({ value }); await flush();
+    const card = dom.root.querySelector('.picture-actions');
+    assert.ok(card); assert.equal(dom.root.children[0], card);
+    assert.equal(card.getAttribute('aria-labelledby'), card.querySelector('h3').id);
+    assert.equal(card.querySelector('h3').textContent, 'Actions');
+    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Overdue (4)', 'Due in the next 14 days (2)']);
+    const [overdue, soon] = card.querySelectorAll('ul');
+    assert.deepEqual(overdue.querySelectorAll('.picture-action-title').map(node => node.textContent),
+        ['Synthetic action o1', 'Synthetic action o2', '<img src=x onerror=alert(1)>']);
+    assert.equal(card.querySelector('img'), null);
+    assert.deepEqual(soon.querySelectorAll('.picture-action-title').map(node => node.textContent), ['Synthetic action s1', 'Synthetic action s2']);
+    assert.match(overdue.textContent, /Due 1 Nov 2026 · Owner: Aroha \(office manager\)/);
+    assert.match(soon.textContent, /Owner: <b>Kiri<\/b>/);
+    assert.doesNotMatch(card.textContent, /aaaaaaaa|bbbbbbbb|Synthetic action (o4|done|none|late)/);
+    const link = card.querySelector('.picture-actions-plan');
+    assert.equal(link.textContent, 'View the full plan'); assert.equal(link.href, '#improvement-plan');
+    link.click(); assert.deepEqual(dom.opened, [undefined]);
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    click(dom, 'Refresh'); await flush();
+    assert.equal(dom.root.querySelectorAll('.picture-actions').length, 1);
+    dom.controller.destroy();
+});
+
+test('Actions card stays hidden until there is a submitted result', async () => {
+    const draft = buildFixtures().tenants[0].assessments.find(record => record.status !== 'submitted');
+    for (const records of [[], [draft]]) {
+        const dom = actionsCard({ records, value: { more: false, lists: [] }, options: { openCyber() {} } }); await flush(); await flush();
+        assert.equal(dom.root.querySelector('.picture-actions'), null);
+        assert.doesNotMatch(dom.root.textContent, /No actions yet|Start with your top three gaps/);
+        dom.controller.destroy();
+    }
+});
+
+test('Actions card empty state links to the top three gaps panel', async () => {
+    const dom = actionsCard({ value: { more: false, lists: [] } }); await flush();
+    const card = dom.root.querySelector('.picture-actions');
+    assert.equal(card.querySelector('.picture-actions-empty').textContent.replace(/\s+/g, ' ').trim(),
+        'No actions yet. Start with your top three gaps.');
+    assert.equal(card.querySelector('h4'), null);
+    const link = card.querySelector('a'), heading = dom.root.querySelector('.picture-top-gaps').querySelector('h3');
+    assert.equal(link.href, '#' + heading.id);
+    link.click();
+    assert.equal(dom.document.activeElement, heading); assert.equal(heading.tabIndex, -1);
+    dom.controller.destroy();
+});
+
+test('the Actions read starts beside the assessment read and does not wait for it', async () => {
+    const fixtures = buildFixtures(), seed = clone(fixtures.tenants[0]); seed.assessments = [mixed()];
+    const transport = createSyntheticTransport(seed, fixtures.metadata, fixtures);
+    const inner = createClient({ metadata: fixtures.metadata, fetch: transport.fetch });
+    let release; const gate = new Promise(resolve => { release = resolve; });
+    const client = { list: async input => { await gate; return inner.list(input); }, read: (...args) => inner.read(...args) };
+    const dom = actionsCard({ client, value: { more: true, lists: [planList([planAction('o1', 'open', '2026-11-01')])] } });
+    await flush();
+    assert.equal(dom.reads.length, 1);
+    assert.match(dom.root.querySelector('.picture-actions').textContent, /Overdue \(1\).*Counts cover the first five saved plans/s);
+    release(); await flush();
+    assert.equal(dom.root.querySelectorAll('.picture-actions').length, 1);
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    dom.controller.destroy();
+});
+
+test('a failed, invalid or unavailable Actions read leaves no card and the rest of Overview intact', async () => {
+    const invalid = { more: false, lists: [planList([{ ...planAction('o1', 'open', '2026-11-01'), rationale: null }])] };
+    for (const settings of [{ readActions: () => Promise.reject(new Error('synthetic')) },
+        { readActions: () => { throw new Error('synthetic'); } }, { value: invalid }, { value: null }]) {
+        const dom = actionsCard(settings); await flush();
+        assert.equal(dom.root.querySelector('.picture-actions'), null);
+        assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+        dom.controller.destroy();
+    }
+    let called = 0;
+    const dom = setup({ options: { readActions: () => { called++; return Promise.resolve({ more: false, lists: [] }); } } }); await flush();
+    assert.equal(called, 0); assert.equal(dom.root.querySelector('.picture-actions'), null);
+    dom.controller.destroy();
+});
+
+describe('honest saved-assessment comparisons', () => {
+    test.each([
+        ['greater coverage', allResponses('unknown'), allResponses('yes'), 'Previous 0 of 14; selected 14 of 14', 0, true],
+        ['same counts, different questions', allResponses().map((row, index) => ({ ...row, optionId: index === 0 ? 'unknown' : 'yes' })),
+            allResponses().map((row, index) => ({ ...row, optionId: index === 1 ? 'unknown' : 'yes' })),
+            'Previous 13 of 14; selected 13 of 14', 12, true],
+        ['unchanged unresolved coverage', mixedResponses(), mixedResponses(), 'Previous 12 of 14; selected 12 of 14', 12, false]
+    ])('%s stays descriptive, never an improvement or decline', async (_label, before, after, coverage, shared, differs) => {
+        const earlier = submittedAt('assessment-before', '2026-09-10T00:00:00.000Z', before);
+        const later = submittedAt('assessment-after', '2026-10-10T00:00:00.000Z', after);
+        const original = clone([earlier, later]), { client, writes } = trendClient([earlier, later]);
+        const dom = setup({ client }); await flush();
+        const metrics = dom.root.querySelector('.picture-metrics').textContent;
+        click(dom, 'Compare with previous assessment'); await flush();
+        const section = trendSection(dom);
+        assert.ok(section.querySelector('.picture-trend-coverage').textContent.includes(coverage));
+        assert.ok(section.textContent.includes(shared + ' questions have one of these answers in both.'));
+        assert.match(section.textContent, /Unknown and unapproved N\/A answers remain unresolved/);
+        assert.match(section.textContent, /Not comparable as improvement or decline/);
+        assert.equal(section.textContent.includes('The set of questions answered Yes, Partial or No also differs.'), differs);
+        assert.doesNotMatch(section.textContent, /Up \d|Down \d|No change|Lower-bound change/);
+        assert.deepEqual(section.querySelector('thead').querySelectorAll('th').map(cell => cell.textContent), ['Area', 'Previous', 'Selected']);
+        assert.equal(dom.root.querySelector('.picture-metrics').textContent, metrics);
+        assert.deepEqual([earlier, later], original); assert.equal(writes(), 0);
+        dom.controller.destroy();
+    });
+
+    test.each(['profile', 'weights', 'tenant'])('a rejected %s binding cannot supply comparison coverage', async field => {
+        const earlier = submittedAt('assessment-before', '2026-09-10T00:00:00.000Z', allResponses('yes'));
+        const later = submittedAt('assessment-after', '2026-10-10T00:00:00.000Z', allResponses('no'));
+        const { client } = trendClient([earlier, later]), read = client.read;
+        client.read = async id => {
+            const response = await read(id);
+            if (id === earlier.assessmentId) {
+                if (field === 'profile') response.assessment.profileRef.profileVersion = 'unaccepted-profile';
+                if (field === 'weights') response.assessment.submission.evaluation.atoms[0].weight = 2;
+                if (field === 'tenant') response.assessment.submission.evaluation.provenance.organisationId = 'another-organisation';
+            }
+            return response;
+        };
+        const dom = setup({ client }); await flush();
+        click(dom, 'Compare with previous assessment'); await flush();
+        const section = trendSection(dom);
+        assert.match(section.textContent, /results could not be shown, so no change is shown/);
+        assert.equal(section.querySelector('table'), null);
+        assert.equal(section.querySelector('.picture-trend-coverage'), null);
+        assert.match(dom.root.querySelector('.picture-metrics').textContent, /0.0%/);
+        dom.controller.destroy();
+    });
+});
+
+test('one live status announces loading and its end without leaving the page', async () => {
+    let release; const record = mixed();
+    const client = { list: () => new Promise(done => { release = () => done({ assessments: [record], nextAfterAssessmentId: null }); }),
+        read: async () => ({ assessment: record }) };
+    const dom = setup({ client });
+    const status = dom.root.querySelector('.picture-status');
+    assert.equal(status.getAttribute('role'), 'status');
+    assert.equal(status.textContent, 'Loading saved assessment…'); assert.equal(status.hidden, false);
+    assert.ok(!status.classList.contains('picture-status-quiet'));
+    release(); await flush();
+    // The same element stays in place, so screen readers hear the change.
+    assert.equal(dom.root.querySelector('.picture-status'), status);
+    assert.equal(status.parentElement, dom.root);
+    assert.equal(status.textContent, 'Saved assessment loaded.');
+    assert.ok(status.classList.contains('picture-status-quiet'));
+    assert.match(dom.root.textContent, /46\.4%–60\.7%/);
+    dom.controller.destroy();
+});
+
+test('an empty organisation hears that there are no saved assessments yet', async () => {
+    const dom = setup({ records: [] }); await flush();
+    const status = dom.root.querySelector('.picture-status');
+    assert.equal(status.textContent, 'No saved assessments yet.');
+    assert.ok(status.classList.contains('picture-status-quiet'));
+    dom.controller.destroy();
 });
