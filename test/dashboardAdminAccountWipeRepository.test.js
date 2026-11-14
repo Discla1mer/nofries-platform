@@ -1,5 +1,5 @@
 'use strict';
-const { createAccountWipeRepository, RESET_TABLES, DELETE_TENANT_TABLES, DELETE_ACCOUNT_TABLES } = require('../api/shared/dashboardAdmin/accountWipeRepository');
+const { createAccountWipeRepository, RESET_TABLES, DELETE_TENANT_TABLES, DELETE_FIRST_TABLES, DELETE_ACCOUNT_TABLES } = require('../api/shared/dashboardAdmin/accountWipeRepository');
 
 const uid = n => '50000000-0000-4000-8000-' + String(n).padStart(12, '0');
 const SUBJECT = uid(1) + ':' + uid(2);
@@ -27,7 +27,12 @@ test('delete runs as the wipe capability in one transaction, children before par
     expect(f.statements[0][0]).toBe('BEGIN');
     expect(f.statements[1][0]).toBe('SET LOCAL ROLE nofries_account_wipe');
     expect(f.statements.at(-1)[0]).toBe('COMMIT');
-    expect(deletes(f.statements)).toEqual([...DELETE_TENANT_TABLES, ...DELETE_TENANT_TABLES, ...DELETE_ACCOUNT_TABLES]);
+    expect(deletes(f.statements)).toEqual([...DELETE_FIRST_TABLES, ...DELETE_TENANT_TABLES, ...DELETE_TENANT_TABLES, ...DELETE_ACCOUNT_TABLES]);
+    // Non-deferrable 0005 keys: receipts/audit before bindings, bindings before admission decisions, proofs before cases.
+    const at = table => DELETE_TENANT_TABLES.indexOf(table);
+    expect(at('dashboard_identity_bindings')).toBeLessThan(at('dashboard_admission_decisions'));
+    expect(at('dashboard_runtime_receipts')).toBeLessThan(at('dashboard_identity_bindings'));
+    expect(at('dashboard_onboarding_proofs')).toBeLessThan(at('dashboard_onboarding_cases'));
     expect(DELETE_TENANT_TABLES.indexOf('dashboard_organisations')).toBeLessThan(DELETE_TENANT_TABLES.indexOf('dashboard_tenants'));
     expect(DELETE_TENANT_TABLES.indexOf('dashboard_starter_scopes')).toBeLessThan(DELETE_TENANT_TABLES.length);
     expect(result).toEqual({ mode: 'delete', tenants: 2, counts: expect.objectContaining({ dashboard_tenants: 4, dashboard_starter_accounts: 2 }) });
@@ -47,7 +52,8 @@ test('every tenant is checked against the account before its rows are deleted', 
     await createAccountWipeRepository(f.pool).delete(scope);
     const sql = f.statements.map(([text]) => text);
     const firstTenantCheck = sql.findIndex(text => text.startsWith('SELECT 1 FROM nofries.dashboard_starter_scopes'));
-    expect(firstTenantCheck).toBeLessThan(sql.findIndex(text => text.startsWith('DELETE')));
+    expect(firstTenantCheck).toBeLessThan(sql.findIndex(text => text.startsWith('DELETE') && !text.includes('dashboard_session_gates')));
+    expect(sql.findIndex(text => text.startsWith('SELECT 1 FROM nofries.dashboard_starter_accounts'))).toBeLessThan(sql.findIndex(text => text.startsWith('DELETE')));
     expect(sql.filter(text => text.startsWith('SELECT 1 FROM nofries.dashboard_starter_scopes'))).toHaveLength(2);
 });
 

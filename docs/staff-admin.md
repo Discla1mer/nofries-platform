@@ -76,12 +76,12 @@ Signup listing (`NOFRIES_DASHBOARD_ADMIN_ENABLED`, `NOFRIES_DASHBOARD_ADMIN_BIND
 
 ## Reset and delete (being built, not yet available)
 
-Joel decided on 14 Nov 2026 that the console offers three account actions: suspend (above), **reset** (clear an account's assessments, evidence and improvement plans, keep its organisations and sign-in) and **delete** (remove the account, its email and all its data, including the sign-in identity).
+The console is to offer three account actions: suspend (above), **reset** (clear an account's assessments, evidence and improvement plans, keep its organisations and sign-in) and **delete** (remove the account, its email and all its data, including the sign-in identity).
 
 The database part is migration `0025_account_wipe_role.sql` and `api/shared/dashboardAdmin/accountWipeRepository.js`:
 
 - `nofries_account_wipe` is a NOLOGIN role with only SELECT and DELETE. Its row-level policies see one tenant, account and subject at a time, named in transaction-local settings (`nofries.wipe_tenant_id`, `nofries.wipe_account_id`, `nofries.wipe_subject_key`). It can never insert or update.
 - The repository checks that the account exists under that subject and that every tenant belongs to the account, then deletes children before parents and commits once. Any error rolls everything back.
-- The migration grants the role to no login. Before reset or delete can run in production, the owner applies 0025 and grants the role to the app's database login with `SET` (no `INHERIT`). Both are owner-approved production steps.
+- The migration grants the role to no login. Before reset or delete can run in production, the owner applies 0025 and grants the role to the app's database login with `SET` (no `INHERIT`). Both are one-way production steps for the repository owner.
 
 Blob records, the Entra External ID user, the console controls and their audit records come in later changes behind `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE`. Deleted data stays in backups until backup retention expires.

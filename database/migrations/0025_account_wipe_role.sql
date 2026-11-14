@@ -1,4 +1,4 @@
--- Staff-initiated account reset and delete (Joel, 14 Nov 2026).
+-- Staff-initiated account reset and delete.
 --
 -- A new NOLOGIN capability, nofries_account_wipe, may read and delete rows of
 -- exactly one account per transaction, selected by transaction-local settings:
@@ -6,8 +6,7 @@
 --   nofries.wipe_account_id  the starter account
 --   nofries.wipe_subject_key the account's sign-in subject
 -- It cannot insert or update anything, owns nothing, and is granted to no
--- login here. A login gets it only by a separate, owner-approved production
--- grant. The staff console sets the settings, deletes in a fixed order and
+-- login here. A login gets it only by a separate production grant. The staff console sets the settings, deletes in a fixed order and
 -- commits once (api/shared/dashboardAdmin/accountWipeRepository.js).
 --
 -- No other role's privileges or policies change. Funnel daily counts hold no

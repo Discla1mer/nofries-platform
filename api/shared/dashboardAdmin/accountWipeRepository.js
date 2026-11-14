@@ -16,18 +16,23 @@ const RESET_TABLES = Object.freeze([
     'dashboard_ncsc_assessments', 'dashboard_ncsc_assessment_receipts', 'dashboard_ncsc_assessment_revisions'
 ]);
 // Delete also removes everything that records the organisation itself.
+// Referencing rows go before the rows they reference wherever the foreign key
+// is not deferrable (0005: receipts and audit before bindings, bindings before
+// admission decisions, onboarding proofs before decisions and cases); the
+// deferrable cycles are complete by COMMIT.
 const DELETE_TENANT_TABLES = Object.freeze([...RESET_TABLES,
     'email_outbox',
+    'dashboard_runtime_receipts', 'dashboard_runtime_audit', 'dashboard_identity_bindings',
     'dashboard_onboarding_proofs', 'dashboard_onboarding_decisions', 'dashboard_onboarding_cases',
-    'dashboard_admission_decisions', 'dashboard_admission_authorities',
-    'dashboard_identity_bindings', 'dashboard_runtime_receipts', 'dashboard_runtime_audit', 'dashboard_operation_receipts',
+    'dashboard_admission_decisions', 'dashboard_admission_authorities', 'dashboard_operation_receipts',
     'dashboard_usage', 'dashboard_advisor_assignments', 'dashboard_feature_flags', 'dashboard_entitlement_states',
     'dashboard_membership_states', 'signup_acceptance_receipts', 'dashboard_starter_scopes',
     'dashboard_organisations', 'dashboard_tenants'
 ]);
-// Then the account and its sign-in subject.
-const DELETE_ACCOUNT_TABLES = Object.freeze(['email_preferences', 'dashboard_starter_accounts',
-    'dashboard_session_gates', 'signup_registrations']);
+// Customer session gates reference bindings and onboarding proofs without
+// deferral, so they go first; the account and subject rows go last.
+const DELETE_FIRST_TABLES = Object.freeze(['dashboard_session_gates']);
+const DELETE_ACCOUNT_TABLES = Object.freeze(['email_preferences', 'dashboard_starter_accounts', 'signup_registrations']);
 const MAX_TENANTS = 64;
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
 
@@ -58,12 +63,18 @@ function createAccountWipeRepository(pool) {
             const owner = await client.query('SELECT 1 FROM nofries.dashboard_starter_accounts WHERE account_id = $1 AND subject_key = $2',
                 [scope.accountId, scope.subjectKey]);
             if (owner.rowCount !== 1) fail('account_wipe_account_not_found');
+            // Every tenant must belong to this account before anything is deleted;
+            // a foreign tenant id aborts the whole call.
             for (const tenantId of scope.tenantIds) {
                 await client.query("SELECT set_config('nofries.wipe_tenant_id', $1, true)", [tenantId]);
-                // Every tenant must belong to this account; a foreign tenant id aborts the whole call.
                 const scoped = await client.query('SELECT 1 FROM nofries.dashboard_starter_scopes WHERE tenant_id = $1 AND account_id = $2',
                     [tenantId, scope.accountId]);
                 if (scoped.rowCount !== 1) fail('account_wipe_tenant_mismatch');
+            }
+            if (mode === 'delete') add('dashboard_session_gates', (await client.query("DELETE FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind = 'customer'",
+                [scope.subjectKey])).rowCount);
+            for (const tenantId of scope.tenantIds) {
+                await client.query("SELECT set_config('nofries.wipe_tenant_id', $1, true)", [tenantId]);
                 for (const table of mode === 'delete' ? DELETE_TENANT_TABLES : RESET_TABLES) {
                     add(table, (await client.query(`DELETE FROM nofries.${table} WHERE tenant_id = $1`, [tenantId])).rowCount);
                 }
@@ -73,8 +84,6 @@ function createAccountWipeRepository(pool) {
                 add('email_preferences', (await client.query('DELETE FROM nofries.email_preferences WHERE account_id = $1', [scope.accountId])).rowCount);
                 add('dashboard_starter_accounts', (await client.query('DELETE FROM nofries.dashboard_starter_accounts WHERE account_id = $1 AND subject_key = $2',
                     [scope.accountId, scope.subjectKey])).rowCount);
-                add('dashboard_session_gates', (await client.query("DELETE FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind = 'customer'",
-                    [scope.subjectKey])).rowCount);
                 add('signup_registrations', (await client.query('DELETE FROM nofries.signup_registrations WHERE subject_key = $1', [scope.subjectKey])).rowCount);
             }
             await client.query('COMMIT');
@@ -89,4 +98,4 @@ function createAccountWipeRepository(pool) {
     return Object.freeze({ reset: input => run(input, 'reset'), delete: input => run(input, 'delete') });
 }
 
-module.exports = { createAccountWipeRepository, RESET_TABLES, DELETE_TENANT_TABLES, DELETE_ACCOUNT_TABLES };
+module.exports = { createAccountWipeRepository, RESET_TABLES, DELETE_TENANT_TABLES, DELETE_FIRST_TABLES, DELETE_ACCOUNT_TABLES };
