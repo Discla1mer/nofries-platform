@@ -92,7 +92,7 @@ function resetFunnelWritesForTests() { writesInFlight = 0; }
 
 function codedError(code) { const error = new Error(code); error.code = code; return error; }
 
-async function acquireClient(pool, timeoutMs) {
+async function acquireClient(pool, timeoutMs, onAbandoned = null) {
     let timer = null, timedOut = false;
     const connecting = Promise.resolve().then(() => pool.connect());
     const timeout = new Promise((_, reject) => {
@@ -103,7 +103,11 @@ async function acquireClient(pool, timeoutMs) {
         return await Promise.race([connecting, timeout]);
     } catch (error) {
         // A client that arrives after we gave up goes straight back to the pool.
-        if (timedOut) connecting.then(client => client.release(), () => {});
+        if (timedOut) {
+            const settle = () => { if (typeof onAbandoned === 'function') onAbandoned(); };
+            connecting.then(client => { client.release(); settle(); }, settle);
+            error.abandoned = true;
+        }
         throw error;
     } finally {
         clearTimeout(timer);
@@ -115,8 +119,12 @@ function createFunnelCountWriter({ pool, acquireTimeoutMs = ACQUIRE_TIMEOUT_MS }
     return async function record(event, day) {
         if (writesInFlight >= MAX_IN_FLIGHT) throw codedError('funnel_count_busy');
         writesInFlight += 1;
+        // After an acquire timeout the slot stays held until the abandoned
+        // connect settles, so the cap counts every pending pool request.
+        let release = true;
         try {
-            const client = await acquireClient(pool, acquireTimeoutMs);
+            const client = await acquireClient(pool, acquireTimeoutMs, () => { writesInFlight -= 1; })
+                .catch(error => { if (error && error.abandoned) release = false; throw error; });
             let discard = false;
             try {
                 await client.query('BEGIN');
@@ -134,7 +142,7 @@ function createFunnelCountWriter({ pool, acquireTimeoutMs = ACQUIRE_TIMEOUT_MS }
                 client.release(discard);
             }
         } finally {
-            writesInFlight -= 1;
+            if (release) writesInFlight -= 1;
         }
     };
 }
