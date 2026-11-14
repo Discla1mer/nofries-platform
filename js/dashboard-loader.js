@@ -1391,9 +1391,9 @@
                 onLocation: presentation && presentation.onLocation, onFunnelStep: funnelStep,
                 // Overview's first-use action opens the new-assessment step directly.
                 startNew: !!(presentation && presentation.startNew === true),
-                ...(presentation && typeof presentation.openImprovement === 'function' ? { openImprovement: function () {
+                ...(presentation && typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                     if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
-                    return presentation.openImprovement();
+                    return presentation.openImprovement(sourceAssessment);
                 } } : {}) });
         };
         mountCyber.readBaseline = async function () {

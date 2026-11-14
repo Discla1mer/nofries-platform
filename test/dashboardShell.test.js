@@ -383,6 +383,26 @@ function syntheticChild() {
     return child;
 }
 
+test('a submitted result opens the improvement plan for that assessment', async () => {
+    const model = readyCyber();
+    model.modules.find(item => item.key === 'improvement_plan').state = 'ready';
+    const source = { assessmentId: 'assessment-shown', revision: 2, revisionSha256: 'c'.repeat(64),
+        profileRef: { profileId: 'shown-profile' }, outputSha256: 'd'.repeat(64) };
+    let presentation;
+    const improvement = syntheticChild();
+    const dom = mount(model, {
+        initialRoute: 'cyber-security',
+        mountCyber(_root, value) { presentation = value; return { destroy() {}, requestLeave(commit) { commit(); return Promise.resolve(true); } }; },
+        mountImprovement: improvement.adapter
+    });
+    const opened = presentation.openImprovement(source);
+    assert.equal(await opened, true);
+    assert.equal(improvement.mounts.length, 1);
+    assert.equal(improvement.mounts[0].options.sourceAssessment, source);
+    assert.equal(dom.window.location.hash, '#improvement-plan');
+    dom.controller.destroy();
+});
+
 test('Overview carries the exact selected source through the accepted Improvement transition only', async () => {
     const model = readyCyber(); model.modules.find(item => item.key === 'improvement_plan').state = 'ready';
     const source = Object.freeze({ assessmentId: 'assessment-selected', revision: 2, revisionSha256: 'a'.repeat(64),

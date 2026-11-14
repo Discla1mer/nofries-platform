@@ -525,8 +525,14 @@
             if (!value || value.assessmentId !== id || value.moduleId !== metadata.moduleId || !profileMatches(value.profileRef, metadata.profileRef) ||
                 !Array.isArray(value.responses) || value.responses.some(function (item) { return !questionById.has(item.itemId); })) throw new Error('ncsc_invalid_response');
             const result = copy(value);
-            if (result.submission) result.submission = { revision: result.submission.revision, submittedAt: result.submission.submittedAt,
-                responseSetSha256: result.submission.responseSetSha256, results: resultModel(result, metadata, organisationId) };
+            if (result.submission) {
+                const outputSha256 = value.submission && value.submission.evaluation && value.submission.evaluation.outputSha256;
+                const results = resultModel(result, metadata, organisationId);
+                result.submission = { revision: result.submission.revision, submittedAt: result.submission.submittedAt,
+                    responseSetSha256: result.submission.responseSetSha256, results: results };
+                // Kept only so the plan hand-off can name this exact submission. It is not shown.
+                if (results && typeof outputSha256 === 'string' && /^[a-f0-9]{64}$/.test(outputSha256)) result.submission.outputSha256 = outputSha256;
+            }
             return result;
         }
         function savedAnswer(id, source) {
@@ -1310,16 +1316,36 @@
             focusTarget(content.querySelector('[id="ncsc-review-edit-' + id + '"]') || content.querySelector('[id="ncsc-review-title"]'));
         }
         function canEdit() { return editable && acknowledged && acknowledged.status !== 'submitted' && !conflict && !(pending && pending.command.action === 'submit'); }
+        // The same source Overview uses for "Plan this": this displayed submission, not the latest or the first saved plan.
+        function displayedPlanSource() {
+            const detail = acknowledged, submission = detail && detail.submission, profile = detail && detail.profileRef;
+            const outputSha256 = submission && submission.outputSha256;
+            const keys = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+            if (!detail || detail.status !== 'submitted' || !submission || !submission.results) return null;
+            if (typeof detail.assessmentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(detail.assessmentId)) return null;
+            if (!Number.isSafeInteger(detail.revision) || detail.revision < 0 || detail.revision > 128) return null;
+            if (typeof detail.revisionSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(detail.revisionSha256)) return null;
+            if (typeof outputSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(outputSha256)) return null;
+            if (!profile || typeof profile !== 'object') return null;
+            const profileRef = {};
+            for (let index = 0; index < keys.length; index += 1) {
+                const key = keys[index], item = profile[key];
+                if (typeof item !== 'string' || !item || item.length > 200 || key.endsWith('Sha256') && !/^[a-f0-9]{64}$/.test(item)) return null;
+                profileRef[key] = item;
+            }
+            return { assessmentId: detail.assessmentId, revision: detail.revision, revisionSha256: detail.revisionSha256, profileRef: profileRef, outputSha256: outputSha256 };
+        }
         function renderResults(results) {
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
-            // The plan is created only when someone chooses create. Say so here,
-            // and only offer the link when the dashboard can open that page.
-            if (typeof options.openImprovement === 'function') {
+            // The plan is created only when someone chooses create. The link carries this submission,
+            // so an older saved plan is not offered in its place.
+            const planSource = displayedPlanSource();
+            if (typeof options.openImprovement === 'function' && planSource) {
                 const follow = node('section', 'ncsc-plan-followup');
                 follow.append(node('p', '', 'These results can become your improvement plan. Open Improvement plan and create it from this result. It lists what to fix, with an owner and a due date for each item. Submitting does not create the plan by itself.'));
                 follow.append(button('Open improvement plan', function () {
-                    if (live() && typeof options.openImprovement === 'function') options.openImprovement();
+                    if (live() && typeof options.openImprovement === 'function') options.openImprovement(planSource);
                 }, 'dashboard-button dashboard-button-secondary'));
                 panel.append(follow);
             }

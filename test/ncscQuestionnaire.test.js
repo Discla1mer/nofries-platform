@@ -3349,14 +3349,19 @@ describe('final submission review step', () => {
         const h = await backend();
         await h.execute(createCommand());
         await h.execute(saveCommand());
-        await h.execute(submitCommand());
+        const submitted = await h.execute(submitCommand());
+        const assessment = submitted.assessment;
         const opened = [];
-        const ui = await resumeUi(h, { openImprovement() { opened.push('open'); return Promise.resolve(true); } });
+        const ui = await resumeUi(h, { openImprovement(source) { opened.push(source); return Promise.resolve(true); } });
         try {
             expect(ui.root.textContent).toContain('Submitting does not create the plan by itself.');
             expect(ui.root.textContent).not.toContain('improvement plan was built');
             control(ui, 'Open improvement plan').click();
-            expect(opened).toEqual(['open']);
+            const keys = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+            expect(opened).toEqual([{ assessmentId: assessment.assessmentId, revision: assessment.revision,
+                revisionSha256: assessment.revisionSha256,
+                profileRef: Object.fromEntries(keys.map(key => [key, assessment.profileRef[key]])),
+                outputSha256: assessment.submission.evaluation.outputSha256 }]);
         } finally { ui.controller.destroy(); }
     });
 

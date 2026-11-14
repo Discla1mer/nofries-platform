@@ -461,9 +461,9 @@
                 });
                 let mountedChild;
                 if (improvementReady) {
-                    presentation.openImprovement = function () {
+                    presentation.openImprovement = function (sourceAssessment) {
                         if (!active() || child !== mountedChild) return Promise.resolve(false);
-                        return navigate(improvementReady.route, true);
+                        return navigate(improvementReady.route, true, undefined, undefined, sourceAssessment);
                     };
                 }
                 presentation.onLocation = function (location) {
