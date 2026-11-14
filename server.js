@@ -61,6 +61,8 @@ const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/sha
 const { requestBodySize } = require('./api/shared/requestLimits');
 const { createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest } = require('./api/shared/funnelCounts');
 const { PATH: UNSUBSCRIBE_PATH, MAX_BODY_BYTES: UNSUBSCRIBE_BODY_BYTES, createUnsubscribeWriter, handleUnsubscribeRequest } = require('./api/shared/lifecycleEmail/unsubscribeEndpoint');
+const { PATH: EMAIL_SETTINGS_PATH, MAX_BODY_BYTES: EMAIL_SETTINGS_BODY_BYTES, handleEmailSettingsRequest } = require('./api/shared/lifecycleEmail/emailSettings');
+const { createEmailSettingsStore } = require('./api/shared/lifecycleEmail/emailSettingsStore');
 const { logSafeFailure: logStaffAuthFailure } = require('./api/shared/browserAuthDiagnostics');
 const { createAuthLoginFunction } = require('./api/authLogin');
 const { createAuthCallbackFunction } = require('./api/authCallback');
@@ -639,6 +641,25 @@ const recordUnsubscribe = funnelPool ? createUnsubscribeWriter({ pool: funnelPoo
 app.all(UNSUBSCRIBE_PATH, express.urlencoded({ extended: false, limit: UNSUBSCRIBE_BODY_BYTES, parameterLimit: 4 }), asyncRoute(async (req, res) => {
     sendResult(res, await handleUnsubscribeRequest(req, { env: apiEnvironment, record: recordUnsubscribe,
         clientKey: req.ip || req.socket.remoteAddress, log: console }));
+}));
+// Signed-in email settings (#151 E7). Customer sessions only: the existing
+// legacy or external customer session reader supplies the subject key, and the
+// store sets it as the RLS context. Without a dashboard database it is a 404.
+const emailSettingsStore = funnelPool ? createEmailSettingsStore({ pool: funnelPool }) : null;
+async function readEmailSettingsSubject(cookie) {
+    const legacy = /(?:^|;)\s*__Host-nofries-customer=/.test(cookie);
+    const external = /(?:^|;)\s*__Host-nofries-external-customer=/.test(cookie);
+    const reader = legacy && !external ? dashboard?.authServices.customer
+        : external && !legacy ? dashboard?.authServices.externalCustomer : null;
+    if (!reader) return null;
+    const details = await reader.session.readSessionDetails(cookie);
+    return details && details.identity && details.identity.isAuthenticated === true ? details.identity.subjectKey : null;
+}
+app.all(EMAIL_SETTINGS_PATH, (req, res, next) => emailSettingsStore ? next()
+    : sendResult(res, { status: 404, body: { error: 'Not found', code: 'not_found' } }),
+express.urlencoded({ extended: false, limit: EMAIL_SETTINGS_BODY_BYTES, parameterLimit: 4 }), asyncRoute(async (req, res) => {
+    sendResult(res, await handleEmailSettingsRequest(req, { env: authEnvironment || {}, readSubject: readEmailSettingsSubject,
+        store: emailSettingsStore, log: console }));
 }));
 app.use(express.json({ limit: '3mb' }));
 if (configuration.signupBootstrap) {

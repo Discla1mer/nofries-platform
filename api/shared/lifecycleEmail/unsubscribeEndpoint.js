@@ -122,7 +122,7 @@ ${form}</main>
 }
 
 const withHeaders = (result, extra) => ({ ...result, headers: { ...result.headers, ...extra } });
-const invalid = () => page(400, 'This link is not valid', ['Check that you used the full link from the email. You can also manage email from your account settings.']);
+const invalid = () => page(400, 'This link is not valid', ['Check that you used the full link from the email. You can also manage email from Email settings in your dashboard Account menu.']);
 
 function readToken(req) {
     const query = req && req.query && typeof req.query === 'object' ? req.query.t : undefined;
