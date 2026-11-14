@@ -40,7 +40,9 @@ async function signIn(source, container, account, signal, at) {
     const subjectKey = account.identitySubjectKey ?? account.activation?.subjectKey ?? null;
     if (!subjectKey) return { status: 'none', subjectKey: null };
     const own = account.organisations[0];
-    const found = await readSubject(container, subjectKey, signal);
+    let found;
+    try { found = await readSubject(container, subjectKey, signal); }
+    catch (_) { signal.throwIfAborted(); return { status: 'unavailable', subjectKey: null }; }
     try {
         const result = inspectCustomerAuthority({ source, blobName: found.name, etag: found.etag, observedAt: at, record: found.record },
             { sourceSha256: hash(source), subjectKey, tenantId: own.tenantId, organisationId: own.organisationId }, at);
@@ -65,6 +67,7 @@ async function organisations(store, account) {
 }
 
 const MAX_LISTED_NAMES = 5000;
+const CONCURRENCY = 8;
 
 // Blob names are email hashes, so the cap is applied only after every name in
 // both stores is sorted newest first by blob creation time (names only, no
@@ -83,14 +86,14 @@ function createAccountListReader(sources, now = Date.now) {
             }
         }
         names.sort((a, b) => b.created - a.created || a.name.localeCompare(b.name));
-        const truncated = names.length > MAX_ACCOUNTS, rows = [];
-        for (const { entry: { source, container }, name } of names.slice(0, MAX_ACCOUNTS)) {
+        const truncated = names.length > MAX_ACCOUNTS, selected = names.slice(0, MAX_ACCOUNTS);
+        async function load({ entry: { source, container }, name }) {
             signal.throwIfAborted();
             const store = new AzureStarterAccountStore(container);
             const key = name.slice('customer-starter/'.length, -'.json'.length);
             let loaded;
-            try { loaded = await store.load(key); } catch (_) { rows.push({ provider: provider(source), readable: false }); continue; }
-            if (!loaded) continue;
+            try { loaded = await store.load(key); } catch (_) { return { provider: provider(source), readable: false }; }
+            if (!loaded) return null;
             const account = loaded.record, at = new Date(now()).toISOString();
             const login = await signIn(source, container, account, signal, at);
             const row = { provider: provider(source), readable: true, email: account.email, accountType: account.accountType,
@@ -100,8 +103,16 @@ function createAccountListReader(sources, now = Date.now) {
             try { row.organisations = await organisations(store, account); } catch (_) { row.organisationsComplete = false; }
             if (includeSelector && login.subjectKey && login.status !== 'invalid') row.selector = { provider: provider(source),
                 subjectKey: login.subjectKey, tenantId: account.organisations[0].tenantId, organisationId: account.organisations[0].organisationId };
-            rows.push(row);
+            return row;
         }
+        // Bounded concurrency keeps the list inside the request budget; output
+        // order is restored by the final sort.
+        const results = new Array(selected.length);
+        let next = 0;
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, selected.length) }, async () => {
+            while (next < selected.length) { const index = next++; results[index] = await load(selected[index]); }
+        }));
+        const rows = results.filter(row => row !== null);
         signal.throwIfAborted();
         rows.sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
         return { rows, truncated };

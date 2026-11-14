@@ -91,6 +91,18 @@ test('the cap keeps the newest accounts across both stores, not the first names 
     expect(result.rows.map(row => row.email)).not.toContain(`customer${1000 + MAX_ACCOUNTS}@example.test`);
 });
 
+test('a sign-in record read failure marks that row unavailable instead of failing the list', async () => {
+    const blobs = new Map(), good = account(1), flaky = account(2); put(blobs, good); put(blobs, flaky);
+    const base = container(blobs), flakyName = `customer-subjects/${subjectHash(flaky.subjectKey)}.json`;
+    const wrapped = { ...base, listBlobsFlat: base.listBlobsFlat, getBlockBlobClient(name) {
+        if (name === flakyName) return { async download() { throw Object.assign(new Error('timeout'), { statusCode: 500 }); } };
+        return base.getBlockBlobClient(name);
+    } };
+    const rows = (await createAccountListReader([{ source, container: wrapped }], () => NOW)(signal(), true)).rows;
+    expect(rows.map(row => row.signIn)).toEqual(['active', 'unavailable']);
+    expect(rows[1].selector).toBeUndefined();
+});
+
 test('the legacy admin store is not scanned, unreadable records are flagged and the list is capped', async () => {
     const legacy = { listBlobsFlat() { throw new Error('PRIVATE_UNEXPECTED_SCAN'); }, getBlockBlobClient() { throw new Error('PRIVATE_UNEXPECTED_READ'); } };
     const blobs = new Map();

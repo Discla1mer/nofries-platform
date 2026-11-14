@@ -129,7 +129,7 @@
     const listButton = document.getElementById('accountListLoad');
     const listStatus = document.getElementById('accountListStatus');
     const listResult = document.getElementById('accountListResults');
-    const SIGN_IN = { active: 'Active', revoked: 'Revoked', missing: 'No sign-in record', none: 'Not created yet', invalid: 'Record does not match' };
+    const SIGN_IN = { active: 'Active', revoked: 'Revoked', missing: 'No sign-in record', none: 'Not created yet', invalid: 'Record does not match', unavailable: 'Could not be read' };
     const date = value => value ? new Date(value).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
     function open(row) {
         email.value = row.email;
