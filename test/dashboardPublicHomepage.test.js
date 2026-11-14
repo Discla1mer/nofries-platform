@@ -46,7 +46,7 @@ test('account creation and login have distinct entries and availability is expli
     assert.doesNotMatch(accountCard, /For your company or your clients\./);
     assert.doesNotMatch(html, /<ol\b[^>]*\bclass="gateway-steps"/);
     assert.deepEqual([...accountCard.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)]
-        .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]), [['/login?intent=create', 'Create account'], ['/try', 'Try the demo'], ['#dashboard-benefits', 'How it works']]);
+        .map(match => [match[1], match[2].replace(/<span[\s\S]*?<\/span>/g, '').trim()]), [['/login?intent=create', 'Create account'], ['/try', 'Try the demo']]);
     assert.match(html, /class="homepage-login" href="\/login\?intent=login"/);
     assert.equal((html.match(/href="\/login\?intent=create"/g) || []).length, 1);
     assert.match(html, /id="dashboard-benefits"/);
@@ -163,7 +163,6 @@ test('the simplified homepage preserves all protected entry and integrity marker
 
 test('in-page homepage links move keyboard focus to their target section', () => {
     const links = [...html.matchAll(/<a\b[^>]*href="#([^"]+)"/g)].map(match => match[1]);
-    assert.ok(links.includes('dashboard-benefits'));
     for (const id of links) {
         // A target with tabindex="-1" receives focus on fragment navigation, so the next Tab continues from it.
         assert.match(html, new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*\\btabindex="-1"`), `#${id} is not focusable`);

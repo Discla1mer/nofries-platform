@@ -65,7 +65,7 @@ test('the App Service never serves or packages the demo; only the static build p
     assert.ok([...PUBLIC_ROOT_FILES, ...PUBLIC_SCRIPT_FILES].every(file => !/try|demo/i.test(file)));
     assert.match(read('scripts/build-static.js'), /require\('\.\.\/demo\/try\/document'\)/);
     // The homepage links the demo, and the public Static Web App serves /try from the built file.
-    assert.equal((read('index.html').match(/<a class="homepage-secondary" href="\/try">Try the demo /g) || []).length, 1);
+    assert.equal((read('index.html').match(/<a class="button homepage-primary" href="\/try">Try the demo /g) || []).length, 1);
     assert.deepEqual(JSON.parse(read('staticwebapp.config.json')).routes.filter(route => route.route === '/try').map(route => route.rewrite), ['/app/try.html']);
     for (const file of ['scripts/build-app-service.js', 'lib/productionApplication.js', 'app-service.js']) {
         assert.doesNotMatch(read(file), /demo\/|tryDemo/, file);
