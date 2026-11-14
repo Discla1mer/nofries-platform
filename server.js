@@ -450,6 +450,12 @@ app.get('/release.json', (req, res) => {
 });
 
 app.use('/api', applyApiSecurityHeaders, applyPrivateHeaders, rateLimitApiRequests);
+// #151 F4: pages send anonymous funnel counts only after an API response they
+// already make carries this marker. Flag off: no marker, so no browser counts.
+app.use('/api', (req, res, next) => {
+    if (funnelCountsEnabled(apiEnvironment)) res.setHeader('X-NoFries-Funnel', 'on');
+    next();
+});
 // These exact protected routes own their bounded wire parsing before the
 // application's general JSON parser. There is no production composition.
 async function sendDashboardAdmin(req, res, route) {

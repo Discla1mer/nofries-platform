@@ -1325,12 +1325,17 @@
         show(cycle, 'queue');
         load(null, false);
     }
-    // Anonymous funnel count (#151 F4): one same-origin POST per step per page
-    // view, with no cookies, referrer or identifiers. The server answers 410
-    // while counts are off; after any refusal this page sends nothing more.
-    const funnelSent = new Set(); let funnelOff = false;
+    // Anonymous funnel count (#151 F4): sent only after an API response this
+    // page already makes carries X-NoFries-Funnel: on (the flag is on). One
+    // same-origin POST per step per page view, with no cookies, referrer or
+    // identifiers. After any refusal or error this page sends nothing more.
+    let funnelOn = false, funnelOff = false;
+    const funnelSent = new Set();
+    function funnelMarked(response) {
+        try { if (response && response.headers && response.headers.get('x-nofries-funnel') === 'on') funnelOn = true; } catch (_) { /* no marker */ }
+    }
     function funnelStep(step) {
-        if (funnelOff || funnelSent.has(step) || typeof window !== 'object' || !window || typeof window.fetch !== 'function') return;
+        if (!funnelOn || funnelOff || funnelSent.has(step) || typeof window !== 'object' || !window || typeof window.fetch !== 'function') return;
         funnelSent.add(step);
         try {
             window.fetch('/api/telemetry', { method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
@@ -1356,6 +1361,7 @@
             // cannot replace the dashboard snapshot.
             const result = await fetch(path, Object.assign({}, options, { headers: Object.assign({}, options.headers,
                 { 'X-NoFries-Dashboard-Generation': snapshot.generation }) }));
+            funnelMarked(result);
             if (!current(cycle)) throw invalid();
             if (result && [401, 403].includes(result.status)) {
                 const error = invalid(); error.status = result.status; failure(cycle, error); throw error;

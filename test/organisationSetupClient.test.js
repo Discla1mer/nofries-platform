@@ -970,35 +970,49 @@ test('step indicator marks one current step for each sign-up state', async () =>
 });
 
 describe('anonymous signup_started count (#151 F4)', () => {
+    const ON = { 'x-nofries-funnel': 'on' };
     const beaconReply = status => jest.fn(async () => ({ ok: status >= 200 && status < 300, status }));
     const sentEvents = beacon => beacon.mock.calls.map(([url, options]) => [url, JSON.parse(options.body).event]);
 
-    test('choosing Create account sends one same-origin count without cookies or referrer', async () => {
+    test('flag off (no marker on API responses): no count is ever sent', async () => {
         const beacon = beaconReply(204);
-        fixture({ search: '?intent=create', beacon });
-        await flush();
+        const h = fixture({ search: '?intent=create', beacon });
+        await h.reply(0, 200, { state: 'start' });
+        h.submit('form');
+        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' });
+        expect(beacon).not.toHaveBeenCalled();
+    });
+
+    test('flag on: choosing Create account sends one same-origin count without cookies or referrer', async () => {
+        const beacon = beaconReply(204);
+        const h = fixture({ search: '?intent=create', beacon });
+        expect(beacon).not.toHaveBeenCalled();
+        await h.reply(0, 200, { state: 'start' }, true, ON);
         expect(sentEvents(beacon)).toEqual([['/api/telemetry', 'signup_started']]);
         expect(beacon.mock.calls[0][1]).toMatchObject({ method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
             referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' } });
         expect(beacon.mock.calls[0][1].body).toBe('{"event":"signup_started"}');
+        h.submit('form');
+        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' }, true, ON);
+        expect(beacon).toHaveBeenCalledTimes(1);
     });
 
-    test('an accepted code request counts once per page view', async () => {
+    test('flag on: an accepted code request counts once', async () => {
         const beacon = beaconReply(204);
         const h = fixture({ beacon });
-        await h.reply(0, 200, { state: 'start' });
+        await h.reply(0, 200, { state: 'start' }, true, ON);
         expect(beacon).not.toHaveBeenCalled();
         h.submit('form');
-        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' });
+        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' }, true, ON);
         expect(sentEvents(beacon)).toEqual([['/api/telemetry', 'signup_started']]);
     });
 
-    test('a refused count (flag off answers 410) stops further counts on the page', async () => {
-        const beacon = beaconReply(410);
-        const h = fixture({ search: '?intent=create', beacon });
-        await flush();
-        expect(beacon).toHaveBeenCalledTimes(1);
-        await h.reply(0, 200, { state: 'start' });
+    test('a refused count stops further counts on the page', async () => {
+        const beacon = beaconReply(503);
+        const h = fixture({ beacon });
+        await h.reply(0, 200, { state: 'start' }, true, ON);
+        h.submit('form');
+        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' }, true, ON);
         expect(beacon).toHaveBeenCalledTimes(1);
     });
 });
