@@ -176,3 +176,14 @@ test('a retained account record version fails the delete and is found again from
     expect(second.kept[accountName]).toEqual([]);
     expect(await retry.inventory(email, signal())).toBeNull();
 });
+
+test('the legacy signup index is never touched', async () => {
+    const blobs = new Map(), email = 'index@example.test', a = account(1, email, 'company'); seed(a, blobs, email);
+    const ticket = `customer-starter/dashboard-admin-signup-index/writers/accounts/${starterAccountKey(email).slice('starter-accounts/'.length)}.json`;
+    blobs.set(ticket, {});
+    const storage = createAccountWipeStorage(container(blobs).value, container(new Map()).value);
+    const found = await storage.inventory(email, signal());
+    expect(found.exact.some(name => name.includes('dashboard-admin-signup-index'))).toBe(false);
+    await storage.delete(found, signal());
+    expect([...blobs.keys()]).toEqual([ticket]);
+});

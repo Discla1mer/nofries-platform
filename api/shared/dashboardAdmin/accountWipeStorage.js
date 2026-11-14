@@ -7,7 +7,8 @@
 // authority, and the account record last, so a retry after a partial failure
 // can still find everything that remains. Each
 // name is deleted with its stored versions where the storage account keeps
-// versions. Shared records (terms, schedules) are never touched. Returns
+// versions. Shared records (terms, schedules) and the legacy signup index
+// are never touched. Returns
 // counts only; no email or key leaves this module.
 const { createHash } = require('node:crypto');
 const { AzureStarterAccountStore } = require('../customerSignup/azureStarterAccountStore');
@@ -75,7 +76,9 @@ async function inventory(container, email, signal) {
         exact.push(`customer-starter/starter-setups/${uuid(slot.organisationId)}.json`, `customer-activations/${uuid(slot.activationId)}.json`,
             termsOfferKey(slot.tenantId, slot.organisationId));
     }
-    exact.push(`customer-starter/dashboard-admin-signup-index/writers/accounts/${starterAccountKey(email).slice('starter-accounts/'.length)}.json`);
+    // The legacy signup index (NOFRIES_DASHBOARD_ADMIN_BINDING) is not touched:
+    // removing only its writer ticket would leave a stale reference. Delete is
+    // refused while that listing is configured (see docs/staff-admin.md).
     return Object.freeze({ account, subjectKey, tenantIds: Object.freeze([...new Set(slots.map(slot => slot.tenantId))]),
         exact: Object.freeze([...new Set(exact)]), session: Object.freeze(session), prefixes: Object.freeze(prefixes), accountRecord: accountName });
 }
