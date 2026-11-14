@@ -102,3 +102,11 @@ test('delete removes customer and onboarding-discovery sessions of the subject, 
     expect(gates.length).toBeGreaterThan(0);
     for (const sql of gates) { expect(sql).toContain("kind IN ('customer', 'onboarding_discovery')"); expect(sql).not.toContain('operator_dashboard'); }
 });
+
+test('session-anchored receipts and audit are deleted only where they carry no tenant', async () => {
+    const f = fakePool();
+    await createAccountWipeRepository(f.pool).delete(scope);
+    const sessionDeletes = f.statements.map(([sql]) => sql).filter(sql => sql.startsWith('DELETE') && sql.includes('session_sha256 IN'));
+    expect(sessionDeletes).toHaveLength(2);
+    for (const sql of sessionDeletes) expect(sql).toContain('tenant_id IS NULL AND');
+});

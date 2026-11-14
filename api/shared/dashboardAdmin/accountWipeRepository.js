@@ -82,12 +82,14 @@ function createAccountWipeRepository(pool) {
                 if (scoped.rowCount !== 1) fail('account_wipe_tenant_mismatch');
             }
             if (mode === 'delete') {
-                // Rows tied to the customer's sessions rather than a tenant (for example
-                // the organisation directory read), then the sessions themselves.
+                // Rows tied to the customer's sessions and to no tenant (for example the
+                // organisation directory read), then the sessions themselves. Session
+                // rows in a tenant go with that tenant below; one in a tenant this
+                // account does not own makes the delete fail, never reach across.
                 const sessions = "SELECT session_sha256 FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind IN ('customer', 'onboarding_discovery')";
-                add('dashboard_runtime_receipts', (await client.query(`DELETE FROM nofries.dashboard_runtime_receipts WHERE anchor_session_sha256 IN (${sessions})`,
+                add('dashboard_runtime_receipts', (await client.query(`DELETE FROM nofries.dashboard_runtime_receipts WHERE tenant_id IS NULL AND anchor_session_sha256 IN (${sessions})`,
                     [scope.subjectKey])).rowCount);
-                add('dashboard_runtime_audit', (await client.query(`DELETE FROM nofries.dashboard_runtime_audit WHERE session_sha256 IN (${sessions})`,
+                add('dashboard_runtime_audit', (await client.query(`DELETE FROM nofries.dashboard_runtime_audit WHERE tenant_id IS NULL AND session_sha256 IN (${sessions})`,
                     [scope.subjectKey])).rowCount);
                 add('dashboard_session_gates', (await client.query("DELETE FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind IN ('customer', 'onboarding_discovery')",
                     [scope.subjectKey])).rowCount);

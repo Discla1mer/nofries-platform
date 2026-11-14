@@ -25,10 +25,13 @@ const ACTIVATE = 'UPDATE nofries.dashboard_starter_scopes SET activation=$1::jso
 
 module.exports = function registerAccountWipeTests() {
 test('migration 0025 grants only SELECT and DELETE to the new capability and changes no other role', () => {
-    const grants = migration.match(/\bGRANT\b[^;']*/g);
+    // Statements only: the header's rollback note names DROP and REVOKE.
+    const statements = migration.replace(/^\s*--.*$/gm, '');
+    const grants = statements.match(/\bGRANT\b[^;']*/g);
     expect(grants.every(line => /^GRANT (USAGE ON SCHEMA nofries|SELECT, DELETE ON .*) TO nofries_account_wipe$/.test(line.replace(/\s+/g, ' ')))).toBe(true);
-    expect(migration).not.toMatch(/nofries_runtime\b(?!.*FROM)|\bREVOKE\b|SECURITY\s+DEFINER|DISABLE\s+ROW|DROP\s+|ALTER\s+TABLE|\bINSERT\s+INTO|\bUPDATE\s+nofries/i);
-    expect(migration).toMatch(/WITH CHECK \(false\)/);
+    expect(statements).not.toMatch(/nofries_runtime\b(?!.*FROM)|\bREVOKE\b|SECURITY\s+DEFINER|DISABLE\s+ROW|DROP\s+|ALTER\s+TABLE|\bINSERT\s+INTO|\bUPDATE\s+nofries/i);
+    expect(statements).toMatch(/WITH CHECK \(false\)/);
+    expect(migration).toMatch(/^-- Rollback,/m);
 });
 
 (target ? describe : describe.skip)('staff account reset and delete (migration 0025)', () => {

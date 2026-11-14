@@ -84,4 +84,17 @@ The database part is migration `0025_account_wipe_role.sql` and `api/shared/dash
 - The repository checks that the account exists under that subject and that every tenant belongs to the account, then deletes children before parents and commits once. Any error rolls everything back.
 - The migration grants the role to no login. Before reset or delete can run in production, the owner applies 0025 and grants the role to the app's database login with `SET` (no `INHERIT`). Both are one-way production steps for the repository owner.
 
-Blob records, the Entra External ID user, the console controls and their audit records come in later changes behind `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE`. Deleted data stays in backups until backup retention expires.
+Blob records, the Entra External ID user, the console controls and their audit records come in later changes behind `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE`.
+
+Limits and refusals:
+
+- Delete is refused while the legacy signup listing (`NOFRIES_DASHBOARD_ADMIN_ENABLED` / `NOFRIES_DASHBOARD_ADMIN_BINDING`) is configured, because its published index is not deletion-aware.
+- Delete fails safe, with nothing changed, when a session the wipe cannot see still references the account's bindings: a staff `operator_dashboard` session, or another person's customer session in a consultant's client organisation. End those sessions, then retry.
+- Session-anchored runtime rows are removed only where they carry no tenant. A session row in an organisation the account does not own makes the delete fail rather than reach across.
+
+Retention after a delete:
+
+- Database backups and point-in-time restore keep the data until their retention expires.
+- Blob container soft delete, where enabled, keeps deleted blobs for its retention period.
+- Email proofs from earlier invitations, and the customer's browser-session blobs, are not looked up. They expire on their own.
+- The External ID user is deleted and then permanently removed from deleted items, so it is not restorable.

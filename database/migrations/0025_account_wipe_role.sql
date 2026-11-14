@@ -11,6 +11,12 @@
 --
 -- No other role's privileges or policies change. Funnel daily counts hold no
 -- account data and are not touched.
+--
+-- Rollback, before any login is granted the role: drop the *_account_wipe and
+-- *_account_wipe_session policies, REVOKE SELECT, DELETE on the 31 tables and
+-- USAGE on schema nofries from nofries_account_wipe, then DROP ROLE
+-- nofries_account_wipe. If a login was granted it, REVOKE that membership first.
+-- Nothing else depends on the role.
 
 DO $role$
 BEGIN
@@ -90,13 +96,15 @@ CREATE POLICY signup_registrations_account_wipe ON nofries.signup_registrations 
     WITH CHECK (false);
 
 -- Session-scoped runtime rows (for example the audit of a customer's
--- organisation directory read) carry no tenant. They reference the customer's
--- session and onboarding-discovery gates, so they are visible to the capability by that session.
+-- organisation directory read) carry no tenant. Rows with no tenant that
+-- reference the customer's session and onboarding-discovery gates are visible
+-- by that session; a session row in any tenant stays out of reach, so a
+-- foreign tenant's row makes the delete fail rather than reach across.
 CREATE POLICY dashboard_runtime_audit_account_wipe_session ON nofries.dashboard_runtime_audit FOR ALL TO nofries_account_wipe
-    USING (session_sha256 IN (SELECT g.session_sha256 FROM nofries.dashboard_session_gates g
+    USING (tenant_id IS NULL AND session_sha256 IN (SELECT g.session_sha256 FROM nofries.dashboard_session_gates g
         WHERE g.subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), '') AND g.kind IN ('customer', 'onboarding_discovery')))
     WITH CHECK (false);
 CREATE POLICY dashboard_runtime_receipts_account_wipe_session ON nofries.dashboard_runtime_receipts FOR ALL TO nofries_account_wipe
-    USING (anchor_session_sha256 IN (SELECT g.session_sha256 FROM nofries.dashboard_session_gates g
+    USING (tenant_id IS NULL AND anchor_session_sha256 IN (SELECT g.session_sha256 FROM nofries.dashboard_session_gates g
         WHERE g.subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), '') AND g.kind IN ('customer', 'onboarding_discovery')))
     WITH CHECK (false);
