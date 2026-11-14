@@ -14,12 +14,14 @@ const { verifyUnsubscribeToken, unsubscribeConfigured, MAX_TOKEN_LENGTH } = requ
 
 const PATH = '/api/emailPreferences';
 const MAX_BODY_BYTES = 1024;
-// Never clears or moves an earlier unsubscribe: an existing row that is already
-// unsubscribed is left exactly as it is.
+// Never clears or moves an earlier unsubscribe. An earlier settings unsubscribe
+// keeps its time but becomes 'link', because a link unsubscribe is permanent
+// and settings may turn back on only what was turned off in settings (E7).
 const UPSERT_SQL = `INSERT INTO nofries.email_preferences (account_id, email_type, unsubscribed_at, source)
     VALUES ($1, $2, clock_timestamp(), 'link')
-    ON CONFLICT (account_id, email_type) DO UPDATE SET unsubscribed_at = clock_timestamp(), source = 'link'
-    WHERE email_preferences.unsubscribed_at IS NULL`;
+    ON CONFLICT (account_id, email_type) DO UPDATE
+    SET unsubscribed_at = COALESCE(email_preferences.unsubscribed_at, clock_timestamp()), source = 'link'
+    WHERE email_preferences.unsubscribed_at IS NULL OR email_preferences.source <> 'link'`;
 const TYPE_LABELS = Object.freeze({ welcome: 'welcome emails', result_summary: 'result summary emails',
     nudge_unfinished: 'reminders to finish an assessment', reassess_reminder: 'reminders to reassess' });
 // Own small limiters, like /api/telemetry: they neither spend nor are starved

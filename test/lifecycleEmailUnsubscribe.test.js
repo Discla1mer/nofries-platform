@@ -180,7 +180,8 @@ describe('unsubscribe writer', () => {
         expect(client.query.mock.calls).toEqual([['BEGIN'], ['SET LOCAL ROLE nofries_runtime'],
             ["SELECT set_config('nofries.subject_key', $1, true)", [claims.subjectKey]],
             [UPSERT_SQL, [claims.accountId, claims.emailType]], ['COMMIT']]);
-        expect(UPSERT_SQL).toMatch(/WHERE email_preferences\.unsubscribed_at IS NULL$/);
+        expect(UPSERT_SQL).toMatch(/COALESCE\(email_preferences\.unsubscribed_at, clock_timestamp\(\)\), source = 'link'/);
+        expect(UPSERT_SQL).toMatch(/WHERE email_preferences\.unsubscribed_at IS NULL OR email_preferences\.source <> 'link'$/);
         expect(UPSERT_SQL).not.toMatch(/unsubscribed_at\s*=\s*NULL/i);
         expect(client.release).toHaveBeenCalledWith(false);
     });
