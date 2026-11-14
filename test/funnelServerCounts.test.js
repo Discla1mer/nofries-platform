@@ -122,19 +122,22 @@ describe('bounded writer', () => {
         expect(log.warn).not.toHaveBeenCalled();
     });
 
-    test('a pool that cannot give a client within the acquire timeout is skipped and a late client is returned', async () => {
+    test('an acquire timeout skips the write, returns a late client and holds the slot until then', async () => {
         let deliver;
-        const client = okClient();
-        const pool = { connect: () => new Promise(resolve => { deliver = resolve; }) };
-        const record = createFunnelCountWriter({ pool, acquireTimeoutMs: 20 });
+        const late = okClient();
+        const record = createFunnelCountWriter({ pool: { connect: () => new Promise(resolve => { deliver = resolve; }) }, acquireTimeoutMs: 20 });
         await expect(record('submitted', '2026-11-13')).rejects.toMatchObject({ code: 'funnel_count_acquire_timeout' });
-        deliver(client);
+        // The abandoned connect still counts against the cap: one more pending write fills it.
+        createFunnelCountWriter({ pool: { connect: () => new Promise(() => {}) }, acquireTimeoutMs: 10000 })('visit', '2026-11-13').catch(() => {});
+        const fresh = okClient(), pool = { connect: jest.fn(async () => fresh) };
+        await expect(createFunnelCountWriter({ pool })('visit', '2026-11-13')).rejects.toMatchObject({ code: 'funnel_count_busy' });
+        expect(pool.connect).not.toHaveBeenCalled();
+        // Once the late client arrives it goes straight back and frees its slot.
+        deliver(late);
         await flush();
-        expect(client.release).toHaveBeenCalledTimes(1);
-        expect(client.query).not.toHaveBeenCalled();
-        // The slot is free again after the timeout.
-        const fresh = okClient();
-        await createFunnelCountWriter({ pool: { connect: async () => fresh } })('submitted', '2026-11-13');
+        expect(late.release).toHaveBeenCalledTimes(1);
+        expect(late.query).not.toHaveBeenCalled();
+        await createFunnelCountWriter({ pool })('visit', '2026-11-13');
         expect(fresh.release).toHaveBeenCalledWith(false);
     });
 
