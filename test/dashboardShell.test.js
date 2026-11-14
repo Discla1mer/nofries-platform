@@ -449,6 +449,8 @@ test('the public demo starts with the assessment and explains the plan instead o
     assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
     await dom.controller.navigate('improvement-plan');
     assert.match(dom.root.textContent, /An improvement plan lists what to fix/);
+    assert.match(dom.root.textContent, /You can give each item an owner and a due date/);
+    assert.doesNotMatch(dom.root.textContent, /with an owner and a due date/);
     assert.match(dom.root.textContent, /Create an account to make one from your own result/);
     const account = [...dom.root.querySelectorAll('a')].find(item => item.textContent === 'Create an account');
     assert.ok(account);

@@ -1338,17 +1338,6 @@
         function renderResults(results) {
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
-            // The plan is created only when someone chooses create. The link carries this submission,
-            // so an older saved plan is not offered in its place.
-            const planSource = displayedPlanSource();
-            if (typeof options.openImprovement === 'function' && planSource) {
-                const follow = node('section', 'ncsc-plan-followup');
-                follow.append(node('p', '', 'These results can become your improvement plan. Open Improvement plan and create it from this result. It lists what to fix, with an owner and a due date for each item. Submitting does not create the plan by itself.'));
-                follow.append(button('Open improvement plan', function () {
-                    if (live() && typeof options.openImprovement === 'function') options.openImprovement(planSource);
-                }, 'dashboard-button dashboard-button-secondary'));
-                panel.append(follow);
-            }
             content.append(panel);
             renderNextSteps(panel);
             if (!results) {
@@ -1375,6 +1364,17 @@
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             leadWithLowerBound(metrics.querySelector('.ncsc-result-metric'), '.ncsc-result-value', results);
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
+            // After the score, so the lower figure leads. The link carries this submission,
+            // so an older saved plan is not offered in its place.
+            const planSource = displayedPlanSource();
+            if (typeof options.openImprovement === 'function' && planSource) {
+                const follow = node('section', 'ncsc-plan-followup');
+                follow.append(node('p', '', 'These results can become your improvement plan. Open Improvement plan and create it from this result. It lists what to fix. You can give each item an owner and a due date. Submitting does not create the plan by itself.'));
+                follow.append(button('Open improvement plan', function () {
+                    if (live() && typeof options.openImprovement === 'function') options.openImprovement(planSource);
+                }, 'dashboard-button dashboard-button-secondary'));
+                panel.append(follow);
+            }
             // results.unknown already includes answers marked not applicable, so state one total.
             panel.append(node('p', '', results.unknown ? 'Answers still to confirm: ' + results.unknown + ' (' + confirmBreakdown(results.unknown - results.pending, results.pending) + ').'
                 : 'Every answer is confirmed as Yes, Partial or No.'));

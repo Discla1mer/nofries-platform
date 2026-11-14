@@ -500,7 +500,7 @@
             const plan = current.key === 'improvement_plan';
             if (plan && options.demoGuide === true) {
                 const section = panel('An improvement plan lists what to fix',
-                    'After an assessment, the plan turns the gaps into actions with an owner and a due date. This demo keeps everything in your browser and does not build that plan. Create an account to make one from your own result and keep it.');
+                    'After an assessment, the plan lists what to fix. You can give each item an owner and a due date. This demo keeps everything in your browser and does not build that plan. Create an account to make one from your own result and keep it.');
                 const account = element('a', 'dashboard-button', 'Create an account');
                 account.setAttribute('href', '/login?intent=create');
                 section.append(account);

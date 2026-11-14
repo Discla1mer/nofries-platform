@@ -3355,7 +3355,11 @@ describe('final submission review step', () => {
         const ui = await resumeUi(h, { openImprovement(source) { opened.push(source); return Promise.resolve(true); } });
         try {
             expect(ui.root.textContent).toContain('Submitting does not create the plan by itself.');
+            expect(ui.root.textContent).toContain('You can give each item an owner and a due date.');
+            expect(ui.root.textContent).not.toContain('with an owner and a due date for each item');
             expect(ui.root.textContent).not.toContain('improvement plan was built');
+            const panel = ui.root.querySelector('.ncsc-results');
+            expect(panel.children.indexOf(panel.querySelector('.ncsc-plan-followup'))).toBeGreaterThan(panel.children.indexOf(panel.querySelector('.ncsc-result-metrics')));
             control(ui, 'Open improvement plan').click();
             const keys = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
             expect(opened).toEqual([{ assessmentId: assessment.assessmentId, revision: assessment.revision,
