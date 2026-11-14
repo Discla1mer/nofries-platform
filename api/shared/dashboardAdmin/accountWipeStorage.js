@@ -37,8 +37,19 @@ async function readJson(container, name, signal) {
 // Every record name (exact names and per-account prefixes) the account owns.
 async function inventory(container, email, signal) {
     const store = new AzureStarterAccountStore(container);
+    const accountName = `customer-starter/${starterAccountKey(email)}.json`;
     const loaded = await store.load(starterAccountKey(email));
-    if (!loaded) return null;
+    if (!loaded) {
+        // An earlier attempt may have removed the account record but not all its
+        // versions. Its name comes from the email alone, so offer just that.
+        let leftover = false;
+        try {
+            for await (const item of container.listBlobsFlat({ prefix: accountName, includeVersions: true, abortSignal: signal }))
+                if (item.name === accountName) { leftover = true; break; }
+        } catch (_) { fail('account_wipe_storage_unavailable'); }
+        return leftover ? Object.freeze({ account: null, subjectKey: null, tenantIds: Object.freeze([]), exact: Object.freeze([]),
+            session: Object.freeze([]), prefixes: Object.freeze([]), accountRecord: accountName }) : null;
+    }
     const account = loaded.record;
     const slots = [...account.organisations];
     if (account.accountType === 'consultant') {
@@ -64,10 +75,9 @@ async function inventory(container, email, signal) {
         exact.push(`customer-starter/starter-setups/${uuid(slot.organisationId)}.json`, `customer-activations/${uuid(slot.activationId)}.json`,
             termsOfferKey(slot.tenantId, slot.organisationId));
     }
-    const accountKey = starterAccountKey(email);
-    exact.push(`customer-starter/dashboard-admin-signup-index/writers/accounts/${accountKey.slice('starter-accounts/'.length)}.json`);
+    exact.push(`customer-starter/dashboard-admin-signup-index/writers/accounts/${starterAccountKey(email).slice('starter-accounts/'.length)}.json`);
     return Object.freeze({ account, subjectKey, tenantIds: Object.freeze([...new Set(slots.map(slot => slot.tenantId))]),
-        exact: Object.freeze([...new Set(exact)]), session: Object.freeze(session), prefixes: Object.freeze(prefixes), accountRecord: `customer-starter/${accountKey}.json` });
+        exact: Object.freeze([...new Set(exact)]), session: Object.freeze(session), prefixes: Object.freeze(prefixes), accountRecord: accountName });
 }
 
 // Delete one name and, where kept, its versions. With versioning on, deleting
@@ -98,10 +108,18 @@ function createAccountWipeStorage(container, sessionContainer) {
         inventory: (email, signal) => inventory(container, email, signal),
         async delete(found, signal) {
             const counts = { blobs: 0, versions: 0, versionsRemaining: 0, versionsUnverified: 0 };
-            // The email proof goes first: its name comes from the sign-in authority
-            // record, which goes next so the account stops working at once.
+            // Each stage must be confirmed complete, versions included, before the
+            // records a retry needs to rediscover it are removed:
+            //   1. the email proof (its name comes from the sign-in authority record);
+            //   2. the authority and per-organisation records (their names come from
+            //      the account and client records);
+            //   3. client records and bindings (found from the account record);
+            //   4. the account record (its name comes from the email alone).
+            const complete = () => { if (counts.versionsRemaining || counts.versionsUnverified) fail('account_wipe_storage_incomplete'); };
             for (const name of found.session) { signal.throwIfAborted(); await removeName(sessionContainer, name, signal, counts); }
+            complete();
             for (const name of found.exact) { signal.throwIfAborted(); await removeName(container, name, signal, counts); }
+            complete();
             for (const prefix of found.prefixes) {
                 // Include names that only have previous versions left (from an earlier
                 // partial attempt), so a retry still removes them.
@@ -110,10 +128,9 @@ function createAccountWipeStorage(container, sessionContainer) {
                 catch (_) { fail('account_wipe_storage_unavailable'); }
                 for (const name of names) { signal.throwIfAborted(); await removeName(container, name, signal, counts); }
             }
-            // The account record is how a retry finds everything else, so it stays
-            // until every other record and version is confirmed gone.
-            if (counts.versionsRemaining || counts.versionsUnverified) fail('account_wipe_storage_incomplete');
+            complete();
             await removeName(container, found.accountRecord, signal, counts);
+            complete();
             return Object.freeze(counts);
         }
     });

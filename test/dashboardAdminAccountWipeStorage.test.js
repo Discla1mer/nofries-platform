@@ -25,7 +25,7 @@ function account(n, email, type = 'consultant') {
 }
 // In-memory container. With versions on, deleting a base blob keeps its
 // current content as a previous version, as Azure does.
-function container(blobs, { versions = {}, versioning = false, refuseVersions = false, failDelete = null } = {}) {
+function container(blobs, { versions = {}, versioning = false, refuseVersions = false, refuseVersionsOf = null, failDelete = null } = {}) {
     const deleted = [], kept = Object.fromEntries(Object.entries(versions).map(([k, v]) => [k, [...v]]));
     const list = ({ prefix, includeVersions }) => {
         const out = [];
@@ -48,7 +48,7 @@ function container(blobs, { versions = {}, versioning = false, refuseVersions = 
         getBlockBlobClient: name => ({ download: download(name) }),
         getBlobClient: name => ({
             withVersion: version => ({ async delete() {
-                if (refuseVersions) throw Object.assign(new Error(), { statusCode: 403 });
+                if (refuseVersions || refuseVersionsOf === name) throw Object.assign(new Error(), { statusCode: 403 });
                 kept[name] = (kept[name] || []).filter(v => v !== version); deleted.push(name + '@' + version);
             } }),
             async deleteIfExists() {
@@ -146,4 +146,33 @@ test('a retry removes client records that only have previous versions left', asy
     await storage.delete(await storage.inventory(email, signal()), signal());
     expect(c.kept[orphan]).toEqual([]);
     expect(c.deleted).toContain(orphan + '@old');
+});
+
+test('a client setup version that cannot be deleted keeps the client record, and a retry finishes it', async () => {
+    const blobs = new Map(), email = 'clientver@example.test', a = account(1, email); seed(a, blobs, email);
+    const client = { requestId: uid(921), kind: 'client', organisationName: 'Client', ...Object.fromEntries(SLOT_IDS.map((k, i) => [k, uid(930 + i)])) };
+    const clientName = `customer-starter/starter-clients/${a.record.accountId}/${client.requestId}.json`;
+    const setup = `customer-starter/starter-setups/${client.organisationId}.json`;
+    blobs.set(clientName, { schemaVersion: 1, accountId: a.record.accountId, slot: client }); blobs.set(setup, {});
+    const first = container(blobs, { versions: { [setup]: ['old'] }, refuseVersionsOf: setup });
+    const storage = createAccountWipeStorage(first.value, container(new Map()).value);
+    await expect(storage.delete(await storage.inventory(email, signal()), signal())).rejects.toMatchObject({ code: 'account_wipe_storage_incomplete' });
+    expect(blobs.has(clientName)).toBe(true);
+    const second = container(blobs, { versions: first.kept }), retry = createAccountWipeStorage(second.value, container(new Map()).value);
+    const counts = await retry.delete(await retry.inventory(email, signal()), signal());
+    expect(second.kept[setup]).toEqual([]); expect(counts.versionsRemaining).toBe(0); expect(blobs.size).toBe(0);
+});
+
+test('a retained account record version fails the delete and is found again from the email alone', async () => {
+    const blobs = new Map(), email = 'acctver@example.test', a = account(1, email, 'company'), accountName = seed(a, blobs, email);
+    const first = container(blobs, { versioning: true, refuseVersionsOf: accountName });
+    const storage = createAccountWipeStorage(first.value, container(new Map()).value);
+    await expect(storage.delete(await storage.inventory(email, signal()), signal())).rejects.toMatchObject({ code: 'account_wipe_storage_incomplete' });
+    expect(blobs.has(accountName)).toBe(false); expect(first.kept[accountName].length).toBeGreaterThan(0);
+    const second = container(blobs, { versions: first.kept }), retry = createAccountWipeStorage(second.value, container(new Map()).value);
+    const found = await retry.inventory(email, signal());
+    expect(found).toMatchObject({ account: null, accountRecord: accountName });
+    await retry.delete(found, signal());
+    expect(second.kept[accountName]).toEqual([]);
+    expect(await retry.inventory(email, signal())).toBeNull();
 });
