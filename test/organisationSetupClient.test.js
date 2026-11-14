@@ -74,6 +74,27 @@ test('default entry waits for an effective provider before permitting any email 
     h.lifecycle('pagehide');
 });
 
+test('homepage create entry shows an explicit opening state instead of a disabled Check progress (F1-R03)', async () => {
+    const h = fixture({ search: '?intent=create' });
+    expect(h.nodes.refresh.hidden).toBe(true);
+    expect(h.nodes.status.textContent).toBe('Opening account setup…');
+    expect(h.nodes.form.getAttribute('aria-busy')).toBe('true');
+    await h.reply(0, 200, { state: 'start' });
+    expect(h.nodes.refresh.hidden).toBe(false);
+    expect(h.nodes.refresh.disabled).toBe(false);
+    expect(h.nodes.status.textContent).toBe('');
+    h.lifecycle('pagehide');
+});
+
+test('a failed first read still offers Check progress (F1-R03)', async () => {
+    const h = fixture({ search: '?intent=create' });
+    expect(h.nodes.refresh.hidden).toBe(true);
+    await h.reply(0, 503, { error: 'setup_unavailable' });
+    expect(h.nodes.refresh.hidden).toBe(false);
+    expect(h.nodes.status.textContent).toContain('Check progress');
+    h.lifecycle('pagehide');
+});
+
 test.each([
     { state: 'start' }, { state: 'sign_in' },
     { state: 'awaiting_code', emailHint: 's***@example.test' },

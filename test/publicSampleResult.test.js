@@ -45,8 +45,12 @@ test('figures and top three gaps match the real result view for the same answers
     const { metadata, result } = sampleResult();
     expect(text(html)).toContain('Reported implementation ' + result.attainment);
     expect(text(html)).toContain(result.completed + ' of ' + result.total + ' questions');
-    const table = html.match(/<tbody>([\s\S]*?)<\/tbody>/)[1];
-    const rows = [...table.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(row => text(row[1]));
+    const table = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/)[1];
+    const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map(row => text(row[1]));
+    // Phones show label/value rows (F1-R05); explicit roles keep the table relationships.
+    expect(html).toMatch(/<table class="sample-result-table" role="table">/);
+    expect([...table.matchAll(/<td role="cell" data-label="(Reported implementation|Answers)">/g)]).toHaveLength(rows.length * 2);
+    expect([...table.matchAll(/<th scope="row" role="rowheader">/g)]).toHaveLength(rows.length);
     expect(rows).toEqual(result.domains.map(domain => `${domain.title} ${domain.attainment} ${domain.total}`));
     const gaps = picture.topGaps(result, metadata);
     expect(gaps).toHaveLength(3);

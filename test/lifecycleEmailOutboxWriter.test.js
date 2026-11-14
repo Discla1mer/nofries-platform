@@ -20,7 +20,7 @@ describe('lifecycle email outbox writer', () => {
     test('template versions are the type plus -v1 and cannot be changed', () => {
         const { TEMPLATE_VERSIONS } = require('../api/shared/lifecycleEmail/templateVersions');
         expect(TEMPLATE_VERSIONS).toEqual({ welcome: 'welcome-v1', result_summary: 'result-summary-v1',
-            nudge_unfinished: 'nudge-unfinished-v1', reassess_reminder: 'reassess-reminder-v1' });
+            nudge_unfinished: 'nudge-unfinished-v2', reassess_reminder: 'reassess-reminder-v1' });
         expect(Object.isFrozen(TEMPLATE_VERSIONS)).toBe(true);
     });
 

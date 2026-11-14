@@ -254,10 +254,12 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             expect(id(ui, `ncsc-rationale-${metadata.questions[0].id}`).value).toBe(rationale);
             expect(ui.root.textContent).toContain(declaration);
             button(ui, 'Clear answer').click(); button(ui, 'Save progress').click();
-            await until(() => ui.root.textContent.includes('Saved revision 2'));
-            expect((await restarted.client.read(assessmentId)).assessment.responses).toEqual([]);
+            await until(() => ui.root.textContent.includes('Your progress is saved. Last saved '));
+            expect((await restarted.client.read(assessmentId)).assessment).toMatchObject({ revision: 2, responses: [] });
             metadata.questions.forEach((_question, index) => answer(ui, index, index === 0 ? 'not_applicable' : 'unknown', index === 0 ? rationale : undefined));
-            button(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 3'));
+            expect(ui.root.textContent).not.toContain('Your progress is saved.');
+            button(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved. Last saved '));
+            expect((await restarted.client.read(assessmentId)).assessment.revision).toBe(3);
             ui.controller.destroy(); const finalTransport = composed(first); ui = await resume(finalTransport);
             button(ui, 'Review and submit').click(); button(ui, 'Save and submit assessment').click();
             button(ui, 'Submit').click();
@@ -872,7 +874,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 template_version, params, status, not_before FROM nofries.email_outbox WHERE account_id=$1 ORDER BY email_type, dedupe_key`,
             [accountId])).rows.map(row => ({ ...row, not_before: row.not_before.toISOString() }));
             const pendingNudge = (s, key) => ownerPool.query(`INSERT INTO nofries.email_outbox (outbox_id, tenant_id, organisation_id,
-                account_id, email_type, dedupe_key, template_version) VALUES ($1,$2,$3,$4,'nudge_unfinished',$5,'nudge-unfinished-v1')`,
+                account_id, email_type, dedupe_key, template_version) VALUES ($1,$2,$3,$4,'nudge_unfinished',$5,'nudge-unfinished-v2')`,
             [crypto.randomUUID(), s.scope.tenantId, s.scope.organisationId, accountId, key]);
             const gaps = () => allResponses().map((row, index) => index < 3 ? { ...row, optionId: 'no' } : row);
             async function starterTenant() {

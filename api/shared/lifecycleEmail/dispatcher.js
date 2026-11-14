@@ -34,8 +34,13 @@ const CLAIM_SQL = `UPDATE nofries.email_outbox o SET status='sending', attempts=
     WHERE o.outbox_id = c.outbox_id
     RETURNING o.outbox_id, o.account_id, o.email_type, o.template_version, o.attempts, c.attempts AS prior_attempts,
         extract(epoch FROM o.locked_until)::text AS lease`;
+// "submitted": every submit queues a result_summary row in the same transaction,
+// in whichever workspace it happened. Checking for one at send time stops the
+// unfinished nudge after a submit in a client workspace (whose cancel cannot
+// reach the account's own organisation) and after a submit that raced a claim.
 const RECIPIENT_SQL = `SELECT a.account_id, a.subject_key, ARRAY(SELECT p.email_type FROM nofries.email_preferences p
-    WHERE p.account_id=a.account_id AND p.unsubscribed_at IS NOT NULL) AS unsubscribed
+    WHERE p.account_id=a.account_id AND p.unsubscribed_at IS NOT NULL) AS unsubscribed,
+    EXISTS(SELECT 1 FROM nofries.email_outbox s WHERE s.account_id=a.account_id AND s.email_type='result_summary') AS submitted
     FROM nofries.dashboard_starter_accounts a WHERE a.account_id = ANY($1::uuid[])`;
 const FENCE = "WHERE outbox_id=$1 AND status='sending' AND extract(epoch FROM locked_until) = $2::numeric";
 const SETS = Object.freeze({ suppressed: ["status='suppressed', last_error_code=$3", ['code']],
@@ -75,7 +80,8 @@ async function claimBatch(client, types, limit = BATCH) {
     const ids = [...new Set(rows.map(row => row.account_id))];
     const recipients = new Map(ids.length ? (await client.query(RECIPIENT_SQL, [ids])).rows.map(row => [row.account_id, row]) : []);
     return rows.map(row => ({ ...row, subjectKey: recipients.get(row.account_id)?.subject_key ?? null,
-        unsubscribed: (recipients.get(row.account_id)?.unsubscribed || []).includes(row.email_type) }));
+        unsubscribed: (recipients.get(row.account_id)?.unsubscribed || []).includes(row.email_type),
+        submitted: recipients.get(row.account_id)?.submitted === true }));
 }
 
 function createLifecycleEmailDispatcher({ env = process.env, pool, resolveAddress, send, from, publicOrigin, log = defaultLog }) {
@@ -93,6 +99,7 @@ function createLifecycleEmailDispatcher({ env = process.env, pool, resolveAddres
     async function deliver(row) {
         if (row.prior_attempts >= MAX_ATTEMPTS) return finish(row, 'failed', { code: 'attempts_exhausted' });
         if (row.unsubscribed) return finish(row, 'suppressed', { code: 'unsubscribed' });
+        if (row.email_type === 'nudge_unfinished' && row.submitted) return finish(row, 'suppressed', { code: 'already_submitted' });
         if (!row.subjectKey) return finish(row, 'failed', { code: 'recipient_missing' });
         let message, unsubscribe;
         const signInUrl = `${publicOrigin}/dashboard`;

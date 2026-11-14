@@ -316,6 +316,9 @@ describe('consultant client setup', () => {
         clients: [{ requestId, organisationName: 'Saved client', status: 'pending' }] } });
     async function acceptingClient() {
         const h = await savedAcceptance(); await h.reply(3, 200, offeredTerms());
+        // Resuming an existing draft shows the steps but no new "Draft saved" announcement.
+        expect(h.document.getElementById('clientSetupControls').querySelector('.client-workspace-status').textContent).toBe('');
+        expect(h.document.getElementById('clientSetupControls').querySelector('.client-draft-steps')).not.toBeNull();
         h.document.getElementById('clientSetupControls').querySelector('input').checked = true;
         buttons(h).find(b => b.textContent === 'Accept and create client dashboard').click(); await flush();
         expect(h.requests[4].init.method).toBe('GET'); return h;
@@ -730,8 +733,19 @@ describe('consultant client setup', () => {
         expect(h.requests[4].init.body).toBe(original);
         await h.reply(4, 200, { csrfToken, state: { status: 'terms', termsText: 'Synthetic terms', scheduleText: 'Synthetic schedule',
             termsVersion: 'synthetic', termsDigest: GA, scheduleId: 'synthetic-schedule', scheduleDigest: GB } });
+        // O-002: the saved draft and the remaining steps are stated before the terms.
+        const setup = h.document.getElementById('clientSetupControls');
+        const status = setup.querySelector('.client-workspace-status');
+        expect(status.getAttribute('role')).toBe('status');
+        expect(status.textContent).toBe('Draft saved. Two steps left before this client dashboard is created.');
+        expect(setup.textContent).toContain('This client setup is saved as a draft. Acceptance has not been confirmed, so the client dashboard is not created yet.');
+        expect(setup.querySelector('.client-draft-steps').querySelectorAll('li').map(item => item.textContent)).toEqual([
+            'Read the client schedule and dashboard terms below.',
+            'Tick that you accept them, then choose Accept and create client dashboard. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.']);
+        expect(setup.textContent).toContain('If you leave now, the draft stays in your organisation list as “Draft, not yet set up”. Choose Resume to return to it.');
         const accept = buttons(h).find(b => b.textContent === 'Accept and create client dashboard');
         accept.click(); await flush(); expect(h.requests).toHaveLength(5);
+        expect(status.textContent).toBe('Read and accept the terms to continue.');
         h.document.getElementById('clientSetupControls').querySelector('input').checked = true;
         accept.click(); await flush(); await h.reply(5, 200, pendingClient(JSON.parse(original).requestId));
         expect(JSON.parse(h.requests[6].init.body)).toMatchObject({ action: 'accept', requestId: JSON.parse(original).requestId,
@@ -1872,6 +1886,10 @@ describe('ready Cyber composition', () => {
             const titles = h.improvementMounts[0].input.controlTitles;
             h.cyberProjection.metadata.controls.forEach(item => expect(titles[item.id]).toBe(item.title));
             expect(Object.keys(titles)).toHaveLength(h.cyberProjection.metadata.controls.length);
+            // Each topic's concrete follow-up uses the results page wording (F1-R10).
+            const followUps = h.improvementMounts[0].input.itemFollowUps;
+            h.cyberProjection.metadata.questions.forEach(question => expect(followUps[question.id]).toBe(question.smallBusiness
+                ? question.smallBusiness.checks.join(' ') : question.guidance.startingActions[0]));
             expect(h.window.location.hash).toBe('#improvement-plan');
             expect(h.requests[11].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
             h.window.dispatch('pagehide');
@@ -2271,8 +2289,8 @@ describe('ready Cyber composition', () => {
         expect(stored.read('assessment-home')).toEqual(saved); expect(h.window.location.assign.mock.calls).toEqual([['/']]);
         const reopened = harness({ cyber: true, hash: '#cyber-security' }); await openedRecord(reopened, stored);
         expect(reopened.elements.dashboardApp.querySelectorAll('input').find(item => item.type === 'radio' && item.checked).value).toBe('yes');
-        expect(reopened.elements.dashboardApp.textContent).toContain('Saved revision 1');
-        expect(reopened.elements.dashboardApp.querySelector('.ncsc-status').textContent).not.toContain('unsaved changes');
+        expect(reopened.elements.dashboardApp.textContent).toMatch(/Last saved .+ NZ time\./);
+        expect(reopened.elements.dashboardApp.querySelector('.ncsc-status').textContent).not.toContain('not saved yet');
         expect(reopened.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).not.toContain('unsaved changes');
         expect(reopened.document.getElementById('ncsc-question-index').children.every(option => !/\*$/.test(option.textContent))).toBe(true);
         expect(reopened.document.getElementById('ncsc-question-index-help').textContent).toContain('* marks unsaved changes');
@@ -2623,6 +2641,43 @@ describe('unmounted authority refresh coalescing', () => {
         await h.reply(4, 200, state());
         expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
         expect(h.requests.filter(item => item.url === '/api/dashboard/modules/cyber_security')).toHaveLength(1);
+    });
+
+    test('the Cyber Security read starts once the projection lists it ready, before the directory answers', async () => {
+        // F1 / D-013: the module read no longer waits for the directory. Protected
+        // assets still wait for both reads, and nothing mounts before the witness.
+        const h = harness({ hash: '#cyber-security', cyber: true }); await flush();
+        const model = cyberProjection();
+        await h.reply(0, 200, state());
+        expect(h.requests.map(item => item.url)).toEqual(paths.slice(0, 3));
+        await h.reply(2, 200, model);
+        expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
+        expect(h.requests[3].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        await h.reply(3, 200, moduleProjection(model));
+        expect(h.native).toHaveLength(0); expect(h.requests).toHaveLength(4); expect(h.mounts).toHaveLength(0);
+        await h.reply(1, 200, listing());
+        expect(h.native.map(n => n.src || n.href)).toEqual(['/api/dashboard/app.js', '/api/dashboard/dashboard.css']);
+        h.load(0); h.load(1); await flush();
+        expect(h.requests[4].url).toBe('/api/dashboard/session'); expect(h.mounts).toHaveLength(0);
+        await h.reply(4, 200, state());
+        expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
+        expect(h.requests.filter(item => item.url === '/api/dashboard/modules/cyber_security')).toHaveLength(1);
+    });
+    test('a projection without a ready Cyber Security module sends no module read', async () => {
+        const h = harness({ hash: '#overview' }); await flush();
+        await h.reply(0, 200, state()); await h.reply(2, 200, projection()); await h.reply(1, 200, listing());
+        h.load(0); h.load(1); await flush();
+        expect(h.requests.map(item => item.url)).toEqual([...paths.slice(0, 3), '/api/dashboard/session']);
+        await h.reply(3, 200, state());
+        expect(h.status).toBe('ready');
+    });
+    test('a directory failure cancels a module read already started from the projection', async () => {
+        const h = harness({ hash: '#cyber-security', cyber: true }); await flush();
+        await h.reply(0, 200, state()); await h.reply(2, 200, cyberProjection());
+        expect(h.requests[3].url).toBe('/api/dashboard/modules/cyber_security');
+        await h.reply(1, 503, { code: 'synthetic_failure' });
+        expect(h.requests[3].init.signal.aborted).toBe(true);
+        expect(h.status).toBe('unavailable'); expect(h.native).toHaveLength(0); expect(h.mounts).toHaveLength(0);
     });
 
     async function finish(h, first, asset, model) {
