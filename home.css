@@ -1428,9 +1428,9 @@ body[data-page="public-error"] .public-shell { min-height: 0; }
     body .site-header nav[aria-label="Main navigation"] > :is(.site-login, .homepage-login) { margin-left: 0; white-space: nowrap; }
 
     body .home-footer { flex-direction: column-reverse; align-items: stretch; gap: 20px; padding-block: 24px 32px; }
-    body .home-footer nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+    body .home-footer nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9em), 1fr)); gap: 0 20px; }
     body .home-footer nav a {
-        justify-content: flex-start; min-height: 48px; padding: 0;
+        justify-content: flex-start; min-width: 0; min-height: 48px; padding: 0; overflow-wrap: anywhere;
         border-bottom: 1px solid var(--line); color: var(--ink); font-size: 1rem; font-weight: 600; text-decoration: none;
     }
     body .home-footer nav a[aria-current="page"] { text-decoration: underline; text-underline-offset: 6px; }
