@@ -268,7 +268,9 @@ function createOrganisationSetup({ store, sendEmail, origin, readContinuation, s
         }
         const verified = { ...record, status: 'verified', codeHash: null, verifiedAt: at };
         await replace(key, loaded, verified);
-        return { status: 200, body: await project(verified, key) };
+        // codeVerified marks only this first transition (not the idempotent
+        // replay above). It is never serialised into the HTTP response.
+        return { status: 200, body: await project(verified, key), codeVerified: true };
     }
     return Object.freeze({ async handle(req) {
         try { return await handle(req); }

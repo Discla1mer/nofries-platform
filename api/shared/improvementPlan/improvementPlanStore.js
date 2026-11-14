@@ -99,6 +99,25 @@ async function loadHistory(tx, scope, aggregate, operationId = null) {
         head.revision !== rows.length - 1 || head.payload_sha256 !== parentSha256) fail();
     return { state, source, history, result: output, revision: rows.length - 1, payloadSha256: parentSha256, replay };
 }
+// Owner decision: carry only from the latest earlier plan whose assessment
+// declared the same scope body (jsonb equality ignores key order), for the same
+// module, submitted no later than the new source. Scope record digests include
+// the assessment ID and time, so bodies are compared, not digests.
+const VERSIONS = 'nofries.dashboard_ncsc_assessment_revisions';
+const INPUT = column => `(${column}.payload#>>'{submission,input,scoreAsOf}') COLLATE "C"`;
+async function previousPlanId(tx, scope, source) {
+    const found = (await tx.query(`SELECT p.plan_id FROM ${TABLE} p
+        JOIN ${VERSIONS} a ON a.tenant_id=p.tenant_id AND a.organisation_id=p.organisation_id AND a.assessment_id=p.assessment_id AND a.revision=p.assessment_revision AND a.payload_sha256=p.assessment_sha256
+        JOIN ${VERSIONS} n ON n.tenant_id=p.tenant_id AND n.organisation_id=p.organisation_id AND n.assessment_id=$4 AND n.revision=$5 AND n.payload_sha256=$6
+        WHERE p.tenant_id=$1 AND p.organisation_id=$2 AND p.plan_id<>$3 AND p.revision=0 AND p.assessment_id<>$4
+        AND a.payload->'scopePopulation'->'body' = n.payload->'scopePopulation'->'body'
+        AND a.payload#>>'{submission,input,moduleId}' = n.payload#>>'{submission,input,moduleId}'
+        AND ${INPUT('a')} <= ${INPUT('n')}
+        ORDER BY ${INPUT('a')} DESC, (p.payload->>'at') COLLATE "C" DESC, p.plan_id COLLATE "C" DESC LIMIT 1`,
+    [...values(scope), source.assessmentId, source.revision, source.revisionSha256])).rows;
+    if (found.length > 1 || (found.length && typeof found[0].plan_id !== 'string')) fail();
+    return found.length ? found[0].plan_id : null;
+}
 async function append(tx, scope, record) {
     const { payload, revision, payloadSha256, parentSha256 } = record, source = payload.source;
     const inserted = await tx.query(`INSERT INTO ${TABLE} (tenant_id, organisation_id, plan_id, revision, operation_id, payload_sha256, parent_revision, parent_sha256, assessment_id, assessment_revision, assessment_sha256, payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)`,
@@ -112,4 +131,4 @@ async function append(tx, scope, record) {
     if (moved.rowCount !== 1) fail();
 }
 module.exports = Object.freeze({ stableIntent, domainCommand, readSource, seed, sourceOf,
-    makeRecord, loadHistory, append, same, digest, result });
+    makeRecord, loadHistory, previousPlanId, append, same, digest, result });

@@ -78,25 +78,111 @@ function aucklandDay(now = new Date()) {
     return NZ_DAY.format(now);
 }
 
-function createFunnelCountWriter({ pool }) {
+// Every count write, beacon or server-side, is bounded so it can never hold
+// the shared dashboard pool: at most MAX_IN_FLIGHT writes per process (more
+// are skipped), a bounded wait for a pooled client, and statement and lock
+// timeouts inside the transaction.
+const MAX_IN_FLIGHT = 2;
+const ACQUIRE_TIMEOUT_MS = 500;
+const STATEMENT_TIMEOUT_SQL = "SET LOCAL statement_timeout = '1000ms'";
+const LOCK_TIMEOUT_SQL = "SET LOCAL lock_timeout = '500ms'";
+let writesInFlight = 0;
+
+function resetFunnelWritesForTests() { writesInFlight = 0; }
+
+function codedError(code) { const error = new Error(code); error.code = code; return error; }
+
+async function acquireClient(pool, timeoutMs) {
+    let timer = null, timedOut = false;
+    const connecting = Promise.resolve().then(() => pool.connect());
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => { timedOut = true; reject(codedError('funnel_count_acquire_timeout')); }, timeoutMs);
+        if (typeof timer.unref === 'function') timer.unref();
+    });
+    try {
+        return await Promise.race([connecting, timeout]);
+    } catch (error) {
+        // A client that arrives after we gave up goes straight back to the pool.
+        if (timedOut) connecting.then(client => client.release(), () => {});
+        throw error;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function createFunnelCountWriter({ pool, acquireTimeoutMs = ACQUIRE_TIMEOUT_MS }) {
     if (!pool || typeof pool.connect !== 'function') throw new Error('funnel_counts_pool_invalid');
     return async function record(event, day) {
-        const client = await pool.connect();
-        let discard = false;
+        if (writesInFlight >= MAX_IN_FLIGHT) throw codedError('funnel_count_busy');
+        writesInFlight += 1;
         try {
-            await client.query('BEGIN');
+            const client = await acquireClient(pool, acquireTimeoutMs);
+            let discard = false;
             try {
-                await client.query('SET LOCAL ROLE nofries_runtime');
-                await client.query(UPSERT_SQL, [day, event]);
-                await client.query('COMMIT');
-            } catch (error) {
-                try { await client.query('ROLLBACK'); } catch (_) { discard = true; }
-                throw error;
+                await client.query('BEGIN');
+                try {
+                    await client.query('SET LOCAL ROLE nofries_runtime');
+                    await client.query(STATEMENT_TIMEOUT_SQL);
+                    await client.query(LOCK_TIMEOUT_SQL);
+                    await client.query(UPSERT_SQL, [day, event]);
+                    await client.query('COMMIT');
+                } catch (error) {
+                    try { await client.query('ROLLBACK'); } catch (_) { discard = true; }
+                    throw error;
+                }
+            } finally {
+                client.release(discard);
             }
         } finally {
-            client.release(discard);
+            writesInFlight -= 1;
         }
     };
+}
+
+// Server-side increments (#151 F3). These three steps are counted by their own
+// handlers, never from the browser. Best-effort and fire-and-forget: called only
+// after the business response is final, never awaited, bounded by a short
+// timeout and silent apart from one fixed tag. The flag is read on each call.
+const SERVER_FUNNEL_EVENTS = Object.freeze(['code_confirmed', 'submitted', 'enquiry_sent']);
+// The beacon endpoint accepts only the steps the server cannot see itself.
+const BROWSER_FUNNEL_EVENTS = Object.freeze(FUNNEL_EVENTS.filter(event => !SERVER_FUNNEL_EVENTS.includes(event)));
+
+// Owner decision (#151): a visitor sending Global Privacy Control (Sec-GPC: 1)
+// or Do Not Track (DNT: 1) is never counted, by the server or the beacon.
+function privacySignal(headers) {
+    if (!headers || typeof headers !== 'object') return false;
+    const value = name => String(headers[name] ?? '').trim();
+    return value('sec-gpc') === '1' || value('dnt') === '1';
+}
+const SERVER_COUNT_TIMEOUT_MS = 2000;
+
+function createServerFunnelCounter({ env = process.env, record = null, log = null, now = () => new Date(),
+    timeoutMs = SERVER_COUNT_TIMEOUT_MS } = {}) {
+    return function countFunnelEvent(event, headers = null) {
+        if (!funnelCountsEnabled(env) || typeof record !== 'function' || !SERVER_FUNNEL_EVENTS.includes(event) ||
+            privacySignal(headers)) return;
+        let timer = null;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('funnel_count_timeout')), timeoutMs);
+            if (typeof timer.unref === 'function') timer.unref();
+        });
+        Promise.race([Promise.resolve().then(() => record(event, aucklandDay(now()))), timeout])
+            .catch(error => {
+                // Skipped at the in-flight cap: expected under load, not a failure.
+                if (error && error.code === 'funnel_count_busy') return;
+                try { if (log && typeof log.warn === 'function') log.warn('funnel_count_write_failed'); } catch (_) { /* never surface */ }
+            })
+            .finally(() => clearTimeout(timer));
+    };
+}
+
+// A successful NCSC submit through the dashboard runtime: POST to
+// ncsc/assessments/<id>/submit (path relative to /api/dashboard) answered 200
+// with a submitted assessment. A same-key replay after a lost response gets the
+// same answer and counts again; the HTTP layer cannot tell the two apart.
+function isAssessmentSubmit(method, path, result) {
+    return method === 'POST' && typeof path === 'string' && /^\/ncsc\/assessments\/[^/]+\/submit$/.test(path) &&
+        Boolean(result) && result.status === 200 && result.body?.assessment?.status === 'submitted';
 }
 
 // Staff view (#151 F5): the last 30 Pacific/Auckland days, oldest first,
@@ -130,11 +216,12 @@ function projectFunnelView(rows, window) {
 }
 
 // Read-only, under the runtime role, with the same short timeouts as writes.
-function createFunnelCountReader({ pool, now = () => new Date() }) {
+function createFunnelCountReader({ pool, now = () => new Date(), acquireTimeoutMs = ACQUIRE_TIMEOUT_MS }) {
     if (!pool || typeof pool.connect !== 'function') throw new Error('funnel_counts_pool_invalid');
     return async function readFunnelView() {
         const window = funnelWindow(now());
-        const client = await pool.connect();
+        // Same bounded wait for a pooled client as the count writes.
+        const client = await acquireClient(pool, acquireTimeoutMs);
         let discard = false;
         try {
             await client.query('BEGIN READ ONLY');
@@ -176,12 +263,15 @@ async function handleFunnelCountRequest(req, { env = process.env, record = null,
     }
     const event = readEvent(req && req.body);
     if (!event) return result(400, { error: 'Unknown event', code: 'invalid_event' });
+    // Accepted but not counted for GPC / DNT, so the answer reveals nothing.
+    if (privacySignal(req && req.headers)) return { status: 204, headers: apiSecurityHeaders(), body: null, isRaw: true };
     if (typeof record !== 'function') return result(503, { error: 'Funnel counts are unavailable', code: 'funnel_counts_unavailable' });
     try {
         await record(event, aucklandDay(now()));
-    } catch (_) {
+    } catch (error) {
         // Fixed text only: no driver error, request detail or visitor data.
-        if (log && typeof log.warn === 'function') log.warn('funnel_count_write_failed');
+        // A skip at the in-flight cap is expected under load, not a failure.
+        if (!(error && error.code === 'funnel_count_busy') && log && typeof log.warn === 'function') log.warn('funnel_count_write_failed');
         return result(503, { error: 'Funnel counts are unavailable', code: 'funnel_counts_unavailable' });
     }
     return { status: 204, headers: apiSecurityHeaders(), body: null, isRaw: true };
@@ -196,7 +286,7 @@ function readEvent(body) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const keys = Object.keys(value);
     if (keys.length !== 1 || keys[0] !== 'event') return null;
-    return typeof value.event === 'string' && FUNNEL_EVENTS.includes(value.event) ? value.event : null;
+    return typeof value.event === 'string' && BROWSER_FUNNEL_EVENTS.includes(value.event) ? value.event : null;
 }
 
 function result(status, body, extraHeaders = {}) {
@@ -204,6 +294,15 @@ function result(status, body, extraHeaders = {}) {
 }
 
 module.exports = {
+    BROWSER_FUNNEL_EVENTS,
+    privacySignal,
+    MAX_IN_FLIGHT,
+    STATEMENT_TIMEOUT_SQL,
+    LOCK_TIMEOUT_SQL,
+    resetFunnelWritesForTests,
+    SERVER_FUNNEL_EVENTS,
+    createServerFunnelCounter,
+    isAssessmentSubmit,
     FUNNEL_VIEW_DAYS,
     READ_SQL,
     createFunnelCountReader,

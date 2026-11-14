@@ -55,12 +55,15 @@ const {
     ScopeAccessError
 } = require('./api/shared/scopeAccess');
 const { getServiceScope } = require('./api/shared/serviceScope');
-const { createEnquiryService } = require('./api/shared/enquiry');
+const { createEnquiryService, isHoneypotEnquiry } = require('./api/shared/enquiry');
 const { errorResult: enquiryErrorResult } = require('./api/enquiry');
 const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
-const { createFunnelCountReader, createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest } = require('./api/shared/funnelCounts');
+const { createFunnelCountReader, createFunnelCountWriter, createServerFunnelCounter, funnelCountsEnabled, handleFunnelCountRequest,
+    isAssessmentSubmit } = require('./api/shared/funnelCounts');
 const { PATH: UNSUBSCRIBE_PATH, MAX_BODY_BYTES: UNSUBSCRIBE_BODY_BYTES, createUnsubscribeWriter, handleUnsubscribeRequest } = require('./api/shared/lifecycleEmail/unsubscribeEndpoint');
+const { PATH: EMAIL_SETTINGS_PATH, MAX_BODY_BYTES: EMAIL_SETTINGS_BODY_BYTES, handleEmailSettingsRequest } = require('./api/shared/lifecycleEmail/emailSettings');
+const { createEmailSettingsStore } = require('./api/shared/lifecycleEmail/emailSettingsStore');
 const { logSafeFailure: logStaffAuthFailure } = require('./api/shared/browserAuthDiagnostics');
 const { createAuthLoginFunction } = require('./api/authLogin');
 const { createAuthCallbackFunction } = require('./api/authCallback');
@@ -544,9 +547,14 @@ if (retainedTrialRead) {
         await sendFunctionResponse(logout, req, res);
     }));
 }
+// Server-side funnel counts (#151 F3): flag-gated, after the response is final,
+// never awaited. Without a dashboard pool there is nothing to write to.
+const recordFunnelCount = funnelPool ? createFunnelCountWriter({ pool: funnelPool }) : null;
+const countFunnelEvent = createServerFunnelCounter({ env: apiEnvironment, record: recordFunnelCount, log: console });
 if (dashboard) app.use('/api/dashboard', asyncRoute(async (req, res) => {
     const result = await dashboard.handleRequest(req);
     if (!res.destroyed && !res.writableEnded) sendResult(res, result);
+    if (isAssessmentSubmit(req.method, req.path, result)) countFunnelEvent('submitted', req.headers);
 }));
 for (const [prefix, setup, customerAuth, signup] of [
     ['/api/organisation-setup', configuration.organisationSetup, dashboard?.authServices.customer, customerSignup],
@@ -619,10 +627,10 @@ for (const [prefix, setup, customerAuth, signup] of [
         originalUrl: req.originalUrl.replace(prefix, '/api/organisation-setup'), headers: req.headers, body: req.body,
         clientKey: getClientKeyFromHeaders(req.headers, req.ip) });
     entryResponse(result);
+    if (result && result.status === 200 && result.codeVerified === true) countFunnelEvent('code_confirmed', req.headers);
 }));
 // Flag off keeps the retired 410 before any body is read. Flag on accepts only
 // a 64-byte {event} POST and writes one aggregate daily count (issue #151).
-const recordFunnelCount = funnelPool ? createFunnelCountWriter({ pool: funnelPool }) : null;
 app.all('/api/telemetry', (req, res, next) => funnelCountsEnabled(apiEnvironment) ? next()
     : sendResult(res, { status: 410, body: { error: 'Public acquisition telemetry is disabled', code: 'telemetry_disabled' } }),
 express.json({ limit: 64 }), asyncRoute(async (req, res) => {
@@ -641,6 +649,25 @@ const recordUnsubscribe = funnelPool ? createUnsubscribeWriter({ pool: funnelPoo
 app.all(UNSUBSCRIBE_PATH, express.urlencoded({ extended: false, limit: UNSUBSCRIBE_BODY_BYTES, parameterLimit: 4 }), asyncRoute(async (req, res) => {
     sendResult(res, await handleUnsubscribeRequest(req, { env: apiEnvironment, record: recordUnsubscribe,
         clientKey: req.ip || req.socket.remoteAddress, log: console }));
+}));
+// Signed-in email settings (#151 E7). Customer sessions only: the existing
+// legacy or external customer session reader supplies the subject key, and the
+// store sets it as the RLS context. Without a dashboard database it is a 404.
+const emailSettingsStore = funnelPool ? createEmailSettingsStore({ pool: funnelPool }) : null;
+async function readEmailSettingsSubject(cookie) {
+    const legacy = /(?:^|;)\s*__Host-nofries-customer=/.test(cookie);
+    const external = /(?:^|;)\s*__Host-nofries-external-customer=/.test(cookie);
+    const reader = legacy && !external ? dashboard?.authServices.customer
+        : external && !legacy ? dashboard?.authServices.externalCustomer : null;
+    if (!reader) return null;
+    const details = await reader.session.readSessionDetails(cookie);
+    return details && details.identity && details.identity.isAuthenticated === true ? details.identity.subjectKey : null;
+}
+app.all(EMAIL_SETTINGS_PATH, (req, res, next) => emailSettingsStore ? next()
+    : sendResult(res, { status: 404, body: { error: 'Not found', code: 'not_found' } }),
+express.urlencoded({ extended: false, limit: EMAIL_SETTINGS_BODY_BYTES, parameterLimit: 4 }), asyncRoute(async (req, res) => {
+    sendResult(res, await handleEmailSettingsRequest(req, { env: authEnvironment || {}, readSubject: readEmailSettingsSubject,
+        store: emailSettingsStore, log: console }));
 }));
 app.use(express.json({ limit: '3mb' }));
 if (configuration.signupBootstrap) {
@@ -714,11 +741,14 @@ app.post('/api/enquiry', asyncRoute(async (req, res) => {
     if (!limit.allowed) {
         return res.status(429).json({ error: 'Too many enquiries have been sent. Please wait and try again.' });
     }
+    let sent;
     try {
-        res.status(200).json(await enquiryService.submitEnquiry(req.body || {}));
+        sent = await enquiryService.submitEnquiry(req.body || {});
     } catch (error) {
-        sendResult(res, enquiryErrorResult(error, { log: console }));
+        return sendResult(res, enquiryErrorResult(error, { log: console }));
     }
+    res.status(200).json(sent);
+    if (!isHoneypotEnquiry(req.body)) countFunnelEvent('enquiry_sent', req.headers);
 }));
 
 app.post('/api/scope/verify', asyncRoute(async (req, res) => {

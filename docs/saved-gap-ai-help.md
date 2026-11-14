@@ -1,0 +1,11 @@
+# Saved-gap assistance: offline first slice
+
+Refs #151. This contract is not imported by the application. It sends no data, loads no credentials and enables no AI. No score, answer, action, account, schema or feature flag changes. This prepares an optional **Help me act on this gap** feature, not public-chat access to assessments.
+
+`evals/saved-gap-help-contract.js` requires explicit enable/consent booleans and an exact selected submitted record, then uses the existing result validator and accepted metadata. It projects one non-Yes answer, its question and starting guidance. Its `context` excludes free text, rationale, scope descriptions, customer identity and scores. The separate `binding` and `sourceMap` must remain server-side. Unknown and claimed N/A remain unresolved. The response contract allows bounded plain text and known source handles only; it cannot establish semantic truth or prevent false claims within prose. Synthetic semantic evaluation is still required.
+
+This is **not an authorization or consent service**. A future server route must perform the existing authorised assessment read and audit before projection, derive tenant identity from that access, bind per-use preview/consent to the selected data and clear late replies on navigation/revision/access changes. Do not serialize the entire contract to a provider. Do not import this offline module into production without a separate review.
+
+Next small slices: protected preview/help UI with deterministic fallback; server-only no-tools adapter with independent isolation review and atomic cost limits; authorised synthetic/test-account pilot. No automatic answer edits, N/A approval, pricing, service activation or action creation. Model output is untrusted and never rendered as HTML.
+
+Before any API wiring, securely resolve the previously failed key setup and reconcile the first synthetic pilot call. A shared OPENAI_API_KEY currently causes the existing prospect runtime to select OpenAI by default, so client help must use explicit default-off enablement and must not accidentally activate other agents. Credit eligibility, current balance, model prices, retention and customer consent are separate activation gates. Claude owns merge and release.

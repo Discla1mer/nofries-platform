@@ -8,6 +8,7 @@ const { ImprovementPlanServiceError, normaliseImprovementCommand, normaliseImpro
     requireImprovementContext, serviceError } = require('./improvementPlanService');
 const { resolveImprovementAccess, resolveEligibleOwner } = require('./improvementPlanAccess');
 const store = require('./improvementPlanStore');
+const { planCarryForward, carryOperationId } = require('./improvementPlanCarryForward');
 const fail = (code = 'improvement_unavailable', status = 503) => { throw new ImprovementPlanServiceError(code, status); };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -70,6 +71,52 @@ function createPostgresImprovementPlanRepository(options) {
             fail();
         }
     }
+    // Reassessment: re-apply owners, due dates and open-work status from the
+    // organisation's previous plan as ordinary appended commands by the current
+    // writer, in this transaction. Old plans are only read. Generate still
+    // returns its own revision 0, so a replay returns the same result.
+    async function carryForward(tx, scope, current, context, initial, generated, source, at, owners) {
+        const previousId = await store.previousPlanId(tx, scope, source);
+        if (!previousId) return [];
+        let previous;
+        try { previous = await store.loadHistory(tx, { ...context.scope, planId: previousId }, current.tenantAggregate); }
+        catch (error) {
+            // A previous plan that no longer validates must not block every
+            // later plan: start fresh. Database errors still abort.
+            if (!(error instanceof ImprovementPlanServiceError || error instanceof ImprovementPlanError)) throw error;
+            try { console.warn('[improvement-plan] carry_forward_source_invalid'); } catch (_) { /* No logging authority. */ }
+            return [];
+        }
+        if (!previous) return [];
+        const records = [];
+        let state = initial, head = generated;
+        for (const action of planCarryForward(previous.result.plan, generated.result.plan)) {
+            if (action.ownerSubjectKey) {
+                try { resolveEligibleOwner(current, context, action.ownerSubjectKey, at); } catch { continue; }
+            }
+            const staged = [];
+            let next = state, last = head;
+            try {
+                for (const step of action.steps) {
+                    const intent = store.stableIntent(context, normaliseImprovementCommand({ planId: scope.planId, type: step.type,
+                        operationId: carryOperationId(previous.payloadSha256, last.revision + 1), expectedRevision: last.revision,
+                        actionId: action.actionId, payload: step.payload }));
+                    const domain = store.domainCommand(intent, at, state.source.evaluationOutputSha256);
+                    next = applyImprovementActionCommand(next, domain, { ...context.scope, actorSubjectKey: context.identity.subjectKey,
+                        eligibleOwnerSubjectKeys: action.ownerSubjectKey ? [action.ownerSubjectKey] : [] });
+                    last = store.makeRecord(intent, at, source, last.payloadSha256, next, domain);
+                    staged.push(last);
+                }
+            } catch (error) {
+                // A value the current rules no longer accept is not carried.
+                if (error instanceof ImprovementPlanError || error instanceof ImprovementPlanServiceError) continue;
+                throw error;
+            }
+            records.push(...staged); state = next; head = last;
+            if (action.ownerSubjectKey) owners.push(action.ownerSubjectKey);
+        }
+        return records;
+    }
     return Object.freeze({
         async readImprovementPlan(contextInput, input) {
             try {
@@ -92,6 +139,7 @@ function createPostgresImprovementPlanRepository(options) {
             } catch (error) { throw serviceError(error); }
             const attempt = async reconcile => {
                 let current, owner = null, ownerRequired = false;
+                const carriedOwners = [];
                 const generate = command.type === 'generate';
                 const result = await database.withTenantTransaction(context.scope.tenantId, async tx => {
                     current = await snapshot(tx, context);
@@ -132,10 +180,14 @@ function createPostgresImprovementPlanRepository(options) {
                     const record = store.makeRecord(intent, at, source, retained?.payloadSha256 ?? null, state, domainCommand);
                     access(current, context, 'improvement.write', now(), generate);
                     await store.append(tx, scope, record);
+                    if (generate) {
+                        for (const carried of await carryForward(tx, scope, current, context, state, record, source, at, carriedOwners)) await store.append(tx, scope, carried);
+                    }
                     if (audit) await auditCommand(context, at, now);
                     const finalAt = now();
                     access(current, context, 'improvement.write', finalAt, generate);
                     if (ownerRequired) resolveEligibleOwner(current, context, owner, finalAt);
+                    carriedOwners.forEach(key => resolveEligibleOwner(current, context, key, finalAt));
                     return record.result;
                 }, at => {
                     // A paired native host samples these source-specific facts
@@ -147,6 +199,7 @@ function createPostgresImprovementPlanRepository(options) {
                     // Replayed commands deliberately require the current writer,
                     // not renewed eligibility for an originally selected owner.
                     if (ownerRequired) resolveEligibleOwner(current, context, owner, checkedAt);
+                    carriedOwners.forEach(key => resolveEligibleOwner(current, context, key, checkedAt));
                 });
                 // Settlement may outlive the request's authority. Withholding
                 // disclosure here does not undo a committed revision and audit.
