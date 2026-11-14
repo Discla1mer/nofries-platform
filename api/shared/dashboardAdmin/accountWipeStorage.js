@@ -85,7 +85,10 @@ async function removeName(container, name, signal, counts) {
             try { await container.getBlobClient(name).withVersion(item.versionId).delete({ abortSignal: signal }); counts.versions += 1; }
             catch (error) { if (error?.statusCode !== 404) counts.versionsRemaining += 1; }
         }
-    } catch (_) { /* Listing versions is unsupported or refused: the base blob is already gone. */ }
+    } catch (_) {
+        // Versions could not be listed, so whether any remain is unknown.
+        counts.versionsUnverified += 1;
+    }
 }
 
 const usable = value => value && typeof value.getBlobClient === 'function' && typeof value.listBlobsFlat === 'function';
@@ -94,17 +97,22 @@ function createAccountWipeStorage(container, sessionContainer) {
     return Object.freeze({
         inventory: (email, signal) => inventory(container, email, signal),
         async delete(found, signal) {
-            const counts = { blobs: 0, versions: 0, versionsRemaining: 0 };
+            const counts = { blobs: 0, versions: 0, versionsRemaining: 0, versionsUnverified: 0 };
             // The email proof goes first: its name comes from the sign-in authority
             // record, which goes next so the account stops working at once.
             for (const name of found.session) { signal.throwIfAborted(); await removeName(sessionContainer, name, signal, counts); }
             for (const name of found.exact) { signal.throwIfAborted(); await removeName(container, name, signal, counts); }
             for (const prefix of found.prefixes) {
-                const names = [];
-                try { for await (const item of container.listBlobsFlat({ prefix, abortSignal: signal })) names.push(item.name); }
+                // Include names that only have previous versions left (from an earlier
+                // partial attempt), so a retry still removes them.
+                const names = new Set();
+                try { for await (const item of container.listBlobsFlat({ prefix, includeVersions: true, abortSignal: signal })) names.add(item.name); }
                 catch (_) { fail('account_wipe_storage_unavailable'); }
                 for (const name of names) { signal.throwIfAborted(); await removeName(container, name, signal, counts); }
             }
+            // The account record is how a retry finds everything else, so it stays
+            // until every other record and version is confirmed gone.
+            if (counts.versionsRemaining || counts.versionsUnverified) fail('account_wipe_storage_incomplete');
             await removeName(container, found.accountRecord, signal, counts);
             return Object.freeze(counts);
         }

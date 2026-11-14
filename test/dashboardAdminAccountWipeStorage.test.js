@@ -90,7 +90,7 @@ test('inventory and delete remove every record of the account, proof then sign-i
     expect(sessionBlobs.size).toBe(1);
     expect(c.deleted[0]).toBe(`customer-subjects/${subjectHash(a.subjectKey)}.json`);
     expect(c.deleted.at(-1)).toBe(accountName);
-    expect(counts).toEqual({ blobs: 10, versions: 0, versionsRemaining: 0 });
+    expect(counts).toEqual({ blobs: 10, versions: 0, versionsRemaining: 0, versionsUnverified: 0 });
     for (const name of blobs.keys()) expect(keepBefore).toContain(name);
     expect(blobs.has('customer-terms/' + 'c'.repeat(64) + '.json')).toBe(true);
     expect(blobs.has('customer-starter/' + starterAccountKey(other) + '.json')).toBe(true);
@@ -104,9 +104,11 @@ test('with versioning on, every version is deleted including the one the base de
     const counts = await storage.delete(await storage.inventory(email, signal()), signal());
     expect(Object.values(ok.kept).every(list => list.length === 0)).toBe(true);
     expect(counts.versions).toBeGreaterThanOrEqual(3); expect(counts.versionsRemaining).toBe(0);
-    const refused = container(new Map(blobs), { versions: { [name]: ['v1'] }, refuseVersions: true });
+    // A version that cannot be deleted keeps the account record so a retry can find it.
+    const refusedBlobs = new Map(blobs), refused = container(refusedBlobs, { versions: { [name]: ['v1'] }, refuseVersions: true });
     const second = createAccountWipeStorage(refused.value, container(new Map()).value);
-    expect((await second.delete(await second.inventory(email, signal()), signal())).versionsRemaining).toBe(1);
+    await expect(second.delete(await second.inventory(email, signal()), signal())).rejects.toMatchObject({ code: 'account_wipe_storage_incomplete' });
+    expect(refusedBlobs.has('customer-starter/' + starterAccountKey(email) + '.json')).toBe(true);
 });
 
 test('an unknown email has no inventory; a failed delete keeps the account record and a retry still finds the proof', async () => {
@@ -125,4 +127,23 @@ test('an unknown email has no inventory; a failed delete keeps the account recor
 
 test('both containers are required', () => {
     expect(() => createAccountWipeStorage(container(new Map()).value)).toThrow('account_wipe_configuration_invalid');
+});
+
+test('a version listing failure is reported as incomplete and keeps the account record', async () => {
+    const blobs = new Map(), email = 'unlisted@example.test', a = account(1, email, 'company'); seed(a, blobs, email);
+    const c = container(blobs), list = c.value.listBlobsFlat;
+    c.value.listBlobsFlat = options => { if (options.includeVersions && !options.prefix.endsWith('/')) throw new Error('refused'); return list(options); };
+    const storage = createAccountWipeStorage(c.value, container(new Map()).value);
+    await expect(storage.delete(await storage.inventory(email, signal()), signal())).rejects.toMatchObject({ code: 'account_wipe_storage_incomplete' });
+    expect(blobs.has('customer-starter/' + starterAccountKey(email) + '.json')).toBe(true);
+});
+
+test('a retry removes client records that only have previous versions left', async () => {
+    const blobs = new Map(), email = 'leftover@example.test', a = account(1, email); seed(a, blobs, email);
+    const orphan = `customer-starter/starter-clients/${a.record.accountId}/${uid(990)}.json`;
+    const c = container(blobs, { versions: { [orphan]: ['old'] }, versioning: true });
+    const storage = createAccountWipeStorage(c.value, container(new Map()).value);
+    await storage.delete(await storage.inventory(email, signal()), signal());
+    expect(c.kept[orphan]).toEqual([]);
+    expect(c.deleted).toContain(orphan + '@old');
 });
