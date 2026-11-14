@@ -474,8 +474,9 @@
             return list;
         }
         // Plain-English meanings of the words used in the progress line and the
-        // finish path. Terms already explained where they appear (Resolved,
-        // Unresolved, * for unsaved) are not repeated here.
+        // finish path. Terms already explained where they appear (Resolved on
+        // the finish path, * for unsaved in the question index) are not
+        // repeated here.
         let glossaryOpen = false;
         function glossary() {
             const section = node('details', 'ncsc-guidance ncsc-glossary'); section.id = 'ncsc-glossary'; section.open = glossaryOpen;
