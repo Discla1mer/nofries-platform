@@ -144,12 +144,21 @@ function createFunnelCountWriter({ pool, acquireTimeoutMs = ACQUIRE_TIMEOUT_MS }
 // after the business response is final, never awaited, bounded by a short
 // timeout and silent apart from one fixed tag. The flag is read on each call.
 const SERVER_FUNNEL_EVENTS = Object.freeze(['code_confirmed', 'submitted', 'enquiry_sent']);
+
+// Owner decision (#151): a visitor sending Global Privacy Control (Sec-GPC: 1)
+// or Do Not Track (DNT: 1) is never counted, by the server or the beacon.
+function privacySignal(headers) {
+    if (!headers || typeof headers !== 'object') return false;
+    const value = name => String(headers[name] ?? '').trim();
+    return value('sec-gpc') === '1' || value('dnt') === '1';
+}
 const SERVER_COUNT_TIMEOUT_MS = 2000;
 
 function createServerFunnelCounter({ env = process.env, record = null, log = null, now = () => new Date(),
     timeoutMs = SERVER_COUNT_TIMEOUT_MS } = {}) {
-    return function countFunnelEvent(event) {
-        if (!funnelCountsEnabled(env) || typeof record !== 'function' || !SERVER_FUNNEL_EVENTS.includes(event)) return;
+    return function countFunnelEvent(event, headers = null) {
+        if (!funnelCountsEnabled(env) || typeof record !== 'function' || !SERVER_FUNNEL_EVENTS.includes(event) ||
+            privacySignal(headers)) return;
         let timer = null;
         const timeout = new Promise((_, reject) => {
             timer = setTimeout(() => reject(new Error('funnel_count_timeout')), timeoutMs);
@@ -196,6 +205,8 @@ async function handleFunnelCountRequest(req, { env = process.env, record = null,
     }
     const event = readEvent(req && req.body);
     if (!event) return result(400, { error: 'Unknown event', code: 'invalid_event' });
+    // Accepted but not counted for GPC / DNT, so the answer reveals nothing.
+    if (privacySignal(req && req.headers)) return { status: 204, headers: apiSecurityHeaders(), body: null, isRaw: true };
     if (typeof record !== 'function') return result(503, { error: 'Funnel counts are unavailable', code: 'funnel_counts_unavailable' });
     try {
         await record(event, aucklandDay(now()));
@@ -224,6 +235,7 @@ function result(status, body, extraHeaders = {}) {
 }
 
 module.exports = {
+    privacySignal,
     MAX_IN_FLIGHT,
     STATEMENT_TIMEOUT_SQL,
     LOCK_TIMEOUT_SQL,

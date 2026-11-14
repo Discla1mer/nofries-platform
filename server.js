@@ -550,7 +550,7 @@ const countFunnelEvent = createServerFunnelCounter({ env: apiEnvironment, record
 if (dashboard) app.use('/api/dashboard', asyncRoute(async (req, res) => {
     const result = await dashboard.handleRequest(req);
     if (!res.destroyed && !res.writableEnded) sendResult(res, result);
-    if (isAssessmentSubmit(req.method, req.path, result)) countFunnelEvent('submitted');
+    if (isAssessmentSubmit(req.method, req.path, result)) countFunnelEvent('submitted', req.headers);
 }));
 for (const [prefix, setup, customerAuth, signup] of [
     ['/api/organisation-setup', configuration.organisationSetup, dashboard?.authServices.customer, customerSignup],
@@ -623,7 +623,7 @@ for (const [prefix, setup, customerAuth, signup] of [
         originalUrl: req.originalUrl.replace(prefix, '/api/organisation-setup'), headers: req.headers, body: req.body,
         clientKey: getClientKeyFromHeaders(req.headers, req.ip) });
     entryResponse(result);
-    if (result && result.status === 200 && result.codeVerified === true) countFunnelEvent('code_confirmed');
+    if (result && result.status === 200 && result.codeVerified === true) countFunnelEvent('code_confirmed', req.headers);
 }));
 // Flag off keeps the retired 410 before any body is read. Flag on accepts only
 // a 64-byte {event} POST and writes one aggregate daily count (issue #151).
@@ -725,7 +725,7 @@ app.post('/api/enquiry', asyncRoute(async (req, res) => {
         return sendResult(res, enquiryErrorResult(error, { log: console }));
     }
     res.status(200).json(sent);
-    if (!isHoneypotEnquiry(req.body)) countFunnelEvent('enquiry_sent');
+    if (!isHoneypotEnquiry(req.body)) countFunnelEvent('enquiry_sent', req.headers);
 }));
 
 app.post('/api/scope/verify', asyncRoute(async (req, res) => {
