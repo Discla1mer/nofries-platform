@@ -67,6 +67,27 @@ test('lists starter accounts newest first with formed date, signup, sign-in stat
     expect(result.rows.some(row => row.selector)).toBe(false);
 });
 
+test('a consultant with more client records than the page budget is reported incomplete', async () => {
+    const blobs = new Map(), consultant = account(1, { type: 'consultant' }); put(blobs, consultant);
+    for (let i = 0; i < 101; i += 1) {
+        const client = { requestId: '30000000-0000-4000-8000-' + String(i).padStart(12, '0'), kind: 'client', organisationName: `Client ${i}`,
+            ...Object.fromEntries(SLOT_IDS.map((key, k) => [key, '40000000-0000-4000-8000-' + String(i * 20 + k).padStart(12, '0')])) };
+        blobs.set(`customer-starter/starter-clients/${consultant.record.accountId}/${client.requestId}.json`, { schemaVersion: 1, accountId: consultant.record.accountId, slot: client });
+    }
+    const base = container(blobs);
+    const paged = { ...base, listBlobsFlat(options) {
+        const names = [...blobs.keys()].sort().filter(name => name.startsWith(options.prefix));
+        const iterator = base.listBlobsFlat(options);
+        iterator.byPage = ({ continuationToken, maxPageSize }) => (async function* () {
+            const start = continuationToken ? Number(continuationToken) : 0, end = start + maxPageSize;
+            yield { segment: { blobItems: names.slice(start, end).map(name => ({ name })) }, continuationToken: end < names.length ? String(end) : undefined };
+        }());
+        return iterator;
+    } };
+    const [row] = (await createAccountListReader([{ source, container: paged }], () => NOW)(signal())).rows;
+    expect(row.organisations).toHaveLength(101); expect(row.organisationsComplete).toBe(false);
+});
+
 test('selectors are returned only when actions are composed, and never for a misbound sign-in record', async () => {
     const blobs = new Map(), good = account(1), bad = account(2);
     bad.authority.organisationId = uid(999); put(blobs, good); put(blobs, bad);

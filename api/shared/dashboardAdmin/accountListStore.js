@@ -9,6 +9,7 @@ const { subjectHash } = require('../customerSignup/customerAuthority');
 const { AzureStarterAccountStore } = require('../customerSignup/azureStarterAccountStore');
 const { hash } = require('../appLifecycle/dashboardRuntimeRecords');
 const MAX_ACCOUNTS = 200;
+const CLIENT_PAGES = 2;
 const MAX_RECORD_BYTES = 16384;
 const PREFIX = 'customer-starter/starter-accounts/';
 const NAME = /^customer-starter\/starter-accounts\/[a-f0-9]{64}\.json$/;
@@ -50,20 +51,21 @@ async function signIn(source, container, account, signal, at) {
     } catch (_) { return { status: 'invalid', subjectKey }; }
 }
 
+// Detached client records are not bounded by the reservation ceiling, so the
+// read is budgeted to two pages and reports when more remain.
 async function organisations(store, account) {
     const names = account.organisations.map(slot => ({ name: slot.organisationName, kind: slot.kind }));
-    if (account.accountType !== 'consultant' || !account.activation) return names;
+    if (account.accountType !== 'consultant' || !account.activation) return { names, complete: true };
     let cursor = null;
-    // Client records are bounded by the reservation ceiling; two pages is ample.
-    for (let page = 0; page < 2; page += 1) {
+    for (let page = 0; page < CLIENT_PAGES; page += 1) {
         const result = await store.listClients(account.accountId, { cursor, limit: 50 });
         for (const slot of result.clients) {
             if (!names.some(item => item.kind === 'client' && item.name === slot.organisationName)) names.push({ name: slot.organisationName, kind: 'client' });
         }
-        if (!result.nextCursor) break;
+        if (!result.nextCursor) return { names, complete: true };
         cursor = result.nextCursor;
     }
-    return names;
+    return { names, complete: false };
 }
 
 const MAX_LISTED_NAMES = 5000;
@@ -100,7 +102,8 @@ function createAccountListReader(sources, now = Date.now) {
                 plan: account.planId, createdAt: account.createdAt, activatedAt: account.activation?.activatedAt ?? null,
                 signup: account.activation ? 'activated' : 'unfinished', signIn: login.status, organisationsComplete: true,
                 organisations: account.organisations.map(slot => ({ name: slot.organisationName, kind: slot.kind })) };
-            try { row.organisations = await organisations(store, account); } catch (_) { row.organisationsComplete = false; }
+            try { const found = await organisations(store, account); row.organisations = found.names; row.organisationsComplete = found.complete; }
+            catch (_) { row.organisationsComplete = false; }
             if (includeSelector && login.subjectKey && login.status !== 'invalid') row.selector = { provider: provider(source),
                 subjectKey: login.subjectKey, tenantId: account.organisations[0].tenantId, organisationId: account.organisations[0].organisationId };
             return row;
