@@ -84,12 +84,13 @@ describe.each(['company', 'consultant'])('%s calculated assessment journey', acc
         function expectCalculatedResults() {
             const panel = h.elements.dashboardApp.querySelector('.ncsc-results');
             expect(panel.querySelectorAll('.ncsc-result-metric').map(card => card.querySelector('.ncsc-result-value').textContent))
-                .toEqual(['75.0%–89.3%', '12 of 14', '0.0%']);
+                .toEqual(['75.0% in place', '12 of 14']);
+            // The result leads with the lower figure (#266); the full range is still shown.
+            expect(panel.textContent).toContain('89.3%');
             expect(panel.textContent).toContain('85.7%');
             expect(panel.textContent).toContain(rationale.value);
-            expect(panel.textContent).toContain('Calculation inputs and versions');
-            expect(panel.textContent).toContain(evaluation.outputSha256);
-            expect(panel.textContent).toContain(detail.submission.responseSetSha256);
+            // Customer results no longer show calculation hashes (#181). Reproducibility
+            // is checked by the identical result text after reopening, below.
             expect(h.button('Retry loading results')).toBeUndefined();
         }
         expectCalculatedResults();
