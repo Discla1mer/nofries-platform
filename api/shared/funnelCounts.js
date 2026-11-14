@@ -144,6 +144,8 @@ function createFunnelCountWriter({ pool, acquireTimeoutMs = ACQUIRE_TIMEOUT_MS }
 // after the business response is final, never awaited, bounded by a short
 // timeout and silent apart from one fixed tag. The flag is read on each call.
 const SERVER_FUNNEL_EVENTS = Object.freeze(['code_confirmed', 'submitted', 'enquiry_sent']);
+// The beacon endpoint accepts only the steps the server cannot see itself.
+const BROWSER_FUNNEL_EVENTS = Object.freeze(FUNNEL_EVENTS.filter(event => !SERVER_FUNNEL_EVENTS.includes(event)));
 
 // Owner decision (#151): a visitor sending Global Privacy Control (Sec-GPC: 1)
 // or Do Not Track (DNT: 1) is never counted, by the server or the beacon.
@@ -210,9 +212,10 @@ async function handleFunnelCountRequest(req, { env = process.env, record = null,
     if (typeof record !== 'function') return result(503, { error: 'Funnel counts are unavailable', code: 'funnel_counts_unavailable' });
     try {
         await record(event, aucklandDay(now()));
-    } catch (_) {
+    } catch (error) {
         // Fixed text only: no driver error, request detail or visitor data.
-        if (log && typeof log.warn === 'function') log.warn('funnel_count_write_failed');
+        // A skip at the in-flight cap is expected under load, not a failure.
+        if (!(error && error.code === 'funnel_count_busy') && log && typeof log.warn === 'function') log.warn('funnel_count_write_failed');
         return result(503, { error: 'Funnel counts are unavailable', code: 'funnel_counts_unavailable' });
     }
     return { status: 204, headers: apiSecurityHeaders(), body: null, isRaw: true };
@@ -227,7 +230,7 @@ function readEvent(body) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const keys = Object.keys(value);
     if (keys.length !== 1 || keys[0] !== 'event') return null;
-    return typeof value.event === 'string' && FUNNEL_EVENTS.includes(value.event) ? value.event : null;
+    return typeof value.event === 'string' && BROWSER_FUNNEL_EVENTS.includes(value.event) ? value.event : null;
 }
 
 function result(status, body, extraHeaders = {}) {
@@ -235,6 +238,7 @@ function result(status, body, extraHeaders = {}) {
 }
 
 module.exports = {
+    BROWSER_FUNNEL_EVENTS,
     privacySignal,
     MAX_IN_FLIGHT,
     STATEMENT_TIMEOUT_SQL,
