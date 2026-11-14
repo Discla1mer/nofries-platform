@@ -1133,6 +1133,11 @@
       "allowedRoles": ["anonymous"]
     },
     {
+      "route": "/api/dashboard-admin/accounts/list",
+      "methods": ["POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": [
         "authenticated"
