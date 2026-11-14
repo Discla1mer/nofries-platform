@@ -134,9 +134,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "no-store"
       }
     },
     {
