@@ -28,12 +28,15 @@ module.exports = function registerAccountWipeHttpPostgres({ improvementHttpSetup
         return result;
     }
     // A row belongs to the account when it carries the account's tenant, or,
-    // carrying no tenant, names its account, subject or customer sessions.
+    // carrying no tenant, names its account, subject or customer sessions. The
+    // harness signs its staff session in with the same synthetic identity; a
+    // staff (operator) session is never the customer's and must survive.
+    const customerGate = row => ['customer', 'onboarding_discovery'].includes(row.kind);
     function split(all, target) {
         const sessions = new Set(all.dashboard_session_gates.filter(row => row.subject_key === target.subjectKey
-            && ['customer', 'onboarding_discovery'].includes(row.kind)).map(row => row.session_sha256));
+            && customerGate(row)).map(row => row.session_sha256));
         const owned = row => row.tenant_id !== undefined && row.tenant_id !== null ? row.tenant_id === target.tenantId
-            : row.account_id === target.accountId || row.subject_key === target.subjectKey
+            : row.account_id === target.accountId || (row.subject_key === target.subjectKey && (row.kind === undefined || customerGate(row)))
                 || sessions.has(row.session_sha256) || sessions.has(row.anchor_session_sha256);
         const mine = {}, others = {};
         for (const [table, rows] of Object.entries(all)) { mine[table] = rows.filter(owned); others[table] = rows.filter(row => !owned(row)); }
