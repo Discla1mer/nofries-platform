@@ -98,7 +98,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
     // The route flag stays required; the reader and its durable audit writer
     // come only from the host's environment composition, never from a header.
     const accountLookup = env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP === 'true' && accountLookupReader
-        ? createAccountLookup({ read: accountLookupReader.read, audit: accountLookupReader.audit, targetDigest: accountLookupReader.targetDigest, readJson, env }) : null;
+        ? createAccountLookup({ read: accountLookupReader.read, list: accountLookupReader.list ?? null, audit: accountLookupReader.audit, targetDigest: accountLookupReader.targetDigest, readJson, env }) : null;
 
     async function principal(request, expected = null) {
         if ((!service && !signupListService) || !readOperatorSession) fail(503, 'dashboard_admin_unavailable');

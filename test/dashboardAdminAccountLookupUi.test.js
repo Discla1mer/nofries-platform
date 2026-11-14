@@ -20,7 +20,7 @@ function harness(fetch) {
         }
         return node;
     };
-    for (const match of html.matchAll(/<(\w+)\b[^>]*\bid="(accountLookup[^"]+)"[^>]*>/g)) {
+    for (const match of html.matchAll(/<(\w+)\b[^>]*\bid="(accountL(?:ookup|ist)[^"]+)"[^>]*>/g)) {
         const node = document.createElement(match[1]); node.value = ''; nodes.set(match[2], node);
     }
     document.getElementById = id => nodes.get(id);
@@ -89,4 +89,42 @@ test('opens the native operator session once when required and reports the bound
     const denied = harness(jest.fn().mockResolvedValueOnce(json(403, { code: 'dashboard_access_denied' })));
     denied.nodes.get('accountLookupEmail').value = 'denied@example.test'; await denied.submit();
     expect(denied.nodes.get('accountLookupStatus').textContent).toContain('Staff admin access is required');
+});
+
+test('the signup list loads after the staff session, shows formed date and organisations, and Open runs the email lookup', async () => {
+    const listed = { rows: [{ provider: 'external', readable: true, email: 'listed@example.test', accountType: 'consultant', plan: 'starter',
+        createdAt: '2026-11-01T00:00:00.000Z', activatedAt: '2026-11-01T00:05:00.000Z', signup: 'activated', signIn: 'active', organisationsComplete: true,
+        organisations: [{ name: 'Listed Ltd', kind: 'own' }, { name: 'Client Co', kind: 'client' }] }, { provider: 'legacy', readable: false }], truncated: true };
+    const fetch = jest.fn(async url => url === '/api/dashboard/session' ? session : json(200, listed));
+    const h = harness(fetch), load = h.nodes.get('accountListLoad'), form = h.nodes.get('accountLookupForm');
+    form.requestSubmit = jest.fn(); h.nodes.get('accountLookupPanel').scrollIntoView = jest.fn();
+    expect(h.nodes.get('accountListPanel').hidden).toBe(false);
+    await [...load.events.click][0]();
+    expect(fetch.mock.calls.map(([url, options]) => url + ' ' + options.method)).toEqual(['/api/dashboard/session GET', '/api/dashboard-admin/accounts/lookup POST']);
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({});
+    const text = h.nodes.get('accountListResults').textContent;
+    expect(text).toContain('listed@example.test'); expect(text).toContain('Listed Ltd'); expect(text).toContain('Client Co (client)');
+    expect(text).toContain('Consultant'); expect(text).toContain('could not be read');
+    expect(h.nodes.get('accountListStatus').textContent).toContain('capped at 200');
+    h.nodes.get('accountListResults').querySelectorAll('button')[0].click();
+    expect(h.nodes.get('accountLookupEmail').value).toBe('listed@example.test'); expect(form.requestSubmit).toHaveBeenCalled();
+    const denied = harness(jest.fn().mockResolvedValueOnce(json(403, { code: 'dashboard_access_denied' })));
+    await [...denied.nodes.get('accountListLoad').events.click][0]();
+    expect(denied.nodes.get('accountListStatus').textContent).toContain('Staff admin access is required');
+});
+
+test('pagehide aborts a pending signup list and its late response is never rendered', async () => {
+    const pending = deferred();
+    const fetch = jest.fn().mockResolvedValueOnce(session).mockReturnValueOnce(pending.promise);
+    const h = harness(fetch), load = h.nodes.get('accountListLoad'), result = h.nodes.get('accountListResults');
+    const run = [...load.events.click][0]();
+    while (fetch.mock.calls.length < 2) await new Promise(resolve => setImmediate(resolve));
+    h.window.dispatch('pagehide');
+    expect(fetch.mock.calls[1][1].signal.aborted).toBe(true);
+    expect(load.disabled).toBe(false); expect(result.getAttribute('aria-busy')).toBe('false');
+    pending.resolve(json(200, { rows: [{ provider: 'external', readable: true, email: 'late@example.test', accountType: 'company', plan: 'starter',
+        createdAt: null, activatedAt: null, signup: 'unfinished', signIn: 'none', organisationsComplete: true, organisations: [] }], truncated: false }));
+    await run;
+    expect(result.textContent).not.toContain('late@example.test');
+    expect(h.nodes.get('accountListStatus').textContent).toBe('');
 });

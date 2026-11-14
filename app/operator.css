@@ -237,3 +237,10 @@ main { width: min(1440px, 100%); margin: 0 auto; padding: clamp(28px, 4vw, 56px)
 #accountLookupResults table { border-collapse: collapse; width: 100%; text-align: left; }
 #accountLookupResults th, #accountLookupResults td { padding: 12px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 #accountLookupPanel :focus-visible { outline: 3px solid var(--teal-dark); outline-offset: 3px; }
+#accountListPanel { margin: 24px 0; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); }
+#accountListLoad { padding: 10px 16px; color: white; background: var(--teal-dark); border-radius: 8px; }
+#accountListResults { overflow-x: auto; }
+#accountListResults table { border-collapse: collapse; width: 100%; text-align: left; }
+#accountListResults th, #accountListResults td { padding: 12px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; vertical-align: top; }
+#accountListResults ul { margin: 0; padding-left: 18px; }
+#accountListPanel :focus-visible { outline: 3px solid var(--teal-dark); outline-offset: 3px; }
