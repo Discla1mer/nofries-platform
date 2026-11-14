@@ -14,12 +14,14 @@ const { verifyUnsubscribeToken, unsubscribeConfigured, MAX_TOKEN_LENGTH } = requ
 
 const PATH = '/api/emailPreferences';
 const MAX_BODY_BYTES = 1024;
-// Never clears or moves an earlier unsubscribe: an existing row that is already
-// unsubscribed is left exactly as it is.
+// Never clears or moves an earlier unsubscribe. An earlier settings unsubscribe
+// keeps its time but becomes 'link', because a link unsubscribe is permanent
+// and settings may turn back on only what was turned off in settings (E7).
 const UPSERT_SQL = `INSERT INTO nofries.email_preferences (account_id, email_type, unsubscribed_at, source)
     VALUES ($1, $2, clock_timestamp(), 'link')
-    ON CONFLICT (account_id, email_type) DO UPDATE SET unsubscribed_at = clock_timestamp(), source = 'link'
-    WHERE email_preferences.unsubscribed_at IS NULL`;
+    ON CONFLICT (account_id, email_type) DO UPDATE
+    SET unsubscribed_at = COALESCE(email_preferences.unsubscribed_at, clock_timestamp()), source = 'link'
+    WHERE email_preferences.unsubscribed_at IS NULL OR email_preferences.source <> 'link'`;
 const TYPE_LABELS = Object.freeze({ welcome: 'welcome emails', result_summary: 'result summary emails',
     nudge_unfinished: 'reminders to finish an assessment', reassess_reminder: 'reminders to reassess' });
 // Own small limiters, like /api/telemetry: they neither spend nor are starved
@@ -27,10 +29,11 @@ const TYPE_LABELS = Object.freeze({ welcome: 'welcome emails', result_summary: '
 // - Failed token checks are limited per client (IPv6 clients share their /64).
 // - Valid tokens are never limited per client, because one-click POSTs arrive
 //   from shared mail-provider addresses and a lost unsubscribe is a compliance
-//   failure. Instead each account and email type is limited on its own, a
-//   recorded unsubscribe is answered from memory (it is permanent, so the answer
-//   stays true), and at most MAX_IN_FLIGHT writes may hold pool connections, so
-//   a replayed token cannot starve the shared dashboard pool.
+//   failure. Instead each account and email type is limited on its own and at
+//   most MAX_IN_FLIGHT writes may hold pool connections, so a replayed token
+//   cannot starve the shared dashboard pool. Every allowed POST runs the
+//   idempotent write: an answer is never served from process memory, so it is
+//   always the database's, on every instance and after any restart.
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX = 30;
 const TOKEN_RATE_MAX = 5;
@@ -60,20 +63,11 @@ function createLimiter(max) {
 
 const clientLimiter = createLimiter(RATE_MAX);
 const tokenLimiter = createLimiter(TOKEN_RATE_MAX);
-// Bounded memory of recorded unsubscribes; oldest entries fall out first and a
-// later replay then simply re-runs the idempotent write.
-const recorded = new Set();
 let inFlight = 0;
-
-function remember(key) {
-    recorded.delete(key);
-    if (recorded.size >= MAX_BUCKETS) recorded.delete(recorded.values().next().value);
-    recorded.add(key);
-}
 
 const allow = clientKey => clientLimiter.allow(telemetryKey(clientKey));
 
-function resetUnsubscribeRateLimitForTests() { clientLimiter.clear(); tokenLimiter.clear(); recorded.clear(); inFlight = 0; }
+function resetUnsubscribeRateLimitForTests() { clientLimiter.clear(); tokenLimiter.clear(); inFlight = 0; }
 
 // Runs as nofries_runtime with the account's subject as the RLS context, the
 // same transaction shape as the funnel-count writer. The email_preferences_subject
@@ -120,7 +114,7 @@ ${form}</main>
 }
 
 const withHeaders = (result, extra) => ({ ...result, headers: { ...result.headers, ...extra } });
-const invalid = () => page(400, 'This link is not valid', ['Check that you used the full link from the email. You can also manage email from your account settings.']);
+const invalid = () => page(400, 'This link is not valid', ['Check that you used the full link from the email. You can also manage email from Email settings in your dashboard Account menu.']);
 
 function readToken(req) {
     const query = req && req.query && typeof req.query === 'object' ? req.query.t : undefined;
@@ -159,7 +153,6 @@ async function handleUnsubscribeRequest(req, { env = process.env, record = null,
     const done = page(200, 'You are unsubscribed', [`We will not send you ${label} again.`]);
     const busy = () => withHeaders(page(503, 'Please try again later', ['We could not update your email settings just now.']), { 'Retry-After': '60' });
     const key = `${claims.accountId}:${claims.emailType}`;
-    if (recorded.has(key)) return done;
     if (!tokenLimiter.allow(key)) {
         return withHeaders(page(429, 'Too many requests', ['Please wait a few minutes and try again.']), { 'Retry-After': '600' });
     }
@@ -174,7 +167,6 @@ async function handleUnsubscribeRequest(req, { env = process.env, record = null,
     } finally {
         inFlight -= 1;
     }
-    remember(key);
     return done;
 }
 

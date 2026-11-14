@@ -1414,6 +1414,10 @@ body[data-dashboard-gateway="true"]:has(#gatewayPublic:not([hidden])) .site-head
 /* Pages without the home layout keep their content column below the shared header. */
 body:is(.legal-page, [data-page="contact"], [data-page="public-error"]) .home-footer { margin-top: 24px; }
 body[data-page="public-error"] .public-shell { min-height: 0; }
+/* Signed-in email settings (#151 E7): one plain block per email type. */
+.email-settings-list { list-style: none; margin: 0; padding: 0; }
+.email-settings-list > li { border-top: 1px solid var(--line-strong); padding-block: 16px; }
+.organisation-card .email-settings-list h2 { margin: 0 0 6px; font-size: 1.15rem; }
 
 /* Roadmap themes disclose detail without changing availability claims. */
 .public-roadmap .roadmap-themes { display: grid; gap: 12px; max-width: 900px; }

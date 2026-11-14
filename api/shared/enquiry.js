@@ -24,6 +24,11 @@ function singleLine(value) {
     return String(value == null ? '' : value).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// People never see the website field, so a filled value marks a bot.
+function isHoneypotEnquiry(input) {
+    return Boolean(input && typeof input === 'object' && singleLine(input.website));
+}
+
 function multiLine(value) {
     return String(value == null ? '' : value)
         .replace(/\r\n?/g, '\n')
@@ -60,7 +65,7 @@ function createEnquiryService({ env = process.env, fetchImpl = (...args) => fetc
     async function submitEnquiry(input = {}) {
         // Honeypot: people never see the website field, so a filled value is a bot.
         // Report success without sending so the bot gets no signal.
-        if (singleLine(input.website)) return { received: true };
+        if (isHoneypotEnquiry(input)) return { received: true };
         const enquiry = validateEnquiry(input);
         const config = deliveryConfig(env);
         if (!config) {
@@ -112,4 +117,4 @@ function createEnquiryService({ env = process.env, fetchImpl = (...args) => fetc
     return { submitEnquiry, availability };
 }
 
-module.exports = { createEnquiryService, validateEnquiry, EnquiryError, LIMITS };
+module.exports = { createEnquiryService, validateEnquiry, EnquiryError, LIMITS, isHoneypotEnquiry };
