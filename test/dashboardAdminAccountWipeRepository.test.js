@@ -82,3 +82,15 @@ test.each([
     await expect(createAccountWipeRepository({ connect: async () => { connected = true; } }).delete(input)).rejects.toThrow();
     expect(connected).toBe(false);
 });
+
+test.each(['reset', 'delete'])('%s locks every table it deletes from before the first delete, with a lock timeout', async mode => {
+    const f = fakePool();
+    await createAccountWipeRepository(f.pool)[mode](scope);
+    const sql = f.statements.map(([text]) => text);
+    const lock = sql.findIndex(text => text.startsWith('LOCK TABLE'));
+    expect(lock).toBeGreaterThan(sql.indexOf('SET LOCAL ROLE nofries_account_wipe'));
+    expect(sql.indexOf("SET LOCAL lock_timeout = '5s'")).toBeLessThan(lock);
+    expect(lock).toBeLessThan(sql.findIndex(text => text.startsWith('DELETE')));
+    expect(sql[lock]).toMatch(/IN SHARE ROW EXCLUSIVE MODE$/);
+    for (const table of new Set(deletes(f.statements))) expect(sql[lock]).toContain('nofries.' + table + (sql[lock].includes('nofries.' + table + ',') ? ',' : ''));
+});

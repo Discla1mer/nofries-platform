@@ -35,6 +35,8 @@ const DELETE_TENANT_TABLES = Object.freeze([...RESET_TABLES,
 const DELETE_FIRST_TABLES = Object.freeze(['dashboard_runtime_receipts', 'dashboard_runtime_audit', 'dashboard_session_gates']);
 const DELETE_ACCOUNT_TABLES = Object.freeze(['email_preferences', 'dashboard_starter_accounts', 'signup_registrations']);
 const MAX_TENANTS = 64;
+const lockTables = mode => mode === 'delete'
+    ? [...new Set([...DELETE_FIRST_TABLES, ...DELETE_TENANT_TABLES, ...DELETE_ACCOUNT_TABLES])] : [...RESET_TABLES];
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
 
 function target(input) {
@@ -58,6 +60,12 @@ function createAccountWipeRepository(pool) {
         try {
             await client.query('BEGIN');
             await client.query('SET LOCAL ROLE nofries_account_wipe');
+            // Serialise with customer writers (evidence, assessments, plans) for the
+            // whole wipe: no row can be added or changed in these tables until
+            // COMMIT. Reads continue. DELETE privilege is enough for this mode; a
+            // busy table fails the call after the lock timeout and nothing changes.
+            await client.query("SET LOCAL lock_timeout = '5s'");
+            await client.query(`LOCK TABLE ${lockTables(mode).map(table => 'nofries.' + table).join(', ')} IN SHARE ROW EXCLUSIVE MODE`);
             await client.query("SELECT set_config('nofries.wipe_account_id', $1, true), set_config('nofries.wipe_subject_key', $2, true)",
                 [scope.accountId, scope.subjectKey]);
             // The account must exist under this subject before anything is removed.
