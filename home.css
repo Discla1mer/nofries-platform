@@ -1418,3 +1418,23 @@ body[data-page="public-error"] .public-shell { min-height: 0; }
 .email-settings-list { list-style: none; margin: 0; padding: 0; }
 .email-settings-list > li { border-top: 1px solid var(--line-strong); padding-block: 16px; }
 .organisation-card .email-settings-list h2 { margin: 0 0 6px; font-size: 1.15rem; }
+
+/* Phones: the header keeps only the brand and Log in. The other page links
+   live in the footer, laid out as a tidy two-column list with large targets. */
+@media (max-width: 700px) {
+    body .site-header:has(> nav[aria-label="Main navigation"]) { grid-template-columns: minmax(0, 1fr) auto; align-items: center; row-gap: 0; }
+    body .site-header nav[aria-label="Main navigation"] { grid-column: auto; grid-row: auto; justify-self: end; justify-content: flex-end; }
+    body .site-header nav[aria-label="Main navigation"] > a:not(.site-login, .homepage-login) { display: none; }
+    body .site-header nav[aria-label="Main navigation"] > :is(.site-login, .homepage-login) { margin-left: 0; white-space: nowrap; }
+
+    body .home-footer { flex-direction: column-reverse; align-items: stretch; gap: 20px; padding-block: 24px 32px; }
+    body .home-footer nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+    body .home-footer nav a {
+        justify-content: flex-start; min-height: 48px; padding: 0;
+        border-bottom: 1px solid var(--line); color: var(--ink); font-size: 1rem; font-weight: 600; text-decoration: none;
+    }
+    body .home-footer nav a[aria-current="page"] { text-decoration: underline; text-underline-offset: 6px; }
+    body .home-footer nav a[href="/privacy.html"] { grid-column: 1; }
+    body .home-footer nav a:is([href="/privacy.html"], [href="/terms.html"]) { border-bottom: 0; color: var(--ink-soft); font-size: .875rem; font-weight: 500; }
+    body .home-footer > div { color: var(--muted); font-size: .8125rem; }
+}

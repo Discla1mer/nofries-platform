@@ -63,6 +63,15 @@ test('the shared header styles are defined once and keep links visible on phones
     for (const name of PAGES) expect([name, read(name).includes('href="/home.css"')]).toEqual([name, true]);
 });
 
+test('on phones the header shows only the brand and Log in, and the footer lists the page links', () => {
+    const css = read('home.css');
+    const phone = css.match(/@media \(max-width: 700px\) \{\s*body \.site-header:has\(> nav\[aria-label="Main navigation"\]\)[\s\S]*?\n\}/);
+    expect(phone).not.toBeNull();
+    expect(phone[0]).toMatch(/nav\[aria-label="Main navigation"\] > a:not\(\.site-login, \.homepage-login\) \{ display: none; \}/);
+    expect(phone[0]).toMatch(/body \.home-footer nav \{ display: grid;/);
+    expect(phone[0]).toMatch(/min-height: 48px;/);
+});
+
 test('the roadmap keeps its header links visible on phones and no page links to the retired News site', () => {
     const html = read('roadmap.html');
     expect(html).toContain('<body data-page="product-roadmap" data-product="dashboard">');
