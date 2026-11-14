@@ -708,9 +708,7 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
 
     describe('reassessment carry-forward', () => {
         async function reassessed() {
-            const adapters = createNcscAdapters(clock, { amount: 2 });
-            ncsc = createPostgresDashboardRepository({ database, clock: clock.now, authoriseAdministration: () => true,
-                ncsc: { audit: adapters.audit, resolveSubmissionQuota: adapters.resolveSubmissionQuota } });
+            // The fixture grant allows two assessment runs at one unit each.
             const { example, initial } = await generated();
             const [a, b, c, d] = initial.plan.actions.map(action => action.actionId);
             let plan = initial.plan;
