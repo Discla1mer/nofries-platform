@@ -463,6 +463,16 @@
             if (text !== undefined && text !== null) result.textContent = String(text);
             return result;
         }
+        // D-004: a scope written one item per line is shown as a list on the
+        // review step. The saved-declaration panel deliberately keeps the exact
+        // saved text, and the saved declaration remains the compared value.
+        function scopeText(description) {
+            const lines = String(description).split(/\r?\n/).map(line => line.trim().replace(/^[-*\u2022]\s+/, '')).filter(Boolean);
+            if (lines.length < 2) return node('p', 'ncsc-preserve-text', description);
+            const list = node('ul', 'ncsc-scope-list');
+            lines.forEach(line => list.append(node('li', 'ncsc-preserve-text', line)));
+            return list;
+        }
         function button(label, action, cls) {
             const result = node('button', cls || 'dashboard-button', label); const createdEpoch = epoch;
             result.type = 'button'; result.addEventListener('click', function () { if (live(createdEpoch) && root.contains(result) && !result.disabled) action(); });
@@ -1156,7 +1166,7 @@
                         '). You can submit with ' + (toConfirm === 1 ? 'it' : 'them') + ', but ' + (toConfirm === 1 ? 'it does' : 'they do') + ' not count as in place.' : ''));
             readiness.id = 'ncsc-review-readiness'; panel.append(readiness);
             renderReviewRange(panel, rows, unanswered);
-            const scope = node('section', 'ncsc-review-scope'); scope.append(node('h4', '', 'Assessment scope'), node('p', 'ncsc-preserve-text', acknowledged.scopePopulation.description));
+            const scope = node('section', 'ncsc-review-scope'); scope.append(node('h4', '', 'Assessment scope'), scopeText(acknowledged.scopePopulation.description));
             panel.append(scope);
             const list = node('ol', 'ncsc-review-list');
             rows.forEach(function (row) {

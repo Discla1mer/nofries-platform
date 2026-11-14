@@ -131,6 +131,15 @@
             const value = doc.createElement(tag); if (cls) value.className = cls;
             if (text !== undefined) value.textContent = String(text); return value;
         }
+        // D-004: a scope written one item per line is shown as a list. The
+        // saved declaration is unchanged and remains the compared value.
+        function scopeText(description) {
+            const lines = String(description).split(/\r?\n/).map(line => line.trim().replace(/^[-*\u2022]\s+/, '')).filter(Boolean);
+            if (lines.length < 2) return node('p', 'ncsc-preserve-text', description);
+            const list = node('ul', 'ncsc-scope-list');
+            lines.forEach(line => list.append(node('li', 'ncsc-preserve-text', line)));
+            return list;
+        }
         // One live region for the whole view, kept across repaints so screen
         // readers hear both "Loading…" and the end of loading.
         const liveStatus = node('p', 'picture-status'); liveStatus.setAttribute('role', 'status');
@@ -230,7 +239,7 @@
             progress.max = detail.progress.total; progress.value = detail.progress.answered;
             progress.setAttribute('aria-label', 'Saved responses');
             const scope = node('section', 'picture-scope');
-            scope.append(node('h3', '', 'Scope'), node('p', 'ncsc-preserve-text', detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.'));
+            scope.append(node('h3', '', 'Scope'), scopeText(detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.'));
             draft.append(heading, saved, progress, scope,
                 node('p', 'dashboard-muted', 'Saved progress is not a score. Submit this assessment when it is ready; unknown answers remain visible as uncertainty.'));
             root.append(draft);
@@ -403,7 +412,7 @@
                 root.append(sourceDetails()); return;
             }
             const scope = node('section', 'picture-scope');
-            scope.append(node('h3', '', 'Scope'), node('p', 'ncsc-preserve-text', detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.')); root.append(scope);
+            scope.append(node('h3', '', 'Scope'), scopeText(detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.')); root.append(scope);
             const result = questionnaire.resultModel(detail, metadata, organisationId);
             if (!result) { root.append(node('p', 'ncsc-warning', 'Results are unavailable for this saved submission. No score has been inferred.'), sourceDetails()); return; }
             if (typeof options.openCyber === 'function') root.append(openSavedAssessment('View saved assessment'));
