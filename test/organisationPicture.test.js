@@ -13,10 +13,12 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const flush = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
 
 function mixed() {
-    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
-    const responses = allResponses().map((row, index) => ({ ...row,
+    return submittedWithResponses(allResponses().map((row, index) => ({ ...row,
         optionId: index < 3 ? 'yes' : index < 10 ? 'partial' : index < 12 ? 'no' : index === 12 ? 'unknown' : 'not_applicable',
-        rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null }));
+        rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null })));
+}
+function submittedWithResponses(responses) {
+    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
     let version = null;
     for (const command of [createCommand('assessment-mixed', 'create-mixed', 'Synthetic office and cloud scope.'),
         saveCommand('assessment-mixed', 0, 'save-mixed', responses), submitCommand('assessment-mixed', 1, 'submit-mixed')]) {
@@ -68,10 +70,14 @@ test('connected view preserves golden server range, uncertainty and completion w
     const dom = setup(); await flush();
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
     assert.match(dom.root.textContent, /85\.7%/);
+    const reported = dom.root.querySelector('.picture-primary');
+    assert.equal(reported.querySelector('.picture-large').textContent, '46.4% in place');
+    assert.equal(reported.querySelector('.picture-metric-upper').textContent, 'Up to 60.7% if every answer still to confirm turns out to be in place.');
+    assert.match(reported.textContent, /The first figure is what you reported as in place\. The higher figure adds answers still to confirm/);
     assert.match(dom.root.textContent, /12 of 14/);
     assert.match(dom.root.textContent, /7 partial and 2 absent/);
-    assert.match(dom.root.textContent, /2 unknown or unresolved/);
-    assert.match(dom.root.textContent, /1 answer marked not applicable, to confirm/);
+    assert.match(dom.root.textContent, /2 still to confirm/);
+    assert.match(dom.root.textContent, /including 1 answer marked not applicable, to confirm/);
     assert.match(dom.root.textContent, /not a performance score/);
     assert.doesNotMatch(dom.root.textContent, /Supporting evidence|Tested or observed coverage|evidence upload/i);
     assert.equal(dom.root.querySelectorAll('meter').length, dom.fixtures.metadata.domains.length);
@@ -161,6 +167,22 @@ test('same-day choices remain unambiguous without changing exact selected IDs or
     dom.controller.destroy();
 });
 
+test('a long scope is shortened in the selector so status and date stay visible, with the full label as a tooltip', async () => {
+    const record = clone(buildFixtures().tenants[0].assessments[0]);
+    const long = 'Synthetic head office, two retail sites,\n  the warehouse laptops and every cloud service we pay for each month';
+    record.scopePopulation.description = long;
+    const dom = setup({ records: [record] }); await flush();
+    const picker = dom.root.querySelector('.picture-toolbar').querySelector('select');
+    const option = picker.querySelector('option');
+    const flat = long.replace(/\s+/g, ' ');
+    assert.ok(option.textContent.startsWith(flat.slice(0, 59).trimEnd() + '… · In progress · '));
+    assert.ok(option.textContent.endsWith(' NZ time'));
+    assert.equal(option.title, flat + option.textContent.slice(option.textContent.indexOf(' · In progress · ')));
+    assert.equal(picker.title, option.title);
+    assert.ok(dom.root.textContent.includes(long));
+    dom.controller.destroy();
+});
+
 test('a single saved choice omits its technical ID while the draft source disclosure preserves it', async () => {
     const record = buildFixtures().tenants[0].assessments[0];
     const dom = setup({ records: [record] }); await flush();
@@ -214,6 +236,23 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
     assert.equal(follow.querySelectorAll('input').length, 0);
     assert.equal(follow.querySelectorAll('button').length, 0);
+    dom.controller.destroy();
+});
+
+// A-019: under half answered Yes, Partial or No, Overview does not lead with the range.
+// #266's lead-with-lower rewrite is skipped, so the headline stays "Not enough answers".
+test.each([[false], [true]])('Overview leads with not enough answers when fewer than half are answered Yes, Partial or No (start action: %s)', async (canStart) => {
+    const record = submittedWithResponses(allResponses().map((row, index) => ({ ...row, optionId: index < 1 ? 'yes' : 'unknown' })));
+    const dom = setup({ records: [record], options: canStart ? { openCyber: () => {} } : {} }); await flush();
+    const primary = dom.root.querySelector('.picture-primary');
+    assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
+    assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet');
+    assert.equal(primary.querySelector('.picture-metric-upper'), null);
+    assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or waiting for review, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
+    // A submitted result is read-only: do not ask the customer to confirm answers.
+    assert.doesNotMatch(primary.textContent, /Confirm the Unknown answers|resolved/i);
+    if (canStart) assert.match(primary.textContent, /Range so far: 7\.1%–100\.0%\. Start a new assessment once more answers are known\./);
+    else assert.doesNotMatch(primary.textContent, /Start a new assessment/);
     dom.controller.destroy();
 });
 
@@ -639,7 +678,7 @@ test('domain categories explicitly show no matches without presenting empty list
         const empty = category.querySelector('.picture-follow-up-empty');
         assert.equal(empty.hidden, false); assert.match(empty.textContent, /No follow-up items in this function for this category/);
     }
-    assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 unknown or unresolved/);
+    assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 still to confirm, including 1 answer marked not applicable, to confirm/);
     const before = follow.textContent, visibility = follow.querySelectorAll('article').map(article => article.hidden);
     change(filter, 'unrecognised-domain');
     assert.equal(follow.textContent, before); assert.deepEqual(follow.querySelectorAll('article').map(article => article.hidden), visibility);

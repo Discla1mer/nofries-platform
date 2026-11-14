@@ -963,6 +963,21 @@ describe('plain action names and "You" as owner in the editor', () => {
         expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toBe(view.actionTitle(actions[0], titles));
     });
 
+    test('topic follow-ups from the host reach the cards and the editor summary (F1-R10)', async () => {
+        const actions = presentation(seed()).actions, followUps = Object.fromEntries(actions.map(action => [action.itemId, 'Follow-up for ' + action.itemId]));
+        const h = harness({ options: { itemFollowUps: followUps } }); await h.controller.ready;
+        const gap = actions.findIndex(action => action.rationale.kind === 'implementation');
+        expect(h.root.querySelectorAll('article')[gap].querySelector('.improvement-action-work').textContent).toBe(followUps[actions[gap].itemId]);
+        expect(view.actionWork(actions[gap], followUps)).toBe(followUps[actions[gap].itemId]);
+    });
+
+    test('malformed follow-ups fall back to the retained wording without breaking the plan', async () => {
+        const h = harness({ options: { itemFollowUps: { 'bad key with spaces': 'x' } } });
+        expect(await h.controller.ready).toBe(true);
+        const actions = presentation(seed()).actions;
+        expect(h.root.querySelectorAll('article')[0].querySelector('.improvement-action-work').textContent).toBe(actions[0].rationale.suggestedAction);
+    });
+
     test('malformed titles fall back to codes without breaking the plan', async () => {
         const h = harness({ options: { controlTitles: { 'bad key with spaces': 'x' } } });
         expect(await h.controller.ready).toBe(true);
@@ -1131,4 +1146,61 @@ describe('onAccepted reports only responses that pass validation', () => {
         expect(() => mount(dom.root, { request: jest.fn(), isCurrent: () => true, newId: jest.fn(), organisationId: SCOPE.organisationId,
             onAccepted: 'yes' })).toThrow();
     });
+});
+
+test('after a plan is created its view and editor reads go out together, one round trip instead of two', async () => {
+    // F1 / D-013: create plan -> loaded action controls took 9 to 10 seconds over three sequential requests.
+    const selected = source(), planId = 'overview-plan-' + selected.revisionSha256, gates = [];
+    const h = harness({ options: { sourceAssessment: selected }, respond(path, body, state) {
+        if (path.includes('/plans?')) return { status: 200, value: page([]) };
+        if (path.endsWith('/execute')) { const plan = seed(body.planId); state.plans.set(body.planId, plan); return { status: 200, value: { schemaVersion: 1, plan: getImprovementPlanView(plan) } }; }
+        const gate = deferred(); gates.push(gate);
+        return gate.promise.then(() => ({ status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) }));
+    }, editorRespond(path, body, state) {
+        const gate = deferred(); gates.push(gate);
+        return gate.promise.then(() => ({ status: 200, value: editorContext(state, planId) }));
+    } });
+    await h.controller.ready;
+    const generated = h.controller.generate(); await settle();
+    expect(h.request.mock.calls.slice(2).map(call => call[0])).toEqual(['/api/dashboard/improvement/view?planId=' + planId,
+        '/api/dashboard/improvement/editor?planId=' + planId]);
+    expect(gates).toHaveLength(2);
+    gates[1].resolve(); await settle();
+    expect(h.root.textContent).not.toContain('Saved plan and current action options loaded.');
+    gates[0].resolve();
+    expect(await generated).toBe(true);
+    expect(h.root.textContent).toContain('Saved plan and current action options loaded.');
+    expect(h.request).toHaveBeenCalledTimes(4);
+});
+
+test('an early editor answer stamped before the plan view is re-read in sequence instead of failing the plan', async () => {
+    // Review of #343: the parallel editor read can be stamped before the view, which editorContext rejects.
+    const selected = source(), planId = 'overview-plan-' + selected.revisionSha256; let editorCalls = 0;
+    const h = harness({ options: { sourceAssessment: selected }, respond(path, body, state) {
+        if (path.includes('/plans?')) return { status: 200, value: page([]) };
+        if (path.endsWith('/execute')) { const plan = seed(body.planId); state.plans.set(body.planId, plan); return { status: 200, value: { schemaVersion: 1, plan: getImprovementPlanView(plan) } }; }
+        return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
+    }, editorRespond(path, body, state) {
+        editorCalls += 1;
+        const value = editorContext(state, planId);
+        return { status: 200, value: editorCalls === 1 ? Object.assign({}, value, { asOf: '2000-01-01T00:00:00.000Z' }) : value };
+    } });
+    await h.controller.ready;
+    expect(await h.controller.generate()).toBe(true);
+    expect(editorCalls).toBe(2);
+    expect(h.root.textContent).toContain('Saved plan and current action options loaded.');
+    expect(h.root.textContent).not.toContain('Improvement Plan is unavailable');
+});
+
+test('an editor answer is discarded when the plan view in the same round trip fails', async () => {
+    const h = harness({ respond(path, body, state) {
+        if (path.startsWith('/api/dashboard/improvement/plans?')) return { status: 200, value: page() };
+        if (path.startsWith('/api/dashboard/improvement/view?')) return { status: 503, value: { code: 'improvement_unavailable' } };
+        throw new Error('unexpected');
+    } });
+    expect(await h.controller.ready).toBe(false);
+    expect(h.request.mock.calls.map(call => call[0])).toEqual(['/api/dashboard/improvement/plans?limit=20',
+        '/api/dashboard/improvement/view?planId=plan-a', '/api/dashboard/improvement/editor?planId=plan-a']);
+    expect(h.root.querySelectorAll('form').filter(visible)).toHaveLength(0);
+    expect(h.root.textContent).not.toContain('Saved plan and current action options loaded.');
 });

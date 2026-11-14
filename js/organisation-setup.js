@@ -135,6 +135,11 @@
     }
     function setBusy(value) {
         busy = value;
+        // Until the first setup state arrives there is nothing to check yet: show
+        // an explicit busy message instead of an unavailable recovery action.
+        const opening = !rendered && !initialReadFailed;
+        byId('organisation-refresh').hidden = opening;
+        if (opening && value && byId('organisation-intro').textContent !== 'Opening account setup…') status.textContent = 'Opening account setup…';
         for (const item of [form, codeForm, profileForm, detailsForm]) item.setAttribute('aria-busy', String(value));
         for (const control of document.querySelectorAll('#create-organisation input, #create-organisation button')) {
             control.disabled = value || navigating || !ready && control !== byId('organisation-refresh');

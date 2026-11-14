@@ -10,6 +10,7 @@
     // Bounded number of submitted results shown in the history. Each one is a
     // separate authorised read; nothing is cached across selections.
     const TREND_LIMIT = 5;
+    const SCOPE_OPTION_CHARS = 60;
     const copy = value => JSON.parse(JSON.stringify(value));
     const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
@@ -54,17 +55,24 @@
     // UTC calendar day basis. Owner names come only from ownerLabel.
     const ACTION_LIMIT = 3, DUE_SOON_DAYS = 14;
     const DAY = /^\d{4}-\d\d-\d\d$/;
+    function calendarDay(value) {
+        if (typeof value !== 'string' || !DAY.test(value)) return false;
+        const parsed = new Date(value + 'T00:00:00.000Z');
+        return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    }
     function actionSummary(input) {
         if (!input || !Array.isArray(input.lists) || typeof input.more !== 'boolean') return null;
         let today = null; const rows = [];
         for (const list of input.lists) {
-            if (!list || typeof list.asOf !== 'string' || !DAY.test(list.asOf.slice(0, 10)) || !Array.isArray(list.actions)) return null;
+            if (!list || typeof list.asOf !== 'string' || !calendarDay(list.asOf.slice(0, 10)) || !Array.isArray(list.actions)) return null;
             if (today === null || list.asOf.slice(0, 10) < today) today = list.asOf.slice(0, 10);
             for (const action of list.actions) {
                 if (!action || typeof action.actionId !== 'string' || typeof action.status !== 'string' ||
-                    typeof action.isOverdue !== 'boolean' || action.isOverdue && action.dueDate === null || action.dueDate !== null && !(typeof action.dueDate === 'string' && DAY.test(action.dueDate)) ||
+                    typeof action.isOverdue !== 'boolean' || action.isOverdue && action.dueDate === null || action.dueDate !== null && !calendarDay(action.dueDate) ||
                     !action.rationale || typeof action.rationale.suggestedAction !== 'string' || !action.rationale.suggestedAction.trim() ||
                     Object.hasOwn(action, 'ownerLabel') && typeof action.ownerLabel !== 'string') return null;
+                if (Object.hasOwn(action.completion || {}, 'nextReviewDate') &&
+                    (action.status !== 'completed' || !calendarDay(action.completion.nextReviewDate))) return null;
                 rows.push(action);
             }
         }
@@ -75,9 +83,20 @@
         const overdue = rows.filter(action => action.isOverdue).sort(byDue);
         const dueSoon = rows.filter(action => !action.isOverdue && action.status !== 'completed' && action.dueDate !== null &&
             action.dueDate >= today && action.dueDate <= horizon).sort(byDue);
+        // Use current completion only: a historical completion does not keep a
+        // reopened action on the review list. Never reopen or mark a review done.
+        const reviews = rows.filter(action => action.status === 'completed' && action.completion &&
+            Object.hasOwn(action.completion, 'nextReviewDate'))
+            .sort((a, b) => a.completion.nextReviewDate.localeCompare(b.completion.nextReviewDate) || a.actionId.localeCompare(b.actionId))
+            .map(action => ({ ...item(action), reviewDate: action.completion.nextReviewDate }));
+        const reviewsDue = reviews.filter(action => action.reviewDate <= today);
+        const reviewsSoon = reviews.filter(action => action.reviewDate > today && action.reviewDate <= horizon);
         return { total: rows.length, more: input.more,
             overdue: { count: overdue.length, items: overdue.slice(0, ACTION_LIMIT).map(item) },
-            dueSoon: { count: dueSoon.length, items: dueSoon.slice(0, ACTION_LIMIT).map(item) } };
+            dueSoon: { count: dueSoon.length, items: dueSoon.slice(0, ACTION_LIMIT).map(item) },
+            reviews: { total: reviews.length, asOfDay: today,
+                due: { count: reviewsDue.length, items: reviewsDue.slice(0, ACTION_LIMIT) },
+                soon: { count: reviewsSoon.length, items: reviewsSoon.slice(0, ACTION_LIMIT) } } };
     }
     const displayDay = value => new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeZone: 'UTC' })
         .format(new Date(value + 'T00:00:00.000Z'));
@@ -92,7 +111,7 @@
         if (!root || !root.ownerDocument || !options || !options.client ||
             typeof options.client.list !== 'function' || typeof options.client.read !== 'function' ||
             !options.metadata || typeof options.organisationId !== 'string' || !options.organisationId ||
-            !questionnaire || typeof questionnaire.resultModel !== 'function') throw new Error('picture_composition_required');
+            !questionnaire || typeof questionnaire.resultModel !== 'function' || typeof questionnaire.enoughAnswersToEstimate !== 'function') throw new Error('picture_composition_required');
         if (mounted.has(root)) mounted.get(root).destroy();
         const doc = root.ownerDocument, client = options.client, metadata = copy(options.metadata);
         const organisationId = options.organisationId, organisationName = options.displayName || organisationId;
@@ -241,19 +260,24 @@
                 } else empty.append(node('span', '', 'Start with your top three gaps.'));
                 card.append(empty); root.prepend(card); return;
             }
-            [['Overdue', actions.overdue], ['Due in the next 14 days', actions.dueSoon]].forEach(([label, group]) => {
+            const groups = [['Overdue', actions.overdue], ['Due in the next 14 days', actions.dueSoon]];
+            if (actions.reviews.total) groups.push(['Reviews due', actions.reviews.due], ['Reviews in the next 14 days', actions.reviews.soon]);
+            groups.forEach(([label, group]) => {
                 card.append(node('h4', '', label + ' (' + group.count + ')'));
                 if (!group.items.length) return;
                 const list = node('ul', 'picture-actions-list');
                 group.items.forEach(entry => {
                     const row = node('li', 'picture-action');
                     row.append(node('span', 'picture-action-title', entry.title),
-                        node('span', 'picture-action-meta dashboard-muted', 'Due ' + displayDay(entry.dueDate) +
+                        node('span', 'picture-action-meta dashboard-muted', (entry.reviewDate ? 'Review ' + displayDay(entry.reviewDate) : 'Due ' + displayDay(entry.dueDate)) +
                             (entry.owner ? ' · Owner: ' + entry.owner : '')));
                     list.append(row);
                 });
                 card.append(list);
             });
+            if (actions.reviews.total) card.append(node('p', 'picture-review-note dashboard-muted',
+                'Review dates use saved action records, checked against ' + displayDay(actions.reviews.asOfDay) + ' (UTC). ' +
+                'A review date does not confirm a review took place, verify evidence or change a score.'));
             if (actions.more) card.append(node('p', 'dashboard-muted', 'Counts cover the first five saved plans.'));
             const full = node('a', 'picture-actions-plan', 'View the full plan'); full.href = '#improvement-plan';
             full.addEventListener('click', event => { event.preventDefault(); if (live() && !denied) openImprovement(); });
@@ -301,7 +325,15 @@
                     if (answered === null) return row.status === 'created' ? 'Not started' : 'In progress';
                     return answered > 0 ? 'In progress' : 'Not started';
                 };
-                const labelFor = row => (row.scopePopulation ? row.scopePopulation.description + ' · ' : '') +
+                // Long scopes hid the status and date. Shorten the scope in the
+                // option; the full text is its tooltip and is shown under Scope.
+                const shortScope = text => {
+                    const flat = text.replace(/\s+/g, ' ').trim();
+                    return flat.length > SCOPE_OPTION_CHARS ? flat.slice(0, SCOPE_OPTION_CHARS - 1).trimEnd() + '…' : flat;
+                };
+                const labelFor = row => (row.scopePopulation ? shortScope(row.scopePopulation.description) + ' · ' : '') +
+                    pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
+                const fullLabelFor = row => (row.scopePopulation ? row.scopePopulation.description.replace(/\s+/g, ' ').trim() + ' · ' : '') +
                     pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
                 const labelCounts = new Map(), referenceCounts = new Map();
                 rows.forEach(row => {
@@ -316,9 +348,12 @@
                     const suffix = duplicate ? ' · ' + (ambiguous ? row.assessmentId
                         : reference + (row.assessmentId.length > 8 ? '…' : '')) : '';
                     const item = node('option', '', label + suffix);
+                    item.title = fullLabelFor(row) + suffix;
                     item.value = row.assessmentId; picker.append(item);
                 });
                 picker.value = selected;
+                const chosen = Array.from(picker.querySelectorAll('option')).find(item => item.value === selected);
+                if (chosen) picker.title = chosen.title;
                 picker.addEventListener('change', () => { if (live() && !denied) read(picker.value, 'user'); });
                 const refresh = button('Refresh', () => load(false)); refresh.disabled = loading;
                 refresh.classList.add('dashboard-button-secondary');
@@ -685,6 +720,15 @@
                 clearTimeout(timer); controller.abort();
             }
         }
+        // Lead with the reported (lower) figure and explain both figures in plain words.
+        function leadWithLowerBound(card, model) {
+            const value = card.querySelector('.picture-large');
+            if (!value || !model.lowerDisplay || model.lowerDisplay === model.upperDisplay || value.textContent !== model.attainment) return;
+            value.textContent = model.lowerDisplay + ' in place';
+            card.replaceChildren(card.querySelector('h3'), value,
+                node('p', 'picture-metric-upper', 'Up to ' + model.upperDisplay + ' if every answer still to confirm turns out to be in place.'),
+                node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. It is not a performance score.'));
+        }
         function renderResult(result) {
             root.append(gapSection(result));
             const metrics = node('div', 'picture-metrics');
@@ -693,12 +737,18 @@
                 card.append(node('h3', '', label), node('strong', 'picture-large', value), node('p', '', copyText)); metrics.append(card); return card;
             }
             const awaitingReview = result.pending + (result.pending === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm';
-            const implementationMetric = metric('Reported implementation', result.attainment,
-                'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm. It is not a performance score.', true);
-            const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
+            const rangeHelp = 'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm. It is not a performance score.';
+            // A submitted result is read-only, so do not ask the customer to confirm answers here.
+            const implementationMetric = questionnaire.enoughAnswersToEstimate(result)
+                ? metric('Reported implementation', result.attainment, rangeHelp, true)
+                : metric('Reported implementation', 'Not enough answers to estimate yet', 'Only ' + result.completed + ' of ' + result.total +
+                    ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
+                    (typeof options.openCyber === 'function' ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp, true);
+            const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             root.append(metrics, informationSection(result));
             const domains = node('section', 'picture-domains');
             domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm. The range is not a performance score.'));
+            leadWithLowerBound(implementationMetric, result);
             result.domains.forEach(domain => {
                 const row = node('div', 'picture-domain');
                 const label = node('strong', '', domain.title), value = node('span', '', domain.attainment);
@@ -742,7 +792,7 @@
             const ordered = metadata.questions.map(question => indexed.get(question.id));
             const categories = [
                 ['Unresolved answers', ordered.filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId)),
-                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. Not applicable answers count as not yet met until a reviewer confirms them. Reviews are coming soon.'
+                    result.unknown ? result.unknown + ' answers still to confirm: check the position. Not applicable answers count as not yet met until a reviewer confirms them. Reviews are coming soon.'
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
                 ['Reported implementation gaps', ordered.filter(question => ['partial', 'no'].includes(question.responseOptionId)),
                     result.partial || result.no ? result.partial + ' partial and ' + result.no + ' absent implementations: review the relevant questions before agreeing improvements.'
