@@ -98,9 +98,30 @@ describe('unsubscribe handler', () => {
             expect(result.status).toBe(200);
             expect(result.body).toContain('You are unsubscribed');
         }
-        // The second POST is answered from the recorded unsubscribe, without a write.
-        expect(record).toHaveBeenCalledTimes(1);
-        expect(record).toHaveBeenCalledWith(claims);
+        // A repeat POST is not answered from memory: it runs the idempotent write again.
+        expect(record).toHaveBeenCalledTimes(2);
+        expect(record).toHaveBeenNthCalledWith(1, claims);
+        expect(record).toHaveBeenNthCalledWith(2, claims);
+    });
+
+    test('a repeat after a recorded unsubscribe still writes, and a failed repeat is not reported as done', async () => {
+        let fail = false;
+        const record = jest.fn(async () => { if (fail) throw new Error('down'); });
+        expect((await handleUnsubscribeRequest(call('POST'), { env: ENV, record })).status).toBe(200);
+        fail = true;
+        const repeat = await handleUnsubscribeRequest(call('POST'), { env: ENV, record });
+        expect(repeat.status).toBe(503);
+        expect(repeat.body).not.toContain('You are unsubscribed');
+        expect(record).toHaveBeenCalledTimes(2);
+        fail = false;
+        for (let i = 2; i < TOKEN_RATE_MAX; i += 1) {
+            expect((await handleUnsubscribeRequest(call('POST'), { env: ENV, record })).status).toBe(200);
+        }
+        expect(record).toHaveBeenCalledTimes(TOKEN_RATE_MAX);
+        const limited = await handleUnsubscribeRequest(call('POST'), { env: ENV, record });
+        expect(limited.status).toBe(429);
+        expect(limited.headers['Retry-After']).toBe('600');
+        expect(record).toHaveBeenCalledTimes(TOKEN_RATE_MAX);
     });
 
     test('a replayed valid token is bounded per account and type, and writes are capped in flight', async () => {
