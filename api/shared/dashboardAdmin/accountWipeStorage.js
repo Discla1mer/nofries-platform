@@ -1,9 +1,11 @@
 'use strict';
 
 // Blob half of the staff account delete. Works out every record an account
-// owns in one customer authority container from the account record itself,
-// then deletes them, sign-in authority first and the account record last, so a
-// retry after a partial failure can still find everything that remains. Each
+// owns from the account record itself: in its customer authority container,
+// and its email proof in the session container. Deletes the email proof first
+// (its name is derived from the sign-in authority record), then the sign-in
+// authority, and the account record last, so a retry after a partial failure
+// can still find everything that remains. Each
 // name is deleted with its stored versions where the storage account keeps
 // versions. Shared records (terms, schedules) are never touched. Returns
 // counts only; no email or key leaves this module.
@@ -50,13 +52,13 @@ async function inventory(container, email, signal) {
         }
     }
     const subjectKey = account.identitySubjectKey ?? account.activation?.subjectKey ?? null;
-    const exact = [], prefixes = [`customer-starter/starter-clients/${uuid(account.accountId)}/`, `customer-starter/starter-client-bindings/${account.accountId}/`];
+    const exact = [], session = [], prefixes = [`customer-starter/starter-clients/${uuid(account.accountId)}/`, `customer-starter/starter-client-bindings/${account.accountId}/`];
     if (subjectKey) {
         exact.push(`customer-subjects/${subjectHash(subjectKey)}.json`, `customer-signup-recoveries/${subjectHash(subjectKey)}.json`);
         const authority = await readJson(container, `customer-subjects/${subjectHash(subjectKey)}.json`, signal);
         if (authority && typeof authority.invitationDigest === 'string' && /^[a-f0-9]{64}$/.test(authority.invitationDigest))
-            // Same key as customerAuthority's proofKey.
-            exact.push(`customer-email-proofs/${sha256(`${subjectKey}\0${authority.invitationDigest}`)}.json`);
+            // Same key as customerAuthority's proofKey; the proof lives in the session container.
+            session.push(`customer-email-proofs/${sha256(`${subjectKey}\0${authority.invitationDigest}`)}.json`);
     }
     for (const slot of slots) {
         exact.push(`customer-starter/starter-setups/${uuid(slot.organisationId)}.json`, `customer-activations/${uuid(slot.activationId)}.json`,
@@ -65,34 +67,37 @@ async function inventory(container, email, signal) {
     const accountKey = starterAccountKey(email);
     exact.push(`customer-starter/dashboard-admin-signup-index/writers/accounts/${accountKey.slice('starter-accounts/'.length)}.json`);
     return Object.freeze({ account, subjectKey, tenantIds: Object.freeze([...new Set(slots.map(slot => slot.tenantId))]),
-        exact: Object.freeze([...new Set(exact)]), prefixes: Object.freeze(prefixes), accountRecord: `customer-starter/${accountKey}.json` });
+        exact: Object.freeze([...new Set(exact)]), session: Object.freeze(session), prefixes: Object.freeze(prefixes), accountRecord: `customer-starter/${accountKey}.json` });
 }
 
-// Delete one name and, where kept, its versions. A version the identity may not
-// delete is counted as remaining rather than failing the whole delete.
+// Delete one name and, where kept, its versions. With versioning on, deleting
+// the base blob turns its current version into a previous one, so versions are
+// listed after the base delete. A version the identity may not delete is
+// counted as remaining rather than failing the whole delete.
 async function removeName(container, name, signal, counts) {
-    let versionsRemaining = 0;
-    try {
-        for await (const item of container.listBlobsFlat({ prefix: name, includeVersions: true, abortSignal: signal })) {
-            if (item.name !== name || !item.versionId || item.isCurrentVersion) continue;
-            try { await container.getBlobClient(name).withVersion(item.versionId).delete({ abortSignal: signal }); counts.versions += 1; }
-            catch (error) { if (error?.statusCode !== 404) versionsRemaining += 1; }
-        }
-    } catch (_) { /* Listing versions is unsupported or refused: delete the current blob only. */ }
     try {
         const result = await container.getBlobClient(name).deleteIfExists({ deleteSnapshots: 'include', abortSignal: signal });
         if (result.succeeded) counts.blobs += 1;
     } catch (_) { fail('account_wipe_storage_unavailable'); }
-    counts.versionsRemaining += versionsRemaining;
+    try {
+        for await (const item of container.listBlobsFlat({ prefix: name, includeVersions: true, abortSignal: signal })) {
+            if (item.name !== name || !item.versionId) continue;
+            try { await container.getBlobClient(name).withVersion(item.versionId).delete({ abortSignal: signal }); counts.versions += 1; }
+            catch (error) { if (error?.statusCode !== 404) counts.versionsRemaining += 1; }
+        }
+    } catch (_) { /* Listing versions is unsupported or refused: the base blob is already gone. */ }
 }
 
-function createAccountWipeStorage(container) {
-    if (!container || typeof container.getBlobClient !== 'function' || typeof container.listBlobsFlat !== 'function') fail('account_wipe_configuration_invalid');
+const usable = value => value && typeof value.getBlobClient === 'function' && typeof value.listBlobsFlat === 'function';
+function createAccountWipeStorage(container, sessionContainer) {
+    if (!usable(container) || !usable(sessionContainer)) fail('account_wipe_configuration_invalid');
     return Object.freeze({
         inventory: (email, signal) => inventory(container, email, signal),
         async delete(found, signal) {
             const counts = { blobs: 0, versions: 0, versionsRemaining: 0 };
-            // The sign-in authority goes first so the account stops working at once.
+            // The email proof goes first: its name comes from the sign-in authority
+            // record, which goes next so the account stops working at once.
+            for (const name of found.session) { signal.throwIfAborted(); await removeName(sessionContainer, name, signal, counts); }
             for (const name of found.exact) { signal.throwIfAborted(); await removeName(container, name, signal, counts); }
             for (const prefix of found.prefixes) {
                 const names = [];
