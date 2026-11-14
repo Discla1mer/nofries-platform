@@ -1390,7 +1390,11 @@
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
                 onLocation: presentation && presentation.onLocation, onFunnelStep: funnelStep,
                 // Overview's first-use action opens the new-assessment step directly.
-                startNew: !!(presentation && presentation.startNew === true) });
+                startNew: !!(presentation && presentation.startNew === true),
+                ...(presentation && typeof presentation.openImprovement === 'function' ? { openImprovement: function () {
+                    if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
+                    return presentation.openImprovement();
+                } } : {}) });
         };
         mountCyber.readBaseline = async function () {
             if (!current(cycle) || cycle.authorityPending) throw invalid();
@@ -1482,6 +1486,21 @@
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
                         return presentation.openImprovement(sourceAssessment);
+                    }, openAction: function (target) {
+                        if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
+                        if (!target || typeof target.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(target.planId) ||
+                            typeof target.actionId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(target.actionId) ||
+                            !Number.isSafeInteger(target.planRevision) || target.planRevision < 0 || target.planRevision > 1024) return Promise.resolve(false);
+                        const chosen = Object.freeze({ bindingId: snapshot.selectedBindingId, planId: target.planId,
+                            actionId: target.actionId, planRevision: target.planRevision });
+                        cycle.workQueueTarget = chosen;
+                        return Promise.resolve(presentation.openImprovement()).then(function (opened) {
+                            if (opened !== true && cycle.workQueueTarget === chosen) cycle.workQueueTarget = null;
+                            return opened === true;
+                        }, function () {
+                            if (cycle.workQueueTarget === chosen) cycle.workQueueTarget = null;
+                            return false;
+                        });
                     } } : {}),
                     ...(typeof presentation.openImprovement === 'function' ? { planGap: function (sourceAssessment, itemId, stillCurrent) {
                         return openGapPlan(cycle, snapshot, presentation, sourceAssessment, itemId, stillCurrent);

@@ -66,6 +66,7 @@ test('the App Service never serves or packages the demo; only the static build p
     assert.match(read('scripts/build-static.js'), /require\('\.\.\/demo\/try\/document'\)/);
     // The homepage links the demo, and the public Static Web App serves /try from the built file.
     assert.equal((read('index.html').match(/<a class="button homepage-primary" href="\/try">Try the demo /g) || []).length, 1);
+    assert.equal((read('index.html').match(/<a id="homepagePrimary" class="button homepage-primary" href="\/login\?intent=create">Create account /g) || []).length, 1);
     assert.deepEqual(JSON.parse(read('staticwebapp.config.json')).routes.filter(route => route.route === '/try').map(route => route.rewrite), ['/app/try.html']);
     for (const file of ['scripts/build-app-service.js', 'lib/productionApplication.js', 'app-service.js']) {
         assert.doesNotMatch(read(file), /demo\/|tryDemo/, file);
@@ -112,6 +113,12 @@ test('the page runs the real dashboard assets and scoring modules, with no fixtu
     assert.ok(model.admissionGranted === false && model.providerAccessGranted === false && model.services.every(item => item.operational === false));
     assert.deepEqual(model.summary, { state: 'empty', attention: [], metrics: [] });
     assert.ok(shell.validate(model));
+    const options = demo.mountOptions({
+        NoFriesNcscAssessmentClient: { createClient() { return {}; } },
+        NoFriesNcscQuestionnaire: {},
+        NoFriesOrganisationPicture: {}
+    }, demo.createBackend(demo.createStore(recordingStorage()), steppingClock()));
+    assert.equal(options.demoGuide, true);
 });
 
 test('the browser shims match node:crypto, Buffer and util for the inputs the engine uses', () => {

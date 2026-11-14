@@ -173,7 +173,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-actions { background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 0 0 1.25rem; overflow-wrap: anywhere; }
 .picture-actions h3 { margin-top: 0; }
 .picture-actions h4 { margin: 1rem 0 .4rem; }
-.picture-actions-list { padding-left: 1.3rem; margin: 0; }
+.picture-actions-list, .picture-actions-next { padding-left: 1.3rem; margin: 0; }
+a.picture-action-title { font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .picture-action { margin: .5rem 0; }
 .picture-action-title, .picture-action-meta { display: block; }
 .picture-actions-plan { display: inline-block; margin-top: 1rem; }

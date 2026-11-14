@@ -1186,7 +1186,7 @@
             const unsaved = rows.filter(function (row) { return row.unsaved; }).length;
             const panel = node('section', 'ncsc-review'); panel.setAttribute('aria-labelledby', 'ncsc-review-title');
             const title = node('h3', '', 'Review your answers before submitting'); title.id = 'ncsc-review-title'; title.tabIndex = -1;
-            panel.append(title, node('p', 'dashboard-muted', 'This review shows your current draft. Opening it, editing an answer or going back does not save or submit anything.'));
+            panel.append(title, node('p', 'dashboard-muted', 'Check these answers before you submit. Nothing is submitted until you choose Save and submit assessment.'));
             const counts = node('ul', 'ncsc-review-counts'); counts.id = 'ncsc-review-counts';
             [(questions.length - unanswered) + ' of ' + questions.length + ' answered', unanswered + ' unanswered',
                 unexplained + ' N/A ' + (unexplained === 1 ? 'answer needs' : 'answers need') + ' an explanation',
@@ -1229,8 +1229,8 @@
             });
             panel.append(list);
             controls = node('div', 'ncsc-actions ncsc-review-actions');
-            const consequence = node('p', 'dashboard-muted', (unsaved ? 'Your ' + unsaved + ' unsaved ' + (unsaved === 1 ? 'answer is' : 'answers are') + ' saved first, then the assessment is submitted. ' : 'The assessment is submitted with the saved answers shown. ') +
-                'A submitted baseline is read-only and cannot be edited.');
+            const consequence = node('p', 'dashboard-muted', (unsaved ? 'When you submit, your ' + unsaved + ' unsaved ' + (unsaved === 1 ? 'answer is' : 'answers are') + ' saved first, then these answers are used. ' : 'When you submit, these saved answers are used. ') +
+                'A submitted assessment is read-only and cannot be edited.');
             consequence.id = 'ncsc-review-consequence';
             const confirm = button('Save and submit assessment', requestSubmit); confirm.id = 'ncsc-review-submit'; confirm.dataset.mutation = 'true'; confirm.setAttribute('aria-describedby', consequence.id);
             controls.append(confirm, button('Back to questions', closeReview, 'dashboard-text-button'));
@@ -1257,7 +1257,8 @@
             // Mention not applicable answers only when there are some (#297).
             if (count) section.append(node('p', '', count + (count === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm.'));
             if (unanswered) {
-                section.append(node('p', '', 'The projected range appears when every question has an answer.'));
+                section.append(node('p', '', 'The projected range appears when every question has an answer. Answer ' + unanswered + ' more ' +
+                    (unanswered === 1 ? 'question' : 'questions') + ' to see your projected range.'));
             } else {
                 const range = projectRange(rows);
                 const shown = range.lower === range.upper ? percentDisplay(range.lower) : percentDisplay(range.lower) + '–' + percentDisplay(range.upper);
@@ -1312,6 +1313,16 @@
         function renderResults(results) {
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
+            // The plan is created only when someone chooses create. Say so here,
+            // and only offer the link when the dashboard can open that page.
+            if (typeof options.openImprovement === 'function') {
+                const follow = node('section', 'ncsc-plan-followup');
+                follow.append(node('p', '', 'These results can become your improvement plan. Open Improvement plan and create it from this result. It lists what to fix, with an owner and a due date for each item. Submitting does not create the plan by itself.'));
+                follow.append(button('Open improvement plan', function () {
+                    if (live() && typeof options.openImprovement === 'function') options.openImprovement();
+                }, 'dashboard-button dashboard-button-secondary'));
+                panel.append(follow);
+            }
             content.append(panel);
             renderNextSteps(panel);
             if (!results) {

@@ -124,8 +124,10 @@
             secondary.forEach(function (item) {
                 const labels = { ready: 'Available', planned: 'Coming next', disabled: 'Unavailable' };
                 // D-010: the Improvement Plan is part of every plan, so say so while it is planned.
+                // The public demo has no local plan, so its menu does not say the plan is coming next.
                 const state = stateFor(item.key);
-                other.append(routeLink(item, null, item.key === 'improvement_plan' && state === 'planned' ? 'Included · coming next' : labels[state]));
+                const plannedLabel = options.demoGuide === true ? 'With an account' : 'Included · coming next';
+                other.append(routeLink(item, null, item.key === 'improvement_plan' && state === 'planned' ? plannedLabel : labels[state]));
             });
             nav.append(other);
         }
@@ -343,6 +345,12 @@
             informationAt = value; showInformationTime();
         }
         function renderOverview() {
+            if (options.demoGuide === true) {
+                const guide = panel('Start here', 'Take the assessment for this fictional business. The result already on screen is only an example.');
+                const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
+                if (cyber) guide.append(button('Take the assessment', function () { navigate(cyber.route, true, undefined, START_NEW_ASSESSMENT); }));
+                main.append(guide);
+            }
             const connectedPicture = pictureAvailable;
             if (connectedPicture) renderPicture();
             if (model.summary.state === 'stale') {
@@ -448,7 +456,16 @@
                 }
                 if (initialAssessmentId === START_NEW_ASSESSMENT) presentation.startNew = true;
                 else if (initialAssessmentId !== undefined) presentation.initialAssessmentId = initialAssessmentId;
+                const improvementReady = typeof options.mountImprovement === 'function' && available.find(function (item) {
+                    return item.key === 'improvement_plan' && stateFor(item.key) === 'ready';
+                });
                 let mountedChild;
+                if (improvementReady) {
+                    presentation.openImprovement = function () {
+                        if (!active() || child !== mountedChild) return Promise.resolve(false);
+                        return navigate(improvementReady.route, true);
+                    };
+                }
                 presentation.onLocation = function (location) {
                     if (!active() || child !== mountedChild || !managedHistory || navigation || travelling || !committedEntry ||
                         location !== null && !validCyberLocation(location)) return;
@@ -481,6 +498,17 @@
         }
         function renderModule(baselineToken) {
             const plan = current.key === 'improvement_plan';
+            if (plan && options.demoGuide === true) {
+                const section = panel('An improvement plan lists what to fix',
+                    'After an assessment, the plan turns the gaps into actions with an owner and a due date. This demo keeps everything in your browser and does not build that plan. Create an account to make one from your own result and keep it.');
+                const account = element('a', 'dashboard-button', 'Create an account');
+                account.setAttribute('href', '/login?intent=create');
+                section.append(account);
+                const home = available.find(function (item) { return item.key === 'overview'; });
+                if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
+                main.append(section);
+                return;
+            }
             const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
             const home = available.find(function (item) { return item.key === 'overview'; });
             if (!plan) {
