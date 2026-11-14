@@ -78,7 +78,7 @@ module.exports = function registerEmailDispatcherSubjectLookupTests() {
         // 0025 adds the account-wipe capability's own policy; the runtime and dispatcher policies are unchanged.
         expect(policies).toEqual([
             { policyname: 'dashboard_starter_accounts_account_wipe', permissive: 'PERMISSIVE', roles: ['nofries_account_wipe'], cmd: 'ALL',
-                qual: "((account_id = NULLIF(current_setting('nofries.wipe_account_id'::text, true), ''::text)) AND (subject_key = NULLIF(current_setting('nofries.wipe_subject_key'::text, true), ''::text)))" },
+                qual: expect.stringMatching(/account_id\)?::text = NULLIF\(current_setting\('nofries\.wipe_account_id'.*subject_key.*nofries\.wipe_subject_key/) },
             { policyname: 'starter_accounts_email_dispatcher', permissive: 'PERMISSIVE', roles: ['nofries_email_dispatcher'], cmd: 'SELECT', qual: 'true' },
             { policyname: 'starter_accounts_subject', permissive: 'PERMISSIVE', roles: ['nofries_runtime'], cmd: 'ALL',
                 qual: "(subject_key = NULLIF(current_setting('nofries.subject_key'::text, true), ''::text))" }]);

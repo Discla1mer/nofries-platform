@@ -64,7 +64,7 @@ BEGIN
     LOOP
         EXECUTE format('GRANT SELECT, DELETE ON nofries.%I TO nofries_account_wipe', item);
         EXECUTE format('CREATE POLICY %I ON nofries.%I FOR ALL TO nofries_account_wipe '
-            'USING (tenant_id = NULLIF(current_setting(''nofries.wipe_tenant_id'', true), '''')) WITH CHECK (false)',
+            'USING (tenant_id::text = NULLIF(current_setting(''nofries.wipe_tenant_id'', true), '''')) WITH CHECK (false)',
             item || '_account_wipe', item);
     END LOOP;
 END
@@ -73,19 +73,19 @@ $tenant_scoped$;
 -- Rows scoped by the starter account.
 GRANT SELECT, DELETE ON nofries.dashboard_starter_accounts, nofries.email_preferences TO nofries_account_wipe;
 CREATE POLICY dashboard_starter_accounts_account_wipe ON nofries.dashboard_starter_accounts FOR ALL TO nofries_account_wipe
-    USING (account_id = NULLIF(current_setting('nofries.wipe_account_id', true), '')
-        AND subject_key = NULLIF(current_setting('nofries.wipe_subject_key', true), ''))
+    USING (account_id::text = NULLIF(current_setting('nofries.wipe_account_id', true), '')
+        AND subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), ''))
     WITH CHECK (false);
 CREATE POLICY email_preferences_account_wipe ON nofries.email_preferences FOR ALL TO nofries_account_wipe
-    USING (account_id = NULLIF(current_setting('nofries.wipe_account_id', true), ''))
+    USING (account_id::text = NULLIF(current_setting('nofries.wipe_account_id', true), ''))
     WITH CHECK (false);
 
 -- Rows scoped by the sign-in subject.
 GRANT SELECT, DELETE ON nofries.dashboard_session_gates, nofries.signup_registrations TO nofries_account_wipe;
 CREATE POLICY dashboard_session_gates_account_wipe ON nofries.dashboard_session_gates FOR ALL TO nofries_account_wipe
-    USING (subject_key = NULLIF(current_setting('nofries.wipe_subject_key', true), '')
+    USING (subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), '')
         AND kind = 'customer')
     WITH CHECK (false);
 CREATE POLICY signup_registrations_account_wipe ON nofries.signup_registrations FOR ALL TO nofries_account_wipe
-    USING (subject_key = NULLIF(current_setting('nofries.wipe_subject_key', true), ''))
+    USING (subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), ''))
     WITH CHECK (false);
