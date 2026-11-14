@@ -12,6 +12,7 @@ const { createPostgresSignupAcceptanceJournal } = require('../customerSignup/pos
 const { createPostgresSignupRegistrationStore, readSignupRegistrationLayout, lockSignupRegistrationHeader } = require('../customerSignup/postgresSignupRegistrationStore');
 const customerActivation = require('../customerSignup/customerActivation');
 const starterProvisioning = require('../customerSignup/starterProvisioning');
+const activationEmails = require('../lifecycleEmail/activationEmails');
 const { createPreparationDiagnostic, attachPreparationDiagnostic, queryCheckpoint } = require('../customerSignup/signupPreparationDiagnostic');
 const { authority: customerAuthority } = require('../customerSignup/customerAuthority');
 const { resolveActiveMembership } = require('./membershipDomain');
@@ -1992,6 +1993,10 @@ async function starterCustomerMutation(options, request, input, diagnostic) {
             if (changed.rows.length !== 1) conflict();
             await writeRow(inv, tx, 'authority', compiled.activation.admission);
             await writeRow(inv, tx, 'admission', compiled.activation.admission);
+            // The account's own first workspace is the moment it becomes a
+            // confirmed, signed-in account; client workspaces queue nothing.
+            if (p.kind === 'own') await activationEmails.enqueueActivationEmails(bound, { ...target,
+                accountId: p.accountId, activatedAt: compiled.activation.occurredAt });
         }
         inv.command = commandInput('publishExistingMembershipBinding', compiled.command);
         const context = await runtimeContext(inv, tx, target);

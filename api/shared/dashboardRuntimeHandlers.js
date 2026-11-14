@@ -230,8 +230,9 @@ function createDashboardRuntimeHandlers(configuration) {
         fields(policy, ['policyId', 'policyRevision', 'issuer', 'identityTenantId', 'audience']);
         fields(supplied.proofStore, ['createOriginalProof', 'readOriginalProof']);
         const originalStore = Object.fromEntries(STORE.map(name => [name, method(authOptions.store, name)]));
-        const cancelTransaction = configurationKeys.includes('externalCustomer')
-            ? method(authOptions.store, 'cancelTransaction', true) : null;
+        const setupFence = configurationKeys.includes('externalCustomer')
+            ? Object.fromEntries(['cancelTransaction', 'settleTransaction', 'revokeTransaction']
+                .map(name => [name, method(authOptions.store, name, true)]).filter(([, fn]) => fn)) : {};
         const proof = Object.fromEntries(['createOriginalProof', 'readOriginalProof'].map(name => [name, method(supplied.proofStore, name)]));
         const connect = method(supplied.pool, 'connect'), end = method(supplied.pool, 'end');
         clock = supplied.clock; budget = supplied.requestBudgetMs;
@@ -241,7 +242,7 @@ function createDashboardRuntimeHandlers(configuration) {
         if (!Number.isSafeInteger(budget) || budget <= 0 || budget > 60000) throw unavailable();
         authOptions.store = Object.freeze({ ...Object.fromEntries(STORE.map(name => [name,
             provider(originalStore[name], { load: name === 'loadSession', consume: name === 'consumeTransaction' })])),
-            ...(cancelTransaction ? { cancelTransaction: provider(cancelTransaction) } : {}) });
+            ...Object.fromEntries(Object.entries(setupFence).map(([name, fn]) => [name, provider(fn)])) });
         if (own(authOptions, 'clientApplication')) {
             const client = authOptions.clientApplication;
             const cache = method(client, 'getTokenCache', true);
@@ -619,8 +620,9 @@ function createDashboardRuntimeHandlers(configuration) {
         const binding = await bounded(() => selected.binding(req));
         try {
             const value = copy(binding, 8192);
-            fields(value, ['bindingId', 'scope', ...(own(value, 'accountType') ? ['accountType'] : []),
+            fields(value, ['bindingId', 'scope', ...(own(value, 'accountLabel') ? ['accountLabel'] : []), ...(own(value, 'accountType') ? ['accountType'] : []),
                 ...(own(value, 'clientSetupAvailable') ? ['clientSetupAvailable'] : [])]);
+            if (own(value, 'accountLabel') && (typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel))) throw new Error();
             uuid(value.bindingId); fields(value.scope, ['tenantId', 'organisationId']);
             if (own(value, 'accountType') && !['company', 'consultant'].includes(value.accountType)) throw new Error();
             if (own(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant')) throw new Error();
@@ -737,10 +739,13 @@ function createDashboardRuntimeHandlers(configuration) {
             return response(200, { schemaVersion: 1, authenticated: true, purpose: value.purpose, expiresAt: value.expiresAt,
                 generation: value.generation, selectedBindingId: value.selectedBindingId,
                 ...(customerAccount?.accountType ? { accountType: customerAccount.accountType } : {}),
+                ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
+                    snapshot.headers['x-nofries-dashboard-capabilities'][0] === 'work-queue-v1 account-label-v1' &&
+                    customerAccount?.accountLabel ? { accountLabel: customerAccount.accountLabel } : {}),
                 // Existing open dashboards validate an exact session shape.
                 // Negotiate display metadata; this does not grant queue access.
                 ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
-                    snapshot.headers['x-nofries-dashboard-capabilities'][0] === 'work-queue-v1' &&
+                    ['work-queue-v1', 'work-queue-v1 account-label-v1'].includes(snapshot.headers['x-nofries-dashboard-capabilities'][0]) &&
                     improvementEnabled && customerAccount?.accountType === 'consultant' ? { workQueueAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }

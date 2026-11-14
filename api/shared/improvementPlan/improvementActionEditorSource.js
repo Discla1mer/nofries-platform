@@ -93,13 +93,17 @@ function createImprovementActionEditorSource(options) {
                     const actions = plan.actions.map(action => {
                         const commands = [];
                         if (canWrite && plan.revision < 1024) {
-                            if (action.status !== 'completed' && selfEligible) commands.push('assign');
+                            // A writer may always name an owner; self-assignment
+                            // is offered separately through ownerChoices.
+                            if (action.status !== 'completed') commands.push('assign');
                             const ownerRequired = action.dueDate !== null && action.ownerSubjectKey !== null &&
                                 ['open', 'blocked', 'in_progress'].includes(action.status);
                             const ownerEligible = ownerRequired && eligible(action.ownerSubjectKey);
-                            if (['open', 'blocked'].includes(action.status) && ownerEligible) commands.push('start');
+                            // Named owners have no membership; execute skips that check for them too.
+                            const ownerReady = ownerEligible || Object.hasOwn(action, 'ownerLabel') && action.dueDate !== null;
+                            if (['open', 'blocked'].includes(action.status) && ownerReady) commands.push('start');
                             if (action.status === 'in_progress') commands.push('block');
-                            if (['in_progress', 'blocked'].includes(action.status) && ownerEligible) commands.push('complete');
+                            if (['in_progress', 'blocked'].includes(action.status) && ownerReady) commands.push('complete');
                             if (action.status === 'completed') commands.push('reopen');
                             if (ownerEligible && commands.some(command => command === 'start' || command === 'complete')) {
                                 advertisedOwners.add(action.ownerSubjectKey);

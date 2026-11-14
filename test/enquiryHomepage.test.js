@@ -12,9 +12,10 @@ function browser(availability) {
         getAttribute(name) { return this[name]; },
         setAttribute(name, value) { this[name] = value; }
     };
-    const document = { body: { dataset: { page: 'dashboard-home' } }, getElementById: id => id === 'homepagePrimary' ? link : null };
+    const enquiry = { hidden: true };
+    const document = { body: { dataset: { page: 'dashboard-home' } }, getElementById: id => id === 'homepagePrimary' ? link : id === 'homepageEnquiry' ? enquiry : null };
     const context = { document, window: { enquiryAvailability: availability }, AbortController, setTimeout, clearTimeout };
-    return { link, context, run: () => vm.runInNewContext(script, context) };
+    return { link, enquiry, context, run: () => vm.runInNewContext(script, context) };
 }
 function expectSignup(page) {
     expect(page.link.href).toBe('/login?intent=create');
@@ -51,8 +52,8 @@ test('promotes only after the read finishes with explicit success', async () => 
     expectSignup(page);
     resolve({ available: true, promote: true });
     await result;
-    expect(page.link.href).toBe('/contact.html');
-    expect(page.link.firstChild.nodeValue).toBe('Get early access ');
+    expectSignup(page);
+    expect(page.enquiry.hidden).toBe(false);
 });
 
 test('a stalled real availability client times out and late success cannot switch the CTA', async () => {
@@ -76,6 +77,7 @@ test('a stalled real availability client times out and late success cannot switc
 test('does not overwrite another entry destination or run on unrelated pages', async () => {
     const availability = jest.fn(async () => ({ available: true, promote: true }));
     const page = browser(availability);
+    page.context.document.body.dataset.page = 'contact';
     page.link.href = '/another-entry';
     await page.run();
     expect(page.link.href).toBe('/another-entry');

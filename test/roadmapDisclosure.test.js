@@ -8,7 +8,7 @@ const themes = name => [...section(name).matchAll(/<details class="roadmap-theme
 
 test('available capabilities are visible before three development and five planned themes', () => {
     expect(section('live')).not.toContain('<details');
-    expect((section('live').match(/<article>/g) || [])).toHaveLength(2);
+    expect((section('live').match(/<article>/g) || [])).toHaveLength(7);
     expect(themes('development')).toHaveLength(3);
     expect(themes('planned')).toHaveLength(5);
     expect(html.indexOf('id="roadmap-live"')).toBeLessThan(html.indexOf('id="roadmap-development"'));
@@ -30,8 +30,8 @@ test.each(['development', 'planned'])('%s disclosures work natively and expose s
 
 test('every existing capability stays in its original availability group exactly once', () => {
     const expected = {
-        development: ['Faster sign-up and sign-in', 'Update answers and compare results', 'Assess against your own requirements', 'Improvement actions', 'Evidence and board reporting', 'Evidence references and recurring reviews', 'Separate assessment types'],
-        planned: ['Reuse controls across frameworks', 'Evidence you can trace and review', 'Connected evidence and continuous checks', 'Risk and exceptions', 'Policies and approvals', 'Assets, identities and devices', 'Supplier and personnel security', 'Recovery and incident readiness', 'Technical assurance', 'Customer questionnaires and audit-ready reporting', 'Prepare for an independent SOC 2 audit', 'Privacy and data responsibilities', 'Accounts that stay open', 'AI governance and IT optimisation']
+        development: ['Faster sign-up and sign-in', 'Update submitted answers', 'Assess against your own requirements', 'Email reminders', 'Evidence and board reporting', 'Evidence references and recurring reviews', 'Separate assessment types'],
+        planned: ['Reuse controls across frameworks', 'Evidence you can trace and review', 'Connected evidence and continuous checks', 'Risk and exceptions', 'Policies and approvals', 'Assets, identities and devices', 'Supplier and personnel security', 'Recovery and incident readiness', 'Technical assurance', 'Customer questionnaires and audit-ready reporting', 'Prepare for an independent SOC 2 audit', 'Privacy and data responsibilities', 'Client overview for consultants', 'AI governance and IT optimisation']
     };
     for (const [name, titles] of Object.entries(expected)) {
         expect([...section(name).matchAll(/<h3>([^<]+)<\/h3>/g)].map(match => match[1]).sort()).toEqual(titles.sort());
@@ -40,7 +40,8 @@ test('every existing capability stays in its original availability group exactly
 
 test('limits remain with their capabilities and the general caveat stays visible', () => {
     for (const phrase of ['Customer uploads, evidence validation and downloadable reports are not available yet.', 'The existing NCSC assessment remains available as described above.']) expect(section('development')).toContain(phrase);
-    for (const phrase of ['not active integrations or included subscription services', 'No Fries does not self-certify or issue the auditor’s opinion.', 'Existing agreed three-month pilot offers and their terms remain unchanged.']) expect(section('planned')).toContain(phrase);
+    for (const phrase of ['not active integrations or included subscription services', 'No Fries does not self-certify or issue the auditor’s opinion.']) expect(section('planned')).toContain(phrase);
+    expect(section('live')).toContain('Existing agreed three-month pilot offers and their terms remain unchanged.');
     expect(html).toMatch(/<p class="public-roadmap-note">[^<]*Planned capabilities are not a promise of delivery or subscription inclusion\.<\/p>/);
 });
 

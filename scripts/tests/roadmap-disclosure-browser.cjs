@@ -20,8 +20,9 @@ const allowed = new Map(['/roadmap.html', '/home.css', '/style.css', '/favicon.s
                 return route.fulfill({ path: file, contentType: ({ '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' })[path.extname(file)] || 'text/html' });
             });
             await page.goto('https://roadmap.test/roadmap.html');
-            assert.equal(await page.locator('details').count(), 8);
-            assert.equal(await page.locator('details[open]').count(), 0);
+            // Scoped to roadmap themes: the shared footer has its own Site version disclosure.
+            assert.equal(await page.locator('details.roadmap-theme').count(), 8);
+            assert.equal(await page.locator('details.roadmap-theme[open]').count(), 0);
             const summaries = page.locator('.roadmap-theme > summary');
             for (let index = 0; index < 8; index++) {
                 const summary = summaries.nth(index);
@@ -30,20 +31,20 @@ const allowed = new Map(['/roadmap.html', '/home.css', '/style.css', '/favicon.s
                 const size = await summary.boundingBox();
                 assert.ok(size.height >= 44);
                 await page.keyboard.press('Enter');
-                assert.equal(await page.locator('details[open]').count(), 1);
+                assert.equal(await page.locator('details.roadmap-theme[open]').count(), 1);
                 assert.ok(await summary.evaluate(node => node.parentElement.open));
                 assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
                 await page.keyboard.press('Space');
-                assert.equal(await page.locator('details[open]').count(), 0);
+                assert.equal(await page.locator('details.roadmap-theme[open]').count(), 0);
                 assert.ok(await summary.evaluate(node => node === document.activeElement));
             }
             // Multiple themes can remain open. Enlarged text must still wrap.
             await page.evaluate(() => {
-                document.querySelectorAll('details').forEach(node => { node.open = true; });
+                document.querySelectorAll('details.roadmap-theme').forEach(node => { node.open = true; });
                 document.documentElement.style.fontSize = '200%';
             });
             assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-            assert.equal(await page.locator('details[open]').count(), 8);
+            assert.equal(await page.locator('details.roadmap-theme[open]').count(), 8);
             assert.deepEqual(unexpected, []);
             await page.close();
         }

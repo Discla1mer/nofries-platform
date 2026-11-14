@@ -903,7 +903,7 @@ function operatorAccess() {
         reason: 'test',
         user: {
             email: 'joel@nofries.nz',
-            name: 'Joel Harvey',
+            name: 'Test Owner',
             role: 'admin',
             capabilities: ROLE_CAPABILITIES.admin.slice()
         },

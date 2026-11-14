@@ -31,7 +31,7 @@ const FOREIGN = '10000000-0000-4000-8000-000000000000:10000000-0000-4000-8000-00
 const SOURCE = Object.freeze({ assessmentId: accepted.assessmentId, revision: 2, revisionSha256: 'c'.repeat(64) });
 const selector = () => ({ planId: 'plan-a' });
 
-function history(context) {
+function history(context, labelled) {
     const scope = { ...context.scope, planId: 'plan-a' }, records = [];
     const generate = { ...selector(), type: 'generate', operationId: 'generate-a', expectedRevision: null, actionId: null,
         payload: { assessmentId: SOURCE.assessmentId, assessmentRevision: SOURCE.revision,
@@ -57,6 +57,7 @@ function history(context) {
     // Proposal5 remains unassigned. Proposal6 has genuine reopen history.
     assign(6, OWNER); step(6, 'start'); step(6, 'complete', { note: 'Synthetic complete.', evidenceReference: 'synthetic:reopened' });
     step(6, 'reopen', { reason: 'Synthetic review requires another pass.' });
+    if (labelled) { step(5, 'assign', { ownerLabel: 'Aroha Ngata', dueDate: '2026-10-01' }); step(5, 'start'); }
     const rows = records.map(record => ({ tenant_id: scope.tenantId, organisation_id: scope.organisationId,
         plan_id: scope.planId, revision: record.revision, operation_id: record.payload.intent.command.operationId,
         payload_sha256: record.payloadSha256, parent_revision: record.revision ? record.revision - 1 : null,
@@ -81,7 +82,7 @@ async function harness(options = {}) {
         modules: ['overview', 'improvement_plan'], ...options });
     const clock = createClock(NOW), context = await createContext(f.scope, clock);
     const h = { ...f, state: clone(f.state), context, clock, trace: [], queries: [],
-        retained: history(context), pendingAudit: [], committedAudit: [], afterSnapshot: null, afterRows: null,
+        retained: history(context, options.labelled), pendingAudit: [], committedAudit: [], afterSnapshot: null, afterRows: null,
         afterAudit: null, beforeCommit: null, afterCommit: null, failCommit: false };
     addOwner(h, options.ownerEndsAt || '2026-10-03T00:00:00.000Z');
     h.state.membershipState = clone(h.state.membershipState);
@@ -179,6 +180,13 @@ test('actual retained history yields only self assignment and domain-valid curre
     expect(JSON.stringify(result)).not.toContain(OWNER); expect(JSON.stringify(result)).not.toContain(FOREIGN);
     expect(Object.isFrozen(result)).toBe(true); expect(Object.isFrozen(result.actions[0].commands)).toBe(true);
     expect(Object.isFrozen(result.ownerChoices[0])).toBe(true); expect(Object.keys(h.source)).toEqual(['editor']);
+});
+
+test('a label-owned action offers its status commands without a membership check or disclosing the name', async () => {
+    const h = await harness({ labelled: true }), result = await h.editor();
+    expect(h.action(result, 5).commands).toEqual(['assign', 'block', 'complete']);
+    expect(h.action(result, 0).commands).toEqual(['assign', 'start']);
+    expect(JSON.stringify(result)).not.toContain('Aroha');
 });
 
 test('an explicit read-only advisor gets all retained identities with no owner choices or commands', async () => {

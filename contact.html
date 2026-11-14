@@ -7,49 +7,47 @@
     <meta name="description" content="Send No Fries an enquiry about managed IT or a cyber gap assessment.">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/home.css">
     <script src="/js/enquiry-availability.js" defer></script>
     <script src="/js/contact.js" defer></script>
 </head>
 <body data-page="contact">
+    <header class="site-header shell public-site-header">
+        <a class="brand" href="/" aria-label="No Fries Dashboard home">
+            <img class="brand-logo" src="/images/nofrieslogo.png" width="44" height="44" alt="">
+            <span class="brand-copy"><strong>No Fries</strong> <span>Dashboard</span></span>
+        </a>
+        <nav aria-label="Main navigation"><a href="/">Home</a><a href="/pricing.html">Pricing</a><a href="/managed-it.html">Managed IT</a><a href="/roadmap.html">Roadmap</a><a href="/contact.html" aria-current="page">Contact</a><a class="site-login" href="/login?intent=login">Log in</a></nav>
+    </header>
     <main class="public-shell">
-        <header class="public-header">
-            <a class="login-brand" href="/" aria-label="No Fries home">
-                <img src="/images/nofrieslogo.png" width="44" height="44" alt="No Fries logo">
-                <div><strong>No Fries</strong></div>
-            </a>
-            <nav aria-label="Main navigation">
-                <a href="/">Home</a>
-                <a href="/managed-it.html">Managed IT</a>
-                <a href="/roadmap.html">Roadmap</a>
-                <a href="/contact.html" aria-current="page">Contact</a>
-                <a href="/login?intent=login">Log in</a>
-            </nav>
-        </header>
-
         <article class="public-panel">
             <p class="eyebrow">Contact</p>
             <h1>Talk to No Fries</h1>
-            <p>Tell us a little about your organisation and what you need. We reply from hello@nofries.nz, usually within one business day.</p>
+            <p>Tell us a little about your organisation and what you need. We reply to new enquiries from hello@nofries.nz, usually within one business day.</p>
 
             <p id="contact-unavailable" class="contact-status" role="status" hidden>The enquiry form is not available right now. Please email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a> instead.</p>
 
             <form id="contact-form" class="contact-form" method="post" novalidate>
-                <label for="contact-name">Your name</label>
-                <input id="contact-name" name="name" autocomplete="name" maxlength="120" required>
+                <div id="contact-errors" class="contact-errors" role="alert" tabindex="-1" hidden></div>
 
-                <label for="contact-email">Email address</label>
-                <input id="contact-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" maxlength="254" required>
+                <label for="contact-name">Your name <span class="field-required">(required)</span></label>
+                <input id="contact-name" name="name" autocomplete="name" maxlength="120" required aria-required="true" aria-describedby="contact-name-error">
+                <p id="contact-name-error" class="contact-field-error" hidden></p>
+
+                <label for="contact-email">Email address <span class="field-required">(required)</span></label>
+                <input id="contact-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" maxlength="254" required aria-required="true" aria-describedby="contact-email-error">
+                <p id="contact-email-error" class="contact-field-error" hidden></p>
 
                 <label for="contact-organisation">Organisation (optional)</label>
                 <input id="contact-organisation" name="organisation" autocomplete="organization" maxlength="160">
 
-                <label for="contact-message">How can we help?</label>
-                <textarea id="contact-message" name="message" minlength="10" maxlength="4000" required aria-describedby="contact-message-help"></textarea>
+                <label for="contact-message">How can we help? <span class="field-required">(required)</span></label>
+                <textarea id="contact-message" name="message" minlength="10" maxlength="4000" required aria-required="true" aria-describedby="contact-message-help"></textarea>
+                <p id="contact-message-error" class="contact-field-error" hidden></p>
                 <p id="contact-message-help" class="field-help">Please don't include passwords or sensitive account details.</p>
 
-                <div class="visually-hidden" aria-hidden="true">
-                    <label for="contact-website">Website</label>
-                    <input id="contact-website" name="website" tabindex="-1" autocomplete="off">
+                <div class="visually-hidden" aria-hidden="true" inert>
+                    <input id="contact-website" name="website" type="text" aria-label="Website" tabindex="-1" autocomplete="off">
                 </div>
 
                 <button class="button" id="contact-send" type="submit" disabled>Send enquiry</button>
@@ -59,9 +57,11 @@
 
             <p>Prefer email? Write to <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>. See the <a href="/privacy.html">privacy statement</a> for how enquiries are handled.</p>
         </article>
-        <footer class="public-header public-footer">
-            <nav aria-label="Footer links"><a href="/">Home</a><a href="/managed-it.html">Managed IT</a><a href="/roadmap.html">Roadmap</a><a href="/contact.html" aria-current="page">Contact</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="mailto:hello@nofries.nz">hello@nofries.nz</a></nav>
-        </footer>
     </main>
+    <footer class="home-footer">
+        <span>© 2026 No Fries · Auckland</span>
+        <nav aria-label="Footer links"><a href="/">Home</a><a href="/pricing.html">Pricing</a><a href="/managed-it.html">Managed IT</a><a href="/roadmap.html">Roadmap</a><a href="/contact.html" aria-current="page">Contact</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav>
+    </footer>
+    <details class="site-release" id="site-version"><summary>Site version</summary><!-- FRONTEND_RELEASE_INFO --></details>
 </body>
 </html>

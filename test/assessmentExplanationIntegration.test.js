@@ -162,7 +162,7 @@ test.each([{}, { role: 'fractional_advisor', service: true }])('Overview explici
         expect(h.adapters.events).toHaveLength(initialAudits + 1);
         expect(h.adapters.events.at(-1)).toMatchObject({ action: 'assessment.read', module: 'cyber_security', result: 'succeeded' });
         click(ui, 'Unresolved answers');
-        expect(section.textContent).toContain('2 unresolved answers, including 1 not-applicable answer awaiting review');
+        expect(section.textContent).toContain('2 unresolved answers, including 1 answer marked not applicable, to confirm');
         expect(section.textContent).toContain('responses[itemId=');
         expect(section.textContent).toContain('.rationale.text');
         expect(section.textContent).toContain('<img src=x onerror=alert(1)> Synthetic pending claim.');
@@ -272,7 +272,7 @@ test.each(['revision', 'hash'])('%s drift requires an explicit second read while
         expect(h.fetch).toHaveBeenCalledTimes(before + 2);
         expect(h.adapters.events).toHaveLength(auditsBefore + 2);
         expect(ui.root.querySelector('.picture-metrics').textContent).toBe(baselineBefore);
-        expect(baselineBefore).toContain('46.4%–60.7%');
+        expect(baselineBefore).toContain('46.4% in place'); expect(baselineBefore).toContain('Up to 60.7%');
         expect(ui.root.querySelector('.picture-source').textContent).toBe(sourceBefore);
         const notice = () => explanation(ui).querySelector('[data-explanation-version-notice]');
         expect(notice()).not.toBeNull();
@@ -294,7 +294,7 @@ test.each(['revision', 'hash'])('%s drift requires an explicit second read while
         await until(() => button(ui, 'Explain this saved result'));
         expect(notice()).toBeNull();
         expect(ui.root.querySelector('.picture-metrics').textContent).toContain('100.0%');
-        expect(ui.root.querySelector('.picture-metrics').textContent).not.toContain('46.4%–60.7%');
+        expect(ui.root.querySelector('.picture-metrics').textContent).not.toContain('46.4% in place');
         expect(h.fetch).toHaveBeenCalledTimes(before + 5);
         expect(h.adapters.events).toHaveLength(auditsBefore + 5);
         click(ui, 'Explain this saved result');
