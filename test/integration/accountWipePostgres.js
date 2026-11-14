@@ -2,7 +2,7 @@
 
 // Native checks of migration 0025 and the staff account wipe repository in a
 // disposable database on the loopback CI server. A real consultant account is
-// built as production builds one (own organisation plus an activated client),
+// built as production builds one (two activated client organisations),
 // then reset or deleted as nofries_account_wipe. A second account is the
 // isolation sentinel and must be untouched.
 const assert = require('node:assert/strict');
@@ -67,7 +67,7 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
     const rows = async (db, sql, params) => (await db.query(sql, params)).rows;
     const database = (db, p) => ({ withTenantTransaction: async (tenant, work) => { assert.equal(tenant, p.scope.tenantId); return work(db); } });
 
-    // A consultant activated a day ago with one reserved client organisation.
+    // A consultant activated a day ago with two reserved client organisations.
     async function consultant(db) {
         const dbNow = Date.parse((await db.query('SELECT clock_timestamp() AS at')).rows[0].at.toISOString());
         const activatedAt = new Date(dbNow - DAY).toISOString(), createdMs = Date.parse(activatedAt) - 60000;
@@ -86,7 +86,7 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         activationFact = { email, subjectKey: actor, accountId: initial.accountId, organisationId: initial.organisations[0].organisationId,
             receiptId: initial.organisations[0].activationId, activatedAt };
         clock = dbNow; await accounts.activate({});
-        await accounts.reserveClient({}, { requestId: crypto.randomUUID(), organisationName: 'Synthetic client' });
+        for (const n of [1, 2]) await accounts.reserveClient({}, { requestId: crypto.randomUUID(), organisationName: 'Synthetic client ' + n });
         const account = saved.record;
         await db.query('INSERT INTO nofries.dashboard_starter_accounts (account_id,email_sha256,subject_key,account_type,created_at,activated_at) VALUES ($1,$2,$3,$4,$5,$6)',
             [account.accountId, crypto.createHash('sha256').update(email).digest('hex'), actor, 'consultant', new Date(createdMs).toISOString(), activatedAt]);
@@ -127,10 +127,11 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         return p;
     }
     async function account(db) {
-        const c = await consultant(db), own = await organisation(db, c, 0), client = await organisation(db, c, 1);
+        // Two client organisations, set up and activated through the same path as production.
+        const c = await consultant(db), first = await organisation(db, c, 1), second = await organisation(db, c, 2);
         await db.query("INSERT INTO nofries.email_preferences (account_id,email_type,unsubscribed_at,source) VALUES ($1,'nudge_unfinished',clock_timestamp(),'settings')",
             [c.account.accountId]);
-        return { c, tenants: [own.scope.tenantId, client.scope.tenantId] };
+        return { c, tenants: [first.scope.tenantId, second.scope.tenantId] };
     }
     // Row counts per table for one account, read by the CI owner (superuser).
     async function footprint(db, a) {
