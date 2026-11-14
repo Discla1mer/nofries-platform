@@ -945,6 +945,34 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(ui.root.textContent).toContain('14 to check later'); ui.controller.destroy();
     });
 
+    // D-006: a short plain-English glossary sits with the progress line and the
+    // review, and keeps its open state when the page re-renders after a save.
+    test.each([false, true])('progress glossary explains the words used there; submitted view omits it: %s', async submitted => {
+        const h = await backend(); await h.execute(createCommand());
+        await h.execute(saveCommand('assessment-a', 0, 'all-unknown', allResponses('unknown')));
+        if (submitted) await h.execute(submitCommand());
+        const ui = await resumeUi(h);
+        try {
+            const glossary = byId(ui, 'ncsc-glossary');
+            if (submitted) { expect(glossary).toBeFalsy(); return; }
+            const progress = byId(ui, 'ncsc-draft-progress'), parent = progress.parentElement;
+            expect(parent.children.indexOf(glossary)).toBe(parent.children.indexOf(progress) + 1);
+            expect(glossary.tagName).toBe('DETAILS'); expect(Boolean(glossary.open)).toBe(false);
+            expect(glossary.querySelector('summary').textContent).toBe('What these words mean');
+            expect(glossary.querySelectorAll('dt').map(term => term.textContent))
+                .toEqual(['To check later', 'Marked not applicable, to confirm', 'Saved and not saved yet', 'Reported implementation range']);
+            expect(glossary.textContent).toContain('count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.');
+            expect(glossary.textContent).toContain('The lower figure is what you reported as in place.');
+            expect(glossary.textContent).not.toMatch(/unresolved|denominator/i);
+            glossary.open = true; event(glossary, 'toggle');
+            choose(ui, 0, 'yes'); control(ui, 'Save progress').click();
+            await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            expect(byId(ui, 'ncsc-glossary').open).toBe(true);
+            control(ui, 'Review and submit').click();
+            expect(ui.root.querySelector('.ncsc-review').textContent).toContain('What these words mean');
+        } finally { ui.controller.destroy(); }
+    });
+
     test('Yes, Partial and No resolve local answers without claiming those responses are already saved', async () => {
         const h = await backend(), ui = await createInUi(h);
         ['yes', 'partial', 'no', 'unknown', 'not_applicable'].forEach((option, index) =>

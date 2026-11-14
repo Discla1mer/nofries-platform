@@ -312,6 +312,8 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-draft-observation-group { margin-top: 1rem; min-width: 0; }
 .ncsc-draft-observation-list { padding-left: 1.25rem; }
 .ncsc-draft-observation-list .dashboard-text-button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.ncsc-glossary dt { margin-top: .75rem; font-weight: 700; }
+.ncsc-glossary dd { margin: .25rem 0 0; }
 .ncsc-preserve-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ncsc-scope-list { margin: .25rem 0 .5rem; padding-left: 1.25rem; }
 .ncsc-answer { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }

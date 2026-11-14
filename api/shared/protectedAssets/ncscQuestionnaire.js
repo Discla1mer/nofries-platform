@@ -473,6 +473,24 @@
             lines.forEach(line => list.append(node('li', 'ncsc-preserve-text', line)));
             return list;
         }
+        // Plain-English meanings of the words used in the progress line and the
+        // finish path. Terms already explained where they appear (Resolved on
+        // the finish path, * for unsaved in the question index) are not
+        // repeated here.
+        let glossaryOpen = false;
+        function glossary() {
+            const section = node('details', 'ncsc-guidance ncsc-glossary'); section.id = 'ncsc-glossary'; section.open = glossaryOpen;
+            section.addEventListener('toggle', function () { glossaryOpen = section.open; });
+            section.append(node('summary', '', 'What these words mean'));
+            const list = node('dl');
+            [['To check later', 'Answers marked Unknown, or marked not applicable, to confirm. They are still to confirm and do not count as in place. You can still submit with them.'],
+                ['Marked not applicable, to confirm', 'You answered Not applicable and explained why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'],
+                ['Saved and not saved yet', 'Saved answers are kept with this draft, so you can come back to them before you submit. Not saved yet means a change is only on this page so far.'],
+                ['Reported implementation range', 'After you submit, your result is shown as a range. It leads with the lower figure. The lower figure is what you reported as in place. The higher figure adds answers still to confirm. It is not a performance score.']
+            ].forEach(function (entry) { list.append(node('dt', '', entry[0]), node('dd', '', entry[1])); });
+            section.append(list);
+            return section;
+        }
         function button(label, action, cls) {
             const result = node('button', cls || 'dashboard-button', label); const createdEpoch = epoch;
             result.type = 'button'; result.addEventListener('click', function () { if (live(createdEpoch) && root.contains(result) && !result.disabled) action(); });
@@ -1021,6 +1039,8 @@
             if (pending) renderPending();
             if (reviewing) { renderReview(); return; }
             questionProgress = node('p', 'ncsc-draft-progress'); questionProgress.id = 'ncsc-draft-progress'; content.append(questionProgress);
+            // The glossary explains the progress words, so it sits right after progress.
+            if (!sealed) content.append(glossary());
             if (!sealed) renderDraftObservations(observationsOpen);
             const indexLabel = node('label', '', 'Question'); indexLabel.setAttribute('for', 'ncsc-question-index');
             const index = node('select', 'ncsc-question-index'); index.id = 'ncsc-question-index';
@@ -1154,7 +1174,7 @@
             [(questions.length - unanswered) + ' of ' + questions.length + ' answered', unanswered + ' unanswered',
                 unexplained + ' N/A ' + (unexplained === 1 ? 'answer needs' : 'answers need') + ' an explanation',
                 unsaved + (unsaved === 1 ? ' answer is' : ' answers are') + ' not saved yet'].forEach(function (text) { counts.append(node('li', '', text)); });
-            panel.append(counts);
+            panel.append(counts, glossary());
             const blockers = [];
             if (unanswered) blockers.push('answer ' + unanswered + (unanswered === 1 ? ' question' : ' questions') + ' (Unknown is allowed)');
             if (unexplained) blockers.push('explain ' + unexplained + ' N/A ' + (unexplained === 1 ? 'answer' : 'answers'));
