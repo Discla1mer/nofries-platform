@@ -37,6 +37,13 @@
             <h1>Loading work that needs attention</h1>
             <p id="loadingStatus">Checking your Microsoft identity, tenant and role.</p>
         </section>
+        <section id="accountListPanel" aria-labelledby="accountListHeading" hidden>
+            <h2 id="accountListHeading">Signups</h2>
+            <p>Every customer account, newest first, with when it was formed, its sign-in state and its organisations. Open an account to see its dashboard access and actions.</p>
+            <button id="accountListLoad" type="button">Load signups</button>
+            <p id="accountListStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="accountListResults" role="region" aria-label="Signups" tabindex="0" aria-busy="false"></div>
+        </section>
         <section id="accountLookupPanel" aria-labelledby="accountLookupHeading" hidden>
             <h2 id="accountLookupHeading">Account lookup</h2>
             <p>Find a customer's sign-in authority and starter account records by email. Searches every customer store; the email is sent only in this page's request body.</p>

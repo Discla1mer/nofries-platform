@@ -12,8 +12,10 @@ const fail = statusCode => { throw Object.assign(new Error(), { statusCode }); }
 // target digest supplied by the host, never the email. Only a request from an
 // authorised staff admin is recorded durably; anonymous, non-staff and
 // wrong-method requests cannot create audit objects.
-function createAccountLookup({ read, audit, targetDigest, readJson, env, now = Date.now }) {
-    if ([read, audit, targetDigest].some(value => typeof value !== 'function')) throw new Error('dashboard_admin_configuration_invalid');
+// The optional signup list (accounts/list) shares the same staff authority,
+// budget and durable audit; its record has no target digest.
+function createAccountLookup({ read, list = null, audit, targetDigest, readJson, env, now = Date.now }) {
+    if ([read, audit, targetDigest].some(value => typeof value !== 'function') || list !== null && typeof list !== 'function') throw new Error('dashboard_admin_configuration_invalid');
     let windowStart = 0, requests = 0;
     return async (request, route, authorise, signal) => {
         let status = 503, body, actor = null, actorHash = null, targetSha256 = null;
@@ -34,6 +36,13 @@ function createAccountLookup({ read, audit, targetDigest, readJson, env, now = D
                 if (now() - windowStart >= 60000) { windowStart = now(); requests = 0; }
                 if (++requests > 10) { headers['Retry-After'] = '60'; fail(429); }
                 const input = await readJson(request, signal);
+                if (route === 'accounts/list') {
+                    if (!list) fail(404);
+                    if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 0) fail(400);
+                    if ((await authorise()).subjectKey !== actor.subjectKey) fail(403);
+                    body = await list(signal, env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true');
+                    if (!body || !Array.isArray(body.rows) || typeof body.truncated !== 'boolean') fail(503);
+                } else {
                 if (!input || typeof input.email !== 'string' || Object.keys(input).length !== 1) fail(400);
                 const email = input.email.trim().toLowerCase();
                 if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || /[\x00-\x1f\x7f]/.test(email)) fail(400);
@@ -44,17 +53,18 @@ function createAccountLookup({ read, audit, targetDigest, readJson, env, now = D
                 // returned only when the write actions are composed.
                 body = await read(email, signal, env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true');
                 if (!body || !Array.isArray(body.rows) || typeof body.truncated !== 'boolean') fail(503);
+                }
             }
             const current = await authorise();
             if (current.subjectKey !== actor.subjectKey) fail(403);
             signal.throwIfAborted();
             status = 200;
         } catch (error) {
-            status = [400, 401, 403, 405, 413, 415, 429].includes(error.statusCode) ? error.statusCode : 503;
+            status = [400, 401, 403, 404, 405, 413, 415, 429].includes(error.statusCode) ? error.statusCode : 503;
             body = { code: `dashboard_admin_account_lookup_${status}` };
         }
-        if (route === 'accounts/lookup' && actor !== null) {
-            try { await audit(Object.freeze({ category: 'dashboard_admin_account_lookup', requestId: randomUUID(), actorSha256: actorHash, targetSha256,
+        if (['accounts/lookup', 'accounts/list'].includes(route) && actor !== null) {
+            try { await audit(Object.freeze({ category: route === 'accounts/list' ? 'dashboard_admin_account_list' : 'dashboard_admin_account_lookup', requestId: randomUUID(), actorSha256: actorHash, targetSha256,
                 status, count: status === 200 ? body.rows.length : 0, truncated: status === 200 && body.truncated, occurredAt: new Date(now()).toISOString() })); }
             catch (_) { status = 503; body = { code: 'dashboard_admin_account_lookup_503' }; }
             // The durable write takes time. A session or role revoked meanwhile

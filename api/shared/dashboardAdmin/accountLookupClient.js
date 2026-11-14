@@ -121,4 +121,69 @@
             if (active === controller) { active = null; button.disabled = false; result.setAttribute('aria-busy', 'false'); }
         }
     });
+
+    // Signup list: every starter account, newest first. "Open" runs the
+    // normal email lookup above, which shows dashboard access and actions.
+    const listPanel = document.getElementById('accountListPanel');
+    if (!listPanel) return;
+    const listButton = document.getElementById('accountListLoad');
+    const listStatus = document.getElementById('accountListStatus');
+    const listResult = document.getElementById('accountListResults');
+    const SIGN_IN = { active: 'Active', revoked: 'Revoked', missing: 'No sign-in record', none: 'Not created yet', invalid: 'Record does not match' };
+    const date = value => value ? new Date(value).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+    function open(row) {
+        email.value = row.email;
+        listPanel.blur?.();
+        form.requestSubmit();
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    listPanel.hidden = false;
+    window.addEventListener('pagehide', () => listResult.replaceChildren());
+    listButton.addEventListener('click', async () => {
+        listButton.disabled = true; listResult.replaceChildren(); listResult.setAttribute('aria-busy', 'true');
+        const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 30000);
+        listStatus.textContent = 'Checking your staff session…';
+        try {
+            await ready(controller.signal);
+            listStatus.textContent = 'Loading signups…';
+            const response = await request('/api/dashboard-admin/accounts/list', {}, controller.signal);
+            if (response.status !== 200) throw Object.assign(new Error('refused'), { status: response.status });
+            const value = response.value;
+            if (!value.rows.length) { listStatus.textContent = 'No signups found.'; return; }
+            const table = document.createElement('table');
+            table.createCaption().textContent = 'Signups, newest first (read only)';
+            const head = table.createTHead().insertRow();
+            ['Email', 'Type', 'Account formed', 'Signup', 'Sign-in record', 'Organisations', 'Plan', ''].forEach(label => {
+                const cell = document.createElement('th'); cell.scope = 'col'; cell.textContent = label; head.append(cell);
+            });
+            const body = table.createTBody();
+            value.rows.forEach(row => {
+                const tr = body.insertRow();
+                if (!row.readable) { const cell = tr.insertCell(); cell.colSpan = 8; cell.textContent = 'An account record could not be read.'; return; }
+                tr.insertCell().textContent = row.email;
+                tr.insertCell().textContent = row.accountType === 'consultant' ? 'Consultant' : 'Company';
+                tr.insertCell().textContent = date(row.createdAt);
+                tr.insertCell().textContent = row.signup === 'activated' ? `Activated ${date(row.activatedAt)}` : 'Unfinished';
+                tr.insertCell().textContent = SIGN_IN[row.signIn] || text(row.signIn);
+                const orgs = tr.insertCell();
+                const list = document.createElement('ul');
+                row.organisations.forEach(org => list.append(Object.assign(document.createElement('li'),
+                    { textContent: org.kind === 'client' ? `${org.name} (client)` : org.name })));
+                orgs.append(list);
+                if (!row.organisationsComplete) orgs.append(Object.assign(document.createElement('p'), { textContent: 'Client list could not be read in full.' }));
+                tr.insertCell().textContent = text(row.plan);
+                const openButton = document.createElement('button'); openButton.type = 'button'; openButton.textContent = 'Open';
+                openButton.setAttribute('aria-label', `Open ${row.email}`);
+                openButton.addEventListener('click', () => open(row));
+                tr.insertCell().append(openButton);
+            });
+            listResult.append(table);
+            listStatus.textContent = `${value.rows.length} signup${value.rows.length === 1 ? '' : 's'}` +
+                (value.truncated ? ', capped at 200. Older signups are not shown.' : '.');
+        } catch (error) {
+            listStatus.textContent = error.name === 'AbortError' ? 'Loading signups timed out. Try again.' :
+                error.status === 429 ? 'Too many requests. Try again in a minute.' :
+                [401, 403].includes(error.status) ? 'Staff admin access is required. Sign in again.' : 'The signup list is unavailable.';
+        } finally { clearTimeout(timer); listButton.disabled = false; listResult.setAttribute('aria-busy', 'false'); }
+    });
 }());

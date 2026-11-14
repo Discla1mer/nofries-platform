@@ -96,6 +96,7 @@ test('composition builds the staff runtime and bounded lookup reader with one-at
     expect(Object.keys(ports).sort()).toEqual(['dashboardAdmin', 'dashboardAdminAccountLookup']);
     expect(ports.dashboardAdmin.authoriseOperator).toEqual(expect.any(Function)); expect(ports.dashboardAdmin.requestBudgetMs).toBe(10000);
     expect(ports.dashboardAdminAccountLookup.read).toEqual(expect.any(Function));
+    expect(ports.dashboardAdminAccountLookup.list).toEqual(expect.any(Function));
     expect(dependencies.ManagedIdentityCredential).toHaveBeenCalledWith({ clientId: uid(9) });
     expect(dependencies.clients).toEqual([{ url: 'https://syntheticdata.blob.core.windows.net', credential: expect.any(Object), options: { retryOptions: { maxTries: 1, tryTimeoutInMs: 4000 } } }]);
     expect(dependencies.containers).toEqual(['customer-authority', 'legacy-signups', 'external-signups', 'admin-audit']);
@@ -125,6 +126,9 @@ test('the lookup audit writer stores one create-only digest-only record per requ
         record: { schemaVersion: 1, category: 'dashboard_admin_account_lookup', requestId: event.requestId, actorSha256: event.actorSha256, targetSha256: event.targetSha256,
             status: 200, count: 2, truncated: false, occurredAt: event.occurredAt } }]);
     await expect(audit({ ...event, requestId: 'not-a-request-id' })).rejects.toThrow();
+    await expect(audit({ ...event, category: 'forged_category' })).rejects.toThrow();
+    await audit({ ...event, category: 'dashboard_admin_account_list', requestId: '12345678-1234-4123-8123-123456789abd', targetSha256: null });
+    expect(dependencies.writes[1].record).toMatchObject({ category: 'dashboard_admin_account_list', targetSha256: null });
     const failing = sdk(); failing.BlobServiceClient = class extends failing.BlobServiceClient {
         getContainerClient(name) { return { getBlockBlobClient() { return { async uploadData() { throw Object.assign(new Error('PRIVATE_CONFLICT'), { statusCode: 412 }); } }; } }; } };
     await expect(createStaffDashboardAdministration(base(), dashboard(), failing).dashboardAdminAccountLookup.audit(event)).rejects.toThrow();
