@@ -13,10 +13,12 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const flush = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
 
 function mixed() {
-    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
-    const responses = allResponses().map((row, index) => ({ ...row,
+    return submittedWithResponses(allResponses().map((row, index) => ({ ...row,
         optionId: index < 3 ? 'yes' : index < 10 ? 'partial' : index < 12 ? 'no' : index === 12 ? 'unknown' : 'not_applicable',
-        rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null }));
+        rationale: index === 13 ? { text: 'Synthetic pending exclusion.' } : null })));
+}
+function submittedWithResponses(responses) {
+    const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
     let version = null;
     for (const command of [createCommand('assessment-mixed', 'create-mixed', 'Synthetic office and cloud scope.'),
         saveCommand('assessment-mixed', 0, 'save-mixed', responses), submitCommand('assessment-mixed', 1, 'submit-mixed')]) {
@@ -234,6 +236,23 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
     assert.equal(follow.querySelectorAll('input').length, 0);
     assert.equal(follow.querySelectorAll('button').length, 0);
+    dom.controller.destroy();
+});
+
+// A-019: under half answered Yes, Partial or No, Overview does not lead with the range.
+// #266's lead-with-lower rewrite is skipped, so the headline stays "Not enough answers".
+test.each([[false], [true]])('Overview leads with not enough answers when fewer than half are answered Yes, Partial or No (start action: %s)', async (canStart) => {
+    const record = submittedWithResponses(allResponses().map((row, index) => ({ ...row, optionId: index < 1 ? 'yes' : 'unknown' })));
+    const dom = setup({ records: [record], options: canStart ? { openCyber: () => {} } : {} }); await flush();
+    const primary = dom.root.querySelector('.picture-primary');
+    assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
+    assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet');
+    assert.equal(primary.querySelector('.picture-metric-upper'), null);
+    assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or waiting for review, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
+    // A submitted result is read-only: do not ask the customer to confirm answers.
+    assert.doesNotMatch(primary.textContent, /Confirm the Unknown answers|resolved/i);
+    if (canStart) assert.match(primary.textContent, /Range so far: 7\.1%–100\.0%\. Start a new assessment once more answers are known\./);
+    else assert.doesNotMatch(primary.textContent, /Start a new assessment/);
     dom.controller.destroy();
 });
 
