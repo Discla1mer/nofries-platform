@@ -6,7 +6,7 @@ const { createDom } = require('./fixtures/dashboardDom');
 const clone = value => JSON.parse(JSON.stringify(value));
 // Reuse immutable synthetic source records; each client returns detached copies.
 const fixture = buildFixtures();
-const AS_OF = '2026-11-12T23:59:59.999Z';
+const AS_OF = '2026-11-12T02:00:00.000Z';
 const action = (id, reviewDate, extra = {}) => ({ actionId: id, status: 'completed', dueDate: '2026-10-01',
     isOverdue: false, ownerLabel: 'Synthetic owner', rationale: { suggestedAction: 'Follow-up ' + id },
     completion: reviewDate === undefined ? { at: '2026-10-01T00:00:00.000Z', note: 'Saved completion' }
@@ -55,8 +55,13 @@ test.each(['2026-02-30', '2026-13-01', '2026-11-12T00:00:00Z', '', null, 12])('m
 });
 
 test('valid leap days work and invalid current-completion or date-basis data fails closed', () => {
-    const value = input([action('leap', '2028-02-29')], { lists: [{ asOf: '2028-02-28T23:59:00.000Z', actions: [action('leap', '2028-02-29')] }] });
+    const value = input([action('leap', '2028-02-29')], { lists: [{ asOf: '2028-02-28T02:00:00.000Z', actions: [action('leap', '2028-02-29')] }] });
     expect(picture.actionSummary(value).reviews.soon.count).toBe(1);
+    expect(picture.actionSummary(value).reviews.asOfDay).toBe('2028-02-28');
+    // 12:00 UTC on 12 Nov is 01:00 on 13 Nov in New Zealand (NZDT, UTC+13).
+    const aucklandNextMorning = picture.actionSummary(input([action('edge', '2026-11-26')],
+        { lists: [{ asOf: '2026-11-12T12:00:00.000Z', actions: [action('edge', '2026-11-26')] }] }));
+    expect(aucklandNextMorning.reviews.asOfDay).toBe('2026-11-13');
     expect(picture.actionSummary(input([action('inconsistent', '2026-11-01', { status: 'open' })]))).toBeNull();
     expect(picture.actionSummary(input([], { lists: [{ asOf: '2026-02-30T00:00:00.000Z', actions: [] }] }))).toBeNull();
 });
@@ -69,7 +74,8 @@ test('Overview surfaces review dates honestly, escapes labels, retains bounded-r
     expect(card.querySelectorAll('h4').map(node => node.textContent)).toEqual([
         'Overdue (0)', 'Due in the next 14 days (0)', 'Reviews due (1)', 'Reviews in the next 14 days (1)']);
     expect(card.textContent).toContain('Review 12 Nov 2026 · Owner: <b>Synthetic owner</b>');
-    expect(card.textContent).toContain('checked against 12 Nov 2026 (UTC)');
+    expect(card.textContent).toContain('checked against 12 Nov 2026 (New Zealand time)');
+    expect(card.textContent).not.toContain('(UTC)');
     expect(card.textContent).toContain('does not confirm a review took place, verify evidence or change a score');
     expect(card.textContent).toContain('Counts cover the first five saved plans');
     expect(card.querySelector('img')).toBeNull(); expect(card.querySelector('b')).toBeNull();

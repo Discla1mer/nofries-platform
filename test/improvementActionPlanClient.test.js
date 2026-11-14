@@ -505,7 +505,7 @@ const OPERATIONS = [
     { type: 'start', label: 'Start action', state: assigned, values: {}, payload: {} },
     { type: 'block', label: 'Block action', state: started, values: { 'Block reason': 'Awaiting an agreed dependency.' }, payload: { reason: 'Awaiting an agreed dependency.' } },
     { type: 'complete', label: 'Complete action', state: started,
-        values: { 'Completion note': 'Recorded workflow completion.', 'Completion evidence reference (unverified)': 'synthetic:evidence:completion' },
+        values: { 'Completion note': 'Recorded workflow completion.', 'Where the proof is kept (required)': 'synthetic:evidence:completion' },
         payload: { note: 'Recorded workflow completion.', evidenceReference: 'synthetic:evidence:completion' } },
     { type: 'reopen', label: 'Reopen action', state: completed, values: { 'Reopen reason': 'Follow-up work remains.' }, payload: { reason: 'Follow-up work remains.' } },
     { type: 'assign', label: 'Set owner and due date', state: seed, values: { 'Owner name': '  Aroha   Ngata ', 'Due date': '2026-10-02' },
@@ -626,7 +626,7 @@ test('a blocked action can be completed through the real form when the server pe
     const h = harness({ plan }); await h.controller.ready; const actionId = chooseAction(h);
     expect(button(h, 'Complete action')).toBeDefined(); button(h, 'Complete action').click();
     fill(h, 'Completion note', 'Recorded workflow completion after review.');
-    fill(h, 'Completion evidence reference (unverified)', 'synthetic:evidence:blocked-completion'); await submitForm(h);
+    fill(h, 'Where the proof is kept (required)', 'synthetic:evidence:blocked-completion'); await submitForm(h);
     const action = getImprovementPlanView(h.state.plans.get('plan-a')).actions.find(row => row.actionId === actionId);
     expect(action.status).toBe('completed'); expect(action.blockedReason).toBeNull();
     expect(action.completion.evidenceVerification).toBe('not_verified');
@@ -696,7 +696,7 @@ const FORM_VALIDATION_MESSAGES = {
     'Block reason': 'Enter a block reason of up to 1000 characters using plain text, then save again.',
     'Reopen reason': 'Enter a reopen reason of up to 1000 characters using plain text, then save again.',
     'Completion note': 'Enter a completion note of up to 1000 characters using plain text, then save again.',
-    'Completion evidence reference (unverified)': 'Enter an unverified record ID of up to 180 characters without surrounding spaces. URLs and file paths cannot be used.'
+    'Where the proof is kept (required)': 'Use a short reference of up to 180 characters, with no spaces at the start or end. Web addresses and file paths cannot be used.'
 };
 const INVALID_ACTION_FIELDS = [
     ...[
@@ -719,7 +719,7 @@ const INVALID_ACTION_FIELDS = [
         ['scheme URL', 'custom://forbidden.invalid/evidence'], ['data URI', 'data:text/plain,unverified'],
         ['absolute file path', '/tmp/evidence'], ['relative file path', './evidence'],
         ['parent file path', '../evidence'], ['Windows file path', 'C:\\evidence'], ['UNC path', '\\\\host\\evidence']
-    ].map(([description, value]) => ({ type: 'complete', field: 'Completion evidence reference (unverified)', description, value }))
+    ].map(([description, value]) => ({ type: 'complete', field: 'Where the proof is kept (required)', description, value }))
 ];
 
 test.each(INVALID_ACTION_FIELDS)('$type form identifies $description in $field and saves the corrected same draft once', async invalid => {
@@ -729,16 +729,20 @@ test.each(INVALID_ACTION_FIELDS)('$type form identifies $description in $field a
     const retainedForm = form(h), values = { ...operation.values, [invalid.field]: invalid.value };
     for (const [name, value] of Object.entries(values)) fill(h, name, value);
     const control = field(h, invalid.field), feedback = control.parentElement.querySelector('span'), requestCount = h.request.mock.calls.length;
+    const message = invalid.field === 'Where the proof is kept (required)' && String(invalid.value).trim() === ''
+        ? 'Enter where the proof is kept, such as a screenshot, invoice or ticket. This is required.'
+        : FORM_VALIDATION_MESSAGES[invalid.field];
+    expect(retainedForm.noValidate).toBe(true);
     expect(control.getAttribute('aria-describedby')).toBeNull(); expect(feedback.hidden).toBe(true); expect(feedback.textContent).toBe('');
     await submitForm(h);
     expect(form(h)).toBe(retainedForm); expect(h.state.plans.get('plan-a')).toBe(before);
     expect(h.request).toHaveBeenCalledTimes(requestCount); expect(h.options.newId).not.toHaveBeenCalled();
-    expect(h.root.querySelector('[role="status"]').textContent).toBe(FORM_VALIDATION_MESSAGES[invalid.field]);
+    expect(h.root.querySelector('[role="status"]').textContent).toBe(message);
     expect(h.document.activeElement).toBe(control); expect(control.getAttribute('aria-invalid')).toBe('true');
     const descriptionId = control.getAttribute('aria-describedby');
     expect(descriptionId).toMatch(/^improvement-action-field-feedback-\d+$/);
     expect(h.root.querySelectorAll('[id="' + descriptionId + '"]')).toEqual([feedback]);
-    expect(feedback.hidden).toBe(false); expect(feedback.textContent).toBe(FORM_VALIDATION_MESSAGES[invalid.field]);
+    expect(feedback.hidden).toBe(false); expect(feedback.textContent).toBe(message);
     for (const [name, value] of Object.entries(values)) expect(field(h, name).value).toBe(value);
 
     fill(h, invalid.field, operation.values[invalid.field]); await submitForm(h);
@@ -755,7 +759,7 @@ test.each(INVALID_ACTION_FIELDS)('$type form identifies $description in $field a
 test('completion validation moves focus to the next invalid field without discarding either value or sending a command', async () => {
     const before = started(), h = harness({ plan: before }); expect(await h.controller.ready).toBe(true);
     const actionId = chooseAction(h); button(h, 'Complete action').click();
-    const note = fill(h, 'Completion note', ' '), reference = fill(h, 'Completion evidence reference (unverified)', 'https://forbidden.invalid/evidence');
+    const note = fill(h, 'Completion note', ' '), reference = fill(h, 'Where the proof is kept (required)', 'https://forbidden.invalid/evidence');
     const retainedForm = form(h), requestCount = h.request.mock.calls.length;
     const noteFeedback = note.parentElement.querySelector('span'), referenceFeedback = reference.parentElement.querySelector('span');
     await submitForm(h);
@@ -768,14 +772,14 @@ test('completion validation moves focus to the next invalid field without discar
     expect(form(h)).toBe(retainedForm); expect(note.getAttribute('aria-invalid')).toBeNull();
     expect(note.getAttribute('aria-describedby')).toBeNull(); expect(noteFeedback.hidden).toBe(true); expect(noteFeedback.textContent).toBe('');
     expect(h.document.activeElement).toBe(reference); expect(reference.getAttribute('aria-invalid')).toBe('true');
-    expect(h.root.querySelector('[role="status"]').textContent).toBe(FORM_VALIDATION_MESSAGES['Completion evidence reference (unverified)']);
+    expect(h.root.querySelector('[role="status"]').textContent).toBe(FORM_VALIDATION_MESSAGES['Where the proof is kept (required)']);
     expect(reference.getAttribute('aria-describedby')).toBe(referenceFeedback.getAttribute('id'));
-    expect(referenceFeedback.hidden).toBe(false); expect(referenceFeedback.textContent).toBe(FORM_VALIDATION_MESSAGES['Completion evidence reference (unverified)']);
+    expect(referenceFeedback.hidden).toBe(false); expect(referenceFeedback.textContent).toBe(FORM_VALIDATION_MESSAGES['Where the proof is kept (required)']);
     expect(note.value).toBe('Recorded workflow completion.'); expect(reference.value).toBe('https://forbidden.invalid/evidence');
     expect(h.request).toHaveBeenCalledTimes(requestCount); expect(h.options.newId).not.toHaveBeenCalled();
     expect(h.state.plans.get('plan-a')).toBe(before);
 
-    fill(h, 'Completion evidence reference (unverified)', 'synthetic:evidence:completion'); await submitForm(h);
+    fill(h, 'Where the proof is kept (required)', 'synthetic:evidence:completion'); await submitForm(h);
     expect(h.request.mock.calls.filter(([path]) => path.endsWith('/execute'))).toEqual([['/api/dashboard/improvement/execute', {
         planId: 'plan-a', type: 'complete', operationId: 'generated-1', expectedRevision: before.commands.length, actionId,
         payload: { note: 'Recorded workflow completion.', evidenceReference: 'synthetic:evidence:completion' }
@@ -893,8 +897,11 @@ test.each(['2026-10-01', '2026-12-01', ''])('completion form persists optional r
     const h = harness({ plan: started() }); await h.controller.ready;
     button(h, 'Complete action').click();
     expect(field(h, 'Next review date').required).toBe(false);
+    expect(form(h).noValidate).toBe(true);
+    expect(field(h, 'Where the proof is kept (required)').required).toBe(true);
+    expect(h.root.textContent).toContain('Say where you keep the proof, such as a screenshot, invoice or ticket.');
     expect(h.root.textContent).toContain('not a reminder or verification');
-    fill(h, 'Completion note', 'Reviewed the completed work.'); fill(h, 'Completion evidence reference', 'evidence:review');
+    fill(h, 'Completion note', 'Reviewed the completed work.'); fill(h, 'Where the proof is kept (required)', 'evidence:review');
     fill(h, 'Next review date', nextReviewDate); await submitForm(h);
     const posted = h.request.mock.calls.find(([path]) => path.endsWith('/execute'))[1];
     expect(posted.payload).toEqual({ note: 'Reviewed the completed work.', evidenceReference: 'evidence:review',
@@ -906,7 +913,7 @@ test.each(['2026-10-01', '2026-12-01', ''])('completion form persists optional r
 
 test('past review date is focused without a write; cancel discards it', async () => {
     const h = harness({ plan: started() }); await h.controller.ready; button(h, 'Complete action').click();
-    fill(h, 'Completion note', 'Completed.'); fill(h, 'Completion evidence reference', 'evidence:review');
+    fill(h, 'Completion note', 'Completed.'); fill(h, 'Where the proof is kept (required)', 'evidence:review');
     const date = fill(h, 'Next review date', '2026-09-30'); await submitForm(h);
     expect(date.getAttribute('aria-invalid')).toBe('true'); expect(h.document.activeElement).toBe(date);
     expect(h.request.mock.calls.some(([path]) => path.endsWith('/execute'))).toBe(false);
@@ -923,7 +930,7 @@ test('uncertain completion retry keeps its exact review date and operation ident
         return result;
     });
     button(h, 'Complete action').click(); fill(h, 'Completion note', 'Completed.');
-    fill(h, 'Completion evidence reference', 'evidence:review'); fill(h, 'Next review date', '2026-12-01');
+    fill(h, 'Where the proof is kept (required)', 'evidence:review'); fill(h, 'Next review date', '2026-12-01');
     await submitForm(h);
     const posted = h.request.mock.calls.find(([path]) => path.endsWith('/execute'))[1];
     expect(await h.controller.retry()).toBe(true);
@@ -940,7 +947,7 @@ test('named-owner completion retains its owner and optional review date through 
     const h = harness({ plan }); await h.controller.ready;
     button(h, 'Complete action').click();
     fill(h, 'Completion note', 'Completed work to review.');
-    fill(h, 'Completion evidence reference', 'evidence:named-review');
+    fill(h, 'Where the proof is kept (required)', 'evidence:named-review');
     fill(h, 'Next review date', '2026-12-01'); await submitForm(h);
     expect(h.request.mock.calls.find(([path]) => path.endsWith('/execute'))[1].payload).toEqual({
         note: 'Completed work to review.', evidenceReference: 'evidence:named-review', nextReviewDate: '2026-12-01' });
@@ -1033,7 +1040,9 @@ describe('empty Improvement Plan tab', () => {
     test('says to submit an assessment first when none is submitted', async () => {
         const h = empty(async () => null);
         expect(await h.controller.ready).toBe(true);
-        expect(h.root.textContent).toContain('Submit an assessment first. Your improvement plan is built from its results.');
+        expect(h.root.textContent).toContain('Submit an assessment first. After you submit, come back here and create your improvement plan from those results.');
+        expect(h.root.textContent).toContain('Submitting does not create the plan by itself.');
+        expect(h.root.textContent).not.toContain('Submit an assessment to create one.');
         expect(button(h, 'Create improvement plan from latest assessment')).toBeUndefined();
     });
 

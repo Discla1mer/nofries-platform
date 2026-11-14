@@ -525,8 +525,14 @@
             if (!value || value.assessmentId !== id || value.moduleId !== metadata.moduleId || !profileMatches(value.profileRef, metadata.profileRef) ||
                 !Array.isArray(value.responses) || value.responses.some(function (item) { return !questionById.has(item.itemId); })) throw new Error('ncsc_invalid_response');
             const result = copy(value);
-            if (result.submission) result.submission = { revision: result.submission.revision, submittedAt: result.submission.submittedAt,
-                responseSetSha256: result.submission.responseSetSha256, results: resultModel(result, metadata, organisationId) };
+            if (result.submission) {
+                const outputSha256 = value.submission && value.submission.evaluation && value.submission.evaluation.outputSha256;
+                const results = resultModel(result, metadata, organisationId);
+                result.submission = { revision: result.submission.revision, submittedAt: result.submission.submittedAt,
+                    responseSetSha256: result.submission.responseSetSha256, results: results };
+                // Kept only so the plan hand-off can name this exact submission. It is not shown.
+                if (results && typeof outputSha256 === 'string' && /^[a-f0-9]{64}$/.test(outputSha256)) result.submission.outputSha256 = outputSha256;
+            }
             return result;
         }
         function savedAnswer(id, source) {
@@ -1186,7 +1192,7 @@
             const unsaved = rows.filter(function (row) { return row.unsaved; }).length;
             const panel = node('section', 'ncsc-review'); panel.setAttribute('aria-labelledby', 'ncsc-review-title');
             const title = node('h3', '', 'Review your answers before submitting'); title.id = 'ncsc-review-title'; title.tabIndex = -1;
-            panel.append(title, node('p', 'dashboard-muted', 'This review shows your current draft. Opening it, editing an answer or going back does not save or submit anything.'));
+            panel.append(title, node('p', 'dashboard-muted', 'Check these answers before you submit. Nothing is submitted until you choose Save and submit assessment.'));
             const counts = node('ul', 'ncsc-review-counts'); counts.id = 'ncsc-review-counts';
             [(questions.length - unanswered) + ' of ' + questions.length + ' answered', unanswered + ' unanswered',
                 unexplained + ' N/A ' + (unexplained === 1 ? 'answer needs' : 'answers need') + ' an explanation',
@@ -1229,8 +1235,8 @@
             });
             panel.append(list);
             controls = node('div', 'ncsc-actions ncsc-review-actions');
-            const consequence = node('p', 'dashboard-muted', (unsaved ? 'Your ' + unsaved + ' unsaved ' + (unsaved === 1 ? 'answer is' : 'answers are') + ' saved first, then the assessment is submitted. ' : 'The assessment is submitted with the saved answers shown. ') +
-                'A submitted baseline is read-only and cannot be edited.');
+            const consequence = node('p', 'dashboard-muted', (unsaved ? 'When you submit, your ' + unsaved + ' unsaved ' + (unsaved === 1 ? 'answer is' : 'answers are') + ' saved first, then these answers are used. ' : 'When you submit, these saved answers are used. ') +
+                'A submitted assessment is read-only and cannot be edited.');
             consequence.id = 'ncsc-review-consequence';
             const confirm = button('Save and submit assessment', requestSubmit); confirm.id = 'ncsc-review-submit'; confirm.dataset.mutation = 'true'; confirm.setAttribute('aria-describedby', consequence.id);
             controls.append(confirm, button('Back to questions', closeReview, 'dashboard-text-button'));
@@ -1257,7 +1263,8 @@
             // Mention not applicable answers only when there are some (#297).
             if (count) section.append(node('p', '', count + (count === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm.'));
             if (unanswered) {
-                section.append(node('p', '', 'The projected range appears when every question has an answer.'));
+                section.append(node('p', '', 'The projected range appears when every question has an answer. Answer ' + unanswered + ' more ' +
+                    (unanswered === 1 ? 'question' : 'questions') + ' to see your projected range.'));
             } else {
                 const range = projectRange(rows);
                 const shown = range.lower === range.upper ? percentDisplay(range.lower) : percentDisplay(range.lower) + '–' + percentDisplay(range.upper);
@@ -1309,6 +1316,25 @@
             focusTarget(content.querySelector('[id="ncsc-review-edit-' + id + '"]') || content.querySelector('[id="ncsc-review-title"]'));
         }
         function canEdit() { return editable && acknowledged && acknowledged.status !== 'submitted' && !conflict && !(pending && pending.command.action === 'submit'); }
+        // The same source Overview uses for "Plan this": this displayed submission, not the latest or the first saved plan.
+        function displayedPlanSource() {
+            const detail = acknowledged, submission = detail && detail.submission, profile = detail && detail.profileRef;
+            const outputSha256 = submission && submission.outputSha256;
+            const keys = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+            if (!detail || detail.status !== 'submitted' || !submission || !submission.results) return null;
+            if (typeof detail.assessmentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(detail.assessmentId)) return null;
+            if (!Number.isSafeInteger(detail.revision) || detail.revision < 0 || detail.revision > 128) return null;
+            if (typeof detail.revisionSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(detail.revisionSha256)) return null;
+            if (typeof outputSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(outputSha256)) return null;
+            if (!profile || typeof profile !== 'object') return null;
+            const profileRef = {};
+            for (let index = 0; index < keys.length; index += 1) {
+                const key = keys[index], item = profile[key];
+                if (typeof item !== 'string' || !item || item.length > 200 || key.endsWith('Sha256') && !/^[a-f0-9]{64}$/.test(item)) return null;
+                profileRef[key] = item;
+            }
+            return { assessmentId: detail.assessmentId, revision: detail.revision, revisionSha256: detail.revisionSha256, profileRef: profileRef, outputSha256: outputSha256 };
+        }
         function renderResults(results) {
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
@@ -1338,6 +1364,17 @@
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             leadWithLowerBound(metrics.querySelector('.ncsc-result-metric'), '.ncsc-result-value', results);
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
+            // After the score, so the lower figure leads. The link carries this submission,
+            // so an older saved plan is not offered in its place.
+            const planSource = displayedPlanSource();
+            if (typeof options.openImprovement === 'function' && planSource) {
+                const follow = node('section', 'ncsc-plan-followup');
+                follow.append(node('p', '', 'These results can become your improvement plan. Open Improvement plan and create it from this result. It lists what to fix. You can give each item an owner and a due date. Submitting does not create the plan by itself.'));
+                follow.append(button('Open improvement plan', function () {
+                    if (live() && typeof options.openImprovement === 'function') options.openImprovement(planSource);
+                }, 'dashboard-button dashboard-button-secondary'));
+                panel.append(follow);
+            }
             // results.unknown already includes answers marked not applicable, so state one total.
             panel.append(node('p', '', results.unknown ? 'Answers still to confirm: ' + results.unknown + ' (' + confirmBreakdown(results.unknown - results.pending, results.pending) + ').'
                 : 'Every answer is confirmed as Yes, Partial or No.'));

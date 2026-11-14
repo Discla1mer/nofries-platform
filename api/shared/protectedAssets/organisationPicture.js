@@ -51,8 +51,9 @@
             });
     }
     // "Actions" card: display-only over improvement/list responses the host
-    // already read. Overdue uses the server's isOverdue; due-soon uses the same
-    // UTC calendar day basis. Owner names come only from ownerLabel.
+    // already read. Overdue uses the server's isOverdue. Due-soon and review
+    // windows use the Pacific/Auckland calendar day of each list's asOf, matching
+    // the rest of the dashboard. Owner names come only from ownerLabel.
     const ACTION_LIMIT = 3, DUE_SOON_DAYS = 14;
     const DAY = /^\d{4}-\d\d-\d\d$/;
     function calendarDay(value) {
@@ -65,7 +66,10 @@
         let today = null; const rows = [];
         for (const list of input.lists) {
             if (!list || typeof list.asOf !== 'string' || !calendarDay(list.asOf.slice(0, 10)) || !Array.isArray(list.actions)) return null;
-            if (today === null || list.asOf.slice(0, 10) < today) today = list.asOf.slice(0, 10);
+            const day = nzCalendarDay(list.asOf) || list.asOf.slice(0, 10);
+            const planId = list.scope && typeof list.scope.planId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(list.scope.planId) ? list.scope.planId : null;
+            const planRevision = Number.isSafeInteger(list.planRevision) && list.planRevision >= 0 && list.planRevision <= 1024 ? list.planRevision : null;
+            if (today === null || day < today) today = day;
             for (const action of list.actions) {
                 if (!action || typeof action.actionId !== 'string' || typeof action.status !== 'string' ||
                     typeof action.isOverdue !== 'boolean' || action.isOverdue && action.dueDate === null || action.dueDate !== null && !calendarDay(action.dueDate) ||
@@ -73,13 +77,18 @@
                     Object.hasOwn(action, 'ownerLabel') && typeof action.ownerLabel !== 'string') return null;
                 if (Object.hasOwn(action.completion || {}, 'nextReviewDate') &&
                     (action.status !== 'completed' || !calendarDay(action.completion.nextReviewDate))) return null;
-                rows.push(action);
+                rows.push({ ...action, planId, planRevision });
             }
         }
         const horizon = today && new Date(Date.parse(today + 'T00:00:00.000Z') + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
         const byDue = (a, b) => a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.actionId < b.actionId ? -1 : a.actionId > b.actionId ? 1 : 0;
-        const item = action => ({ title: action.rationale.suggestedAction, dueDate: action.dueDate,
+        const item = action => ({ title: action.rationale.suggestedAction, dueDate: action.dueDate, status: action.status,
+            actionId: action.actionId, planId: action.planId, planRevision: action.planRevision,
             owner: Object.hasOwn(action, 'ownerLabel') && action.ownerLabel.trim() ? action.ownerLabel : null });
+        const dueKey = action => action.dueDate || '9999-99-99';
+        const byOpen = (a, b) => (a.status === 'in_progress' ? 0 : 1) - (b.status === 'in_progress' ? 0 : 1) ||
+            (dueKey(a) < dueKey(b) ? -1 : dueKey(a) > dueKey(b) ? 1 : a.actionId < b.actionId ? -1 : a.actionId > b.actionId ? 1 : 0);
+        const next = rows.filter(action => action.status !== 'completed').sort(byOpen).slice(0, ACTION_LIMIT).map(item);
         const overdue = rows.filter(action => action.isOverdue).sort(byDue);
         const dueSoon = rows.filter(action => !action.isOverdue && action.status !== 'completed' && action.dueDate !== null &&
             action.dueDate >= today && action.dueDate <= horizon).sort(byDue);
@@ -91,14 +100,24 @@
             .map(action => ({ ...item(action), reviewDate: action.completion.nextReviewDate }));
         const reviewsDue = reviews.filter(action => action.reviewDate <= today);
         const reviewsSoon = reviews.filter(action => action.reviewDate > today && action.reviewDate <= horizon);
-        return { total: rows.length, more: input.more,
+        return { total: rows.length, more: input.more, next,
             overdue: { count: overdue.length, items: overdue.slice(0, ACTION_LIMIT).map(item) },
             dueSoon: { count: dueSoon.length, items: dueSoon.slice(0, ACTION_LIMIT).map(item) },
             reviews: { total: reviews.length, asOfDay: today,
                 due: { count: reviewsDue.length, items: reviewsDue.slice(0, ACTION_LIMIT) },
                 soon: { count: reviewsSoon.length, items: reviewsSoon.slice(0, ACTION_LIMIT) } } };
     }
-    const displayDay = value => new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeZone: 'UTC' })
+    function nzCalendarDay(iso) {
+        try {
+            const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(iso));
+            const part = type => parts.find(item => item.type === type);
+            const day = part('year').value + '-' + part('month').value + '-' + part('day').value;
+            return calendarDay(day) ? day : null;
+        } catch (_) { return null; }
+    }
+    // A saved due date is a calendar day. Midnight UTC is still that day in
+    // New Zealand (the zone is ahead of UTC), matching the rest of the dashboard.
+    const displayDay = value => new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeZone: 'Pacific/Auckland' })
         .format(new Date(value + 'T00:00:00.000Z'));
     function sameProfile(actual, expected) {
         return actual && expected && Object.keys(expected).every(key => actual[key] === expected[key]);
@@ -269,6 +288,29 @@
                 } else empty.append(node('span', '', 'Start with your top three gaps.'));
                 card.append(empty); root.prepend(card); return;
             }
+            if (actions.next && actions.next.length) {
+                card.append(node('h4', '', 'Next open actions'));
+                const list = node('ul', 'picture-actions-next');
+                const statusLabel = { in_progress: 'In progress', blocked: 'Blocked', open: 'Open' };
+                actions.next.forEach(entry => {
+                    const row = node('li', 'picture-action');
+                    const link = node('a', 'picture-action-title', entry.title);
+                    link.setAttribute('href', '#improvement-plan');
+                    link.href = '#improvement-plan';
+                    link.addEventListener('click', event => {
+                        event.preventDefault();
+                        if (!live() || denied) return;
+                        if (entry.planId && entry.actionId && Number.isSafeInteger(entry.planRevision) && typeof options.openAction === 'function') {
+                            options.openAction({ planId: entry.planId, actionId: entry.actionId, planRevision: entry.planRevision });
+                        } else if (openImprovement) openImprovement();
+                    });
+                    row.append(link, node('span', 'picture-action-meta dashboard-muted',
+                        (statusLabel[entry.status] || 'Open') + (entry.dueDate ? ' · Due ' + displayDay(entry.dueDate) : ' · No due date') +
+                        (entry.owner ? ' · Owner: ' + entry.owner : '')));
+                    list.append(row);
+                });
+                card.append(list);
+            }
             const groups = [['Overdue', actions.overdue], ['Due in the next 14 days', actions.dueSoon]];
             if (actions.reviews.total) groups.push(['Reviews due', actions.reviews.due], ['Reviews in the next 14 days', actions.reviews.soon]);
             groups.forEach(([label, group]) => {
@@ -285,7 +327,7 @@
                 card.append(list);
             });
             if (actions.reviews.total) card.append(node('p', 'picture-review-note dashboard-muted',
-                'Review dates use saved action records, checked against ' + displayDay(actions.reviews.asOfDay) + ' (UTC). ' +
+                'Review dates use saved action records, checked against ' + displayDay(actions.reviews.asOfDay) + ' (New Zealand time). ' +
                 'A review date does not confirm a review took place, verify evidence or change a score.'));
             if (actions.more) card.append(node('p', 'dashboard-muted', 'Counts cover the first five saved plans.'));
             const full = node('a', 'picture-actions-plan', 'View the full plan'); full.href = '#improvement-plan';

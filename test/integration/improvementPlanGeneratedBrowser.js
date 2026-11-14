@@ -244,7 +244,7 @@ module.exports = function registerGeneratedBrowser({ ncscHttpSetup, httpJson, te
             // Follow only legal commands advertised by the actual native editor.
             if (await editor.getByRole('button', { name: OPEN.start, exact: true }).isVisible()) { await open('start'); await save('start'); }
             await open('complete'); await form().getByLabel('Completion note', { exact: true }).fill('Synthetic work completed for review.');
-            await form().getByLabel('Completion evidence reference (unverified)', { exact: true }).fill('synthetic:generated-browser:evidence'); await save('complete');
+            await form().getByLabel('Where the proof is kept (required)', { exact: true }).fill('synthetic:generated-browser:evidence'); await save('complete');
             const completed = await h.get('improvement/view?planId=' + encodeURIComponent(planId), h.generation); httpJson(completed, 200);
             assert.equal(completed.body.actions.find(row => row.actionId === actionId).evidence.completionVerification, 'not_verified');
             await open('reopen'); await form().getByLabel('Reopen reason', { exact: true }).fill('Synthetic reviewer requests follow-up.'); await save('reopen');

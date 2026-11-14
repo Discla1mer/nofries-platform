@@ -3740,6 +3740,19 @@ describe('Overview Actions card', () => {
         expect(stamp().dateTime).toBe(valid ? '2026-09-08T23:51:00.000Z' : before);
         h.window.dispatch('pagehide');
     });
+    test('a named action opens that saved action in the improvement plan', async () => {
+        const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }), model = await ready(h);
+        await h.reply(at(h, /improvement\/plans/), 200, plans(model));
+        await h.reply(at(h, /improvement\/list/), 200, { ...list, scope: { planId: 'plan-a', tenantId: 't', organisationId: model.context.organisationId }, planRevision: 2 });
+        await h.reply(at(h, /ncsc\/assessments/), 200, empty, { text: async () => JSON.stringify(empty) });
+        const link = [...card(h).querySelectorAll('a')].find(item => item.textContent === 'Synthetic overdue action');
+        expect(link).toBeDefined();
+        link.click(); await flush();
+        expect(h.window.location.hash).toBe('#improvement-plan');
+        expect(h.improvementMounts).toHaveLength(1);
+        expect(h.improvementMounts[0].input.initialTarget).toEqual({ planId: 'plan-a', actionId: 'a1', planRevision: 2 });
+        h.window.dispatch('pagehide');
+    });
     test('with improvement actions off, Overview makes no improvement reads and shows no card', async () => {
         const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' }); await ready(h, false);
         expect(h.requests).toHaveLength(6);

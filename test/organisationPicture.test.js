@@ -1490,10 +1490,11 @@ function planAction(actionId, status, dueDate, extra = {}) {
 }
 const planList = actions => ({ schemaVersion: 1, asOf: ACTIONS_AS_OF, actions });
 function actionsCard(settings = {}) {
-    const opened = [], reads = [];
+    const opened = [], reads = [], targeted = [];
     const readActions = settings.readActions || (() => { reads.push(1); return Promise.resolve(settings.value); });
-    const dom = setup({ ...settings, options: { openImprovement: value => opened.push(value), readActions, ...settings.options } });
-    return { ...dom, opened, reads };
+    const dom = setup({ ...settings, options: { openImprovement: value => opened.push(value),
+        openAction: value => targeted.push(value), readActions, ...settings.options } });
+    return { ...dom, opened, reads, targeted };
 }
 
 test('Actions card shows overdue and next-14-day counts with up to three titles and label owners only', async () => {
@@ -1507,13 +1508,24 @@ test('Actions card shows overdue and next-14-day counts with up to three titles 
         planAction('late', 'open', '2026-11-27')
     ])] };
     value.lists[0].actions[2].rationale.suggestedAction = '<img src=x onerror=alert(1)>';
+    value.lists[0].scope = { planId: 'plan-first' }; value.lists[0].planRevision = 4;
+    value.lists[1].scope = { planId: 'plan-second' }; value.lists[1].planRevision = 1;
     const dom = actionsCard({ value }); await flush();
     const card = dom.root.querySelector('.picture-actions');
     assert.ok(card); assert.equal(dom.root.children[0], card);
     assert.equal(card.getAttribute('aria-labelledby'), card.querySelector('h3').id);
     assert.equal(card.querySelector('h3').textContent, 'Actions');
-    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Overdue (4)', 'Due in the next 14 days (2)']);
-    const [overdue, soon] = card.querySelectorAll('ul');
+    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Next open actions', 'Overdue (4)', 'Due in the next 14 days (2)']);
+    const next = card.querySelector('.picture-actions-next');
+    assert.deepEqual([...next.querySelectorAll('a')].map(node => node.textContent),
+        ['<img src=x onerror=alert(1)>', 'Synthetic action o1', 'Synthetic action o2']);
+    assert.match(next.textContent, /In progress · Due 3 Nov 2026/);
+    assert.match(next.textContent, /Open · Due 1 Nov 2026 · Owner: Aroha \(office manager\)/);
+    assert.match(next.textContent, /Blocked · Due 2 Nov 2026/);
+    assert.equal(next.querySelector('img'), null);
+    next.querySelector('a').click();
+    assert.deepEqual(dom.targeted, [{ planId: 'plan-first', actionId: 'o3', planRevision: 4 }]);
+    const [overdue, soon] = card.querySelectorAll('.picture-actions-list');
     assert.deepEqual(overdue.querySelectorAll('.picture-action-title').map(node => node.textContent),
         ['Synthetic action o1', 'Synthetic action o2', '<img src=x onerror=alert(1)>']);
     assert.equal(card.querySelector('img'), null);

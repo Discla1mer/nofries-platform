@@ -3275,6 +3275,9 @@ describe('final submission review step', () => {
             expect(counts).toContain(`4 of ${questions.length} answered`); expect(counts).toContain(`${questions.length - 4} unanswered`);
             expect(counts).toContain('1 N/A answer needs an explanation'); expect(counts).toContain('2 answers are not saved yet');
             expect(byId(ui, 'ncsc-review-readiness').textContent).toMatch(/Before you can submit, answer \d+ questions .* and explain 1 N\/A answer\./);
+            expect(ui.root.querySelector('.ncsc-review').textContent).toContain('Nothing is submitted until you choose Save and submit assessment.');
+            expect(ui.root.querySelector('.ncsc-review').textContent).not.toContain('does not save or submit anything');
+            expect(ui.root.querySelector('.ncsc-review').textContent).not.toContain('The assessment is submitted with the saved answers shown.');
             expect(byId(ui, control(ui, 'Save and submit assessment').getAttribute('aria-describedby')).textContent).toMatch(/2 unsaved answers are saved first.*read-only/);
             expect(control(ui, 'Save progress')).toBeUndefined();
             control(ui, 'Back to questions').click();
@@ -3325,6 +3328,7 @@ describe('final submission review step', () => {
             const range = byId(ui, 'ncsc-review-range');
             expect(range.textContent).toContain('1 answer marked not applicable, to confirm.');
             expect(range.textContent).toContain('The projected range appears when every question has an answer.');
+            expect(range.textContent).toContain('Answer ' + (metadata().questions.length - 3) + ' more questions to see your projected range.');
             expect(byId(ui, 'ncsc-review-range-value')).toBeUndefined();
             expect(range.querySelectorAll('button').map(item => item.textContent)).toEqual(['Change question 3']);
         } finally { ui.controller.destroy(); }
@@ -3335,9 +3339,34 @@ describe('final submission review step', () => {
             const range = byId(clean, 'ncsc-review-range');
             expect(range.textContent).not.toMatch(/not applicable/);
             expect(byId(clean, 'ncsc-review-range-value').textContent).toBe('With your current answers, reported implementation would be 100.0%.');
+            expect(byId(clean, 'ncsc-review-consequence').textContent).toContain('When you submit, these saved answers are used.');
             expect(range.textContent).not.toContain('Approval is not available');
             expect(range.querySelectorAll('button')).toHaveLength(0);
         } finally { clean.controller.destroy(); }
+    });
+
+    test('submitted results link to creating an improvement plan without claiming one was built', async () => {
+        const h = await backend();
+        await h.execute(createCommand());
+        await h.execute(saveCommand());
+        const submitted = await h.execute(submitCommand());
+        const assessment = submitted.assessment;
+        const opened = [];
+        const ui = await resumeUi(h, { openImprovement(source) { opened.push(source); return Promise.resolve(true); } });
+        try {
+            expect(ui.root.textContent).toContain('Submitting does not create the plan by itself.');
+            expect(ui.root.textContent).toContain('You can give each item an owner and a due date.');
+            expect(ui.root.textContent).not.toContain('with an owner and a due date for each item');
+            expect(ui.root.textContent).not.toContain('improvement plan was built');
+            const panel = ui.root.querySelector('.ncsc-results');
+            expect(panel.children.indexOf(panel.querySelector('.ncsc-plan-followup'))).toBeGreaterThan(panel.children.indexOf(panel.querySelector('.ncsc-result-metrics')));
+            control(ui, 'Open improvement plan').click();
+            const keys = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+            expect(opened).toEqual([{ assessmentId: assessment.assessmentId, revision: assessment.revision,
+                revisionSha256: assessment.revisionSha256,
+                profileRef: Object.fromEntries(keys.map(key => [key, assessment.profileRef[key]])),
+                outputSha256: assessment.submission.evaluation.outputSha256 }]);
+        } finally { ui.controller.destroy(); }
     });
 
     test('a cleared saved answer is shown as unanswered and not saved yet', async () => {
