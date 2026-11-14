@@ -676,6 +676,9 @@
         function render() {
             if (!live()) return;
             const focused = captureFocus(root);
+            const observations = root.querySelector('.ncsc-draft-observations');
+            const observationsOpen = !!(observations && observations.open && acknowledged &&
+                observations.dataset.assessmentId === acknowledged.assessmentId);
             const scrollX = win && win.scrollX, scrollY = win && win.scrollY;
             // Retain the progress block's height while acknowledging Save. Otherwise
             // removing an unsaved-count line moves the button under a double click.
@@ -697,7 +700,7 @@
             root.append(errorBox, content);
             if (view === 'denied') content.append(node('p', '', 'This assessment is not available. Reopen the dashboard through your authenticated organisation context.'));
             else if (view === 'create') renderCreate();
-            else if (acknowledged) renderAssessment();
+            else if (acknowledged) renderAssessment(observationsOpen);
             else if (view === 'assessment' && selected) renderAssessmentRead();
             else renderList();
             // Reuse the optional disclosure so open state survives save/recovery
@@ -983,7 +986,7 @@
                 return await perform(command, []);
             } catch (error) { fixedFailure(error); return false; }
         }
-        function renderAssessment() {
+        function renderAssessment(observationsOpen) {
             const renderedEpoch = epoch;
             const sealed = acknowledged.status === 'submitted';
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
@@ -1008,6 +1011,7 @@
             if (pending) renderPending();
             if (reviewing) { renderReview(); return; }
             questionProgress = node('p', 'ncsc-draft-progress'); questionProgress.id = 'ncsc-draft-progress'; content.append(questionProgress);
+            if (!sealed) renderDraftObservations(observationsOpen);
             const indexLabel = node('label', '', 'Question'); indexLabel.setAttribute('for', 'ncsc-question-index');
             const index = node('select', 'ncsc-question-index'); index.id = 'ncsc-question-index';
             index.setAttribute('aria-describedby', 'ncsc-question-index-help');
@@ -1067,6 +1071,49 @@
             }
             content.append(controls);
             content.append(node('p', 'dashboard-muted', 'Resolved means answered Yes, Partial or No; it does not mean implemented. To submit, answer every question and explain each not applicable answer. Unknown answers, and answers marked not applicable, to confirm, are allowed. A submitted baseline is read-only and is not a certification.'));
+        }
+        // Counts and navigation from acknowledged answers only. Never evaluate a
+        // draft, infer a risk ranking, or reuse another assessment's baseline.
+        function renderDraftObservations(expanded) {
+            const panel = node('details', 'ncsc-guidance ncsc-draft-observations');
+            panel.dataset.assessmentId = acknowledged.assessmentId; panel.open = expanded;
+            const summary = node('summary', '', 'Saved draft observations'); summary.id = 'ncsc-draft-observations-summary';
+            panel.append(summary, node('p', 'dashboard-muted', 'Last saved ' + localDate(acknowledged.updatedAt) +
+                '. Only saved answers are included. Unsaved changes are not included until a save is confirmed.'));
+            panel.append(node('p', '', 'These are self-reported draft observations, not a score, risk ranking or verified evidence. They do not change any submitted baseline.'));
+            const rows = questions.map(function (question, index) { return { question: question, index: index, value: savedAnswer(question.id) }; });
+            const saved = rows.filter(function (row) { return row.value.optionId !== null; }).length;
+            const yes = rows.filter(function (row) { return row.value.optionId === 'yes'; }).length;
+            panel.append(node('p', 'ncsc-draft-observation-counts', saved + ' of ' + questions.length + ' responses saved. ' +
+                yes + ' answered Yes (self-reported, not verified).'));
+            if (!saved) panel.append(node('p', '', 'No saved answers yet. Observations appear after answers are saved.'));
+            [
+                ['Reported gaps', ['no', 'partial'], 'Check what is missing and agree a next step with your team or IT provider.'],
+                ['Information to confirm', ['unknown'], 'Ask whoever looks after these systems what is in place.'],
+                ['Applicability to confirm', ['not_applicable'], 'These exclusions are not approved. Confirm whether each question applies to this scope.'],
+                ['Not answered in this save', [null], 'Answer these questions, or choose Unknown when you cannot confirm what is in place.']
+            ].forEach(function (group) {
+                const matches = rows.filter(function (row) { return group[1].includes(row.value.optionId); });
+                const section = node('section', 'ncsc-draft-observation-group');
+                section.append(node('h3', '', group[0] + ' · ' + matches.length));
+                if (matches.length) {
+                    section.append(node('p', '', group[2]));
+                    const list = node('ul', 'ncsc-draft-observation-list');
+                    matches.forEach(function (row) {
+                        const control = metadata.controls.find(function (entry) { return entry.id === row.question.controlId; });
+                        const label = row.value.optionId === 'not_applicable' ? 'Not applicable, to confirm' :
+                            row.value.optionId === null ? 'Unanswered' : optionById.get(row.value.optionId).label;
+                        const jump = button('Question ' + (row.index + 1) + ': ' + (control ? control.title : row.question.prompt) + ' · ' + label,
+                            function () { if (questionRegion) { activeQuestion = row.index; renderAssessmentQuestion(); } }, 'dashboard-text-button');
+                        jump.id = 'ncsc-draft-observation-' + row.question.id;
+                        const item = node('li'); item.append(jump); list.append(item);
+                    });
+                    section.append(list);
+                }
+                panel.append(section);
+            });
+            panel.append(node('p', 'dashboard-muted', 'Grouped by saved answer, with questions in framework order. A zero count is not assurance that there are no gaps. Open a question to review its current answer, including any newer unsaved change.'));
+            content.append(panel);
         }
         // "2 Unknown and 1 not applicable", leaving out a part that is zero.
         function confirmBreakdown(unknown, notApplicable) {

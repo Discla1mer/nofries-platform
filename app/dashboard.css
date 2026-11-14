@@ -309,6 +309,9 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-question-help ul { margin: .4rem 0; padding-left: 1.25rem; }
 /* Wider screens show each answer's meaning under its choice instead. */
 @media (min-width: 30.01rem) { .ncsc-help-answers { display: none; } }
+.ncsc-draft-observation-group { margin-top: 1rem; min-width: 0; }
+.ncsc-draft-observation-list { padding-left: 1.25rem; }
+.ncsc-draft-observation-list .dashboard-text-button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
 .ncsc-preserve-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ncsc-answer { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
 .ncsc-answer legend { font-size: var(--dashboard-font-section); font-weight: var(--dashboard-weight-emphasis); line-height: 1.4; padding: 0 0 1rem; }
