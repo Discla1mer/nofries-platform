@@ -523,9 +523,10 @@ describe('saved assessment list pagination and resume', () => {
         try {
             await until(() => savedActions(ui).length === 2);
             const search = byId(ui, 'ncsc-assessment-search');
-            const cards = ui.root.querySelectorAll('.ncsc-assessment-card');
-            const displayedDate = cards[1].querySelector('h3').textContent.replace('Assessment started ', '');
-            const lastSaved = cards[1].querySelector('.ncsc-assessment-date').textContent.replace('Last saved ', '');
+            // The list is ordered most recently saved first (#219), so find the warehouse card by id rather than position.
+            const warehouseCard = byId(ui, 'ncsc-assessment-open-assessment-warehouse').closest('.ncsc-assessment-card');
+            const displayedDate = warehouseCard.querySelector('h3').textContent.replace('Assessment started ', '');
+            const lastSaved = warehouseCard.querySelector('.ncsc-assessment-date').textContent.replace('Last saved ', '');
             search.focus();
             for (const query of [' WAREHOUSE ', displayedDate, lastSaved]) {
                 enter(search, query);
