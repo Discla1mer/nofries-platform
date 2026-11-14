@@ -1,5 +1,11 @@
 'use strict';
 
+// Setup and acceptance can take 10 to 20 seconds. Name the step that is
+// running so a long wait reads as progress, not as a page that stopped.
+const WORKING = 'Working on it. This can take up to 20 seconds. Please keep this page open.';
+const SAVING_DETAILS = 'Saving your details. This can take up to 20 seconds. Please keep this page open.';
+const SAVING_ACCEPTANCE = 'Saving your acceptance and preparing your dashboard. This can take up to 20 seconds. Please keep this page open.';
+
 // Unmounted view. The client is supplied by the reviewed same-origin signup
 // transport; this component neither stores credentials nor grants access.
 function mountSignupJourney(root, client, { customerTransport, signInRecovery, supportReference, chooseAccount = false, entryIntent } = {}) {
@@ -14,7 +20,9 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         throw new TypeError('signup_view_dependencies_required');
     }
     const doc = root.ownerDocument;
-    let disposed = false, busy = false, generation = 0, viewRevision = 0;
+    // True until the first state read succeeds. A failure while opening is a
+    // sign-in/access check failure, not a statement that signup is unavailable.
+    let disposed = false, busy = false, generation = 0, viewRevision = 0, opening = true;
     let cancelOperation = null, setupDraft = null;
     const element = (tag, text) => {
         const node = doc.createElement(tag);
@@ -218,7 +226,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                     organisationName: reservation ? reservation.organisationName : controls.organisationName.value.trim().normalize('NFC'),
                     details: { name: controls.name.value, role: controls.role.value, address: controls.address.value,
                         registrationId: controls.registrationId.value, authorityConfirmed: authority.checked } };
-                run(signal => client.completeSetup(input, { signal }));
+                run(signal => client.completeSetup(input, { signal }), undefined, false, SAVING_DETAILS);
             });
             root.append(form);
             setupSignOut();
@@ -286,7 +294,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 }
                 run(signal => client.acceptTerms({ termsVersion: state.termsVersion, termsDigest: state.termsDigest,
                     ...(scheduled ? { scheduleId: state.scheduleId, scheduleDigest: state.scheduleDigest } : {}),
-                    accepted: true }, { signal }));
+                    accepted: true }, { signal }), undefined, false, SAVING_ACCEPTANCE);
             });
             consent.addEventListener('change', () => { if (consent.checked) hint.hidden = true; });
             root.append(label, submit, hint,
@@ -325,7 +333,10 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             const link = element('a', consultant ? 'Open your consultant dashboard' : 'Continue to your dashboard');
             link.className = 'button';
             link.href = consultant ? '/dashboard#organisations' : '/dashboard';
-            root.append(link);
+            // The page normally opens the dashboard by itself; say so while it loads.
+            const opening = element('p', 'Preparing your dashboard. Please keep this page open.');
+            opening.className = 'signup-progress'; opening.setAttribute('role', 'status');
+            root.append(opening, link);
         } else if (state.status === 'pending_preparation') {
             heading.textContent = 'Your organisation is being prepared';
             root.append(element('p', 'Your identity is verified. No Fries is preparing your approved organisation before you review its terms. Your terms have not been accepted yet.'),
@@ -354,6 +365,29 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             help.className = 'field-help signup-status-help'; help.append(element('span', ' '), report); root.append(help);
             if (customerTransport) signInLinks();
         }
+        heading.focus();
+    }
+    function showAccessUnconfirmed(diagnosticSource) {
+        if (disposed) return;
+        viewRevision++;
+        setupDraft = null;
+        root.replaceChildren();
+        const heading = element('h1', 'We could not open your account');
+        heading.tabIndex = -1;
+        root.append(heading,
+            element('p', 'Your sign-in may have worked, but No Fries could not check your account and organisation access just now. If you already have an account, it and your saved work are kept. You do not need to sign up again.'),
+            element('p', 'Try again now. If your account still does not open, sign in again with the same email and password.'),
+            element('p', 'Error code: NF-SIGNIN-UNCONFIRMED'));
+        showDiagnostic(diagnosticSource);
+        const retry = button('Try again', signal => client.load({ signal }));
+        retry.classList.add('signup-entry-action'); root.append(retry);
+        signInLinks();
+        const help = element('p', 'If this keeps happening, contact No Fries for help and include this error code.');
+        const report = element('a', 'Report this problem');
+        report.href = reportLink(diagnosticSource);
+        report.target = '_blank'; report.rel = 'noopener noreferrer';
+        report.setAttribute('aria-label', 'Report this problem (opens in a new tab)');
+        help.className = 'field-help signup-status-help'; help.append(element('span', ' '), report); root.append(help);
         heading.focus();
     }
     function showDiagnostic(value) {
@@ -447,7 +481,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                     typeof s.scheduleText === 'string' && s.scheduleText.length > 0 && s.scheduleText.length <= 32768 &&
                     typeof s.scheduleDigest === 'string' && /^[a-f0-9]{64}$/.test(s.scheduleDigest)));
     }
-    async function run(action, timeoutMs = 30000, restoreDraft = false) {
+    async function run(action, timeoutMs = 30000, restoreDraft = false, label = WORKING) {
         if (disposed || busy) return;
         busy = true;
         const current = ++generation;
@@ -461,14 +495,18 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         for (const node of [...root.querySelectorAll('button'), ...root.querySelectorAll('input'), ...root.querySelectorAll('select')]) node.disabled = true;
         // Setup and acceptance can take 10 to 20 seconds. Say so straight away,
         // so a disabled button is not mistaken for a page that has stopped.
-        const progress = element('p', 'Working on it. This can take up to 20 seconds. Please keep this page open.');
+        const progress = element('p', label);
         progress.className = 'signup-progress'; progress.setAttribute('role', 'status');
         root.append(progress);
         try {
             const state = await Promise.race([action(controller.signal), cancelled]);
-            if (!disposed && current === generation) show(state, state, restoreDraft);
+            if (!disposed && current === generation) { opening = false; show(state, state, restoreDraft); }
         } catch (error) {
-            if (!disposed && current === generation) show({ status: 'unavailable' }, error);
+            // Failure or timeout always ends in a visible state with a way on.
+            if (!disposed && current === generation) {
+                if (customerTransport && opening) showAccessUnconfirmed(error);
+                else show({ status: 'unavailable' }, error);
+            }
         } finally {
             clearTimeout(timer);
             if (!disposed && current === generation) {

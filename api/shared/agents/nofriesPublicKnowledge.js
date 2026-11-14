@@ -6,7 +6,7 @@ const { detectProspectPromptInjection } = require('./prospectInjectionGuard');
 // Change this version whenever the public facts or availability change.
 const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
     schemaVersion: 1,
-    knowledgeVersion: 'public-stack-2026-11-10-v1',
+    knowledgeVersion: 'public-stack-2026-11-11-v1',
     links: {
         home: 'https://nofries.nz/',
         dashboard: 'https://nofries.nz/dashboard',
@@ -72,11 +72,11 @@ const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
         // api/shared/securityGap/ncscProfile.js; keep them in step.
         answerMeanings: {
             availability: 'available',
-            summary: 'Assessment answers mean: Yes - all parts of the statement are in place across your declared scope. Partial - some parts are in place, or only part of your scope is covered; plans alone do not count. No - none of it is in place yet, including when work is only planned. Unknown - you do not have enough information to confirm what is in place. Not applicable (N/A) - you believe it does not apply to your scope; explain why, and it stays unresolved until approved.'
+            summary: 'Assessment answers mean: Yes - all parts of the statement are in place across your declared scope. Partial - some parts are in place, or only part of your scope is covered; plans alone do not count. No - none of it is in place yet, including when work is only planned. Unknown - you do not have enough information to confirm what is in place. Not applicable (N/A) - you believe it does not apply to your scope; explain why. It counts as still to confirm, not as in place, until approved.'
         },
         scoringMethod: {
             availability: 'available',
-            summary: 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The result is a range. The lower end counts Unknown, unanswered and unapproved N/A answers as 0; the upper end counts them as 1, so unresolved answers widen the range. Lower end = (Yes + 0.5 x Partial) / total questions. The 0.5 for Partial is a No Fries planning convention, not an NCSC weight, and this is a No Fries calculation, not an NCSC score.'
+            summary: 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The result is a range. The lower end counts Unknown, unanswered and unapproved N/A answers as 0; the upper end counts them as 1, so answers still to confirm widen the range. Lower end = (Yes + 0.5 x Partial) / total questions. The 0.5 for Partial is a No Fries planning convention, not an NCSC weight, and this is a No Fries calculation, not an NCSC score.'
         },
         complianceLimit: {
             availability: 'available',

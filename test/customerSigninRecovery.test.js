@@ -321,12 +321,15 @@ test.each([{ status: 503, state: { status: 'create_account' } }, { status: 200, 
 ('a recovery hint cannot manufacture account state after an unavailable read %j', async failure => {
     const f = runDocument(buildHostedSignupDocument(sources()), { ...failure, search: '?provider=external&signin=expired' });
     try {
-        await flush(); expect(f.root.querySelector('h1').textContent).toBe('Signup is unavailable');
+        // A-001: an unavailable opening read is a sign-in check failure with
+        // only a manual state re-read; the hint still manufactures nothing.
+        await flush(); expect(f.root.querySelector('h1').textContent).toBe('We could not open your account');
         expect(f.root.textContent).not.toContain('If you finished creating');
+        expect(f.root.textContent).not.toContain('Signup is unavailable');
         expect(f.assign).not.toHaveBeenCalled(); expect(f.replace).not.toHaveBeenCalled();
-        expect(f.root.querySelector('button')).toBeNull();
-        expect(f.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
-        expect(f.root.textContent).toContain('Do not create another account or submit your details again.');
+        expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
+        expect(f.root.textContent).toContain('Error code: NF-SIGNIN-UNCONFIRMED');
+        expect(f.root.textContent).toContain('If you already have an account, it and your saved work are kept.');
         expect(f.fetch).toHaveBeenCalledTimes(1);
     } finally { f.dispose(); }
 });

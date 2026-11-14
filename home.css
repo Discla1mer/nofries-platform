@@ -890,7 +890,9 @@ body[data-dashboard-state="ready"] #dashboardMessage, body[data-dashboard-state=
 .signup-glance p { margin: 0; font-size: 0.95rem; }
 .signup-handoff { margin-block: 20px 0; padding: clamp(14px, 3vw, 20px); border: 1px solid var(--line-strong); border-radius: 12px; background: var(--page); }
 .signup-handoff h2 { margin: 0 0 10px; font-size: 1.05rem; }
-.signup-handoff ul { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; font-size: .95rem; }
+.signup-handoff ul { margin: 0; padding-left: 1.2em; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; font-size: .95rem; }
+/* A long sign-in hostname wraps inside the panel on 320px screens. */
+.signup-handoff li { min-width: 0; overflow-wrap: anywhere; }
 .signup-progress { margin-block: 16px; font-weight: 600; }
 /* Roadmap shares the public navigation; keep wrapped rows close on phones. */
 body[data-page="product-roadmap"] .site-header nav { gap: 0 20px; }
@@ -1076,9 +1078,24 @@ body[data-page="operator-dashboard"] .site-details > summary { display: flex; al
 .sample-result-gaps { margin: 16px 0 0; padding: 0; list-style: none; }
 .sample-result-gaps > li { min-width: 0; padding: 24px; border: 1px solid var(--line); border-radius: 16px; }
 .sample-result-gaps p { margin: 10px 0 0; }
+/* The example's cards use the same opaque surface as saved results (F1-R06). */
+.sample-result :is(.public-roadmap-grid > article, .sample-result-gaps > li) { border-color: var(--result-card-line); border-radius: var(--result-card-radius); background: var(--result-card-surface); box-shadow: var(--result-card-shadow); }
+.sample-result-banner { position: relative; z-index: 1; box-shadow: var(--result-card-shadow); font-size: 1.05rem; }
 .sample-result-table { width: 100%; border-collapse: collapse; }
 .sample-result-table :is(th, td) { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .sample-result-table td { white-space: nowrap; }
+/* Phones: each function becomes a short label/value block so no header has to
+   break inside a word. Explicit table roles in the markup keep the row and
+   column relationships for assistive technology when the display changes. */
+@media (max-width: 40rem) {
+    .sample-result-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .sample-result-table :is(tbody, tr, th, td) { display: block; }
+    .sample-result-table tr { padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .sample-result-table :is(th, td) { padding: 0; border-bottom: 0; }
+    .sample-result-table tbody th { margin-bottom: 6px; }
+    .sample-result-table td { display: flex; justify-content: space-between; gap: 16px; white-space: normal; }
+    .sample-result-table td::before { content: attr(data-label); content: attr(data-label) / ""; color: var(--muted); }
+}
 .sample-result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
 .sample-result-actions > a:not(.button) { display: inline-flex; align-items: center; min-height: 46px; color: var(--ink); font-weight: 700; text-decoration: underline; text-underline-offset: 5px; }
 body[data-page="dashboard-pricing"] .public-roadmap p a:not(.button) { color: var(--green); font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
@@ -1225,8 +1242,8 @@ body[data-dashboard-gateway="true"]:has(#dashboardStatusPanel:not([hidden])) .ho
 .lockup-tagline::after { content: ""; display: block; width: 18px; height: 1px; margin-top: 12px; background: var(--ink); }
 .homepage-lead { max-width: 38ch; margin: 0; color: var(--ink-soft); font-size: 1.12rem; line-height: 1.7; }
 .homepage-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 18px 24px; margin-top: 30px; }
-#gatewayPublic .homepage-primary { display: inline-flex; align-items: center; justify-content: space-between; gap: 26px; min-height: 54px; padding: 14px 22px; border: 1px solid var(--yellow); border-radius: 10px; color: var(--ink); background: var(--yellow); box-shadow: none; font-size: .94rem; font-weight: 700; }
-#gatewayPublic .homepage-primary:hover { background: var(--yellow-hover); border-color: var(--yellow-hover); transform: none; }
+#gatewayPublic .homepage-primary { display: inline-flex; align-items: center; justify-content: space-between; gap: 26px; min-height: 54px; padding: 14px 22px; border: 1px solid var(--button-fill); border-radius: var(--button-radius); color: var(--button-ink); background: var(--button-fill); box-shadow: none; font-family: var(--button-font); font-size: var(--button-size-large); font-weight: var(--button-weight); }
+#gatewayPublic .homepage-primary:hover { background: var(--button-fill-hover); border-color: var(--button-fill-hover); transform: none; }
 .homepage-primary > span { font-size: 1.25rem; font-weight: 500; }
 .homepage-secondary { display: inline-flex; align-items: center; gap: 12px; min-height: 46px; color: var(--ink-soft); font-size: .88rem; font-weight: 600; }
 .homepage-secondary:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 5px; }
@@ -1307,6 +1324,15 @@ body[data-dashboard-gateway="true"]:has(#dashboardStatusPanel:not([hidden])) .ho
     #gatewayPublic .homepage-intro :is(.homepage-lockup, .homepage-headline) { overflow-wrap: anywhere; }
     .homepage-actions { flex-direction: column; align-items: stretch; }
     .homepage-secondary { justify-content: center; }
+    /* Small phones (F1-R04): a smaller lockup, and Create account straight
+       after the headline so it shows on a 320 x 568 screen. The lead keeps its
+       DOM position, so keyboard and reading order are unchanged for links. */
+    #gatewayPublic .homepage-intro { display: flex; flex-direction: column; }
+    #gatewayPublic .homepage-intro .homepage-lockup { margin-bottom: 20px; font-size: clamp(2.6rem, 14vw, 3.4rem); }
+    #gatewayPublic .homepage-intro h1.homepage-headline { margin-bottom: 16px; }
+    #gatewayPublic .homepage-intro > :is(.homepage-lead, .homepage-reassurance, #homepageEnquiry) { order: 1; }
+    #gatewayPublic .homepage-intro > .homepage-lead { margin-top: 20px; }
+    .homepage-actions { margin-top: 0; }
     .homepage-preview figcaption { padding-inline: 18px; }
     .preview-content { padding: 20px 18px; }
     .preview-topbar { padding-inline: 18px; }
