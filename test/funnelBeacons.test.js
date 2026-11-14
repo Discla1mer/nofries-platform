@@ -147,13 +147,23 @@ test('SWA lets anonymous visitors POST counts, and only POST, to the exact telem
     const edgeRule = (pathname, method) => config.routes.find(rule => (!rule.methods || rule.methods.includes(method)) &&
         (rule.route === pathname || rule.route.endsWith('*') && pathname.startsWith(rule.route.slice(0, -1))));
     const rule = edgeRule('/api/telemetry', 'POST');
-    // Kept minimal for the 20,000-byte SWA config limit; the App Service handler
-    // already sends the full private API security headers on every answer.
-    expect(rule).toEqual({ route: '/api/telemetry', methods: ['POST'], allowedRoles: ['anonymous'], headers: { 'Cache-Control': 'no-store' } });
+    // No edge headers block (20,000-byte SWA config budget): App Service sends
+    // private, no-store API headers on every /api answer (proved below).
+    expect(rule).toEqual({ route: '/api/telemetry', methods: ['POST'], allowedRoles: ['anonymous'] });
     expect(config.routes.indexOf(rule)).toBeLessThan(config.routes.findIndex(item => item.route === '/api/*'));
     expect(config.routes.filter(item => item.route === '/api/telemetry')).toHaveLength(1);
     for (const method of ['GET', 'PUT', 'DELETE']) expect(edgeRule('/api/telemetry', method)).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
     expect(edgeRule('/api/telemetry/x', 'POST')).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
+});
+
+test.each([['POST', '/api/telemetry']])('App Service itself marks %s %s private and no-store', async (method, url) => {
+    // The telemetry edge rule carries no headers block; the host covers it.
+    const request = require('supertest');
+    const response = await request(require('../server').createNoFriesApp())[method.toLowerCase()](url)
+        .set('Sec-Fetch-Site', 'same-origin').send({});
+    expect(response.headers['cache-control']).toBe('private, no-store, max-age=0');
+    expect(response.headers['x-robots-tag']).toBe('noindex, nofollow');
+    expect(response.headers['content-security-policy']).toBe("default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
 });
 
 test('connect-src allows the same origin on the public pages and the dashboard', () => {
