@@ -1,12 +1,13 @@
-/* Fictional demo banner (#29). The dashboard itself uses app/dashboard.css unchanged. */
-body { margin: 0; background: #ece6da; }
+/* Fictional demo banner (#29). Fallbacks match app/dashboard.css because the banner
+   sits outside .nofries-dashboard; the dashboard itself stays unchanged. */
+body { margin: 0; background: var(--dashboard-paper, #ece6da); }
 .try-demo-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1.5rem;
-    padding: .85rem max(1rem, env(safe-area-inset-left)); background: #ffd400; color: #111816; font: 1rem/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    padding: .85rem max(1rem, env(safe-area-inset-left)); background: var(--dashboard-yellow, #e5b53b); color: var(--dashboard-ink, #17140f); font: 1rem/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .try-demo-banner p { margin: 0; }
 .try-demo-copy { min-width: 0; flex: 1 1 22rem; }
 .try-demo-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; flex: 0 1 auto; }
-.try-demo-banner button { font: inherit; min-height: 2.875rem; padding: .55rem 1rem; border: 2px solid #111816; border-radius: .6rem; background: #fffbe6; color: #111816; cursor: pointer; } .try-demo-banner button:hover { background: #ffffff; }
-.try-demo-banner a { color: #111816; min-height: 2.875rem; display: inline-flex; align-items: center; }
-.try-demo-banner a.try-demo-cta { padding: 0 1rem; border-radius: .6rem; background: #111816; color: #fffbe6; text-decoration: none; font-weight: 600; }
-.try-demo-banner :focus-visible { outline: 3px solid #111816; outline-offset: 3px; }
+.try-demo-banner button { font: inherit; min-height: 2.875rem; padding: .55rem 1rem; border: 2px solid var(--dashboard-ink, #17140f); border-radius: .6rem; background: var(--dashboard-surface, #f6f2ea); color: var(--dashboard-ink, #17140f); cursor: pointer; } .try-demo-banner button:hover { background: var(--dashboard-navy, #f2e4bc); }
+.try-demo-banner a { color: var(--dashboard-ink, #17140f); min-height: 2.875rem; display: inline-flex; align-items: center; }
+.try-demo-banner a.try-demo-cta { padding: 0 1rem; border-radius: .6rem; background: var(--dashboard-ink, #17140f); color: var(--dashboard-surface, #f6f2ea); text-decoration: none; font-weight: 600; }
+.try-demo-banner :focus-visible { outline: 3px solid var(--dashboard-focus, #17140f); outline-offset: 3px; }
 .try-demo-status { flex-basis: 100%; font-weight: 600; } .try-demo-status:empty { display: none; }

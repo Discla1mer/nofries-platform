@@ -22,6 +22,55 @@ async function tabTo(page, predicate, limit = 60) {
 async function shot(page, file, fullPage = true) { await page.evaluate(() => window.scrollTo(0, 0)); await page.screenshot({ path: path.join(shots, file), fullPage }); }
 const fits = page => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 const main = page => page.locator('main');
+const focusedText = page => page.evaluate(() => document.activeElement && document.activeElement.textContent.trim());
+
+function contrast(first, second) {
+    const luminance = color => color.match(/\d+(?:\.\d+)?/g).slice(0, 3)
+        .map(value => Number(value) / 255)
+        .map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
+        .reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+    const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
+    return (values[0] + .05) / (values[1] + .05);
+}
+
+async function checkPalette(page) {
+    const palette = await page.evaluate(() => {
+        const dashboard = getComputedStyle(document.querySelector('.nofries-dashboard'));
+        const token = name => {
+            const hex = dashboard.getPropertyValue('--dashboard-' + name).trim();
+            return 'rgb(' + [1, 3, 5].map(offset => parseInt(hex.slice(offset, offset + 2), 16)).join(', ') + ')';
+        };
+        const colors = selector => {
+            const style = getComputedStyle(document.querySelector(selector));
+            return { text: style.color, background: style.backgroundColor, border: style.borderTopColor };
+        };
+        return { ink: token('ink'), paper: token('paper'), surface: token('surface'), yellow: token('yellow'),
+            body: colors('body'), banner: colors('.try-demo-banner'), reset: colors('#try-demo-reset'), cta: colors('.try-demo-cta') };
+    });
+    assert.equal(palette.body.background, palette.paper, 'page uses dashboard paper');
+    assert.equal(palette.banner.background, palette.yellow, 'banner uses dashboard mustard');
+    assert.equal(palette.banner.text, palette.ink, 'banner uses dashboard ink');
+    assert.equal(palette.reset.background, palette.surface, 'reset uses dashboard surface');
+    assert.equal(palette.reset.text, palette.ink);
+    assert.equal(palette.cta.background, palette.ink);
+    assert.equal(palette.cta.text, palette.surface);
+    for (const control of [palette.banner, palette.reset, palette.cta]) assert.ok(contrast(control.text, control.background) >= 4.5, 'demo text has AA contrast');
+    assert.ok(contrast(palette.reset.border, palette.banner.background) >= 3, 'reset boundary is visible');
+    assert.ok(contrast(palette.cta.background, palette.banner.background) >= 3, 'contact control is visible');
+    await tabTo(page, () => document.activeElement.id === 'try-demo-reset');
+    for (const label of ['Reset demo', 'Create your account', 'Talk to No Fries', 'No Fries home']) {
+        assert.equal(await focusedText(page), label);
+        const focus = await page.evaluate(() => {
+            const element = document.activeElement; const style = getComputedStyle(element);
+            return { color: style.outlineColor, width: parseFloat(style.outlineWidth), style: style.outlineStyle,
+                visible: element.matches(':focus-visible'), height: element.getBoundingClientRect().height };
+        });
+        assert.ok(focus.visible && focus.style === 'solid' && focus.width >= 3, label + ': visible focus');
+        assert.ok(contrast(focus.color, palette.banner.background) >= 3, label + ': focus contrast');
+        assert.ok(focus.height >= 46, label + ': 2.875rem touch target');
+        await page.keyboard.press('Tab');
+    }
+}
 
 async function run(browser, origin, name, viewport) {
     const touch = name !== 'desktop';
@@ -40,6 +89,7 @@ async function run(browser, origin, name, viewport) {
     await main(page).getByText('28.6%–42.9%').first().waitFor();
     assert.equal(await page.getByRole('link', { name: 'Get help closing these gaps' }).getAttribute('href'), '/contact.html');
     assert.ok(await fits(page), name + ': no horizontal scroll');
+    await checkPalette(page);
     await shot(page, name + '-1-overview.png', !touch);
 
     if (name === 'desktop') {

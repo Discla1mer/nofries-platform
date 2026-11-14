@@ -37,6 +37,29 @@ async function submitThroughClient(client, assessmentId, responses) {
     return client.submit(submitCommand(assessmentId, 1, 'submit-' + assessmentId));
 }
 
+test('demo colours follow the dashboard palette with readable text, controls and focus', () => {
+    const css = read('demo/try/try-demo.css');
+    const dashboard = read('app/dashboard.css').match(/\.nofries-dashboard \{([^}]+)\}/)[1];
+    const tokens = Object.fromEntries([...dashboard.matchAll(/(--dashboard-[a-z-]+):\s*(#[a-f\d]{6})/gi)].map(match => [match[1], match[2]]));
+    const fallbacks = [...css.matchAll(/var\((--dashboard-[a-z-]+),\s*(#[a-f\d]{6})\)/gi)];
+    assert.ok(fallbacks.length >= 8, 'banner outside the dashboard has palette fallbacks');
+    for (const [, token, color] of fallbacks) assert.equal(color, tokens[token], token + ' fallback follows the dashboard');
+    for (const [, token] of css.matchAll(/var\((--dashboard-[a-z-]+)/gi)) assert.ok(tokens[token], token + ' exists');
+    assert.doesNotMatch(css, /#(?:08100f|ffd400|111816|fffbe6|3a3414|75691f|ffe477)\b/i);
+    assert.match(css, /:focus-visible\s*\{\s*outline:\s*3px solid var\(--dashboard-focus,/);
+    assert.equal((css.match(/min-height: 2\.875rem/g) || []).length, 2, 'buttons and links retain touch targets');
+    const luminance = color => [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16) / 255)
+        .map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
+        .reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+    const contrast = (first, second) => {
+        const values = [first, second].map(name => luminance(tokens['--dashboard-' + name])).sort((a, b) => b - a);
+        return (values[0] + .05) / (values[1] + .05);
+    };
+    for (const background of ['yellow', 'surface', 'navy']) assert.ok(contrast('ink', background) >= 4.5, background + ': text contrast');
+    assert.ok(contrast('ink', 'yellow') >= 3, 'reset border and CTA contrast');
+    assert.ok(contrast('focus', 'yellow') >= 3, 'focus contrast');
+});
+
 test('the App Service never serves or packages the demo; only the static build publishes it', async () => {
     for (const route of ['/try', '/try/', '/demo/try/try-demo.js', '/demo/try/document.js']) assert.equal((await request(app).get(route)).status, 404, route);
     assert.ok([...PUBLIC_ROOT_FILES, ...PUBLIC_SCRIPT_FILES].every(file => !/try|demo/i.test(file)));
