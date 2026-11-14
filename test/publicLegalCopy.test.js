@@ -92,3 +92,11 @@ test('public Terms labels open the customer terms, and legal in-page links resol
         for (const href of html.matchAll(/\bhref="#([^"]+)"/g)) expect(anchors).toContain(href[1]);
     }
 });
+
+test('the privacy notice describes anonymous funnel totals in the visitor tracking section', () => {
+    const section = read('privacy.html').match(/<section id="tracking">([\s\S]*?)<\/section>/);
+    expect(section).not.toBeNull();
+    for (const text of ['anonymous daily totals', 'home page visits', 'signups started', 'signup codes confirmed',
+        'first answers in an assessment', 'assessments submitted', 'results viewed', 'contact enquiries sent',
+        'only a date, the step and a number', 'No identifiers, cookies or IP addresses are stored']) expect(section[1]).toContain(text);
+});
