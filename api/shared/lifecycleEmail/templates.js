@@ -15,8 +15,11 @@ const TEMPLATES = Object.freeze({
     result_summary: Object.freeze({ [V.result_summary]: template('Your No Fries results are ready',
         'Your assessment results are ready. Sign in to see them and your improvement plan:', '{{signInUrl}}', '',
         'For your security, we do not include any results in this email.') }),
+    // v2: activation queues the nudge for every new account, so the wording
+    // must hold whether or not an assessment was started. Only activation (#151
+    // E3) queues this type, so no v1 row was ever written.
     nudge_unfinished: Object.freeze({ [V.nudge_unfinished]: template('Your No Fries assessment is waiting',
-        'You started a cyber security self-assessment but have not finished it yet. Sign in to pick up where you left off:', '{{signInUrl}}') }),
+        'Your cyber security self-assessment is ready when you are. Sign in to start it, or to carry on where you left off:', '{{signInUrl}}') }),
     reassess_reminder: Object.freeze({ [V.reassess_reminder]: template('Time to check your cyber security again',
         'It has been a while since your last assessment, and things change. Sign in to start a new one:', '{{signInUrl}}') })
 });

@@ -546,6 +546,11 @@
         // Original receipts acknowledge commands; they never supply current authority.
         await reconcile(cycle, 0, false);
     }
+    function cyberListedReady(projection) {
+        return Array.isArray(projection?.modules) && projection.modules.some(function (item) {
+            return item && item.key === 'cyber_security' && item.state === 'ready';
+        });
+    }
     function reconcile(cycle, transitions, initializeAllowed) {
         // Initialisation can reconcile again within the same cycle. Track the
         // full chain so focus/restore cannot restart a pending authority check.
@@ -577,12 +582,23 @@
         }
         const prefetchProjection = value.selectedBindingId !== null && !(value.accountType === 'consultant' &&
             !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations'));
+        // The Cyber Security module read starts as soon as the projection lists
+        // that module as ready, without waiting for the directory. The fixed
+        // protected assets still wait for both reads and the route decision,
+        // and nothing mounts before the closing session witness.
+        const early = prefetchProjection ? {} : null;
+        const listed = directory(cycle, value, [], null);
+        if (early) {
+            early.projection = request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess);
+            early.cyber = early.projection.then(function (projection) {
+                return current(cycle) && cyberListedReady(projection)
+                    ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess) : null;
+            });
+            [early.projection, early.cyber, listed].forEach(function (work) { work.catch(function () {}); });
+        }
         // Both reads depend only on this fresh session. Reconciliation failure
         // disposes the cycle and cancels siblings; neither response admits the protected shell.
-        const middle = prefetchProjection ? await Promise.all([
-            directory(cycle, value, [], null),
-            request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess)
-        ]) : [await directory(cycle, value, [], null)];
+        const middle = early ? await Promise.all([listed, early.projection]) : [await listed];
         if (!current(cycle)) return;
         if (value.selectedBindingId === null || value.accountType === 'consultant' && !cycle.openSelection && (cycle.forcePortfolio || window.location.hash === '#organisations')) { cycle.busy = false; show(cycle, 'selection'); return; }
         // Navigation may change while directory reads are pending. Keep the
@@ -592,11 +608,9 @@
         if (!current(cycle)) return;
         // These generation-bound reads are independent. Wait for both before
         // validating or mounting; the final session witness still gates display.
-        const prefetchCyber = Array.isArray(projection?.modules) && projection.modules.some(function (item) {
-            return item && item.key === 'cyber_security' && item.state === 'ready';
-        });
+        const prefetchCyber = cyberListedReady(projection);
         loadingStage(cycle, OPENING_MESSAGE, OPENING_DETAIL);
-        const prepared = await Promise.all([assets(cycle), prefetchCyber
+        const prepared = await Promise.all([assets(cycle), early ? early.cyber : prefetchCyber
             ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess)
             : Promise.resolve(null)]);
         if (!current(cycle)) return;
@@ -772,6 +786,8 @@
                     listCursor = selectedCursor;
                 }
                 csrf = response.csrfToken; render(response.state, body && body.requestId);
+                // A new client setup is now a saved draft: say so before the terms.
+                if (body?.action === 'create' && response.state?.status === 'terms') status.textContent = 'Draft saved. Two steps left before this client dashboard is created.';
                 if (refusal) status.textContent = refusal;
                 if (!body && cursor !== undefined) {
                     const firstRow = Array.from(elements.choices.children).find(function (row) {
@@ -951,7 +967,12 @@
             } else if (state?.status === 'terms' && typeof state.termsText === 'string' && typeof state.scheduleText === 'string' &&
                 DIGEST.test(state.termsDigest) && DIGEST.test(state.scheduleDigest) && typeof state.scheduleId === 'string' && UUID.test(responseRequestId)) {
                 content.append(element('h3', 'Review the schedule and terms for ' + (clientNames.get(responseRequestId) || 'this client')));
-                content.append(element('p', 'This client setup is saved. Acceptance has not been confirmed. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.'));
+                content.append(element('p', 'This client setup is saved as a draft. Acceptance has not been confirmed, so the client dashboard is not created yet.'));
+                const steps = element('ol'); steps.className = 'client-draft-steps';
+                steps.append(element('li', 'Read the client schedule and dashboard terms below.'),
+                    element('li', 'Tick that you accept them, then choose Accept and create client dashboard. We will check your recent sign-in before submitting; if confirmation is needed, return to this same client.'));
+                content.append(element('p', 'Steps left:'), steps,
+                    element('p', 'If you leave now, the draft stays in your organisation list as “Draft, not yet set up”. Choose Resume to return to it.'));
                 const schedule = element('section'); schedule.className = 'client-terms-section';
                 const scheduleHeading = element('h4', 'Client schedule'); scheduleHeading.id = 'clientScheduleHeading';
                 schedule.setAttribute('aria-labelledby', scheduleHeading.id);
@@ -1324,6 +1345,17 @@
         mountCyber.controlTitles = Object.assign(Object.create(null), Object.fromEntries(value.metadata.controls.map(function (control) {
             return [control.id, control.title];
         })));
+        // Each question's concrete follow-up, worded as on the results page, so a
+        // plan gap names the actual work (F1-R10). Plan actions are per question,
+        // so this is keyed by question id, not control. Display only.
+        mountCyber.itemFollowUps = Object.create(null);
+        value.metadata.questions.forEach(function (question) {
+            const followUp = question.smallBusiness && question.smallBusiness.checks.join(' ') ||
+                question.guidance && question.guidance.startingActions && question.guidance.startingActions[0];
+            if (typeof followUp === 'string' && followUp.trim() && followUp.length <= 1000) {
+                mountCyber.itemFollowUps[question.id] = followUp;
+            }
+        });
         // The Improvement Plan's empty state offers the latest submitted
         // assessment. This reads the same validated, bounded list as Overview.
         mountCyber.latestSubmitted = async function () {
@@ -1411,6 +1443,7 @@
                         planRevision: cycle.workQueueTarget.planRevision } } : {}),
                 sourceAssessment: presentation && presentation.sourceAssessment,
                 ...(cyber && cyber.controlTitles ? { controlTitles: cyber.controlTitles } : {}),
+                ...(cyber && cyber.itemFollowUps ? { itemFollowUps: cyber.itemFollowUps } : {}),
                 ...(cyber && typeof cyber.latestSubmitted === 'function' ? { latestSource: cyber.latestSubmitted } : {}),
                 newId: secureId,
                 isCurrent: function () { return current(cycle) && !cycle.authorityPending; },

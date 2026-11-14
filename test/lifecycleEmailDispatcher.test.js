@@ -11,12 +11,12 @@ const row = (over = {}) => ({ outbox_id: ID, account_id: ACCOUNT, email_type: 'w
     attempts: 1, prior_attempts: 0, lease: LEASE, ...over });
 
 function harness({ env = ON, rows = [row()], unsubscribed = [], response = { ok: true, status: 200, json: async () => ({ id: 'msg_1' }) },
-    resolveAddress = async () => ADDRESS, rowCount = 1, subjectKey = 'subject:key' } = {}) {
+    resolveAddress = async () => ADDRESS, rowCount = 1, subjectKey = 'subject:key', submitted = false } = {}) {
     const queries = [], logs = [], updates = [], claims = [];
     const client = { release: jest.fn(), async query(sql, params) {
         queries.push(sql);
         if (sql === CLAIM_SQL) { claims.push(params); return { rows: rows.splice(0) }; }
-        if (sql.includes('FROM nofries.dashboard_starter_accounts')) return { rows: [{ account_id: ACCOUNT, subject_key: subjectKey, unsubscribed }] };
+        if (sql.includes('FROM nofries.dashboard_starter_accounts')) return { rows: [{ account_id: ACCOUNT, subject_key: subjectKey, unsubscribed, submitted }] };
         if (sql.startsWith('UPDATE nofries.email_outbox SET locked_until=NULL')) { updates.push({ sql, params }); return { rowCount, rows: [] }; }
         return { rows: [] };
     } };
@@ -87,6 +87,18 @@ describe('lifecycle email dispatcher', () => {
         expect(resolveAddress).not.toHaveBeenCalled(); expect(h.send).not.toHaveBeenCalled();
     });
 
+    test('suppresses the unfinished nudge once the account has submitted anywhere, and only that type', async () => {
+        const nudge = harness({ submitted: true, rows: [row({ email_type: 'nudge_unfinished', template_version: 'nudge-unfinished-v2' })] });
+        await nudge.dispatcher.runOnce();
+        expect(nudge.updates[0]).toEqual({ sql: expect.stringContaining("status='suppressed'"), params: [ID, LEASE, 'already_submitted'] });
+        expect(nudge.send).not.toHaveBeenCalled();
+        expect(nudge.queries.find(sql => sql.includes('FROM nofries.dashboard_starter_accounts')))
+            .toContain("s.email_type='result_summary'");
+        const welcome = harness({ submitted: true });
+        await welcome.dispatcher.runOnce();
+        expect(welcome.send).toHaveBeenCalledTimes(1);
+    });
+
     test('the allow-list filters the claim; an empty or invalid list claims nothing', async () => {
         expect([...allowedTypes({})].sort()).toEqual(['nudge_unfinished', 'reassess_reminder', 'result_summary', 'welcome']);
         expect([...allowedTypes({ NOFRIES_LIFECYCLE_EMAIL_TYPES: ' welcome , result_summary' })]).toEqual(['welcome', 'result_summary']);
@@ -116,7 +128,7 @@ describe('lifecycle email dispatcher', () => {
 
         test('sends a signed per-type link and the RFC 8058 one-click headers', async () => {
             const h = harness({ env: SIGNED, subjectKey: SUBJECT,
-                rows: [row({ email_type: 'nudge_unfinished', template_version: 'nudge-unfinished-v1' })] });
+                rows: [row({ email_type: 'nudge_unfinished', template_version: 'nudge-unfinished-v2' })] });
             expect(await h.dispatcher.runOnce()).toEqual({ claimed: 1 });
             const message = h.send.mock.calls[0][0];
             const url = new URL(message.headers['List-Unsubscribe'].slice(1, -1));

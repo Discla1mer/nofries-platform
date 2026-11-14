@@ -1,188 +1,259 @@
 (function (root, factory) {
     'use strict';
-    if (typeof module === 'object' && module.exports) module.exports = factory();
-    else root.NoFriesTryDemo = factory();
-}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+    // The demo engine is the real questionnaire metadata and ENG-003 scoring.
+    // Node loads it directly; the page bundles the same files (document.js).
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(function () {
+            const crypto = require('node:crypto');
+            return { evaluator: require('../../api/shared/assessmentEngine/ncscAssessmentEvaluator'),
+                core: require('../../api/shared/assessmentEngine/assessmentEvaluator'),
+                metadata: require('../../api/shared/ncscQuestionnaireMetadata').createNcscQuestionnaireMetadata(),
+                sha256: function (text) { return crypto.createHash('sha256').update(text, 'utf8').digest('hex'); } };
+        });
+    } else root.NoFriesTryDemo = factory(function () { return root.NoFriesTryEngine(); });
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (loadEngine) {
     'use strict';
 
-    // Fictional demonstration only (#29). No real organisation, person, record,
-    // credential or framework text. Nothing here reads or writes beyond STORAGE_KEY.
-    const STORAGE_KEY = 'nofries.tryDemo.v1';
+    // Fictional demonstration only (#29). No real organisation, person or record.
+    // Answers live in memory and in one browser-storage key; nothing is sent anywhere.
+    const STORAGE_KEY = 'nofries.tryDemo.v2';
+    // Earlier releases kept answers under this key. Nothing reads it now; reset and start remove it.
+    const LEGACY_STORAGE_KEY = 'nofries.tryDemo.v1';
     const BUSINESS = 'Brightwater Joinery (fictional)';
-    const OPTIONS = [['yes', 'Yes', 2], ['partly', 'Partly', 1], ['no', 'No', 0], ['unsure', 'Not sure', 0]];
-    const AREAS = ['People and access', 'Devices and protection', 'Backup and recovery'];
-    const QUESTIONS = [
-        ['mfa', 0, 'Does everyone sign in to email and files with a second step, such as an app code?', 'Turn on two-step sign-in for every account, starting with owners and finance.', 'Office manager'],
-        ['admins', 0, 'Is administrator access limited to the people who need it, and reviewed at least once a year?', 'List who has administrator access, remove anyone who no longer needs it and book a yearly review.', 'Business owner'],
-        ['updates', 1, 'Do work laptops and phones install security updates automatically?', 'Switch on automatic updates and check monthly that every device is current.', 'IT provider'],
-        ['protection', 1, 'Is security software running and watched on every work device?', 'Confirm which devices are protected and who responds to alerts.', 'IT provider'],
-        ['backup', 2, 'Are important work files backed up somewhere separate from your everyday systems?', 'Agree what must be backed up and keep a copy separate from day-to-day accounts.', 'Business owner'],
-        ['restore', 2, 'Have you restored a file from backup in the last six months to prove it works?', 'Restore a sample file this month and record the date and result.', 'Office manager']
-    ].map(function (row) { return Object.freeze({ id: row[0], area: row[1], text: row[2], action: row[3], owner: row[4] }); });
-    const EXAMPLE_ANSWERS = Object.freeze({ mfa: 'partly', admins: 'unsure', updates: 'yes', protection: 'partly', backup: 'yes', restore: 'no' });
+    const ORGANISATION_ID = 'fictional-demo';
+    const PREFIX = '/api/dashboard/ncsc/assessments';
+    const EARLIER_ID = 'brightwater-july-2026';
+    const EARLIER_AT = '2026-07-14T21:00:00.000Z';
+    const EARLIER_SCOPE = 'Brightwater Joinery (fictional): 9 staff, the workshop and office laptops, Microsoft 365 email and files, and the online accounting and job-booking services.';
+    // The fictional business's earlier answers, keyed by the real question-ID stem.
+    const EARLIER_ANSWERS = Object.freeze({ RM: 'no', SA: 'partial', AI: 'no', SC: 'unknown', PA: 'partial', MF: 'partial', DU: 'no',
+        LP: 'partial', DR: 'yes', RP: 'no', PM: 'no', SV: 'yes', AC: 'unknown', NS: 'no' });
+    const MAX_LOG = 400;
+    let engine = null;
+    function getEngine() { if (!engine) engine = loadEngine(); return engine; }
+    const clone = function (value) { return JSON.parse(JSON.stringify(value)); };
+    const byId = function (a, b) { return a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0; };
 
-    function projection() {
-        const asAt = '2026-10-30T09:00:00.000Z';
-        function metric(kind, value) {
-            return { module: 'cyber_security', kind: kind, value: value, period: 'Example review · October 2026',
-                version: 'Sample question set', revision: 'Fictional example data', evidence: 'No evidence is collected in this demo', asAt: asAt };
-        }
-        function attention(title, owner, due, priority, area, nextAction) {
-            return { module: 'cyber_security', title: title, owner: owner, due: due, priority: priority,
-                source: 'Example Cyber Security review · ' + area, nextAction: nextAction };
-        }
+    function projection(now) {
         return {
-            schemaVersion: 1, context: { organisationId: 'fictional-demo', displayName: BUSINESS }, currentUser: { jobTitle: null },
-            audience: 'IT manager', subscription: 'Govern', admissionGranted: false, providerAccessGranted: false,
-            generatedAt: '2026-11-01T09:00:00.000Z',
+            schemaVersion: 1, context: { organisationId: ORGANISATION_ID, displayName: BUSINESS }, currentUser: { jobTitle: null },
+            audience: 'IT manager', subscription: 'Score', admissionGranted: false, providerAccessGranted: false, generatedAt: now,
             modules: ['overview', 'ai_governance', 'cyber_security', 'it_optimisation', 'improvement_plan', 'evidence', 'board_reports', 'services']
                 .map(function (key) { return { key: key, state: ['overview', 'cyber_security', 'services'].includes(key) ? 'ready' : 'planned' }; }),
             services: ['managed_endpoint', 'work_file_backup', 'microsoft_365_admin', 'fractional_advisory']
                 .map(function (key) { return { key: key, state: 'not_included', operational: false }; }),
-            summary: { state: 'current', attention: [
-                attention('Review who has administrator access', 'Business owner', 'Due this week', 'High', AREAS[0], QUESTIONS[1].action),
-                attention('Prove the backup can be restored', 'Office manager', 'Due this month', 'High', AREAS[2], QUESTIONS[5].action),
-                attention('Confirm who responds to device alerts', 'IT provider', 'Awaiting decision', 'Medium', AREAS[1], QUESTIONS[3].action)
-            ], metrics: [metric('implementation', '50%'), metric('risk', '2 high priorities'), metric('trend', '+8 points since July')] }
+            summary: { state: 'empty', attention: [], metrics: [] }
         };
     }
 
-    function points(optionId) { const option = OPTIONS.find(function (row) { return row[0] === optionId; }); return option ? option[2] : 0; }
-    function results(answers) {
-        const areas = AREAS.map(function (name, index) {
-            const items = QUESTIONS.filter(function (question) { return question.area === index; });
-            const percent = Math.round(items.reduce(function (sum, question) { return sum + points(answers[question.id]); }, 0) / (items.length * 2) * 100);
-            return { name: name, percent: percent, label: percent >= 75 ? 'In good shape' : percent >= 50 ? 'Some gaps' : 'Needs attention' };
-        });
-        const rank = { High: 0, Medium: 1 };
-        const actions = QUESTIONS.filter(function (question) { return answers[question.id] !== 'yes'; }).map(function (question) {
-            return { id: question.id, area: AREAS[question.area], action: question.action, owner: question.owner,
-                priority: answers[question.id] === 'partly' ? 'Medium' : 'High' };
-        }).sort(function (a, b) { return rank[a.priority] - rank[b.priority]; });
-        return { areas: areas, actions: actions, complete: QUESTIONS.every(function (question) { return !!answers[question.id]; }) };
+    // In-memory stand-in for the assessment API. It answers the same routes and
+    // shapes as the server, and a submission is scored by the real evaluator.
+    function createServer(clock) {
+        const parts = getEngine(), metadata = parts.metadata, sha256 = parts.sha256;
+        const records = new Map(), receipts = new Map();
+        let sequence = 0;
+        function digest(label, value) { sequence += 1; return sha256('nofries:try-demo:' + label + ':' + sequence + '\n' + JSON.stringify(value)); }
+        function progress(responses) {
+            return { total: metadata.questions.length, answered: responses.length, missing: metadata.questions.length - responses.length,
+                unknown: responses.filter(function (row) { return row.optionId === 'unknown'; }).length,
+                notApplicableClaims: responses.filter(function (row) { return row.optionId === 'not_applicable'; }).length };
+        }
+        function summary(detail) {
+            const characters = Array.from(detail.scopePopulation.description);
+            const value = {};
+            ['assessmentId', 'moduleId', 'profileRef', 'status', 'revision', 'revisionSha256', 'createdAt', 'updatedAt', 'progress']
+                .forEach(function (key) { value[key] = clone(detail[key]); });
+            value.scopePopulation = { description: characters.slice(0, 160).join('') + (characters.length > 160 ? '…' : '') };
+            return value;
+        }
+        // Mirrors constructSubmission in ncscAssessmentSubmission.js: no evidence,
+        // no stated impact, and any not applicable answer stays a pending claim.
+        function evaluate(record, at) {
+            const ids = metadata.questions.map(function (question) { return question.id; }).sort();
+            const evidence = ids.map(function (itemId) { return { itemId: itemId, evidenceState: 'not_provided' }; });
+            const risk = ids.map(function (itemId) { return { itemId: itemId, statedImpact: 'unspecified', priorityOverlay: 'none' }; });
+            const answers = new Map(record.responses.map(function (row) { return [row.itemId, row]; }));
+            const input = { schemaVersion: 1, scoreContractVersion: parts.core.SCORE_CONTRACT_VERSION, organisationId: ORGANISATION_ID,
+                moduleId: metadata.moduleId, assessmentId: record.assessmentId, assessmentRevision: 'rev-' + record.revision,
+                profileRef: clone(metadata.profileRef), scoreAsOf: at, scopePopulationSha256: sha256(record.scopePopulation.description),
+                evidenceSnapshot: { id: 'evidence-' + sha256('evidence:' + record.assessmentId), sha256: parts.core.calculateEvidenceSnapshotSha256(evidence) },
+                riskContextSnapshot: { id: 'risk-' + sha256('risk:' + record.assessmentId), sha256: parts.core.calculateRiskContextSnapshotSha256(risk) },
+                atomInputs: metadata.questions.map(function (question) {
+                    const answer = answers.get(question.id);
+                    const atom = { itemId: question.id, response: { optionId: answer.optionId }, evidenceState: 'not_provided',
+                        statedImpact: 'unspecified', priorityOverlay: 'none' };
+                    if (answer.rationale) atom.applicabilityClaim = { rationaleSha256: sha256(answer.rationale.text) };
+                    return atom;
+                }) };
+            return JSON.parse(parts.core.serialiseAssessmentEvaluation(parts.evaluator.evaluateAcceptedNcscAssessment(input)));
+        }
+        function problem(status, code) { return { status: status, body: { code: code } }; }
+        function execute(command, at) {
+            const key = JSON.stringify([command.assessmentId, command.idempotencyKey]), intent = JSON.stringify(command);
+            const original = receipts.get(key);
+            if (original) return original.intent === intent ? clone(original.response) : problem(409, 'ncsc_idempotency_conflict');
+            const current = records.get(command.assessmentId);
+            if (command.action === 'create' && current) return problem(409, 'ncsc_state_conflict');
+            if (command.action !== 'create' && !current) return problem(404, 'ncsc_not_found');
+            if (current && current.revision !== command.expectedRevision) return problem(409, 'ncsc_revision_conflict');
+            if (current && (current.status === 'submitted' || current.revision >= 128 || (command.action === 'save' && current.revision >= 127))) {
+                return problem(409, 'ncsc_state_conflict');
+            }
+            let next;
+            if (command.action === 'create') {
+                next = { assessmentId: command.assessmentId, moduleId: metadata.moduleId, profileRef: clone(metadata.profileRef),
+                    status: 'created', revision: 0, revisionSha256: null, createdAt: at, updatedAt: at, progress: progress([]),
+                    scopePopulation: clone(command.payload.scopePopulation), responses: [], submission: null };
+            } else {
+                next = clone(current); next.revision += 1; next.updatedAt = at;
+                if (command.action === 'save') {
+                    const answers = new Map(next.responses.map(function (row) { return [row.itemId, row]; }));
+                    command.payload.responses.forEach(function (row) { if (row.optionId === null) answers.delete(row.itemId); else answers.set(row.itemId, clone(row)); });
+                    next.responses = Array.from(answers.values()).sort(byId);
+                    next.progress = progress(next.responses); next.status = 'in-progress';
+                } else {
+                    if (current.status !== 'in-progress' || current.progress.missing) return problem(409, 'ncsc_state_conflict');
+                    next.status = 'submitted';
+                    next.submission = { revision: next.revision, submittedAt: at, responseSetSha256: sha256(JSON.stringify(next.responses)),
+                        evaluation: evaluate(next, at) };
+                }
+            }
+            next.revisionSha256 = digest('revision', next);
+            records.set(next.assessmentId, next);
+            const response = { status: command.action === 'create' ? 201 : 200, body: { schemaVersion: 1, action: command.action, assessment: clone(next) } };
+            receipts.set(key, { intent: intent, response: clone(response) });
+            return response;
+        }
+        function route(url, options) {
+            const target = new URL(url, 'https://try-demo.invalid');
+            const match = /^\/api\/dashboard\/ncsc\/assessments(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,119})(?:\/(save|submit))?)?$/.exec(target.pathname);
+            if (target.origin !== 'https://try-demo.invalid' || !match) return { response: problem(404, 'ncsc_not_found') };
+            const method = options.method || 'GET';
+            if (method === 'GET') {
+                if (match[2]) return { response: problem(405, 'ncsc_method_not_allowed') };
+                if (match[1]) {
+                    return { response: records.has(match[1]) ? { status: 200, body: { schemaVersion: 1, assessment: clone(records.get(match[1])) } }
+                        : problem(404, 'ncsc_not_found') };
+                }
+                const limit = Number(target.searchParams.get('limit') || 50), after = target.searchParams.get('afterAssessmentId');
+                const available = Array.from(records.values()).sort(function (a, b) { return a.assessmentId < b.assessmentId ? -1 : 1; })
+                    .filter(function (item) { return after === null || item.assessmentId > after; });
+                const page = available.slice(0, limit);
+                return { response: { status: 200, body: { schemaVersion: 1, assessments: page.map(summary),
+                    nextAfterAssessmentId: available.length > page.length ? page[page.length - 1].assessmentId : null } } };
+            }
+            if (method !== 'POST' || (match[1] && !match[2])) return { response: problem(405, 'ncsc_method_not_allowed') };
+            let body;
+            try { body = JSON.parse(options.body); } catch (_) { body = null; }
+            if (!body || typeof body !== 'object' || Array.isArray(body)) return { response: problem(400, 'ncsc_input_invalid') };
+            const command = { assessmentId: match[1] || body.assessmentId, action: match[2] || 'create',
+                idempotencyKey: body.idempotencyKey, expectedRevision: body.expectedRevision, payload: body.payload };
+            const at = clock();
+            return { command: command, at: at, response: execute(command, at) };
+        }
+        function seed() {
+            const responses = metadata.questions.map(function (question) {
+                return { itemId: question.id, optionId: EARLIER_ANSWERS[question.id.split('-')[3]], rationale: null };
+            });
+            [{ action: 'create', expectedRevision: null, payload: { scopePopulation: { description: EARLIER_SCOPE } } },
+                { action: 'save', expectedRevision: 0, payload: { responses: responses } },
+                { action: 'submit', expectedRevision: 1, payload: {} }].forEach(function (step) {
+                const result = execute(Object.assign({ assessmentId: EARLIER_ID, idempotencyKey: 'seed-' + step.action }, step), EARLIER_AT);
+                if (result.status >= 300) throw new Error('try_demo_seed_failed');
+            });
+        }
+        seed();
+        return { metadata: metadata, route: route, execute: execute };
     }
 
     // Browser storage is optional. A blocked or throwing store falls back to memory.
     function createStore(storage) {
         let memory = null;
-        function empty() { return { answers: {}, view: 'intro' }; }
-        function clean(value) {
-            const state = empty();
-            if (!value || typeof value !== 'object') return state;
-            QUESTIONS.forEach(function (question) {
-                const answer = value.answers && value.answers[question.id];
-                if (OPTIONS.some(function (row) { return row[0] === answer; })) state.answers[question.id] = answer;
-            });
-            if (['intro', 'questions', 'results'].includes(value.view)) state.view = value.view;
-            return state;
+        function read() {
+            if (memory) return clone(memory);
+            try {
+                const value = JSON.parse(storage.getItem(STORAGE_KEY) || 'null');
+                return value && Array.isArray(value.log) && value.log.length <= MAX_LOG ? value.log : [];
+            } catch (_) { return []; }
         }
         return {
-            read: function () { if (memory) return clean(memory); try { return clean(JSON.parse(storage.getItem(STORAGE_KEY) || 'null')); } catch (_) { return empty(); } },
-            save: function (state) { memory = null; try { storage.setItem(STORAGE_KEY, JSON.stringify(clean(state))); } catch (_) { memory = clean(state); } },
-            clear: function () { memory = null; try { storage.removeItem(STORAGE_KEY); } catch (_) { /* nothing stored */ } }
+            read: read,
+            append: function (entry) {
+                const log = read().concat([entry]).slice(-MAX_LOG);
+                memory = null;
+                try { storage.setItem(STORAGE_KEY, JSON.stringify({ log: log })); } catch (_) { memory = log; }
+            },
+            clear: function () {
+                memory = null;
+                [STORAGE_KEY, LEGACY_STORAGE_KEY].forEach(function (key) { try { storage.removeItem(key); } catch (_) { /* nothing stored */ } });
+            },
+            clearLegacy: function () { try { storage.removeItem(LEGACY_STORAGE_KEY); } catch (_) { /* nothing stored */ } }
         };
     }
 
-    function mountAssessment(store) {
-        return function (childRoot) {
-            const doc = childRoot.ownerDocument;
-            let state = store.read();
-            function el(tag, className, text) { const node = doc.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; }
-            function button(label, handler, secondary) {
-                const node = el('button', 'dashboard-button' + (secondary ? ' dashboard-button-secondary' : ''), label);
-                node.type = 'button'; node.addEventListener('click', handler); return node;
+    function createBackend(store, now) {
+        let last = 0;
+        const clock = function () { last = Math.max(last + 1, Date.parse(now())); return new Date(last).toISOString(); };
+        let server = createServer(clock);
+        // Replay the visitor's saved steps through the same engine. Anything that
+        // no longer replays (an older format, a changed catalogue) starts afresh.
+        const log = store.read();
+        try {
+            log.forEach(function (entry) {
+                last = Math.max(last, Date.parse(entry.at));
+                if (server.execute(entry.command, entry.at).status >= 300) throw new Error('replay');
+            });
+        } catch (_) { store.clear(); last = 0; server = createServer(clock); }
+        function respond(response) {
+            const text = JSON.stringify(response.body);
+            return { status: response.status, ok: response.status >= 200 && response.status < 300, redirected: false, type: 'basic',
+                headers: { get: function (name) { return String(name).toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null; } },
+                text: function () { return Promise.resolve(text); } };
+        }
+        return {
+            metadata: server.metadata,
+            fetch: function (url, options) {
+                options = options || {};
+                if (options.signal && options.signal.aborted) return Promise.reject(new Error('aborted'));
+                const result = server.route(url, options);
+                if (result.command && result.response.status < 300) store.append({ command: result.command, at: result.at });
+                return Promise.resolve(respond(result.response));
             }
-            function answered() { return QUESTIONS.filter(function (question) { return state.answers[question.id]; }).length; }
-            function show(view) { state.view = view; store.save(state); render(true); }
-            function heading(text) { const node = el('h2', '', text); node.tabIndex = -1; return node; }
-            function render(focus) {
-                childRoot.replaceChildren();
-                const section = el('section', 'dashboard-panel try-demo-assessment');
-                const view = state.view === 'results' && !results(state.answers).complete ? 'questions' : state.view;
-                const title = view === 'questions' ? renderQuestions(section) : view === 'results' ? renderResults(section) : renderIntro(section);
-                childRoot.append(section);
-                if (focus) title.focus();
+        };
+    }
+
+    // Overview asks the public enquiry status before showing "Get help closing
+    // these gaps" (a link to /contact.html). Answer that here; refuse anything else.
+    // Any other URL is logged as a console error before it is refused, so the
+    // browser check's console guard fails on a request the demo did not expect.
+    function pageFetch(url) {
+        if (url === '/api/enquiry') {
+            // Demo stub, not live status: the demo always reports enquiries as
+            // available and never asks the real /api/enquiry endpoint.
+            return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve({ available: true }); } });
+        }
+        if (typeof console !== 'undefined' && console.error) console.error('Try demo refused an unexpected request: ' + String(url));
+        return Promise.reject(new TypeError('The demo makes no network requests.'));
+    }
+
+    function mountOptions(win, backend) {
+        const dashboard = win.NoFriesNcscAssessmentClient, questionnaire = win.NoFriesNcscQuestionnaire, picture = win.NoFriesOrganisationPicture;
+        const client = dashboard.createClient({ metadata: backend.metadata, fetch: backend.fetch });
+        let pictureSelection = null;
+        return {
+            window: win,
+            mountCyber: function (root, presentation) {
+                return questionnaire.mount(root, { window: win, metadata: backend.metadata, client: client, presentationMode: 'editable',
+                    organisationId: ORGANISATION_ID, initialAssessmentId: presentation && presentation.initialAssessmentId,
+                    initialQuestionIndex: presentation && presentation.initialQuestionIndex, onLocation: presentation && presentation.onLocation,
+                    startNew: !!(presentation && presentation.startNew === true) });
+            },
+            mountPicture: function (root, presentation) {
+                return picture.mount(root, { metadata: backend.metadata, client: client, organisationId: ORGANISATION_ID,
+                    displayName: presentation.displayName, initialAssessmentId: pictureSelection || undefined,
+                    onSelection: function (assessmentId, source) { if (source === 'user') pictureSelection = assessmentId; },
+                    openCyber: presentation.openCyber });
             }
-            function renderIntro(section) {
-                const title = heading('Sample cyber security check');
-                const count = answered();
-                section.append(title, el('p', '', 'Six questions about the everyday IT at ' + BUSINESS + '. The full assessment goes further; this sample shows how answers become results and next actions.'),
-                    el('p', 'dashboard-muted', 'Your answers stay in this browser. Nothing is sent to No Fries.'));
-                const actions = el('div', 'ncsc-actions');
-                actions.append(results(state.answers).complete ? button('View sample results', function () { show('results'); })
-                    : button(count ? 'Continue the sample questions (' + count + ' of 6 answered)' : 'Start the sample questions', function () { show('questions'); }));
-                section.append(actions);
-                return title;
-            }
-            function renderQuestions(section) {
-                const title = heading('Sample questions');
-                const progress = el('p', 'dashboard-muted', ''); progress.setAttribute('role', 'status');
-                const error = el('p', 'ncsc-inline-error', ''); error.setAttribute('role', 'alert'); error.hidden = true;
-                const form = el('form', 'ncsc-questionnaire'); form.noValidate = true;
-                function updateProgress() { progress.textContent = answered() + ' of 6 answered'; }
-                AREAS.forEach(function (area, index) {
-                    form.append(el('h3', '', area));
-                    QUESTIONS.filter(function (question) { return question.area === index; }).forEach(function (question) {
-                        const fieldset = el('fieldset', 'ncsc-answer'); fieldset.dataset.question = question.id;
-                        fieldset.append(el('legend', '', question.text));
-                        OPTIONS.forEach(function (option) {
-                            const label = el('label', 'ncsc-option');
-                            const input = el('input'); input.type = 'radio'; input.name = 'try-demo-' + question.id; input.value = option[0];
-                            input.checked = state.answers[question.id] === option[0];
-                            input.addEventListener('change', function () { state.answers[question.id] = option[0]; store.save(state); updateProgress(); error.hidden = true; });
-                            label.append(input, el('span', '', option[1])); fieldset.append(label);
-                        });
-                        form.append(fieldset);
-                    });
-                });
-                const submit = el('button', 'dashboard-button', 'See sample results'); submit.type = 'submit';
-                const actions = el('div', 'ncsc-actions');
-                actions.append(submit, button('Use example answers', function () { state.answers = Object.assign({}, EXAMPLE_ANSWERS); show('questions'); }, true),
-                    button('Back', function () { show('intro'); }, true));
-                form.append(error, actions);
-                form.addEventListener('submit', function (event) {
-                    event.preventDefault();
-                    const missing = QUESTIONS.find(function (question) { return !state.answers[question.id]; });
-                    if (!missing) { show('results'); return; }
-                    error.textContent = 'Answer all six questions to see results. Next unanswered: ' + missing.text;
-                    error.hidden = false;
-                    const first = form.querySelector('[data-question="' + missing.id + '"]').querySelector('input');
-                    if (first) first.focus();
-                });
-                updateProgress(); section.append(title, progress, form);
-                return title;
-            }
-            function renderResults(section) {
-                const outcome = results(state.answers);
-                const title = heading('Sample results');
-                section.append(title, el('p', '', 'Based on your answers for ' + BUSINESS + '.'),
-                    el('p', 'dashboard-muted', 'An illustration only, not a security assessment, audit or certification.'));
-                const metrics = el('div', 'ncsc-result-metrics');
-                outcome.areas.forEach(function (area) {
-                    const card = el('article', 'ncsc-result-metric');
-                    card.append(el('h3', '', area.name), el('strong', 'ncsc-result-value', area.percent + '%'), el('p', '', area.label));
-                    metrics.append(card);
-                });
-                const next = el('section', 'ncsc-results'); next.append(el('h3', '', 'Next actions'));
-                if (!outcome.actions.length) next.append(el('p', '', 'No gaps in this sample. The full assessment checks more areas.'));
-                else {
-                    const list = el('ol', 'try-demo-actions-list');
-                    outcome.actions.forEach(function (item) {
-                        const row = el('li'); row.dataset.action = item.id;
-                        const badge = el('span', 'dashboard-badge', item.priority + ' priority'); badge.dataset.priority = item.priority;
-                        row.append(badge, el('p', '', item.action), el('p', 'dashboard-muted', item.owner + ' · ' + item.area));
-                        list.append(row);
-                    });
-                    next.append(list);
-                }
-                const talk = el('a', 'dashboard-button', 'Talk to No Fries about your real IT'); talk.href = '/contact.html';
-                const actions = el('div', 'ncsc-actions'); actions.append(talk, button('Change answers', function () { show('questions'); }, true));
-                section.append(metrics, next, actions);
-                return title;
-            }
-            render();
-            return { destroy: function () { childRoot.replaceChildren(); },
-                requestLeave: function (commit) { if (typeof commit === 'function') commit(); return Promise.resolve(true); } };
         };
     }
 
@@ -192,16 +263,25 @@
         const status = doc.getElementById('try-demo-status');
         let storage = null; try { storage = win.localStorage; } catch (_) { storage = null; }
         const store = createStore(storage);
-        function mountDashboard(route) { win.NoFriesDashboard.mount(root, projection(), { initialRoute: route, mountCyber: mountAssessment(store) }); }
+        store.clearLegacy();
+        const now = function () { return new Date().toISOString(); };
+        win.fetch = pageFetch;
+        function mountDashboard(route) {
+            const options = mountOptions(win, createBackend(store, now));
+            options.initialRoute = route;
+            win.NoFriesDashboard.mount(root, projection(now()), options);
+        }
         doc.getElementById('try-demo-reset').addEventListener('click', function () {
             store.clear();
             win.history.replaceState(null, '', win.location.pathname);
             mountDashboard('');
-            status.textContent = (/^Demo reset\./.test(status.textContent) ? 'Demo reset again.' : 'Demo reset.') + ' Your sample answers were cleared.';
+            status.textContent = (/^Demo reset\./.test(status.textContent) ? 'Demo reset again.' : 'Demo reset.') + ' Your demo answers were cleared.';
         });
         mountDashboard(null);
     }
 
-    return Object.freeze({ STORAGE_KEY: STORAGE_KEY, BUSINESS: BUSINESS, QUESTIONS: QUESTIONS, EXAMPLE_ANSWERS: EXAMPLE_ANSWERS,
-        projection: projection, results: results, createStore: createStore, mountAssessment: mountAssessment, start: start });
+    return Object.freeze({ STORAGE_KEY: STORAGE_KEY, LEGACY_STORAGE_KEY: LEGACY_STORAGE_KEY, BUSINESS: BUSINESS, ORGANISATION_ID: ORGANISATION_ID,
+        EARLIER_ID: EARLIER_ID,
+        projection: projection, createServer: createServer, createStore: createStore, createBackend: createBackend,
+        pageFetch: pageFetch, mountOptions: mountOptions, start: start });
 }));

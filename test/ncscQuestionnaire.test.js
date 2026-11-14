@@ -278,6 +278,12 @@ function event(element, name) {
     for (const handler of element.events[name] || []) handler({ currentTarget: element, target: element, preventDefault() {} });
 }
 function enter(element, value) { element.value = value; event(element, 'input'); }
+// The save status names a time, not a revision, so wait for the save command
+// that produces revision n to be recorded and acknowledged in the UI.
+function savedRevision(ui, h, n) {
+    return until(() => h.records.some(row => row.action === 'save' && row.expectedRevision === n - 1) &&
+        ui.root.textContent.includes('Your progress is saved. Last saved '), 'saved revision ' + n);
+}
 async function until(predicate, label = 'UI state') {
     const end = Date.now() + 4000;
     while (!predicate() && Date.now() < end) await pause();
@@ -441,7 +447,7 @@ describe('saved assessment list pagination and resume', () => {
         const h = await backend(), ui = await createInUi(h);
         try {
             choose(ui, 0, 'yes'); choose(ui, 1, 'partial');
-            control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 1.'));
+            control(ui, 'Save progress').click(); await savedRevision(ui, h, 1);
             const saved = clone(h.records), assessmentId = h.records[0].assessmentId;
             submitUi(ui);
             expect(ui.root.querySelector('.ncsc-errors').querySelectorAll('a')).toHaveLength(12);
@@ -617,7 +623,7 @@ describe('saved assessment list pagination and resume', () => {
             retry.click(); await pause(); expect(read).toHaveBeenCalledTimes(2);
             expect(ui.root.textContent).toContain('Synthetic exact retry scope.');
             expect(ui.root.textContent).not.toContain('Synthetic other scope.');
-            expect(ui.root.textContent).toContain('Saved revision 0.');
+            expect(ui.root.textContent).toMatch(/Last saved \d+ \w+ \d{4}, .+ NZ time\./); expect(ui.root.textContent).not.toMatch(/revision/i);
             expect(list).not.toHaveBeenCalled();
             expect(h.calls.map(call => call.url)).toEqual([PREFIX + '/' + id]);
             expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
@@ -650,7 +656,7 @@ describe('saved assessment list pagination and resume', () => {
             expect(read.mock.calls.map(args => args[0])).toEqual([id, id, id]);
             expect(ui.root.textContent).toContain('Synthetic twice-unavailable saved scope.');
             expect(ui.root.textContent).not.toContain('Synthetic unrelated saved scope.');
-            expect(ui.root.textContent).toContain('Saved revision 0.');
+            expect(ui.root.textContent).toMatch(/Last saved \d+ \w+ \d{4}, .+ NZ time\./); expect(ui.root.textContent).not.toMatch(/revision/i);
             expect(list).not.toHaveBeenCalled();
             expect(h.calls.map(call => call.url)).toEqual([PREFIX + '/' + id]);
             expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
@@ -954,7 +960,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
             expect(glossary.tagName).toBe('DETAILS'); expect(Boolean(glossary.open)).toBe(false);
             expect(glossary.querySelector('summary').textContent).toBe('What these words mean');
             expect(glossary.querySelectorAll('dt').map(term => term.textContent))
-                .toEqual(['To check later', 'Marked not applicable, to confirm', 'Saved and not saved yet', 'Score range']);
+                .toEqual(['To check later', 'Marked not applicable, to confirm', 'Saved and not saved yet', 'Reported implementation range']);
             expect(glossary.textContent).toContain('count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.');
             expect(glossary.textContent).toContain('The lower figure is what you reported as in place.');
             expect(glossary.textContent).not.toMatch(/unresolved|denominator/i);
@@ -1008,9 +1014,9 @@ describe('questionnaire draft progress and unanswered navigation', () => {
     test('local answer, rationale and clear update navigation while saved counts wait for acknowledgement', async () => {
         const h = await backend(), ui = await createInUi(h);
         choose(ui, 0, 'unknown');
-        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
+        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('Newer changes are not saved yet.');
         choose(ui, 1, 'not_applicable', 'Initial claim');
-        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('2 answers have unsaved changes.');
+        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('Newer changes are not saved yet.');
         const rationale = byId(ui, 'ncsc-rationale-' + metadata().questions[1].id);
         rationale.focus(); rationale.setSelectionRange(3, 7); enter(rationale, 'Changed pending claim');
         expect(byId(ui, rationale.id)).toBe(rationale); expect(ui.document.activeElement).toBe(rationale);
@@ -1019,7 +1025,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(byId(ui, 'ncsc-question-index').children[1].textContent).toContain('Not applicable, to confirm *');
         control(ui, 'Clear answer').click();
         expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('1 of 14 answered · 13 to go · 1 to check later (unknown, or marked not applicable, to confirm) · 1 not saved yet');
-        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('1 answer has unsaved changes.');
+        expect(ui.root.querySelector('.ncsc-status').textContent).toContain('Newer changes are not saved yet.');
         expect(byId(ui, 'ncsc-question-index').children[1].textContent).not.toContain('*');
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
         expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · 1 to check later (unknown, or marked not applicable, to confirm) · all saved.');
@@ -1046,7 +1052,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         try {
             const nav = ui.root.querySelector('.ncsc-question-navigation');
             expect(nav.querySelectorAll('button').map(item => item.textContent))
-                .toEqual(['Previous question', 'Next question', 'More', 'Next unanswered question', 'Next unresolved question']);
+                .toEqual(['Previous question', 'Next question', 'More', 'Next unanswered question', 'Next question still to confirm']);
             const toggle = byId(ui, 'ncsc-navigation-more-toggle'), more = byId(ui, 'ncsc-navigation-more');
             expect(toggle.getAttribute('aria-controls')).toBe(more.id); expect(toggle.getAttribute('aria-expanded')).toBe('false');
             expect(more.classList.contains('ncsc-navigation-collapsed')).toBe(true);
@@ -1147,19 +1153,19 @@ describe('questionnaire draft progress and unanswered navigation', () => {
     test('next unresolved includes missing, Unknown and pending N/A, skips resolved answers and wraps without saving', async () => {
         const h = await backend(), ui = await createInUi(h);
         metadata().questions.forEach((_, index) => choose(ui, index, ['yes', 'partial', 'no'][index % 3]));
-        expect(control(ui, 'Next unresolved question').disabled).toBe(true);
+        expect(control(ui, 'Next question still to confirm').disabled).toBe(true);
         choose(ui, 1, 'unknown'); choose(ui, 3, 'not_applicable', 'Synthetic pending claim');
         choose(ui, 5, 'yes'); control(ui, 'Clear answer').click();
         const picker = byId(ui, 'ncsc-question-index');
         picker.value = '0'; event(picker, 'change');
         for (const target of ['1', '3', '5', '1']) {
-            control(ui, 'Next unresolved question').click();
+            control(ui, 'Next question still to confirm').click();
             expect(picker.value).toBe(target);
             expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
         }
-        const detached = control(ui, 'Next unresolved question');
+        const detached = control(ui, 'Next question still to confirm');
         choose(ui, 1, 'yes'); detached.click(); expect(picker.value).toBe('1');
-        control(ui, 'Next unresolved question').click(); expect(picker.value).toBe('3');
+        control(ui, 'Next question still to confirm').click(); expect(picker.value).toBe('3');
         expect(h.records).toHaveLength(1);
         expect(ui.root.textContent).toContain('You can still submit with Unknown and Not applicable answers.');
         ui.controller.destroy(); detached.click(); expect(ui.root.textContent).toBe('');
@@ -1175,7 +1181,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         const ui = await resumeUi(h, { presentationMode: 'read-only' });
         const before = ui.root.querySelector('.ncsc-results').textContent;
         for (const target of ['1', '3', '1']) {
-            control(ui, 'Next unresolved question').click();
+            control(ui, 'Next question still to confirm').click();
             expect(byId(ui, 'ncsc-question-index').value).toBe(target);
             expect(ui.root.querySelectorAll('input').filter(input => input.type === 'radio').every(input => input.disabled)).toBe(true);
         }
@@ -1213,6 +1219,94 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(control(ui, 'Save progress')).toBeUndefined();
         expect(ui.root.querySelectorAll('input').filter(input => input.type === 'radio').every(input => input.disabled)).toBe(true);
         control(ui, 'Next unanswered question').click(); expect(h.records).toHaveLength(2);
+        ui.controller.destroy();
+    });
+});
+
+describe('saved-only draft observations', () => {
+    const panel = ui => ui.root.querySelector('.ncsc-draft-observations');
+    const groups = ui => panel(ui).querySelectorAll('.ncsc-draft-observation-group').map(group => group.querySelector('h3').textContent);
+
+    test('separates acknowledged gaps, Unknown, pending N/A and missing answers without scoring', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        expect(panel(ui).textContent).toContain('No saved answers yet');
+        for (const [i, option] of ['no', 'partial', 'unknown', 'not_applicable', 'yes'].entries()) choose(ui, i, option, option === 'not_applicable' ? 'Synthetic exclusion' : undefined);
+        expect(groups(ui)).toEqual(['Reported gaps · 0', 'Information to confirm · 0', 'Applicability to confirm · 0', 'Not answered in this save · 14']);
+        control(ui, 'Save progress').click(); await until(() => panel(ui).textContent.includes('5 of 14 responses saved'));
+        expect(groups(ui)).toEqual(['Reported gaps · 2', 'Information to confirm · 1', 'Applicability to confirm · 1', 'Not answered in this save · 9']);
+        expect(panel(ui).textContent).toContain('1 answered Yes (self-reported, not verified)');
+        expect(panel(ui).textContent).toContain('These exclusions are not approved');
+        expect(panel(ui).textContent).toContain('not a score, risk ranking or verified evidence');
+        expect(panel(ui).textContent).toContain('do not change any submitted baseline');
+        expect(panel(ui).textContent).toContain('Last saved ');
+        expect(panel(ui).textContent).not.toMatch(/revision/i);
+        expect(panel(ui).textContent).not.toMatch(/\d+(?:\.\d+)?%|improved|declined|certified/i);
+        expect(panel(ui).querySelectorAll('meter')).toHaveLength(0);
+        ui.controller.destroy();
+    });
+
+    test('keeps saved observations unchanged after newer edits and an uncertain save', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        choose(ui, 0, 'no'); control(ui, 'Save progress').click(); await until(() => groups(ui)[0] === 'Reported gaps · 1');
+        const before = panel(ui).textContent;
+        choose(ui, 0, 'yes'); expect(panel(ui).textContent).toBe(before);
+        h.fetch.mockRejectedValueOnce(new Error('Synthetic network failure'));
+        control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('This operation is unconfirmed'));
+        expect(panel(ui).textContent).toBe(before);
+        expect(panel(ui).textContent).toContain('until a save is confirmed');
+        ui.controller.destroy();
+    });
+
+    test('opens the current question without saving and preserves disclosure and focus on confirmed save', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        panel(ui).open = true;
+        const jump = byId(ui, 'ncsc-draft-observation-' + metadata().questions[3].id);
+        const writes = h.records.length;
+        jump.click(); jump.click();
+        expect(byId(ui, 'ncsc-question-index').value).toBe('3');
+        expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
+        expect(h.records).toHaveLength(writes);
+        choose(ui, 3, 'unknown'); control(ui, 'Save progress').click();
+        await until(() => groups(ui)[1] === 'Information to confirm · 1');
+        expect(panel(ui).open).toBe(true);
+        expect(h.records).toHaveLength(writes + 1);
+        jump.click(); // Replaced controls are inert.
+        expect(h.records).toHaveLength(writes + 1);
+        ui.controller.destroy();
+    });
+
+    test('all Yes is explicitly self-reported rather than assurance; submission removes draft observations', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        metadata().questions.forEach((_question, index) => choose(ui, index, 'yes'));
+        control(ui, 'Save progress').click(); await until(() => panel(ui).textContent.includes('14 of 14 responses saved'));
+        expect(groups(ui)).toEqual(['Reported gaps · 0', 'Information to confirm · 0', 'Applicability to confirm · 0', 'Not answered in this save · 0']);
+        expect(panel(ui).textContent).toContain('A zero count is not assurance');
+        const baselineBefore = JSON.stringify([...h.versions.values()]);
+        control(ui, 'Review and submit').click(); expect(panel(ui)).toBeNull();
+        expect(JSON.stringify([...h.versions.values()])).toBe(baselineBefore);
+        control(ui, 'Back to questions').click(); expect(panel(ui)).not.toBeNull();
+        submitUi(ui); await until(() => ui.root.textContent.includes('Your results are below'));
+        expect(panel(ui)).toBeNull(); expect(ui.root.querySelector('.ncsc-results')).not.toBeNull();
+        ui.controller.destroy();
+    });
+
+    test('read-only saved work has the same observations but no save or submit controls', async () => {
+        const h = await backend(), first = await createInUi(h);
+        choose(first, 0, 'partial'); control(first, 'Save progress').click(); await until(() => groups(first)[0] === 'Reported gaps · 1');
+        first.controller.destroy();
+        const ui = await resumeUi(h, { presentationMode: 'read-only' });
+        expect(groups(ui)[0]).toBe('Reported gaps · 1');
+        expect(control(ui, 'Save progress')).toBeUndefined(); expect(control(ui, 'Review and submit')).toBeUndefined();
+        ui.controller.destroy();
+    });
+
+    test('access denial clears observations and makes retained controls inert', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        const old = byId(ui, 'ncsc-draft-observation-' + metadata().questions[1].id);
+        choose(ui, 0, 'no'); h.deny(); control(ui, 'Save progress').click();
+        await until(() => ui.root.textContent.includes('This assessment is not available'));
+        expect(panel(ui)).toBeNull(); const text = ui.root.textContent, writes = h.records.length;
+        old.click(); expect(ui.root.textContent).toBe(text); expect(h.records).toHaveLength(writes);
         ui.controller.destroy();
     });
 });
@@ -1406,6 +1500,45 @@ describe('submitted assessment results', () => {
         expect(model.domains.flatMap(domain => domain.controls.flatMap(control => control.questions))).toHaveLength(14);
         expect(assessment).toEqual(before);
     });
+    // A-019: under half answered Yes, Partial or No, the range is not the headline; it stays below as detail.
+    // With enough answers, #266's lead-with-lower headline applies; without, its rewrite is skipped.
+    test.each([[6, null, null], [7, '50.0% in place', 'Up to 100.0%'], [14, '100.0%', null]])('with %i of 14 answered Yes, Partial or No, the range leads only when enough answers are known', async (answered, headline, upTo) => {
+        const h = await backend(); await h.execute(createCommand());
+        const rows = allResponses('unknown'); rows.slice(0, answered).forEach(row => { row.optionId = 'yes'; });
+        await h.execute(saveCommand('assessment-a', 0, 'save-a', rows)); await h.execute(submitCommand());
+        const ui = await resumeUi(h);
+        try {
+            const card = ui.root.querySelector('.ncsc-results').querySelectorAll('.ncsc-result-metric')
+                .find(item => item.querySelector('h3').textContent === 'Reported implementation');
+            const model = resultModel((await h.client.read('assessment-a')).assessment, metadata(), h.organisationId);
+            const shown = card.querySelector('.ncsc-result-value').textContent;
+            if (headline) {
+                expect(shown).toBe(headline); expect(card.textContent).not.toContain('Not enough answers');
+                if (upTo) expect(card.querySelector('.ncsc-result-upper').textContent).toContain(upTo);
+                else expect(card.querySelector('.ncsc-result-upper')).toBeNull();
+            } else {
+                expect(shown).toBe('Not enough answers to estimate yet');
+                expect(card.querySelector('.ncsc-result-upper')).toBeNull();
+                expect(card.textContent).toContain('Only 6 of 14 answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + model.attainment + '. Start a new assessment once more answers are known.');
+                // Submitted answers cannot be changed, so the customer is not asked to confirm them.
+                expect(card.textContent).not.toContain('Confirm the Unknown answers');
+                expect(card.textContent).not.toMatch(/resolved/i);
+            }
+        } finally { ui.controller.destroy(); }
+    });
+    test('without an action to start a new assessment, not enough answers does not suggest one', async () => {
+        const h = await backend(); await h.execute(createCommand());
+        const rows = allResponses('unknown'); rows[0].optionId = 'yes';
+        await h.execute(saveCommand('assessment-a', 0, 'save-a', rows)); await h.execute(submitCommand());
+        const ui = await resumeUi(h, { presentationMode: 'read-only' });
+        try {
+            const card = ui.root.querySelector('.ncsc-results').querySelectorAll('.ncsc-result-metric')
+                .find(item => item.querySelector('h3').textContent === 'Reported implementation');
+            expect(card.querySelector('.ncsc-result-value').textContent).toBe('Not enough answers to estimate yet');
+            expect(card.textContent).toContain('Only 1 of 14 answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ');
+            expect(card.textContent).not.toContain('Start a new assessment');
+        } finally { ui.controller.destroy(); }
+    });
     test.each([['outputSha256'], ['responseSetSha256']])('rejects a malformed %s even though provenance is not displayed', async field => {
         const { h, assessment } = await submitted();
         if (field === 'outputSha256') assessment.submission.evaluation.outputSha256 = 'not-a-digest';
@@ -1473,14 +1606,17 @@ describe('submitted assessment results', () => {
             optionId: atom.response.optionId, rationale: atom.response.optionId === 'not_applicable' ? { text: rationale } : null }))));
         await h.execute(submitCommand()); const ui = await resumeUi(h);
         const panel = ui.root.querySelector('.ncsc-results');
-        expect(panel.textContent).toContain('46.4%–60.7%');
         const reported = panel.querySelectorAll('.ncsc-result-metric').find(card => card.querySelector('h3').textContent === 'Reported implementation');
+        expect(reported.querySelector('.ncsc-result-value').textContent).toBe('46.4% in place');
+        expect(reported.querySelector('.ncsc-result-upper').textContent).toBe('Up to 60.7% if every answer still to confirm turns out to be in place.');
+        expect(reported.children.map(node => node.className)).toEqual(['', 'ncsc-result-value', 'ncsc-result-upper', '']);
         expect(reported.textContent).toContain('The lower figure is what you reported as in place. The higher figure adds answers still to confirm');
         const resolved = panel.querySelectorAll('.ncsc-result-metric').find(card => card.querySelector('h3').textContent === 'Answers confirmed');
         expect(resolved.textContent).toContain('12 of 14'); expect(resolved.textContent).toContain('85.7%');
         const assessment = (await h.client.read('assessment-a')).assessment;
         const projected = resultModel(assessment, metadata(), h.organisationId);
-        expect(projected).toMatchObject({ denominatorWeight: 14, lowerCreditUnits: 13, upperCreditUnits: 17 });
+        expect(projected).toMatchObject({ denominatorWeight: 14, lowerCreditUnits: 13, upperCreditUnits: 17, attainment: '46.4%–60.7%',
+            lowerDisplay: '46.4%', upperDisplay: '60.7%' });
         projected.domains.forEach((domain, index) => {
             const evaluated = assessment.submission.evaluation.domains[index];
             expect(domain).toMatchObject({ lowerPercentTenths: evaluated.attainment.lowerPercentTenths,
@@ -1618,6 +1754,42 @@ describe('questionnaire form accessibility', () => {
             expect(byId(ui, 'ncsc-answer-' + metadata().questions[0].id + '-partial').checked).toBe(true);
             expect(ui.root.textContent).toContain('unsaved changes');
             expect(h.records).toEqual(retainedRecords); expect(h.calls).toHaveLength(retainedCalls);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test.each([['wide', false, true], ['narrow', true, false]])('on %s screens the choices follow the question and help is one disclosure (F1-R09)', async (_label, narrow, openByDefault) => {
+        const h = await backend(), dom = interactiveDom(); const queries = [];
+        dom.window.matchMedia = query => { queries.push(query); return { matches: narrow && query === '(max-width: 30rem)' }; };
+        const ui = await createInUi(h, { dom });
+        try {
+            const question = metadata().questions[0];
+            const fieldset = ui.root.querySelector('fieldset');
+            // Nothing but the short hint and the Unknown reassurance sits between the question and its choices.
+            const beforeChoices = fieldset.children.slice(0, fieldset.children.findIndex(child => child.className === 'ncsc-option'));
+            expect(beforeChoices.map(child => child.tagName.toLowerCase())).toEqual(['legend', 'p', 'p']);
+            expect(fieldset.querySelectorAll('details')).toHaveLength(0);
+            const help = byId(ui, 'ncsc-question-help-' + question.id);
+            expect(help.tagName.toLowerCase()).toBe('details');
+            expect(help.children[0].tagName.toLowerCase()).toBe('summary');
+            expect(help.children[0].textContent).toBe('Help with this question');
+            const region = ui.root.querySelector('.ncsc-question').children;
+            expect(region.indexOf(help)).toBeGreaterThan(region.indexOf(fieldset));
+            expect(Boolean(help.open)).toBe(openByDefault);
+            expect(queries).toContain('(max-width: 30rem)');
+            // No content is lost: the example, checks, framework wording and every answer meaning remain.
+            expect(help.textContent).toContain('Example: ' + question.smallBusiness.example);
+            question.smallBusiness.checks.forEach(text => expect(help.textContent).toContain(text));
+            expect(help.textContent).toContain(question.prompt);
+            expect(help.textContent).toContain('What the answers mean');
+            for (const id of question.responseOptionIds) {
+                const input = byId(ui, `ncsc-answer-${question.id}-${id}`), definition = byId(ui, input.getAttribute('aria-describedby'));
+                expect(definition.textContent.length).toBeGreaterThan(20);
+                expect(help.textContent).toContain(definition.textContent);
+            }
+            // The person's open or closed choice survives the re-render that answering causes.
+            help.open = !openByDefault; event(help, 'toggle');
+            choose(ui, 0, 'partial');
+            expect(Boolean(byId(ui, 'ncsc-question-help-' + question.id).open)).toBe(!openByDefault);
         } finally { ui.controller.destroy(); }
     });
 
@@ -1871,7 +2043,7 @@ describe('questionnaire public controls and retained mutation intent', () => {
         expect(h.records.at(-1).payload.responses).toEqual([{ itemId: question.id, optionId: null, rationale: null }]);
         resumed.controller.destroy(); const final = await resumeUi(h);
         expect(final.root.querySelectorAll('input').filter(input => input.type === 'radio').every(input => !input.checked)).toBe(true);
-        expect(final.root.textContent).toMatch(/Saved revision 2/); final.controller.destroy();
+        expect(final.root.textContent).toMatch(/Last saved .+ NZ time\./); expect((await h.client.read(h.records[0].assessmentId)).assessment.revision).toBe(2); final.controller.destroy();
     });
 
     test.each([undefined, 'read-only', 'unknown', true])('missing or unknown presentation mode remains read-only: %s', async presentationMode => {
@@ -1990,7 +2162,7 @@ describe('questionnaire public controls and retained mutation intent', () => {
         choose(ui, 0, 'not_applicable', 'Captured draft'); control(ui, 'Save progress').click(); control(ui, 'Save progress').click();
         await until(() => entered); const id = `ncsc-rationale-${metadata().questions[0].id}`;
         enter(byId(ui, id), 'Newer typing must survive'); byId(ui, id).focus(); byId(ui, id).setSelectionRange(4, 8);
-        wait.resolve(); await until(() => ui.root.textContent.includes('Newer edits are still unsaved'));
+        wait.resolve(); await until(() => ui.root.textContent.includes('Newer changes are not saved yet'));
         expect(save).toHaveBeenCalledTimes(1); expect(byId(ui, id).value).toBe('Newer typing must survive');
         expect(ui.document.activeElement.id).toBe(id); expect(ui.document.activeElement.selectionStart).toBe(4);
         expect(h.records.at(-1).payload.responses[0].rationale.text).toBe('Captured draft');
@@ -2038,6 +2210,25 @@ describe('questionnaire public controls and retained mutation intent', () => {
         await until(() => h.records.length === 5);
         expect(h.records.at(-1)).toMatchObject({ expectedRevision: 3, payload: { responses: [{ itemId: rows[1].itemId,
             optionId: 'not_applicable', rationale: { text: 'New text during current GET' } }] } }); ui.controller.destroy();
+    });
+
+    test('a save conflict lists each question whose answer here differs from the newer saved answers', async () => {
+        const h = await backend(); await h.execute(createCommand());
+        const rows = allResponses('yes'); rows[2] = { ...rows[2], optionId: 'not_applicable', rationale: { text: 'Saved reason' } };
+        await h.execute(saveCommand('assessment-a', 0, 'seed', rows));
+        const ui = await resumeUi(h);
+        choose(ui, 0, 'no'); choose(ui, 2, 'not_applicable', 'My reason');
+        await h.execute(saveCommand('assessment-a', 1, 'other-session', [{ ...rows[0], optionId: 'partial' },
+            { ...rows[2], rationale: { text: 'Their reason' } }]));
+        control(ui, 'Save progress').click(); await until(() => control(ui, 'Keep my answers'));
+        const panel = ui.root.querySelector('.ncsc-warning'), list = panel.querySelector('.ncsc-conflict-differences');
+        expect(panel.querySelector('h3').textContent).toBe('These answers were changed somewhere else');
+        expect(panel.textContent).toContain('2 answers on this page differ from the newer saved answers:');
+        expect(list.querySelectorAll('li').map(item => item.textContent.replace(/\s+/g, ' '))).toEqual([
+            'Question 1: ' + metadata().questions[0].smallBusiness.question + ' Your answer: No · Saved answer: Partial',
+            'Question 3: ' + metadata().questions[2].smallBusiness.question + ' Your answer: Not applicable, with a different explanation · Saved answer: Not applicable']);
+        control(ui, 'Use saved answers').click();
+        expect(ui.root.querySelector('.ncsc-conflict-differences')).toBeNull(); ui.controller.destroy();
     });
 
     test('failed required GET after a successful retry prevents later writes until explicit successful reload', async () => {
@@ -2170,7 +2361,7 @@ describe('questionnaire boundary and navigation regressions', () => {
             expect(byId(ui, `ncsc-rationale-${metadata().questions[index].id}`).value).toBe(rows[index].rationale.text);
             enter(byId(ui, `ncsc-rationale-${metadata().questions[index].id}`), 'Shortened unsent claim.');
         }
-        control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 6.'));
+        control(ui, 'Save progress').click(); await savedRevision(ui, h, 6);
         expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[1][0].idempotencyKey).not.toBe(rejected.idempotencyKey);
         expect(save.mock.calls[1][0].expectedRevision).toBe(rejected.expectedRevision);
         const saved = (await h.client.read('assessment-a')).assessment;
@@ -2190,7 +2381,7 @@ describe('questionnaire boundary and navigation regressions', () => {
         expect(h.records).toHaveLength(8); const rejected = submit.mock.calls[0][0]; control(ui, 'Back to questions').click();
         expect(byId(ui, `ncsc-rationale-${metadata().questions[0].id}`).value).toBe(rows[0].rationale.text);
         choose(ui, 0, 'not_applicable', 'Shortened first claim.'); choose(ui, 1, 'not_applicable', 'Shortened second claim.');
-        control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Saved revision 8.'));
+        control(ui, 'Save progress').click(); await savedRevision(ui, h, 8);
         submitUi(ui); await until(() => ui.root.textContent.includes('Your results are below, followed by your read-only answers.'));
         await until(() => ui.document.activeElement === byId(ui, 'ncsc-sealed'));
         expect(byId(ui, 'ncsc-sealed').textContent).toMatch(/^Submitted .+ NZ time\./);
@@ -2704,9 +2895,29 @@ describe('batched automatic save', () => {
         const off = await resumeUi(h, { autosaveIdleMs: 0 });
         try {
             expect(byId(off, 'ncsc-question-index-help').textContent).toBe('The full question is below. * marks unsaved changes.');
+            expect(byId(off, 'ncsc-save').className).toBe('dashboard-button');
             choose(off, 0, 'yes'); await settle();
             expect(h.records).toHaveLength(before);
         } finally { off.controller.destroy(); }
+    });
+    // A-017: plain saved status with a local time, counts only in the progress
+    // line, and a secondary manual Save while autosave is on.
+    test('save status names the local saved time, not a revision, and Save is secondary while autosave is on', async () => {
+        const h = await backend(), ui = await createInUi(h, { autosaveIdleMs: idle });
+        try {
+            const save = byId(ui, 'ncsc-save');
+            expect(save.textContent).toBe('Save progress'); expect(save.className).toBe('dashboard-button dashboard-button-secondary');
+            const status = () => byId(ui, 'ncsc-save-status').textContent;
+            expect(status()).toMatch(/Last saved \d+ \w+ \d{4}, .+ NZ time\.$/);
+            choose(ui, 0, 'yes');
+            // During the autosave pause the status reads as saving (#328).
+            expect(status()).toBe('Saving…');
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · saving….');
+            await until(() => status().startsWith('Your progress is saved. Last saved '));
+            expect(status()).toMatch(/^Your progress is saved\. Last saved .+ NZ time\.$/);
+            expect(ui.root.textContent).not.toMatch(/revision \d/i);
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · all saved.');
+        } finally { ui.controller.destroy(); }
     });
 });
 
@@ -2815,7 +3026,7 @@ describe('questionnaire native unload lifecycle and task hierarchy', () => {
             control(ui, 'Save progress').click(); await until(() => save.mock.calls.length === 1);
             expect(unload.fire().defaultPrevented).toBe(true);
             enter(byId(ui, `ncsc-rationale-${metadata().questions[0].id}`), 'New typing during save');
-            gate.resolve(); await until(() => ui.root.textContent.includes('Newer edits are still unsaved.'));
+            gate.resolve(); await until(() => ui.root.textContent.includes('Newer changes are not saved yet.'));
             expect(unload.handlers.size).toBe(1);
             expect(h.records.at(-1).payload.responses[0].rationale.text).toBe('Captured pending claim');
             control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
@@ -2997,8 +3208,63 @@ describe('final submission review step', () => {
             expect(ui.document.activeElement.tagName).toBe('LEGEND');
             expect(byId(ui, `ncsc-answer-${questions[1].id}-partial`)).toBeUndefined();
             expect(h.calls.length).toBe(before); expect(posts(h)).toHaveLength(0);
-            expect(ui.root.textContent).toMatch(/2 answers have unsaved changes/);
+            expect(ui.root.textContent).toMatch(/Newer changes are not saved yet\./);
         } finally { ui.controller.destroy(); }
+    });
+
+    test('answers marked not applicable, to confirm, are counted, explained and shown widening the projected range that the results page then reports', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        try {
+            const plan = ['yes', 'yes', 'yes', 'yes', 'yes', 'yes', 'partial', 'partial', 'no', 'unknown', 'not_applicable', 'not_applicable', 'yes', 'yes'];
+            expect(plan).toHaveLength(questions.length);
+            plan.forEach((option, index) => choose(ui, index, option, option === 'not_applicable' ? 'Synthetic out-of-scope reason.' : undefined));
+            const before = h.calls.length;
+            control(ui, 'Review and submit').click();
+            const range = byId(ui, 'ncsc-review-range');
+            expect(range.textContent).toContain('2 answers marked not applicable, to confirm.');
+            // Yes 8, Partial 2, No 1, Unknown 1, pending N/A 2: lower 18/28, upper 24/28, 20/28 without the N/A widening.
+            expect(byId(ui, 'ncsc-review-range-value').textContent).toBe('With your current answers, reported implementation would be 64.3%–85.7%.');
+            expect(range.textContent).toContain('they add nothing to the lower figure and full credit to the upper figure. Yours widen the range by 14.3 percentage points.');
+            expect(range.textContent).toContain('Approval is not available yet.');
+            expect(range.querySelectorAll('button').map(item => item.textContent)).toEqual(['Change question 11', 'Change question 12']);
+            expect(h.calls.length).toBe(before);
+            control(ui, 'Change question 12').click();
+            expect(ui.root.querySelector('.ncsc-review')).toBeNull();
+            expect(byId(ui, 'ncsc-question-index').value).toBe('11');
+            const input = byId(ui, `ncsc-answer-${questions[11].id}-no`); input.checked = true; event(input, 'change');
+            control(ui, 'Return to review').click();
+            expect(byId(ui, 'ncsc-review-range').textContent).toContain('1 answer marked not applicable, to confirm.');
+            expect(byId(ui, 'ncsc-review-range-value').textContent).toBe('With your current answers, reported implementation would be 64.3%–78.6%.');
+            expect(byId(ui, 'ncsc-review-range').textContent).toContain('Yours widen the range by 7.1 percentage points.');
+            control(ui, 'Save and submit assessment').click(); confirmSubmit(ui);
+            await until(() => ui.root.querySelector('.ncsc-result-metric'));
+            // The server evaluator's submitted result matches the preview.
+            // The headline leads with the lower figure (#266); the upper figure follows.
+            expect(ui.root.querySelector('.ncsc-result-value').textContent).toBe('64.3% in place');
+            expect(ui.root.querySelector('.ncsc-result-upper').textContent).toBe('Up to 78.6% if every answer still to confirm turns out to be in place.');
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('the projected range waits for every answer and omits N/A guidance when there is none', async () => {
+        const h = await sparseDraft(), ui = await resumeUi(h);
+        try {
+            control(ui, 'Review and submit').click();
+            const range = byId(ui, 'ncsc-review-range');
+            expect(range.textContent).toContain('1 answer marked not applicable, to confirm.');
+            expect(range.textContent).toContain('The projected range appears when every question has an answer.');
+            expect(byId(ui, 'ncsc-review-range-value')).toBeUndefined();
+            expect(range.querySelectorAll('button').map(item => item.textContent)).toEqual(['Change question 3']);
+        } finally { ui.controller.destroy(); }
+        const complete = await backend(); await complete.execute(createCommand()); await complete.execute(saveCommand());
+        const clean = await resumeUi(complete);
+        try {
+            control(clean, 'Review and submit').click();
+            const range = byId(clean, 'ncsc-review-range');
+            expect(range.textContent).not.toMatch(/not applicable/);
+            expect(byId(clean, 'ncsc-review-range-value').textContent).toBe('With your current answers, reported implementation would be 100.0%.');
+            expect(range.textContent).not.toContain('Approval is not available');
+            expect(range.querySelectorAll('button')).toHaveLength(0);
+        } finally { clean.controller.destroy(); }
     });
 
     test('a cleared saved answer is shown as unanswered and not saved yet', async () => {
@@ -3065,6 +3331,10 @@ describe('final submission review step', () => {
         try {
             metadata().questions.forEach((_question, index) => { if (index > 2) choose(ui, index, 'unknown'); });
             control(ui, 'Review and submit').click();
+            // A-015: the finish path says how many answers are still to confirm in plain words.
+            const readiness = byId(ui, 'ncsc-review-readiness').textContent;
+            expect(readiness).toMatch(/^Every question has an answer\.( [^.]+ explanation\.)? \d+ answers are still to confirm \(\d+ Unknown( and \d+ not applicable)?\)\. You can submit with them, but they do not count as in place\.$/);
+            expect(readiness).not.toMatch(/unresolved/i);
             const confirm = control(ui, 'Save and submit assessment'); confirm.click(); confirm.click();
             expect(ui.root.querySelectorAll('.ncsc-submit-dialog')).toHaveLength(1);
             expect(posts(h)).toHaveLength(0);
@@ -3421,5 +3691,114 @@ describe('plan submission allowance', () => {
             { used: '1', limit: 5 }, { used: 1, limit: '5' }, { used: 1 }, { used: 1, limit: 5, price: 0 }]) {
             await expect(list({ ...page, submissionAllowance: bad })).rejects.toMatchObject({ code: 'ncsc_unavailable' });
         }
+    });
+});
+
+describe('automatic save retry after an unconfirmed outcome', () => {
+    const unavailable = () => Object.assign(new Error('ncsc_unavailable'), { code: 'ncsc_unavailable', statusCode: 503, ambiguous: true });
+    const saves = h => h.records.filter(row => row.action === 'save');
+
+    test('a lost autosave response is resent unchanged and writes exactly once', async () => {
+        const h = await backend(); let lose = true;
+        const save = jest.fn(async (...args) => {
+            const result = await h.client.save(...args);
+            if (lose) { lose = false; throw unavailable(); }
+            return result;
+        });
+        const read = jest.fn((...args) => h.client.read(...args));
+        const ui = await createInUi(h, { client: { ...h.client, save, read }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [0, 0] });
+        try {
+            choose(ui, 0, 'yes');
+            await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[1][0]).toEqual(save.mock.calls[0][0]);
+            expect(saves(h)).toHaveLength(1); expect(h.versions.values().next().value.envelope.revision).toBe(1);
+            expect(control(ui, 'Try the save again')).toBeUndefined(); expect(ui.root.textContent).not.toMatch(/unconfirmed/);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('a 503 before the server applies the save recovers on the next automatic attempt', async () => {
+        const h = await backend(); let failures = 1;
+        const save = jest.fn(async (...args) => { if (failures) { failures -= 1; throw unavailable(); } return h.client.save(...args); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [0, 0] });
+        try {
+            choose(ui, 0, 'yes');
+            await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[1][0]).toEqual(save.mock.calls[0][0]);
+            expect(saves(h)).toHaveLength(1); expect(control(ui, 'Try the save again')).toBeUndefined();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('automatic retries stop after the configured attempts and show the existing manual retry', async () => {
+        const h = await backend(); let failing = true;
+        const save = jest.fn(async (...args) => { if (failing) throw unavailable(); return h.client.save(...args); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [0, 0] });
+        try {
+            choose(ui, 0, 'yes');
+            await until(() => control(ui, 'Try the save again'));
+            expect(save).toHaveBeenCalledTimes(3);
+            const first = save.mock.calls[0][0];
+            save.mock.calls.forEach(call => expect(call[0]).toEqual(first));
+            expect(ui.root.textContent).toContain('We could not confirm the save');
+            expect(ui.root.textContent).toContain('This operation is unconfirmed. Retry the same operation to establish its result.');
+            expect(saves(h)).toHaveLength(0);
+            await new Promise(resolve => setTimeout(resolve, 60));
+            expect(save).toHaveBeenCalledTimes(3);
+            failing = false; control(ui, 'Try the save again').click();
+            await until(() => !control(ui, 'Try the save again') && saves(h).length === 1);
+            expect(save).toHaveBeenCalledTimes(4); expect(save.mock.calls[3][0]).toEqual(first);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('the waiting status is announced while an automatic retry is pending', async () => {
+        const h = await backend(); let failures = 1;
+        const save = jest.fn(async (...args) => { if (failures) { failures -= 1; throw unavailable(); } return h.client.save(...args); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [200] });
+        try {
+            choose(ui, 0, 'yes');
+            await until(() => save.mock.calls.length === 1 && ui.root.textContent.includes('Trying again automatically'));
+            const status = byId(ui, 'ncsc-save-status');
+            expect(status.getAttribute('aria-live')).toBe('polite');
+            expect(status.textContent).toBe('Saving is taking longer than usual. Trying again automatically.');
+            await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            expect(save).toHaveBeenCalledTimes(2); expect(saves(h)).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test.each([
+        ['revision conflict', () => Object.assign(new Error('c'), { code: 'ncsc_revision_conflict', statusCode: 409 })],
+        ['access denied', () => Object.assign(new Error('d'), { code: 'ncsc_access_denied', statusCode: 403 })],
+        ['too large', () => Object.assign(new Error('t'), { code: 'ncsc_request_too_large', statusCode: 413 })]
+    ])('a definite %s answer is never retried automatically', async (_name, failure) => {
+        const h = await backend();
+        const save = jest.fn(async () => { throw failure(); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [0, 0] });
+        try {
+            choose(ui, 0, 'yes');
+            await until(() => save.mock.calls.length === 1 && !ui.root.textContent.includes('Saving…'));
+            await new Promise(resolve => setTimeout(resolve, 60));
+            expect(save).toHaveBeenCalledTimes(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('Save progress pressed by hand keeps the single attempt and the manual retry', async () => {
+        const h = await backend();
+        const save = jest.fn(async () => { throw unavailable(); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveRetryDelaysMs: [0, 0] });
+        try {
+            choose(ui, 0, 'yes'); control(ui, 'Save progress').click();
+            await until(() => control(ui, 'Try the save again'));
+            expect(save).toHaveBeenCalledTimes(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('leaving the assessment during the retry delay sends nothing further', async () => {
+        const h = await backend();
+        const save = jest.fn(async () => { throw unavailable(); });
+        const ui = await createInUi(h, { client: { ...h.client, save }, autosaveIdleMs: 20, autosaveRetryDelaysMs: [100, 100] });
+        choose(ui, 0, 'yes');
+        await until(() => save.mock.calls.length === 1 && ui.root.textContent.includes('Trying again automatically'));
+        ui.controller.destroy();
+        await new Promise(resolve => setTimeout(resolve, 300));
+        expect(save).toHaveBeenCalledTimes(1);
     });
 });
