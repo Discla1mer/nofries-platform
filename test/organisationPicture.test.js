@@ -179,7 +179,8 @@ test('a long scope is shortened in the selector so status and date stay visible,
     assert.ok(option.textContent.endsWith(' NZ time'));
     assert.equal(option.title, flat + option.textContent.slice(option.textContent.indexOf(' · In progress · ')));
     assert.equal(picker.title, option.title);
-    assert.ok(dom.root.textContent.includes(long));
+    // The full scope is still shown on the page (one list item per line since #268).
+    long.split('\n').map(line => line.trim()).forEach(line => assert.ok(dom.root.textContent.includes(line)));
     dom.controller.destroy();
 });
 
