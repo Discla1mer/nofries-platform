@@ -14,7 +14,7 @@ async function main() {
     const preview = buildPreview(path.join(directory, 'preview.html'));
     const server = http.createServer((_request, response) => {
         response.setHeader('Content-Type', 'text/html; charset=utf-8');
-        response.end(fs.readFileSync(preview.path));
+        response.end(fs.readFileSync(preview.frameOutput));
     });
     let browser;
     try {
