@@ -83,7 +83,7 @@ CREATE POLICY email_preferences_account_wipe ON nofries.email_preferences FOR AL
 GRANT SELECT, DELETE ON nofries.dashboard_session_gates, nofries.signup_registrations TO nofries_account_wipe;
 CREATE POLICY dashboard_session_gates_account_wipe ON nofries.dashboard_session_gates FOR ALL TO nofries_account_wipe
     USING (subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), '')
-        AND kind = 'customer')
+        AND kind IN ('customer', 'onboarding_discovery'))
     WITH CHECK (false);
 CREATE POLICY signup_registrations_account_wipe ON nofries.signup_registrations FOR ALL TO nofries_account_wipe
     USING (subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), ''))
@@ -91,12 +91,12 @@ CREATE POLICY signup_registrations_account_wipe ON nofries.signup_registrations 
 
 -- Session-scoped runtime rows (for example the audit of a customer's
 -- organisation directory read) carry no tenant. They reference the customer's
--- session gates, so they are visible to the capability by that session.
+-- session and onboarding-discovery gates, so they are visible to the capability by that session.
 CREATE POLICY dashboard_runtime_audit_account_wipe_session ON nofries.dashboard_runtime_audit FOR ALL TO nofries_account_wipe
     USING (session_sha256 IN (SELECT g.session_sha256 FROM nofries.dashboard_session_gates g
-        WHERE g.subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), '') AND g.kind = 'customer'))
+        WHERE g.subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), '') AND g.kind IN ('customer', 'onboarding_discovery')))
     WITH CHECK (false);
 CREATE POLICY dashboard_runtime_receipts_account_wipe_session ON nofries.dashboard_runtime_receipts FOR ALL TO nofries_account_wipe
     USING (anchor_session_sha256 IN (SELECT g.session_sha256 FROM nofries.dashboard_session_gates g
-        WHERE g.subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), '') AND g.kind = 'customer'))
+        WHERE g.subject_key::text = NULLIF(current_setting('nofries.wipe_subject_key', true), '') AND g.kind IN ('customer', 'onboarding_discovery')))
     WITH CHECK (false);

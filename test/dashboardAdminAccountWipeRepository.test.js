@@ -94,3 +94,11 @@ test.each(['reset', 'delete'])('%s locks every table it deletes from before the 
     expect(sql[lock]).toMatch(/IN SHARE ROW EXCLUSIVE MODE$/);
     for (const table of new Set(deletes(f.statements))) expect(sql[lock]).toContain('nofries.' + table + (sql[lock].includes('nofries.' + table + ',') ? ',' : ''));
 });
+
+test('delete removes customer and onboarding-discovery sessions of the subject, never staff sessions', async () => {
+    const f = fakePool();
+    await createAccountWipeRepository(f.pool).delete(scope);
+    const gates = f.statements.map(([sql]) => sql).filter(sql => sql.includes('dashboard_session_gates') && !sql.startsWith('LOCK TABLE'));
+    expect(gates.length).toBeGreaterThan(0);
+    for (const sql of gates) { expect(sql).toContain("kind IN ('customer', 'onboarding_discovery')"); expect(sql).not.toContain('operator_dashboard'); }
+});

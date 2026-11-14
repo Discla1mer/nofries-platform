@@ -29,7 +29,8 @@ const DELETE_TENANT_TABLES = Object.freeze([...RESET_TABLES,
     'dashboard_membership_states', 'signup_acceptance_receipts', 'dashboard_starter_scopes',
     'dashboard_organisations', 'dashboard_tenants'
 ]);
-// Customer session gates reference bindings and onboarding proofs without
+// Customer and onboarding-discovery session gates reference bindings and
+// onboarding proofs without
 // deferral, so they go first, after the receipts and audit rows that reference
 // those sessions; the account and subject rows go last.
 const DELETE_FIRST_TABLES = Object.freeze(['dashboard_runtime_receipts', 'dashboard_runtime_audit', 'dashboard_session_gates']);
@@ -83,12 +84,12 @@ function createAccountWipeRepository(pool) {
             if (mode === 'delete') {
                 // Rows tied to the customer's sessions rather than a tenant (for example
                 // the organisation directory read), then the sessions themselves.
-                const sessions = "SELECT session_sha256 FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind = 'customer'";
+                const sessions = "SELECT session_sha256 FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind IN ('customer', 'onboarding_discovery')";
                 add('dashboard_runtime_receipts', (await client.query(`DELETE FROM nofries.dashboard_runtime_receipts WHERE anchor_session_sha256 IN (${sessions})`,
                     [scope.subjectKey])).rowCount);
                 add('dashboard_runtime_audit', (await client.query(`DELETE FROM nofries.dashboard_runtime_audit WHERE session_sha256 IN (${sessions})`,
                     [scope.subjectKey])).rowCount);
-                add('dashboard_session_gates', (await client.query("DELETE FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind = 'customer'",
+                add('dashboard_session_gates', (await client.query("DELETE FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind IN ('customer', 'onboarding_discovery')",
                     [scope.subjectKey])).rowCount);
             }
             for (const tenantId of scope.tenantIds) {
