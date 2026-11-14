@@ -8,7 +8,7 @@ const { ImprovementPlanServiceError, normaliseImprovementCommand, normaliseImpro
     requireImprovementContext, serviceError } = require('./improvementPlanService');
 const { resolveImprovementAccess, resolveEligibleOwner } = require('./improvementPlanAccess');
 const store = require('./improvementPlanStore');
-const { planCarryForward, carryOperationId } = require('./improvementPlanCarryForward');
+const { planCarryForward, carryOperationId, applyCarriedSteps } = require('./improvementPlanCarryForward');
 const fail = (code = 'improvement_unavailable', status = 503) => { throw new ImprovementPlanServiceError(code, status); };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -94,25 +94,19 @@ function createPostgresImprovementPlanRepository(options) {
             if (action.ownerSubjectKey) {
                 try { resolveEligibleOwner(current, context, action.ownerSubjectKey, at); } catch { continue; }
             }
-            const staged = [];
-            let next = state, last = head;
-            try {
-                for (const step of action.steps) {
-                    const intent = store.stableIntent(context, normaliseImprovementCommand({ planId: scope.planId, type: step.type,
-                        operationId: carryOperationId(previous.payloadSha256, last.revision + 1), expectedRevision: last.revision,
-                        actionId: action.actionId, payload: step.payload }));
-                    const domain = store.domainCommand(intent, at, state.source.evaluationOutputSha256);
-                    next = applyImprovementActionCommand(next, domain, { ...context.scope, actorSubjectKey: context.identity.subjectKey,
-                        eligibleOwnerSubjectKeys: action.ownerSubjectKey ? [action.ownerSubjectKey] : [] });
-                    last = store.makeRecord(intent, at, source, last.payloadSha256, next, domain);
-                    staged.push(last);
-                }
-            } catch (error) {
-                // A value the current rules no longer accept is not carried.
-                if (error instanceof ImprovementPlanError || error instanceof ImprovementPlanServiceError) continue;
-                throw error;
-            }
-            records.push(...staged); state = next; head = last;
+            // Per action: a rejected start/block keeps the assign; a rejected
+            // assign carries nothing. Database errors still abort.
+            const carried = applyCarriedSteps(action.steps, state, head, (step, from, last) => {
+                const intent = store.stableIntent(context, normaliseImprovementCommand({ planId: scope.planId, type: step.type,
+                    operationId: carryOperationId(previous.payloadSha256, last.revision + 1), expectedRevision: last.revision,
+                    actionId: action.actionId, payload: step.payload }));
+                const domain = store.domainCommand(intent, at, from.source.evaluationOutputSha256);
+                const next = applyImprovementActionCommand(from, domain, { ...context.scope, actorSubjectKey: context.identity.subjectKey,
+                    eligibleOwnerSubjectKeys: action.ownerSubjectKey ? [action.ownerSubjectKey] : [] });
+                return { state: next, record: store.makeRecord(intent, at, source, last.payloadSha256, next, domain) };
+            }, error => error instanceof ImprovementPlanError || error instanceof ImprovementPlanServiceError);
+            if (!carried) continue;
+            records.push(...carried.records); ({ state, head } = carried);
             if (action.ownerSubjectKey) owners.push(action.ownerSubjectKey);
         }
         return records;

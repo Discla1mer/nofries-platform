@@ -40,6 +40,9 @@ comments are post-launch (issue #11).
    and complete (`api/shared/improvementPlan/improvementPlanService.js`). The
    dashboard bundles `improvementActionPlanClient.js`. Requires
    `NOFRIES_DASHBOARD_IMPROVEMENT_ENABLED`.
+   A new plan carries owners, due dates and open status from the newest
+   same-scope plan; if that plan does not validate, nothing is carried, even
+   if an older valid plan exists.
 5. **Payment.** `server.js` answers every `/api/billing/*` request with
    `billing_disabled`. A customer cannot pay inside the app. Until this is
    built, a paid plan has to be approved by an operator and invoiced outside

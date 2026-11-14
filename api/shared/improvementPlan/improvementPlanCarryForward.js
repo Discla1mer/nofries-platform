@@ -37,4 +37,25 @@ function carryOperationId(sourcePayloadSha256, revision) {
     return `carry:${sourcePayloadSha256}:${revision}`;
 }
 
-module.exports = Object.freeze({ planCarryForward, canCarryFrom, carryOperationId });
+// Applies one carried action's steps in order. applyStep(step, state, head)
+// returns { state, record }. If the assign is rejected nothing is carried. If
+// a later start/block is rejected (a value today's rules no longer accept), the
+// action is still carried as assigned: owner and due date kept, status open.
+// Errors that are not rejections (e.g. database errors) propagate.
+function applyCarriedSteps(steps, state, head, applyStep, isRejection) {
+    const records = [];
+    let assigned = null;
+    for (const step of steps) {
+        let applied;
+        try { applied = applyStep(step, state, head); }
+        catch (error) {
+            if (!isRejection(error)) throw error;
+            return assigned;
+        }
+        state = applied.state; head = applied.record; records.push(head);
+        if (records.length === 1 && step.type === 'assign') assigned = { state, head, records: [head] };
+    }
+    return { state, head, records };
+}
+
+module.exports = Object.freeze({ planCarryForward, canCarryFrom, carryOperationId, applyCarriedSteps });
