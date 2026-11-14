@@ -126,6 +126,18 @@
       }
     },
     {
+      "route": "/api/telemetry",
+      "methods": [
+        "POST"
+      ],
+      "allowedRoles": [
+        "anonymous"
+      ],
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
       "route": "/api/scope/request",
       "allowedRoles": [
         "anonymous"

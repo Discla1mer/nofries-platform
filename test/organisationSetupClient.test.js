@@ -5,8 +5,10 @@ const path = require('node:path');
 const { createDom } = require('./fixtures/dashboardDom');
 const source = fs.readFileSync(path.join(__dirname, '../js/organisation-setup.js'), 'utf8');
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
-function fixture({ external = false, search = '', hash = '' } = {}) {
+function fixture({ external = false, search = '', hash = '', beacon, navigator } = {}) {
     const { document, window } = createDom();
+    if (beacon) window.fetch = beacon;
+    if (navigator) window.navigator = navigator;
     Object.assign(window.location, { search, hash, replace: jest.fn() });
     if (external) document.body = { dataset: { customerProvider: 'external' } };
     const pageEvents = {};
@@ -966,4 +968,69 @@ test('step indicator marks one current step for each sign-up state', async () =>
     await h.reply(4, 200, { state: 'verified', organisationName: 'Example', accessGranted: false, nextStep: 'secure_sign_in' });
     expect(current()).toEqual(['signin']);
     h.lifecycle('pagehide');
+});
+
+describe('anonymous signup_started count (#151 F4)', () => {
+    const ON = { 'x-nofries-funnel': 'on' };
+    const beaconReply = status => jest.fn(async () => ({ ok: status >= 200 && status < 300, status }));
+    const sentEvents = beacon => beacon.mock.calls.map(([url, options]) => [url, JSON.parse(options.body).event]);
+
+    test('flag off (no marker on API responses): no count is ever sent', async () => {
+        const beacon = beaconReply(204);
+        const h = fixture({ search: '?intent=create', beacon });
+        await h.reply(0, 200, { state: 'start' });
+        h.submit('form');
+        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' });
+        expect(beacon).not.toHaveBeenCalled();
+    });
+
+    test('flag on: choosing Create account sends one same-origin count without cookies or referrer', async () => {
+        const beacon = beaconReply(204);
+        const h = fixture({ search: '?intent=create', beacon });
+        expect(beacon).not.toHaveBeenCalled();
+        await h.reply(0, 200, { state: 'start' }, true, ON);
+        expect(sentEvents(beacon)).toEqual([['/api/telemetry', 'signup_started']]);
+        expect(beacon.mock.calls[0][1]).toMatchObject({ method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
+            referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' } });
+        expect(beacon.mock.calls[0][1].body).toBe('{"event":"signup_started"}');
+        h.submit('form');
+        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' }, true, ON);
+        expect(beacon).toHaveBeenCalledTimes(1);
+    });
+
+    test('flag on: an automatic hand-off to external signup leaves the count to that page', async () => {
+        const beacon = beaconReply(204);
+        const h = fixture({ search: '?intent=create', beacon });
+        await h.reply(0, 200, { state: 'start' }, true, { ...ON, 'x-nofries-customer-entry': 'external' });
+        expect(h.window.location.replace).toHaveBeenCalledWith('/signup?provider=external&intent=create');
+        expect(beacon).not.toHaveBeenCalled();
+    });
+
+    test.each([{ globalPrivacyControl: true }, { doNotTrack: '1' }])('flag on with privacy signal %o: no count', async navigator => {
+        const beacon = beaconReply(204);
+        const h = fixture({ search: '?intent=create', beacon, navigator });
+        await h.reply(0, 200, { state: 'start' }, true, ON);
+        h.submit('form');
+        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' }, true, ON);
+        expect(beacon).not.toHaveBeenCalled();
+    });
+
+    test('flag on: an accepted code request counts once', async () => {
+        const beacon = beaconReply(204);
+        const h = fixture({ beacon });
+        await h.reply(0, 200, { state: 'start' }, true, ON);
+        expect(beacon).not.toHaveBeenCalled();
+        h.submit('form');
+        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' }, true, ON);
+        expect(sentEvents(beacon)).toEqual([['/api/telemetry', 'signup_started']]);
+    });
+
+    test('a refused count stops further counts on the page', async () => {
+        const beacon = beaconReply(503);
+        const h = fixture({ beacon });
+        await h.reply(0, 200, { state: 'start' }, true, ON);
+        h.submit('form');
+        await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' }, true, ON);
+        expect(beacon).toHaveBeenCalledTimes(1);
+    });
 });
