@@ -10,6 +10,7 @@
     // Bounded number of submitted results shown in the history. Each one is a
     // separate authorised read; nothing is cached across selections.
     const TREND_LIMIT = 5;
+    const SCOPE_OPTION_CHARS = 60;
     const copy = value => JSON.parse(JSON.stringify(value));
     const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
@@ -324,7 +325,15 @@
                     if (answered === null) return row.status === 'created' ? 'Not started' : 'In progress';
                     return answered > 0 ? 'In progress' : 'Not started';
                 };
-                const labelFor = row => (row.scopePopulation ? row.scopePopulation.description + ' · ' : '') +
+                // Long scopes hid the status and date. Shorten the scope in the
+                // option; the full text is its tooltip and is shown under Scope.
+                const shortScope = text => {
+                    const flat = text.replace(/\s+/g, ' ').trim();
+                    return flat.length > SCOPE_OPTION_CHARS ? flat.slice(0, SCOPE_OPTION_CHARS - 1).trimEnd() + '…' : flat;
+                };
+                const labelFor = row => (row.scopePopulation ? shortScope(row.scopePopulation.description) + ' · ' : '') +
+                    pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
+                const fullLabelFor = row => (row.scopePopulation ? row.scopePopulation.description.replace(/\s+/g, ' ').trim() + ' · ' : '') +
                     pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
                 const labelCounts = new Map(), referenceCounts = new Map();
                 rows.forEach(row => {
@@ -339,9 +348,12 @@
                     const suffix = duplicate ? ' · ' + (ambiguous ? row.assessmentId
                         : reference + (row.assessmentId.length > 8 ? '…' : '')) : '';
                     const item = node('option', '', label + suffix);
+                    item.title = fullLabelFor(row) + suffix;
                     item.value = row.assessmentId; picker.append(item);
                 });
                 picker.value = selected;
+                const chosen = Array.from(picker.querySelectorAll('option')).find(item => item.value === selected);
+                if (chosen) picker.title = chosen.title;
                 picker.addEventListener('change', () => { if (live() && !denied) read(picker.value, 'user'); });
                 const refresh = button('Refresh', () => load(false)); refresh.disabled = loading;
                 refresh.classList.add('dashboard-button-secondary');
