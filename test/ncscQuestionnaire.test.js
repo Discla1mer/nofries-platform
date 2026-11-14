@@ -3818,3 +3818,52 @@ describe('automatic save retry after an unconfirmed outcome', () => {
         expect(save).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('anonymous funnel steps (#151 F4)', () => {
+    test('first_answer fires on the first answer of an empty assessment and result_viewed on the submitted result', async () => {
+        const steps = [];
+        const h = await backend(), ui = await createInUi(h, { onFunnelStep: step => steps.push(step) });
+        expect(steps).toEqual([]);
+        choose(ui, 0, 'yes'); choose(ui, 1, 'no');
+        expect(steps).toEqual(['first_answer']);
+        metadata().questions.forEach((_question, index) => choose(ui, index, 'yes'));
+        control(ui, 'Save progress').click(); await savedRevision(ui, h, 1);
+        submitUi(ui); await until(() => ui.root.textContent.includes('Your results are below'));
+        expect(steps).toEqual(['first_answer', 'result_viewed']);
+        ui.controller.destroy();
+    });
+
+    test('an unavailable result does not count result_viewed; a later rendered result does', async () => {
+        const h = await backend(), first = await createInUi(h);
+        metadata().questions.forEach((_question, index) => choose(first, index, 'yes'));
+        control(first, 'Save progress').click(); await savedRevision(first, h, 1);
+        submitUi(first); await until(() => first.root.textContent.includes('Your results are below'));
+        first.controller.destroy();
+        const sent = new Set(), steps = [];
+        const onFunnelStep = step => { if (!sent.has(step)) { sent.add(step); steps.push(step); } };
+        const broken = { ...h.client, read: async (...args) => {
+            const result = clone(await h.client.read(...args)); result.assessment.submission.evaluation.evidence = null; return result;
+        } };
+        const unavailable = await resumeUi(h, { client: broken, onFunnelStep });
+        expect(unavailable.root.textContent).toContain('Results are unavailable for this submission');
+        expect(steps).toEqual([]);
+        unavailable.controller.destroy();
+        const shown = await resumeUi(h, { onFunnelStep });
+        await until(() => shown.root.textContent.includes('Your results are below'));
+        expect(shown.root.querySelector('.ncsc-results')).not.toBeNull();
+        expect(steps).toEqual(['result_viewed']);
+        shown.controller.destroy();
+    });
+
+    test('a resumed assessment with saved answers does not count first_answer, and a throwing hook changes nothing', async () => {
+        const h = await backend(), first = await createInUi(h);
+        choose(first, 0, 'partial'); control(first, 'Save progress').click(); await savedRevision(first, h, 1);
+        first.controller.destroy();
+        const steps = [];
+        const ui = await resumeUi(h, { onFunnelStep: step => { steps.push(step); throw new Error('hook'); } });
+        choose(ui, 1, 'yes');
+        expect(steps).toEqual([]);
+        expect(byId(ui, `ncsc-answer-${metadata().questions[1].id}-yes`).checked).toBe(true);
+        ui.controller.destroy();
+    });
+});

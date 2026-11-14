@@ -14,7 +14,11 @@
                 });
                 if (!response.ok) throw new Error('unavailable');
                 const body = await response.json();
-                return { available: body.available === true, promote: body.available === true && body.promote === true };
+                // #151 F4: the server marks API responses only while funnel counts are on.
+                const funnel = Boolean(response.headers && typeof response.headers.get === 'function' &&
+                    response.headers.get('x-nofries-funnel') === 'on');
+                return { available: body.available === true, promote: body.available === true && body.promote === true,
+                    ...(funnel ? { funnel: true } : {}) };
             }());
             return await Promise.race([read, deadline]);
         } catch (_) {

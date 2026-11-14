@@ -58,6 +58,21 @@ test('the privacy notice keeps operative disclosures and states facts plainly', 
     expect(privacy).not.toContain('token count');
 });
 
+test('the privacy notice describes service emails and action-owner names as the code handles them', () => {
+    const privacy = read('privacy.html');
+    const section = privacy.match(/<section id="service-emails">([\s\S]*?)<\/section>/);
+    expect(section).not.toBeNull();
+    for (const text of ['four service emails', 'about 7 days later', 'about 90 days after', 'Resend delivers them',
+        'do not greet you by name', 'do not contain your answers, gap titles, results or scores',
+        'Resend’s message id', 'how many gaps it found', 'does not hold the text of the email or your email address',
+        'stops that type of email', 'one-click unsubscribe', 'Unsubscribing is permanent']) expect(section[1]).toContain(text);
+    expect(privacy).toContain('names you enter as action owners in your improvement plan');
+    expect(privacy).toContain('cannot be an email address');
+    expect(privacy).toContain('stay in the improvement plan’s history for as long as the plan record is kept');
+    expect(privacy).toContain('Resend delivers signup codes and service emails');
+    expect(privacy.indexOf('id="service-emails"')).toBeLessThan(privacy.indexOf('id="staff-workspaces"'));
+});
+
 test('the privacy notice keeps staff and service-workspace detail collapsed below the customer notice', () => {
     const privacy = read('privacy.html');
     const staff = privacy.match(/<details class="legal-staff" id="staff-workspaces">([\s\S]*?)<\/details>/);
@@ -91,4 +106,15 @@ test('public Terms labels open the customer terms, and legal in-page links resol
         expect(html.match(/<h1\b/g)).toHaveLength(1);
         for (const href of html.matchAll(/\bhref="#([^"]+)"/g)) expect(anchors).toContain(href[1]);
     }
+});
+
+test('the privacy notice describes anonymous funnel totals in the visitor tracking section', () => {
+    const section = read('privacy.html').match(/<section id="tracking">([\s\S]*?)<\/section>/);
+    expect(section).not.toBeNull();
+    for (const text of ['anonymous daily totals', 'home page visits', 'signups started', 'signup codes confirmed',
+        'first answers in an assessment', 'assessments submitted', 'results viewed', 'contact enquiries sent',
+        'only a date, the step and a number', 'No identifiers, cookies or IP addresses are stored',
+        'are not used to identify you or your organisation',
+        'If your browser sends a Global Privacy Control or Do Not Track signal, your visit is not counted.']) expect(section[1]).toContain(text);
+    expect(section[1]).not.toContain('cannot be linked to you');
 });

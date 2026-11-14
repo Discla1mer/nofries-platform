@@ -126,6 +126,18 @@
       }
     },
     {
+      "route": "/api/telemetry",
+      "methods": [
+        "POST"
+      ],
+      "allowedRoles": [
+        "anonymous"
+      ],
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
       "route": "/api/scope/request",
       "allowedRoles": [
         "anonymous"
@@ -1135,6 +1147,16 @@
     {
       "route": "/api/dashboard-admin/funnel",
       "methods": ["GET"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/emailPreferences",
+      "methods": ["GET", "POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/account/email",
+      "methods": ["GET", "POST"],
       "allowedRoles": ["anonymous"]
     },
     {
