@@ -1210,7 +1210,8 @@ describe('saved-only draft observations', () => {
         expect(panel(ui).textContent).toContain('These exclusions are not approved');
         expect(panel(ui).textContent).toContain('not a score, risk ranking or verified evidence');
         expect(panel(ui).textContent).toContain('do not change any submitted baseline');
-        expect(panel(ui).textContent).toContain('Saved revision 1');
+        expect(panel(ui).textContent).toContain('Last saved ');
+        expect(panel(ui).textContent).not.toMatch(/revision/i);
         expect(panel(ui).textContent).not.toMatch(/\d+(?:\.\d+)?%|improved|declined|certified/i);
         expect(panel(ui).querySelectorAll('meter')).toHaveLength(0);
         ui.controller.destroy();

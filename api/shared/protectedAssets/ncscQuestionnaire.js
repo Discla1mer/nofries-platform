@@ -1071,7 +1071,7 @@
             const panel = node('details', 'ncsc-guidance ncsc-draft-observations');
             panel.dataset.assessmentId = acknowledged.assessmentId; panel.open = expanded;
             const summary = node('summary', '', 'Saved draft observations'); summary.id = 'ncsc-draft-observations-summary';
-            panel.append(summary, node('p', 'dashboard-muted', 'Saved revision ' + acknowledged.revision + ' · ' + localDate(acknowledged.updatedAt) +
+            panel.append(summary, node('p', 'dashboard-muted', 'Last saved ' + localDate(acknowledged.updatedAt) +
                 '. Only saved answers are included. Unsaved changes are not included until a save is confirmed.'));
             panel.append(node('p', '', 'These are self-reported draft observations, not a score, risk ranking or verified evidence. They do not change any submitted baseline.'));
             const rows = questions.map(function (question, index) { return { question: question, index: index, value: savedAnswer(question.id) }; });
