@@ -272,7 +272,7 @@ test.each(['revision', 'hash'])('%s drift requires an explicit second read while
         expect(h.fetch).toHaveBeenCalledTimes(before + 2);
         expect(h.adapters.events).toHaveLength(auditsBefore + 2);
         expect(ui.root.querySelector('.picture-metrics').textContent).toBe(baselineBefore);
-        expect(baselineBefore).toContain('46.4%–60.7%');
+        expect(baselineBefore).toContain('46.4% in place'); expect(baselineBefore).toContain('Up to 60.7%');
         expect(ui.root.querySelector('.picture-source').textContent).toBe(sourceBefore);
         const notice = () => explanation(ui).querySelector('[data-explanation-version-notice]');
         expect(notice()).not.toBeNull();
@@ -294,7 +294,7 @@ test.each(['revision', 'hash'])('%s drift requires an explicit second read while
         await until(() => button(ui, 'Explain this saved result'));
         expect(notice()).toBeNull();
         expect(ui.root.querySelector('.picture-metrics').textContent).toContain('100.0%');
-        expect(ui.root.querySelector('.picture-metrics').textContent).not.toContain('46.4%–60.7%');
+        expect(ui.root.querySelector('.picture-metrics').textContent).not.toContain('46.4% in place');
         expect(h.fetch).toHaveBeenCalledTimes(before + 5);
         expect(h.adapters.events).toHaveLength(auditsBefore + 5);
         click(ui, 'Explain this saved result');

@@ -10,10 +10,10 @@ const PUBLIC_REPOSITORY = Object.freeze({ full_name: 'Discla1mer/nofries-platfor
 const CI_PATH = '.github/workflows/ci.yml';
 const CI_WORKFLOW_SHA256 = '090f984cfa7f7d20b62b8d8c4293155dea455302a15c2dba46162b8d884189c8';
 const CI_SOURCES = Object.freeze({
-    'package.json': 'df9376f4dc623545cb2973eddab9722f471364a7bd16e8ea3f0c23080f8c3703',
+    'package.json': '44ddc8a5b05562d0cde0bea2690e16105540cac45bcb130400918d1984eed916',
     'scripts/ci-journey-sequencer.js': '0cfe1e2f72d1694b604621b65d85ab7617032dcc985b8f13ce666f2c65f00306',
     'scripts/ci-journey-order.js': 'b09a4f16700a0ea6558b7208375e9d347f6f6a6e23b69922ce63491d7d8d9d81',
-    'scripts/check-dependency-audit.js': '5de53625d16faed5ff9269ae6e6c86035b31210374ecc1af91ab4f5218374e4a'
+    'scripts/check-dependency-audit.js': 'a9bbbe2c0396acf4d366cc018bdb35355db7a9b957e66ec98c7db2a0035183c8'
 });
 const CI_STEPS = Object.freeze({
     'unit (1/4)': Object.freeze(['Run npm ci --ignore-scripts --omit=optional --audit=false',

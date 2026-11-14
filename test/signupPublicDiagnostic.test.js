@@ -121,9 +121,12 @@ test.each([503, 200])('original failed response%s carries one complete bounded p
         expect(f.root.textContent).toContain('Recorded step: Preparing your organisation.');
         expect(f.root.textContent).toContain('Reason: Setup information was unavailable for this step.');
         expect(f.root.textContent).toContain('Support reference: ' + REFERENCE);
-        expect(f.root.textContent).toContain('Error code: NF-SIGNUP-UNCONFIRMED');
+        // A-001: a failed opening read (503) is the sign-in check view with a
+        // manual retry; an explicit unavailable state (200) is the signup view.
+        expect(f.root.textContent).toContain(status === 503 ? 'Error code: NF-SIGNIN-UNCONFIRMED' : 'Error code: NF-SIGNUP-UNCONFIRMED');
         expect(f.root.textContent).not.toContain(PRIVATE);
-        expect(f.root.querySelector('button')).toBeNull(); expect(f.document.activeElement.tagName).toBe('H1');
+        expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(status === 503 ? ['Try again'] : []);
+        expect(f.document.activeElement.tagName).toBe('H1');
         const reportLink = f.root.querySelectorAll('a').find(node => node.textContent === 'Report this problem');
         expect(new URLSearchParams(reportLink.href.split('#')[1]).get('reference')).toBe(REFERENCE);
         expect(reportLink.href).not.toMatch(/signupStage|signupReason|workspace_preparation|setup_information_unavailable/);
@@ -212,7 +215,8 @@ test('no response diagnostic and a timeout before response headers show honest f
         expect(f.root.textContent).not.toMatch(/Recorded step:|Reason:|Support reference:|timed out|database|permission/);
         finish({ status: 503, headers: { get } }); await jest.advanceTimersByTimeAsync(0);
         expect(get).not.toHaveBeenCalled(); expect(f.root.textContent).not.toContain('synthetic-private-late-value');
-        expect(f.root.querySelector('button')).toBeNull(); expect(jest.getTimerCount()).toBe(0);
+        expect(f.root.querySelectorAll('button').map(node => node.textContent)).toEqual(['Try again']);
+        expect(jest.getTimerCount()).toBe(0);
     } finally { f.view.dispose(); client.dispose(); jest.useRealTimers(); }
 });
 

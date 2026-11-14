@@ -171,8 +171,8 @@ describe('contact form progressive enhancement', () => {
     });
 
     test('contact home link names the No Fries home page it opens and fields use cream paper', () => {
-        expect(html).toMatch(/<a class="login-brand" href="\/" aria-label="No Fries home">/);
-        expect(html).toMatch(/<strong>No Fries<\/strong><\/div>/);
+        expect(html).toMatch(/<a class="brand" href="\/" aria-label="No Fries Dashboard home">/);
+        expect(html).toMatch(/<strong>No Fries<\/strong> <span>Dashboard<\/span>/);
         expect(html).not.toMatch(/aria-label="No Fries Managed IT home"/);
         const css = fs.readFileSync(path.join(__dirname, '../style.css'), 'utf8');
         const fields = css.match(/\.contact-form input, \.contact-form textarea \{[^}]+\}/);

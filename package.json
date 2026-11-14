@@ -1,6 +1,6 @@
 {
   "name": "nofries",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "No Fries Dashboard and managed-IT modular monolith",
   "main": "server.js",
   "author": "",
@@ -36,9 +36,9 @@
         "adm-zip": "file:vendor/adm-zip-memory-only/adm-zip-memory-only-0.6.0-memory-only.1.tgz"
       }
     },
-    "hono": "4.13.11",
+    "hono": "4.13.18",
     "get-uri@8.0.1": {
-      "basic-ftp": "6.2.1"
+      "basic-ftp": "6.2.6"
     },
     "ibm-cloud-sdk-core@5.6.0": {
       "axios": "1.20.0"
@@ -59,7 +59,8 @@
     "@azure/identity": {
       "@azure/msal-node": "7.1.1"
     },
-    "@hono/node-server": "2.1.3",
+    "@hono/node-server": "2.1.8",
+    "fast-xml-parser": "5.12.0",
     "follow-redirects": "1.16.2",
     "glob": "14.0.3",
     "minimatch": "11.0.3"

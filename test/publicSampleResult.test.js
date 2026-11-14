@@ -45,8 +45,12 @@ test('figures and top three gaps match the real result view for the same answers
     const { metadata, result } = sampleResult();
     expect(text(html)).toContain('Reported implementation ' + result.attainment);
     expect(text(html)).toContain(result.completed + ' of ' + result.total + ' questions');
-    const table = html.match(/<tbody>([\s\S]*?)<\/tbody>/)[1];
-    const rows = [...table.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(row => text(row[1]));
+    const table = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/)[1];
+    const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map(row => text(row[1]));
+    // Phones show label/value rows (F1-R05); explicit roles keep the table relationships.
+    expect(html).toMatch(/<table class="sample-result-table" role="table">/);
+    expect([...table.matchAll(/<td role="cell" data-label="(Reported implementation|Answers)">/g)]).toHaveLength(rows.length * 2);
+    expect([...table.matchAll(/<th scope="row" role="rowheader">/g)]).toHaveLength(rows.length);
     expect(rows).toEqual(result.domains.map(domain => `${domain.title} ${domain.attainment} ${domain.total}`));
     const gaps = picture.topGaps(result, metadata);
     expect(gaps).toHaveLength(3);
@@ -69,4 +73,16 @@ test('it ends with the sign-up and contact paths and claims only live capabiliti
             expect([item.id, visible.match(new RegExp(claim, 'i'))?.[0] || null]).toEqual([item.id, null]);
         }
     }
+});
+
+test('NCSC is spelled out at first use and the example figure is explained from the answers', () => {
+    for (const page of [html, fs.readFileSync(path.join(root, 'index.html'), 'utf8')]) {
+        const body = text(page.match(/<body\b[\s\S]*<\/body>/)[0]);
+        expect(body.indexOf('NCSC')).toBe(body.indexOf('New Zealand’s National Cyber Security Centre (NCSC)') + 'New Zealand’s National Cyber Security Centre ('.length);
+    }
+    const { result } = sampleResult();
+    const counts = Object.values(ANSWERS).reduce((all, answer) => ({ ...all, [answer]: (all[answer] || 0) + 1 }), {});
+    expect(((counts.yes + counts.partial / 2) / result.total * 100).toFixed(1) + '%').toBe(result.attainment);
+    expect(text(html)).toContain(`Each Yes counts in full, each Partial counts as half and each No counts as zero, so ${counts.yes} Yes and ${counts.partial} Partial out of ${result.total} questions gives ${result.attainment}.`);
+    expect(text(html)).toContain('Guide and Govern is about leadership, priorities and everyday guidance');
 });

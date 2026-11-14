@@ -19,6 +19,8 @@
     let mountSequence = 0;
     const moduleStates = { ready: 'Included', planned: 'Coming next', disabled: 'Included · unavailable' };
     const serviceStates = { not_included: 'Available to scope', disabled: 'Included · unavailable', setup_required: 'Waiting for setup' };
+    // Customer-facing plan names. The projection keeps its stored codes.
+    const planNames = { Score: 'Free plan', Govern: 'Governance plan' };
     const metricLabels = { implementation: 'Implementation attainment', evidence: 'Evidence confidence', risk: 'Risk priority', trend: 'Trend' };
 
     // The shell performs no authorisation, storage or scoring. An explicitly
@@ -73,6 +75,8 @@
         let queuedEvent = null;
         let unmanagedBoundaryHash = null;
         let planBaselineToken = 0;
+        let informationAt = model.generatedAt;
+        let informationStamp = null;
         // A history pointer is a read hint, never authority or saved answers.
         const restored = win && win.history && win.history.state && win.history.state.nofriesCyber;
         let cyberLocation = restored && restored.organisationId === model.context.organisationId &&
@@ -151,8 +155,8 @@
             const nav = element('nav'); nav.setAttribute('aria-label', 'Workspace');
             appendMenu(nav, false);
             const subscription = element('div', 'dashboard-subscription');
-            subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', 'Plan: ' + model.subscription),
-                element('p', '', 'This is the name of your plan, not a security score. Managed IT and advisory services are arranged separately.'));
+            subscription.append(element('span', 'dashboard-eyebrow', 'Your plan'), element('strong', '', planNames[model.subscription]),
+                element('p', '', 'Managed IT and advisory services are arranged separately.'));
             rail.append(brand, context, nav, subscription);
             const workspace = element('div', 'dashboard-workspace');
             const top = element('header', 'dashboard-topbar');
@@ -317,15 +321,26 @@
             else if (current.key === 'improvement_plan' && stateFor(current.key) === 'ready' && typeof options.mountImprovement === 'function') renderImprovement(sourceAssessment);
             else renderModule(planBaselineToken);
             const footer = element('footer', 'dashboard-provenance');
-            // People read local time; keep the exact instant in the datetime attribute.
-            let shown;
-            try { shown = new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(model.generatedAt)) + ' NZ time'; }
-            catch (_) { shown = model.generatedAt.replace('T', ' ').replace('.000Z', ' UTC'); }
-            const stamp = element('time', '', shown);
-            stamp.dateTime = model.generatedAt;
+            const stamp = element('time');
+            informationStamp = stamp; showInformationTime();
             footer.append(element('span', '', 'Information as at '), stamp,
                 element('p', '', 'Assessment indicators are not audit, assurance or certification.'));
             main.append(footer);
+        }
+        // People read local time; keep the exact instant in the datetime attribute.
+        function showInformationTime() {
+            if (!informationStamp) return;
+            let shown;
+            try { shown = new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(informationAt)) + ' NZ time'; }
+            catch (_) { shown = informationAt.replace('T', ' ').replace('.000Z', ' UTC'); }
+            informationStamp.textContent = shown;
+            informationStamp.dateTime = informationAt;
+        }
+        // The host reports each successful read of saved information. This
+        // only moves the displayed time forward; it grants nothing.
+        function informationRead(value) {
+            if (disposed || !canonicalInstant(value) || Date.parse(value) <= Date.parse(informationAt)) return;
+            informationAt = value; showInformationTime();
         }
         function renderOverview() {
             const connectedPicture = pictureAvailable;
@@ -339,7 +354,7 @@
             const attention = panel('Needs attention', 'Named owners. Clear next steps.');
             attention.classList.add('dashboard-attention');
             if (!model.summary.attention.length) {
-                attention.append(element('h3', '', 'Build your first baseline'), element('p', '', 'No assessment or improvement record has been shared with this view yet.'));
+                attention.append(element('h3', '', 'Start your cyber check'), element('p', '', 'No assessment or improvement record has been shared with this view yet.'));
                 const assessment = available.find(function (item) { return item.group === 'Assess' && stateFor(item.key) === 'ready'; });
                 if (assessment) attention.append(button('View ' + assessment.label, function () { navigate(assessment.route, true); }));
                 else attention.append(element('p', 'dashboard-muted', 'An organisation administrator can confirm your assessment scope.'));
@@ -520,7 +535,7 @@
         }
         function renderServices() {
             main.append(element('p', 'dashboard-intro', 'What is included, what needs setup and what can be scoped separately?'));
-            const subscription = panel('No Fries ' + model.subscription, 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
+            const subscription = panel('Your plan: ' + planNames[model.subscription], 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
             subscription.classList.add('dashboard-subscription-panel'); main.append(subscription);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {
@@ -620,7 +635,7 @@
                 if (active()) handleLocation(eventType);
             });
         }
-        const controller = { refreshSavedData: function () {
+        const controller = { informationRead: informationRead, refreshSavedData: function () {
             if (!disposed && !navigation && current.key === 'overview' && child && typeof child.refreshSavedData === 'function') return child.refreshSavedData();
         }, navigate: function (route) { return navigate(route, true); }, requestLeave: function (commit) {
             if (disposed) return Promise.resolve(false);

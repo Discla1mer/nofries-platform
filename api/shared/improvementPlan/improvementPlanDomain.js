@@ -143,7 +143,12 @@ function commandValue(input) {
     } else if (row.type === 'block') {
         fields(row.payload, ['reason']); note(row.payload.reason);
     } else if (row.type === 'complete') {
-        fields(row.payload, ['note', 'evidenceReference']); note(row.payload.note); evidenceReference(row.payload.evidenceReference, row);
+        fields(row.payload, ['note', 'evidenceReference', ...(Object.hasOwn(row.payload || {}, 'nextReviewDate') ? ['nextReviewDate'] : [])]);
+        note(row.payload.note); evidenceReference(row.payload.evidenceReference, row);
+        if (Object.hasOwn(row.payload, 'nextReviewDate')) {
+            date(row.payload.nextReviewDate);
+            if (row.payload.nextReviewDate < row.at.slice(0, 10)) fail('date_invalid');
+        }
     } else if (row.type === 'reopen') {
         fields(row.payload, ['reason']); note(row.payload.reason);
     } else if (row.type === 'start') fields(row.payload, []);

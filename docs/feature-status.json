@@ -39,7 +39,7 @@
     {
       "id": "improvement-plan",
       "name": "Improvement plan with owners and due dates",
-      "status": "coming-next",
+      "status": "live",
       "roadmapTitle": "Improvement actions",
       "availabilityClaims": ["improvement plans?", "action plans?", "plan the way forward", "start improving", "track (?:your )?(?:improvements|remediation)"]
     },
@@ -47,7 +47,7 @@
       "id": "edit-submitted-answers",
       "name": "Edit a submitted assessment and refresh scores",
       "status": "coming-next",
-      "roadmapTitle": "Update answers and compare results",
+      "roadmapTitle": "Update submitted answers",
       "availabilityClaims": ["edit (?:a |your )?submitted"]
     },
     {

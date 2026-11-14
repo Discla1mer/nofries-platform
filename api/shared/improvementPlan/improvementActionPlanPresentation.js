@@ -47,6 +47,12 @@ function date(value) {
     if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) fail();
     instant(value + 'T00:00:00.000Z');
 }
+function reviewFields(value, at) {
+    if (!Object.hasOwn(value || {}, 'nextReviewDate')) return [];
+    date(value.nextReviewDate);
+    if (value.nextReviewDate < at.slice(0, 10)) fail();
+    return ['nextReviewDate'];
+}
 function countSet(value) {
     fields(value, ['total', 'unassigned', 'overdue', 'byStatus']);
     for (const key of ['total', 'unassigned', 'overdue']) integer(value[key], 4096);
@@ -79,7 +85,7 @@ function eventValue(event, model, revisions) {
     else if (event.type === 'block' || event.type === 'reopen') {
         fields(details, ['reason']); text(details.reason);
     } else {
-        fields(details, ['note', 'evidenceReference', 'evidenceVerification', 'durableLinkStatus']);
+        fields(details, ['note', 'evidenceReference', 'evidenceVerification', 'durableLinkStatus', ...reviewFields(details, event.at)]);
         text(details.note); evidenceReference(details.evidenceReference);
         if (details.evidenceVerification !== 'not_verified' || details.durableLinkStatus !== 'not_established') fail();
     }
@@ -100,7 +106,7 @@ function actionValue(action, model, revisions) {
     if (action.status === 'blocked') text(action.blockedReason);
     else if (action.blockedReason !== null) fail();
     if (action.status === 'completed') {
-        fields(action.completion, ['at', 'note']); instant(action.completion.at); text(action.completion.note);
+        fields(action.completion, ['at', 'note', ...reviewFields(action.completion, action.completion?.at)]); instant(action.completion.at); text(action.completion.note);
         if (action.completion.at < model.source.scoreAsOf || action.completion.at > model.updatedAt) fail();
     } else if (action.completion !== null) fail();
     if (action.isOverdue && (action.status === 'completed' || action.dueDate === null)) fail();

@@ -255,7 +255,7 @@ async function guardChecks(page, shell, width) {
     await link(page, 'overview').evaluate(node => { node.click(); node.click(); });
     await expectHeading(page, 'Services'); await openAssessment(page);
     assert.equal(await page.locator('.ncsc-question input[value="no"]').isChecked(), true);
-    assert.match(await page.locator('.ncsc-status').textContent(), /Saved revision 2/);
+    assert.match(await page.locator('.ncsc-status').textContent(), /Last saved .+ NZ time\./);
     assert.equal(await page.evaluate(() => window.menuSyntheticRequests.filter(row => row.method === 'POST').length), 1);
     // Existing secondary public links keep the loader's original leave guard.
     await page.locator('.ncsc-question input[value="partial"]').check();

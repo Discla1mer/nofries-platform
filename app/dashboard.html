@@ -26,12 +26,13 @@
         <section id="dashboardStatusPanel" aria-labelledby="dashboardHeading">
             <p class="eyebrow">Account</p>
             <h1 id="dashboardHeading" tabindex="-1">Opening your dashboard</h1>
-            <p id="dashboardMessage">We are checking your session before showing organisation information.</p>
+            <p id="dashboardMessage" aria-live="polite">We are checking your session before showing organisation information.</p>
             <p id="dashboardStatus" role="status" aria-live="polite">No organisation information is shown until access is confirmed.</p>
             <div class="dashboard-recovery-actions">
                 <button class="button" id="dashboardRetry" type="button" hidden>Retry</button>
                 <a class="button" id="dashboardSignIn" href="/api/auth/login?returnTo=%2Fdashboard" hidden>Sign in</a>
             </div>
+            <p class="dashboard-create-account" id="dashboardCreateAccount" hidden>New here? <a id="dashboardCreateAccountLink" href="/login?intent=create">Create an account</a></p>
             <div class="dashboard-account-menu" id="dashboardAccountMenu" hidden>
                 <button class="dashboard-account-toggle" id="dashboardAccountToggle" type="button" aria-expanded="false" aria-controls="dashboardAccountActions">Account</button>
                 <div class="dashboard-account-actions" id="dashboardAccountActions" hidden>

@@ -10,6 +10,7 @@
     // Bounded number of submitted results shown in the history. Each one is a
     // separate authorised read; nothing is cached across selections.
     const TREND_LIMIT = 5;
+    const SCOPE_OPTION_CHARS = 60;
     const copy = value => JSON.parse(JSON.stringify(value));
     const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
@@ -54,17 +55,24 @@
     // UTC calendar day basis. Owner names come only from ownerLabel.
     const ACTION_LIMIT = 3, DUE_SOON_DAYS = 14;
     const DAY = /^\d{4}-\d\d-\d\d$/;
+    function calendarDay(value) {
+        if (typeof value !== 'string' || !DAY.test(value)) return false;
+        const parsed = new Date(value + 'T00:00:00.000Z');
+        return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    }
     function actionSummary(input) {
         if (!input || !Array.isArray(input.lists) || typeof input.more !== 'boolean') return null;
         let today = null; const rows = [];
         for (const list of input.lists) {
-            if (!list || typeof list.asOf !== 'string' || !DAY.test(list.asOf.slice(0, 10)) || !Array.isArray(list.actions)) return null;
+            if (!list || typeof list.asOf !== 'string' || !calendarDay(list.asOf.slice(0, 10)) || !Array.isArray(list.actions)) return null;
             if (today === null || list.asOf.slice(0, 10) < today) today = list.asOf.slice(0, 10);
             for (const action of list.actions) {
                 if (!action || typeof action.actionId !== 'string' || typeof action.status !== 'string' ||
-                    typeof action.isOverdue !== 'boolean' || action.isOverdue && action.dueDate === null || action.dueDate !== null && !(typeof action.dueDate === 'string' && DAY.test(action.dueDate)) ||
+                    typeof action.isOverdue !== 'boolean' || action.isOverdue && action.dueDate === null || action.dueDate !== null && !calendarDay(action.dueDate) ||
                     !action.rationale || typeof action.rationale.suggestedAction !== 'string' || !action.rationale.suggestedAction.trim() ||
                     Object.hasOwn(action, 'ownerLabel') && typeof action.ownerLabel !== 'string') return null;
+                if (Object.hasOwn(action.completion || {}, 'nextReviewDate') &&
+                    (action.status !== 'completed' || !calendarDay(action.completion.nextReviewDate))) return null;
                 rows.push(action);
             }
         }
@@ -75,9 +83,20 @@
         const overdue = rows.filter(action => action.isOverdue).sort(byDue);
         const dueSoon = rows.filter(action => !action.isOverdue && action.status !== 'completed' && action.dueDate !== null &&
             action.dueDate >= today && action.dueDate <= horizon).sort(byDue);
+        // Use current completion only: a historical completion does not keep a
+        // reopened action on the review list. Never reopen or mark a review done.
+        const reviews = rows.filter(action => action.status === 'completed' && action.completion &&
+            Object.hasOwn(action.completion, 'nextReviewDate'))
+            .sort((a, b) => a.completion.nextReviewDate.localeCompare(b.completion.nextReviewDate) || a.actionId.localeCompare(b.actionId))
+            .map(action => ({ ...item(action), reviewDate: action.completion.nextReviewDate }));
+        const reviewsDue = reviews.filter(action => action.reviewDate <= today);
+        const reviewsSoon = reviews.filter(action => action.reviewDate > today && action.reviewDate <= horizon);
         return { total: rows.length, more: input.more,
             overdue: { count: overdue.length, items: overdue.slice(0, ACTION_LIMIT).map(item) },
-            dueSoon: { count: dueSoon.length, items: dueSoon.slice(0, ACTION_LIMIT).map(item) } };
+            dueSoon: { count: dueSoon.length, items: dueSoon.slice(0, ACTION_LIMIT).map(item) },
+            reviews: { total: reviews.length, asOfDay: today,
+                due: { count: reviewsDue.length, items: reviewsDue.slice(0, ACTION_LIMIT) },
+                soon: { count: reviewsSoon.length, items: reviewsSoon.slice(0, ACTION_LIMIT) } } };
     }
     const displayDay = value => new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeZone: 'UTC' })
         .format(new Date(value + 'T00:00:00.000Z'));
@@ -92,7 +111,7 @@
         if (!root || !root.ownerDocument || !options || !options.client ||
             typeof options.client.list !== 'function' || typeof options.client.read !== 'function' ||
             !options.metadata || typeof options.organisationId !== 'string' || !options.organisationId ||
-            !questionnaire || typeof questionnaire.resultModel !== 'function') throw new Error('picture_composition_required');
+            !questionnaire || typeof questionnaire.resultModel !== 'function' || typeof questionnaire.enoughAnswersToEstimate !== 'function') throw new Error('picture_composition_required');
         if (mounted.has(root)) mounted.get(root).destroy();
         const doc = root.ownerDocument, client = options.client, metadata = copy(options.metadata);
         const organisationId = options.organisationId, organisationName = options.displayName || organisationId;
@@ -112,6 +131,18 @@
             const value = doc.createElement(tag); if (cls) value.className = cls;
             if (text !== undefined) value.textContent = String(text); return value;
         }
+        // D-004: a scope written one item per line is shown as a list. The
+        // saved declaration is unchanged and remains the compared value.
+        function scopeText(description) {
+            const lines = String(description).split(/\r?\n/).map(line => line.trim().replace(/^[-*\u2022]\s+/, '')).filter(Boolean);
+            if (lines.length < 2) return node('p', 'ncsc-preserve-text', description);
+            const list = node('ul', 'ncsc-scope-list');
+            lines.forEach(line => list.append(node('li', 'ncsc-preserve-text', line)));
+            return list;
+        }
+        // One live region for the whole view, kept across repaints so screen
+        // readers hear both "Loading…" and the end of loading.
+        const liveStatus = node('p', 'picture-status'); liveStatus.setAttribute('role', 'status');
         function button(label, action) {
             const control = node('button', 'dashboard-button', label); control.type = 'button';
             control.addEventListener('click', () => { if (live() && !denied) action(); }); return control;
@@ -242,7 +273,7 @@
             progress.max = detail.progress.total; progress.value = detail.progress.answered;
             progress.setAttribute('aria-label', 'Saved responses');
             const scope = node('section', 'picture-scope');
-            scope.append(node('h3', '', 'Scope'), node('p', 'ncsc-preserve-text', detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.'));
+            scope.append(node('h3', '', 'Scope'), scopeText(detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.'));
             draft.append(heading, saved, progress, scope,
                 node('p', 'dashboard-muted', 'Saved progress is not a score. Submit this assessment when it is ready; unknown answers remain visible as uncertainty.'));
             root.append(draft);
@@ -252,7 +283,8 @@
         // never changes the assessment picture below it.
         function placeActions() {
             const previous = root.querySelector('.picture-actions'); if (previous) previous.remove();
-            if (!live() || denied || !actions) return;
+            // Before any submitted result there is nothing to act on yet.
+            if (!live() || denied || !actions || !actions.total && !rows.some(row => row.status === 'submitted')) return;
             const card = node('section', 'picture-actions'), heading = node('h3', '', 'Actions');
             heading.id = id + '-actions'; card.setAttribute('aria-labelledby', heading.id); card.append(heading);
             const gaps = root.querySelector('.picture-top-gaps');
@@ -271,19 +303,24 @@
                 } else empty.append(node('span', '', 'Start with your top three gaps.'));
                 card.append(empty); root.prepend(card); return;
             }
-            [['Overdue', actions.overdue], ['Due in the next 14 days', actions.dueSoon]].forEach(([label, group]) => {
+            const groups = [['Overdue', actions.overdue], ['Due in the next 14 days', actions.dueSoon]];
+            if (actions.reviews.total) groups.push(['Reviews due', actions.reviews.due], ['Reviews in the next 14 days', actions.reviews.soon]);
+            groups.forEach(([label, group]) => {
                 card.append(node('h4', '', label + ' (' + group.count + ')'));
                 if (!group.items.length) return;
                 const list = node('ul', 'picture-actions-list');
                 group.items.forEach(entry => {
                     const row = node('li', 'picture-action');
                     row.append(node('span', 'picture-action-title', entry.title),
-                        node('span', 'picture-action-meta dashboard-muted', 'Due ' + displayDay(entry.dueDate) +
+                        node('span', 'picture-action-meta dashboard-muted', (entry.reviewDate ? 'Review ' + displayDay(entry.reviewDate) : 'Due ' + displayDay(entry.dueDate)) +
                             (entry.owner ? ' · Owner: ' + entry.owner : '')));
                     list.append(row);
                 });
                 card.append(list);
             });
+            if (actions.reviews.total) card.append(node('p', 'picture-review-note dashboard-muted',
+                'Review dates use saved action records, checked against ' + displayDay(actions.reviews.asOfDay) + ' (UTC). ' +
+                'A review date does not confirm a review took place, verify evidence or change a score.'));
             if (actions.more) card.append(node('p', 'dashboard-muted', 'Counts cover the first five saved plans.'));
             const full = node('a', 'picture-actions-plan', 'View the full plan'); full.href = '#improvement-plan';
             full.addEventListener('click', event => { event.preventDefault(); if (live() && !denied) openImprovement(); });
@@ -292,29 +329,37 @@
         function paint() {
             if (!live()) return;
             clearExplanation();
-            root.replaceChildren(); root.classList.add('organisation-picture');
+            Array.from(root.children).forEach(child => { if (child !== liveStatus) child.remove(); });
+            root.classList.add('organisation-picture');
+            if (liveStatus.parentElement !== root) root.append(liveStatus);
             const isEmpty = !loading && !rows.length && loaded && !message && !selected && after === null;
             if (!isEmpty) {
                 const header = node('header', 'picture-heading');
                 header.append(node('h2', '', 'Cyber baseline'),
                     node('p', 'dashboard-muted', 'A saved assessment of the selected scope, not a live check of connected systems.'));
-                root.append(header);
+                root.prepend(header);
             }
-            const status = node('p', 'picture-status', message || (loading ? 'Loading saved assessment…' : ''));
-            status.setAttribute('role', 'status'); status.hidden = !message && !loading; root.append(status);
+            // After loading, the status stays in place but only for screen readers.
+            const done = detail ? 'Saved assessment loaded.' : isEmpty ? 'No saved assessments yet.' : loaded ? 'Saved assessments loaded.' : '';
+            const text = message || (loading ? 'Loading saved assessment…' : done);
+            if (liveStatus.textContent !== text) liveStatus.textContent = text;
+            liveStatus.className = message || loading ? 'picture-status' : 'picture-status picture-status-quiet';
             if (denied) return;
+            // Self-reported answer date and saved-assessment refresh time are
+            // separate claims. The first-use state keeps main's single action.
             if (detail) {
                 const facts = node('p', 'picture-source');
                 facts.append(node('strong', '', (detail.status === 'submitted' ? 'Answers submitted: ' : 'Answers saved: ') +
                     displayDate(detail.updatedAt)), node('br'), node('span', '', 'Source: self-reported assessment answers.'));
                 root.append(facts);
             }
-            if (checkedAt || !message) {
+            if (!isEmpty && (checkedAt || !message)) {
                 const note = node('p', 'picture-refresh-note dashboard-muted'); note.setAttribute('role', 'status');
                 root.append(note); freshness();
             }
             if (!loading && !message && rows.length) savedWork();
-            if (allowance) {
+            function appendAllowance() {
+                if (!allowance) return;
                 // Plan usage in plain English, so the limit is known before starting work.
                 const exhausted = allowance.used >= allowance.limit;
                 const usage = node('p', exhausted ? 'ncsc-warning picture-allowance' : 'dashboard-muted picture-allowance',
@@ -324,6 +369,7 @@
                 if (exhausted) { const contact = node('a', '', 'Contact No Fries about more submissions'); contact.href = '/contact.html'; usage.append(contact); }
                 root.append(usage);
             }
+            if (!isEmpty) appendAllowance();
             if (detail && detail.status !== 'submitted') renderResume();
             if (rows.length) {
                 const toolbar = node('div', 'picture-toolbar');
@@ -335,7 +381,15 @@
                     if (answered === null) return row.status === 'created' ? 'Not started' : 'In progress';
                     return answered > 0 ? 'In progress' : 'Not started';
                 };
-                const labelFor = row => (row.scopePopulation ? row.scopePopulation.description + ' · ' : '') +
+                // Long scopes hid the status and date. Shorten the scope in the
+                // option; the full text is its tooltip and is shown under Scope.
+                const shortScope = text => {
+                    const flat = text.replace(/\s+/g, ' ').trim();
+                    return flat.length > SCOPE_OPTION_CHARS ? flat.slice(0, SCOPE_OPTION_CHARS - 1).trimEnd() + '…' : flat;
+                };
+                const labelFor = row => (row.scopePopulation ? shortScope(row.scopePopulation.description) + ' · ' : '') +
+                    pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
+                const fullLabelFor = row => (row.scopePopulation ? row.scopePopulation.description.replace(/\s+/g, ' ').trim() + ' · ' : '') +
                     pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
                 const labelCounts = new Map(), referenceCounts = new Map();
                 rows.forEach(row => {
@@ -350,9 +404,12 @@
                     const suffix = duplicate ? ' · ' + (ambiguous ? row.assessmentId
                         : reference + (row.assessmentId.length > 8 ? '…' : '')) : '';
                     const item = node('option', '', label + suffix);
+                    item.title = fullLabelFor(row) + suffix;
                     item.value = row.assessmentId; picker.append(item);
                 });
                 picker.value = selected;
+                const chosen = Array.from(picker.querySelectorAll('option')).find(item => item.value === selected);
+                if (chosen) picker.title = chosen.title;
                 picker.addEventListener('change', () => { if (live() && !denied) read(picker.value, 'user'); });
                 const refresh = button('Refresh', () => load(false)); refresh.disabled = loading;
                 refresh.classList.add('dashboard-button-secondary');
@@ -363,15 +420,24 @@
                 if (!detail) root.append(node('p', 'dashboard-muted', 'Refresh reloads saved assessments. It does not check whether answers still reflect the organisation today.'));
             }
             if (isEmpty) {
+                // A new organisation leads with one plain action, before any detail.
                 const empty = node('section', 'picture-first-use');
                 empty.append(node('p', 'picture-first-use-eyebrow', 'Welcome to No Fries'),
-                    node('h2', '', 'Build your first baseline'),
-                    node('p', 'picture-first-use-intro', 'No saved assessments yet. A cyber assessment helps you understand where you stand.'));
+                    node('h2', '', 'Start your cyber check'),
+                    node('p', 'picture-first-use-intro', 'No saved assessments yet. Answer questions about your business to see where you stand and what to fix first.'));
+                if (typeof options.openCyber === 'function') {
+                    const token = epoch;
+                    const action = button('Start your cyber check', () => {
+                        if (live(token) && !loading && !message && !rows.length && !selected && after === null &&
+                            action.parentElement === empty && empty.parentElement === root) options.openCyber(undefined, { startNew: true });
+                    });
+                    action.classList.add('picture-first-use-action'); empty.append(action);
+                }
                 const steps = node('ol', 'picture-first-use-steps'); steps.setAttribute('role', 'list');
                 [
-                    ['Assessment', 'Answer questions about your chosen scope.'],
-                    ['Results', 'Submit to see your saved baseline and its limitations.'],
-                    ['Next steps', 'Review follow-up points from your results.']
+                    ['Answer the questions', 'Tell us what is in place for the part of your business you choose.'],
+                    ['See your results', 'Submit your answers to see where you stand.'],
+                    ['Fix the gaps', 'Get your top three gaps and plan what to do next.']
                 ].forEach((step, index) => {
                     const item = node('li', 'picture-first-use-step');
                     const number = node('span', 'picture-first-use-number', String(index + 1));
@@ -381,15 +447,8 @@
                     item.append(number, content); steps.append(item);
                 });
                 empty.append(steps);
-                if (typeof options.openCyber === 'function') {
-                    const token = epoch;
-                    const action = button('Open assessment', () => {
-                        if (live(token) && !loading && !message && !rows.length && !selected && after === null &&
-                            action.parentElement === empty && empty.parentElement === root) options.openCyber(undefined, { startNew: true });
-                    });
-                    action.classList.add('picture-first-use-action'); empty.append(action);
-                }
                 root.append(empty);
+                appendAllowance();
             }
             if (message && !loading) root.append(button('Retry', () => { if (retry) retry(); }));
             if (!detail) return;
@@ -397,7 +456,7 @@
                 root.append(sourceDetails()); return;
             }
             const scope = node('section', 'picture-scope');
-            scope.append(node('h3', '', 'Scope'), node('p', 'ncsc-preserve-text', detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.')); root.append(scope);
+            scope.append(node('h3', '', 'Scope'), scopeText(detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.')); root.append(scope);
             const result = questionnaire.resultModel(detail, metadata, organisationId);
             if (!result) { root.append(node('p', 'ncsc-warning', 'Results are unavailable for this saved submission. No score has been inferred.'), sourceDetails()); return; }
             if (typeof options.openCyber === 'function') root.append(openSavedAssessment('View saved assessment'));
@@ -432,18 +491,16 @@
             }
         }
         const newestFirst = (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId);
-        // Display-only view over results the validator already accepted. It
-        // subtracts saved percentages for display and never re-scores answers.
+        // Display-only view over results the validator already accepted. The
+        // contract pins the profile and included question set, but contains no
+        // evidence that two declarations cover the same real-world population.
+        // Neither equal descriptions nor record-bound scope hashes establish it.
         function trendPoint(value, result) {
-            const attainment = value.submission.evaluation.attainment;
             return { assessmentId: value.assessmentId, submittedAt: value.updatedAt, scope: value.scopePopulation.description,
-                attainment: result.attainment, lower: attainment.lowerPercentTenths,
-                domains: result.domains.map(domain => ({ title: domain.title, attainment: domain.attainment, lower: domain.lowerPercentTenths })) };
-        }
-        function changeText(before, after) {
-            if (before === null || after === null) return 'Not comparable';
-            const difference = after - before, points = (Math.abs(difference) / 10).toFixed(1);
-            return difference === 0 ? 'No change' : (difference > 0 ? 'Up ' : 'Down ') + points + (points === '1.0' ? ' point' : ' points');
+                attainment: result.attainment, total: result.total,
+                answered: new Set(result.domains.flatMap(domain => domain.controls.flatMap(control => control.questions))
+                    .filter(question => ['yes', 'partial', 'no'].includes(question.responseOptionId)).map(question => question.itemId)),
+                domains: result.domains.map(domain => ({ title: domain.title, attainment: domain.attainment })) };
         }
         function trendSection(result) {
             const section = node('section', 'picture-trend'), key = epoch + ':' + detail.assessmentId;
@@ -495,7 +552,7 @@
             if (trend.status === 'idle') {
                 const others = trend.reads.length, state = trend, token = epoch;
                 section.append(node('p', '', (others === 1 ? 'There is 1 other submitted assessment.'
-                    : 'There are ' + others + ' other submitted assessments.') + ' Compare results to see what has changed.'));
+                    : 'There are ' + others + ' other submitted assessments.') + ' Compare saved results and answer coverage.'));
                 const action = button(trend.previousId ? (after !== null ? 'Compare with an earlier assessment'
                     : 'Compare with previous assessment') : 'Compare with later assessments',
                     () => compareTrend(state, token, action));
@@ -509,7 +566,7 @@
                 section.append(node('p', 'dashboard-muted', 'Earlier results could not be loaded, so no change is shown. Refresh to try again.')); return heading;
             }
             if (trend.total === 1) {
-                section.append(node('p', '', 'This is the only submitted assessment so far. Submit another assessment later to see what has changed since this one.'));
+                section.append(node('p', '', 'This is the only submitted assessment so far. Another submitted assessment is needed to compare saved results and answer coverage.'));
                 if (after !== null) section.append(node('p', 'dashboard-muted', 'Other saved assessments may not be loaded yet. Load more to include them.'));
                 return heading;
             }
@@ -517,31 +574,38 @@
             // While pages remain unloaded, an unseen submission may fall between
             // these two, so do not call the comparison "the previous assessment".
             const incomplete = after !== null, earlier = incomplete ? 'Earlier' : 'Previous';
-            if (!trend.previousId) section.append(node('p', '', 'This is the earliest submitted assessment shown, so there is nothing earlier to compare it with. Choose a later assessment to see what changed.'));
+            if (!trend.previousId) section.append(node('p', '', 'This is the earliest submitted assessment shown, so there is nothing earlier to compare it with. Choose a later assessment to compare saved results and answer coverage.'));
             else if (!previous) section.append(node('p', '', (incomplete ? 'The earlier' : 'The previous') + ' assessment\'s results could not be shown, so no change is shown.'));
             else {
                 section.append(node('p', '', incomplete
                     ? 'Compared with the most recent earlier assessment loaded so far, submitted ' + displayDate(previous.submittedAt) +
                         '. Other saved assessments are not loaded yet, so there may be one in between. Load more to check.'
                     : 'Compared with the previous assessment, submitted ' + displayDate(previous.submittedAt) + '.'));
-                if (previous.scope !== current.scope) section.append(node('p', 'ncsc-warning',
-                    'The two assessments describe their scope differently. Some of the change may come from the different scope rather than from changes in the organisation.'));
+                const shared = [...previous.answered].filter(itemId => current.answered.has(itemId)).length;
+                const sameCoverage = previous.total === current.total && shared === previous.answered.size && shared === current.answered.size;
+                section.append(node('p', 'picture-trend-coverage', 'Question coverage: ' + earlier + ' ' +
+                    previous.answered.size + ' of ' + previous.total + '; selected ' + current.answered.size + ' of ' + current.total +
+                    ' answered Yes, Partial or No. ' + shared + ' questions have one of these answers in both. Unknown and unapproved N/A answers remain unresolved.'));
+                section.append(node('p', 'ncsc-warning', 'Not comparable as improvement or decline: ' +
+                    (previous.scope !== current.scope ? 'the saved scope declarations differ.'
+                        : 'matching saved scope descriptions do not establish the same real-world population.') +
+                    (!sameCoverage ? ' The set of questions answered Yes, Partial or No also differs.' : '') +
+                    ' Saved ranges are shown separately; no change is calculated.'));
                 const table = node('table', 'picture-trend-table');
-                table.append(node('caption', '', 'Reported implementation, ' + earlier.toLowerCase() + ' and now'));
+                table.append(node('caption', '', 'Reported implementation, ' + earlier.toLowerCase() + ' and selected'));
                 const head = node('thead'), headRow = node('tr');
-                ['Area', earlier, 'Now', 'Change'].forEach(label => { const cell = node('th', '', label); cell.setAttribute('scope', 'col'); headRow.append(cell); });
+                ['Area', earlier, 'Selected'].forEach(label => { const cell = node('th', '', label); cell.setAttribute('scope', 'col'); headRow.append(cell); });
                 head.append(headRow);
                 const body = node('tbody');
                 const line = (label, before, now) => {
                     const row = node('tr'), title = node('th', '', label); title.setAttribute('scope', 'row');
-                    row.append(title, node('td', '', before.attainment), node('td', '', now.attainment),
-                        node('td', 'picture-trend-change', changeText(before.lower, now.lower)));
+                    row.append(title, node('td', '', before.attainment), node('td', '', now.attainment));
                     body.append(row);
                 };
                 line('Overall', previous, current);
                 current.domains.forEach((domain, position) => line(domain.title, previous.domains[position], domain));
                 table.append(head, body); section.append(table,
-                    node('p', 'dashboard-muted', 'Change compares the lower figure in each range: what was reported as in place. Unknown answers and Not applicable answers waiting for review are not counted as in place. These are self-reported answers, not a risk trend or proof that controls work.'));
+                    node('p', 'dashboard-muted', 'Both saved results use the accepted profile and included question weights. Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown answers and unapproved N/A still contribute to the upper bound; no subset is re-scored.'));
             }
             section.append(node('h4', '', 'Submitted assessments'));
             const list = node('ol', 'picture-trend-history');
@@ -581,6 +645,46 @@
                 list.append(item);
             });
             section.append(list, helpPanel()); return section;
+        }
+        // Information needs are saved answers, not unanswered questions or a
+        // risk ranking. Reuse the existing plan handoff without creating a plan.
+        function informationSection(result) {
+            const section = node('section', 'picture-information');
+            const heading = node('h3', '', 'Information to confirm');
+            heading.id = id + '-information'; section.setAttribute('aria-labelledby', heading.id);
+            section.append(heading);
+            const indexed = new Map(result.domains.flatMap(domain => domain.controls.flatMap(control =>
+                control.questions.map(question => [question.itemId, question]))));
+            const questions = metadata.questions.map(question => indexed.get(question.id))
+                .filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId));
+            const unknown = questions.filter(question => question.responseOptionId === 'unknown').length;
+            const pending = questions.length - unknown;
+            section.append(node('p', '', unknown + ' saved Unknown ' + (unknown === 1 ? 'answer' : 'answers') +
+                ' · ' + pending + ' saved Not applicable ' + (pending === 1 ? 'answer' : 'answers') + ' awaiting review.'),
+                node('p', 'dashboard-muted', 'These are saved answers to confirm, not unanswered questions or a risk score.'));
+            if (!questions.length) {
+                section.append(node('p', '', 'No information requests are suggested by these saved answers. This does not verify that controls are effective.'));
+                return section;
+            }
+            const list = node('ul', 'picture-information-list');
+            questions.forEach(question => {
+                const item = node('li');
+                item.append(node('h4', '', question.prompt), node('p', '', question.responseOptionId === 'unknown'
+                    ? 'Saved answer: Unknown. Find out what is in place.'
+                    : 'Saved answer: Not applicable, awaiting review. Confirm whether this applies to the assessment scope.'));
+                list.append(item);
+            });
+            section.append(list);
+            if (openImprovement && improvementSelection()) {
+                const token = epoch, binding = sourceBinding();
+                const action = button('Open plan for information requests', () => {
+                    if (!currentSubmitted(token, binding, action)) return;
+                    const selection = improvementSelection(); if (selection) openImprovement(selection);
+                });
+                section.append(node('p', 'dashboard-muted', 'Opening the plan creates or sends nothing. An authorised editor must choose Create improvement plan for this assessment to save requests. This may also create other recommended actions.'), action,
+                    node('p', 'dashboard-muted', 'Use the plan to agree who will find the information and when. Completing an action does not approve a Not applicable answer, verify a control or change assessment scores.'));
+            } else section.append(node('p', 'dashboard-muted', 'This view only lists information needs. Use the questions above to agree who will find the information and when to review it. No requests have been created or sent.'));
+            return section;
         }
         // "Plan this" asks the host to open the improvement editor at this gap's
         // action, creating the plan for this exact submitted revision only if
@@ -669,6 +773,15 @@
                 clearTimeout(timer); controller.abort();
             }
         }
+        // Lead with the reported (lower) figure and explain both figures in plain words.
+        function leadWithLowerBound(card, model) {
+            const value = card.querySelector('.picture-large');
+            if (!value || !model.lowerDisplay || model.lowerDisplay === model.upperDisplay || value.textContent !== model.attainment) return;
+            value.textContent = model.lowerDisplay + ' in place';
+            card.replaceChildren(card.querySelector('h3'), value,
+                node('p', 'picture-metric-upper', 'Up to ' + model.upperDisplay + ' if every answer still to confirm turns out to be in place.'),
+                node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. It is not a performance score.'));
+        }
         function renderResult(result) {
             root.append(gapSection(result));
             const metrics = node('div', 'picture-metrics');
@@ -677,12 +790,18 @@
                 card.append(node('h3', '', label), node('strong', 'picture-large', value), node('p', '', copyText)); metrics.append(card); return card;
             }
             const awaitingReview = result.pending + (result.pending === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm';
-            const implementationMetric = metric('Reported implementation', result.attainment,
-                'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm. It is not a performance score.', true);
-            const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' unknown or unresolved, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
-            root.append(metrics);
+            const rangeHelp = 'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm. It is not a performance score.';
+            // A submitted result is read-only, so do not ask the customer to confirm answers here.
+            const implementationMetric = questionnaire.enoughAnswersToEstimate(result)
+                ? metric('Reported implementation', result.attainment, rangeHelp, true)
+                : metric('Reported implementation', 'Not enough answers to estimate yet', 'Only ' + result.completed + ' of ' + result.total +
+                    ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
+                    (typeof options.openCyber === 'function' ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp, true);
+            const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
+            root.append(metrics, informationSection(result));
             const domains = node('section', 'picture-domains');
             domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm. The range is not a performance score.'));
+            leadWithLowerBound(implementationMetric, result);
             result.domains.forEach(domain => {
                 const row = node('div', 'picture-domain');
                 const label = node('strong', '', domain.title), value = node('span', '', domain.attainment);
@@ -726,7 +845,7 @@
             const ordered = metadata.questions.map(question => indexed.get(question.id));
             const categories = [
                 ['Unresolved answers', ordered.filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId)),
-                    result.unknown ? result.unknown + ' unknown or unresolved answers: confirm the position. Not applicable answers count as not yet met until a reviewer confirms them. Reviews are coming soon.'
+                    result.unknown ? result.unknown + ' answers still to confirm: check the position. Not applicable answers count as not yet met until a reviewer confirms them. Reviews are coming soon.'
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
                 ['Reported implementation gaps', ordered.filter(question => ['partial', 'no'].includes(question.responseOptionId)),
                     result.partial || result.no ? result.partial + ' partial and ' + result.no + ' absent implementations: review the relevant questions before agreeing improvements.'
