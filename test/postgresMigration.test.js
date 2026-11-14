@@ -76,6 +76,7 @@ require('./integration/lifecycleEmailOutboxPostgres')();
 require('./integration/emailDispatcherSubjectLookupPostgres')();
 require('./integration/lifecycleEmailDispatcherPostgres')();
 require('./integration/lifecycleEmailUnsubscribePostgres')();
+require('./integration/lifecycleEmailSettingsPostgres')();
 // restrictedMaintenancePostgres: private controller integration suite remains private.
 // databasePublicHardeningPostgres: private controller integration suite remains private.
 
