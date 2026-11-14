@@ -27,11 +27,11 @@ function account(n, { email = `customer${n}@example.test`, type = 'company', act
         accountType: type, expiresAt: NOW - 1000 };
     return { record, authority, subjectKey };
 }
-function container(blobs) {
+function container(blobs, created = new Map()) {
     return {
         listBlobsFlat({ prefix }) {
             const names = [...blobs.keys()].sort().filter(name => name.startsWith(prefix));
-            const iterator = (async function* () { for (const name of names) yield { name }; }());
+            const iterator = (async function* () { for (const name of names) yield { name, properties: { createdOn: created.get(name) } }; }());
             iterator.byPage = () => (async function* () { yield { segment: { blobItems: names.map(name => ({ name })) }, continuationToken: undefined }; }());
             return iterator;
         },
@@ -74,6 +74,21 @@ test('selectors are returned only when actions are composed, and never for a mis
     expect(rows[0].selector).toEqual({ provider: 'external', subjectKey: good.subjectKey,
         tenantId: good.record.organisations[0].tenantId, organisationId: good.record.organisations[0].organisationId });
     expect(rows[1]).toMatchObject({ signIn: 'invalid' }); expect(rows[1].selector).toBeUndefined();
+});
+
+test('the cap keeps the newest accounts across both stores, not the first names scanned', async () => {
+    const legacyBlobs = new Map(), externalBlobs = new Map(), legacyCreated = new Map(), externalCreated = new Map();
+    for (let n = 1; n <= MAX_ACCOUNTS; n += 1) {
+        const old = account(1000 + n, { createdAt: NOW - 10 * 86400000 - n * 1000 }); put(legacyBlobs, old, { authority: false });
+        legacyCreated.set('customer-starter/' + starterAccountKey(old.record.email) + '.json', new Date(Date.parse(old.record.createdAt)));
+    }
+    const fresh = account(1, { createdAt: NOW - 1000 }); put(externalBlobs, fresh, { authority: false });
+    externalCreated.set('customer-starter/' + starterAccountKey(fresh.record.email) + '.json', new Date(NOW - 1000));
+    const result = await createAccountListReader([{ source: { ...source, kind: 'legacy_starter', providerKind: 'workforce-b2b' }, container: container(legacyBlobs, legacyCreated) },
+        { source, container: container(externalBlobs, externalCreated) }], () => NOW)(signal());
+    expect(result.truncated).toBe(true); expect(result.rows).toHaveLength(MAX_ACCOUNTS);
+    expect(result.rows[0].email).toBe('customer1@example.test');
+    expect(result.rows.map(row => row.email)).not.toContain(`customer${1000 + MAX_ACCOUNTS}@example.test`);
 });
 
 test('the legacy admin store is not scanned, unreadable records are flagged and the list is capped', async () => {
