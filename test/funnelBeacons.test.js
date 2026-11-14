@@ -151,6 +151,7 @@ test('SWA lets anonymous visitors POST counts, and only POST, to the exact telem
     // already sends the full private API security headers on every answer.
     expect(rule).toEqual({ route: '/api/telemetry', methods: ['POST'], allowedRoles: ['anonymous'], headers: { 'Cache-Control': 'no-store' } });
     expect(config.routes.indexOf(rule)).toBeLessThan(config.routes.findIndex(item => item.route === '/api/*'));
+    expect(config.routes.filter(item => item.route === '/api/telemetry')).toHaveLength(1);
     for (const method of ['GET', 'PUT', 'DELETE']) expect(edgeRule('/api/telemetry', method)).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
     expect(edgeRule('/api/telemetry/x', 'POST')).toMatchObject({ route: '/api/*', allowedRoles: ['authenticated'] });
 });
