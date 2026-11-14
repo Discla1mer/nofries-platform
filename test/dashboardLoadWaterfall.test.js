@@ -80,19 +80,22 @@ function harness(route, failure) {
 beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date(NOW)); });
 afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
 
-test.each(['overview', 'cyber-security'])('%s reaches saved data in six controlled network waves', async route => {
+// Five waves: session -> directory + projection -> assets + Cyber Security module -> closing session witness -> saved list.
+// #343 starts the module read as soon as the projection lists it ready, beside the protected assets, so mount is at
+// 450 ms (was 540 ms with a separate module wave). Assets still wait for both middle reads; nothing mounts before the witness.
+test.each(['overview', 'cyber-security'])('%s reaches saved data in five controlled network waves', async route => {
     const h = harness(route);
-    await jest.advanceTimersByTimeAsync(539);
+    await jest.advanceTimersByTimeAsync(449);
     expect(h.mounts).toEqual([]);
     await jest.advanceTimersByTimeAsync(1);
-    expect(h.mounts).toEqual([540]);
+    expect(h.mounts).toEqual([450]);
     expect(h.trace.map(({ url, start }) => [url, start])).toEqual([
-        [SESSION, 0], [DIRECTORY, 70], [BOOTSTRAP, 70], [SCRIPT, 250], [STYLE, 250], [MODULE, 380], [SESSION, 470], [LIST, 540]
+        [SESSION, 0], [DIRECTORY, 70], [BOOTSTRAP, 70], [MODULE, 250], [SCRIPT, 250], [STYLE, 250], [SESSION, 380], [LIST, 450]
     ]);
     await jest.advanceTimersByTimeAsync(109);
     expect(h.elements.dashboardApp.textContent).not.toContain('No saved assessments yet.');
     await jest.advanceTimersByTimeAsync(1);
-    expect(h.trace.at(-1).end).toBe(650);
+    expect(h.trace.at(-1).end).toBe(560);
     expect(h.document.body.dataset.dashboardState).toBe('ready');
     expect(h.elements.dashboardApp.textContent).toContain('No saved assessments yet.');
     expect(h.elements.dashboardApp.textContent).not.toMatch(/Loading saved|Loading assessment/);
