@@ -86,13 +86,16 @@ test('a ready shell with an unsettled questionnaire request cannot pass the help
     }
 });
 
-test('a returning consultant explicitly chooses an organisation through the delivered loader before opening its workspace', async () => {
+test('a returning consultant resumes the selected workspace and can explicitly open the organisation chooser', async () => {
     const app = application(undefined, true);
-    const portfolio = await servedDashboard({ app, cookie: '', now: NOW, origin: 'https://nofries.example.test' });
+    const resumed = await servedDashboard({ app, cookie: '', now: NOW, origin: 'https://nofries.example.test' });
+    expect({ state: resumed.state, hidden: resumed.hidden }).toEqual({ state: 'ready', hidden: false });
+    expect(resumed.trace.some(entry => entry.url === '/api/dashboard/selection')).toBe(false);
+    const portfolio = await servedDashboard({ app, cookie: '', now: NOW, origin: 'https://nofries.example.test', hash: '#organisations' });
     expect({ state: portfolio.state, hidden: portfolio.hidden }).toEqual({ state: 'selection', hidden: true });
     expect(portfolio.trace.some(entry => entry.url === '/api/dashboard/selection')).toBe(false);
     const selected = await servedDashboard({ app, cookie: '', now: NOW, origin: 'https://nofries.example.test',
-        chooseOrganisationLabel: 'Synthetic workshop' });
+        hash: '#organisations', chooseOrganisationLabel: 'Synthetic workshop' });
     expect(selected.trace).toContainEqual({ url: '/api/dashboard/selection', method: 'post', status: 200 });
     expect({ state: selected.state, hidden: selected.hidden }).toEqual({ state: 'ready', hidden: false });
 });

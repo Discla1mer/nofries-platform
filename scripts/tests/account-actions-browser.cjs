@@ -26,8 +26,7 @@ const gateway = buildGatewayDocument({ customerLogin: true, template: read('inde
     protectedAppSource: bundleFiles.map(file => read('api/shared/protectedAssets/' + file + '.js')).join('\n') });
 const signup = buildHostedSignupDocument({ clientSource: read('api/shared/customerSignup/signupClient.js'),
     journeySource: read('api/shared/customerSignup/signupJourney.js') });
-const assets = ['style.css', 'home.css', 'js/organisation-setup.js', 'js/home.js', 'js/prospect-assistant.js',
-    'images/nofrieslogo.png', 'favicon.svg'];
+const assets = ['style.css', 'home.css', 'js/organisation-setup.js', 'js/home.js', 'images/nofrieslogo.png', 'favicon.svg'];
 const sources = [...changed, 'lib/signupDocument.js', 'lib/gatewayDocument.js', 'js/dashboard-loader.js',
     'api/shared/customerSignup/signupClient.js', 'scripts/tests/account-actions-browser.cjs'];
 const hashes = () => Object.fromEntries(sources.map(file => [file, createHash('sha256').update(read(file)).digest('hex')]));
@@ -144,13 +143,13 @@ async function geometry(page, name) {
             // A deliberate fresh navigation performs the existing authority
             // read. The unavailable view has no in-place status retry action.
             await page.reload();
-            await page.getByRole('button', { name: 'Resume workspace setup', exact: true }).waitFor();
+            await page.getByRole('button', { name: 'Resume organisation setup', exact: true }).waitFor();
             assert.equal(await page.locator('#signup h1').evaluate(el => el === document.activeElement), true);
             assert.equal(await page.locator('.signup-help').isVisible(), false);
             assert.equal(requests.slice(interruptedReadStart).filter(request => request.pathname === '/api/external-customer-signup/state').length, 2);
             await geometry(page, 'signup-recovered-' + width);
             await page.reload();
-            await page.getByRole('button', { name: 'Resume workspace setup', exact: true }).waitFor();
+            await page.getByRole('button', { name: 'Resume organisation setup', exact: true }).waitFor();
             results.push({ width, unavailableHasFixedCode: true, unavailableHasNoStatusRetry: true,
                 freshNavigationRecovery: true, savedSetupReload: true });
             await context.close();

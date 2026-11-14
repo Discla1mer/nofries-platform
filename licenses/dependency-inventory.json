@@ -1172,7 +1172,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@hono/node-server",
-      "version": "2.1.1",
+      "version": "2.1.8",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -2332,7 +2332,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@nodable/entities",
-      "version": "2.1.1",
+      "version": "3.1.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -3675,6 +3675,14 @@
     },
     {
       "lockfile": "package-lock.json",
+      "path": "node_modules/anynum",
+      "version": "1.0.1",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
       "path": "node_modules/apparatus",
       "version": "0.0.10",
       "license": "MIT",
@@ -3844,7 +3852,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/basic-ftp",
-      "version": "6.2.1",
+      "version": "6.2.6",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -4988,7 +4996,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/fast-xml-builder",
-      "version": "1.2.0",
+      "version": "1.3.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -4996,7 +5004,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/fast-xml-parser",
-      "version": "5.8.0",
+      "version": "5.12.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -5428,7 +5436,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/hono",
-      "version": "4.13.11",
+      "version": "4.13.18",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -5727,6 +5735,14 @@
       "version": "2.1.0",
       "license": "MIT",
       "development": true,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/is-unsafe",
+      "version": "2.0.3",
+      "license": "MIT",
+      "development": false,
       "optional": false
     },
     {
@@ -7108,7 +7124,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/path-expression-matcher",
-      "version": "1.5.0",
+      "version": "1.6.2",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -8524,7 +8540,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/strnum",
-      "version": "2.3.0",
+      "version": "2.5.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9004,7 +9020,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/xml-naming",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9268,7 +9284,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/@nodable/entities",
-      "version": "3.0.0",
+      "version": "3.1.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9364,7 +9380,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/fast-xml-builder",
-      "version": "1.3.0",
+      "version": "1.3.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9372,7 +9388,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/fast-xml-parser",
-      "version": "5.10.1",
+      "version": "5.12.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9412,7 +9428,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/is-unsafe",
-      "version": "2.0.0",
+      "version": "2.0.3",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9660,7 +9676,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/strnum",
-      "version": "2.4.1",
+      "version": "2.5.1",
       "license": "MIT",
       "development": false,
       "optional": false

@@ -35,7 +35,8 @@ describe('one verified public No Fries knowledge source', () => {
         ['I need help resuming assessments', 'assessment_progress', 'same account'],
         ['I want to see my assessment score', 'saved_results', 'submitted answers'],
         ['Explain my assessment score', 'saved_results', 'cannot inspect'],
-        ['Can I change my saved assessment answers?', 'feature_availability', 'planned or not enabled']
+        ['Can I change my saved assessment answers?', 'feature_availability', 'planned or not enabled'],
+        ['Can I use improvement plans in the dashboard?', 'improvement_plans', 'plan this']
     ])('answers common public help without a question-prefix dependency: %s', (message, topic, included) => {
         const reply = publicHelpReply(message);
         expect(reply).toMatchObject({ topic, knowledgeVersion: NOFRIES_PUBLIC_KNOWLEDGE.knowledgeVersion });

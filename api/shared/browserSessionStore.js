@@ -16,6 +16,7 @@ class MemoryBrowserSessionStore {
     constructor() {
         this.transactions = new Map();
         this.sessions = new Map();
+        this.fences = new Map();
     }
 
     async createTransaction(id, record) {
@@ -49,6 +50,26 @@ class MemoryBrowserSessionStore {
         if (!transactionRealmMatches(record, binding)) return false;
         this.transactions.delete(id);
         return true;
+    }
+
+    // Setup sign-out fence: one record per consumed transaction, first writer
+    // wins. A callback settles it before issuing a session cookie; sign-out
+    // revokes it. Whichever arrives second sees the other's record.
+    async settleTransaction(id, binding, sealed) {
+        validateOpaqueId(id);
+        validateCancellationBinding(binding);
+        validateSealedSession(sealed);
+        const existing = this.fences.get(id);
+        if (existing) return false;
+        this.fences.set(id, fenceRecord(binding, 'settled', sealed));
+        return true;
+    }
+
+    async revokeTransaction(id, binding) {
+        validateOpaqueId(id);
+        validateCancellationBinding(binding);
+        if (!this.fences.has(id)) this.fences.set(id, fenceRecord(binding, 'revoked'));
+        return fenceOutcome(clone(this.fences.get(id)), binding);
     }
 
     async createSession(id, record) {
@@ -162,6 +183,39 @@ class AzureBlobBrowserSessionStore {
                 try { await leaseClient.releaseLease(); } catch (_) { /* No deletion was acknowledged. */ }
             }
         }
+    }
+
+    async settleTransaction(id, binding, sealed) {
+        validateOpaqueId(id);
+        validateCancellationBinding(binding);
+        validateSealedSession(sealed);
+        try {
+            await this.create('fences', id, fenceRecord(binding, 'settled', sealed));
+            return true;
+        } catch (error) {
+            // Only a confirmed existing fence means sign-out got there first.
+            if (error && error.code === 'browser_auth_store_conflict') return false;
+            throw error;
+        }
+    }
+
+    async revokeTransaction(id, binding) {
+        validateOpaqueId(id);
+        validateCancellationBinding(binding);
+        try {
+            await this.create('fences', id, fenceRecord(binding, 'revoked'));
+        } catch (error) {
+            if (!error || error.code !== 'browser_auth_store_conflict') throw error;
+        }
+        // Read back whichever record won, including an earlier revocation.
+        let record;
+        try {
+            const response = await this.blob('fences', id).download(0);
+            record = parseRecord(await streamToBuffer(response.readableStreamBody));
+        } catch (error) {
+            throw storeError(error);
+        }
+        return fenceOutcome(record, binding);
     }
 
     async createSession(id, record) {
@@ -387,6 +441,33 @@ function transactionRealmMatches(record, binding) {
         record.customerPurpose === undefined &&
         record.customerTransport === binding.customerTransport &&
         record.customerProviderKey === binding.customerProviderKey);
+}
+
+const FENCE_KIND = 'oidc_transaction_fence';
+
+function validateSealedSession(sealed) {
+    if (typeof sealed !== 'string' || !/^[A-Za-z0-9_-]{40,200}$/.test(sealed)) {
+        throw new BrowserSessionStoreError('browser_auth_store_record_invalid');
+    }
+}
+
+function fenceRecord(binding, state, sealed) {
+    return { v: 1, kind: FENCE_KIND, state, customerTransport: binding.customerTransport,
+        customerProviderKey: binding.customerProviderKey, ...(state === 'settled' ? { sealed } : {}) };
+}
+
+// false: another realm's fence; null: revoked, so no callback can still issue
+// a session; { sealed }: a callback already issued the sealed session.
+function fenceOutcome(record, binding) {
+    if (!record || record.v !== 1 || record.kind !== FENCE_KIND ||
+        record.customerTransport !== binding.customerTransport ||
+        record.customerProviderKey !== binding.customerProviderKey) return false;
+    if (record.state === 'revoked' && !Object.hasOwn(record, 'sealed')) return null;
+    if (record.state === 'settled') {
+        validateSealedSession(record.sealed);
+        return { sealed: record.sealed };
+    }
+    throw new BrowserSessionStoreError('browser_auth_store_record_invalid');
 }
 
 function clone(value) {

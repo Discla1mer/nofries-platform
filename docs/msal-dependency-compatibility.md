@@ -40,13 +40,15 @@ These checks make no live credential or token calls and do not establish live
 tenant configuration, cloud-provider availability, or compatibility of unused
 interactive/broker credentials.
 
-The temporary acceptance still expires at `2026-10-27T00:00:00Z`, with its original
-source fence and exact legacy restrictions. A missing MSAL audit finding passes
-only when every locked MSAL declaration is a canonical stable version outside
-the affected range. Unknown/malformed versions and any hidden vulnerable copy
-fail closed. Other advisory and severity policy remains enforced. API override
-permission is limited to the exact reviewed override, direct pin and locked
-Identity/MSAL closure.
+The temporary acceptance expired at `2026-10-27T00:00:00Z` and is retired:
+`scripts/check-dependency-audit.js` no longer filters any audit finding for this
+advisory, so a reported MSAL finding is an ordinary High finding and blocks. The
+checker still requires every locked MSAL declaration to be a canonical stable
+version outside the affected range. Unknown/malformed versions and any hidden
+vulnerable copy fail closed even if the audit database omits them. Other
+advisory and severity policy remains enforced. API override permission is
+limited to the exact reviewed override, direct pin and locked Identity/MSAL
+closure.
 
 The ordinary Jest suite exercises the physical root SDK and checks every MSAL
 lock declaration. It supports the existing public CI install contract

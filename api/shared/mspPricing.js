@@ -105,14 +105,15 @@ function estimateManagedItPrice(context = {}) {
         recommendedTierId: STANDARD_PRICE.recommendedTierId,
         reviewReasons,
         assumptions: [
-            'Remote user support during agreed business hours',
-            'AI-assisted email helpdesk, with every change approved by Joel, our founder',
+            'Remote user support during NZ business hours, Monday to Friday',
+            'AI-assisted email helpdesk, with a person approving every change before it is made',
             'Support for one main work computer per user',
             'Help with business email and shared work tools where agreed',
-            'Microsoft 365 backup is included from the Managed tier',
+            'Microsoft 365 backup is included from the Managed tier, and available on Essentials as an add-on, quoted on request',
             'Security hardening and alert handling are included in the Secure tier',
             'Proof every month',
-            'Large projects, on-site work, hardware, supplier charges and extra phone usage are agreed separately'
+            'On-site work is available by arrangement, quoted separately',
+            'Large projects, hardware, supplier charges and extra phone usage are agreed separately'
         ]
     };
 }
