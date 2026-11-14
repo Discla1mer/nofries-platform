@@ -55,6 +55,8 @@ function harness(hash = '#organisations') {
     document.querySelector = selector => document.body.querySelector(selector);
     const leaveLink = document.createElement('a'); leaveLink.dataset.dashboardLeave = '';
     leaveLink.setAttribute('href', '/roadmap.html'); document.body.append(leaveLink);
+    const switchAccount = document.createElement('a'); switchAccount.id = 'dashboardSwitchAccount'; switchAccount.dataset.dashboardLeave = '';
+    switchAccount.setAttribute('href', '/login?account=choose'); document.body.append(switchAccount);
     elements.dashboardEntry.append(elements.dashboardStatusPanel, elements.dashboardChooser, elements.dashboardApp);
     document.head = document.createElement('head'); const native = [];
     document.head.append = node => { native.push(node); document.head.children.push(node); };
@@ -79,7 +81,7 @@ function harness(hash = '#organisations') {
         native.slice(-2).forEach(node => node.onload()); await flush();
         await reply(index + 1, 200, value);
     }
-    return { document, window, elements, requests, reply, mount, leaveLink, unload,
+    return { document, window, elements, requests, reply, mount, leaveLink, switchAccount, unload,
         get status() { return document.body.dataset.dashboardState; },
         get back() { return document.getElementById('consultantPortfolioControls'); } };
 }
@@ -570,4 +572,43 @@ test('signing out forgets the remembered organisation', async () => {
     expect(h.requests[2].url).toBe('/api/dashboard/logout');
     await h.reply(2, 200, { schemaVersion: 1, loggedOut: true });
     expect(store.values.size).toBe(0);
+});
+
+test('a 5xx or network failure on the automatic reopen shows unavailable, and Retry shows the chooser without reopening', async () => {
+    for (const fail of [h => h.reply(2, 503, { code: 'dashboard_unavailable' }), async h => { h.requests[2].resolve(Promise.reject(new TypeError('network'))); await flush(); }]) {
+        const store = memoryStorage(B);
+        const h = lastOpened(harness(''), store); await flush();
+        await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+        expect(h.requests[2].url).toBe('/api/dashboard/selection');
+        await fail(h);
+        expect(h.status).toBe('unavailable'); expect(h.requests).toHaveLength(3);
+        h.elements.dashboardRetry.click(); await flush();
+        expect(h.requests[3].url).toBe('/api/dashboard/session');
+        await h.reply(3, 200, state()); await h.reply(4, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+        expect(h.status).toBe('selection'); expect(h.requests).toHaveLength(5);
+    }
+});
+
+test('sign-in expiry or a 401 forgets the remembered organisation', async () => {
+    const expired = memoryStorage(B);
+    const h = lastOpened(harness(), expired); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    expect(h.status).toBe('selection'); expect(expired.values.size).toBe(1);
+    jest.advanceTimersByTime(60 * 60 * 1000); await flush();
+    expect(h.status).toBe('expired'); expect(expired.values.size).toBe(0);
+
+    const refused = memoryStorage(B);
+    const signedOut = lastOpened(harness(''), refused); await flush();
+    await signedOut.reply(0, 401, { code: 'dashboard_session_required' });
+    expect(signedOut.status).toBe('unauthenticated'); expect(refused.values.size).toBe(0);
+});
+
+test('Sign in with another account forgets the remembered organisation, but a new-tab click keeps it', async () => {
+    const store = memoryStorage(B);
+    const h = lastOpened(harness(), store); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    const click = event => { for (const fn of h.switchAccount.events.click) fn(event); };
+    click({ ctrlKey: true, preventDefault: jest.fn() }); expect(store.values.size).toBe(1);
+    const event = { preventDefault: jest.fn() }; click(event);
+    expect(event.preventDefault).not.toHaveBeenCalled(); expect(store.values.size).toBe(0);
 });

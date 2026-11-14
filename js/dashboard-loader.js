@@ -310,6 +310,8 @@
         cycle.busy = false;
         if (error && (error.status === 401 || error.expired)) {
             unresolved = null;
+            // A later sign-in may be a different person; do not reopen this one's organisation.
+            forgetLastOrganisation();
             show(cycle, hadSession ? 'expired' : 'unauthenticated');
         } else if (unresolved && unresolved.kind === 'logout') show(cycle, 'signout');
         else show(cycle, error && error.status === 403 ? 'denied' : 'unavailable');
@@ -368,6 +370,7 @@
             if (!current(cycle)) return;
             const expired = begin();
             expired.busy = false;
+            forgetLastOrganisation();
             show(expired, 'expired');
         }, Math.min(2147483647, Math.max(0, Date.parse(value.expiresAt) - Date.now())));
     }
@@ -572,6 +575,8 @@
     function resumeLastOrganisation(cycle, value) {
         // Offer this once per page load, only on a plain /dashboard visit.
         // Organisations, Return to organisations and Retry keep the chooser.
+        // The reopen is automatic, so an uncertain (5xx/network) failure is not
+        // kept for Retry to resend: Retry rereads the session and shows the chooser.
         const offered = resumeOffered;
         resumeOffered = true;
         if (offered || value.purpose !== 'customer' || cycle.forcePortfolio || cycle.openSelection || unresolved ||
@@ -582,6 +587,7 @@
         try {
             const pending = command('selection', { bindingId: bindingId, expectedGeneration: value.generation, operationId: secureId() });
             execute(next, pending).catch(function (error) {
+                if (unresolved === pending) unresolved = null;
                 // A definite refusal (other than sign-in) shows the chooser instead.
                 if (!current(next) || !error || !(error.status >= 400 && error.status < 500) || error.status === 401) { failure(next, error); return; }
                 const chooser = begin();
@@ -1552,14 +1558,17 @@
             const destination = link.getAttribute('href');
             if (!destination) return;
             if (linkExit) { event.preventDefault(); return; }
+            // Signing in with another account must not reopen this account's last organisation.
+            const switching = link === accountSwitch;
             const cycle = active;
-            if (!current(cycle) || !controller && !clientDraft(cycle)) return;
+            if (!current(cycle) || !controller && !clientDraft(cycle)) { if (switching) forgetLastOrganisation(); return; }
             event.preventDefault();
             if (cycle.busy || cycle.authorityPending || unresolved) return;
             const exit = { cycle: cycle, committed: false };
             linkExit = exit;
             Promise.resolve(leave(cycle, function () {
                 exit.committed = true;
+                if (switching) forgetLastOrganisation();
                 dispose(cycle);
                 clearContent();
                 window.location.assign(destination);
