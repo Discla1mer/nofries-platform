@@ -475,7 +475,7 @@
             [['To check later', 'Answers marked Unknown, or marked not applicable, to confirm. They are still to confirm and do not count as in place. You can still submit with them.'],
                 ['Marked not applicable, to confirm', 'You answered Not applicable and explained why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'],
                 ['Saved and not saved yet', 'Saved answers are kept with this draft, so you can come back to them before you submit. Not saved yet means a change is only on this page so far.'],
-                ['Reported implementation range', 'After you submit, your result leads with the lower figure: what you reported as in place. The higher figure adds answers still to confirm. It is not a performance score.']
+                ['Reported implementation range', 'After you submit, your result is shown as a range. It leads with the lower figure. The lower figure is what you reported as in place. The higher figure adds answers still to confirm. It is not a performance score.']
             ].forEach(function (entry) { list.append(node('dt', '', entry[0]), node('dd', '', entry[1])); });
             section.append(list);
             return section;
@@ -1028,8 +1028,9 @@
             if (pending) renderPending();
             if (reviewing) { renderReview(); return; }
             questionProgress = node('p', 'ncsc-draft-progress'); questionProgress.id = 'ncsc-draft-progress'; content.append(questionProgress);
-            if (!sealed) renderDraftObservations(observationsOpen);
+            // The glossary explains the progress words, so it sits right after progress.
             if (!sealed) content.append(glossary());
+            if (!sealed) renderDraftObservations(observationsOpen);
             const indexLabel = node('label', '', 'Question'); indexLabel.setAttribute('for', 'ncsc-question-index');
             const index = node('select', 'ncsc-question-index'); index.id = 'ncsc-question-index';
             index.setAttribute('aria-describedby', 'ncsc-question-index-help');
