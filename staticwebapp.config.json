@@ -1133,6 +1133,16 @@
       "allowedRoles": ["anonymous"]
     },
     {
+      "route": "/api/emailPreferences",
+      "methods": ["GET", "POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/account/email",
+      "methods": ["GET", "POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": [
         "authenticated"
