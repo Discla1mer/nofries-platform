@@ -325,6 +325,9 @@
                 provenance.evidenceSnapshot.sha256, provenance.riskContextSnapshot.sha256,
                 submission.responseSetSha256, value.outputSha256].forEach(digest);
             return { attainment: range(value.attainment), substantiated: coverage(value.evidence.substantiatedCoverage),
+                // Validated by range(): the overall lower and upper figures, for leading with the lower one.
+                lowerDisplay: value.attainment.status === 'scored' ? value.attainment.lowerDisplay : null,
+                upperDisplay: value.attainment.status === 'scored' ? value.attainment.upperDisplay : null,
                 denominatorWeight: value.attainment.denominatorWeight,
                 lowerCreditUnits: value.attainment.lowerCreditUnits, upperCreditUnits: value.attainment.upperCreditUnits,
                 completion: value.countsCompletion.completionDisplay,
@@ -1227,6 +1230,7 @@
                 ? 'This is what you reported as in place. Every answer is Yes, Partial or No, so there is one figure.'
                 : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.');
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
+            leadWithLowerBound(metrics.querySelector('.ncsc-result-metric'), '.ncsc-result-value', results);
             panel.append(node('p', 'dashboard-muted', 'Risk priority: Not calculated. Suggested actions follow framework order, not risk order. Trend: Not shown here. To compare submitted assessments, use Change over time on the Overview.'));
             // results.unknown already includes answers marked not applicable, so state one total.
             panel.append(node('p', '', results.unknown ? 'Answers still to confirm: ' + results.unknown + ' (' + confirmBreakdown(results.unknown - results.pending, results.pending) + ').'
@@ -1246,6 +1250,14 @@
                     }); detail.append(item);
                 }); panel.append(detail);
             });
+        }
+        // Show the reported (lower) figure first; the upper figure follows in a plain sentence.
+        function leadWithLowerBound(card, valueSelector, model) {
+            const value = card && card.querySelector(valueSelector);
+            if (!value || !model.lowerDisplay || model.lowerDisplay === model.upperDisplay || value.textContent !== model.attainment) return;
+            value.textContent = model.lowerDisplay + ' in place';
+            const upTo = node('p', 'ncsc-result-upper', 'Up to ' + model.upperDisplay + ' if every answer still to confirm turns out to be in place.');
+            const children = Array.from(card.children); children.splice(children.indexOf(value) + 1, 0, upTo); card.replaceChildren.apply(card, children);
         }
         function renderNextSteps(panel) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Suggested follow-ups'));
