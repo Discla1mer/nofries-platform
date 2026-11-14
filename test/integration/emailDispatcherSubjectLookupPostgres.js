@@ -75,7 +75,10 @@ module.exports = function registerEmailDispatcherSubjectLookupTests() {
     test('adds one SELECT policy for the dispatcher and leaves the runtime policy unchanged', async () => {
         const policies = (await pool.query(`SELECT policyname, permissive, roles::text[] AS roles, cmd, qual FROM pg_policies
             WHERE schemaname='nofries' AND tablename='dashboard_starter_accounts' ORDER BY policyname`)).rows;
+        // 0025 adds the account-wipe capability's own policy; the runtime and dispatcher policies are unchanged.
         expect(policies).toEqual([
+            { policyname: 'dashboard_starter_accounts_account_wipe', permissive: 'PERMISSIVE', roles: ['nofries_account_wipe'], cmd: 'ALL',
+                qual: expect.stringMatching(/account_id\)?::text = NULLIF\(current_setting\('nofries\.wipe_account_id'.*subject_key.*nofries\.wipe_subject_key/) },
             { policyname: 'starter_accounts_email_dispatcher', permissive: 'PERMISSIVE', roles: ['nofries_email_dispatcher'], cmd: 'SELECT', qual: 'true' },
             { policyname: 'starter_accounts_subject', permissive: 'PERMISSIVE', roles: ['nofries_runtime'], cmd: 'ALL',
                 qual: "(subject_key = NULLIF(current_setting('nofries.subject_key'::text, true), ''::text))" }]);
