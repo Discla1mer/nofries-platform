@@ -2834,6 +2834,30 @@ describe('batched automatic save', () => {
     // Setting up 100 saved revisions through the real backend takes several
     // seconds on a loaded machine; the behaviour checked here is not timing.
     }, 30000);
+    test.each([[99, 'idle', 0], [99, 'hidden', 0], [97, 'idle', 3]])(
+        'multi-batch autosave preserves the reserve at revision %i (%s)', async (startRevision, trigger, automaticWrites) => {
+        const h = await backend(); await h.execute(createCommand());
+        for (let revision = 0; revision < startRevision; revision += 1) {
+            await h.execute(saveCommand('assessment-a', revision, 'reserve-' + revision, allResponses(revision % 2 ? 'unknown' : 'no').slice(0, 1)));
+        }
+        const ui = await resumeUi(h, { dom: lifecycleDom(), autosaveIdleMs: idle });
+        try {
+            const before = h.records.length;
+            metadata().questions.forEach((_question, index) => choose(ui, index, 'not_applicable', '界'.repeat(4000)));
+            if (trigger === 'hidden') { ui.document.visibilityState = 'hidden'; ui.document.dispatch('visibilitychange'); }
+            await settle();
+            expect(h.records).toHaveLength(before + automaticWrites);
+            expect((await h.client.read('assessment-a')).assessment.revision).toBeLessThanOrEqual(100);
+            if (!automaticWrites) {
+                expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('14 not saved yet');
+                expect(ui.root.textContent).toContain('Use Save progress to save these answers.');
+                control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
+            }
+            expect(h.records.length).toBeGreaterThan(before + 1);
+            expect((await h.client.read('assessment-a')).assessment.responses.map(row => row.rationale.text))
+                .toEqual(metadata().questions.map(() => '界'.repeat(4000)));
+        } finally { ui.controller.destroy(); }
+    }, 30000);
     // Live walkthrough: 11 answers, 12 s idle, browser closed, all 11 lost.
     const lifecycleDom = () => {
         const dom = interactiveDom(), listeners = {};
