@@ -126,20 +126,23 @@ test('editing after approval, or selecting another account, clears the approval'
     expect(f.elements.Apply.disabled).toBe(true); expect(f.elements.Approve.disabled).toBe(true);
 });
 
-test('a delete that left no lookup rows can be finished by email without a selection', async () => {
-    const f = fixture({ selected: null });
+test.each([['delete', 'DELETE'], ['reset', 'RESET']])('%s works by email without a lookup selection (scan cap, or a partial delete)', async (chosen, wordValue) => {
+    const f = fixture({ selected: null, executeReply: { status: 200, value: { action: chosen, outcome: 'succeeded',
+        stages: chosen === 'reset' ? { database: 'done' } : { database: 'absent', storage: 'absent', identity: 'done' }, counts: { databaseRows: 2 }, recorded: true } } });
     expect(f.elements.Delete.disabled).toBe(true);
     f.elements.ResumeEmail.value = 'not-an-email'; f.elements.Resume.click();
     expect(f.elements.Status.textContent).toMatch(/Enter the account email/); expect(f.elements.Approve.disabled).toBe(true);
     f.elements.ResumeEmail.value = ' ' + EMAIL + ' '; f.elements.Resume.click();
-    expect(f.elements.Reset.disabled).toBe(true); expect(f.elements.Approve.textContent).toBe('Approve delete');
-    expect(f.elements.Summary.textContent).toMatch(/Finish the delete of synthetic@example.invalid/);
-    f.type(EMAIL, 'DELETE'); await f.submit(); await f.applyNow();
+    expect(f.elements.Reset.disabled).toBe(false); expect(f.elements.Delete.disabled).toBe(false);
+    expect(f.elements.Summary.textContent).toMatch(/Selected synthetic@example.invalid by email/);
+    f.elements[chosen === 'reset' ? 'Reset' : 'Delete'].click();
+    if (chosen === 'delete') expect(f.elements.Summary.textContent).toMatch(/steps already done are skipped/);
+    f.type(EMAIL, wordValue); await f.submit(); await f.applyNow();
     // Only the email goes to the server; no identity reference comes from the page.
     expect(f.bodies()).toEqual([
-        { wipe: { step: 'approve', action: 'delete', email: EMAIL, confirmEmail: EMAIL, confirmWord: 'DELETE' } },
+        { wipe: { step: 'approve', action: chosen, email: EMAIL, confirmEmail: EMAIL, confirmWord: wordValue } },
         { wipe: { step: 'execute', approvalId: 'synthetic-approval', email: EMAIL } }]);
-    expect(f.elements.Status.textContent).toMatch(/Delete complete/);
+    expect(f.elements.Status.textContent).toMatch(chosen === 'reset' ? /Reset complete/ : /Delete complete/);
 });
 
 test('pagehide hides the panel and forgets the selection', () => {

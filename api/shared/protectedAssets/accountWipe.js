@@ -9,8 +9,10 @@
     const $ = id => document.getElementById('accountWipe' + id);
     const resetButton = $('Reset'), deleteButton = $('Delete'), typed = $('Email'), word = $('Word'), hint = $('WordHint');
     const approve = $('Approve'), apply = $('Apply'), status = $('Status'), summary = $('Summary');
-    // A delete that stopped after storage leaves no lookup rows to select, so it
-    // can be finished by email. The server acts only on the reference it kept.
+    // Reset or delete by email, for accounts lookup cannot offer for selection
+    // (a delete that stopped after storage leaves no rows; a row past the scan
+    // cap has no selector). The server resolves the account by email itself,
+    // and for a partial delete acts only on the reference it kept.
     const resumeEmail = $('ResumeEmail'), resume = $('Resume');
     const WORDS = { reset: 'RESET', delete: 'DELETE' };
     const STAGES = { database: 'Database', storage: 'Stored records', identity: 'Sign-in user' };
@@ -59,7 +61,6 @@
     function controls() {
         const idle = !busy && Boolean(selected);
         resetButton.disabled = deleteButton.disabled = !idle;
-        if (selected && selected.resume) resetButton.disabled = true;
         resume.disabled = resumeEmail.disabled = busy;
         resetButton.setAttribute('aria-pressed', String(action === 'reset')); deleteButton.setAttribute('aria-pressed', String(action === 'delete'));
         typed.disabled = word.disabled = !idle || !action; approve.disabled = !idle || !action; apply.disabled = busy || !approved;
@@ -69,8 +70,8 @@
     function choose(next) {
         if (busy || !selected) return;
         generation++; clear(); action = next; typed.value = ''; word.value = ''; status.textContent = '';
-        summary.textContent = selected.resume
-            ? 'Finish the delete of ' + selected.email + ': steps already done are skipped, and the server uses only what it kept from the earlier attempt.'
+        summary.textContent = selected.byEmail && next === 'delete'
+            ? 'Delete ' + selected.email + ': removes the account, its email and all its data, then its External ID sign-in user. This cannot be undone. If an earlier delete stopped partway, steps already done are skipped and the server uses only what it kept from that attempt.'
             : next === 'reset'
             ? 'Reset ' + selected.email + ': clears assessments, evidence and improvement plans in every organisation of this account. Sign-in, email and organisations are kept.'
             : 'Delete ' + selected.email + ': removes the account, its email and all its data, then its External ID sign-in user. This cannot be undone.';
@@ -131,8 +132,10 @@
     resume.addEventListener('click', function () {
         const value = String(resumeEmail.value || '').trim();
         if (busy) return;
-        if (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) { status.textContent = 'Enter the account email whose delete you want to finish.'; return; }
-        generation++; controller?.abort(); clear(); selected = { email: value, resume: true }; choose('delete');
+        if (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) { status.textContent = 'Enter the account email to reset or delete.'; return; }
+        generation++; controller?.abort(); clear(); busy = false; action = null; typed.value = ''; word.value = '';
+        selected = { email: value, byEmail: true };
+        summary.textContent = 'Selected ' + value + ' by email. Choose Reset or Delete.'; status.textContent = ''; controls();
     });
     resetButton.addEventListener('click', function () { choose('reset'); });
     deleteButton.addEventListener('click', function () { choose('delete'); });
