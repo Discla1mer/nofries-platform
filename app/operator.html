@@ -68,6 +68,20 @@
             </form>
             <p id="accountActionsStatus" role="status" aria-live="polite"></p>
         </section>
+        <section id="accountWipePanel" class="operator-loading-panel" hidden aria-labelledby="accountWipeHeading">
+            <h2 id="accountWipeHeading">Reset or delete account</h2>
+            <p>Reset clears the selected account's assessments, evidence and improvement plans and keeps its sign-in, email and organisations. Delete removes the account, its email and all its data, including its External ID sign-in user. Neither can be undone. Approve by typing the account email and the action word; the approval lasts 15 minutes in this staff session and works once.</p>
+            <p id="accountWipeSummary" aria-live="polite"></p>
+            <form id="accountWipeForm" autocomplete="off">
+                <button id="accountWipeReset" type="button" aria-pressed="false" disabled>Reset</button>
+                <button id="accountWipeDelete" type="button" aria-pressed="false" disabled>Delete</button>
+                <label>Type the account email <input id="accountWipeEmail" type="email" required maxlength="254" autocomplete="off" spellcheck="false" disabled></label>
+                <label>Type <span id="accountWipeWordHint">RESET or DELETE</span> <input id="accountWipeWord" type="text" required maxlength="6" autocomplete="off" spellcheck="false" disabled></label>
+                <button id="accountWipeApprove" type="submit" disabled>Approve</button>
+                <button id="accountWipeApply" type="button" disabled>Apply</button>
+            </form>
+            <p id="accountWipeStatus" role="status" aria-live="polite"></p>
+        </section>
     </main>
     <div class="operator-toast" id="operatorToast" role="status" aria-live="polite" hidden></div>
 </body>
