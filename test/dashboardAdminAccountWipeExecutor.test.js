@@ -345,6 +345,64 @@ describe('second review round', () => {
     });
 });
 
+describe('third review round', () => {
+    test('an approval is bound to the account seen: a re-signup with the same email is a changed target', async () => {
+        const h = harness();
+        const first = await h.executor.approve(approval('delete'), signal());
+        const second = await h.executor.approve(approval('delete'), signal());
+        // The customer signs up again before the second approval is used: new account id.
+        h.set(inventory({ account: { accountId: uid(11) } }));
+        const result = await h.executor.execute(apply(second.approvalId), signal());
+        expect(result).toMatchObject({ outcome: 'refused', code: 'account_wipe_target_changed' });
+        expect(order(h.calls)).toEqual([]);
+        void first;
+    });
+
+    test('a different sign-in subject for the same account id is a changed target', async () => {
+        for (const swap of [inventory({ subjectKey: uid(1) + ':' + uid(3) })]) {
+            const h = harness();
+            const { approvalId } = await h.executor.approve(approval('reset'), signal());
+            h.set(swap);
+            expect((await h.executor.execute(apply(approvalId), signal())).code).toBe('account_wipe_target_changed');
+            expect(h.repository.reset).not.toHaveBeenCalled();
+        }
+    });
+
+    test('a successful or partial run voids every other approval for the email', async () => {
+        const h = harness();
+        const first = await h.executor.approve(approval('delete'), signal());
+        const second = await h.executor.approve(approval('delete'), signal());
+        expect((await h.executor.execute(apply(first.approvalId), signal())).outcome).toBe('succeeded');
+        await expect(h.executor.execute(apply(second.approvalId), signal())).rejects.toMatchObject({ code: 'account_wipe_approval_invalid' });
+        const p = harness();
+        const a = await p.executor.approve(approval('delete'), signal()), b = await p.executor.approve(approval('delete'), signal());
+        p.storage.delete.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_storage_unavailable' }));
+        expect((await p.executor.execute(apply(a.approvalId), signal())).outcome).toBe('partial');
+        await expect(p.executor.execute(apply(b.approvalId), signal())).rejects.toMatchObject({ code: 'account_wipe_approval_invalid' });
+    });
+
+    test('finishing a partial delete is allowed only for the approved account', async () => {
+        const h = harness();
+        let { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.remover.remove.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_identity_unavailable', softDeleted: true }));
+        expect((await h.executor.execute(apply(approvalId), signal())).outcome).toBe('partial');
+        // Storage is gone; the resume approval is bound to the held account.
+        ({ approvalId } = await h.executor.approve(approval('delete'), signal()));
+        h.calls.length = 0;
+        expect((await h.executor.execute(apply(approvalId), signal())).outcome).toBe('succeeded');
+        // The soft-deleted state was carried, so the retry demanded a confirmed permanent delete.
+        expect(h.remover.remove.mock.calls[1][1]).toMatchObject({ pendingPermanent: true });
+    });
+
+    test('a stalled role probe is cut off at the run deadline', async () => {
+        const h = harness();
+        const executor = createAccountWipeExecutor({ sources: [{ kind: 'external_starter', storage: h.storage }], repository: h.repository, identity: h.remover,
+            legacyIndexConfigured: false, ensureRole: () => new Promise(() => {}), audit: async () => {}, targetDigest: () => DIGEST, log: () => {} });
+        const controller = new AbortController(); setTimeout(() => controller.abort(), 20);
+        await expect(executor.approve(approval('reset'), controller.signal)).rejects.toMatchObject({ code: 'account_wipe_timed_out' });
+    });
+});
+
 describe('approval', () => {
     test.each([
         ['wrong typed email', { confirmEmail: 'someone.else@example.test' }],
