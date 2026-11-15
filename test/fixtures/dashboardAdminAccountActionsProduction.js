@@ -29,7 +29,8 @@ function fixture(kind = 'legacy_admin') {
             getContainerClient(name) {
                 const account = new URL(this.url).hostname.split('.')[0], rows = bucket(account, name), options = this.options;
                 return { url: this.url + '/' + name, pipeline: { options }, async getProperties() { return {}; },
-                    listBlobsFlat() { throw new Error('PRIVATE_UNEXPECTED_SCAN'); }, getBlockBlobClient(key) { return {
+                    listBlobsFlat() { throw new Error('PRIVATE_UNEXPECTED_SCAN'); }, getBlobClient() { throw new Error('PRIVATE_UNEXPECTED_DELETE'); },
+                    getBlockBlobClient(key) { return {
                         async download() {
                             reads.push({ account, name, key });
                             const value = name === 'dashboard-epochs' ? { bytes: Buffer.from(JSON.stringify({ instanceId: h.dashboard.instanceId, restoreEpoch: h.state.epoch })), etag: '"epoch"' } : rows.get(key);
