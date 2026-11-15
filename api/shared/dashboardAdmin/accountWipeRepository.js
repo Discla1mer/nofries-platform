@@ -77,7 +77,21 @@ function createAccountWipeRepository(pool, { now = Date.now } = {}) {
             if (left <= 0 || options.signal?.aborted) fail('account_wipe_timed_out');
             return left;
         };
-        const client = await pool.connect();
+        // Waiting for a connection counts against the deadline. One that arrives
+        // after giving up is released as broken, never used.
+        let client;
+        if (!timed) client = await pool.connect();
+        else {
+            const left = remaining();
+            let timer, late = false;
+            const pending = pool.connect();
+            try {
+                client = await Promise.race([pending, new Promise((_, reject) => { timer = setTimeout(() => { late = true; reject(new Error('timeout')); }, left); })]);
+            } catch (_) {
+                if (late) { pending.then(connection => connection.release(true), () => {}); fail('account_wipe_timed_out'); }
+                fail('account_wipe_unavailable');
+            } finally { clearTimeout(timer); }
+        }
         const db = { async query(sql, params) {
             if (timed) {
                 const left = remaining();
@@ -154,8 +168,15 @@ function createAccountWipeRepository(pool, { now = Date.now } = {}) {
                 add('signup_registrations', (await db.query('DELETE FROM nofries.signup_registrations WHERE subject_key = $1', [scope.subjectKey])).rowCount);
             }
             if (timed) remaining();
-            try { await client.query('COMMIT'); }
-            catch (_) { fail('account_wipe_commit_unknown'); }
+            // statement_timeout does not cover COMMIT, so its wait is bounded here
+            // (at least 1 s): no answer in time is an unknown outcome.
+            let commitTimer;
+            try {
+                await Promise.race([client.query('COMMIT'), new Promise((_, reject) => {
+                    if (timed) commitTimer = setTimeout(() => reject(new Error('commit_timeout')), Math.max(1000, Math.floor(options.deadline - now())));
+                })]);
+            } catch (_) { fail('account_wipe_commit_unknown'); }
+            finally { clearTimeout(commitTimer); }
             return Object.freeze({ mode, tenants: scope.tenantIds.length, counts: Object.freeze(counts) });
         } catch (error) {
             discard = true;
