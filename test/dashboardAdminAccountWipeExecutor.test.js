@@ -48,7 +48,7 @@ describe('delete', () => {
         h.calls.length = 0;
         const result = await h.executor.execute(apply(approved.approvalId), signal());
         expect(order(h.calls)).toEqual(['delete', 'storage', 'identity']);
-        expect(h.repository.delete).toHaveBeenCalledWith({ accountId: uid(10), subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)] });
+        expect(h.repository.delete).toHaveBeenCalledWith({ accountId: uid(10), subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)] }, undefined);
         expect(h.remover.remove).toHaveBeenCalledWith(SUBJECT);
         expect(result).toMatchObject({ outcome: 'succeeded', stages: { database: 'done', storage: 'done', identity: 'done' },
             failedStage: null, code: null, counts: { databaseRows: 5, blobs: 7, versions: 3 }, recorded: true });
@@ -166,7 +166,7 @@ describe('unactivated legacy account (subject only in the organisation context)'
         h.repository.delete.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_account_not_found' }));
         ({ approvalId } = await h.executor.approve(approval('delete'), signal()));
         const retry = await h.executor.execute(apply(approvalId), signal());
-        expect(h.repository.delete).toHaveBeenLastCalledWith({ accountId: uid(10), subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)] });
+        expect(h.repository.delete).toHaveBeenLastCalledWith({ accountId: uid(10), subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)] }, undefined);
         expect(retry).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'done', identity: 'not_applicable' } });
     });
 
@@ -200,6 +200,23 @@ describe('unactivated legacy account (subject only in the organisation context)'
         await h.executor.execute(apply(approvalId), signal());
         h.set(null);
         await expect(h.executor.approve(approval('delete'), signal())).rejects.toMatchObject({ code: 'account_wipe_account_not_found' });
+    });
+});
+
+describe('run deadline', () => {
+    test('the deadline reaches the database transaction; expiry there is a rolled-back, retryable outcome', async () => {
+        const h = harness();
+        let { approvalId } = await h.executor.approve(approval('delete'), signal());
+        const run = signal(), deadline = Date.now() + 30000;
+        h.repository.delete.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_timed_out' }));
+        const result = await h.executor.execute(apply(approvalId, { deadline }), run);
+        expect(h.repository.delete).toHaveBeenCalledWith(expect.any(Object), { signal: run, deadline });
+        expect(result).toMatchObject({ outcome: 'timed_out_rolled_back', code: 'account_wipe_timed_out', failedStage: null,
+            stages: { database: 'failed', storage: 'pending', identity: 'pending' } });
+        expect(h.storage.delete).not.toHaveBeenCalled();
+        expect(h.records.at(-1)).toMatchObject({ phase: 'outcome', outcome: 'timed_out_rolled_back' });
+        ({ approvalId } = await h.executor.approve(approval('delete'), signal()));
+        expect((await h.executor.execute(apply(approvalId, { deadline }), signal())).outcome).toBe('succeeded');
     });
 });
 

@@ -87,7 +87,7 @@ Select the account, choose Reset or Delete, then type the account email and the 
 
 A delete that stopped after its stored records were removed leaves nothing to select in lookup. To finish it, enter the email under **Finish a partial delete by email**, then approve and apply Delete as usual. The page sends only the email. The server finishes the delete only from the retry reference it kept (see Outcomes) and never accepts an identity id from the page.
 
-The actions go through the existing `POST /api/dashboard-admin/accounts/lookup` route as a body with the single key `wipe`, so the Static Web Apps route table does not grow. They have the same staff, native session, same-origin and rate checks as lookup. Applying is handled like suspend and restore: the response waits for the outcome and its audit record, instead of the 10-second read budget. Once a run has started it continues for up to 30 seconds, even if the browser is closed. A delete still unfinished at that point stops as `partial`; finish it by approving and applying again.
+The actions go through the existing `POST /api/dashboard-admin/accounts/lookup` route as a body with the single key `wipe`, so the Static Web Apps route table does not grow. They have the same staff, native session, same-origin and rate checks as lookup. Applying is handled like suspend and restore: the response waits for the outcome and its audit record, instead of the 10-second read budget. Once a run has started it continues for up to 30 seconds, even if the browser is closed. The budget is enforced inside the database transaction too: each statement's `statement_timeout` and the lock wait are capped at the time left, and nothing is committed after it. A delete still unfinished at that point stops as `partial`; finish it by approving and applying again.
 
 ### Outcomes
 
@@ -97,6 +97,7 @@ Each approval writes `dashboard-admin-account-wipes/<operationId>/approval.json`
 | --- | --- |
 | `succeeded` | Every stage is done (or was already gone). |
 | `refused` | Nothing changed. The code says why (see below). |
+| `timed_out_rolled_back` | The 30-second budget ran out inside the database transaction. It was rolled back, so nothing was committed. Approve and apply again. |
 | `partial` | Delete only. The database part is done and a later stage (`storage` or `identity`) failed. Approve and apply Delete again: completed stages report `absent` and the rest is finished. |
 
 Before the first delete, the app takes a retry reference: the sign-in subject and, once the database part is done, that fact. Both stay in app memory for 7 days. The database-done fact is also written as `dashboard-admin-account-wipes/retry/<email digest>.json` in the audit container. That file holds digests only and is trusted only for the same account. With it, an unactivated account whose subject was recorded only in an organisation context that storage has since deleted can still be finished after a restart. A partial delete that stopped at the identity stage can likewise still remove the External ID user from memory. If the app restarts before the retry, the retry reports `account_wipe_identity_reference_lost`. In that case, delete the user by hand in the Entra admin centre (External ID tenant, Users, search by the email, then delete it and permanently delete it from Deleted users).
