@@ -56,14 +56,14 @@ test('the shared header styles are defined once and keep links visible on phones
     expect(css).toMatch(/body \.site-header\.public-site-header nav \{ display: flex;[^}]*justify-self: end;/);
     expect(css).toMatch(/body \.site-header\.public-site-header nav \.site-login \{[^}]*border: 1px solid var\(--line-strong\);/);
     expect(css).toMatch(/@media \(max-width: 980px\) \{\s*body \.site-header\.public-site-header \{ grid-template-columns: minmax\(0, 1fr\);/);
-    // The homepage shows the same small brand as every other page.
-    expect(css).not.toMatch(/\.site-header > \.brand \{ display: none; \}/);
+    // Only the public homepage can hide the duplicate small brand.
+    expect(css).toMatch(/body\[data-page="dashboard-home"\]:has\(#gatewayPublic:not\(\[hidden\]\)\) \.site-header > \.brand \{ display: none; \}/);
     // Managed IT no longer restyles the shared header.
     expect(read('managed-it.css')).not.toMatch(/\.site-header/);
     for (const name of PAGES) expect([name, read(name).includes('href="/home.css"')]).toEqual([name, true]);
 });
 
-test('on phones the header shows only the brand and Log in, and the footer lists the page links', () => {
+test('on phones the header keeps Log in and the footer lists the page links', () => {
     const css = read('home.css');
     const phone = css.match(/@media \(max-width: 700px\) \{\s*body \.site-header:has\(> nav\[aria-label="Main navigation"\]\)[\s\S]*?\n\}/);
     expect(phone).not.toBeNull();
