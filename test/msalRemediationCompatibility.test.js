@@ -31,8 +31,9 @@ const rootConsumer = () => consumer('root', 'package.json',
 const consumers = [rootConsumer()];
 if (fullClosure) consumers.push(
     consumer('api', 'api/package.json', 'api/node_modules/@azure/msal-node', 'api/node_modules/@azure/identity'),
+    // promptfoo 0.125 resolves MSAL to the root copy; its Identity keeps its own.
     consumer('promptfoo', 'node_modules/promptfoo/package.json',
-        'node_modules/promptfoo/node_modules/@azure/msal-node', 'node_modules/promptfoo/node_modules/@azure/identity'),
+        'node_modules/@azure/msal-node', 'node_modules/promptfoo/node_modules/@azure/identity'),
     consumer('promptfoo Identity', 'node_modules/promptfoo/node_modules/@azure/identity/package.json',
         'node_modules/promptfoo/node_modules/@azure/identity/node_modules/@azure/msal-node',
         'node_modules/promptfoo/node_modules/@azure/identity')
@@ -156,7 +157,7 @@ test('every governed locked MSAL copy is fixed; full-closure mode requires every
     for (const directory of ['.', 'api']) {
         const lock = JSON.parse(fs.readFileSync(path.resolve(directory, 'package-lock.json')));
         const nodes = Object.entries(lock.packages).filter(([node]) => node.endsWith('/@azure/msal-node'));
-        expect(nodes.length).toBe(directory === '.' ? 3 : 1);
+        expect(nodes.length).toBe(directory === '.' ? 2 : 1);
         for (const [node, entry] of nodes) {
             expect(entry.version).toBe('7.1.1');
             if (fullClosure || (directory === '.' && node === 'node_modules/@azure/msal-node')) {
