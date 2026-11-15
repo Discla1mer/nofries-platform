@@ -121,6 +121,41 @@ async function layout(page) {
                     el.scrollHeight > el.clientHeight + 1 && ['hidden', 'clip'].includes(s.overflowY));
         }).map(el => ({ tag: el.tagName, id: el.id, class: el.className, text: el.textContent.trim().slice(0, 55) })) }));
 }
+async function publicHeader(page, route, width) {
+    const header = page.locator('.site-header:has(nav[aria-label="Main navigation"])');
+    if (!await header.count()) return null;
+    const brand = header.locator('.brand');
+    const brandName = await brand.getAttribute('aria-label');
+    const hiddenBrand = route === '/' && width <= 700;
+    assert.equal(await brand.isVisible(), !hiddenBrand, route + ': header brand visibility');
+    assert.equal((await header.ariaSnapshot()).includes(brandName), !hiddenBrand, route + ': accessible header brand');
+    const login = header.getByRole('link', { name: 'Log in', exact: true });
+    assert.ok(await login.isVisible(), route + ': Log in is visible');
+    assert.equal(await login.getAttribute('href'), '/login?intent=login');
+    await login.click({ trial: true });
+    if (route === '/') {
+        assert.ok(await page.locator('.homepage-lockup').isVisible(), 'Homepage hero branding is visible');
+        assert.ok(await page.locator('.lockup-mark').evaluate(el => el.complete && el.naturalWidth > 0), 'Hero image loaded');
+        await page.locator('#dashboardSkipLink').focus();
+        await page.keyboard.press('Tab');
+        assert.ok(await (hiddenBrand ? login : brand).evaluate(el => el === document.activeElement), 'Tab reaches the first visible header link');
+        if (hiddenBrand) {
+            assert.ok(await brand.evaluate(el => { el.focus(); return el !== document.activeElement; }), 'Hidden brand cannot receive focus');
+            const bounds = await login.boundingBox(), headerBounds = await header.boundingBox();
+            assert.ok(bounds.width >= 44 && bounds.height >= 44, 'Log in keeps its tap target');
+            assert.ok(Math.abs(bounds.x + bounds.width - headerBounds.x - headerBounds.width) < 1, 'Log in remains on the right');
+            // The gateway uses the same document for signed-in states, without the public hero.
+            await page.locator('#gatewayPublic').evaluate(el => { el.hidden = true; });
+            assert.ok(await brand.isVisible(), 'Gateway keeps its home link when the hero is hidden');
+            assert.ok((await header.ariaSnapshot()).includes(brandName));
+            await brand.focus();
+            assert.ok(await brand.evaluate(el => el === document.activeElement));
+            await page.locator('#gatewayPublic').evaluate(el => { el.hidden = false; });
+        }
+    }
+    await page.evaluate(() => window.scrollTo(0, 0));
+    return { hiddenBrand, loginVisible: true };
+}
 (async () => {
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const base = 'http://127.0.0.1:' + server.address().port;
@@ -131,7 +166,7 @@ async function layout(page) {
         const routes = ['/', '/login', '/managed-it.html', '/privacy.html', '/terms.html', '/roadmap.html', '/pricing.html', '/sample-result.html', '/report.html', '/try'];
         if (fs.existsSync(path.join(dist, 'contact.html'))) routes.push('/contact.html');
         else console.log('Contact form absent: deferred to #42/#43, not a passing contact-form check.');
-        for (const route of routes) for (const width of [1280, 320]) for (const scale of [1, 2]) {
+        for (const route of routes) for (const width of route === '/' ? [1280, 701, 700, 390, 320] : [1280, 320]) for (const scale of [1, 2]) {
             const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
             try {
                 const page = await context.newPage(); page.setDefaultTimeout(5000);
@@ -143,11 +178,12 @@ async function layout(page) {
                 await page.goto(base + route);
                 await page.locator('h1').first().waitFor();
                 if (route === '/login') await page.locator('#organisation-email').waitFor();
+                const header = await publicHeader(page, route, width);
                 const doubled = scale === 2 ? await doubleText(page) : 0;
                 const pageState = { axe: await scan(page), layout: await layout(page) };
                 const probe = route === '/login' ? await signupContrast(page) : null;
                 const hint = route === '/report.html' ? await reportHint(page) : null;
-                const entry = { route, width, scale, doubled, page: pageState, probe, hint };
+                const entry = { route, width, scale, doubled, page: pageState, header, probe, hint };
                 if (probe && (probe.candidate.ratio < 4.5 || probe.candidateScan.violations.length)) failures.push({ route, width, scale, state: 'signup-error-contrast' });
                 if (hint && !hint.pass) failures.push({ route, width, scale, state: 'persistent-report-hint' });
                 results.push(entry);
@@ -164,7 +200,7 @@ async function layout(page) {
         fs.writeFileSync(evidence, JSON.stringify({ summary, results }, null, 2));
         console.log(JSON.stringify({ ...summary, evidence }));
         if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '## Public accessibility\n' +
-            `${results.length} cases (1280/320 CSS pixels × 100/200% measured text).\n\n` +
+            `${results.length} cases (1280/320 CSS pixels, plus homepage 390/700/701px × 100/200% measured text).\n\n` +
             '| Page | Width | Text | Failing state |\n| --- | ---: | ---: | --- |\n' +
             failures.map(f => `| ${f.route} | ${f.width} | ${f.scale * 100}% | ${f.state} |`).join('\n') + '\n');
         if (browser) await browser.close();

@@ -339,7 +339,7 @@ async function keyboardChecks(page, card, name) {
     return focus;
 }
 
-async function brandChecks(page, name) {
+async function brandChecks(page, name, hiddenBrand = false) {
     const brand = await page.evaluate(() => {
         const body = getComputedStyle(document.body), root = getComputedStyle(document.documentElement);
         const logo = document.querySelector('.brand-logo'), card = [...document.querySelectorAll('.organisation-card, #dashboardStatusPanel')]
@@ -356,7 +356,8 @@ async function brandChecks(page, name) {
     assert.deepEqual(brand.tokens, brand.rootTokens, name + ': page overrides the shared brand palette');
     assert.deepEqual(brand.tokens, { '--page': '#ece6da', '--paper': '#f6f2ea', '--line': '#d3c9b7', '--muted': '#5f574b',
         '--green': '#7a5711', '--yellow': '#e5b53b', '--ink': '#17140f' }, name + ': shared brand palette drift');
-    assert.deepEqual(brand.logo, { path: '/images/nofrieslogo.png', width: 44, height: 44, loaded: true }, name + ': canonical logo drift');
+    const size = hiddenBrand ? 0 : 44;
+    assert.deepEqual(brand.logo, { path: '/images/nofrieslogo.png', width: size, height: size, loaded: true }, name + ': canonical logo drift');
     assert.deepEqual(brand.icons, [{ path: '/images/nofrieslogo.png', type: 'image/png' }], name + ': missing or placeholder tab icon');
     assert.match(brand.font, /^Inter, ui-sans-serif, system-ui/);
     if (brand.card) assert.equal(brand.card, 'rgb(246, 242, 234)', name + ': account surface drift');
@@ -400,7 +401,7 @@ async function publicBrandChecks(browser) {
             const name = target.slice(1) + '-' + width;
             await page.setViewportSize({ width, height: 900 }); await page.goto(base + target);
             assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), name + ': horizontal overflow');
-            const brand = await brandChecks(page, name);
+            const brand = await brandChecks(page, name, target === '/brand-home' && width <= 700);
             await page.screenshot({ path: path.join(artifacts, name + '.png'), fullPage: true });
             results.push({ name, scriptsDisabled: true, brand });
         }
