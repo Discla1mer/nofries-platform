@@ -403,6 +403,15 @@ describe('third review round', () => {
     });
 });
 
+test('without a deadline the attempt record gets the full audit timeout', async () => {
+    const h = harness();
+    const executor = createAccountWipeExecutor({ sources: [{ kind: 'external_starter', storage: h.storage }], repository: h.repository, identity: h.remover,
+        legacyIndexConfigured: false, ensureRole: async () => {}, targetDigest: () => DIGEST, auditTimeoutMs: 200, log: () => {},
+        audit: () => new Promise(resolve => setTimeout(resolve, 10)) });
+    const { approvalId } = await executor.approve(approval('reset'), signal());
+    expect(await executor.execute(apply(approvalId), signal())).toMatchObject({ outcome: 'succeeded', recorded: true });
+});
+
 describe('approval', () => {
     test.each([
         ['wrong typed email', { confirmEmail: 'someone.else@example.test' }],
