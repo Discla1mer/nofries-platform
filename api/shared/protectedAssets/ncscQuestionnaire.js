@@ -1600,6 +1600,18 @@
             }, 'dashboard-text-button');
             nextUnresolved = unresolved; more.append(unresolved);
             nav.append(navigationSummary, navigationActions); questionRegion.append(nav); updateQuestionNavigation();
+            // A bar taller than a quarter of the screen (enlarged text, a short
+            // landscape phone) would cover answers, so it stays in the page below
+            // the choices instead of sticking (WCAG 1.4.4, 1.4.10).
+            const fitNavigation = function () {
+                const tall = nav.isConnected && nav.offsetHeight > (window.innerHeight || 0) / 4;
+                nav.classList[tall ? 'add' : 'remove']('ncsc-navigation-static');
+            };
+            fitNavigation();
+            if (typeof window.ResizeObserver === 'function') {
+                const watcher = new window.ResizeObserver(function () { if (!nav.isConnected) watcher.disconnect(); else fitNavigation(); });
+                watcher.observe(nav);
+            }
             questionRegion.append(node('p', 'dashboard-muted', 'Still to confirm means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
             applyInlineErrors();
             restoreFocus(questionRegion, focused, fieldset.querySelector('legend'));

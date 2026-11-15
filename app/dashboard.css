@@ -361,8 +361,8 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-leave-dialog .dashboard-text-button { border-color: var(--dashboard-control-border, #7d7262); }
 .ncsc-leave-dialog .dashboard-text-button:hover { background: var(--dashboard-navy, #f2e4bc); }
 @media (max-width: 30rem) {
-    /* A compact bar that stays at the bottom of the screen while the question is in view. */
-    .ncsc-question-navigation { position: sticky; bottom: 0; z-index: 2; gap: .4rem; margin: 1rem 0 0; padding: .5rem 0; align-items: stretch;
+    /* A compact bar below the choices. */
+    .ncsc-question-navigation { gap: .4rem; margin: 1rem 0 0; padding: .5rem 0; align-items: stretch;
         background: var(--dashboard-paper, #fffdf8); border-top: 1px solid var(--dashboard-line, #d3c9b7); }
     .ncsc-question-navigation .ncsc-navigation-summary { flex: 1 1 100%; text-align: center; }
     .ncsc-navigation-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr auto; gap: .4rem; }
@@ -371,8 +371,6 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .ncsc-navigation-more-toggle { display: block; }
     .ncsc-navigation-more { display: grid; grid-column: 1 / -1; gap: .4rem; }
     .ncsc-navigation-more.ncsc-navigation-collapsed { display: none; }
-    /* Keep a focused control clear of the sticky bar. */
-    .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-bottom: 9rem; }
     .ncsc-actions > button { width: 100%; text-align: center; }
     .ncsc-review-item .dashboard-text-button { width: 100%; text-align: center; }
     .ncsc-review-counts { flex-direction: column; }
@@ -384,6 +382,14 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .ncsc-answer > p { margin: 0 0 .6rem; }
     .ncsc-leave-dialog { padding: 1rem; }
     .ncsc-leave-dialog[open] { grid-template-columns: minmax(0, 1fr); }
+}
+/* The bar stays at the bottom of the screen only on a tall enough screen and
+   while it is no taller than a quarter of it (the script marks a taller bar
+   static); otherwise it stays below the choices and never covers an answer. */
+@media (max-width: 30rem) and (min-height: 34rem) {
+    .ncsc-question-navigation:not(.ncsc-navigation-static) { position: sticky; bottom: 0; z-index: 2; }
+    /* Keep a focused control clear of the sticky bar. */
+    .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-bottom: 9rem; }
 }
 @media print { .ncsc-actions, .ncsc-review-item button, .ncsc-question-navigation, .ncsc-leave-dialog, .ncsc-leave-dialog[open] { display: none; } }
 @media (forced-colors: active) {
