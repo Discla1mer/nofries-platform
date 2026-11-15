@@ -118,3 +118,42 @@ test('session-anchored receipts and audit are deleted only where they carry no t
     expect(sessionDeletes).toHaveLength(2);
     for (const sql of sessionDeletes) expect(sql).toContain('tenant_id IS NULL AND');
 });
+
+describe('run deadline', () => {
+    test('every statement gets statement_timeout no larger than the time left; the lock wait is capped too', async () => {
+        let clock = 1000;
+        const f = fakePool(), result = await createAccountWipeRepository(f.pool, { now: () => (clock += 10) }).reset(scope, { deadline: 4000 });
+        expect(result.mode).toBe('reset');
+        const sql = f.statements.map(([text]) => text);
+        const timeouts = sql.filter(text => text.startsWith('SET LOCAL statement_timeout'));
+        expect(timeouts.length).toBe(sql.filter(text => !text.startsWith('SET LOCAL statement_timeout')).length - 1); // all but BEGIN
+        const values = timeouts.map(text => Number(text.split('= ')[1]));
+        expect(values.every(value => value > 0 && value < 3000)).toBe(true);
+        expect([...values].sort((a, b) => b - a)).toEqual(values);
+        expect(sql.find(text => text.startsWith('SET LOCAL lock_timeout'))).toMatch(/^SET LOCAL lock_timeout = \d+$/);
+    });
+
+    test('a tiny budget rolls back mid-delete and never commits', async () => {
+        let clock = 0;
+        const f = fakePool(), repository = createAccountWipeRepository(f.pool, { now: () => clock });
+        const original = f.pool.connect;
+        f.pool.connect = async () => { const client = await original(); const query = client.query;
+            client.query = async (sql, params) => { if (sql.startsWith('DELETE')) clock += 40; return query(sql, params); }; return client; };
+        await expect(repository.delete(scope, { deadline: 100 })).rejects.toMatchObject({ code: 'account_wipe_timed_out' });
+        const sql = f.statements.map(([text]) => text);
+        expect(sql).not.toContain('COMMIT'); expect(sql.at(-1)).toBe('ROLLBACK'); expect(f.released).toEqual([true]);
+        expect(deletes(f.statements).length).toBeGreaterThan(0);
+    });
+
+    test('an expired deadline or aborted signal sends no statement but ROLLBACK', async () => {
+        const f = fakePool(), controller = new AbortController(); controller.abort();
+        await expect(createAccountWipeRepository(f.pool).reset(scope, { deadline: Date.now() + 60000, signal: controller.signal })).rejects.toMatchObject({ code: 'account_wipe_timed_out' });
+        expect(f.statements.map(([text]) => text)).toEqual(['ROLLBACK']);
+    });
+
+    test('a statement cancelled by statement_timeout is reported as timed out', async () => {
+        const f = fakePool({ failOn: 'dashboard_evidence_heads', failCode: '57014' });
+        await expect(createAccountWipeRepository(f.pool).reset(scope, { deadline: Date.now() + 60000 })).rejects.toMatchObject({ code: 'account_wipe_timed_out' });
+        expect(f.statements.map(([text]) => text)).not.toContain('COMMIT');
+    });
+});

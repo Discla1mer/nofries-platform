@@ -135,7 +135,10 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
             organisations: inventory?.tenantIds.length ?? 0, store: located ? (located.kind === 'external_starter' ? 'external' : 'legacy') : null });
     }
 
-    async function execute({ actor, sessionSha256, approvalId, email }, signal) {
+    // deadline (epoch ms, optional) bounds the database transaction from inside:
+    // past it the transaction rolls back and the outcome is 'timed_out_rolled_back'.
+    async function execute({ actor, sessionSha256, approvalId, email, deadline }, signal) {
+        if (deadline !== undefined && !Number.isFinite(deadline)) fail('account_wipe_input_invalid');
         const actorSha256 = actorOf(actor, sessionSha256), target = normaliseEmail(email), targetSha256 = digestOf(target);
         prune();
         // Single use: taken out before any check, so it can never be replayed.
@@ -145,11 +148,11 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
             approval.sessionSha256 !== sessionSha256 || approval.targetSha256 !== targetSha256) fail('account_wipe_approval_invalid');
         if (running.has(targetSha256)) fail('account_wipe_busy');
         running.add(targetSha256);
-        try { return await run(approval.action, approvalId, actorSha256, target, targetSha256, signal); }
+        try { return await run(approval.action, approvalId, actorSha256, target, targetSha256, signal, deadline === undefined ? undefined : { signal, deadline }); }
         finally { running.delete(targetSha256); }
     }
 
-    async function run(action, operationId, actorSha256, email, targetSha256, signal) {
+    async function run(action, operationId, actorSha256, email, targetSha256, signal, bound) {
         const base = { action, actorSha256, targetSha256 };
         if (!await record(operationId, 'attempt', { ...base, outcome: 'attempt' })) fail('account_wipe_audit_unavailable');
         const stages = action === 'reset' ? { database: 'pending' } : { database: 'pending', storage: 'pending', identity: 'pending' };
@@ -162,7 +165,7 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
                 if (!inventory?.account) fail('account_wipe_account_not_found');
                 if (!inventory.subjectKey) fail('account_wipe_subject_unknown');
                 stage = 'database';
-                const result = await repository.reset(scope(inventory));
+                const result = await repository.reset(scope(inventory), bound);
                 counts.databaseRows = Object.values(result.counts).reduce((sum, n) => sum + n, 0);
                 stages.database = 'done';
             } else {
@@ -180,7 +183,7 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
                 stage = 'database';
                 if (accountId && subjectKey) {
                     try {
-                        const result = await repository.delete({ ...scope(inventory), subjectKey });
+                        const result = await repository.delete({ ...scope(inventory), subjectKey }, bound);
                         counts.databaseRows = Object.values(result.counts).reduce((sum, n) => sum + n, 0);
                         stages.database = 'done';
                     } catch (error) {
@@ -219,7 +222,9 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
             code = wipeCode(error);
             // Checks and the single database transaction change nothing when they fail.
             if (['checks', 'database'].includes(stage)) {
-                outcome = 'refused';
+                // The run budget ran out inside the transaction: rolled back, nothing
+                // committed, safe to approve and apply again.
+                outcome = code === 'account_wipe_timed_out' ? 'timed_out_rolled_back' : 'refused';
                 if (stage === 'database') {
                     stages.database = 'failed';
                     // Nothing was deleted, so no new retry reference is kept.

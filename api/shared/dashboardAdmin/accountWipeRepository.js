@@ -43,7 +43,8 @@ const fail = code => { const error = new Error(code); error.code = code; throw e
 // 23503: a row the wipe cannot see (a staff or other person's session, or a
 // row in an organisation outside this account) still references one being
 // deleted. 55P03: a customer writer held a table past the lock timeout.
-const DATABASE_CODES = Object.freeze({ '23503': 'account_wipe_reference_blocked', '55P03': 'account_wipe_busy' });
+// 57014: a statement ran into the remaining run budget (statement_timeout).
+const DATABASE_CODES = Object.freeze({ '23503': 'account_wipe_reference_blocked', '55P03': 'account_wipe_busy', '57014': 'account_wipe_timed_out' });
 
 function target(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) fail('account_wipe_target_invalid');
@@ -56,34 +57,55 @@ function target(input) {
     return Object.freeze({ accountId: input.accountId, subjectKey: input.subjectKey, tenantIds: Object.freeze([...input.tenantIds]) });
 }
 
-function createAccountWipeRepository(pool) {
-    if (!pool || typeof pool.connect !== 'function') fail('account_wipe_configuration_invalid');
-    async function run(input, mode) {
+// An optional run deadline (epoch ms, with an optional AbortSignal) is
+// enforced inside the transaction: before every statement the remaining time
+// is checked and statement_timeout lowered to it, lock_timeout is at most the
+// remaining time, and COMMIT is never sent after the deadline. Expiry rolls
+// back with account_wipe_timed_out: nothing is committed.
+function createAccountWipeRepository(pool, { now = Date.now } = {}) {
+    if (!pool || typeof pool.connect !== 'function' || typeof now !== 'function') fail('account_wipe_configuration_invalid');
+    async function run(input, mode, options = {}) {
         const scope = target(input), counts = {};
+        if (!options || typeof options !== 'object' || options.deadline !== undefined && !Number.isFinite(options.deadline) ||
+            options.signal !== undefined && typeof options.signal?.aborted !== 'boolean') fail('account_wipe_target_invalid');
         const add = (table, n) => { counts[table] = (counts[table] || 0) + n; };
+        const timed = options.deadline !== undefined;
+        const remaining = () => {
+            const left = Math.floor(options.deadline - now());
+            if (left <= 0 || options.signal?.aborted) fail('account_wipe_timed_out');
+            return left;
+        };
         const client = await pool.connect();
+        const db = { async query(sql, params) {
+            if (timed) {
+                const left = remaining();
+                if (sql !== 'BEGIN') await client.query(`SET LOCAL statement_timeout = ${left}`);
+            }
+            return params === undefined ? client.query(sql) : client.query(sql, params);
+        } };
         let discard = false;
         try {
-            await client.query('BEGIN');
+            await db.query('BEGIN');
             // Fails when the login is not granted the role (SET TRUE) or 0025 is absent.
-            try { await client.query('SET LOCAL ROLE nofries_account_wipe'); } catch (_) { fail('account_wipe_role_unavailable'); }
+            try { await db.query('SET LOCAL ROLE nofries_account_wipe'); }
+            catch (error) { if (error?.code === 'account_wipe_timed_out') throw error; fail('account_wipe_role_unavailable'); }
             // Serialise with customer writers (evidence, assessments, plans) for the
             // whole wipe: no row can be added or changed in these tables until
             // COMMIT. Reads continue. DELETE privilege is enough for this mode; a
             // busy table fails the call after the lock timeout and nothing changes.
-            await client.query("SET LOCAL lock_timeout = '5s'");
-            await client.query(`LOCK TABLE ${lockTables(mode).map(table => 'nofries.' + table).join(', ')} IN SHARE ROW EXCLUSIVE MODE`);
-            await client.query("SELECT set_config('nofries.wipe_account_id', $1, true), set_config('nofries.wipe_subject_key', $2, true)",
+            await db.query(timed ? `SET LOCAL lock_timeout = ${Math.min(5000, remaining())}` : "SET LOCAL lock_timeout = '5s'");
+            await db.query(`LOCK TABLE ${lockTables(mode).map(table => 'nofries.' + table).join(', ')} IN SHARE ROW EXCLUSIVE MODE`);
+            await db.query("SELECT set_config('nofries.wipe_account_id', $1, true), set_config('nofries.wipe_subject_key', $2, true)",
                 [scope.accountId, scope.subjectKey]);
             // The account must exist under this subject before anything is removed.
-            const owner = await client.query('SELECT 1 FROM nofries.dashboard_starter_accounts WHERE account_id = $1 AND subject_key = $2',
+            const owner = await db.query('SELECT 1 FROM nofries.dashboard_starter_accounts WHERE account_id = $1 AND subject_key = $2',
                 [scope.accountId, scope.subjectKey]);
             if (owner.rowCount !== 1) fail('account_wipe_account_not_found');
             // Every tenant must belong to this account before anything is deleted;
             // a foreign tenant id aborts the whole call.
             for (const tenantId of scope.tenantIds) {
-                await client.query("SELECT set_config('nofries.wipe_tenant_id', $1, true)", [tenantId]);
-                const scoped = await client.query('SELECT 1 FROM nofries.dashboard_starter_scopes WHERE tenant_id = $1 AND account_id = $2',
+                await db.query("SELECT set_config('nofries.wipe_tenant_id', $1, true)", [tenantId]);
+                const scoped = await db.query('SELECT 1 FROM nofries.dashboard_starter_scopes WHERE tenant_id = $1 AND account_id = $2',
                     [tenantId, scope.accountId]);
                 if (scoped.rowCount !== 1) fail('account_wipe_tenant_mismatch');
             }
@@ -93,27 +115,27 @@ function createAccountWipeRepository(pool) {
                 // rows in a tenant go with that tenant below; one in a tenant this
                 // account does not own makes the delete fail, never reach across.
                 const sessions = "SELECT session_sha256 FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind IN ('customer', 'onboarding_discovery')";
-                add('dashboard_runtime_receipts', (await client.query(`DELETE FROM nofries.dashboard_runtime_receipts WHERE tenant_id IS NULL AND anchor_session_sha256 IN (${sessions})`,
+                add('dashboard_runtime_receipts', (await db.query(`DELETE FROM nofries.dashboard_runtime_receipts WHERE tenant_id IS NULL AND anchor_session_sha256 IN (${sessions})`,
                     [scope.subjectKey])).rowCount);
-                add('dashboard_runtime_audit', (await client.query(`DELETE FROM nofries.dashboard_runtime_audit WHERE tenant_id IS NULL AND session_sha256 IN (${sessions})`,
+                add('dashboard_runtime_audit', (await db.query(`DELETE FROM nofries.dashboard_runtime_audit WHERE tenant_id IS NULL AND session_sha256 IN (${sessions})`,
                     [scope.subjectKey])).rowCount);
-                add('dashboard_session_gates', (await client.query("DELETE FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind IN ('customer', 'onboarding_discovery')",
+                add('dashboard_session_gates', (await db.query("DELETE FROM nofries.dashboard_session_gates WHERE subject_key = $1 AND kind IN ('customer', 'onboarding_discovery')",
                     [scope.subjectKey])).rowCount);
             }
             for (const tenantId of scope.tenantIds) {
-                await client.query("SELECT set_config('nofries.wipe_tenant_id', $1, true)", [tenantId]);
+                await db.query("SELECT set_config('nofries.wipe_tenant_id', $1, true)", [tenantId]);
                 for (const table of mode === 'delete' ? DELETE_TENANT_TABLES : RESET_TABLES) {
-                    add(table, (await client.query(`DELETE FROM nofries.${table} WHERE tenant_id = $1`, [tenantId])).rowCount);
+                    add(table, (await db.query(`DELETE FROM nofries.${table} WHERE tenant_id = $1`, [tenantId])).rowCount);
                 }
             }
             if (mode === 'delete') {
-                await client.query("SELECT set_config('nofries.wipe_tenant_id', '', true)");
-                add('email_preferences', (await client.query('DELETE FROM nofries.email_preferences WHERE account_id = $1', [scope.accountId])).rowCount);
-                add('dashboard_starter_accounts', (await client.query('DELETE FROM nofries.dashboard_starter_accounts WHERE account_id = $1 AND subject_key = $2',
+                await db.query("SELECT set_config('nofries.wipe_tenant_id', '', true)");
+                add('email_preferences', (await db.query('DELETE FROM nofries.email_preferences WHERE account_id = $1', [scope.accountId])).rowCount);
+                add('dashboard_starter_accounts', (await db.query('DELETE FROM nofries.dashboard_starter_accounts WHERE account_id = $1 AND subject_key = $2',
                     [scope.accountId, scope.subjectKey])).rowCount);
-                add('signup_registrations', (await client.query('DELETE FROM nofries.signup_registrations WHERE subject_key = $1', [scope.subjectKey])).rowCount);
+                add('signup_registrations', (await db.query('DELETE FROM nofries.signup_registrations WHERE subject_key = $1', [scope.subjectKey])).rowCount);
             }
-            await client.query('COMMIT');
+            await db.query('COMMIT');
             return Object.freeze({ mode, tenants: scope.tenantIds.length, counts: Object.freeze(counts) });
         } catch (error) {
             discard = true;
@@ -122,7 +144,7 @@ function createAccountWipeRepository(pool) {
             fail(DATABASE_CODES[error?.code] || 'account_wipe_unavailable');
         } finally { client.release(discard); }
     }
-    return Object.freeze({ reset: input => run(input, 'reset'), delete: input => run(input, 'delete') });
+    return Object.freeze({ reset: (input, options) => run(input, 'reset', options), delete: (input, options) => run(input, 'delete', options) });
 }
 
 module.exports = { createAccountWipeRepository, RESET_TABLES, DELETE_TENANT_TABLES, DELETE_FIRST_TABLES, DELETE_ACCOUNT_TABLES };
