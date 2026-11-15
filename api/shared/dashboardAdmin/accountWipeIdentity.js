@@ -38,7 +38,14 @@ function createAccountWipeIdentity({ tenantId, getToken, fetch: request = global
     // A usable Graph token for the External ID tenant, or a fixed code.
     async function token(signal) {
         let value;
-        try { value = await getToken({ signal }); } catch (_) { fail('account_wipe_identity_unavailable'); }
+        // Raced against the run signal too: the managed-identity assertion inside
+        // the credential cannot take the signal itself.
+        try {
+            value = await (signal ? Promise.race([getToken({ signal }), new Promise((_, reject) => {
+                if (signal.aborted) reject(new Error('aborted'));
+                signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+            })]) : getToken({ signal }));
+        } catch (_) { fail('account_wipe_identity_unavailable'); }
         if (!tokenFor(value, tenantId)) fail('account_wipe_identity_configuration_invalid');
         return value;
     }
@@ -74,16 +81,25 @@ function createAccountWipeIdentity({ tenantId, getToken, fetch: request = global
             };
             const permanent = `https://graph.microsoft.com/v1.0/directory/deletedItems/${objectId}`;
             const active = await call(`https://graph.microsoft.com/v1.0/users/${objectId}`);
-            let deleted = await call(permanent);
-            // Only a user this call (or an earlier pending one) deleted can be lagging into deleted items.
+            // From here the user may be soft-deleted (in deleted items, restorable):
+            // every error says so, so the caller keeps it pending until a permanent
+            // delete is confirmed.
             const lagging = active === 204 || pendingPermanent === true;
-            for (const delay of lagging ? retryDelaysMs : []) {
-                if (deleted === 204) break;
-                if (deadline !== undefined && now() + delay + timeoutMs > deadline) break;
-                try { await sleep(delay, signal); } catch (_) { break; }
+            let deleted;
+            try {
                 deleted = await call(permanent);
+                // Only a user this call (or an earlier pending one) deleted can be lagging into deleted items.
+                for (const delay of lagging ? retryDelaysMs : []) {
+                    if (deleted === 204) break;
+                    if (deadline !== undefined && now() + delay + timeoutMs > deadline) break;
+                    try { await sleep(delay, signal); } catch (_) { break; }
+                    deleted = await call(permanent);
+                }
+                if (lagging && deleted === 404) fail('account_wipe_identity_pending');
+            } catch (error) {
+                if (lagging) error.softDeleted = true;
+                throw error;
             }
-            if (lagging && deleted === 404) fail('account_wipe_identity_pending');
             return Object.freeze({ removed: true, alreadyGone: active === 404 && deleted === 404 });
         }
     });

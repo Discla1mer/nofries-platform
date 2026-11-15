@@ -69,6 +69,17 @@ test('configuration must name the External ID tenant', () => {
 });
 
 describe('review fixes', () => {
+    test('204 then a failing permanent delete is marked soft-deleted, so a later 404/404 stays pending', async () => {
+        const first = make([204, 500]);
+        await expect(first.identity.remove(`${TENANT}:${OBJECT}`)).rejects.toMatchObject({ code: 'account_wipe_identity_unavailable', softDeleted: true });
+        const second = make([404, 404, 404, 404, 404, 404]);
+        await expect(second.identity.remove(`${TENANT}:${OBJECT}`, { pendingPermanent: true })).rejects.toMatchObject({ code: 'account_wipe_identity_pending' });
+        // A failure before anything was deleted is not marked.
+        const before = make([500]);
+        const error = await before.identity.remove(`${TENANT}:${OBJECT}`).catch(e => e);
+        expect(error.softDeleted).toBeUndefined();
+    });
+
     test('204 then persistent 404 across two invocations stays pending; only a confirmed permanent delete succeeds', async () => {
         const first = make([204, 404, 404, 404, 404, 404]);
         await expect(first.identity.remove(`${TENANT}:${OBJECT}`)).rejects.toMatchObject({ code: 'account_wipe_identity_pending' });

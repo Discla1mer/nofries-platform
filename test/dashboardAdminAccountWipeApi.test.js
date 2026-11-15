@@ -8,7 +8,7 @@ const { createAccountWipeExecutor } = require('../api/shared/dashboardAdmin/acco
 const { createAccountWipeRoute, sessionDigest } = require('../api/shared/dashboardAdmin/accountWipeRoute');
 const { fixture } = require('./fixtures/dashboardAdminAccountActionsProduction');
 const { createStaffDashboardAdministration } = require('../lib/dashboardAdminStaffProduction');
-const { composeAccountWipe, createRetryMarkers, ROLE_PROBE } = require('../lib/dashboardAdminAccountWipeProduction');
+const { composeAccountWipe, createRetryMarkers, createRoleProbe, ROLE_PROBE } = require('../lib/dashboardAdminAccountWipeProduction');
 
 const uid = n => '71000000-0000-4000-8000-' + String(n).padStart(12, '0');
 const STAFF = uid(1) + ':' + uid(2), EMAIL = 'synthetic.owner@example.test', origin = 'https://operator.example.test';
@@ -218,11 +218,29 @@ describe('production composition', () => {
         await expect(markers.read('not-a-digest')).rejects.toThrow();
     });
 
+    test('a stalled connection wait for the role probe ends at the deadline; a late connection is released as broken', async () => {
+        const released = []; let deliver;
+        const pool = { connect: () => new Promise(resolve => { deliver = () => resolve({ query: async () => ({ rows: [{ ok: true }] }), release: discard => released.push(discard) }); }) };
+        await expect(createRoleProbe(pool)({ deadline: Date.now() + 30 })).rejects.toThrow();
+        deliver(); await new Promise(resolve => setImmediate(resolve));
+        expect(released).toEqual([true]);
+    });
+
+    test('the role probe runs with statement_timeout no larger than the time left, and a stalled probe is discarded', async () => {
+        const seen = [], released = [];
+        const pool = { connect: async () => ({ query: async (sql, params) => { seen.push([sql, params]);
+            if (sql === ROLE_PROBE) throw Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
+            return { rows: [] }; }, release: discard => released.push(discard) }) };
+        await expect(createRoleProbe(pool)({ deadline: Date.now() + 2000 })).rejects.toThrow();
+        expect(Number(seen[1][1][0])).toBeLessThanOrEqual(2000); expect(released).toEqual([true]);
+        expect(seen.at(-1)[0]).toBe('ROLLBACK');
+    });
+
     test('a login that cannot SET the wipe role is refused with a clear code', async () => {
         const queries = [];
         const pool = { connect: async () => ({ query: async sql => { queries.push(sql); return { rows: [{ ok: false }] }; }, release() {} }) };
         const { route } = compose({}, pool);
         expect((await route(approve('reset').wipe, actor, request, new AbortController().signal)).body.code).toBe('account_wipe_role_unavailable');
-        expect(queries).toEqual([ROLE_PROBE]);
+        expect(queries).toEqual(['BEGIN', "SELECT set_config('statement_timeout', $1, true)", ROLE_PROBE, 'COMMIT']);
     });
 });

@@ -150,10 +150,10 @@ describe('run deadline', () => {
         expect(deletes(f.statements).length).toBeGreaterThan(0);
     });
 
-    test('an expired deadline or aborted signal sends no statement but ROLLBACK', async () => {
+    test('an expired deadline or aborted signal takes no connection and sends nothing', async () => {
         const f = fakePool(), controller = new AbortController(); controller.abort();
         await expect(createAccountWipeRepository(f.pool).reset(scope, { deadline: Date.now() + 60000, signal: controller.signal })).rejects.toMatchObject({ code: 'account_wipe_timed_out' });
-        expect(f.statements.map(([text]) => text)).toEqual(['ROLLBACK']);
+        expect(f.statements).toEqual([]); expect(f.released).toEqual([]); // not even a connection is taken
     });
 
     test('a statement cancelled by statement_timeout is reported as timed out', async () => {
@@ -192,5 +192,24 @@ describe('review fixes', () => {
         await expect(createAccountWipeRepository(f.pool, { now: () => clock }).delete(scope, { deadline: 500 })).rejects.toMatchObject({ code: 'account_wipe_timed_out' });
         expect(f.statements.map(([sql]) => sql)).not.toContain('COMMIT');
         expect(f.statements.at(-1)[0]).toBe('ROLLBACK');
+    });
+});
+
+describe('bounded waits', () => {
+    test('a stalled connection wait ends at the deadline; a connection arriving later is released as broken', async () => {
+        const f = fakePool(), original = f.pool.connect;
+        let deliver;
+        f.pool.connect = () => new Promise(resolve => { deliver = async () => resolve(await original()); });
+        await expect(createAccountWipeRepository(f.pool).reset(scope, { deadline: Date.now() + 30 })).rejects.toMatchObject({ code: 'account_wipe_timed_out' });
+        await deliver(); await new Promise(resolve => setImmediate(resolve));
+        expect(f.released).toEqual([true]); expect(f.statements).toEqual([]);
+    });
+
+    test('a COMMIT that never answers ends as an unknown outcome', async () => {
+        const f = fakePool(), original = f.pool.connect;
+        f.pool.connect = async () => { const client = await original(); const query = client.query;
+            client.query = (sql, params) => sql === 'COMMIT' ? new Promise(() => {}) : query(sql, params); return client; };
+        await expect(createAccountWipeRepository(f.pool).reset(scope, { deadline: Date.now() + 1200 })).rejects.toMatchObject({ code: 'account_wipe_commit_unknown' });
+        expect(f.released).toEqual([true]);
     });
 });
