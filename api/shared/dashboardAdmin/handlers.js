@@ -99,7 +99,15 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
 
     // Staff account reset/delete: only with its exact flag and a host-composed
     // executor. Off: the lookup route answers a wipe body 404 and no control loads.
-    const accountWipe = env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE === 'true' && typeof accountLookupReader?.wipe === 'function' ? accountLookupReader.wipe : null;
+    const accountWipeRoute = env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE === 'true' && typeof accountLookupReader?.wipe === 'function' ? accountLookupReader.wipe : null;
+    // Applying a reset or delete is a mutation on the lookup route: once it
+    // starts, the response waits for its bounded outcome and audit (as for
+    // suspend/restore) instead of the read budget's 503.
+    const mutations = new WeakSet();
+    const accountWipe = accountWipeRoute && (async (input, actor, request, signal) => {
+        if (input && typeof input === 'object' && input.step === 'execute') { signal.throwIfAborted(); mutations.add(request); }
+        return accountWipeRoute(input, actor, request, signal);
+    });
     // The route flag stays required; the reader and its durable audit writer
     // come only from the host's environment composition, never from a header.
     const accountLookup = env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP === 'true' && accountLookupReader
@@ -252,7 +260,10 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 return await execute(request, route, checked, controller.signal);
             }
             return await Promise.race([execute(request, route, checked, controller.signal), new Promise(resolve => {
-                timer = setTimeout(() => { stopped = true; controller.abort(); resolve(response(503, { code: 'dashboard_admin_unavailable' })); }, requestBudgetMs);
+                timer = setTimeout(() => {
+                    if (mutations.has(request)) return;
+                    stopped = true; controller.abort(); resolve(response(503, { code: 'dashboard_admin_unavailable' }));
+                }, requestBudgetMs);
             })]);
         } finally { clearTimeout(timer); externalSignal?.removeEventListener('abort', abort); }
     }

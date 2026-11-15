@@ -13,7 +13,7 @@ const signal = () => new AbortController().signal;
 function inventory(overrides = {}) {
     return { account: { accountId: uid(10) }, subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)], ...overrides };
 }
-function harness({ kind = 'external_starter', found = inventory(), identity = true, legacy = false, role = true, auditFails = [] } = {}) {
+function harness({ kind = 'external_starter', found = inventory(), identity = true, legacy = false, role = true, auditFails = [], markers = null } = {}) {
     const calls = [], records = [];
     let clock = Date.parse('2026-11-15T01:00:00.000Z'), ids = 0, current = found;
     const storage = {
@@ -29,7 +29,7 @@ function harness({ kind = 'external_starter', found = inventory(), identity = tr
         sources: [{ kind, storage }], repository, identity: identity ? remover : null, legacyIndexConfigured: legacy,
         ensureRole: async () => { calls.push(['role']); if (!role) throw new Error('no role'); },
         audit: async event => { if (auditFails.includes(event.phase)) throw new Error('down'); records.push(event); },
-        targetDigest: email => email === EMAIL ? DIGEST : 'd'.repeat(64),
+        targetDigest: email => email === EMAIL ? DIGEST : 'd'.repeat(64), retryMarkers: markers,
         now: () => clock, newId: () => uid(500 + ++ids)
     });
     return { executor, storage, repository, remover, calls, records, tick: ms => { clock += ms; }, set: value => { current = value; } };
@@ -146,6 +146,60 @@ describe('delete', () => {
         const { approvalId } = await h.executor.approve(approval('delete'), signal());
         await expect(h.executor.execute(apply(approvalId), signal())).rejects.toMatchObject({ code: 'account_wipe_audit_unavailable' });
         expect(order(h.calls)).toEqual([]);
+    });
+});
+
+describe('unactivated legacy account (subject only in the organisation context)', () => {
+    // Storage removes the context (stage 3) before the account record (stage 5).
+    // After a failure between them, the inventory no longer finds the subject.
+    const contextGone = () => inventory({ subjectKey: null });
+    function store() {
+        const rows = new Map();
+        return { rows, read: jest.fn(async digest => rows.get(digest) ?? null), write: jest.fn(async (digest, record) => { rows.set(digest, record); }) };
+    }
+
+    test('a retry in the same process uses the reference taken before the first delete', async () => {
+        const h = harness({ kind: 'legacy_starter' });
+        let { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.storage.delete.mockImplementationOnce(async () => { h.set(contextGone()); throw Object.assign(new Error('x'), { code: 'account_wipe_storage_unavailable' }); });
+        expect((await h.executor.execute(apply(approvalId), signal())).outcome).toBe('partial');
+        h.repository.delete.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_account_not_found' }));
+        ({ approvalId } = await h.executor.approve(approval('delete'), signal()));
+        const retry = await h.executor.execute(apply(approvalId), signal());
+        expect(h.repository.delete).toHaveBeenLastCalledWith({ accountId: uid(10), subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)] });
+        expect(retry).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'done', identity: 'not_applicable' } });
+    });
+
+    test('after a restart, the durable digest-only marker lets the retry skip the finished database part', async () => {
+        const markers = store(), first = harness({ kind: 'legacy_starter', markers });
+        const { approvalId } = await first.executor.approve(approval('delete'), signal());
+        first.storage.delete.mockImplementationOnce(async () => { throw Object.assign(new Error('x'), { code: 'account_wipe_storage_unavailable' }); });
+        expect((await first.executor.execute(apply(approvalId), signal())).outcome).toBe('partial');
+        const marker = markers.rows.get(DIGEST);
+        expect(marker).toMatchObject({ databaseDone: true, targetSha256: DIGEST, accountSha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
+        expect(JSON.stringify(marker)).not.toMatch(new RegExp([EMAIL, uid(10), uid(2)].join('|')));
+        // A new process: nothing in memory, the subject no longer discoverable.
+        const second = harness({ kind: 'legacy_starter', markers, found: contextGone() });
+        const again = await second.executor.approve(approval('delete'), signal());
+        const retry = await second.executor.execute(apply(again.approvalId), signal());
+        expect(second.repository.delete).not.toHaveBeenCalled();
+        expect(retry).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'done', identity: 'not_applicable' } });
+    });
+
+    test('a marker for another account with the same email is not trusted', async () => {
+        const markers = store();
+        markers.rows.set(DIGEST, { schemaVersion: 1, targetSha256: DIGEST, accountSha256: 'e'.repeat(64), databaseDone: true });
+        const h = harness({ kind: 'legacy_starter', markers, found: contextGone() });
+        await expect(h.executor.approve(approval('delete'), signal())).rejects.toMatchObject({ code: 'account_wipe_subject_unknown' });
+    });
+
+    test('a database refusal keeps no new retry reference', async () => {
+        const h = harness();
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.repository.delete.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_reference_blocked' }));
+        await h.executor.execute(apply(approvalId), signal());
+        h.set(null);
+        await expect(h.executor.approve(approval('delete'), signal())).rejects.toMatchObject({ code: 'account_wipe_account_not_found' });
     });
 });
 
