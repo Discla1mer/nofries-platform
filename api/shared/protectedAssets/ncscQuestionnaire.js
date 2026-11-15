@@ -1603,13 +1603,14 @@
             // A bar taller than a quarter of the screen (enlarged text, a short
             // landscape phone) would cover answers, so it stays in the page below
             // the choices instead of sticking (WCAG 1.4.4, 1.4.10).
+            const view = typeof window === 'undefined' ? null : window;
             const fitNavigation = function () {
-                const tall = nav.isConnected && nav.offsetHeight > (window.innerHeight || 0) / 4;
+                const tall = Boolean(view && nav.isConnected && nav.offsetHeight > (view.innerHeight || 0) / 4);
                 nav.classList[tall ? 'add' : 'remove']('ncsc-navigation-static');
             };
             fitNavigation();
-            if (typeof window.ResizeObserver === 'function') {
-                const watcher = new window.ResizeObserver(function () { if (!nav.isConnected) watcher.disconnect(); else fitNavigation(); });
+            if (view && typeof view.ResizeObserver === 'function') {
+                const watcher = new view.ResizeObserver(function () { if (!nav.isConnected) watcher.disconnect(); else fitNavigation(); });
                 watcher.observe(nav);
             }
             questionRegion.append(node('p', 'dashboard-muted', 'Still to confirm means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
