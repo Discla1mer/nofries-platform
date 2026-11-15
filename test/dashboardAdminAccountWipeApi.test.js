@@ -236,6 +236,16 @@ describe('production composition', () => {
         expect(seen.at(-1)[0]).toBe('ROLLBACK');
     });
 
+    test.each(['BEGIN', ROLE_PROBE])('a stalled %s in the role probe returns within the deadline and destroys the connection', async hang => {
+        const sent = [], released = []; let tail = Promise.resolve();
+        const pool = { connect: async () => ({ release: discard => released.push(discard), query: (sql, params) => {
+            const run = tail.then(() => { sent.push(sql); return sql === hang ? new Promise(() => {}) : { rows: [{ ok: true }] }; }); tail = run.catch(() => {}); return run; } }) };
+        const started = Date.now();
+        await expect(createRoleProbe(pool)({ deadline: Date.now() + 50 })).rejects.toThrow();
+        expect(Date.now() - started).toBeLessThan(50 + 200);
+        expect(released).toEqual([true]); expect(sent).not.toContain('ROLLBACK');
+    });
+
     test('a login that cannot SET the wipe role is refused with a clear code', async () => {
         const queries = [];
         const pool = { connect: async () => ({ query: async sql => { queries.push(sql); return { rows: [{ ok: false }] }; }, release() {} }) };
