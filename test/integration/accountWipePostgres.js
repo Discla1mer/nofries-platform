@@ -16,6 +16,7 @@ const { compileStarterProvisioning, compileStarterAdmission, starterBootstrapCom
 const { createPostgresDashboardRepository } = require('../../api/shared/appLifecycle/postgresDashboardRepository');
 const { createPostgresSignupAcceptanceJournal } = require('../../api/shared/customerSignup/postgresSignupAcceptanceJournal');
 const { createAccountWipeRepository, RESET_TABLES, DELETE_TENANT_TABLES } = require('../../api/shared/dashboardAdmin/accountWipeRepository');
+const outbox = require('../../api/shared/lifecycleEmail/outboxWriter');
 
 const target = String(process.env.NOFRIES_TEST_DATABASE_URL || '').trim();
 const migration = fs.readFileSync(path.join(__dirname, '../../database/migrations/0025_account_wipe_role.sql'), 'utf8');
@@ -134,6 +135,9 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         const c = await consultant(db), first = await organisation(db, c, 1), second = await organisation(db, c, 2);
         await db.query("INSERT INTO nofries.email_preferences (account_id,email_type,unsubscribed_at,source) VALUES ($1,'nudge_unfinished',clock_timestamp(),'settings')",
             [c.account.accountId]);
+        // A queued lifecycle email, written by the runtime as production writes it.
+        await tx(db, () => asRuntime(db, c.actor, first.scope, () => outbox.enqueue(db, { ...first.scope, accountId: c.account.accountId,
+            type: 'welcome', dedupeKey: 'welcome', notBefore: new Date().toISOString() })));
         return { c, tenants: [first.scope.tenantId, second.scope.tenantId] };
     }
     // Row counts per table for one account, read by the CI owner (superuser).
@@ -155,6 +159,7 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         const before = await footprint(db, doomed), sentinelBefore = await footprint(db, sentinel);
         expect(before.dashboard_tenants).toBe(2); expect(before.dashboard_starter_scopes).toBe(2);
         expect(before.signup_acceptance_receipts).toBeGreaterThan(0); expect(before.dashboard_starter_accounts).toBe(1);
+        expect(before.email_outbox).toBe(1);
         const result = await createAccountWipeRepository(pool).delete(wipeTarget(doomed));
         expect(result).toMatchObject({ mode: 'delete', tenants: 2 });
         expect(Object.values(await footprint(db, doomed)).every(n => n === 0)).toBe(true);
