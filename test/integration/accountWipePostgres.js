@@ -180,9 +180,19 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         await expect(createAccountWipeRepository(pool).delete({ ...wipeTarget(a), tenantIds: [a.tenants[0], other.tenants[0]] }))
             .rejects.toMatchObject({ code: 'account_wipe_tenant_mismatch' });
         expect(await footprint(db, a)).toEqual(before);
+        // The account row exists under another subject: the wipe role cannot see
+        // it, but its preferences and tenant rows show it is still there.
         await expect(createAccountWipeRepository(pool).delete({ ...wipeTarget(a), subjectKey: other.c.actor }))
-            .rejects.toMatchObject({ code: 'account_wipe_account_not_found' });
+            .rejects.toMatchObject({ code: 'account_wipe_subject_mismatch' });
         expect(await footprint(db, a)).toEqual(before);
+    });
+
+    test('an account id with nothing left in the database is reported as not found', async () => {
+        const db = await connect(), sentinel = await account(db), sentinelBefore = await footprint(db, sentinel);
+        const { randomUUID } = require('node:crypto');
+        await expect(createAccountWipeRepository(pool).delete({ accountId: randomUUID(), subjectKey: sentinel.c.actor, tenantIds: [randomUUID()] }))
+            .rejects.toMatchObject({ code: 'account_wipe_account_not_found' });
+        expect(await footprint(db, sentinel)).toEqual(sentinelBefore);
     });
 
     test('the capability sees nothing without settings and can never insert or update', async () => {

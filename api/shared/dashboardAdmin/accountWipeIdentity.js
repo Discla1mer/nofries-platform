@@ -22,31 +22,84 @@ function tokenFor(token, tenantId) {
     } catch (_) { return false; }
 }
 
-function createAccountWipeIdentity({ tenantId, getToken, fetch: request = globalThis.fetch, timeoutMs = 5000 }) {
-    if (typeof tenantId !== 'string' || !UUID.test(tenantId) || typeof getToken !== 'function' || typeof request !== 'function')
-        fail('account_wipe_identity_configuration_invalid');
+// After DELETE /users the user can take a moment to appear in deleted items,
+// so a 404 there is retried with a short backoff (within the run deadline)
+// before the user is counted as gone; still not visible is
+// account_wipe_identity_pending, which a later retry finishes.
+const PERMANENT_RETRY_MS = Object.freeze([500, 1000, 2000, 4000]);
+const wait = (ms, signal) => new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('aborted')); }, { once: true });
+});
+
+function createAccountWipeIdentity({ tenantId, getToken, fetch: request = globalThis.fetch, timeoutMs = 5000, sleep = wait, now = Date.now, retryDelaysMs = PERMANENT_RETRY_MS }) {
+    if (typeof tenantId !== 'string' || !UUID.test(tenantId) || typeof getToken !== 'function' || typeof request !== 'function' ||
+        typeof sleep !== 'function' || typeof now !== 'function' || !Array.isArray(retryDelaysMs)) fail('account_wipe_identity_configuration_invalid');
+    // A usable Graph token for the External ID tenant, or a fixed code.
+    async function token(signal) {
+        let value;
+        // Raced against the run signal too: the managed-identity assertion inside
+        // the credential cannot take the signal itself.
+        try {
+            value = await (signal ? Promise.race([getToken({ signal }), new Promise((_, reject) => {
+                if (signal.aborted) reject(new Error('aborted'));
+                signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+            })]) : getToken({ signal }));
+        } catch (_) { fail('account_wipe_identity_unavailable'); }
+        if (!tokenFor(value, tenantId)) fail('account_wipe_identity_configuration_invalid');
+        return value;
+    }
     return Object.freeze({
-        async remove(subjectKey) {
+        // Checked before any irreversible stage of a delete.
+        async check({ signal } = {}) {
+            try { await token(signal); } catch (_) { fail('account_wipe_identity_unavailable'); }
+            return true;
+        },
+        // pendingPermanent: an earlier call deleted this user but could not remove
+        // it from deleted items yet. Then a 404 from both endpoints is not proof
+        // of removal (the user may still be lagging into deleted items): it is
+        // retried like a fresh delete and stays pending until a permanent
+        // delete is confirmed (204).
+        async remove(subjectKey, { signal, deadline, pendingPermanent = false } = {}) {
             if (typeof subjectKey !== 'string') fail('account_wipe_identity_target_invalid');
             const [subjectTenant, objectId, ...rest] = subjectKey.split(':');
             if (rest.length || !UUID.test(subjectTenant || '') || !UUID.test(objectId || '')) fail('account_wipe_identity_target_invalid');
             if (subjectTenant !== tenantId) fail('account_wipe_identity_wrong_tenant');
-            let token;
-            try { token = await getToken(); } catch (_) { fail('account_wipe_identity_unavailable'); }
-            if (!tokenFor(token, tenantId)) fail('account_wipe_identity_configuration_invalid');
+            const bearer = await token(signal);
             const call = async url => {
+                if (signal?.aborted || deadline !== undefined && now() >= deadline) fail('account_wipe_identity_unavailable');
                 let response;
                 try {
-                    response = await request(url, { method: 'DELETE', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
-                        headers: { Authorization: `Bearer ${token}` } });
+                    response = await request(url, { method: 'DELETE', redirect: 'error',
+                        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
+                        headers: { Authorization: `Bearer ${bearer}` } });
                 } catch (_) { fail('account_wipe_identity_unavailable'); }
                 try { await response.body?.cancel?.(); } catch (_) { /* Body is not needed. */ }
                 if (response.status === 204 || response.status === 404) return response.status;
                 if ([401, 403].includes(response.status)) fail('account_wipe_identity_forbidden');
                 fail('account_wipe_identity_unavailable');
             };
+            const permanent = `https://graph.microsoft.com/v1.0/directory/deletedItems/${objectId}`;
             const active = await call(`https://graph.microsoft.com/v1.0/users/${objectId}`);
-            const deleted = await call(`https://graph.microsoft.com/v1.0/directory/deletedItems/${objectId}`);
+            // From here the user may be soft-deleted (in deleted items, restorable):
+            // every error says so, so the caller keeps it pending until a permanent
+            // delete is confirmed.
+            const lagging = active === 204 || pendingPermanent === true;
+            let deleted;
+            try {
+                deleted = await call(permanent);
+                // Only a user this call (or an earlier pending one) deleted can be lagging into deleted items.
+                for (const delay of lagging ? retryDelaysMs : []) {
+                    if (deleted === 204) break;
+                    if (deadline !== undefined && now() + delay + timeoutMs > deadline) break;
+                    try { await sleep(delay, signal); } catch (_) { break; }
+                    deleted = await call(permanent);
+                }
+                if (lagging && deleted === 404) fail('account_wipe_identity_pending');
+            } catch (error) {
+                if (lagging) error.softDeleted = true;
+                throw error;
+            }
             return Object.freeze({ removed: true, alreadyGone: active === 404 && deleted === 404 });
         }
     });
