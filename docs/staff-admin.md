@@ -85,6 +85,8 @@ Next to suspend, the console offers two more account actions, one account at a t
 
 Select the account, choose Reset or Delete, then type the account email and the word `RESET` or `DELETE` to approve. The approval is held on the server, bound to your staff sign-in and browser session, lasts 15 minutes and can be used once. Apply to carry it out.
 
+A delete that stopped after its stored records were removed leaves nothing to select in lookup. To finish it, enter the email under **Finish a partial delete by email**, then approve and apply Delete as usual. The page sends only the email. The server finishes the delete only from the retry reference it kept (see Outcomes) and never accepts an identity id from the page.
+
 The actions go through the existing `POST /api/dashboard-admin/accounts/lookup` route as a body with the single key `wipe`, so the Static Web Apps route table does not grow. They have the same staff, native session, same-origin and rate checks as lookup. Applying is handled like suspend and restore: the response waits for the outcome and its audit record, instead of the 10-second read budget. Once a run has started it continues for up to 30 seconds, even if the browser is closed. A delete still unfinished at that point stops as `partial`; finish it by approving and applying again.
 
 ### Outcomes

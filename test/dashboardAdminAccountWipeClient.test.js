@@ -7,7 +7,7 @@ const source = fs.readFileSync(require.resolve('../api/shared/protectedAssets/ac
 const html = fs.readFileSync(require.resolve('../app/operator.html'), 'utf8');
 const flush = async () => { for (let i = 0; i < 5; i += 1) await new Promise(resolve => setImmediate(resolve)); };
 const EMAIL = 'synthetic@example.invalid';
-const IDS = ['Panel', 'Form', 'Reset', 'Delete', 'Email', 'Word', 'WordHint', 'Approve', 'Apply', 'Status', 'Summary'];
+const IDS = ['Panel', 'Form', 'Reset', 'Delete', 'Email', 'Word', 'WordHint', 'Approve', 'Apply', 'Status', 'Summary', 'ResumeEmail', 'Resume'];
 
 function fixture({ approveReply = null, executeReply = null, selected = { email: EMAIL } } = {}) {
     const { document, window } = createDom(), elements = {};
@@ -100,6 +100,22 @@ test('editing after approval, or selecting another account, clears the approval'
     f.type(EMAIL, 'DELETE'); await f.submit(); expect(f.elements.Apply.disabled).toBe(false);
     f.window.nofriesAccountSelection = { email: 'other@example.invalid' }; f.window.dispatch('nofries-account-selection');
     expect(f.elements.Apply.disabled).toBe(true); expect(f.elements.Approve.disabled).toBe(true);
+});
+
+test('a delete that left no lookup rows can be finished by email without a selection', async () => {
+    const f = fixture({ selected: null });
+    expect(f.elements.Delete.disabled).toBe(true);
+    f.elements.ResumeEmail.value = 'not-an-email'; f.elements.Resume.click();
+    expect(f.elements.Status.textContent).toMatch(/Enter the account email/); expect(f.elements.Approve.disabled).toBe(true);
+    f.elements.ResumeEmail.value = ' ' + EMAIL + ' '; f.elements.Resume.click();
+    expect(f.elements.Reset.disabled).toBe(true); expect(f.elements.Approve.textContent).toBe('Approve delete');
+    expect(f.elements.Summary.textContent).toMatch(/Finish the delete of synthetic@example.invalid/);
+    f.type(EMAIL, 'DELETE'); await f.submit(); await f.applyNow();
+    // Only the email goes to the server; no identity reference comes from the page.
+    expect(f.bodies()).toEqual([
+        { wipe: { step: 'approve', action: 'delete', email: EMAIL, confirmEmail: EMAIL, confirmWord: 'DELETE' } },
+        { wipe: { step: 'execute', approvalId: 'synthetic-approval', email: EMAIL } }]);
+    expect(f.elements.Status.textContent).toMatch(/Delete complete/);
 });
 
 test('pagehide hides the panel and forgets the selection', () => {

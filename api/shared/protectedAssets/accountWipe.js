@@ -9,6 +9,9 @@
     const $ = id => document.getElementById('accountWipe' + id);
     const resetButton = $('Reset'), deleteButton = $('Delete'), typed = $('Email'), word = $('Word'), hint = $('WordHint');
     const approve = $('Approve'), apply = $('Apply'), status = $('Status'), summary = $('Summary');
+    // A delete that stopped after storage leaves no lookup rows to select, so it
+    // can be finished by email. The server acts only on the reference it kept.
+    const resumeEmail = $('ResumeEmail'), resume = $('Resume');
     const WORDS = { reset: 'RESET', delete: 'DELETE' };
     const STAGES = { database: 'Database', storage: 'Stored records', identity: 'Sign-in user' };
     const STATES = { done: 'removed', absent: 'already gone', failed: 'failed', pending: 'not started', not_applicable: 'not an External ID account (not removed)' };
@@ -53,6 +56,8 @@
     function controls() {
         const idle = !busy && Boolean(selected);
         resetButton.disabled = deleteButton.disabled = !idle;
+        if (selected && selected.resume) resetButton.disabled = true;
+        resume.disabled = resumeEmail.disabled = busy;
         resetButton.setAttribute('aria-pressed', String(action === 'reset')); deleteButton.setAttribute('aria-pressed', String(action === 'delete'));
         typed.disabled = word.disabled = !idle || !action; approve.disabled = !idle || !action; apply.disabled = busy || !approved;
         approve.textContent = action ? 'Approve ' + action : 'Approve';
@@ -61,7 +66,9 @@
     function choose(next) {
         if (busy || !selected) return;
         generation++; clear(); action = next; typed.value = ''; word.value = ''; status.textContent = '';
-        summary.textContent = next === 'reset'
+        summary.textContent = selected.resume
+            ? 'Finish the delete of ' + selected.email + ': steps already done are skipped, and the server uses only what it kept from the earlier attempt.'
+            : next === 'reset'
             ? 'Reset ' + selected.email + ': clears assessments, evidence and improvement plans in every organisation of this account. Sign-in, email and organisations are kept.'
             : 'Delete ' + selected.email + ': removes the account, its email and all its data, then its External ID sign-in user. This cannot be undone.';
         controls();
@@ -116,13 +123,19 @@
         summary.textContent = selected ? 'Selected ' + selected.email + '. Choose Reset or Delete.' : 'Select an account from lookup first.';
         status.textContent = ''; controls();
     }
+    resume.addEventListener('click', function () {
+        const value = String(resumeEmail.value || '').trim();
+        if (busy) return;
+        if (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) { status.textContent = 'Enter the account email whose delete you want to finish.'; return; }
+        generation++; controller?.abort(); clear(); selected = { email: value, resume: true }; choose('delete');
+    });
     resetButton.addEventListener('click', function () { choose('reset'); });
     deleteButton.addEventListener('click', function () { choose('delete'); });
     form.addEventListener('submit', function (event) { event.preventDefault(); run(false); });
     form.addEventListener('input', function () { if (!busy && approved) { clear(); status.textContent = ''; controls(); } });
     apply.addEventListener('click', function () { run(true); });
     window.addEventListener('nofries-account-selection', selection);
-    window.addEventListener('pagehide', function () { window.nofriesAccountSelection = null; selection(); panel.hidden = true; });
+    window.addEventListener('pagehide', function () { window.nofriesAccountSelection = null; resumeEmail.value = ''; selection(); panel.hidden = true; });
     window.addEventListener('pageshow', async function (event) {
         if (!event || !event.persisted) return;
         selection(); panel.hidden = true;
