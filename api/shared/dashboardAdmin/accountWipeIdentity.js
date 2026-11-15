@@ -48,7 +48,12 @@ function createAccountWipeIdentity({ tenantId, getToken, fetch: request = global
             try { await token(signal); } catch (_) { fail('account_wipe_identity_unavailable'); }
             return true;
         },
-        async remove(subjectKey, { signal, deadline } = {}) {
+        // pendingPermanent: an earlier call deleted this user but could not remove
+        // it from deleted items yet. Then a 404 from both endpoints is not proof
+        // of removal (the user may still be lagging into deleted items): it is
+        // retried like a fresh delete and stays pending until a permanent
+        // delete is confirmed (204).
+        async remove(subjectKey, { signal, deadline, pendingPermanent = false } = {}) {
             if (typeof subjectKey !== 'string') fail('account_wipe_identity_target_invalid');
             const [subjectTenant, objectId, ...rest] = subjectKey.split(':');
             if (rest.length || !UUID.test(subjectTenant || '') || !UUID.test(objectId || '')) fail('account_wipe_identity_target_invalid');
@@ -70,14 +75,15 @@ function createAccountWipeIdentity({ tenantId, getToken, fetch: request = global
             const permanent = `https://graph.microsoft.com/v1.0/directory/deletedItems/${objectId}`;
             const active = await call(`https://graph.microsoft.com/v1.0/users/${objectId}`);
             let deleted = await call(permanent);
-            // Only a user this call has just deleted can be lagging into deleted items.
-            for (const delay of active === 204 ? retryDelaysMs : []) {
+            // Only a user this call (or an earlier pending one) deleted can be lagging into deleted items.
+            const lagging = active === 204 || pendingPermanent === true;
+            for (const delay of lagging ? retryDelaysMs : []) {
                 if (deleted === 204) break;
                 if (deadline !== undefined && now() + delay + timeoutMs > deadline) break;
                 try { await sleep(delay, signal); } catch (_) { break; }
                 deleted = await call(permanent);
             }
-            if (active === 204 && deleted === 404) fail('account_wipe_identity_pending');
+            if (lagging && deleted === 404) fail('account_wipe_identity_pending');
             return Object.freeze({ removed: true, alreadyGone: active === 404 && deleted === 404 });
         }
     });
