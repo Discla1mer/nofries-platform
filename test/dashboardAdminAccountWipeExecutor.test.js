@@ -1,5 +1,5 @@
 'use strict';
-const { createAccountWipeExecutor, APPROVAL_MS, OUTCOME_RESERVE_MS } = require('../api/shared/dashboardAdmin/accountWipeExecutor');
+const { createAccountWipeExecutor, APPROVAL_MS, OUTCOME_RESERVE_MS, OUTCOME_MIN_MS } = require('../api/shared/dashboardAdmin/accountWipeExecutor');
 const { readAccountWipeGraphSettings, createAccountWipeGraphToken, EXCHANGE_SCOPE, GRAPH_SCOPE } = require('../api/shared/dashboardAdmin/accountWipeGraphToken');
 
 const uid = n => '70000000-0000-4000-8000-' + String(n).padStart(12, '0');
@@ -13,7 +13,7 @@ const signal = () => new AbortController().signal;
 function inventory(overrides = {}) {
     return { account: { accountId: uid(10) }, subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)], ...overrides };
 }
-function harness({ kind = 'external_starter', found = inventory(), identity = true, legacy = false, role = true, auditFails = [], markers = null } = {}) {
+function harness({ kind = 'external_starter', found = inventory(), identity = true, legacy = false, role = true, auditFails = [], markers = null, auditStalls = [] } = {}) {
     const calls = [], records = [];
     let clock = Date.parse('2026-11-15T01:00:00.000Z'), ids = 0, current = found;
     const storage = {
@@ -29,7 +29,8 @@ function harness({ kind = 'external_starter', found = inventory(), identity = tr
     const executor = createAccountWipeExecutor({
         sources: [{ kind, storage }], repository, identity: identity ? remover : null, legacyIndexConfigured: legacy,
         ensureRole: async () => { calls.push(['role']); if (!role) throw new Error('no role'); },
-        audit: async event => { if (auditFails.includes(event.phase)) throw new Error('down'); records.push(event); },
+        audit: async event => { if (auditStalls.includes(event.phase)) return new Promise(() => {}); if (auditFails.includes(event.phase)) throw new Error('down'); records.push(event); },
+        auditTimeoutMs: 30, log: () => {},
         targetDigest: email => email === EMAIL ? DIGEST : 'd'.repeat(64), retryMarkers: markers,
         now: () => clock, newId: () => uid(500 + ++ids)
     });
@@ -50,7 +51,7 @@ describe('delete', () => {
         const result = await h.executor.execute(apply(approved.approvalId), signal());
         expect(order(h.calls)).toEqual(['delete', 'storage', 'identity']);
         expect(h.repository.delete).toHaveBeenCalledWith({ accountId: uid(10), subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)] }, undefined);
-        expect(h.remover.remove).toHaveBeenCalledWith(SUBJECT, { signal: expect.any(AbortSignal), deadline: undefined });
+        expect(h.remover.remove).toHaveBeenCalledWith(SUBJECT, { signal: expect.any(AbortSignal), deadline: undefined, pendingPermanent: false });
         expect(result).toMatchObject({ outcome: 'succeeded', stages: { database: 'done', storage: 'done', identity: 'done' },
             failedStage: null, code: null, counts: { databaseRows: 5, blobs: 7, versions: 3 }, recorded: true });
         expect(h.records.map(r => r.phase)).toEqual(['approval', 'attempt', 'outcome']);
@@ -297,6 +298,50 @@ describe('review fixes', () => {
         const { approvalId } = await h.executor.approve(approval('reset'), signal());
         await h.executor.execute(apply(approvalId, { deadline }), signal());
         expect(h.repository.reset.mock.calls[0][1].deadline).toBe(deadline - OUTCOME_RESERVE_MS);
+    });
+});
+
+describe('second review round', () => {
+    test('a user pending permanent deletion stays pending across retries until a permanent delete is confirmed', async () => {
+        const h = harness();
+        let { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.remover.remove.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_identity_pending' }));
+        expect((await h.executor.execute(apply(approvalId), signal())).code).toBe('account_wipe_identity_pending');
+        // Retry: the reference is held with the pending state and passed on.
+        h.remover.remove.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_identity_pending' }));
+        ({ approvalId } = await h.executor.approve(approval('delete'), signal()));
+        expect((await h.executor.execute(apply(approvalId), signal())).outcome).toBe('partial');
+        expect(h.remover.remove.mock.calls[1][1]).toMatchObject({ pendingPermanent: true });
+        // Confirmed at last: only now is the reference cleared.
+        ({ approvalId } = await h.executor.approve(approval('delete'), signal()));
+        expect((await h.executor.execute(apply(approvalId), signal())).outcome).toBe('succeeded');
+        expect(h.remover.remove.mock.calls[2][1]).toMatchObject({ pendingPermanent: true });
+        await expect(h.executor.approve(approval('delete'), signal())).rejects.toMatchObject({ code: 'account_wipe_account_not_found' });
+    });
+
+    test('a stalled attempt record is bounded: nothing runs and the account is not left locked', async () => {
+        const h = harness({ auditStalls: ['attempt'] });
+        let { approvalId } = await h.executor.approve(approval('reset'), signal());
+        await expect(h.executor.execute(apply(approvalId), signal())).rejects.toMatchObject({ code: 'account_wipe_audit_unavailable' });
+        expect(h.repository.reset).not.toHaveBeenCalled();
+        ({ approvalId } = await h.executor.approve(approval('reset'), signal()));
+        // Still stalled, but refused as unavailable, never as busy: the lock was released.
+        await expect(h.executor.execute(apply(approvalId), signal())).rejects.toMatchObject({ code: 'account_wipe_audit_unavailable' });
+    });
+
+    test('a stalled outcome record after destructive stages returns unrecorded, logs and releases the lock', async () => {
+        const logs = [], h = harness({ auditStalls: ['outcome'] });
+        const executor = createAccountWipeExecutor({ sources: [{ kind: 'external_starter', storage: h.storage }], repository: h.repository, identity: h.remover,
+            legacyIndexConfigured: false, ensureRole: async () => {}, audit: event => event.phase === 'outcome' ? new Promise(() => {}) : Promise.resolve(),
+            targetDigest: () => DIGEST, auditTimeoutMs: 30, log: message => logs.push(message) });
+        let { approvalId } = await executor.approve(approval('reset'), signal());
+        const started = Date.now();
+        expect(await executor.execute(apply(approvalId, { deadline: Date.now() - 1 }), signal())).toMatchObject({ outcome: 'succeeded', recorded: false });
+        // The outcome write still gets its minimum slice even past the deadline, then gives up.
+        expect(Date.now() - started).toBeGreaterThanOrEqual(OUTCOME_MIN_MS - 50);
+        expect(logs).toEqual([`[dashboard-admin-account-wipe] outcome_unrecorded ${approvalId}`]);
+        ({ approvalId } = await executor.approve(approval('reset'), signal()));
+        expect((await executor.execute(apply(approvalId), signal())).recorded).toBe(false);
     });
 });
 
