@@ -222,6 +222,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 body = fs.readFileSync(path.join(__dirname, '../protectedAssets/dashboardAdminEntry.js'), 'utf8');
                 if (env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.execute)
                     body += '\n' + fs.readFileSync(path.join(__dirname, '../protectedAssets/accountActions.js'), 'utf8');
+                if (accountLookup && accountWipe) body += '\n' + fs.readFileSync(path.join(__dirname, '../protectedAssets/accountWipe.js'), 'utf8');
                 contentType = 'application/javascript; charset=utf-8';
             }
             else if (route === 'capabilities') body = await checked(() => capabilities(actor, checked));
