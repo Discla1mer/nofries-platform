@@ -350,6 +350,7 @@
         if (mounted.has(root)) mounted.get(root).destroy();
         const doc = root.ownerDocument;
         const win = options.window || doc.defaultView;
+        let stopNavigation = null;
         const metadata = copy(options.metadata);
         const client = options.client;
         const organisationId = options.organisationId;
@@ -1603,16 +1604,22 @@
             // A bar taller than a quarter of the screen (enlarged text, a short
             // landscape phone) would cover answers, so it stays in the page below
             // the choices instead of sticking (WCAG 1.4.4, 1.4.10).
-            const view = typeof window === 'undefined' ? null : window;
+            stopNavigationFit();
             const fitNavigation = function () {
-                const tall = Boolean(view && nav.isConnected && nav.offsetHeight > (view.innerHeight || 0) / 4);
+                if (!nav.isConnected) { stopNavigationFit(); return; }
+                const tall = Boolean(win && nav.offsetHeight > (win.innerHeight || 0) / 4);
                 nav.classList[tall ? 'add' : 'remove']('ncsc-navigation-static');
             };
             fitNavigation();
-            if (view && typeof view.ResizeObserver === 'function') {
-                const watcher = new view.ResizeObserver(function () { if (!nav.isConnected) watcher.disconnect(); else fitNavigation(); });
-                watcher.observe(nav);
-            }
+            // Re-check when the bar changes size (text size) or the screen does
+            // (rotation, browser bars); stopped when the question is replaced.
+            const watcher = win && typeof win.ResizeObserver === 'function' ? new win.ResizeObserver(fitNavigation) : null;
+            if (watcher) watcher.observe(nav);
+            if (win && typeof win.addEventListener === 'function') win.addEventListener('resize', fitNavigation);
+            stopNavigation = function () {
+                if (watcher) watcher.disconnect();
+                if (win && typeof win.removeEventListener === 'function') win.removeEventListener('resize', fitNavigation);
+            };
             questionRegion.append(node('p', 'dashboard-muted', 'Still to confirm means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
             applyInlineErrors();
             restoreFocus(questionRegion, focused, fieldset.querySelector('legend'));
@@ -2076,9 +2083,10 @@
             }
             decision.resolve(allowed === true && live());
         }
+        function stopNavigationFit() { const stop = stopNavigation; stopNavigation = null; if (stop) stop(); }
         function destroy() {
             if (disposed) return;
-            disposed = true; epoch += 1; abortRequests(); cancelAutosave();
+            disposed = true; epoch += 1; abortRequests(); cancelAutosave(); stopNavigationFit();
             if (autosaveEnabled && typeof doc.removeEventListener === 'function') doc.removeEventListener('visibilitychange', autosaveWhenHidden);
             if (autosaveEnabled && win && typeof win.removeEventListener === 'function') win.removeEventListener('pagehide', autosaveOnPageHide);
             syncUnloadWarning();
