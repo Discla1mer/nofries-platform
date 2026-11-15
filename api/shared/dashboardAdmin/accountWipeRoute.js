@@ -40,7 +40,10 @@ function createAccountWipeRoute(executor) {
                 body = await executor.approve({ actor, sessionSha256, action: input.action, email: input.email,
                     confirmEmail: input.confirmEmail, confirmWord: input.confirmWord }, signal);
             } else if (exact(input, ['step', 'approvalId', 'email']) && input.step === 'execute') {
-                body = await executor.execute({ actor, sessionSha256, approvalId: input.approvalId, email: input.email }, AbortSignal.timeout(RUN_BUDGET_MS));
+                // The deadline also bounds the database transaction from inside, so
+                // nothing commits after the reply's budget (see accountWipeRepository).
+                const deadline = Date.now() + RUN_BUDGET_MS;
+                body = await executor.execute({ actor, sessionSha256, approvalId: input.approvalId, email: input.email, deadline }, AbortSignal.timeout(RUN_BUDGET_MS));
             } else invalid();
             return { status: 200, body };
         } catch (error) {

@@ -59,6 +59,9 @@ test('applying waits past the read budget for the outcome and its record; a slow
     const applied = await h.handler.handle(wire(execute(body.approvalId)), 'accounts/lookup');
     expect(applied).toMatchObject({ status: 200, body: { outcome: 'succeeded' } });
     expect(h.records.at(-1)).toMatchObject({ phase: 'outcome', outcome: 'succeeded' });
+    // The run deadline is handed to the database transaction.
+    expect(h.repository.delete).toHaveBeenCalledWith(expect.any(Object), { signal: expect.any(AbortSignal), deadline: expect.any(Number) });
+    expect(h.repository.delete.mock.calls[0][1].deadline - Date.now()).toBeLessThanOrEqual(30000);
     h.storage.inventory.mockImplementationOnce(async () => { await new Promise(resolve => setTimeout(resolve, 120)); return null; });
     expect((await h.handler.handle(wire(approve('reset')), 'accounts/lookup')).status).toBe(503);
 });
