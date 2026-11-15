@@ -205,11 +205,22 @@ describe('bounded waits', () => {
         expect(f.released).toEqual([true]); expect(f.statements).toEqual([]);
     });
 
-    test('a COMMIT that never answers ends as an unknown outcome', async () => {
+    test('a COMMIT that never answers ends as an unknown outcome without queueing ROLLBACK behind it', async () => {
+        // Sequential like PostgreSQL: each query waits for the one before it.
         const f = fakePool(), original = f.pool.connect;
-        f.pool.connect = async () => { const client = await original(); const query = client.query;
-            client.query = (sql, params) => sql === 'COMMIT' ? new Promise(() => {}) : query(sql, params); return client; };
+        f.pool.connect = async () => { const client = await original(), query = client.query; let tail = Promise.resolve();
+            client.query = (sql, params) => { const run = tail.then(() => sql === 'COMMIT' ? new Promise(() => {}) : query(sql, params)); tail = run.catch(() => {}); return run; };
+            return client; };
         await expect(createAccountWipeRepository(f.pool).reset(scope, { deadline: Date.now() + 1200 })).rejects.toMatchObject({ code: 'account_wipe_commit_unknown' });
+        expect(f.released).toEqual([true]);
+        expect(f.statements.map(([sql]) => sql)).not.toContain('ROLLBACK');
+    });
+
+    test('a ROLLBACK that never answers is bounded, and the connection is destroyed', async () => {
+        const f = fakePool({ owner: 0 }), original = f.pool.connect;
+        f.pool.connect = async () => { const client = await original(), query = client.query;
+            client.query = (sql, params) => sql === 'ROLLBACK' ? new Promise(() => {}) : query(sql, params); return client; };
+        await expect(createAccountWipeRepository(f.pool).reset(scope)).rejects.toMatchObject({ code: 'account_wipe_account_not_found' });
         expect(f.released).toEqual([true]);
     });
 });

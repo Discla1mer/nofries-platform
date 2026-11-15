@@ -180,7 +180,16 @@ function createAccountWipeRepository(pool, { now = Date.now } = {}) {
             return Object.freeze({ mode, tenants: scope.tenantIds.length, counts: Object.freeze(counts) });
         } catch (error) {
             discard = true;
-            try { await client.query('ROLLBACK'); } catch (_) { /* The connection is discarded below. */ }
+            // A COMMIT that may still be in flight blocks the connection (PostgreSQL
+            // runs one query at a time), so no ROLLBACK is queued behind it: the
+            // connection is destroyed instead. Otherwise the connection is idle in
+            // the transaction and ROLLBACK is sent, bounded to 1 s.
+            if (error?.code !== 'account_wipe_commit_unknown') {
+                let rollbackTimer;
+                try { await Promise.race([client.query('ROLLBACK'), new Promise((_, reject) => { rollbackTimer = setTimeout(() => reject(new Error('rollback_timeout')), 1000); })]); }
+                catch (_) { /* The connection is discarded below. */ }
+                finally { clearTimeout(rollbackTimer); }
+            }
             if (typeof error.code === 'string' && error.code.startsWith('account_wipe_')) throw error;
             fail(DATABASE_CODES[error?.code] || 'account_wipe_unavailable');
         } finally { client.release(discard); }

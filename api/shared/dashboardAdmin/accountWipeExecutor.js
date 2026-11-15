@@ -231,7 +231,9 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
     async function run(action, operationId, actorSha256, email, targetSha256, signal, bound, deadline, approval) {
         const base = { action, actorSha256, targetSha256 };
         const left = () => deadline === undefined ? auditTimeoutMs : deadline - now();
-        if (!await record(operationId, 'attempt', { ...base, outcome: 'attempt' }, Math.min(auditTimeoutMs, left() - OUTCOME_RESERVE_MS)))
+        // With a deadline the attempt record must leave the outcome reserve; without one it gets the full timeout.
+        if (!await record(operationId, 'attempt', { ...base, outcome: 'attempt' },
+            deadline === undefined ? auditTimeoutMs : Math.min(auditTimeoutMs, left() - OUTCOME_RESERVE_MS)))
             fail('account_wipe_audit_unavailable');
         const stages = action === 'reset' ? { database: 'pending' } : { database: 'pending', storage: 'pending', identity: 'pending' };
         const counts = { databaseRows: 0, blobs: 0, versions: 0 };
