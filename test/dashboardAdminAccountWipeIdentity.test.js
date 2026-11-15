@@ -69,6 +69,16 @@ test('configuration must name the External ID tenant', () => {
 });
 
 describe('review fixes', () => {
+    test('204 then persistent 404 across two invocations stays pending; only a confirmed permanent delete succeeds', async () => {
+        const first = make([204, 404, 404, 404, 404, 404]);
+        await expect(first.identity.remove(`${TENANT}:${OBJECT}`)).rejects.toMatchObject({ code: 'account_wipe_identity_pending' });
+        const second = make([404, 404, 404, 404, 404, 404]);
+        await expect(second.identity.remove(`${TENANT}:${OBJECT}`, { pendingPermanent: true })).rejects.toMatchObject({ code: 'account_wipe_identity_pending' });
+        expect(second.sleeps).toEqual([500, 1000, 2000, 4000]);
+        const third = make([404, 404, 204]);
+        await expect(third.identity.remove(`${TENANT}:${OBJECT}`, { pendingPermanent: true })).resolves.toEqual({ removed: true, alreadyGone: false });
+    });
+
     test('a just-deleted user missing from deleted items is retried with backoff, then reported pending, never removed', async () => {
         const m = make([204, 404, 404, 404, 404, 404]);
         await expect(m.identity.remove(`${TENANT}:${OBJECT}`)).rejects.toMatchObject({ code: 'account_wipe_identity_pending' });
