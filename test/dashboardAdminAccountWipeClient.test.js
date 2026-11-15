@@ -99,6 +99,22 @@ test('a timed-out run says it was rolled back and leaves the action ready to app
     expect(f.elements.Approve.textContent).toBe('Approve reset'); expect(f.elements.Approve.disabled).toBe(false);
 });
 
+test('an unknown COMMIT result says it may or may not have been applied, never that nothing changed', async () => {
+    const f = fixture({ executeReply: { status: 200, value: { action: 'delete', outcome: 'unknown', code: 'account_wipe_commit_unknown',
+        stages: { database: 'unknown', storage: 'pending', identity: 'pending' }, counts: { databaseRows: 0 }, recorded: true } } });
+    f.elements.Delete.click(); f.type(EMAIL, 'DELETE'); await f.submit(); await f.applyNow();
+    expect(f.elements.Status.textContent).toMatch(/may or may not have been applied.*Look the account up before retrying/);
+    expect(f.elements.Status.textContent).not.toMatch(/nothing was changed/i);
+    expect(f.elements.Approve.disabled).toBe(false);
+});
+
+test.each([['account_wipe_subject_mismatch', /different sign-in identity/], ['account_wipe_identity_unavailable', /could not get access to External ID/]])
+('%s is explained', async (code, text) => {
+    const f = fixture({ approveReply: { status: code.endsWith('unavailable') ? 503 : 409, value: { code } } });
+    f.elements.Delete.click(); f.type(EMAIL, 'DELETE'); await f.submit();
+    expect(f.elements.Status.textContent).toMatch(text);
+});
+
 test('editing after approval, or selecting another account, clears the approval', async () => {
     const f = fixture();
     f.elements.Delete.click(); f.type(EMAIL, 'DELETE'); await f.submit();

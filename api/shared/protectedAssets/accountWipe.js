@@ -14,8 +14,11 @@
     const resumeEmail = $('ResumeEmail'), resume = $('Resume');
     const WORDS = { reset: 'RESET', delete: 'DELETE' };
     const STAGES = { database: 'Database', storage: 'Stored records', identity: 'Sign-in user' };
-    const STATES = { done: 'removed', absent: 'already gone', failed: 'failed', pending: 'not started', not_applicable: 'not an External ID account (not removed)' };
+    const STATES = { done: 'removed', absent: 'already gone', failed: 'failed', pending: 'not started', unknown: 'result not known', not_applicable: 'not an External ID account (not removed)' };
     const MESSAGES = {
+        account_wipe_subject_mismatch: 'The database still holds this account under a different sign-in identity. Nothing was changed; this needs investigating before a delete.',
+        account_wipe_identity_unavailable: 'The app could not get access to External ID, so delete was refused before anything was changed. Reset still works.',
+        account_wipe_identity_pending: 'The sign-in user was deleted but is not yet ready to be removed permanently.',
         account_wipe_confirmation_mismatch: 'Type the account email exactly, and the action word in capitals.',
         account_wipe_approval_invalid: 'The approval has expired, was already used or belongs to another session. Approve again.',
         account_wipe_account_not_found: 'No account was found for this email.',
@@ -81,6 +84,7 @@
             : 'Delete complete for ' + email + '. ' + stages + '.') + unrecorded;
         if (result.outcome === 'partial') return 'Delete only partly done for ' + email + '. ' + stages + '. ' + explain(result.code) +
             ' Approve and apply Delete again to finish the remaining steps; finished steps are skipped.' + unrecorded;
+        if (result.outcome === 'unknown') return 'The database change for ' + email + ' may or may not have been applied (its confirmation was lost). Look the account up before retrying.' + unrecorded;
         if (result.outcome === 'timed_out_rolled_back') return 'This took too long, so the database change was rolled back and nothing was changed. Approve and apply again.' + unrecorded;
         return 'Refused: ' + explain(result.code) + unrecorded;
     }
@@ -102,7 +106,7 @@
             if (result.status !== 200) { status.textContent = explain(result.value && result.value.code); return; }
             if (execute) {
                 status.textContent = outcomeText(result.value, target.email);
-                if (!['partial', 'timed_out_rolled_back'].includes(result.value.outcome)) { action = null; typed.value = ''; word.value = ''; }
+                if (!['partial', 'timed_out_rolled_back', 'unknown'].includes(result.value.outcome)) { action = null; typed.value = ''; word.value = ''; }
             } else {
                 if (result.value.action !== chosen || !(Date.parse(result.value.approvalExpiresAt) > Date.now())) throw new Error();
                 approved = result.value;
