@@ -15,8 +15,12 @@ const fail = statusCode => { throw Object.assign(new Error(), { statusCode }); }
 // The optional signup list is the same route with an exact empty body {}. It
 // shares the staff authority, budget and durable audit; its record has no
 // target digest. One route keeps the Static Web Apps route table within budget.
-function createAccountLookup({ read, list = null, audit, targetDigest, readJson, env, now = Date.now }) {
-    if ([read, audit, targetDigest].some(value => typeof value !== 'function') || list !== null && typeof list !== 'function') throw new Error('dashboard_admin_configuration_invalid');
+// The optional staff reset/delete (accountWipeRoute) is the same route with a
+// body whose only key is "wipe"; it writes its own approval, attempt and
+// outcome records, so no lookup record is written for it. Without it composed
+// (flag off) such a body is answered 404.
+function createAccountLookup({ read, list = null, wipe = null, audit, targetDigest, readJson, env, now = Date.now }) {
+    if ([read, audit, targetDigest].some(value => typeof value !== 'function') || [list, wipe].some(value => value !== null && typeof value !== 'function')) throw new Error('dashboard_admin_configuration_invalid');
     let windowStart = 0, requests = 0;
     return async (request, route, authorise, signal) => {
         let status = 503, body, actor = null, actorHash = null, targetSha256 = null, listing = false;
@@ -37,6 +41,14 @@ function createAccountLookup({ read, list = null, audit, targetDigest, readJson,
                 if (now() - windowStart >= 60000) { windowStart = now(); requests = 0; }
                 if (++requests > 10) { headers['Retry-After'] = '60'; fail(429); }
                 const input = await readJson(request, signal);
+                if (input && typeof input === 'object' && !Array.isArray(input) && Object.keys(input).length === 1 && Object.hasOwn(input, 'wipe')) {
+                    if (!wipe) fail(404);
+                    if ((await authorise()).subjectKey !== actor.subjectKey) fail(403);
+                    // Once a wipe has started its outcome is reported as it is; a
+                    // later revocation must not hide a committed change.
+                    const result = await wipe(input.wipe, actor, request, signal);
+                    return { status: result.status, body: result.body, headers, isRaw: false };
+                }
                 if (input && typeof input === 'object' && !Array.isArray(input) && Object.keys(input).length === 0) {
                     if (!list) fail(400);
                     listing = true;
@@ -61,7 +73,7 @@ function createAccountLookup({ read, list = null, audit, targetDigest, readJson,
             signal.throwIfAborted();
             status = 200;
         } catch (error) {
-            status = [400, 401, 403, 405, 413, 415, 429].includes(error.statusCode) ? error.statusCode : 503;
+            status = [400, 401, 403, 404, 405, 413, 415, 429].includes(error.statusCode) ? error.statusCode : 503;
             body = { code: `dashboard_admin_account_lookup_${status}` };
         }
         if (route === 'accounts/lookup' && actor !== null) {

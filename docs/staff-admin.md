@@ -1,6 +1,6 @@
 # Staff admin console
 
-The staff console lives at `/operator`. A staff admin can look up any customer by email, read that customer's dashboard membership, and suspend or restore it. Nothing in the console deletes customer data or changes a customer's sign-in record. Everything is off until the settings below are set.
+The staff console lives at `/operator`. A staff admin can look up any customer by email, read that customer's dashboard membership, and suspend or restore it. With its own flag on, the console can also reset or delete one account (see [Reset and delete](#reset-and-delete)); nothing else in the console deletes customer data or changes a customer's sign-in record. Everything is off until the settings below are set.
 
 ## Who can use it
 
@@ -74,25 +74,80 @@ There is no button for this and the check is not relaxed in code. Recovery is a 
 
 Signup listing (`NOFRIES_DASHBOARD_ADMIN_ENABLED`, `NOFRIES_DASHBOARD_ADMIN_BINDING`) is a separate feature and is not needed for any of the above.
 
-## Reset and delete (being built, not yet available)
+## Reset and delete
 
-The console is to offer three account actions: suspend (above), **reset** (clear an account's assessments, evidence and improvement plans, keep its organisations and sign-in) and **delete** (remove the account, its email and all its data, including the sign-in identity).
+Next to suspend, the console offers two more account actions, one account at a time:
 
-The database part is migration `0025_account_wipe_role.sql` and `api/shared/dashboardAdmin/accountWipeRepository.js`:
+- **Reset** clears the account's assessments, evidence and improvement plans in every organisation it owns (clients included). Sign-in, email and organisations are kept, so the customer can sign in and start again. Only the database changes: the Blob records hold no assessment, evidence or plan data.
+- **Delete** removes the account completely, in this order: the database rows, then the Blob records (account, organisation, client, sign-in authority and email-proof records, with their stored versions), then the customer's Microsoft Entra External ID user. That user is also permanently removed from deleted items, so it cannot be restored.
+
+### How staff use it
+
+Select the account, choose Reset or Delete, then type the account email and the word `RESET` or `DELETE` to approve. The approval is held on the server, bound to your staff sign-in and browser session, lasts 15 minutes and can be used once. Apply to carry it out.
+
+The actions go through the existing `POST /api/dashboard-admin/accounts/lookup` route as a body with the single key `wipe`, so the Static Web Apps route table does not grow. They have the same staff, native session, same-origin and rate checks as lookup. Once a delete has started it runs to the end (up to 55 seconds), even if the browser is closed.
+
+### Outcomes
+
+Each approval writes `dashboard-admin-account-wipes/<operationId>/approval.json` in the audit container. Each apply writes `attempt.json` before anything changes and `outcome.json` afterwards. Records hold the staff digest, the keyed email digest (the same as lookup records), stage names, a code and counts. They never hold the email, the sign-in subject or any record content. If the attempt record cannot be written, nothing runs. If the outcome record cannot be written, the console says so.
+
+| Outcome | Meaning |
+| --- | --- |
+| `succeeded` | Every stage is done (or was already gone). |
+| `refused` | Nothing changed. The code says why (see below). |
+| `partial` | Delete only. The database part is done and a later stage (`storage` or `identity`) failed. Approve and apply Delete again: completed stages report `absent` and the rest is finished. |
+
+A partial delete that stopped at the identity stage keeps the External ID user's reference in app memory for 7 days, so the retry can still remove it. If the app restarts before the retry, the retry reports `account_wipe_identity_reference_lost`. In that case, delete the user by hand in the Entra admin centre (External ID tenant, Users, search by the email, then delete it and permanently delete it from Deleted users).
+
+Accounts in the legacy (workforce) starter store have no External ID user. Their identity stage is `not_applicable`.
+
+### Refusals
+
+| Code | Meaning |
+| --- | --- |
+| `account_wipe_legacy_index_configured` | Delete is off while the legacy signup listing (`NOFRIES_DASHBOARD_ADMIN_ENABLED` / `NOFRIES_DASHBOARD_ADMIN_BINDING`) is configured, because its published index is not deletion-aware. Reset is unaffected. |
+| `account_wipe_identity_not_configured` | Delete needs the Graph settings below. It is refused before anything is touched. |
+| `account_wipe_role_unavailable` | The app's database login cannot `SET ROLE nofries_account_wipe`. |
+| `account_wipe_reference_blocked` | A session the wipe cannot see still references the account: a staff `operator_dashboard` session, or another person's customer session in a consultant's client organisation. End it and retry. |
+| `account_wipe_tenant_mismatch` | One of the account's organisations is not linked to it in the database (for example a client that was never set up). Nothing changed. |
+| `account_wipe_subject_unknown` | The account has no recorded sign-in subject (an invitation that was never activated). It cannot be wiped here. |
+| `account_wipe_account_not_found` / `account_wipe_account_ambiguous` | No account for that email, or the email is in both starter stores. |
+| `account_wipe_busy` | A customer save held a table past the 5-second lock timeout, or another wipe of the same account is running. Try again. |
+
+### Turn it on (production steps, in order)
+
+All of these are owner steps. Reset needs steps 1 and 5 only.
+
+1. **Database.** Apply migration `0025_account_wipe_role.sql`. Then grant the role to the app's runtime database login, with `SET` and without `INHERIT`: `GRANT nofries_account_wipe TO "<runtime login>" WITH SET TRUE, INHERIT FALSE;`. The app runs `SET LOCAL ROLE nofries_account_wipe` only inside a wipe transaction and checks `pg_has_role(current_user, 'nofries_account_wipe', 'SET')` before each approval and each run.
+2. **Storage.** Give the App Service managed identity **Storage Blob Data Contributor** on `NOFRIES_STARTER_AUTHORITY_CONTAINER`, on `NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER`, and on the browser-auth container (`NOFRIES_BROWSER_AUTH_CONTAINER` on `NOFRIES_BROWSER_AUTH_STORAGE_ACCOUNT`, which holds the email proofs). Each grant is scoped to its container. Where blob versioning is on, the identity also needs `Microsoft.Storage/storageAccounts/blobServices/containers/blobs/deleteBlobVersion/action` on those containers. Contributor does not include it: use a custom role with that one data action, or Storage Blob Data Owner. Without it, delete reports `partial` at the storage stage (`account_wipe_storage_incomplete`).
+3. **Graph app.** In the External ID tenant, register an app. Give it the Microsoft Graph **application** permissions `User.ReadWrite.All` and `User.DeleteRestore.All`, and grant admin consent.
+4. **Federated credential.** On that app, add a federated identity credential that trusts the App Service managed identity: issuer `https://login.microsoftonline.com/<workforce tenant id>/v2.0`, subject the managed identity's object (principal) id, audience `api://AzureADTokenExchange`. No client secret is created.
+5. **Settings.**
+
+| Setting | Value |
+| --- | --- |
+| `NOFRIES_ACCOUNT_WIPE_GRAPH_TENANT_ID` | The External ID tenant id. It must equal `NOFRIES_EXTERNAL_CUSTOMER_TENANT_ID`. |
+| `NOFRIES_ACCOUNT_WIPE_GRAPH_CLIENT_ID` | The app registration's client id from step 3. |
+| `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE` | `true`, last. Any other value leaves it off. |
+
+The feature also needs `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS=true` and the console settings above. When `NOFRIES_MANAGED_IDENTITY_CLIENT_ID` is set, the Graph assertion uses that same identity.
+
+Log lines:
+
+| Log line | Meaning |
+| --- | --- |
+| `[dashboard-admin-account-wipe] dashboard_admin_unavailable` | The flag or a wipe port is unusable. Reset and delete are off; lookup, suspend and restore keep working. |
+| `[dashboard-admin-account-wipe] account_wipe_identity_configuration_invalid` | Only one Graph setting is set, a setting is malformed, or the tenant is not the External ID tenant. Delete is refused; reset works. |
+
+To turn it off, unset `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE` (or set it to `false`). The lookup route then answers a `wipe` body with 404 and the console hides the controls. Audit records are kept.
+
+### What the database part does
 
 - `nofries_account_wipe` is a NOLOGIN role with only SELECT and DELETE. Its row-level policies see one tenant, account and subject at a time, named in transaction-local settings (`nofries.wipe_tenant_id`, `nofries.wipe_account_id`, `nofries.wipe_subject_key`). It can never insert or update.
-- The repository checks that the account exists under that subject and that every tenant belongs to the account, then deletes children before parents and commits once. Any error rolls everything back.
-- The migration grants the role to no login. Before reset or delete can run in production, the owner applies 0025 and grants the role to the app's database login with `SET` (no `INHERIT`). Both are one-way production steps for the repository owner.
-
-Blob records, the Entra External ID user, the console controls and their audit records come in later changes behind `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE`.
-
-Limits and refusals:
-
-- Delete is refused while the legacy signup listing (`NOFRIES_DASHBOARD_ADMIN_ENABLED` / `NOFRIES_DASHBOARD_ADMIN_BINDING`) is configured, because its published index is not deletion-aware.
-- Delete fails safe, with nothing changed, when a session the wipe cannot see still references the account's bindings: a staff `operator_dashboard` session, or another person's customer session in a consultant's client organisation. End those sessions, then retry.
+- The repository checks that the account exists under that subject and that every tenant belongs to the account. It then deletes children before parents and commits once. Any error rolls everything back.
 - Session-anchored runtime rows are removed only where they carry no tenant. A session row in an organisation the account does not own makes the delete fail rather than reach across.
 
-Retention after a delete:
+### Retention after a delete
 
 - Database backups and point-in-time restore keep the data until their retention expires.
 - Blob container soft delete, where enabled, keeps deleted blobs for its retention period.
