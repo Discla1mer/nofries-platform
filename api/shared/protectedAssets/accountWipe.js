@@ -39,8 +39,10 @@
         account_wipe_identity_reference_lost: 'The sign-in user\'s reference is no longer held. Remove the user by hand in the Entra admin centre.',
         account_wipe_audit_unavailable: 'The audit record could not be written, so nothing was changed.'
     };
-    const explain = code => MESSAGES[code] || 'The service is unavailable. Look the account up again before retrying.';
-    let selected = null, action = null, approved = null, busy = false, generation = 0, timer, controller;
+    const LOOKUP = '/api/dashboard-admin/accounts/lookup';
+    const explain = code => code === 'dashboard_admin_account_lookup_429' ? 'Too many requests just now. Wait a minute and try again.' : MESSAGES[code] || 'The service is unavailable. Look the account up again before retrying.';
+    let selected = null, action = null, approved = null, busy = false, generation = 0, timer, controller, enabled = false;
+    const inflight = new Set();
 
     async function request(url, body, signal) {
         const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal,
@@ -91,6 +93,37 @@
         if (result.outcome === 'timed_out_rolled_back') return 'This took too long, so the database change was rolled back and nothing was changed. Approve and apply again.' + unrecorded;
         return 'Refused: ' + explain(result.code) + unrecorded;
     }
+    // One-click path for the signup list. The operator has already confirmed a
+    // dialog naming the action and the email, so the client supplies the same
+    // confirmation the server checks, then uses the single-use approval at once.
+    // The server still binds the approval to this staff session and this target.
+    async function perform(chosen, email) {
+        if (!enabled || !WORDS[chosen] || typeof email !== 'string' || !email) return { done: false, text: 'Reset and delete are unavailable.' };
+        // Leaving the page (or the wipe turning off) aborts every row operation,
+        // so an approval that resolves afterwards is never applied.
+        const active = new AbortController(), deadline = window.setTimeout(function () { active.abort(); }, 90000);
+        let sent = false;
+        inflight.add(active);
+        try {
+            await ready(active.signal);
+            const approval = await request(LOOKUP, { wipe: { step: 'approve', action: chosen, email, confirmEmail: email, confirmWord: WORDS[chosen] } }, active.signal);
+            if (approval.status !== 200) return { done: false, text: explain(approval.value && approval.value.code) };
+            if (approval.value.action !== chosen || typeof approval.value.approvalId !== 'string') throw new Error();
+            if (active.signal.aborted || !enabled) return { done: false, text: 'Stopped before anything was applied.' };
+            sent = true;
+            const result = await request(LOOKUP, { wipe: { step: 'execute', approvalId: approval.value.approvalId, email } }, active.signal);
+            if (result.status !== 200) return { done: false, text: explain(result.value && result.value.code) };
+            const value = result.value;
+            if (value.outcome === 'partial') return { done: false, outcome: value.outcome, text: 'Delete only partly done. ' +
+                Object.keys(value.stages).map(key => STAGES[key] + ': ' + (STATES[value.stages[key]] || value.stages[key])).join('; ') + '. ' + explain(value.code) +
+                ' Choose Delete again to finish; finished steps are skipped.' +
+                (value.recorded === false ? ' The outcome record could not be stored; keep a note of this result.' : '') };
+            return { done: value.outcome === 'succeeded', outcome: value.outcome, text: outcomeText(value, email) };
+        } catch (_) {
+            return { done: false, text: sent ? 'The outcome could not be confirmed. Refresh the list; if the account is still there, try again.'
+                : 'Stopped before anything was applied. Try again.' };
+        } finally { window.clearTimeout(deadline); inflight.delete(active); }
+    }
     async function run(execute) {
         if (busy || !selected || !action) return;
         if (!execute && !form.reportValidity()) return;
@@ -104,7 +137,7 @@
             if (cycle !== generation) return;
             const body = execute ? { wipe: { step: 'execute', approvalId: prior.approvalId, email: target.email } }
                 : { wipe: { step: 'approve', action: chosen, email: target.email, confirmEmail: typed.value, confirmWord: word.value } };
-            const result = await request('/api/dashboard-admin/accounts/lookup', body, active.signal);
+            const result = await request(LOOKUP, body, active.signal);
             if (cycle !== generation) return;
             if (result.status !== 200) { status.textContent = explain(result.value && result.value.code); return; }
             if (execute) {
@@ -145,17 +178,24 @@
     form.addEventListener('input', function () { if (!busy && approved) { clear(); status.textContent = ''; controls(); } });
     apply.addEventListener('click', function () { run(true); });
     window.addEventListener('nofries-account-selection', selection);
-    window.addEventListener('pagehide', function () { window.nofriesAccountSelection = null; resumeEmail.value = ''; selection(); panel.hidden = true; });
+    window.addEventListener('pagehide', function () { window.nofriesAccountSelection = null; resumeEmail.value = ''; selection(); available(false); });
     window.addEventListener('pageshow', async function (event) {
         if (!event || !event.persisted) return;
-        selection(); panel.hidden = true;
+        selection(); available(false);
         const cycle = generation, active = new AbortController(), deadline = window.setTimeout(function () { active.abort(); }, 10000);
         try {
             const result = await request('/api/dashboard-admin/entry-capabilities', undefined, active.signal);
-            if (cycle === generation) panel.hidden = result.status !== 200 || result.value.accountWipe !== true;
-        } catch (_) { if (cycle === generation) panel.hidden = true; }
+            if (cycle === generation) available(result.status === 200 && result.value.accountWipe === true);
+        } catch (_) { if (cycle === generation) available(false); }
         finally { window.clearTimeout(deadline); }
     });
+    // The signup list shows per-row Reset and Delete only while this is on.
+    function available(on) {
+        enabled = on; panel.hidden = !on;
+        if (!on) { inflight.forEach(function (item) { item.abort(); }); inflight.clear(); }
+        if (typeof window.CustomEvent === 'function') window.dispatchEvent(new window.CustomEvent('nofries-account-wipe', { detail: { available: on } }));
+    }
+    window.nofriesAccountWipe = Object.freeze({ perform, available: () => enabled });
     selection();
-    panel.hidden = false;
+    available(true);
 }());
