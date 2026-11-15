@@ -7,9 +7,12 @@
 // operator session, same origin and request budget before this runs.
 const { createHash } = require('node:crypto');
 const SESSION_COOKIE = '__Host-nofries-auth';
-// A delete that has started runs to the end of this budget even if the browser
-// goes away, so a closed tab does not leave a needless partial.
-const RUN_BUDGET_MS = 55000;
+// A run that has started continues to the end of this budget even if the
+// browser goes away, so a closed tab does not leave a needless partial. The
+// handler waits for it (plus the outcome record) before replying; together
+// they stay inside the edge's request timeout. A slower delete stops as a
+// recorded 'partial' and is finished by approving and applying again.
+const RUN_BUDGET_MS = 30000;
 const STATUS = Object.freeze({ account_wipe_input_invalid: 400, account_wipe_confirmation_mismatch: 400,
     account_wipe_approval_invalid: 403, account_wipe_account_not_found: 404,
     account_wipe_audit_unavailable: 503, account_wipe_unavailable: 503 });

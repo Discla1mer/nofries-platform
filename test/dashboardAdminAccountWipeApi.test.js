@@ -8,7 +8,7 @@ const { createAccountWipeExecutor } = require('../api/shared/dashboardAdmin/acco
 const { createAccountWipeRoute, sessionDigest } = require('../api/shared/dashboardAdmin/accountWipeRoute');
 const { fixture } = require('./fixtures/dashboardAdminAccountActionsProduction');
 const { createStaffDashboardAdministration } = require('../lib/dashboardAdminStaffProduction');
-const { composeAccountWipe, ROLE_PROBE } = require('../lib/dashboardAdminAccountWipeProduction');
+const { composeAccountWipe, createRetryMarkers, ROLE_PROBE } = require('../lib/dashboardAdminAccountWipeProduction');
 
 const uid = n => '71000000-0000-4000-8000-' + String(n).padStart(12, '0');
 const STAFF = uid(1) + ':' + uid(2), EMAIL = 'synthetic.owner@example.test', origin = 'https://operator.example.test';
@@ -21,7 +21,7 @@ let warning;
 beforeEach(() => { jest.spyOn(console, 'info').mockImplementation(() => {}); warning = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
 afterEach(() => { expect(JSON.stringify(warning.mock.calls)).not.toMatch(/PRIVATE|synthetic|@/); jest.restoreAllMocks(); });
 
-function harness(options = {}) {
+function harness(options = {}, requestBudgetMs = 10000) {
     const flag = Object.hasOwn(options, 'flag') ? options.flag : 'true', admin = options.admin || STAFF;
     const records = [], lookupAudit = jest.fn(async () => {});
     const found = { account: { accountId: uid(10) }, subjectKey: uid(3) + ':' + uid(4), tenantIds: [uid(20)] };
@@ -35,7 +35,7 @@ function harness(options = {}) {
     const handler = createDashboardAdminHandlers({ service, readOperatorSession: async () => ({ identity }),
         accountLookupReader: { read: jest.fn(), list: jest.fn(), wipe: createAccountWipeRoute(executor), audit: lookupAudit, targetDigest: () => 'd'.repeat(64) },
         env: { NOFRIES_PUBLIC_URL: origin, NOFRIES_REQUIRE_AUTH: 'true', NOFRIES_ENTRA_TENANT_ID: uid(1), NOFRIES_ALLOWED_SUBJECTS: admin,
-            NOFRIES_ADMIN_SUBJECTS: admin, NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: 'true', NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE: flag } });
+            NOFRIES_ADMIN_SUBJECTS: admin, NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: 'true', NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE: flag }, requestBudgetMs });
     return { handler, records, lookupAudit, repository, storage, remover, service };
 }
 const approve = (action, extra = {}) => ({ wipe: { step: 'approve', action, email: EMAIL, confirmEmail: EMAIL, confirmWord: action.toUpperCase(), ...extra } });
@@ -50,6 +50,17 @@ test('approve then apply deletes through the lookup route, with no lookup record
     expect(h.lookupAudit).not.toHaveBeenCalled();
     expect(h.records.map(r => r.phase)).toEqual(['approval', 'attempt', 'outcome']);
     expect(h.service.authorise).toHaveBeenCalledWith(expect.objectContaining({ subjectKey: STAFF }), null);
+});
+
+test('applying waits past the read budget for the outcome and its record; a slow approval is still bounded', async () => {
+    const h = harness({}, 40);
+    const { body } = await h.handler.handle(wire(approve('delete')), 'accounts/lookup');
+    h.storage.delete.mockImplementationOnce(async () => { await new Promise(resolve => setTimeout(resolve, 120)); return { blobs: 1, versions: 0 }; });
+    const applied = await h.handler.handle(wire(execute(body.approvalId)), 'accounts/lookup');
+    expect(applied).toMatchObject({ status: 200, body: { outcome: 'succeeded' } });
+    expect(h.records.at(-1)).toMatchObject({ phase: 'outcome', outcome: 'succeeded' });
+    h.storage.inventory.mockImplementationOnce(async () => { await new Promise(resolve => setTimeout(resolve, 120)); return null; });
+    expect((await h.handler.handle(wire(approve('reset')), 'accounts/lookup')).status).toBe(503);
 });
 
 test.each([undefined, '', 'false', 'TRUE'])('flag %p: a wipe body is answered 404 and nothing is read', async flag => {
@@ -162,6 +173,22 @@ describe('production composition', () => {
     test.each(['NOFRIES_DASHBOARD_ADMIN_BINDING', 'NOFRIES_DASHBOARD_ADMIN_ENABLED'])('%s set refuses delete', async key => {
         const { route } = compose({ [key]: 'true', NOFRIES_ACCOUNT_WIPE_GRAPH_TENANT_ID: uid(5), NOFRIES_ACCOUNT_WIPE_GRAPH_CLIENT_ID: uid(6) });
         expect((await route(approve('delete').wipe, actor, request, new AbortController().signal)).body.code).toBe('account_wipe_legacy_index_configured');
+    });
+
+    test('retry markers are overwritten in place under a digest name and read back; a missing one is null', async () => {
+        const rows = new Map(), writes = [];
+        const container = { getBlockBlobClient: key => ({
+            async uploadData(bytes, options) { writes.push({ key, conditions: options.conditions }); rows.set(key, Buffer.from(bytes)); return { etag: '"m"' }; },
+            async download() {
+                if (!rows.has(key)) throw Object.assign(new Error('missing'), { statusCode: 404 });
+                return { contentLength: rows.get(key).length, etag: '"m"', readableStreamBody: Readable.from([rows.get(key)]) };
+            } }) };
+        const markers = createRetryMarkers(container), digest = 'e'.repeat(64);
+        expect(await markers.read(digest)).toBeNull();
+        await markers.write(digest, { databaseDone: true });
+        expect(writes).toEqual([{ key: `dashboard-admin-account-wipes/retry/${digest}.json`, conditions: {} }]);
+        expect(await markers.read(digest)).toEqual({ databaseDone: true });
+        await expect(markers.read('not-a-digest')).rejects.toThrow();
     });
 
     test('a login that cannot SET the wipe role is refused with a clear code', async () => {
