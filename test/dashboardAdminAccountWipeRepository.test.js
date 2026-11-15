@@ -5,12 +5,12 @@ const uid = n => '50000000-0000-4000-8000-' + String(n).padStart(12, '0');
 const SUBJECT = uid(1) + ':' + uid(2);
 const scope = { accountId: uid(10), subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)] };
 
-function fakePool({ owner = 1, scoped = 1, failOn = null } = {}) {
+function fakePool({ owner = 1, scoped = 1, failOn = null, failCode = '23503' } = {}) {
     const statements = [], released = [];
     const client = {
         async query(sql, params = []) {
             statements.push([sql, params]);
-            if (failOn && sql.includes(failOn)) throw Object.assign(new Error('PRIVATE_DATABASE_DETAIL customer@example.test'), { code: '23503' });
+            if (failOn && sql.includes(failOn)) throw Object.assign(new Error('PRIVATE_DATABASE_DETAIL customer@example.test'), { code: failCode });
             if (sql.startsWith('SELECT 1 FROM nofries.dashboard_starter_accounts')) return { rowCount: owner };
             if (sql.startsWith('SELECT 1 FROM nofries.dashboard_starter_scopes')) return { rowCount: scoped };
             if (sql.startsWith('DELETE')) return { rowCount: 2 };
@@ -65,12 +65,20 @@ test.each([[{ owner: 0 }, 'account_wipe_account_not_found'], [{ scoped: 0 }, 'ac
     expect(f.statements.at(-1)[0]).toBe('ROLLBACK'); expect(f.released).toEqual([true]);
 });
 
-test('a database error rolls back, discards the connection and reveals no detail', async () => {
-    const f = fakePool({ failOn: 'dashboard_tenants' });
+test.each([['23503', 'account_wipe_reference_blocked'], ['55P03', 'account_wipe_busy'], ['XX000', 'account_wipe_unavailable']])
+('database error %s rolls back as %s, discards the connection and reveals no detail', async (failCode, code) => {
+    const f = fakePool({ failOn: 'dashboard_tenants', failCode });
     const error = await createAccountWipeRepository(f.pool).delete(scope).catch(e => e);
-    expect(error.code).toBe('account_wipe_unavailable'); expect(error.message).not.toContain('PRIVATE');
+    expect(error.code).toBe(code); expect(error.message).not.toContain('PRIVATE');
     expect(f.statements.at(-1)[0]).toBe('ROLLBACK'); expect(f.released).toEqual([true]);
     expect(f.statements.map(([sql]) => sql)).not.toContain('COMMIT');
+});
+
+test('a login without the wipe role is refused with a clear code before anything is read', async () => {
+    const f = fakePool({ failOn: 'SET LOCAL ROLE', failCode: '42501' });
+    await expect(createAccountWipeRepository(f.pool).reset(scope)).rejects.toMatchObject({ code: 'account_wipe_role_unavailable' });
+    expect(f.statements.filter(([sql]) => sql.startsWith('SELECT 1') || sql.startsWith('DELETE'))).toEqual([]);
+    expect(f.released).toEqual([true]);
 });
 
 test.each([

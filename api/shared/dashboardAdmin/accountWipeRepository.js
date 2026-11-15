@@ -39,6 +39,11 @@ const MAX_TENANTS = 64;
 const lockTables = mode => mode === 'delete'
     ? [...new Set([...DELETE_FIRST_TABLES, ...DELETE_TENANT_TABLES, ...DELETE_ACCOUNT_TABLES])] : [...RESET_TABLES];
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
+// PostgreSQL conditions the console explains; anything else is unavailable.
+// 23503: a row the wipe cannot see (a staff or other person's session, or a
+// row in an organisation outside this account) still references one being
+// deleted. 55P03: a customer writer held a table past the lock timeout.
+const DATABASE_CODES = Object.freeze({ '23503': 'account_wipe_reference_blocked', '55P03': 'account_wipe_busy' });
 
 function target(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) fail('account_wipe_target_invalid');
@@ -60,7 +65,8 @@ function createAccountWipeRepository(pool) {
         let discard = false;
         try {
             await client.query('BEGIN');
-            await client.query('SET LOCAL ROLE nofries_account_wipe');
+            // Fails when the login is not granted the role (SET TRUE) or 0025 is absent.
+            try { await client.query('SET LOCAL ROLE nofries_account_wipe'); } catch (_) { fail('account_wipe_role_unavailable'); }
             // Serialise with customer writers (evidence, assessments, plans) for the
             // whole wipe: no row can be added or changed in these tables until
             // COMMIT. Reads continue. DELETE privilege is enough for this mode; a
@@ -113,7 +119,7 @@ function createAccountWipeRepository(pool) {
             discard = true;
             try { await client.query('ROLLBACK'); } catch (_) { /* The connection is discarded below. */ }
             if (typeof error.code === 'string' && error.code.startsWith('account_wipe_')) throw error;
-            fail('account_wipe_unavailable');
+            fail(DATABASE_CODES[error?.code] || 'account_wipe_unavailable');
         } finally { client.release(discard); }
     }
     return Object.freeze({ reset: input => run(input, 'reset'), delete: input => run(input, 'delete') });
