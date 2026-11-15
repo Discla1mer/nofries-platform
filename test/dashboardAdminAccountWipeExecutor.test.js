@@ -1,5 +1,5 @@
 'use strict';
-const { createAccountWipeExecutor, APPROVAL_MS } = require('../api/shared/dashboardAdmin/accountWipeExecutor');
+const { createAccountWipeExecutor, APPROVAL_MS, OUTCOME_RESERVE_MS } = require('../api/shared/dashboardAdmin/accountWipeExecutor');
 const { readAccountWipeGraphSettings, createAccountWipeGraphToken, EXCHANGE_SCOPE, GRAPH_SCOPE } = require('../api/shared/dashboardAdmin/accountWipeGraphToken');
 
 const uid = n => '70000000-0000-4000-8000-' + String(n).padStart(12, '0');
@@ -24,7 +24,8 @@ function harness({ kind = 'external_starter', found = inventory(), identity = tr
         reset: jest.fn(async scope => { calls.push(['reset', scope]); return { mode: 'reset', tenants: 2, counts: { a: 2, b: 3 } }; }),
         delete: jest.fn(async scope => { calls.push(['delete', scope]); return { mode: 'delete', tenants: 2, counts: { a: 4, b: 1 } }; })
     };
-    const remover = { remove: jest.fn(async subject => { calls.push(['identity', subject]); return { removed: true, alreadyGone: false }; }) };
+    const remover = { remove: jest.fn(async subject => { calls.push(['identity', subject]); return { removed: true, alreadyGone: false }; }),
+        check: jest.fn(async () => true) };
     const executor = createAccountWipeExecutor({
         sources: [{ kind, storage }], repository, identity: identity ? remover : null, legacyIndexConfigured: legacy,
         ensureRole: async () => { calls.push(['role']); if (!role) throw new Error('no role'); },
@@ -49,7 +50,7 @@ describe('delete', () => {
         const result = await h.executor.execute(apply(approved.approvalId), signal());
         expect(order(h.calls)).toEqual(['delete', 'storage', 'identity']);
         expect(h.repository.delete).toHaveBeenCalledWith({ accountId: uid(10), subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)] }, undefined);
-        expect(h.remover.remove).toHaveBeenCalledWith(SUBJECT);
+        expect(h.remover.remove).toHaveBeenCalledWith(SUBJECT, { signal: expect.any(AbortSignal), deadline: undefined });
         expect(result).toMatchObject({ outcome: 'succeeded', stages: { database: 'done', storage: 'done', identity: 'done' },
             failedStage: null, code: null, counts: { databaseRows: 5, blobs: 7, versions: 3 }, recorded: true });
         expect(h.records.map(r => r.phase)).toEqual(['approval', 'attempt', 'outcome']);
@@ -81,7 +82,8 @@ describe('delete', () => {
     ])('%s: refused at approval before anything is changed', async (_, options, code) => {
         const h = harness(options);
         await expect(h.executor.approve(approval('delete'), signal())).rejects.toMatchObject({ code });
-        expect(order(h.calls)).toEqual([]); expect(h.records).toEqual([]);
+        expect(order(h.calls)).toEqual([]);
+        expect(h.records).toEqual([expect.objectContaining({ phase: 'approval_refused', code, targetSha256: DIGEST })]);
     });
 
     test('a database refusal (session reference) changes nothing and later stages do not run', async () => {
@@ -210,13 +212,91 @@ describe('run deadline', () => {
         const run = signal(), deadline = Date.now() + 30000;
         h.repository.delete.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_timed_out' }));
         const result = await h.executor.execute(apply(approvalId, { deadline }), run);
-        expect(h.repository.delete).toHaveBeenCalledWith(expect.any(Object), { signal: run, deadline });
+        expect(h.repository.delete).toHaveBeenCalledWith(expect.any(Object), { signal: expect.any(AbortSignal), deadline: deadline - OUTCOME_RESERVE_MS });
         expect(result).toMatchObject({ outcome: 'timed_out_rolled_back', code: 'account_wipe_timed_out', failedStage: null,
             stages: { database: 'failed', storage: 'pending', identity: 'pending' } });
         expect(h.storage.delete).not.toHaveBeenCalled();
         expect(h.records.at(-1)).toMatchObject({ phase: 'outcome', outcome: 'timed_out_rolled_back' });
         ({ approvalId } = await h.executor.approve(approval('delete'), signal()));
         expect((await h.executor.execute(apply(approvalId, { deadline }), signal())).outcome).toBe('succeeded');
+    });
+});
+
+describe('review fixes', () => {
+    test('a COMMIT with an unknown result is audited and reported as unknown, never as nothing changed; a delete retry converges', async () => {
+        const h = harness();
+        let { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.repository.delete.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_commit_unknown' }));
+        const first = await h.executor.execute(apply(approvalId), signal());
+        expect(first).toMatchObject({ outcome: 'unknown', code: 'account_wipe_commit_unknown', stages: { database: 'unknown', storage: 'pending', identity: 'pending' } });
+        expect(h.records.at(-1)).toMatchObject({ phase: 'outcome', outcome: 'unknown' });
+        expect(h.storage.delete).not.toHaveBeenCalled();
+        // It had committed: the retry finds nothing of the account in the database.
+        h.repository.delete.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_account_not_found' }));
+        ({ approvalId } = await h.executor.approve(approval('delete'), signal()));
+        expect(await h.executor.execute(apply(approvalId), signal())).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'done', identity: 'done' } });
+    });
+
+    test('a subject mismatch in the database refuses the delete before Blob or Graph', async () => {
+        const h = harness();
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.repository.delete.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_subject_mismatch' }));
+        expect(await h.executor.execute(apply(approvalId), signal())).toMatchObject({ outcome: 'refused', code: 'account_wipe_subject_mismatch' });
+        expect(h.storage.delete).not.toHaveBeenCalled(); expect(h.remover.remove).not.toHaveBeenCalled();
+    });
+
+    test('an unusable Graph credential refuses delete at approval and at apply, before anything irreversible', async () => {
+        const h = harness();
+        h.remover.check.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_identity_unavailable' }));
+        await expect(h.executor.approve(approval('delete'), signal())).rejects.toMatchObject({ code: 'account_wipe_identity_unavailable' });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.remover.check.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_identity_unavailable' }));
+        expect(await h.executor.execute(apply(approvalId), signal())).toMatchObject({ outcome: 'refused', code: 'account_wipe_identity_unavailable' });
+        expect(order(h.calls)).toEqual([]);
+        // Reset never needs Graph.
+        const r = harness(); r.remover.check.mockRejectedValue(new Error('x'));
+        const reset = await r.executor.approve(approval('reset'), signal());
+        expect((await r.executor.execute(apply(reset.approvalId), signal())).outcome).toBe('succeeded');
+    });
+
+    test('an identity pending in deleted items is a retryable partial', async () => {
+        const h = harness();
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.remover.remove.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_identity_pending' }));
+        expect(await h.executor.execute(apply(approvalId), signal())).toMatchObject({ outcome: 'partial', failedStage: 'identity', code: 'account_wipe_identity_pending' });
+    });
+
+    test.each([
+        ['approval_refused', 'approve', h => h.executor.approve(approval('delete', { confirmWord: 'NO' }), signal()), 'account_wipe_confirmation_mismatch'],
+        ['execute_refused', 'execute', h => h.executor.execute(apply(uid(999)), signal()), 'account_wipe_approval_invalid']
+    ])('every refusal leaves a %s record without email or subject', async (phase, _, act, code) => {
+        const h = harness();
+        await expect(act(h)).rejects.toMatchObject({ code });
+        expect(h.records).toEqual([expect.objectContaining({ phase, code, outcome: 'refused', targetSha256: DIGEST, actorSha256: expect.stringMatching(/^[0-9a-f]{64}$/) })]);
+        expect(JSON.stringify(h.records).toLowerCase()).not.toMatch(new RegExp([EMAIL, ACTOR.subjectKey].join('|')));
+    });
+
+    test('busy and refusals decided by the route are recorded too', async () => {
+        const h = harness();
+        await h.executor.refused({ actor: ACTOR, step: 'approve', email: 'not an email', code: 'account_wipe_input_invalid' });
+        expect(h.records).toEqual([expect.objectContaining({ phase: 'approval_refused', code: 'account_wipe_input_invalid', targetSha256: null })]);
+    });
+
+    test('an outcome record that cannot be stored is logged with the operation id only', async () => {
+        const logs = [], h = harness({ auditFails: ['outcome'] });
+        const executor = createAccountWipeExecutor({ sources: [{ kind: 'external_starter', storage: h.storage }], repository: h.repository, identity: h.remover,
+            legacyIndexConfigured: false, ensureRole: async () => {}, audit: async event => { if (event.phase === 'outcome') throw new Error('down'); },
+            targetDigest: () => DIGEST, log: message => logs.push(message) });
+        const { approvalId } = await executor.approve(approval('reset'), signal());
+        await executor.execute(apply(approvalId), signal());
+        expect(logs).toEqual([`[dashboard-admin-account-wipe] outcome_unrecorded ${approvalId}`]);
+    });
+
+    test('the stage budget leaves room for the outcome record inside the overall deadline', async () => {
+        const h = harness(), deadline = Date.parse('2026-11-15T01:00:25.000Z');
+        const { approvalId } = await h.executor.approve(approval('reset'), signal());
+        await h.executor.execute(apply(approvalId, { deadline }), signal());
+        expect(h.repository.reset.mock.calls[0][1].deadline).toBe(deadline - OUTCOME_RESERVE_MS);
     });
 });
 
@@ -229,7 +309,7 @@ describe('approval', () => {
     ])('%s is refused', async (_, extra) => {
         const h = harness();
         await expect(h.executor.approve(approval('delete', extra), signal())).rejects.toMatchObject({ code: 'account_wipe_confirmation_mismatch' });
-        expect(h.records).toEqual([]);
+        expect(h.records.map(r => [r.phase, r.code])).toEqual([['approval_refused', 'account_wipe_confirmation_mismatch']]);
     });
 
     test('an approval that cannot be recorded is not granted', async () => {

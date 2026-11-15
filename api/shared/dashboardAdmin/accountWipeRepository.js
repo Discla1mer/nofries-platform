@@ -60,8 +60,10 @@ function target(input) {
 // An optional run deadline (epoch ms, with an optional AbortSignal) is
 // enforced inside the transaction: before every statement the remaining time
 // is checked and statement_timeout lowered to it, lock_timeout is at most the
-// remaining time, and COMMIT is never sent after the deadline. Expiry rolls
-// back with account_wipe_timed_out: nothing is committed.
+// remaining time, and the time left is checked again immediately before COMMIT,
+// which is never sent after the deadline. Expiry rolls back with
+// account_wipe_timed_out: nothing is committed. A COMMIT whose result is not
+// known (connection lost or cancelled during it) is account_wipe_commit_unknown.
 function createAccountWipeRepository(pool, { now = Date.now } = {}) {
     if (!pool || typeof pool.connect !== 'function' || typeof now !== 'function') fail('account_wipe_configuration_invalid');
     async function run(input, mode, options = {}) {
@@ -79,7 +81,7 @@ function createAccountWipeRepository(pool, { now = Date.now } = {}) {
         const db = { async query(sql, params) {
             if (timed) {
                 const left = remaining();
-                if (sql !== 'BEGIN') await client.query(`SET LOCAL statement_timeout = ${left}`);
+                if (sql !== 'BEGIN') await client.query("SELECT set_config('statement_timeout', $1, true)", [String(left)]);
             }
             return params === undefined ? client.query(sql) : client.query(sql, params);
         } };
@@ -93,14 +95,30 @@ function createAccountWipeRepository(pool, { now = Date.now } = {}) {
             // whole wipe: no row can be added or changed in these tables until
             // COMMIT. Reads continue. DELETE privilege is enough for this mode; a
             // busy table fails the call after the lock timeout and nothing changes.
-            await db.query(timed ? `SET LOCAL lock_timeout = ${Math.min(5000, remaining())}` : "SET LOCAL lock_timeout = '5s'");
+            if (timed) await db.query("SELECT set_config('lock_timeout', $1, true)", [String(Math.min(5000, remaining()))]);
+            else await db.query("SET LOCAL lock_timeout = '5s'");
             await db.query(`LOCK TABLE ${lockTables(mode).map(table => 'nofries.' + table).join(', ')} IN SHARE ROW EXCLUSIVE MODE`);
             await db.query("SELECT set_config('nofries.wipe_account_id', $1, true), set_config('nofries.wipe_subject_key', $2, true)",
                 [scope.accountId, scope.subjectKey]);
             // The account must exist under this subject before anything is removed.
             const owner = await db.query('SELECT 1 FROM nofries.dashboard_starter_accounts WHERE account_id = $1 AND subject_key = $2',
                 [scope.accountId, scope.subjectKey]);
-            if (owner.rowCount !== 1) fail('account_wipe_account_not_found');
+            if (owner.rowCount !== 1) {
+                // "Not found" only when nothing of the account is left: the wipe
+                // role sees the account row only under the expected subject, so an
+                // account row under another subject would otherwise look absent.
+                // Its preferences (by account) and its tenants' rows are visible,
+                // and any of them left means the database still holds it.
+                const found = result => result?.rows?.[0]?.found === true;
+                if (found(await db.query('SELECT EXISTS (SELECT 1 FROM nofries.email_preferences WHERE account_id = $1) AS found', [scope.accountId])))
+                    fail('account_wipe_subject_mismatch');
+                for (const tenantId of scope.tenantIds) {
+                    await db.query("SELECT set_config('nofries.wipe_tenant_id', $1, true)", [tenantId]);
+                    if (found(await db.query('SELECT (EXISTS (SELECT 1 FROM nofries.dashboard_starter_scopes WHERE tenant_id = $1) OR ' +
+                        'EXISTS (SELECT 1 FROM nofries.dashboard_tenants WHERE tenant_id = $1)) AS found', [tenantId]))) fail('account_wipe_subject_mismatch');
+                }
+                fail('account_wipe_account_not_found');
+            }
             // Every tenant must belong to this account before anything is deleted;
             // a foreign tenant id aborts the whole call.
             for (const tenantId of scope.tenantIds) {
@@ -135,7 +153,9 @@ function createAccountWipeRepository(pool, { now = Date.now } = {}) {
                     [scope.accountId, scope.subjectKey])).rowCount);
                 add('signup_registrations', (await db.query('DELETE FROM nofries.signup_registrations WHERE subject_key = $1', [scope.subjectKey])).rowCount);
             }
-            await db.query('COMMIT');
+            if (timed) remaining();
+            try { await client.query('COMMIT'); }
+            catch (_) { fail('account_wipe_commit_unknown'); }
             return Object.freeze({ mode, tenants: scope.tenantIds.length, counts: Object.freeze(counts) });
         } catch (error) {
             discard = true;
