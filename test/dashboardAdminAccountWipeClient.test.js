@@ -91,6 +91,14 @@ test.each([
     expect(f.elements.Apply.disabled).toBe(true);
 });
 
+test('a timed-out run says it was rolled back and leaves the action ready to approve again', async () => {
+    const f = fixture({ executeReply: { status: 200, value: { action: 'reset', outcome: 'timed_out_rolled_back', code: 'account_wipe_timed_out',
+        stages: { database: 'failed' }, counts: { databaseRows: 0 }, recorded: true } } });
+    f.elements.Reset.click(); f.type(EMAIL, 'RESET'); await f.submit(); await f.applyNow();
+    expect(f.elements.Status.textContent).toMatch(/rolled back and nothing was changed/);
+    expect(f.elements.Approve.textContent).toBe('Approve reset'); expect(f.elements.Approve.disabled).toBe(false);
+});
+
 test('editing after approval, or selecting another account, clears the approval', async () => {
     const f = fixture();
     f.elements.Delete.click(); f.type(EMAIL, 'DELETE'); await f.submit();

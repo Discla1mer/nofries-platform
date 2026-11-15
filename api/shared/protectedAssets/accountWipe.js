@@ -81,6 +81,7 @@
             : 'Delete complete for ' + email + '. ' + stages + '.') + unrecorded;
         if (result.outcome === 'partial') return 'Delete only partly done for ' + email + '. ' + stages + '. ' + explain(result.code) +
             ' Approve and apply Delete again to finish the remaining steps; finished steps are skipped.' + unrecorded;
+        if (result.outcome === 'timed_out_rolled_back') return 'This took too long, so the database change was rolled back and nothing was changed. Approve and apply again.' + unrecorded;
         return 'Refused: ' + explain(result.code) + unrecorded;
     }
     async function run(execute) {
@@ -101,7 +102,7 @@
             if (result.status !== 200) { status.textContent = explain(result.value && result.value.code); return; }
             if (execute) {
                 status.textContent = outcomeText(result.value, target.email);
-                if (result.value.outcome !== 'partial') { action = null; typed.value = ''; word.value = ''; }
+                if (!['partial', 'timed_out_rolled_back'].includes(result.value.outcome)) { action = null; typed.value = ''; word.value = ''; }
             } else {
                 if (result.value.action !== chosen || !(Date.parse(result.value.approvalExpiresAt) > Date.now())) throw new Error();
                 approved = result.value;
