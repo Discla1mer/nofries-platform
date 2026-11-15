@@ -200,3 +200,27 @@ describe('one-click perform for the account list', () => {
         expect(await f.window.nofriesAccountWipe.perform('purge', EMAIL)).toEqual({ done: false, text: 'Reset and delete are unavailable.' });
     });
 });
+
+test('leaving the page while an approval is pending never sends the execute step', async () => {
+    let release;
+    const f = fixture({ selected: null });
+    const original = f.fetch.getMockImplementation();
+    f.fetch.mockImplementation(async (url, options) => {
+        const input = options.body && JSON.parse(options.body);
+        if (input?.wipe?.step === 'approve') await new Promise(resolve => { release = resolve; });
+        return original(url, options);
+    });
+    const running = f.window.nofriesAccountWipe.perform('delete', EMAIL);
+    while (!release) await new Promise(resolve => setImmediate(resolve));
+    f.window.dispatch('pagehide');
+    release();
+    const result = await running;
+    expect(result.done).toBe(false); expect(result.text).toContain('Stopped before anything was applied');
+    expect(f.bodies().map(body => body.wipe.step)).toEqual(['approve']);
+});
+
+test('a partial delete whose outcome record failed keeps the keep-a-note warning', async () => {
+    const f = fixture({ selected: null, executeReply: { status: 200, value: { action: 'delete', outcome: 'partial', code: 'account_wipe_identity_forbidden',
+        stages: { database: 'done', storage: 'done', identity: 'failed' }, counts: { databaseRows: 1, blobs: 0, versions: 0 }, recorded: false } } });
+    expect((await f.window.nofriesAccountWipe.perform('delete', EMAIL)).text).toContain('could not be stored; keep a note');
+});

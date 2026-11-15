@@ -42,6 +42,7 @@
     const LOOKUP = '/api/dashboard-admin/accounts/lookup';
     const explain = code => code === 'dashboard_admin_account_lookup_429' ? 'Too many requests just now. Wait a minute and try again.' : MESSAGES[code] || 'The service is unavailable. Look the account up again before retrying.';
     let selected = null, action = null, approved = null, busy = false, generation = 0, timer, controller, enabled = false;
+    const inflight = new Set();
 
     async function request(url, body, signal) {
         const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal,
@@ -98,22 +99,30 @@
     // The server still binds the approval to this staff session and this target.
     async function perform(chosen, email) {
         if (!enabled || !WORDS[chosen] || typeof email !== 'string' || !email) return { done: false, text: 'Reset and delete are unavailable.' };
+        // Leaving the page (or the wipe turning off) aborts every row operation,
+        // so an approval that resolves afterwards is never applied.
         const active = new AbortController(), deadline = window.setTimeout(function () { active.abort(); }, 90000);
+        let sent = false;
+        inflight.add(active);
         try {
             await ready(active.signal);
             const approval = await request(LOOKUP, { wipe: { step: 'approve', action: chosen, email, confirmEmail: email, confirmWord: WORDS[chosen] } }, active.signal);
             if (approval.status !== 200) return { done: false, text: explain(approval.value && approval.value.code) };
             if (approval.value.action !== chosen || typeof approval.value.approvalId !== 'string') throw new Error();
+            if (active.signal.aborted || !enabled) return { done: false, text: 'Stopped before anything was applied.' };
+            sent = true;
             const result = await request(LOOKUP, { wipe: { step: 'execute', approvalId: approval.value.approvalId, email } }, active.signal);
             if (result.status !== 200) return { done: false, text: explain(result.value && result.value.code) };
             const value = result.value;
             if (value.outcome === 'partial') return { done: false, outcome: value.outcome, text: 'Delete only partly done. ' +
                 Object.keys(value.stages).map(key => STAGES[key] + ': ' + (STATES[value.stages[key]] || value.stages[key])).join('; ') + '. ' + explain(value.code) +
-                ' Choose Delete again to finish; finished steps are skipped.' };
+                ' Choose Delete again to finish; finished steps are skipped.' +
+                (value.recorded === false ? ' The outcome record could not be stored; keep a note of this result.' : '') };
             return { done: value.outcome === 'succeeded', outcome: value.outcome, text: outcomeText(value, email) };
         } catch (_) {
-            return { done: false, text: 'The outcome could not be confirmed. Refresh the list; if the account is still there, try again.' };
-        } finally { window.clearTimeout(deadline); }
+            return { done: false, text: sent ? 'The outcome could not be confirmed. Refresh the list; if the account is still there, try again.'
+                : 'Stopped before anything was applied. Try again.' };
+        } finally { window.clearTimeout(deadline); inflight.delete(active); }
     }
     async function run(execute) {
         if (busy || !selected || !action) return;
@@ -183,6 +192,7 @@
     // The signup list shows per-row Reset and Delete only while this is on.
     function available(on) {
         enabled = on; panel.hidden = !on;
+        if (!on) { inflight.forEach(function (item) { item.abort(); }); inflight.clear(); }
         if (typeof window.CustomEvent === 'function') window.dispatchEvent(new window.CustomEvent('nofries-account-wipe', { detail: { available: on } }));
     }
     window.nofriesAccountWipe = Object.freeze({ perform, available: () => enabled });
