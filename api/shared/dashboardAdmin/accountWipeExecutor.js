@@ -29,6 +29,9 @@ const PENDING_IDENTITY_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PENDING_IDENTITIES = 256;
 const WORDS = Object.freeze({ reset: 'RESET', delete: 'DELETE' });
 const KINDS = new Set(['legacy_starter', 'external_starter']);
+// Of the overall run deadline, this much is kept for the outcome record, so
+// the whole apply (attempt record, stages, outcome record) ends by the deadline.
+const OUTCOME_RESERVE_MS = 3000;
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const wipeCode = error => typeof error?.code === 'string' && /^account_wipe_[a-z_]+$/.test(error.code) ? error.code : 'account_wipe_unavailable';
@@ -42,12 +45,12 @@ function normaliseEmail(value) {
 const digestShape = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 
 function createAccountWipeExecutor({ sources, repository, identity = null, ensureRole, legacyIndexConfigured, audit, targetDigest,
-    retryMarkers = null, now = Date.now, newId = randomUUID }) {
+    retryMarkers = null, now = Date.now, newId = randomUUID, log = message => console.warn(message) }) {
     if (!Array.isArray(sources) || !sources.length || sources.length > 2 || new Set(sources.map(source => source?.kind)).size !== sources.length ||
         sources.some(source => !KINDS.has(source?.kind) || typeof source.storage?.inventory !== 'function' || typeof source.storage?.delete !== 'function') ||
         typeof repository?.reset !== 'function' || typeof repository?.delete !== 'function' ||
-        identity !== null && typeof identity?.remove !== 'function' || typeof legacyIndexConfigured !== 'boolean' ||
-        [ensureRole, audit, targetDigest, now, newId].some(value => typeof value !== 'function') ||
+        identity !== null && (typeof identity?.remove !== 'function' || typeof identity?.check !== 'function') || typeof legacyIndexConfigured !== 'boolean' ||
+        [ensureRole, audit, targetDigest, now, newId, log].some(value => typeof value !== 'function') ||
         retryMarkers !== null && (typeof retryMarkers?.read !== 'function' || typeof retryMarkers?.write !== 'function')) fail('account_wipe_configuration_invalid');
     const approvals = new Map(), pendingIdentities = new Map(), running = new Set();
 
@@ -66,7 +69,7 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         return sha256(actor.subjectKey);
     }
     // Refusals that need no customer data, checked before anything is read.
-    async function preconditions(action) {
+    async function preconditions(action, signal) {
         if (action === 'delete') {
             // The legacy signup listing publishes an index that is not
             // deletion-aware; a delete would leave a stale entry in it.
@@ -75,6 +78,9 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
             if (!identity) fail('account_wipe_identity_not_configured');
         }
         try { await ensureRole(); } catch (_) { fail('account_wipe_role_unavailable'); }
+        // A broken Graph credential is found here, not after the database and
+        // Blob records are gone: a valid External ID token is required first.
+        if (action === 'delete') await identity.check({ signal });
     }
     async function locate(email, signal) {
         const found = [];
@@ -109,13 +115,29 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         return true;
     }
 
+    // Every refused approve or apply leaves a create-only record: actor digest,
+    // keyed email digest (when the email is usable) and the code. Never the email.
+    async function refusal(step, actor, email, error) {
+        const code = wipeCode(error);
+        let targetSha256 = null;
+        try { targetSha256 = digestOf(normaliseEmail(email)); } catch (_) { /* unusable email: no target */ }
+        await record(newId(), step === 'approve' ? 'approval_refused' : 'execute_refused',
+            { actorSha256: typeof actor?.subjectKey === 'string' && actor.subjectKey ? sha256(actor.subjectKey) : null, targetSha256, outcome: 'refused', code });
+    }
+    function audited(step, work) {
+        return async (input, signal) => {
+            try { return await work(input, signal); }
+            catch (error) { await refusal(step, input?.actor, input?.email, error); throw error; }
+        };
+    }
+
     async function approve({ actor, sessionSha256, action, email, confirmEmail, confirmWord }, signal) {
         if (!Object.hasOwn(WORDS, action ?? '')) fail('account_wipe_input_invalid');
         const actorSha256 = actorOf(actor, sessionSha256), target = normaliseEmail(email);
         let typed;
         try { typed = normaliseEmail(confirmEmail); } catch (_) { fail('account_wipe_confirmation_mismatch'); }
         if (typed !== target || confirmWord !== WORDS[action]) fail('account_wipe_confirmation_mismatch');
-        await preconditions(action);
+        await preconditions(action, signal);
         const targetSha256 = digestOf(target), located = await locate(target, signal);
         prune();
         const inventory = located?.inventory ?? null;
@@ -135,8 +157,10 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
             organisations: inventory?.tenantIds.length ?? 0, store: located ? (located.kind === 'external_starter' ? 'external' : 'legacy') : null });
     }
 
-    // deadline (epoch ms, optional) bounds the database transaction from inside:
-    // past it the transaction rolls back and the outcome is 'timed_out_rolled_back'.
+    // deadline (epoch ms, optional) bounds the whole apply: the stages get it
+    // less OUTCOME_RESERVE_MS (the database transaction enforces it from inside;
+    // past it the transaction rolls back and the outcome is
+    // 'timed_out_rolled_back'), and the outcome record uses the rest.
     async function execute({ actor, sessionSha256, approvalId, email, deadline }, signal) {
         if (deadline !== undefined && !Number.isFinite(deadline)) fail('account_wipe_input_invalid');
         const actorSha256 = actorOf(actor, sessionSha256), target = normaliseEmail(email), targetSha256 = digestOf(target);
@@ -148,7 +172,12 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
             approval.sessionSha256 !== sessionSha256 || approval.targetSha256 !== targetSha256) fail('account_wipe_approval_invalid');
         if (running.has(targetSha256)) fail('account_wipe_busy');
         running.add(targetSha256);
-        try { return await run(approval.action, approvalId, actorSha256, target, targetSha256, signal, deadline === undefined ? undefined : { signal, deadline }); }
+        let bound;
+        if (deadline !== undefined) {
+            const stageDeadline = deadline - OUTCOME_RESERVE_MS;
+            bound = { signal: AbortSignal.any([signal, AbortSignal.timeout(Math.max(0, stageDeadline - now()))]), deadline: stageDeadline };
+        }
+        try { return await run(approval.action, approvalId, actorSha256, target, targetSha256, bound?.signal ?? signal, bound); }
         finally { running.delete(targetSha256); }
     }
 
@@ -159,7 +188,7 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         const counts = { databaseRows: 0, blobs: 0, versions: 0 };
         let stage = 'checks', outcome = 'succeeded', failedStage = null, code = null, heldBefore = null;
         try {
-            await preconditions(action);
+            await preconditions(action, signal);
             const located = await locate(email, signal), inventory = located?.inventory ?? null;
             if (action === 'reset') {
                 if (!inventory?.account) fail('account_wipe_account_not_found');
@@ -213,7 +242,7 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
                     // The Blob records naming the user are gone and this process no
                     // longer holds its reference: staff must remove it by hand.
                     if (!subjectKey) fail('account_wipe_identity_reference_lost');
-                    const removed = await identity.remove(subjectKey);
+                    const removed = await identity.remove(subjectKey, { signal, deadline: bound?.deadline });
                     stages.identity = removed.alreadyGone ? 'absent' : 'done';
                     pendingIdentities.delete(targetSha256);
                 }
@@ -225,7 +254,11 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
                 // The run budget ran out inside the transaction: rolled back, nothing
                 // committed, safe to approve and apply again.
                 outcome = code === 'account_wipe_timed_out' ? 'timed_out_rolled_back' : 'refused';
-                if (stage === 'database') {
+                if (code === 'account_wipe_commit_unknown') {
+                    // COMMIT was sent and its result is unknown: the change may or may
+                    // not be applied. The retry reference stays, so a delete retry converges.
+                    outcome = 'unknown'; stages.database = 'unknown';
+                } else if (stage === 'database') {
                     stages.database = 'failed';
                     // Nothing was deleted, so no new retry reference is kept.
                     if (heldBefore) pendingIdentities.set(targetSha256, heldBefore); else pendingIdentities.delete(targetSha256);
@@ -234,10 +267,13 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
             else { outcome = 'partial'; failedStage = stage; stages[stage] = 'failed'; }
         }
         const recorded = await record(operationId, 'outcome', { ...base, outcome, stages, failedStage, code, counts });
+        if (!recorded) { try { log('[dashboard-admin-account-wipe] outcome_unrecorded ' + operationId); } catch (_) { /* no logging authority */ } }
         return Object.freeze({ operationId, action, outcome, stages: Object.freeze(stages), failedStage, code, counts: Object.freeze(counts), recorded });
     }
 
-    return Object.freeze({ approve, execute });
+    return Object.freeze({ approve: audited('approve', approve), execute: audited('execute', execute),
+        // For refusals decided before the executor (a malformed request body).
+        refused: ({ actor, step, email = null, code }) => refusal(step === 'approve' ? 'approve' : 'execute', actor, email, { code }) });
 }
 
-module.exports = { createAccountWipeExecutor, APPROVAL_MS, WORDS };
+module.exports = { createAccountWipeExecutor, APPROVAL_MS, WORDS, OUTCOME_RESERVE_MS };

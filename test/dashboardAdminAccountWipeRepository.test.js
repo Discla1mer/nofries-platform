@@ -5,13 +5,14 @@ const uid = n => '50000000-0000-4000-8000-' + String(n).padStart(12, '0');
 const SUBJECT = uid(1) + ':' + uid(2);
 const scope = { accountId: uid(10), subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)] };
 
-function fakePool({ owner = 1, scoped = 1, failOn = null, failCode = '23503' } = {}) {
+function fakePool({ owner = 1, scoped = 1, failOn = null, failCode = '23503', leftover = null } = {}) {
     const statements = [], released = [];
     const client = {
         async query(sql, params = []) {
             statements.push([sql, params]);
             if (failOn && sql.includes(failOn)) throw Object.assign(new Error('PRIVATE_DATABASE_DETAIL customer@example.test'), { code: failCode });
             if (sql.startsWith('SELECT 1 FROM nofries.dashboard_starter_accounts')) return { rowCount: owner };
+            if (sql.startsWith('SELECT EXISTS') || sql.startsWith('SELECT (EXISTS')) return { rowCount: 1, rows: [{ found: leftover !== null && sql.includes(leftover) }] };
             if (sql.startsWith('SELECT 1 FROM nofries.dashboard_starter_scopes')) return { rowCount: scoped };
             if (sql.startsWith('DELETE')) return { rowCount: 2 };
             return { rowCount: 0 };
@@ -125,12 +126,16 @@ describe('run deadline', () => {
         const f = fakePool(), result = await createAccountWipeRepository(f.pool, { now: () => (clock += 10) }).reset(scope, { deadline: 4000 });
         expect(result.mode).toBe('reset');
         const sql = f.statements.map(([text]) => text);
-        const timeouts = sql.filter(text => text.startsWith('SET LOCAL statement_timeout'));
-        expect(timeouts.length).toBe(sql.filter(text => !text.startsWith('SET LOCAL statement_timeout')).length - 1); // all but BEGIN
-        const values = timeouts.map(text => Number(text.split('= ')[1]));
+        const timeout = "SELECT set_config('statement_timeout', $1, true)";
+        const timeouts = f.statements.filter(([text]) => text === timeout);
+        // All but BEGIN and COMMIT, parameterised (never interpolated).
+        expect(timeouts.length).toBe(sql.filter(text => text !== timeout).length - 2);
+        const values = timeouts.map(([, params]) => Number(params[0]));
         expect(values.every(value => value > 0 && value < 3000)).toBe(true);
         expect([...values].sort((a, b) => b - a)).toEqual(values);
-        expect(sql.find(text => text.startsWith('SET LOCAL lock_timeout'))).toMatch(/^SET LOCAL lock_timeout = \d+$/);
+        const lock = f.statements.find(([text]) => text === "SELECT set_config('lock_timeout', $1, true)");
+        expect(Number(lock[1][0])).toBeLessThanOrEqual(3000);
+        expect(sql.some(text => /statement_timeout =|lock_timeout =/.test(text))).toBe(false);
     });
 
     test('a tiny budget rolls back mid-delete and never commits', async () => {
@@ -155,5 +160,37 @@ describe('run deadline', () => {
         const f = fakePool({ failOn: 'dashboard_evidence_heads', failCode: '57014' });
         await expect(createAccountWipeRepository(f.pool).reset(scope, { deadline: Date.now() + 60000 })).rejects.toMatchObject({ code: 'account_wipe_timed_out' });
         expect(f.statements.map(([text]) => text)).not.toContain('COMMIT');
+    });
+});
+
+describe('review fixes', () => {
+    test.each([['email_preferences'], ['dashboard_starter_scopes']])
+    ('an account row hidden by a different subject, with %s rows left, is a subject mismatch, not absent', async leftover => {
+        const f = fakePool({ owner: 0, leftover });
+        await expect(createAccountWipeRepository(f.pool).delete(scope)).rejects.toMatchObject({ code: 'account_wipe_subject_mismatch' });
+        expect(deletes(f.statements)).toEqual([]); expect(f.statements.at(-1)[0]).toBe('ROLLBACK');
+    });
+
+    test('nothing of the account left is reported as not found', async () => {
+        const f = fakePool({ owner: 0 });
+        await expect(createAccountWipeRepository(f.pool).delete(scope)).rejects.toMatchObject({ code: 'account_wipe_account_not_found' });
+        expect(f.statements.filter(([sql]) => sql.includes('EXISTS')).length).toBe(1 + scope.tenantIds.length);
+    });
+
+    test('a COMMIT that fails has an unknown outcome', async () => {
+        const f = fakePool({ failOn: 'COMMIT', failCode: '08006' });
+        await expect(createAccountWipeRepository(f.pool).delete(scope)).rejects.toMatchObject({ code: 'account_wipe_commit_unknown' });
+        expect(f.released).toEqual([true]);
+    });
+
+    test('the time left is checked again right before COMMIT; past the deadline COMMIT is never sent', async () => {
+        let clock = 0;
+        const f = fakePool(), original = f.pool.connect;
+        // The last statement passes the deadline before COMMIT would be sent.
+        f.pool.connect = async () => { const client = await original(); const query = client.query;
+            client.query = async (sql, params) => { const result = await query(sql, params); if (sql.startsWith('DELETE FROM nofries.signup_registrations')) clock = 1000; return result; }; return client; };
+        await expect(createAccountWipeRepository(f.pool, { now: () => clock }).delete(scope, { deadline: 500 })).rejects.toMatchObject({ code: 'account_wipe_timed_out' });
+        expect(f.statements.map(([sql]) => sql)).not.toContain('COMMIT');
+        expect(f.statements.at(-1)[0]).toBe('ROLLBACK');
     });
 });
