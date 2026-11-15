@@ -163,3 +163,40 @@ test('the script is served with entry.js only while the flag is on', async () =>
     expect(await entry('true')).toContain("getElementById('accountWipePanel')");
     expect(await entry('false')).not.toContain('accountWipePanel');
 });
+
+describe('one-click perform for the account list', () => {
+    test('approves with the confirmed email and word, then applies that single-use approval once', async () => {
+        const f = fixture({ selected: null });
+        const result = await f.window.nofriesAccountWipe.perform('delete', EMAIL);
+        expect(f.bodies()).toEqual([
+            { wipe: { step: 'approve', action: 'delete', email: EMAIL, confirmEmail: EMAIL, confirmWord: 'DELETE' } },
+            { wipe: { step: 'execute', approvalId: 'synthetic-approval', email: EMAIL } }]);
+        expect(result.done).toBe(true); expect(result.text).toContain('Delete complete for ' + EMAIL);
+        for (const [url] of f.fetch.mock.calls) expect(url).not.toMatch(/@|%40|\?/);
+    });
+    test('a refused approval is explained and nothing is applied', async () => {
+        const f = fixture({ selected: null, approveReply: { status: 409, value: { code: 'account_wipe_account_not_found' } } });
+        const result = await f.window.nofriesAccountWipe.perform('delete', EMAIL);
+        expect(result).toEqual({ done: false, text: 'No account was found for this email.' });
+        expect(f.bodies()).toHaveLength(1);
+    });
+    test('the shared request budget is explained in plain words', async () => {
+        const f = fixture({ selected: null, approveReply: { status: 429, value: { code: 'dashboard_admin_account_lookup_429' } } });
+        expect((await f.window.nofriesAccountWipe.perform('reset', EMAIL)).text).toContain('Wait a minute');
+    });
+    test('a partial delete says what is left and that Delete finishes it', async () => {
+        const f = fixture({ selected: null, executeReply: { status: 200, value: { action: 'delete', outcome: 'partial', code: 'account_wipe_identity_forbidden',
+            stages: { database: 'done', storage: 'done', identity: 'failed' }, counts: { databaseRows: 1, blobs: 0, versions: 0 }, recorded: true } } });
+        const result = await f.window.nofriesAccountWipe.perform('delete', EMAIL);
+        expect(result.done).toBe(false);
+        expect(result.text).toContain('Sign-in user: failed'); expect(result.text).toContain('Choose Delete again');
+    });
+    test('after pagehide (or with the flag off) perform refuses without any request', async () => {
+        const f = fixture({ selected: null });
+        f.window.dispatch('pagehide');
+        expect(f.window.nofriesAccountWipe.available()).toBe(false);
+        expect((await f.window.nofriesAccountWipe.perform('delete', EMAIL)).done).toBe(false);
+        expect(f.bodies()).toHaveLength(0);
+        expect(await f.window.nofriesAccountWipe.perform('purge', EMAIL)).toEqual({ done: false, text: 'Reset and delete are unavailable.' });
+    });
+});

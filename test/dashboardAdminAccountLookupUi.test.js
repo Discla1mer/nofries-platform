@@ -128,3 +128,83 @@ test('pagehide aborts a pending signup list and its late response is never rende
     expect(result.textContent).not.toContain('late@example.test');
     expect(h.nodes.get('accountListStatus').textContent).toBe('');
 });
+
+describe('customer accounts list: opens by itself, with Reset and Delete on every row behind one confirmation', () => {
+    const listed = { rows: [{ provider: 'external', readable: true, email: 'row@example.test', accountType: 'company', plan: 'starter',
+        createdAt: null, activatedAt: null, signup: 'unfinished', signIn: 'none', organisationsComplete: true, organisations: [] }], truncated: false };
+    function setup(wipeOn = true, outcome = { done: true, text: 'Delete complete for row@example.test.' }) {
+        const fetch = jest.fn(async url => url === '/api/dashboard/session' ? session : json(200, listed));
+        const perform = jest.fn(async () => outcome);
+        const timers = [];
+        const { document, window } = createDom(), nodes = new Map(), create = document.createElement;
+        document.createElement = tag => {
+            const node = create(tag);
+            for (const [method, child] of Object.entries({ createCaption: 'caption', createTHead: 'thead', createTBody: 'tbody', insertRow: 'tr', insertCell: 'td' }))
+                node[method] = () => { const item = document.createElement(child); node.append(item); return item; };
+            if (tag === 'dialog') { node.open = false; node.showModal = jest.fn(() => { node.open = true; }); node.close = jest.fn(() => { node.open = false; }); }
+            return node;
+        };
+        for (const match of html.matchAll(/<(\w+)\b[^>]*\bid="(accountL(?:ookup|ist)[^"]+)"[^>]*>/g)) { const node = document.createElement(match[1]); node.value = ''; nodes.set(match[2], node); }
+        document.getElementById = id => nodes.get(id);
+        nodes.get('accountLookupForm').append(document.createElement('button'));
+        window.dispatchEvent = event => window.dispatch(event.type);
+        window.nofriesAccountWipe = { perform, available: () => wipeOn };
+        vm.runInNewContext(source, { document, window, Event: class { constructor(type) { this.type = type; } }, fetch, AbortController,
+            setTimeout: (fn, ms) => { timers.push([fn, ms]); return timers.length; }, clearTimeout: jest.fn() });
+        const dialog = nodes.get('accountListPanel').querySelector('dialog');
+        const button = name => nodes.get('accountListResults').querySelectorAll('button').find(item => item.textContent === name);
+        return { fetch, perform, timers, nodes, dialog, button };
+    }
+    const autoload = async h => { const [fn, ms] = h.timers.find(([, ms]) => ms === 0); expect(ms).toBe(0); await fn(); };
+
+    test('the list loads straight away and each row carries Open, Reset and Delete', async () => {
+        const h = setup();
+        expect(h.fetch).not.toHaveBeenCalled();
+        await autoload(h);
+        expect(JSON.parse(h.fetch.mock.calls[1][1].body)).toEqual({});
+        for (const name of ['Open', 'Reset', 'Delete']) { expect(h.button(name)).toBeTruthy(); expect(h.button(name).hidden).toBe(false); }
+        expect(h.button('Delete').getAttribute('aria-label')).toBe('Delete row@example.test');
+        expect(h.nodes.get('accountListStatus').textContent).toBe('1 account.');
+    });
+
+    test('Delete asks once, naming the account; Yes deletes and marks the row, Cancel does nothing', async () => {
+        const h = setup();
+        await autoload(h);
+        h.button('Delete').click();
+        expect(h.dialog.showModal).toHaveBeenCalled();
+        expect(h.dialog.textContent).toContain('Delete this account?');
+        expect(h.dialog.textContent).toContain('row@example.test');
+        expect(h.dialog.textContent).toContain('cannot be undone');
+        h.dialog.querySelectorAll('button').find(item => item.textContent === 'Cancel').click();
+        expect(h.dialog.open).toBe(false); expect(h.perform).not.toHaveBeenCalled();
+        h.button('Delete').click();
+        h.dialog.querySelectorAll('button').find(item => item.textContent === 'Yes, delete').click();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(h.perform).toHaveBeenCalledWith('delete', 'row@example.test');
+        expect(h.perform).toHaveBeenCalledTimes(1);
+        expect(h.nodes.get('accountListResults').textContent).toContain('Delete complete for row@example.test.');
+        expect(h.nodes.get('accountListResults').querySelectorAll('.account-deleted')).toHaveLength(1);
+        expect(h.button('Delete').hidden).toBe(true);
+    });
+
+    test('Reset confirms with its own wording and keeps the row', async () => {
+        const h = setup(true, { done: true, text: 'Reset complete for row@example.test: 3 database rows cleared. Sign-in is kept.' });
+        await autoload(h);
+        h.button('Reset').click();
+        expect(h.dialog.textContent).toContain('Reset this account?');
+        expect(h.dialog.textContent).toContain('Sign-in, email and organisations are kept');
+        h.dialog.querySelectorAll('button').find(item => item.textContent === 'Yes, reset').click();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(h.perform).toHaveBeenCalledWith('reset', 'row@example.test');
+        expect(h.button('Delete').hidden).toBe(false);
+    });
+
+    test('without the staff wipe, rows show Open only and nothing can be confirmed', async () => {
+        const h = setup(false);
+        await autoload(h);
+        expect(h.button('Open').hidden).toBe(false);
+        expect(h.button('Delete').hidden).toBe(true); expect(h.button('Reset').hidden).toBe(true);
+        h.button('Delete').click();
+        expect(h.dialog.showModal).not.toHaveBeenCalled(); expect(h.perform).not.toHaveBeenCalled();
+    });
+});
