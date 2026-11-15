@@ -20,6 +20,8 @@
     const MESSAGES = {
         account_wipe_subject_mismatch: 'The database still holds this account under a different sign-in identity. Nothing was changed; this needs investigating before a delete.',
         account_wipe_identity_unavailable: 'The app could not get access to External ID, so delete was refused before anything was changed. Reset still works.',
+        account_wipe_target_changed: 'The account for this email changed after approval (for example it signed up again). Nothing was changed; look it up and approve again.',
+        account_wipe_timed_out: 'This took too long and was stopped. Look the account up before retrying.',
         account_wipe_identity_pending: 'The sign-in user was deleted but is not yet ready to be removed permanently.',
         account_wipe_confirmation_mismatch: 'Type the account email exactly, and the action word in capitals.',
         account_wipe_approval_invalid: 'The approval has expired, was already used or belongs to another session. Approve again.',

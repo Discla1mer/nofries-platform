@@ -108,7 +108,7 @@ test('an unknown COMMIT result says it may or may not have been applied, never t
     expect(f.elements.Approve.disabled).toBe(false);
 });
 
-test.each([['account_wipe_subject_mismatch', /different sign-in identity/], ['account_wipe_identity_unavailable', /could not get access to External ID/]])
+test.each([['account_wipe_subject_mismatch', /different sign-in identity/], ['account_wipe_identity_unavailable', /could not get access to External ID/], ['account_wipe_target_changed', /changed after approval/]])
 ('%s is explained', async (code, text) => {
     const f = fixture({ approveReply: { status: code.endsWith('unavailable') ? 503 : 409, value: { code } } });
     f.elements.Delete.click(); f.type(EMAIL, 'DELETE'); await f.submit();
