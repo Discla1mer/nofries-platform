@@ -31,8 +31,8 @@ function createAccountWipeGraphToken({ tenantId, clientId, managedIdentityClient
         if (typeof assertion?.token !== 'string' || !assertion.token) fail('account_wipe_identity_unavailable');
         return assertion.token;
     });
-    return async function getToken() {
-        const result = await credential.getToken(GRAPH_SCOPE);
+    return async function getToken({ signal } = {}) {
+        const result = await credential.getToken(GRAPH_SCOPE, signal ? { abortSignal: signal } : undefined);
         if (typeof result?.token !== 'string' || !result.token) fail('account_wipe_identity_unavailable');
         return result.token;
     };

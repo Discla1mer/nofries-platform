@@ -28,7 +28,7 @@ function harness(options = {}, requestBudgetMs = 10000) {
     let current = found;
     const repository = { reset: jest.fn(async () => ({ counts: { a: 3 } })), delete: jest.fn(async () => ({ counts: { a: 3 } })) };
     const storage = { inventory: jest.fn(async () => current), delete: jest.fn(async () => { current = null; return { blobs: 2, versions: 0 }; }) };
-    const remover = { remove: jest.fn(async () => ({ removed: true, alreadyGone: false })) };
+    const remover = { remove: jest.fn(async () => ({ removed: true, alreadyGone: false })), check: jest.fn(async () => true) };
     const executor = createAccountWipeExecutor({ sources: [{ kind: 'external_starter', storage }], repository, identity: remover,
         legacyIndexConfigured: false, ensureRole: async () => {}, audit: async event => records.push(event), targetDigest: () => 'd'.repeat(64) });
     const service = { authorise: jest.fn(async actor => actor), capabilities: async () => ({}), lookup: async () => ({}) };
@@ -61,7 +61,8 @@ test('applying waits past the read budget for the outcome and its record; a slow
     expect(h.records.at(-1)).toMatchObject({ phase: 'outcome', outcome: 'succeeded' });
     // The run deadline is handed to the database transaction.
     expect(h.repository.delete).toHaveBeenCalledWith(expect.any(Object), { signal: expect.any(AbortSignal), deadline: expect.any(Number) });
-    expect(h.repository.delete.mock.calls[0][1].deadline - Date.now()).toBeLessThanOrEqual(30000);
+    // One 25 s budget for the whole apply; the stages end 3 s before it, for the outcome record.
+    expect(h.repository.delete.mock.calls[0][1].deadline - Date.now()).toBeLessThanOrEqual(22000);
     h.storage.inventory.mockImplementationOnce(async () => { await new Promise(resolve => setTimeout(resolve, 120)); return null; });
     expect((await h.handler.handle(wire(approve('reset')), 'accounts/lookup')).status).toBe(503);
 });
@@ -116,6 +117,29 @@ test('refusals are bounded codes the console can explain', async () => {
     expect(await h.handler.handle(wire(approve('reset')), 'accounts/lookup')).toMatchObject({ status: 503, body: { code: 'account_wipe_unavailable' } });
 });
 
+test('every refusal on the route is recorded: executor refusals and malformed bodies alike, without the email', async () => {
+    const h = harness();
+    await h.handler.handle(wire(approve('delete', { confirmWord: 'NOPE' })), 'accounts/lookup');
+    await h.handler.handle(wire({ wipe: { step: 'execute', approvalId: 'x', email: EMAIL } }), 'accounts/lookup');
+    await h.handler.handle(wire({ wipe: { step: 'other', email: EMAIL } }), 'accounts/lookup');
+    await h.handler.handle(wire(approve('reset'), { cookie: '' }), 'accounts/lookup');
+    expect(h.records.map(r => [r.phase, r.code])).toEqual([
+        ['approval_refused', 'account_wipe_confirmation_mismatch'], ['execute_refused', 'account_wipe_approval_invalid'],
+        ['execute_refused', 'account_wipe_input_invalid'], ['approval_refused', 'account_wipe_approval_invalid']]);
+    expect(h.records.every(r => r.targetSha256 === 'd'.repeat(64))).toBe(true);
+    expect(JSON.stringify(h.records)).not.toContain(EMAIL);
+});
+
+test.each([['account_wipe_role_unavailable'], ['account_wipe_identity_unavailable']])('%s is a 503 service fault, not a refusal', async code => {
+    const h = harness();
+    h.remover.check.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'account_wipe_identity_unavailable' }));
+    const route = createAccountWipeRoute({ approve: async () => { throw Object.assign(new Error('x'), { code }); }, execute: jest.fn(), refused: jest.fn() });
+    expect(await route(approve('delete').wipe, { subjectKey: STAFF }, { headers: { cookie: COOKIE } }, new AbortController().signal))
+        .toEqual({ status: 503, body: { code } });
+    if (code === 'account_wipe_identity_unavailable')
+        expect(await h.handler.handle(wire(approve('delete')), 'accounts/lookup')).toMatchObject({ status: 503, body: { code } });
+});
+
 test('session digest needs exactly one staff session cookie', () => {
     expect(sessionDigest(COOKIE)).toMatch(/^[0-9a-f]{64}$/);
     expect(sessionDigest('other=1; ' + COOKIE)).toBe(sessionDigest(COOKIE));
@@ -167,7 +191,7 @@ describe('production composition', () => {
 
     test('without Graph settings delete is refused before any read; partial Graph settings log one line', async () => {
         const { route } = compose();
-        expect(await route(approve('delete').wipe, actor, request, new AbortController().signal)).toMatchObject({ status: 409, body: { code: 'account_wipe_identity_not_configured' } });
+        expect(await route(approve('delete').wipe, actor, request, new AbortController().signal)).toMatchObject({ status: 503, body: { code: 'account_wipe_identity_not_configured' } });
         compose({ NOFRIES_ACCOUNT_WIPE_GRAPH_TENANT_ID: uid(5) });
         expect(warning).toHaveBeenCalledWith('[dashboard-admin-account-wipe] account_wipe_identity_configuration_invalid');
         warning.mockClear();
