@@ -6,6 +6,9 @@
 // Statements and table names are fixed here; callers supply identifiers only.
 // Returns per-table row counts and never any row content.
 const { uuid, subject } = require('../appLifecycle/dashboardRuntimeRecords');
+const { createBoundedSender } = require('./accountWipeQuery');
+// Client-side cap per query when no run deadline is given.
+const UNTIMED_QUERY_MS = 30000, ROLLBACK_MS = 1000, COMMIT_MIN_MS = 1000;
 
 // Children before parents. Reset clears an organisation's working data and
 // keeps its tenant, membership, entitlement and sign-in bindings, so the
@@ -92,12 +95,13 @@ function createAccountWipeRepository(pool, { now = Date.now } = {}) {
                 fail('account_wipe_unavailable');
             } finally { clearTimeout(timer); }
         }
+        // Every query goes through the bounded sender: a stalled answer breaks the
+        // connection (destroyed below, nothing queued behind it) at the deadline.
+        const sender = createBoundedSender(client, options.signal);
         const db = { async query(sql, params) {
-            if (timed) {
-                const left = remaining();
-                if (sql !== 'BEGIN') await client.query("SELECT set_config('statement_timeout', $1, true)", [String(left)]);
-            }
-            return params === undefined ? client.query(sql) : client.query(sql, params);
+            if (!timed) return sender.send(sql, params, UNTIMED_QUERY_MS, 'account_wipe_timed_out');
+            if (sql !== 'BEGIN') await sender.send("SELECT set_config('statement_timeout', $1, true)", [String(remaining())], remaining(), 'account_wipe_timed_out');
+            return sender.send(sql, params, remaining(), 'account_wipe_timed_out');
         } };
         let discard = false;
         try {
@@ -169,26 +173,19 @@ function createAccountWipeRepository(pool, { now = Date.now } = {}) {
             }
             if (timed) remaining();
             // statement_timeout does not cover COMMIT, so its wait is bounded here
-            // (at least 1 s): no answer in time is an unknown outcome.
-            let commitTimer;
-            try {
-                await Promise.race([client.query('COMMIT'), new Promise((_, reject) => {
-                    if (timed) commitTimer = setTimeout(() => reject(new Error('commit_timeout')), Math.max(1000, Math.floor(options.deadline - now())));
-                })]);
-            } catch (_) { fail('account_wipe_commit_unknown'); }
-            finally { clearTimeout(commitTimer); }
+            // (at least 1 s): no answer in time, or any failure, is an unknown outcome.
+            try { await sender.send('COMMIT', undefined, timed ? Math.max(COMMIT_MIN_MS, options.deadline - now()) : UNTIMED_QUERY_MS, 'account_wipe_commit_unknown'); }
+            catch (_) { fail('account_wipe_commit_unknown'); }
             return Object.freeze({ mode, tenants: scope.tenantIds.length, counts: Object.freeze(counts) });
         } catch (error) {
             discard = true;
-            // A COMMIT that may still be in flight blocks the connection (PostgreSQL
-            // runs one query at a time), so no ROLLBACK is queued behind it: the
-            // connection is destroyed instead. Otherwise the connection is idle in
-            // the transaction and ROLLBACK is sent, bounded to 1 s.
-            if (error?.code !== 'account_wipe_commit_unknown') {
-                let rollbackTimer;
-                try { await Promise.race([client.query('ROLLBACK'), new Promise((_, reject) => { rollbackTimer = setTimeout(() => reject(new Error('rollback_timeout')), 1000); })]); }
+            // A query still in flight (a stalled one, or a COMMIT whose result is
+            // unknown) blocks the connection: PostgreSQL runs one query at a time, so
+            // nothing is queued behind it and the connection is destroyed. Otherwise
+            // the connection is idle in the transaction and a bounded ROLLBACK is sent.
+            if (!sender.broken && error?.code !== 'account_wipe_commit_unknown') {
+                try { await sender.send('ROLLBACK', undefined, ROLLBACK_MS, 'account_wipe_unavailable'); }
                 catch (_) { /* The connection is discarded below. */ }
-                finally { clearTimeout(rollbackTimer); }
             }
             if (typeof error.code === 'string' && error.code.startsWith('account_wipe_')) throw error;
             fail(DATABASE_CODES[error?.code] || 'account_wipe_unavailable');

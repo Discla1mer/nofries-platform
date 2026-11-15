@@ -224,3 +224,41 @@ describe('bounded waits', () => {
         expect(f.released).toEqual([true]);
     });
 });
+
+describe('stalled connections (sequential like PostgreSQL)', () => {
+    // A query matching `hang` never answers; every later query waits behind it.
+    function stalled(hang, options) {
+        const f = fakePool(options), original = f.pool.connect;
+        f.pool.connect = async () => { const client = await original(), query = client.query; let tail = Promise.resolve();
+            client.query = (sql, params) => { const run = tail.then(() => hang(sql) ? new Promise(() => {}) : query(sql, params)); tail = run.catch(() => {}); return run; };
+            return client; };
+        return f;
+    }
+    test.each([
+        ['BEGIN', sql => sql === 'BEGIN', {}, 'account_wipe_timed_out'],
+        ['a statement mid-delete', sql => sql.startsWith('DELETE FROM nofries.dashboard_evidence_heads'), {}, 'account_wipe_timed_out'],
+        ['the statement_timeout round trip', sql => sql.startsWith("SELECT set_config('statement_timeout'"), {}, 'account_wipe_timed_out']
+    ])('a stalled %s returns within the deadline and destroys the connection without queueing ROLLBACK', async (_, hang, options, code) => {
+        const f = stalled(hang, options), started = Date.now();
+        await expect(createAccountWipeRepository(f.pool).reset(scope, { deadline: Date.now() + 60 })).rejects.toMatchObject({ code });
+        expect(Date.now() - started).toBeLessThan(60 + 200);
+        expect(f.released).toEqual([true]);
+        expect(f.statements.map(([sql]) => sql)).not.toContain('ROLLBACK');
+        expect(f.statements.map(([sql]) => sql)).not.toContain('COMMIT');
+    });
+
+    test('a stalled ROLLBACK after a refusal is bounded and the connection destroyed', async () => {
+        const f = stalled(sql => sql === 'ROLLBACK', { owner: 0 }), started = Date.now();
+        await expect(createAccountWipeRepository(f.pool).reset(scope, { deadline: Date.now() + 5000 })).rejects.toMatchObject({ code: 'account_wipe_account_not_found' });
+        expect(Date.now() - started).toBeLessThan(1000 + 300);
+        expect(f.released).toEqual([true]);
+    });
+
+    test('an aborted run signal breaks a stalled query at once', async () => {
+        const f = stalled(sql => sql.startsWith('LOCK TABLE')), controller = new AbortController();
+        setTimeout(() => controller.abort(), 20);
+        await expect(createAccountWipeRepository(f.pool).reset(scope, { deadline: Date.now() + 10000, signal: controller.signal }))
+            .rejects.toMatchObject({ code: 'account_wipe_timed_out' });
+        expect(f.released).toEqual([true]);
+    });
+});
