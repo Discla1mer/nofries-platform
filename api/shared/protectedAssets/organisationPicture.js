@@ -61,7 +61,16 @@
         const parsed = new Date(value + 'T00:00:00.000Z');
         return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
     }
-    function actionSummary(input) {
+    // Plain control name for an action's question, from the same metadata the
+    // results view uses ("Patching", "Sensitive-request verification check").
+    function controlName(metadata, itemId) {
+        if (!metadata || !Array.isArray(metadata.questions) || typeof itemId !== 'string') return null;
+        const question = metadata.questions.find(entry => entry && entry.id === itemId);
+        const control = question && (metadata.controls || []).find(entry => entry && entry.id === question.controlId);
+        const title = control && typeof control.title === 'string' ? control.title.split(' — ').pop().trim() : '';
+        return title || null;
+    }
+    function actionSummary(input, metadata) {
         if (!input || !Array.isArray(input.lists) || typeof input.more !== 'boolean') return null;
         let today = null; const rows = [];
         for (const list of input.lists) {
@@ -82,7 +91,9 @@
         }
         const horizon = today && new Date(Date.parse(today + 'T00:00:00.000Z') + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
         const byDue = (a, b) => a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.actionId < b.actionId ? -1 : a.actionId > b.actionId ? 1 : 0;
-        const item = action => ({ title: action.rationale.suggestedAction, dueDate: action.dueDate, status: action.status,
+        const item = action => ({ title: (name => name ? name + ': ' + action.rationale.suggestedAction.charAt(0).toLowerCase() +
+                action.rationale.suggestedAction.slice(1) : action.rationale.suggestedAction)(controlName(metadata, action.itemId)),
+            dueDate: action.dueDate, status: action.status,
             actionId: action.actionId, planId: action.planId, planRevision: action.planRevision,
             owner: Object.hasOwn(action, 'ownerLabel') && action.ownerLabel.trim() ? action.ownerLabel : null });
         const dueKey = action => action.dueDate || '9999-99-99';
@@ -994,7 +1005,7 @@
         if (readActions) {
             // Started beside the assessment reads, never after them.
             Promise.resolve().then(readActions).then(value => {
-                if (!live()) return; actions = actionSummary(value); placeActions();
+                if (!live()) return; actions = actionSummary(value, metadata); placeActions();
             }, () => {});
         }
         return controller;
