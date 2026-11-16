@@ -55,6 +55,7 @@ const {
     ScopeAccessError
 } = require('./api/shared/scopeAccess');
 const { getServiceScope } = require('./api/shared/serviceScope');
+const serverTiming = require('./api/shared/serverTiming');
 const { createEnquiryService, isHoneypotEnquiry } = require('./api/shared/enquiry');
 const { errorResult: enquiryErrorResult } = require('./api/enquiry');
 const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
@@ -559,7 +560,9 @@ if (retainedTrialRead) {
 const recordFunnelCount = funnelPool ? createFunnelCountWriter({ pool: funnelPool }) : null;
 const countFunnelEvent = createServerFunnelCounter({ env: apiEnvironment, record: recordFunnelCount, log: console });
 if (dashboard) app.use('/api/dashboard', asyncRoute(async (req, res) => {
-    const result = await dashboard.handleRequest(req);
+    // D-013: stage durations only (see api/shared/serverTiming.js).
+    const { result, timing } = await serverTiming.run(async state => ({ result: await dashboard.handleRequest(req), timing: state }));
+    if (!res.destroyed && !res.writableEnded && !res.headersSent) res.setHeader('Server-Timing', serverTiming.header(timing));
     if (!res.destroyed && !res.writableEnded) sendResult(res, result);
     if (isAssessmentSubmit(req.method, req.path, result)) countFunnelEvent('submitted', req.headers);
 }));
