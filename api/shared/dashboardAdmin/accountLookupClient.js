@@ -215,10 +215,10 @@
             value.rows.forEach(row => {
                 const tr = body.insertRow();
                 if (!row.readable) { const cell = tr.insertCell(); cell.colSpan = 8; cell.textContent = 'An account record could not be read.'; return; }
-                tr.insertCell().textContent = row.email;
+                Object.assign(tr.insertCell(), { className: 'account-email', textContent: row.email });
                 tr.insertCell().textContent = row.accountType === 'consultant' ? 'Consultant' : 'Company';
-                tr.insertCell().textContent = date(row.createdAt);
-                tr.insertCell().textContent = row.signup === 'activated' ? `Activated ${date(row.activatedAt)}` : 'Unfinished';
+                Object.assign(tr.insertCell(), { className: 'account-date', textContent: date(row.createdAt) });
+                Object.assign(tr.insertCell(), { className: 'account-signup', textContent: row.signup === 'activated' ? `Activated ${date(row.activatedAt)}` : 'Unfinished' });
                 tr.insertCell().textContent = SIGN_IN[row.signIn] || text(row.signIn);
                 const orgs = tr.insertCell();
                 const list = document.createElement('ul');
@@ -226,8 +226,10 @@
                     { textContent: org.kind === 'client' ? `${org.name} (client)` : org.name })));
                 orgs.append(list);
                 if (!row.organisationsComplete) orgs.append(Object.assign(document.createElement('p'), { textContent: 'Client list could not be read in full.' }));
-                tr.insertCell().textContent = text(row.plan);
-                const actions = tr.insertCell(); actions.className = 'account-actions';
+                Object.assign(tr.insertCell(), { className: 'account-plan', textContent: text(row.plan) });
+                // The cell stays a table cell; the flex layout lives on a wrapper inside it.
+                const actionsCell = tr.insertCell(); actionsCell.className = 'account-actions-cell';
+                const actions = document.createElement('div'); actions.className = 'account-actions'; actionsCell.append(actions);
                 const openButton = document.createElement('button'); openButton.type = 'button'; openButton.textContent = 'Open';
                 openButton.setAttribute('aria-label', `Open ${row.email}`);
                 openButton.addEventListener('click', () => open(row));
