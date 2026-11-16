@@ -1,5 +1,8 @@
 'use strict';
 
+const serverTiming = require('../serverTiming');
+const TIMING_STAGES = Object.freeze({ captureRequest: 'session', readExternalRuntimeEpoch: 'epoch' });
+
 // Fixed, uninstalled request capability. Only trusted composition receives it.
 const { types: { isProxy, isPromise } } = require('node:util');
 const { createPostgresDatabase, PostgresDatabaseError } = require('./postgres');
@@ -186,13 +189,13 @@ function invocation(options, request, expectedGeneration, nativeAsset = false) {
     inv.query = async (tx, sql, params = []) => {
         inv.now();
         let result;
-        try { result = await tx.query(sql, params); }
+        try { result = await serverTiming.measure('db', () => tx.query(sql, params)); }
         catch (error) { throw error instanceof PostgresDatabaseError ? error : new PostgresDatabaseError('postgres_query_failed'); }
         inv.now(); return result;
     };
     inv.provider = async name => {
         inv.now(); let value;
-        try { value = await options[name](...(name === 'captureRequest' ? [request] : [])); }
+        try { value = await serverTiming.measure(TIMING_STAGES[name] || 'provider', () => options[name](...(name === 'captureRequest' ? [request] : []))); }
         catch (_) { inv.unavailable(); }
         inv.now(); return value;
     };
@@ -351,7 +354,7 @@ function currentImprovement(inv, operation, authority, at) {
 async function locator(inv) {
     let client, started = false, discard = false;
     inv.now();
-    try { client = checkedClient(inv, await inv.options.pool.connect()); } catch (_) { inv.unavailable(); }
+    try { client = checkedClient(inv, await serverTiming.measure('connect', () => inv.options.pool.connect())); } catch (_) { inv.unavailable(); }
     try {
         inv.now();
         try { await client.query('BEGIN READ ONLY'); started = true; }
@@ -519,7 +522,7 @@ function checkedDatabase(inv) {
     const pool = Object.freeze({
         async connect() {
             inv.now();
-            const client = await inv.options.pool.connect();
+            const client = await serverTiming.measure('connect', () => inv.options.pool.connect());
             try { inv.now(); }
             catch (error) {
                 try { client.release(false); } catch (_) { /* The borrow settled. */ }
@@ -1240,7 +1243,7 @@ async function portfolioTransaction(inv, routing, work, seal) {
     let client, started = false, discard = false;
     try {
         inv.now();
-        client = checkedClient(inv, await inv.options.pool.connect()); inv.now();
+        client = checkedClient(inv, await serverTiming.measure('connect', () => inv.options.pool.connect())); inv.now();
         try { await client.query('BEGIN'); started = true; }
         catch (_) { discard = true; inv.unavailable(); }
         const parent = await portfolioParent(inv, client, routing);
