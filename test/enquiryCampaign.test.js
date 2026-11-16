@@ -12,11 +12,12 @@ function land(search, stored = null, { blocked = false } = {}) {
     const store = new Map(stored === null ? [] : [['nofries-enquiry-campaign', stored]]);
     const sessionStorage = {
         getItem: key => { if (blocked) throw new Error('blocked'); return store.has(key) ? store.get(key) : null; },
-        setItem: (key, value) => { if (blocked) throw new Error('blocked'); store.set(key, String(value)); }
+        setItem: (key, value) => { if (blocked) throw new Error('blocked'); store.set(key, String(value)); },
+        removeItem: key => { if (blocked) throw new Error('blocked'); store.delete(key); }
     };
     const window = { location: { search }, sessionStorage };
     vm.runInNewContext(source, { window, URLSearchParams, AbortController, setTimeout, clearTimeout, fetch: () => {} });
-    return { tag: window.enquiryCampaign(), store };
+    return { tag: window.enquiryCampaign(), store, window };
 }
 
 test.each([
@@ -44,4 +45,20 @@ test('keeps the first campaign in the tab instead of overwriting it', () => {
 
 test('blocked storage gives no tag and does not throw', () => {
     expect(land('?utm_source=meta', null, { blocked: true }).tag).toBe('');
+});
+
+test('a confirmed send clears the tag, so a later campaign link can set a new one', () => {
+    const { window, store } = land('?utm_source=meta&utm_medium=paid&utm_campaign=a');
+    window.clearEnquiryCampaign();
+    expect(store.size).toBe(0);
+    expect(window.enquiryCampaign()).toBe('');
+});
+
+test('the contact form clears the tag only after a confirmed send', () => {
+    const contact = fs.readFileSync(path.join(__dirname, '../js/contact.js'), 'utf8');
+    const confirmed = contact.indexOf("payload.received !== true");
+    const cleared = contact.indexOf('window.clearEnquiryCampaign()');
+    expect(confirmed).toBeGreaterThan(0);
+    expect(cleared).toBeGreaterThan(confirmed);
+    expect(contact.indexOf('form.reset();')).toBeLessThan(cleared);
 });

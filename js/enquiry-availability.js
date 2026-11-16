@@ -6,6 +6,10 @@
     window.enquiryCampaign = function () {
         try { return String(window.sessionStorage.getItem('nofries-enquiry-campaign') || ''); } catch (_) { return ''; }
     };
+    // Called only after the server confirms an enquiry was sent; a failed send keeps the tag.
+    window.clearEnquiryCampaign = function () {
+        try { window.sessionStorage.removeItem('nofries-enquiry-campaign'); } catch (_) { /* nothing stored */ }
+    };
     try {
         const params = new URLSearchParams(window.location.search);
         const label = function (value) {

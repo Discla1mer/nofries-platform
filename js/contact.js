@@ -125,6 +125,7 @@
                     return;
                 }
                 form.reset();
+                if (typeof window.clearEnquiryCampaign === 'function') window.clearEnquiryCampaign();
                 status.textContent = 'Thanks — your enquiry has been sent. We will reply by email.';
                 if (window.plausible) {
                     window.plausible('Enquiry Sent');
