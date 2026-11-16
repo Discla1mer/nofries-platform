@@ -21,9 +21,20 @@
     //      Unknown and not-applicable answers are unresolved, not gaps.
     //   2. Higher existing profile weight first (the accepted profile weights
     //      every question 1, so this does not reorder today).
-    //   3. "no" before "partial", matching the saved credit (0 before 1).
-    //   4. Then accepted profile question order.
+    //   3. Fixed priority tier (GAP_TIER): the controls that stop the most
+    //      common attacks on small businesses (account takeover, ransomware,
+    //      invoice fraud) first. Display order only; scores are unchanged.
+    //   4. "no" before "partial", matching the saved credit (0 before 1).
+    //   5. Then accepted profile question order.
     const GAP_LIMIT = 3;
+    // Tier 1: MFA, patching, data recovery, sensitive-request (payment change) checks.
+    // Tier 2: least privilege, password manager, awareness, secure configuration.
+    // Anything else, including future questions, is tier 3.
+    const GAP_TIER = Object.freeze({ MF: 1, PA: 1, DR: 1, SV: 1, LP: 2, PM: 2, SA: 2, SC: 2 });
+    const gapTier = itemId => {
+        const code = /^NF-NCSC-(?:MCSS|CC)-([A-Z]{2})-\d\d-Q\d+$/.exec(itemId);
+        return code && Object.hasOwn(GAP_TIER, code[1]) ? GAP_TIER[code[1]] : 3;
+    };
     const ENQUIRY_TIMEOUT_MS = 5000;
     const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
     const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
@@ -38,6 +49,7 @@
         return metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }))
             .filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
             .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
+                gapTier(a.question.id) - gapTier(b.question.id) ||
                 GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position)
             .slice(0, limit)
             .map(({ question, row }) => {
@@ -640,7 +652,7 @@
                     ' still unknown or to confirm. Confirm ' + (result.unknown === 1 ? 'it' : 'them') + ' to check for gaps.'));
                 return section;
             }
-            section.append(node('p', 'dashboard-muted', 'Chosen by a fixed rule from your saved answers. Controls not in place come first, then partly in place, then in NCSC framework order.'));
+            section.append(node('p', 'dashboard-muted', 'Ranked from your saved answers. Multi-factor authentication, patching, backups and checking payment changes come first, because they help protect against common attacks on small businesses, such as stolen accounts, ransomware and invoice fraud. Then controls not in place before partly in place. This is a fixed order, not a risk assessment of your business.'));
             const list = node('ol', 'picture-top-gaps-list');
             gaps.forEach(gap => {
                 const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;

@@ -12,7 +12,10 @@ Four measures remain separate:
 - Evidence confidence: explicitly not assessed. Substantiated and tested coverage
   display the server values; self-attestation is not proof of effectiveness.
 - Risk priority: explicitly not calculated because the current evaluator requires
-  a separate priority adapter. Suggested actions are in framework order.
+  a separate priority adapter. Suggested actions are in framework order. The
+  Overview's "Your top three gaps" uses a fixed display tier instead (MFA,
+  patching, data recovery and payment-change checks first; see `GAP_TIER` in
+  `organisationPicture.js`). It is not a risk score and changes no result.
 - Trend: not shown in this panel. The panel points to the Overview's Change over
   time section, which compares submitted assessments on request.
 
