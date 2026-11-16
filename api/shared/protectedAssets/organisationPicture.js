@@ -641,7 +641,7 @@
                     ' still unknown or to confirm. Confirm ' + (result.unknown === 1 ? 'it' : 'them') + ' to check for gaps.'));
                 return section;
             }
-            section.append(node('p', 'dashboard-muted', 'Ranked from your saved answers. Multi-factor authentication, patching, backups and checking payment changes come first, because they stop the most common attacks on small businesses. Then controls not in place before partly in place.'));
+            section.append(node('p', 'dashboard-muted', 'Ranked from your saved answers. Multi-factor authentication, patching, backups and checking payment changes come first, because they help protect against common attacks on small businesses, such as stolen accounts, ransomware and invoice fraud. Then controls not in place before partly in place. This is a fixed order, not a risk assessment of your business.'));
             const list = node('ol', 'picture-top-gaps-list');
             gaps.forEach(gap => {
                 const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
