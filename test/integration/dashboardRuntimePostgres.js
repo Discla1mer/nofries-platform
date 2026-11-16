@@ -2058,8 +2058,8 @@ function registerRealPostgresTests() {
             expect(bootstrap.status).toBe(200);
             expect(rendered.text).toContain(bootstrap.body.context.displayName);
             expect(rendered.trace).toEqual(expect.arrayContaining([
-                expect.objectContaining({ url: '/api/dashboard/app.js', status: 200 }),
-                expect.objectContaining({ url: '/api/dashboard/dashboard.css', status: 200 })
+                expect.objectContaining({ url: expect.stringMatching(/^\/api\/dashboard\/app\.js\?v=[A-Za-z0-9_-]{43}$/), status: 200 }),
+                expect.objectContaining({ url: expect.stringMatching(/^\/api\/dashboard\/dashboard\.css\?v=[A-Za-z0-9_-]{43}$/), status: 200 })
             ]));
             const switchOwned = await h.sameOrigin(request(h.app).post('/api/dashboard/selection')).set('Cookie', login.cookie)
                 .send({ operationId: nextId(), bindingId: anotherOwned.publication.binding.bindingId, expectedGeneration: session.body.generation });

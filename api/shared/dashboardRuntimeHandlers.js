@@ -4,6 +4,7 @@
 // routes, provider, runtime, publication capability or customer admission.
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { IncomingMessage } = require('node:http');
+const { createHash } = require('node:crypto');
 const { TextDecoder } = require('node:util');
 const { isProxy } = require('node:util').types;
 const { BrowserAuthError, createBrowserAuthService, assertExactSameOriginRequest } = require('./browserAuth');
@@ -538,8 +539,10 @@ function createDashboardRuntimeHandlers(configuration) {
                     directory.limit = Number(value);
                 } else { try { directory.afterBindingId = uuid(value); } catch (_) { bad(); } }
             }
+        } else if (['app.js', 'dashboard.css'].includes(route) && query !== null) {
+            if (!/^v=[A-Za-z0-9_-]{43}$/.test(query)) bad();
         } else if (query !== null) bad();
-        return freeze({ route, resource, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
+        return freeze({ route, resource, assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
     }
     async function readWire(original, entry, snapshot) {
         entry.phase = 'wire';
@@ -727,9 +730,22 @@ function createDashboardRuntimeHandlers(configuration) {
             });
             return response(200, value);
         }
-        if (selected.resource) return bounded(() => resources.handleHostResource(privateRequest, {
-            route: selected.route, expectedGeneration
-        }), 'resource');
+        if (selected.resource) {
+            const value = await bounded(() => resources.handleHostResource(privateRequest, {
+                route: selected.route, expectedGeneration
+            }), 'resource');
+            // Only public-to-the-signed-in-app source bytes are cached, after every existing guard.
+            // Never cache denied responses, personalised JSON, or bytes under a stale content URL.
+            if (selected.assetVersion && value.status === 200 && value.isRaw === true && typeof value.body === 'string') {
+                if (createHash('sha256').update(value.body, 'utf8').digest('base64url') !== selected.assetVersion) {
+                    return response(404, { code: 'dashboard_asset_version_not_found' });
+                }
+                const headers = { ...value.headers, 'Cache-Control': 'private, max-age=31536000, immutable' };
+                delete headers.Pragma;
+                return freeze({ ...value, headers });
+            }
+            return value;
+        }
         if (selected.route === 'session' && snapshot.method === 'GET') {
             const value = await bounded(() => runtime.readSession(privateRequest), 'runtime');
             if (value.state === 'initialization_required') return response(409, { code: 'dashboard_initialization_required' });

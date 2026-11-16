@@ -1180,7 +1180,7 @@ describe('internal dashboard loader protocol', () => {
         expect(h.native).toHaveLength(0);
         expect(h.requests[2].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
         await h.reply(2, 200, projection());
-        expect(h.native.map(n => n.src || n.href)).toEqual(['/api/dashboard/app.js', '/api/dashboard/dashboard.css']);
+        expect(h.native.map(n => n.src || n.href)).toEqual(['/api/dashboard/app.js?v=' + crypto.createHash('sha256').update('approved bytes').digest('base64url'), '/api/dashboard/dashboard.css?v=' + crypto.createHash('sha256').update('approved bytes').digest('base64url')]);
         for (const node of h.native) {
             expect(node.integrity).toMatch(/^sha256-[A-Za-z0-9+/]{43}=$/);
             expect(node.crossOrigin).toBe('anonymous');
@@ -2656,7 +2656,7 @@ describe('unmounted authority refresh coalescing', () => {
         await h.reply(3, 200, moduleProjection(model));
         expect(h.native).toHaveLength(0); expect(h.requests).toHaveLength(4); expect(h.mounts).toHaveLength(0);
         await h.reply(1, 200, listing());
-        expect(h.native.map(n => n.src || n.href)).toEqual(['/api/dashboard/app.js', '/api/dashboard/dashboard.css']);
+        expect(h.native.map(n => n.src || n.href)).toEqual(['/api/dashboard/app.js?v=' + crypto.createHash('sha256').update('approved bytes').digest('base64url'), '/api/dashboard/dashboard.css?v=' + crypto.createHash('sha256').update('approved bytes').digest('base64url')]);
         h.load(0); h.load(1); await flush();
         expect(h.requests[4].url).toBe('/api/dashboard/session'); expect(h.mounts).toHaveLength(0);
         await h.reply(4, 200, state());

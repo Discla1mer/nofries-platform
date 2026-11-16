@@ -1811,6 +1811,8 @@
                 const meta = document.getElementById(metadata);
                 const integrity = meta && meta.getAttribute('content');
                 if (!/^sha256-[A-Za-z0-9+/]{43}=$/.test(integrity || '')) { reject(invalid()); return; }
+                // The content-derived URL changes whenever SRI changes; the SRI check still runs.
+                path += '?v=' + integrity.slice(7).replace(/\+/g, '-').replace(/\//g, '_').replace(/=$/, '');
                 const node = document.createElement(tag);
                 let settled = false;
                 function finish(error) {
