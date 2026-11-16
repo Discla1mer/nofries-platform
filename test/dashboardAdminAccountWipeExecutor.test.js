@@ -13,7 +13,7 @@ const signal = () => new AbortController().signal;
 function inventory(overrides = {}) {
     return { account: { accountId: uid(10) }, subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)], ...overrides };
 }
-function harness({ kind = 'external_starter', found = inventory(), identity = true, legacy = false, role = true, auditFails = [], markers = null, auditStalls = [] } = {}) {
+function harness({ kind = 'external_starter', found = inventory(), identity = true, legacy = false, role = true, auditFails = [], markers = null, auditStalls = [], probe = null } = {}) {
     const calls = [], records = [];
     let clock = Date.parse('2026-11-15T01:00:00.000Z'), ids = 0, current = found;
     const storage = {
@@ -22,7 +22,8 @@ function harness({ kind = 'external_starter', found = inventory(), identity = tr
     };
     const repository = {
         reset: jest.fn(async scope => { calls.push(['reset', scope]); return { mode: 'reset', tenants: 2, counts: { a: 2, b: 3 } }; }),
-        delete: jest.fn(async scope => { calls.push(['delete', scope]); return { mode: 'delete', tenants: 2, counts: { a: 4, b: 1 } }; })
+        delete: jest.fn(async scope => { calls.push(['delete', scope]); return { mode: 'delete', tenants: 2, counts: { a: 4, b: 1 } }; }),
+        ...(probe ? { probe: jest.fn(async scope => { calls.push(['probe', scope]); return probe(scope); }) } : {})
     };
     const remover = { remove: jest.fn(async subject => { calls.push(['identity', subject]); return { removed: true, alreadyGone: false }; }),
         check: jest.fn(async () => true) };
@@ -525,5 +526,68 @@ describe('Graph token', () => {
         const getToken = createAccountWipeGraphToken({ tenantId: uid(1), clientId: uid(3), managedIdentityClientId: uid(5), ManagedIdentityCredential, ClientAssertionCredential });
         expect(await getToken()).toBe('graph-token');
         expect(seen).toEqual([['mi', { clientId: uid(5) }], ['app', uid(1), uid(3)], ['mi-token', EXCHANGE_SCOPE], ['app-token', GRAPH_SCOPE, 'assertion']]);
+    });
+});
+
+describe('choosing the store when an email is in both', () => {
+    function both() {
+        const calls = [];
+        const storage = kind => ({ inventory: jest.fn(async () => inventory({ account: { accountId: kind === 'legacy_starter' ? uid(11) : uid(10) } })),
+            delete: jest.fn(async () => { calls.push(['storage', kind]); return { blobs: 1, versions: 0 }; }) });
+        const legacy = storage('legacy_starter'), external = storage('external_starter');
+        const repository = { reset: jest.fn(), delete: jest.fn(async scope => { calls.push(['delete', scope.accountId]); return { counts: { a: 1 } }; }) };
+        const remover = { remove: jest.fn(async () => ({ alreadyGone: false })), check: jest.fn(async () => true) };
+        const executor = createAccountWipeExecutor({ sources: [{ kind: 'legacy_starter', storage: legacy }, { kind: 'external_starter', storage: external }],
+            repository, identity: remover, legacyIndexConfigured: false, ensureRole: async () => {}, audit: async () => {}, targetDigest: () => DIGEST });
+        return { executor, legacy, external, remover, calls };
+    }
+    test('the named store is acted on and the other is never touched', async () => {
+        const h = both();
+        const approved = await h.executor.approve(approval('delete', { store: 'legacy' }), signal());
+        expect(approved).toMatchObject({ store: 'legacy' });
+        const result = await h.executor.execute(apply(approved.approvalId), signal());
+        expect(result).toMatchObject({ outcome: 'succeeded', stages: { database: 'done', storage: 'done', identity: 'not_applicable' } });
+        expect(h.calls).toEqual([['delete', uid(11)], ['storage', 'legacy_starter']]);
+        expect(h.external.inventory).not.toHaveBeenCalled(); expect(h.remover.remove).not.toHaveBeenCalled();
+    });
+    test('without a store it is still refused, and an unknown store is invalid input', async () => {
+        const h = both();
+        await expect(h.executor.approve(approval('delete'), signal())).rejects.toMatchObject({ code: 'account_wipe_account_ambiguous' });
+        await expect(h.executor.approve(approval('delete', { store: 'both' }), signal())).rejects.toMatchObject({ code: 'account_wipe_input_invalid' });
+        expect(h.calls).toEqual([]);
+    });
+});
+
+describe('an unfinished signup (no sign-in subject recorded)', () => {
+    const unfinished = () => inventory({ subjectKey: null });
+    test('is deleted when the database holds nothing of it: Blob records go, no database or External ID call', async () => {
+        const h = harness({ found: unfinished(), probe: () => ({ mode: 'probe', held: false }) });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.calls.length = 0;
+        const result = await h.executor.execute(apply(approvalId), signal());
+        expect(order(h.calls)).toEqual(['probe', 'storage']);
+        expect(h.repository.probe).toHaveBeenCalledWith({ accountId: uid(10), subjectKey: null, tenantIds: [uid(20), uid(21)] }, undefined);
+        expect(h.repository.delete).not.toHaveBeenCalled(); expect(h.remover.remove).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'done', identity: 'none_recorded' }, code: null });
+    });
+    test('is refused with nothing changed when the database still holds any of it', async () => {
+        const h = harness({ found: unfinished(), probe: () => ({ mode: 'probe', held: true }) });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.calls.length = 0;
+        const result = await h.executor.execute(apply(approvalId), signal());
+        expect(result).toMatchObject({ outcome: 'refused', code: 'account_wipe_subject_unknown' });
+        expect(order(h.calls)).toEqual(['probe']);
+    });
+    test('a failed probe refuses too, and reset still needs the subject', async () => {
+        const h = harness({ found: unfinished(), probe: () => { throw Object.assign(new Error(), { code: 'account_wipe_unavailable' }); } });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        expect(await h.executor.execute(apply(approvalId), signal())).toMatchObject({ outcome: 'refused', code: 'account_wipe_unavailable' });
+        expect(h.storage.delete).not.toHaveBeenCalled();
+        await expect(h.executor.approve(approval('reset'), signal())).rejects.toMatchObject({ code: 'account_wipe_subject_unknown' });
+    });
+    test('a legacy unfinished signup is not sent to External ID either', async () => {
+        const h = harness({ kind: 'legacy_starter', found: unfinished(), probe: () => ({ mode: 'probe', held: false }) });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        expect((await h.executor.execute(apply(approvalId), signal())).stages).toEqual({ database: 'absent', storage: 'done', identity: 'not_applicable' });
     });
 });

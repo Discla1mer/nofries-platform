@@ -42,10 +42,13 @@ function createAccountWipeRoute(executor) {
             const sessionSha256 = sessionDigest(request?.headers?.cookie);
             if (!sessionSha256) { const error = new Error(); error.code = 'account_wipe_approval_invalid'; throw error; }
             let body;
-            if (exact(input, ['step', 'action', 'email', 'confirmEmail', 'confirmWord']) && input.step === 'approve') {
+            // "store" (legacy or external) is optional: it names which account to
+            // act on when the email is in both customer stores.
+            if ((exact(input, ['step', 'action', 'email', 'confirmEmail', 'confirmWord']) || exact(input, ['step', 'action', 'email', 'confirmEmail', 'confirmWord', 'store'])) &&
+                input.step === 'approve') {
                 local = false;
                 body = await executor.approve({ actor, sessionSha256, action: input.action, email: input.email,
-                    confirmEmail: input.confirmEmail, confirmWord: input.confirmWord }, signal);
+                    confirmEmail: input.confirmEmail, confirmWord: input.confirmWord, ...(Object.hasOwn(input, 'store') ? { store: input.store } : {}) }, signal);
             } else if (exact(input, ['step', 'approvalId', 'email']) && input.step === 'execute') {
                 // The deadline also bounds the database transaction from inside, so
                 // nothing commits after the reply's budget (see accountWipeRepository).

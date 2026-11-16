@@ -49,11 +49,12 @@ const fail = code => { const error = new Error(code); error.code = code; throw e
 // 57014: a statement ran into the remaining run budget (statement_timeout).
 const DATABASE_CODES = Object.freeze({ '23503': 'account_wipe_reference_blocked', '55P03': 'account_wipe_busy', '57014': 'account_wipe_timed_out' });
 
-function target(input) {
+function target(input, mode) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) fail('account_wipe_target_invalid');
     const keys = Object.keys(input).sort().join(',');
     if (keys !== 'accountId,subjectKey,tenantIds') fail('account_wipe_target_invalid');
-    uuid(input.accountId); subject(input.subjectKey);
+    // Only the read-only probe runs without a sign-in subject (an unfinished signup).
+    uuid(input.accountId); if (!(mode === 'probe' && input.subjectKey === null)) subject(input.subjectKey);
     if (!Array.isArray(input.tenantIds) || !input.tenantIds.length || input.tenantIds.length > MAX_TENANTS ||
         new Set(input.tenantIds).size !== input.tenantIds.length) fail('account_wipe_target_invalid');
     input.tenantIds.forEach(id => uuid(id));
@@ -70,7 +71,7 @@ function target(input) {
 function createAccountWipeRepository(pool, { now = Date.now } = {}) {
     if (!pool || typeof pool.connect !== 'function' || typeof now !== 'function') fail('account_wipe_configuration_invalid');
     async function run(input, mode, options = {}) {
-        const scope = target(input), counts = {};
+        const scope = target(input, mode), counts = {};
         if (!options || typeof options !== 'object' || options.deadline !== undefined && !Number.isFinite(options.deadline) ||
             options.signal !== undefined && typeof options.signal?.aborted !== 'boolean') fail('account_wipe_target_invalid');
         const add = (table, n) => { counts[table] = (counts[table] || 0) + n; };
@@ -115,26 +116,36 @@ function createAccountWipeRepository(pool, { now = Date.now } = {}) {
             // busy table fails the call after the lock timeout and nothing changes.
             if (timed) await db.query("SELECT set_config('lock_timeout', $1, true)", [String(Math.min(5000, remaining()))]);
             else await db.query("SET LOCAL lock_timeout = '5s'");
-            await db.query(`LOCK TABLE ${lockTables(mode).map(table => 'nofries.' + table).join(', ')} IN SHARE ROW EXCLUSIVE MODE`);
+            if (mode !== 'probe') await db.query(`LOCK TABLE ${lockTables(mode).map(table => 'nofries.' + table).join(', ')} IN SHARE ROW EXCLUSIVE MODE`);
             await db.query("SELECT set_config('nofries.wipe_account_id', $1, true), set_config('nofries.wipe_subject_key', $2, true)",
-                [scope.accountId, scope.subjectKey]);
+                [scope.accountId, scope.subjectKey ?? '']);
+            // The wipe role sees the account row only under the expected subject, so
+            // an account row under another subject (or with no subject known) would
+            // look absent. Its preferences (by account) and its tenants' rows are
+            // visible, and any of them left means the database still holds it.
+            const found = result => result?.rows?.[0]?.found === true;
+            async function held() {
+                if (found(await db.query('SELECT EXISTS (SELECT 1 FROM nofries.email_preferences WHERE account_id = $1) AS found', [scope.accountId]))) return true;
+                for (const tenantId of scope.tenantIds) {
+                    await db.query("SELECT set_config('nofries.wipe_tenant_id', $1, true)", [tenantId]);
+                    if (found(await db.query('SELECT (EXISTS (SELECT 1 FROM nofries.dashboard_starter_scopes WHERE tenant_id = $1) OR ' +
+                        'EXISTS (SELECT 1 FROM nofries.dashboard_tenants WHERE tenant_id = $1)) AS found', [tenantId]))) return true;
+                }
+                return false;
+            }
+            if (mode === 'probe') {
+                // Read only: whether the database holds anything of an account
+                // with no recorded sign-in subject. Nothing is locked or changed.
+                const result = Object.freeze({ mode, held: await held() });
+                await sender.send('ROLLBACK', undefined, ROLLBACK_MS, 'account_wipe_unavailable');
+                return result;
+            }
             // The account must exist under this subject before anything is removed.
             const owner = await db.query('SELECT 1 FROM nofries.dashboard_starter_accounts WHERE account_id = $1 AND subject_key = $2',
                 [scope.accountId, scope.subjectKey]);
             if (owner.rowCount !== 1) {
-                // "Not found" only when nothing of the account is left: the wipe
-                // role sees the account row only under the expected subject, so an
-                // account row under another subject would otherwise look absent.
-                // Its preferences (by account) and its tenants' rows are visible,
-                // and any of them left means the database still holds it.
-                const found = result => result?.rows?.[0]?.found === true;
-                if (found(await db.query('SELECT EXISTS (SELECT 1 FROM nofries.email_preferences WHERE account_id = $1) AS found', [scope.accountId])))
-                    fail('account_wipe_subject_mismatch');
-                for (const tenantId of scope.tenantIds) {
-                    await db.query("SELECT set_config('nofries.wipe_tenant_id', $1, true)", [tenantId]);
-                    if (found(await db.query('SELECT (EXISTS (SELECT 1 FROM nofries.dashboard_starter_scopes WHERE tenant_id = $1) OR ' +
-                        'EXISTS (SELECT 1 FROM nofries.dashboard_tenants WHERE tenant_id = $1)) AS found', [tenantId]))) fail('account_wipe_subject_mismatch');
-                }
+                // "Not found" only when nothing of the account is left.
+                if (await held()) fail('account_wipe_subject_mismatch');
                 fail('account_wipe_account_not_found');
             }
             // Every tenant must belong to this account before anything is deleted;
@@ -191,7 +202,8 @@ function createAccountWipeRepository(pool, { now = Date.now } = {}) {
             fail(DATABASE_CODES[error?.code] || 'account_wipe_unavailable');
         } finally { client.release(discard); }
     }
-    return Object.freeze({ reset: (input, options) => run(input, 'reset', options), delete: (input, options) => run(input, 'delete', options) });
+    return Object.freeze({ reset: (input, options) => run(input, 'reset', options), delete: (input, options) => run(input, 'delete', options),
+        probe: (input, options) => run(input, 'probe', options) });
 }
 
 module.exports = { createAccountWipeRepository, RESET_TABLES, DELETE_TENANT_TABLES, DELETE_FIRST_TABLES, DELETE_ACCOUNT_TABLES };

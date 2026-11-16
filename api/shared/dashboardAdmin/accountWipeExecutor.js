@@ -29,6 +29,8 @@ const PENDING_IDENTITY_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PENDING_IDENTITIES = 256;
 const WORDS = Object.freeze({ reset: 'RESET', delete: 'DELETE' });
 const KINDS = new Set(['legacy_starter', 'external_starter']);
+// The store a staff admin picked from the account list, when an email is in both.
+const STORES = Object.freeze({ legacy: 'legacy_starter', external: 'external_starter' });
 // Of the overall run deadline, this much is kept for the outcome record, so
 // the whole apply (attempt record, stages, outcome record) ends by the deadline.
 const OUTCOME_RESERVE_MS = 3000;
@@ -68,6 +70,8 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         [ensureRole, audit, targetDigest, now, newId, log].some(value => typeof value !== 'function') ||
         retryMarkers !== null && (typeof retryMarkers?.read !== 'function' || typeof retryMarkers?.write !== 'function')) fail('account_wipe_configuration_invalid');
     const approvals = new Map(), pendingIdentities = new Map(), running = new Set();
+    // Deleting unfinished signups needs the read-only database probe.
+    const unfinishedDeletable = typeof repository.probe === 'function';
 
     function prune() {
         const at = now();
@@ -98,14 +102,16 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         // Blob records are gone: a valid External ID token is required first.
         if (action === 'delete') await identity.check({ signal });
     }
-    async function locate(email, signal) {
+    async function locate(email, signal, kind = null) {
         const found = [];
         for (const source of sources) {
+            if (kind && source.kind !== kind) continue;
             signal.throwIfAborted();
             const inventory = await bounded(() => source.storage.inventory(email, signal), signal);
             if (inventory) found.push({ kind: source.kind, storage: source.storage, inventory });
         }
-        // An email in both starter stores is never guessed between.
+        // An email in both starter stores is never guessed between: the store
+        // must be named.
         if (found.length > 1) fail('account_wipe_account_ambiguous');
         return found[0] || null;
     }
@@ -169,14 +175,16 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         };
     }
 
-    async function approve({ actor, sessionSha256, action, email, confirmEmail, confirmWord }, signal) {
+    async function approve({ actor, sessionSha256, action, email, confirmEmail, confirmWord, store = null }, signal) {
         if (!Object.hasOwn(WORDS, action ?? '')) fail('account_wipe_input_invalid');
+        if (store !== null && !Object.hasOwn(STORES, store)) fail('account_wipe_input_invalid');
+        const storeKind = store === null ? null : STORES[store];
         const actorSha256 = actorOf(actor, sessionSha256), target = normaliseEmail(email);
         let typed;
         try { typed = normaliseEmail(confirmEmail); } catch (_) { fail('account_wipe_confirmation_mismatch'); }
         if (typed !== target || confirmWord !== WORDS[action]) fail('account_wipe_confirmation_mismatch');
         await preconditions(action, signal);
-        const targetSha256 = digestOf(target), located = await locate(target, signal);
+        const targetSha256 = digestOf(target), located = await locate(target, signal, storeKind);
         prune();
         const inventory = located?.inventory ?? null;
         if (action === 'reset' && !inventory?.account || action === 'delete' && !inventory && !pendingIdentities.has(targetSha256)) fail('account_wipe_account_not_found');
@@ -184,7 +192,10 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
             const held = pendingIdentities.get(targetSha256);
             const resumable = action === 'delete' && (held?.accountId === inventory.account.accountId && held.subjectKey ||
                 await databaseDone(targetSha256, inventory.account.accountId, signal));
-            if (!resumable) fail('account_wipe_subject_unknown');
+            // A signup that never finished has no sign-in subject. Delete may still
+            // remove it, but only if the database holds nothing of it (checked
+            // again when applied); reset needs the subject.
+            if (!resumable && !(action === 'delete' && unfinishedDeletable)) fail('account_wipe_subject_unknown');
         }
         if (approvals.size >= MAX_APPROVALS) fail('account_wipe_busy');
         const approvalId = newId(), expiresAt = now() + APPROVAL_MS;
@@ -193,7 +204,7 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         // Bound to the account seen now, not just the email: an account deleted and
         // signed up again with the same email is a different target.
         approvals.set(approvalId, Object.freeze({ actorSubjectKey: actor.subjectKey, sessionSha256, action, targetSha256, expiresAt,
-            accountId: inventory?.account?.accountId ?? null, kind: located?.kind ?? null,
+            accountId: inventory?.account?.accountId ?? null, kind: located?.kind ?? null, storeKind,
             subjectSha256: inventory?.subjectKey ? sha256(inventory.subjectKey) : null }));
         return Object.freeze({ approvalId, action, approvalExpiresAt: new Date(expiresAt).toISOString(),
             organisations: inventory?.tenantIds.length ?? 0, store: located ? (located.kind === 'external_starter' ? 'external' : 'legacy') : null });
@@ -240,7 +251,7 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         let stage = 'checks', outcome = 'succeeded', failedStage = null, code = null, heldBefore = null;
         try {
             await preconditions(action, signal, bound?.deadline);
-            const located = await locate(email, signal), inventory = located?.inventory ?? null;
+            const located = await locate(email, signal, approval.storeKind ?? null), inventory = located?.inventory ?? null;
             await sameTarget(approval, located, targetSha256, signal);
             if (action === 'reset') {
                 if (!inventory?.account) fail('account_wipe_account_not_found');
@@ -261,9 +272,18 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
                 const subjectKey = inventory?.subjectKey ?? (held && (!accountId || held.accountId === accountId) ? held.subjectKey : null);
                 const external = located ? located.kind === 'external_starter' : held.external;
                 const finishedBefore = accountId ? await databaseDone(targetSha256, accountId, signal) : true;
-                if (accountId && !subjectKey && !finishedBefore) fail('account_wipe_subject_unknown');
+                // An unfinished signup (no subject): its database part is absent only
+                // when the database holds nothing of it; otherwise it needs a person.
+                let unfinished = false;
+                if (accountId && !subjectKey && !finishedBefore) {
+                    if (!unfinishedDeletable || !inventory.tenantIds.length) fail('account_wipe_subject_unknown');
+                    const probe = await repository.probe({ accountId, subjectKey: null, tenantIds: [...inventory.tenantIds] }, bound);
+                    if (probe.held !== false) fail('account_wipe_subject_unknown');
+                    unfinished = true;
+                }
                 // The retry reference is taken before anything is deleted.
-                hold(targetSha256, { subjectKey, external, accountId: accountId ?? held?.accountId ?? null, databaseDone: finishedBefore, identityPending });
+                hold(targetSha256, { subjectKey, external, accountId: accountId ?? held?.accountId ?? null, databaseDone: finishedBefore || unfinished, identityPending,
+                    unfinished: unfinished || held?.unfinished === true });
                 stage = 'database';
                 if (accountId && subjectKey) {
                     try {
@@ -277,7 +297,7 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
                     }
                 } else stages.database = 'absent';
                 if (accountId) {
-                    hold(targetSha256, { subjectKey, external, accountId, databaseDone: true, identityPending });
+                    hold(targetSha256, { subjectKey, external, accountId, databaseDone: true, identityPending, unfinished: unfinished || held?.unfinished === true });
                     if (retryMarkers) {
                         try { await bounded(() => retryMarkers.write(targetSha256, Object.freeze({ schemaVersion: 1, targetSha256, accountSha256: sha256(accountId),
                             databaseDone: true, recordedAt: new Date(now()).toISOString() })), signal); }
@@ -293,6 +313,9 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
                 } else stages.storage = 'absent';
                 stage = 'identity';
                 if (!external) { stages.identity = 'not_applicable'; pendingIdentities.delete(targetSha256); }
+                // No sign-in subject was ever recorded for this signup, so there is
+                // no External ID user this account can name.
+                else if (!subjectKey && (unfinished || held?.unfinished)) { stages.identity = 'none_recorded'; pendingIdentities.delete(targetSha256); }
                 else {
                     // The Blob records naming the user are gone and this process no
                     // longer holds its reference: staff must remove it by hand.

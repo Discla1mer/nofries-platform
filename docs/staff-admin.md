@@ -122,8 +122,8 @@ Accounts in the legacy (workforce) starter store have no External ID user. Their
 | `account_wipe_identity_unavailable` | No valid Graph token for the External ID tenant (credential, federation or consent broken). Delete is refused before anything is touched; reset is unaffected. |
 | `account_wipe_identity_pending` | (Partial, identity stage.) The user was deleted but had not yet appeared in deleted items after a short bounded retry. Approve and apply Delete again to remove it permanently. |
 | `account_wipe_tenant_mismatch` | One of the account's organisations is not linked to it in the database (for example a client that was never set up). Nothing changed. |
-| `account_wipe_subject_unknown` | The account has no recorded sign-in subject (an invitation that was never activated). It cannot be wiped here. |
-| `account_wipe_account_not_found` / `account_wipe_account_ambiguous` | No account for that email, or the email is in both starter stores. |
+| `account_wipe_subject_unknown` | The account has no recorded sign-in subject (a signup that was never finished) and the database still holds some of it, or the action is Reset. Delete removes an unfinished signup only when a read-only check finds nothing of it in the database: its stored records go, the database stage is `absent` and the sign-in stage is `none_recorded`. If an External ID user was created for it anyway, remove that user in the Entra admin centre. |
+| `account_wipe_account_not_found` / `account_wipe_account_ambiguous` | No account for that email, or the email is in both starter stores and no store was named. Reset and Delete from the Customer accounts list name the row's store (`store`: `legacy` or `external`), so only that account is acted on. |
 | `account_wipe_busy` | A customer save held a table past the 5-second lock timeout, or another wipe of the same account is running. Try again. |
 
 `account_wipe_role_unavailable`, `account_wipe_identity_not_configured` and `account_wipe_identity_unavailable` are service faults and are answered with HTTP 503; the other refusals with 400, 403, 404 or 409.

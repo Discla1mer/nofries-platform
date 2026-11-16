@@ -224,3 +224,16 @@ test('a partial delete whose outcome record failed keeps the keep-a-note warning
         stages: { database: 'done', storage: 'done', identity: 'failed' }, counts: { databaseRows: 1, blobs: 0, versions: 0 }, recorded: false } } });
     expect((await f.window.nofriesAccountWipe.perform('delete', EMAIL)).text).toContain('could not be stored; keep a note');
 });
+
+test('perform sends the list row store, only when it is legacy or external', async () => {
+    const f = fixture({ selected: null });
+    await f.window.nofriesAccountWipe.perform('delete', EMAIL, 'external');
+    await f.window.nofriesAccountWipe.perform('delete', EMAIL, 'bogus');
+    const approvals = f.bodies().filter(body => body.wipe.step === 'approve');
+    expect(approvals[0].wipe.store).toBe('external'); expect(Object.hasOwn(approvals[1].wipe, 'store')).toBe(false);
+});
+test('an unfinished signup delete says no sign-in user was recorded', async () => {
+    const f = fixture({ selected: null, executeReply: { status: 200, value: { action: 'delete', outcome: 'succeeded', code: null,
+        stages: { database: 'absent', storage: 'done', identity: 'none_recorded' }, counts: { databaseRows: 0, blobs: 4, versions: 0 }, recorded: true } } });
+    expect((await f.window.nofriesAccountWipe.perform('delete', EMAIL)).text).toContain('Sign-in user: none recorded (signup never finished)');
+});

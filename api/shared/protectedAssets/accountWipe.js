@@ -16,7 +16,7 @@
     const resumeEmail = $('ResumeEmail'), resume = $('Resume');
     const WORDS = { reset: 'RESET', delete: 'DELETE' };
     const STAGES = { database: 'Database', storage: 'Stored records', identity: 'Sign-in user' };
-    const STATES = { done: 'removed', absent: 'already gone', failed: 'failed', pending: 'not started', unknown: 'result not known', not_applicable: 'not an External ID account (not removed)' };
+    const STATES = { done: 'removed', absent: 'already gone', failed: 'failed', pending: 'not started', unknown: 'result not known', not_applicable: 'not an External ID account (not removed)', none_recorded: 'none recorded (signup never finished)' };
     const MESSAGES = {
         account_wipe_subject_mismatch: 'The database still holds this account under a different sign-in identity. Nothing was changed; this needs investigating before a delete.',
         account_wipe_identity_unavailable: 'The app could not get access to External ID, so delete was refused before anything was changed. Reset still works.',
@@ -97,8 +97,10 @@
     // dialog naming the action and the email, so the client supplies the same
     // confirmation the server checks, then uses the single-use approval at once.
     // The server still binds the approval to this staff session and this target.
-    async function perform(chosen, email) {
+    async function perform(chosen, email, store) {
         if (!enabled || !WORDS[chosen] || typeof email !== 'string' || !email) return { done: false, text: 'Reset and delete are unavailable.' };
+        // The list row's store names the account when an email is in both stores.
+        const where = store === 'legacy' || store === 'external' ? { store } : {};
         // Leaving the page (or the wipe turning off) aborts every row operation,
         // so an approval that resolves afterwards is never applied.
         const active = new AbortController(), deadline = window.setTimeout(function () { active.abort(); }, 90000);
@@ -106,7 +108,7 @@
         inflight.add(active);
         try {
             await ready(active.signal);
-            const approval = await request(LOOKUP, { wipe: { step: 'approve', action: chosen, email, confirmEmail: email, confirmWord: WORDS[chosen] } }, active.signal);
+            const approval = await request(LOOKUP, { wipe: { step: 'approve', action: chosen, email, confirmEmail: email, confirmWord: WORDS[chosen], ...where } }, active.signal);
             if (approval.status !== 200) return { done: false, text: explain(approval.value && approval.value.code) };
             if (approval.value.action !== chosen || typeof approval.value.approvalId !== 'string') throw new Error();
             if (active.signal.aborted || !enabled) return { done: false, text: 'Stopped before anything was applied.' };
