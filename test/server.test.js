@@ -273,8 +273,11 @@ describe('dormant dashboard document', () => {
             expect(config.routes.indexOf(rule)).toBeLessThan(catchall);
             expect(rule.methods).toEqual(methods[rule.route.slice('/api/dashboard/'.length)]);
             expect(rule.allowedRoles).toEqual(['anonymous']);
+            // Content-versioned assets take Cache-Control from App Service (immutable only on an exact hash match).
+            const edgeCache = ['/api/dashboard/app.js', '/api/dashboard/dashboard.css'].includes(rule.route) ? {}
+                : { 'Cache-Control': 'private, no-store, max-age=0' };
             expect(rule.headers).toEqual(rule.route === '/api/dashboard/improvement/*' ? { 'Cache-Control': 'no-store' }
-                : { 'Cache-Control': 'private, no-store, max-age=0', 'X-Robots-Tag': 'noindex, nofollow',
+                : { ...edgeCache, 'X-Robots-Tag': 'noindex, nofollow',
                     'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" });
         }
         expect(config.routes.some(route => route.route === '/dashboard/')).toBe(false);
