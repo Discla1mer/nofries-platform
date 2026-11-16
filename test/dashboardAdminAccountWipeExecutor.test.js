@@ -591,3 +591,41 @@ describe('an unfinished signup (no sign-in subject recorded)', () => {
         expect((await h.executor.execute(apply(approvalId), signal())).stages).toEqual({ database: 'absent', storage: 'done', identity: 'not_applicable' });
     });
 });
+
+describe('review follow-ups: store-bound retry references and unfinished retries after a restart', () => {
+    test('a retry reference from an external delete is never used by a delete aimed at the legacy store', async () => {
+        const h = harness();
+        h.remover.remove.mockRejectedValueOnce(Object.assign(new Error(), { code: 'account_wipe_identity_forbidden' }));
+        const first = await h.executor.approve(approval('delete'), signal());
+        expect(await h.executor.execute(apply(first.approvalId), signal())).toMatchObject({ outcome: 'partial', failedStage: 'identity' });
+        h.calls.length = 0;
+        await expect(h.executor.approve(approval('delete', { store: 'legacy' }), signal())).rejects.toMatchObject({ code: 'account_wipe_account_not_found' });
+        expect(h.remover.remove).toHaveBeenCalledTimes(1);
+        // The same store still finishes it from the reference.
+        const retry = await h.executor.approve(approval('delete', { store: 'external' }), signal());
+        expect(await h.executor.execute(apply(retry.approvalId), signal())).toMatchObject({ outcome: 'succeeded', stages: { identity: 'done' } });
+    });
+
+    test('an unfinished signup whose storage step failed is still reported as having no sign-in user after a restart', async () => {
+        const rows = new Map(), markers = { read: jest.fn(async d => rows.get(d) ?? null), write: jest.fn(async (d, r) => { rows.set(d, r); }) };
+        const probe = () => ({ mode: 'probe', held: false });
+        const first = harness({ found: inventory({ subjectKey: null }), probe, markers });
+        first.storage.delete.mockRejectedValueOnce(Object.assign(new Error(), { code: 'account_wipe_storage_unavailable' }));
+        const a = await first.executor.approve(approval('delete'), signal());
+        expect(await first.executor.execute(apply(a.approvalId), signal())).toMatchObject({ outcome: 'partial', failedStage: 'storage' });
+        expect([...rows.values()][0]).toMatchObject({ databaseDone: true, unfinished: true });
+        const restarted = harness({ found: inventory({ subjectKey: null }), probe, markers });
+        const b = await restarted.executor.approve(approval('delete'), signal());
+        const result = await restarted.executor.execute(apply(b.approvalId), signal());
+        expect(result).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'done', identity: 'none_recorded' } });
+        expect(restarted.remover.remove).not.toHaveBeenCalled();
+    });
+
+    test('a durable marker for a normal account never turns a lost subject into "none recorded"', async () => {
+        const rows = new Map([[DIGEST, { schemaVersion: 1, targetSha256: DIGEST, accountSha256: require('node:crypto').createHash('sha256').update(uid(10)).digest('hex'), databaseDone: true }]]);
+        const markers = { read: jest.fn(async d => rows.get(d) ?? null), write: jest.fn(async () => {}) };
+        const h = harness({ found: inventory({ subjectKey: null }), probe: () => ({ mode: 'probe', held: false }), markers });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        expect(await h.executor.execute(apply(approvalId), signal())).toMatchObject({ outcome: 'partial', failedStage: 'identity', code: 'account_wipe_identity_reference_lost' });
+    });
+});

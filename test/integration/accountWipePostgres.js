@@ -206,7 +206,7 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         await expect(repository.probe({ accountId: randomUUID(), subjectKey: null, tenantIds: [randomUUID(), randomUUID()] })).resolves.toEqual({ mode: 'probe', held: false });
         expect(await footprint(db, a)).toEqual(before);
         // Only the probe accepts a missing subject.
-        await expect(repository.delete({ accountId: a.c.account.accountId, subjectKey: null, tenantIds: a.tenants })).rejects.toMatchObject({ code: 'account_wipe_target_invalid' });
+        await expect(repository.delete({ accountId: a.c.account.accountId, subjectKey: null, tenantIds: a.tenants })).rejects.toMatchObject({ code: 'onboarding_input_invalid' });
         expect(await footprint(db, a)).toEqual(before);
     });
 
