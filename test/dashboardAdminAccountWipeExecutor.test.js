@@ -629,3 +629,19 @@ describe('review follow-ups: store-bound retry references and unfinished retries
         expect(await h.executor.execute(apply(approvalId), signal())).toMatchObject({ outcome: 'partial', failedStage: 'identity', code: 'account_wipe_identity_reference_lost' });
     });
 });
+
+test('with an email in both stores, deleting the legacy account keeps the external partial delete finishable', async () => {
+    const sub = { legacy_starter: uid(31) + ':' + uid(32), external_starter: SUBJECT };
+    const current = { legacy_starter: inventory({ account: { accountId: uid(11) }, subjectKey: sub.legacy_starter }), external_starter: inventory() };
+    const storage = kind => ({ inventory: jest.fn(async () => current[kind]), delete: jest.fn(async () => { current[kind] = null; return { blobs: 1, versions: 0 }; }) });
+    const remover = { remove: jest.fn(async () => ({ alreadyGone: false })), check: jest.fn(async () => true) };
+    remover.remove.mockRejectedValueOnce(Object.assign(new Error(), { code: 'account_wipe_identity_forbidden' }));
+    const executor = createAccountWipeExecutor({ sources: [{ kind: 'legacy_starter', storage: storage('legacy_starter') }, { kind: 'external_starter', storage: storage('external_starter') }],
+        repository: { reset: jest.fn(), delete: jest.fn(async () => ({ counts: { a: 1 } })) }, identity: remover, legacyIndexConfigured: false,
+        ensureRole: async () => {}, audit: async () => {}, targetDigest: () => DIGEST });
+    const run = async store => { const { approvalId } = await executor.approve(approval('delete', { store }), signal()); return executor.execute(apply(approvalId), signal()); };
+    expect(await run('external')).toMatchObject({ outcome: 'partial', failedStage: 'identity' });
+    expect(await run('legacy')).toMatchObject({ outcome: 'succeeded', stages: { identity: 'not_applicable' } });
+    expect(await run('external')).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'absent', identity: 'done' } });
+    expect(remover.remove).toHaveBeenLastCalledWith(SUBJECT, expect.any(Object));
+});
