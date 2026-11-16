@@ -241,17 +241,23 @@ main { width: min(1440px, 100%); margin: 0 auto; padding: clamp(28px, 4vw, 56px)
 #accountListLoad { padding: 10px 16px; color: white; background: var(--teal-dark); border-radius: 8px; }
 #accountListResults { overflow-x: auto; }
 #accountListResults table { border-collapse: collapse; width: 100%; text-align: left; }
-#accountListResults th, #accountListResults td { padding: 12px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; vertical-align: top; }
+#accountListResults th, #accountListResults td { padding: 12px 10px; border-bottom: 1px solid var(--line); overflow-wrap: break-word; vertical-align: top; }
+#accountListResults th { white-space: nowrap; }
+#accountListResults caption { caption-side: top; padding-bottom: 8px; text-align: left; color: var(--muted); font-size: 14px; }
+#accountListResults td.account-email { min-width: 13rem; overflow-wrap: anywhere; }
+#accountListResults td.account-date, #accountListResults td.account-signup { min-width: 7.5rem; }
+#accountListResults td.account-plan { white-space: nowrap; }
 #accountListResults ul { margin: 0; padding-left: 18px; }
 #accountListPanel :focus-visible { outline: 3px solid var(--teal-dark); outline-offset: 3px; }
 
 /* Customer accounts list: per-row actions and the confirm dialog. */
-#accountListResults .account-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 15rem; }
+#accountListResults .account-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 14.5rem; }
+#accountListResults .account-actions button { white-space: nowrap; }
 #accountListResults .account-actions button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--teal-dark); border-radius: 8px; background: white; color: var(--teal-dark); font: inherit; font-weight: 700; cursor: pointer; }
 #accountListResults .account-actions button.danger, .account-confirm button.danger { border-color: var(--red); background: var(--red); color: white; }
 #accountListResults .account-actions button:disabled { opacity: .55; cursor: progress; }
 #accountListResults .account-actions [role="status"] { flex-basis: 100%; margin: 4px 0 0; color: var(--muted); font-size: 14px; }
-#accountListResults tr.account-deleted td:not(.account-actions) { color: var(--muted); text-decoration: line-through; }
+#accountListResults tr.account-deleted td:not(.account-actions-cell) { color: var(--muted); text-decoration: line-through; }
 .account-confirm { max-width: min(30rem, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: white; box-shadow: var(--shadow); }
 .account-confirm::backdrop { background: rgba(20, 32, 31, .45); }
 .account-confirm h2 { margin: 0 0 8px; font-size: 1.25rem; }
