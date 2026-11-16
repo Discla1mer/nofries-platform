@@ -853,3 +853,65 @@ describe('opt-in NCSC HTTP request boundary', () => {
         expect(h.options.pool.connect).not.toHaveBeenCalled(); expect(h.options.ncsc.resolveSubmissionQuota).not.toHaveBeenCalled();
     }));
 });
+
+describe('versioned dashboard asset cache policy', () => {
+    // Resource I/O is controlled here; genuine host authentication and URL parsing run.
+    // Existing resource/request-database suites retain authority and disclosure coverage.
+    function cachedHost(h, result) {
+        let factory;
+        const read = jest.fn(async () => result);
+        jest.isolateModules(() => {
+            jest.doMock('../api/shared/dashboardRuntime', () => ({
+                createDashboardResourceRuntime: () => ({ handleHostResource: read })
+            }));
+            factory = require('../api/shared/dashboardRuntimeHandlers').createDashboardRuntimeHandlers;
+        });
+        jest.dontMock('../api/shared/dashboardRuntime');
+        return { handler: factory(h.options), read };
+    }
+    test.each(['app.js', 'dashboard.css'])('%s caches exact bytes only after host authentication', async route => {
+        const h = harness(); h.build(); const issued = await h.login();
+        const body = 'synthetic static source';
+        const version = crypto.createHash('sha256').update(body).digest('base64url');
+        const result = { status: 200, body, isRaw: true, headers: {
+            'Cache-Control': 'private, no-store, max-age=0', Pragma: 'no-cache', 'X-Content-Type-Options': 'nosniff'
+        } };
+        const { handler, read } = cachedHost(h, result);
+        const url = '/api/dashboard/' + route + '?v=' + version;
+        await withExpectedWarning({ route, status: 401, code: 'dashboard_authentication_required' }, async () => {
+            expectError(await handler.handleRequest(request({ url })), 401, 'dashboard_authentication_required');
+        });
+        expect(read).not.toHaveBeenCalled();
+        const allowed = await handler.handleRequest(request({ url, cookieHeader: issued.cookie }));
+        expect(allowed).toMatchObject({ status: 200, body, headers: {
+            'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff'
+        } });
+        expect(allowed.headers.Pragma).toBeUndefined();
+        const legacy = await handler.handleRequest(request({ url: '/api/dashboard/' + route, cookieHeader: issued.cookie }));
+        expect(legacy.headers['Cache-Control']).toBe('private, no-store, max-age=0');
+        await withExpectedWarning({ route, status: 503, code: 'dashboard_unavailable' }, async () => {
+            const stale = await handler.handleRequest(request({ url: '/api/dashboard/' + route + '?v=' + 'A'.repeat(43), cookieHeader: issued.cookie }));
+            expectError(stale, 404, 'dashboard_asset_version_not_found');
+        });
+    });
+    test.each([[403, 'dashboard_access_denied'], [503, 'dashboard_unavailable']])('resource denial %s stays uncacheable', async (status, code) => {
+        const h = harness(); h.build(); const issued = await h.login();
+        const { handler } = cachedHost(h, { status, body: { code }, isRaw: false, headers: {
+            'Cache-Control': 'private, no-store, max-age=0', 'Content-Type': 'application/json; charset=utf-8'
+        } });
+        await withExpectedWarning({ route: 'app.js', status, code }, async () => {
+            const result = await handler.handleRequest(request({ url: '/api/dashboard/app.js?v=' + 'A'.repeat(43), cookieHeader: issued.cookie }));
+            expectError(result, status, code);
+        });
+    });
+    test.each(['?v=bad', '?v=' + 'A'.repeat(43) + '&extra=1', '?extra=1'])('rejects ambiguous version query %s', async query => {
+        const h = harness(); h.build(); const issued = await h.login();
+        const { handler, read } = cachedHost(h, {});
+        await withExpectedWarning({ route: 'app.js', status: 400, code: 'dashboard_input_invalid' }, async () => {
+            const result = await handler.handleRequest(request({ url: '/api/dashboard/app.js' + query, cookieHeader: issued.cookie }));
+            expect(result.status).toBe(400);
+            expect(result.headers['Cache-Control']).toBe('private, no-store, max-age=0');
+        });
+        expect(read).not.toHaveBeenCalled();
+    });
+});

@@ -16,14 +16,14 @@ const picture = require('../api/shared/protectedAssets/organisationPicture');
 const source = fs.readFileSync(process.env.NOFRIES_LOAD_WATERFALL_SOURCE || path.join(__dirname, '../js/dashboard-loader.js'), 'utf8');
 const NOW = '2026-11-11T00:00:00.000Z', BINDING = '10000000-0000-4000-8000-000000000001', GENERATION = 'a'.repeat(64);
 const SESSION = '/api/dashboard/session', DIRECTORY = '/api/dashboard/organisations?limit=50', BOOTSTRAP = '/api/dashboard/bootstrap';
-const SCRIPT = '/api/dashboard/app.js', STYLE = '/api/dashboard/dashboard.css', MODULE = '/api/dashboard/modules/cyber_security';
+const SCRIPT = '/api/dashboard/app.js?v=' + 'A'.repeat(43), STYLE = '/api/dashboard/dashboard.css?v=' + 'A'.repeat(43), MODULE = '/api/dashboard/modules/cyber_security';
 const LIST = '/api/dashboard/ncsc/assessments';
 const delays = { [SESSION]: 70, [DIRECTORY]: 100, [BOOTSTRAP]: 180, [SCRIPT]: 80, [STYLE]: 130, [MODULE]: 90, [LIST]: 110 };
 const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dashboardMessage', 'dashboardStatus', 'dashboardRetry',
     'dashboardSignIn', 'dashboardSignOut', 'dashboardChooser', 'dashboardChoices', 'dashboardMore', 'dashboardApp',
     'dashboardApplicationIntegrity', 'dashboardStyleIntegrity'];
 
-function harness(route, failure) {
+function harness(route, failure, warm = false) {
     const { document, window } = createDom(), started = Date.now(), trace = [], mounts = [];
     const elements = Object.fromEntries(ids.map(id => [id, document.createElement('div')]));
     document.body = document.createElement('body'); document.head = document.createElement('head');
@@ -49,7 +49,7 @@ function harness(route, failure) {
         const key = url.startsWith(LIST + '?') ? LIST : url;
         if (!Object.hasOwn(delays, key)) throw new Error('Unexpected request: ' + url);
         const event = { url: key, start: Date.now() - started, options }; trace.push(event);
-        setTimeout(() => { event.end = Date.now() - started; deliver(key); }, delays[key]);
+        setTimeout(() => { event.end = Date.now() - started; deliver(key); }, warm && [SCRIPT, STYLE].includes(key) ? 0 : delays[key]);
     }
     const fetch = (url, options) => new Promise(resolve => schedule(url, options, key => {
         const denied = failure === key && (key !== SESSION || trace.filter(row => row.url === SESSION).length === 2);
@@ -117,5 +117,17 @@ test.each([BOOTSTRAP, MODULE, SESSION])('the wave budget never skips a denied %s
     expect(h.trace.some(row => row.url === LIST)).toBe(false);
     expect(h.document.body.dataset.dashboardState).toBe('denied');
     if (failure === BOOTSTRAP) expect(h.trace.some(row => row.url === SCRIPT || row.url === STYLE)).toBe(false);
+    h.window.dispatch('pagehide');
+});
+
+// Cache-hit model: only static bytes become local; all authentication/data waves remain.
+test.each(['overview', 'cyber-security'])('%s warm assets preserve the closing witness and save one asset wait', async route => {
+    const h = harness(route, null, true);
+    await jest.advanceTimersByTimeAsync(409);
+    expect(h.mounts).toEqual([]);
+    await jest.advanceTimersByTimeAsync(111);
+    expect(h.mounts).toEqual([410]);
+    expect(h.trace.filter(row => row.url === SESSION)).toHaveLength(2);
+    expect(h.trace.find(row => row.url === LIST).end).toBe(520);
     h.window.dispatch('pagehide');
 });
