@@ -104,6 +104,8 @@
             ['name', 'email', 'organisation', 'message', 'website'].forEach(function (field) {
                 body[field] = String(data.get(field) || '');
             });
+            const campaign = typeof window.enquiryCampaign === 'function' ? window.enquiryCampaign() : '';
+            if (campaign) body.campaign = campaign;
 
             status.textContent = 'Sending…';
             try {
