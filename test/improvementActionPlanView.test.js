@@ -137,7 +137,7 @@ test('native details/summary history controls preserve default browser keyboard 
     expect(dom.root.querySelectorAll('details').filter(element => element.children[0].textContent.startsWith('Action history'))).toHaveLength(cards(dom).length);
     dom.root.querySelectorAll('details').forEach(element => {
         expect(element.children[0].tagName).toBe('SUMMARY');
-        expect(element.children[0].textContent).toMatch(/^(Action history \(\d+ events\)|Supporting evidence|Assessment details|Action identifiers|Technical details for support|Counts and filters)$/);
+        expect(element.children[0].textContent).toMatch(/^(Action history \(\d+ events\)|Supporting evidence|Assessment details|Action identifiers|Technical details for support|Counts and filters|About this plan)$/);
         expect(element.getAttribute('role')).toBeNull(); expect(element.children[0].getAttribute('role')).toBeNull();
         expect(element.children[0].getAttribute('tabindex')).toBeNull(); expect(element.children[0].events).toEqual({});
     });
@@ -195,17 +195,17 @@ test.each([
 
 test('compact heading leads with action summary while verbose source, counts and identifiers use native disclosures', () => {
     const model = presentation(), dom = render(model), panel = dom.root.children[0];
-    expect(panel.children.slice(0, 6).map(child => child.tagName)).toEqual(['H2', 'P', 'P', 'P', 'P', 'P']);
+    expect(panel.children.slice(0, 6).map(child => child.tagName)).toEqual(['H2', 'P', 'P', 'P', 'P', 'DETAILS']);
     expect(panel.children[1].textContent).toBe('From the assessment submitted ' + nzDateTime(model.source.scoreAsOf) +
         ' · Plan last updated ' + nzDateTime(model.updatedAt) + ' (NZ time)');
     expect(panel.children[1].textContent).not.toContain(model.source.assessmentId);
     expect(panel.children[2].textContent).toBe('This plan has 14 actions: 9 gaps to fix, 2 answers to check and 3 answers that need supporting evidence.');
     expect(panel.children[3].textContent).toContain('Visible overdue: ' + model.counts.visible.overdue);
     const details = panel.children.filter(child => child.tagName === 'DETAILS');
-    expect(details.map(child => child.children[0].textContent)).toEqual(['Technical details for support', 'Counts and filters']);
+    expect(details.map(child => child.children[0].textContent)).toEqual(['About this plan', 'Technical details for support', 'Counts and filters']);
     details.forEach(element => expect(element.getAttribute('open')).toBeNull());
     const first = cards(dom)[0];
-    expect(first.children[0].textContent).toContain(model.actions[0].controlId);
+    expect(first.children[0].textContent).not.toContain(model.actions[0].controlId);
     expect(first.children[2].textContent).toBe(model.actions[0].rationale.suggestedAction);
     expect(facts(first.children.find(child => child.tagName === 'DL'))).not.toHaveProperty('Owner ID');
     expect(cardFacts(first)).toMatchObject({ 'Owner ID': model.actions[0].ownerSubjectKey || 'Unassigned',
@@ -455,10 +455,26 @@ describe('plain action names, owners and plan summary', () => {
         });
     });
 
-    test('without titles, the code is the fallback name', () => {
+    test('without titles, codes remain in details rather than the fallback heading', () => {
         const model = presentation(), dom = render(model);
-        expect(cards(dom)[0].querySelector('h3').textContent).toBe(model.actions[0].controlId + ' · ' +
+        expect(cards(dom)[0].querySelector('h3').textContent).toBe('Control to review · ' +
             (model.actions[0].rationale.kind === 'implementation' ? 'Gap to fix' : model.actions[0].rationale.kind === 'evidence' ? 'Evidence to add' : 'Answer to check'));
+    });
+
+    test('internal extension labels are removed only from display names', () => {
+        const model = presentation(), action = model.actions[0];
+        const titles = { [action.controlId]: 'No Fries Critical Control extension — Use a password manager' };
+        expect(view.actionTitle(action, titles)).toMatch(/^Use a password manager · /);
+        expect(titles[action.controlId]).toContain('No Fries Critical Control extension');
+        expect(view.actionTitle(action, { [action.controlId]: 'No Fries Critical Control extension · ' })).toMatch(/^Control to review · /);
+    });
+
+    test('one short caveat is visible, with complete notices in a closed disclosure', () => {
+        const model = presentation(), dom = render(model);
+        const about = dom.root.querySelectorAll('details').find(detail => detail.querySelector('summary').textContent === 'About this plan');
+        expect(about.getAttribute('open')).toBeNull();
+        Object.values(model.notices).forEach(notice => expect(about.textContent).toContain(notice));
+        expect(dom.root.textContent).toContain('Self-reported progress: completing actions does not verify controls or change your score.');
     });
 
     test('the current person sees "You" as owner; other people are not named by ID', () => {

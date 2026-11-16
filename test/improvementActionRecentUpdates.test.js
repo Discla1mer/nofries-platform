@@ -65,8 +65,8 @@ test('completion and reopen are workflow events, with inert bounded previews and
     const dom = render();
     expect(recent(dom).textContent).toContain('Workflow completed');
     expect(recent(dom).textContent).toContain('Reopened');
-    expect(recent(dom).textContent).toContain('Workflow updates do not verify evidence or change assessment scores.');
-    expect(recent(dom).textContent).toContain('Full records remain in each action’s Action history below.');
+    expect(dom.root.textContent).toContain('Self-reported progress: completing actions does not verify controls or change your score.');
+    expect(recent(dom).textContent).toContain('Open Action history below for the full record.');
     expect(recent(dom).textContent).toContain('Completion note (preview): ' + Array.from(NOTE).slice(0, 160).join('') + '…');
     expect(recent(dom).textContent).not.toContain(NOTE);
     expect(recent(dom).textContent).toContain('Reason: ' + REASON);
@@ -79,7 +79,7 @@ test.each([{ status: 'blocked' }, { status: 'open' }, { owner: 'unassigned' }, {
         const value = model(mixed(), filters), dom = render(value);
         const expected = value.actions.flatMap(action => action.history.map(event => ({ action, event })))
             .sort((a, b) => b.event.revision - a.event.revision).slice(0, 5);
-        expect(recent(dom).textContent).toContain('Only actions shown in this view are included; current filters apply.');
+        expect(recent(dom).textContent).toContain('Updates for the actions shown. Open Action history below for the full record.');
         expect(recent(dom).querySelectorAll('li')).toHaveLength(expected.length);
         recent(dom).querySelectorAll('li').forEach((entry, index) => expect(entry.children[1].textContent)
             .toBe(actionTitle(expected[index].action) + ' · ' + nzDateTime(expected[index].event.at)));

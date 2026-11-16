@@ -220,7 +220,7 @@ test('a selected saved assessment is snapshotted but never automatically generat
     expect(h.request).toHaveBeenCalledTimes(1); expect(h.options.newId).not.toHaveBeenCalled();
     expect(button(h, 'Create improvement plan for this assessment')).toBeDefined();
     // The assessment is named in plain words; its internal ID is not shown.
-    expect(h.root.textContent).toContain('Plan for the assessment you chose on Overview.');
+    expect(h.root.textContent).toContain('Plan for your selected assessment.');
     expect(h.root.textContent).not.toContain(expected.assessmentId); expect(h.root.textContent).not.toContain('changed');
     expect(h.root.querySelectorAll('article')).toEqual([]);
     expect(await h.controller.select('guessed-plan')).toBe(false); expect(h.request).toHaveBeenCalledTimes(1);
@@ -558,7 +558,7 @@ test.each(OPERATIONS)('actual $type form sends the retained command and refreshe
     const before = h.state.plans.get('plan-a'), actionId = chooseAction(h);
     const action = presentation(before).actions.find(row => row.actionId === actionId);
     const picker = h.root.querySelectorAll('select').find(node => node.getAttribute('aria-label') === 'Improvement action');
-    expect(picker.children.find(option => option.value === actionId).textContent).toContain(action.controlId);
+    expect(picker.children.find(option => option.value === actionId).textContent).toContain('Control to review');
     expect(picker.children.find(option => option.value === actionId).textContent).not.toContain(actionId);
     const trigger = button(h, operation.label); expect(trigger).toBeDefined(); trigger.focus(); trigger.click();
     expect(form(h)).toBeDefined(); expect(button(h, 'Cancel changes')).toBeDefined();
@@ -985,16 +985,16 @@ describe('plain action names and "You" as owner in the editor', () => {
         expect(h.root.querySelectorAll('article')[0].querySelector('.improvement-action-work').textContent).toBe(actions[0].rationale.suggestedAction);
     });
 
-    test('malformed titles fall back to codes without breaking the plan', async () => {
+    test('malformed titles use a plain fallback without breaking the plan', async () => {
         const h = harness({ options: { controlTitles: { 'bad key with spaces': 'x' } } });
         expect(await h.controller.ready).toBe(true);
-        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toContain('NF-NCSC');
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toContain('Control to review');
     });
 
     test('after Assign to me the owner reads "You", not a platform user', async () => {
         const h = harness(); await h.controller.ready;
         const actionId = chooseAction(h); button(h, 'Assign to me').click(); fill(h, 'Due date', '2026-10-02'); await submitForm(h);
-        expect(h.root.textContent).toContain('Owner: you.');
+        expect(h.root.textContent).toContain('Owner: You.');
         expect(h.root.textContent).not.toContain('a platform user');
         const assignedCard = h.root.querySelectorAll('article').find(card => card.textContent.includes(actionId));
         expect(assignedCard.textContent).toContain('Owner You');

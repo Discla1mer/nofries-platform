@@ -135,7 +135,9 @@ async function main() {
             }, models.mixed);
             assert.equal(await page.locator('[aria-busy]').count(), 0);
             assert.equal(await page.locator('article').count(), models.mixed.actions.length);
-            assert.match(await page.locator('#plan').innerText(), /Read-only plan[\s\S]*Changes cannot be made in this view/);
+            const about = page.locator('details').filter({ has: page.locator('summary', { hasText: /^About this plan$/ }) });
+            assert.equal(await about.evaluate(node => node.open), false);
+            assert.match(await about.textContent(), /Read-only plan[\s\S]*Changes cannot be made in this view/);
             const facts = await page.locator('article').evaluateAll(elements => elements.map(element => {
                 const list = element.querySelector(':scope > dl');
                 return Object.fromEntries([...list.querySelectorAll('dt')]
