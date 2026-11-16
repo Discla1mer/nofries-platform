@@ -180,7 +180,7 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
         h.button('Delete').click();
         h.dialog.querySelectorAll('button').find(item => item.textContent === 'Yes, delete').click();
         await new Promise(resolve => setImmediate(resolve));
-        expect(h.perform).toHaveBeenCalledWith('delete', 'row@example.test');
+        expect(h.perform).toHaveBeenCalledWith('delete', 'row@example.test', 'external');
         expect(h.perform).toHaveBeenCalledTimes(1);
         expect(h.nodes.get('accountListResults').textContent).toContain('Delete complete for row@example.test.');
         expect(h.nodes.get('accountListResults').querySelectorAll('.account-deleted')).toHaveLength(1);
@@ -195,7 +195,7 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
         expect(h.dialog.textContent).toContain('Sign-in, email and organisations are kept');
         h.dialog.querySelectorAll('button').find(item => item.textContent === 'Yes, reset').click();
         await new Promise(resolve => setImmediate(resolve));
-        expect(h.perform).toHaveBeenCalledWith('reset', 'row@example.test');
+        expect(h.perform).toHaveBeenCalledWith('reset', 'row@example.test', 'external');
         expect(h.button('Delete').hidden).toBe(false);
     });
 

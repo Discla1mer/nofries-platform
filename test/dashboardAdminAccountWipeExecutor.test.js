@@ -13,7 +13,7 @@ const signal = () => new AbortController().signal;
 function inventory(overrides = {}) {
     return { account: { accountId: uid(10) }, subjectKey: SUBJECT, tenantIds: [uid(20), uid(21)], ...overrides };
 }
-function harness({ kind = 'external_starter', found = inventory(), identity = true, legacy = false, role = true, auditFails = [], markers = null, auditStalls = [] } = {}) {
+function harness({ kind = 'external_starter', found = inventory(), identity = true, legacy = false, role = true, auditFails = [], markers = null, auditStalls = [], probe = null } = {}) {
     const calls = [], records = [];
     let clock = Date.parse('2026-11-15T01:00:00.000Z'), ids = 0, current = found;
     const storage = {
@@ -22,7 +22,8 @@ function harness({ kind = 'external_starter', found = inventory(), identity = tr
     };
     const repository = {
         reset: jest.fn(async scope => { calls.push(['reset', scope]); return { mode: 'reset', tenants: 2, counts: { a: 2, b: 3 } }; }),
-        delete: jest.fn(async scope => { calls.push(['delete', scope]); return { mode: 'delete', tenants: 2, counts: { a: 4, b: 1 } }; })
+        delete: jest.fn(async scope => { calls.push(['delete', scope]); return { mode: 'delete', tenants: 2, counts: { a: 4, b: 1 } }; }),
+        ...(probe ? { probe: jest.fn(async scope => { calls.push(['probe', scope]); return probe(scope); }) } : {})
     };
     const remover = { remove: jest.fn(async subject => { calls.push(['identity', subject]); return { removed: true, alreadyGone: false }; }),
         check: jest.fn(async () => true) };
@@ -526,4 +527,121 @@ describe('Graph token', () => {
         expect(await getToken()).toBe('graph-token');
         expect(seen).toEqual([['mi', { clientId: uid(5) }], ['app', uid(1), uid(3)], ['mi-token', EXCHANGE_SCOPE], ['app-token', GRAPH_SCOPE, 'assertion']]);
     });
+});
+
+describe('choosing the store when an email is in both', () => {
+    function both() {
+        const calls = [];
+        const storage = kind => ({ inventory: jest.fn(async () => inventory({ account: { accountId: kind === 'legacy_starter' ? uid(11) : uid(10) } })),
+            delete: jest.fn(async () => { calls.push(['storage', kind]); return { blobs: 1, versions: 0 }; }) });
+        const legacy = storage('legacy_starter'), external = storage('external_starter');
+        const repository = { reset: jest.fn(), delete: jest.fn(async scope => { calls.push(['delete', scope.accountId]); return { counts: { a: 1 } }; }) };
+        const remover = { remove: jest.fn(async () => ({ alreadyGone: false })), check: jest.fn(async () => true) };
+        const executor = createAccountWipeExecutor({ sources: [{ kind: 'legacy_starter', storage: legacy }, { kind: 'external_starter', storage: external }],
+            repository, identity: remover, legacyIndexConfigured: false, ensureRole: async () => {}, audit: async () => {}, targetDigest: () => DIGEST });
+        return { executor, legacy, external, remover, calls };
+    }
+    test('the named store is acted on and the other is never touched', async () => {
+        const h = both();
+        const approved = await h.executor.approve(approval('delete', { store: 'legacy' }), signal());
+        expect(approved).toMatchObject({ store: 'legacy' });
+        const result = await h.executor.execute(apply(approved.approvalId), signal());
+        expect(result).toMatchObject({ outcome: 'succeeded', stages: { database: 'done', storage: 'done', identity: 'not_applicable' } });
+        expect(h.calls).toEqual([['delete', uid(11)], ['storage', 'legacy_starter']]);
+        expect(h.external.inventory).not.toHaveBeenCalled(); expect(h.remover.remove).not.toHaveBeenCalled();
+    });
+    test('without a store it is still refused, and an unknown store is invalid input', async () => {
+        const h = both();
+        await expect(h.executor.approve(approval('delete'), signal())).rejects.toMatchObject({ code: 'account_wipe_account_ambiguous' });
+        await expect(h.executor.approve(approval('delete', { store: 'both' }), signal())).rejects.toMatchObject({ code: 'account_wipe_input_invalid' });
+        expect(h.calls).toEqual([]);
+    });
+});
+
+describe('an unfinished signup (no sign-in subject recorded)', () => {
+    const unfinished = () => inventory({ subjectKey: null });
+    test('is deleted when the database holds nothing of it: Blob records go, no database or External ID call', async () => {
+        const h = harness({ found: unfinished(), probe: () => ({ mode: 'probe', held: false }) });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.calls.length = 0;
+        const result = await h.executor.execute(apply(approvalId), signal());
+        expect(order(h.calls)).toEqual(['probe', 'storage']);
+        expect(h.repository.probe).toHaveBeenCalledWith({ accountId: uid(10), subjectKey: null, tenantIds: [uid(20), uid(21)] }, undefined);
+        expect(h.repository.delete).not.toHaveBeenCalled(); expect(h.remover.remove).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'done', identity: 'none_recorded' }, code: null });
+    });
+    test('is refused with nothing changed when the database still holds any of it', async () => {
+        const h = harness({ found: unfinished(), probe: () => ({ mode: 'probe', held: true }) });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        h.calls.length = 0;
+        const result = await h.executor.execute(apply(approvalId), signal());
+        expect(result).toMatchObject({ outcome: 'refused', code: 'account_wipe_subject_unknown' });
+        expect(order(h.calls)).toEqual(['probe']);
+    });
+    test('a failed probe refuses too, and reset still needs the subject', async () => {
+        const h = harness({ found: unfinished(), probe: () => { throw Object.assign(new Error(), { code: 'account_wipe_unavailable' }); } });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        expect(await h.executor.execute(apply(approvalId), signal())).toMatchObject({ outcome: 'refused', code: 'account_wipe_unavailable' });
+        expect(h.storage.delete).not.toHaveBeenCalled();
+        await expect(h.executor.approve(approval('reset'), signal())).rejects.toMatchObject({ code: 'account_wipe_subject_unknown' });
+    });
+    test('a legacy unfinished signup is not sent to External ID either', async () => {
+        const h = harness({ kind: 'legacy_starter', found: unfinished(), probe: () => ({ mode: 'probe', held: false }) });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        expect((await h.executor.execute(apply(approvalId), signal())).stages).toEqual({ database: 'absent', storage: 'done', identity: 'not_applicable' });
+    });
+});
+
+describe('review follow-ups: store-bound retry references and unfinished retries after a restart', () => {
+    test('a retry reference from an external delete is never used by a delete aimed at the legacy store', async () => {
+        const h = harness();
+        h.remover.remove.mockRejectedValueOnce(Object.assign(new Error(), { code: 'account_wipe_identity_forbidden' }));
+        const first = await h.executor.approve(approval('delete'), signal());
+        expect(await h.executor.execute(apply(first.approvalId), signal())).toMatchObject({ outcome: 'partial', failedStage: 'identity' });
+        h.calls.length = 0;
+        await expect(h.executor.approve(approval('delete', { store: 'legacy' }), signal())).rejects.toMatchObject({ code: 'account_wipe_account_not_found' });
+        expect(h.remover.remove).toHaveBeenCalledTimes(1);
+        // The same store still finishes it from the reference.
+        const retry = await h.executor.approve(approval('delete', { store: 'external' }), signal());
+        expect(await h.executor.execute(apply(retry.approvalId), signal())).toMatchObject({ outcome: 'succeeded', stages: { identity: 'done' } });
+    });
+
+    test('an unfinished signup whose storage step failed is still reported as having no sign-in user after a restart', async () => {
+        const rows = new Map(), markers = { read: jest.fn(async d => rows.get(d) ?? null), write: jest.fn(async (d, r) => { rows.set(d, r); }) };
+        const probe = () => ({ mode: 'probe', held: false });
+        const first = harness({ found: inventory({ subjectKey: null }), probe, markers });
+        first.storage.delete.mockRejectedValueOnce(Object.assign(new Error(), { code: 'account_wipe_storage_unavailable' }));
+        const a = await first.executor.approve(approval('delete'), signal());
+        expect(await first.executor.execute(apply(a.approvalId), signal())).toMatchObject({ outcome: 'partial', failedStage: 'storage' });
+        expect([...rows.values()][0]).toMatchObject({ databaseDone: true, unfinished: true });
+        const restarted = harness({ found: inventory({ subjectKey: null }), probe, markers });
+        const b = await restarted.executor.approve(approval('delete'), signal());
+        const result = await restarted.executor.execute(apply(b.approvalId), signal());
+        expect(result).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'done', identity: 'none_recorded' } });
+        expect(restarted.remover.remove).not.toHaveBeenCalled();
+    });
+
+    test('a durable marker for a normal account never turns a lost subject into "none recorded"', async () => {
+        const rows = new Map([[DIGEST, { schemaVersion: 1, targetSha256: DIGEST, accountSha256: require('node:crypto').createHash('sha256').update(uid(10)).digest('hex'), databaseDone: true }]]);
+        const markers = { read: jest.fn(async d => rows.get(d) ?? null), write: jest.fn(async () => {}) };
+        const h = harness({ found: inventory({ subjectKey: null }), probe: () => ({ mode: 'probe', held: false }), markers });
+        const { approvalId } = await h.executor.approve(approval('delete'), signal());
+        expect(await h.executor.execute(apply(approvalId), signal())).toMatchObject({ outcome: 'partial', failedStage: 'identity', code: 'account_wipe_identity_reference_lost' });
+    });
+});
+
+test('with an email in both stores, deleting the legacy account keeps the external partial delete finishable', async () => {
+    const sub = { legacy_starter: uid(31) + ':' + uid(32), external_starter: SUBJECT };
+    const current = { legacy_starter: inventory({ account: { accountId: uid(11) }, subjectKey: sub.legacy_starter }), external_starter: inventory() };
+    const storage = kind => ({ inventory: jest.fn(async () => current[kind]), delete: jest.fn(async () => { current[kind] = null; return { blobs: 1, versions: 0 }; }) });
+    const remover = { remove: jest.fn(async () => ({ alreadyGone: false })), check: jest.fn(async () => true) };
+    remover.remove.mockRejectedValueOnce(Object.assign(new Error(), { code: 'account_wipe_identity_forbidden' }));
+    const executor = createAccountWipeExecutor({ sources: [{ kind: 'legacy_starter', storage: storage('legacy_starter') }, { kind: 'external_starter', storage: storage('external_starter') }],
+        repository: { reset: jest.fn(), delete: jest.fn(async () => ({ counts: { a: 1 } })) }, identity: remover, legacyIndexConfigured: false,
+        ensureRole: async () => {}, audit: async () => {}, targetDigest: () => DIGEST });
+    const run = async store => { const { approvalId } = await executor.approve(approval('delete', { store }), signal()); return executor.execute(apply(approvalId), signal()); };
+    expect(await run('external')).toMatchObject({ outcome: 'partial', failedStage: 'identity' });
+    expect(await run('legacy')).toMatchObject({ outcome: 'succeeded', stages: { identity: 'not_applicable' } });
+    expect(await run('external')).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'absent', identity: 'done' } });
+    expect(remover.remove).toHaveBeenLastCalledWith(SUBJECT, expect.any(Object));
 });

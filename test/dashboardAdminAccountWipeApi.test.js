@@ -254,3 +254,17 @@ describe('production composition', () => {
         expect(queries).toEqual(['BEGIN', "SELECT set_config('statement_timeout', $1, true)", ROLE_PROBE, 'COMMIT']);
     });
 });
+
+test('the optional store reaches the executor; any other extra key or store value is refused', async () => {
+    const approveSpy = jest.fn(async () => ({ approvalId: 'x', action: 'delete', approvalExpiresAt: new Date(Date.now() + 60000).toISOString() }));
+    const route = createAccountWipeRoute({ approve: approveSpy, execute: jest.fn(), refused: jest.fn() });
+    const call = body => route(body, { subjectKey: STAFF }, { headers: { cookie: COOKIE } }, new AbortController().signal);
+    expect((await call(approve('delete', { store: 'external' }).wipe)).status).toBe(200);
+    expect(approveSpy.mock.calls[0][0]).toMatchObject({ action: 'delete', email: EMAIL, store: 'external' });
+    expect((await call(approve('delete').wipe)).status).toBe(200);
+    expect(Object.hasOwn(approveSpy.mock.calls[1][0], 'store')).toBe(false);
+    expect(await call(approve('delete', { other: 1 }).wipe)).toEqual({ status: 400, body: { code: 'account_wipe_input_invalid' } });
+    const h = harness();
+    expect(await h.handler.handle(wire(approve('delete', { store: 'both' })), 'accounts/lookup')).toMatchObject({ status: 400, body: { code: 'account_wipe_input_invalid' } });
+    expect(h.storage.delete).not.toHaveBeenCalled();
+});

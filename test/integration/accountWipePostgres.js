@@ -195,6 +195,21 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         expect(await footprint(db, sentinel)).toEqual(sentinelBefore);
     });
 
+    test('the unfinished-signup probe is read only and sees an account the database still holds', async () => {
+        const db = await connect(), a = await account(db), before = await footprint(db, a);
+        const { randomUUID } = require('node:crypto');
+        const repository = createAccountWipeRepository(pool);
+        // Held: by its preferences (account id) or by any of its tenants.
+        await expect(repository.probe({ accountId: a.c.account.accountId, subjectKey: null, tenantIds: [randomUUID()] })).resolves.toEqual({ mode: 'probe', held: true });
+        await expect(repository.probe({ accountId: randomUUID(), subjectKey: null, tenantIds: [a.tenants[1]] })).resolves.toEqual({ mode: 'probe', held: true });
+        // Nothing of it in the database: an unfinished signup.
+        await expect(repository.probe({ accountId: randomUUID(), subjectKey: null, tenantIds: [randomUUID(), randomUUID()] })).resolves.toEqual({ mode: 'probe', held: false });
+        expect(await footprint(db, a)).toEqual(before);
+        // Only the probe accepts a missing subject.
+        await expect(repository.delete({ accountId: a.c.account.accountId, subjectKey: null, tenantIds: a.tenants })).rejects.toMatchObject({ code: 'onboarding_input_invalid' });
+        expect(await footprint(db, a)).toEqual(before);
+    });
+
     test('the capability sees nothing without settings and can never insert or update', async () => {
         const db = await connect(), a = await account(db);
         await tx(db, async () => {

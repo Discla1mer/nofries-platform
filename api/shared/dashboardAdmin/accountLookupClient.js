@@ -173,7 +173,7 @@
         if (working || !service) return;
         working = true; setRowButtons(true); cells.status.textContent = CONFIRM[action].working;
         try {
-            const result = await service.perform(action, row.email);
+            const result = await service.perform(action, row.email, row.provider);
             cells.status.textContent = result.text;
             if (result.done && action === 'delete') { cells.row.classList.add('account-deleted'); cells.buttons.forEach(button => { button.hidden = true; button.dataset.gone = 'true'; }); }
         } finally { working = false; setRowButtons(false); }
