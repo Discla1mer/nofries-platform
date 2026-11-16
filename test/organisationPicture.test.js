@@ -1275,7 +1275,9 @@ test('the Overview loads through the real client when the plan includes no asses
         return { ...response, text: async () => patched };
     };
     const dom = setup({ client: createClient({ metadata: fixtures.metadata, fetch }) }); await flush();
-    assert.doesNotMatch(dom.root.textContent, /unavailable/i);
+    // Gap guidance may itself say "unavailable" (Patching: "unavailable patch"); check the rest of the view.
+    const gapSection = dom.root.querySelector('.picture-top-gaps');
+    assert.doesNotMatch(dom.root.textContent.replace(gapSection ? gapSection.textContent : '', ''), /unavailable/i);
     assert.ok(dom.root.querySelector('select'));
     const usage = dom.root.querySelector('.picture-allowance');
     assert.ok(usage);
@@ -1306,14 +1308,15 @@ function gapView(dom) {
         items: section.querySelectorAll('li').map(item => ({ id: item.dataset.gapItem, title: item.querySelector('h4').textContent, text: item.textContent })) };
 }
 
-test('top three gaps put not-in-place answers first, then partial, in profile order, above the metrics', async () => {
+test('top three gaps put priority-tier controls first, then not-in-place before partial, above the metrics', async () => {
     const dom = setup(); await flush();
     const { section, heading, items } = gapView(dom), questions = dom.fixtures.metadata.questions;
     assert.equal(heading, 'Your top three gaps');
-    assert.deepEqual(items.map(item => item.id), [questions[10].id, questions[11].id, questions[3].id]);
-    assert.deepEqual(items.map(item => item.title), ['Provide and use a password manager', 'Sensitive-request verification check', 'Secure Configuration of Software']);
+    // Tier 1 (sensitive-request checks, patching, MFA) outranks the tier 2 password manager "No".
+    assert.deepEqual(items.map(item => item.id), [questions[11].id, questions[4].id, questions[5].id]);
+    assert.deepEqual(items.map(item => item.title), ['Sensitive-request verification check', 'Patching', 'Multi-factor Authentication']);
     items.forEach((item, index) => {
-        const question = questions[[10, 11, 3][index]];
+        const question = questions[[11, 4, 5][index]];
         assert.ok(item.text.includes('Why it matters:') && item.text.includes(question.guidance.summary));
         assert.ok(item.text.includes('What to do next:') && item.text.includes(question.smallBusiness.meaning));
         assert.match(item.text, /You can start this with your team\.|Ask your IT provider to help with this\./);
