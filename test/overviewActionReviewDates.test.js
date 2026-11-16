@@ -101,3 +101,15 @@ test('tenant remount discards a delayed old review list', async () => {
     // A new organisation's Overview now leads with "Start your cyber check" (#319).
     expect(dom.root.textContent).toContain('Start your cyber check'); next.destroy();
 });
+
+test('open actions are named by their control when metadata is supplied', () => {
+    const open = (id, itemId, text) => action(id, undefined, { status: 'open', completion: null, dueDate: null, itemId,
+        rationale: { suggestedAction: text } });
+    const value = input([open('a', 'NF-NCSC-MCSS-PA-01-Q1', 'Define and implement the missing parts of this control.'),
+        open('b', 'NF-NCSC-CC-SV-01-Q1', 'Obtain current supporting evidence.'), open('c', 'unknown-item', 'Keep this wording.')]);
+    const titles = picture.actionSummary(value, fixture.metadata).next.map(entry => entry.title);
+    expect(titles).toEqual(['Patching: define and implement the missing parts of this control.',
+        'Sensitive-request verification check: obtain current supporting evidence.', 'Keep this wording.']);
+    // Without metadata the saved wording is shown unchanged.
+    expect(picture.actionSummary(value).next.map(entry => entry.title)[0]).toBe('Define and implement the missing parts of this control.');
+});
