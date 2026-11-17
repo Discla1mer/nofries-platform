@@ -1,16 +1,17 @@
 'use strict';
 
-// Explicit local-only proof for 0026. Each run creates and drops its own
-// synthetic database and restricted role; no application database is selected.
+// Native checks of migration 0026 (#427), registered by the existing disposable
+// PostgreSQL suite. Each run creates and drops its own synthetic database and
+// restricted role; no application database is selected.
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { applyMigrations } = require('../scripts/db-migrate');
-const registry = require('../api/shared/protectedAssets/dashboardRegistry');
-const { RESET_TABLES, DELETE_TENANT_TABLES } = require('../api/shared/dashboardAdmin/accountWipeRepository');
+const { applyMigrations } = require('../../scripts/db-migrate');
+const registry = require('../../api/shared/protectedAssets/dashboardRegistry');
+const { RESET_TABLES, DELETE_TENANT_TABLES } = require('../../api/shared/dashboardAdmin/accountWipeRepository');
 
 const MIGRATION = '0026_dashboard_contact_requests.sql';
-const sql = fs.readFileSync(path.join(__dirname, '../database/migrations', MIGRATION), 'utf8');
+const sql = fs.readFileSync(path.join(__dirname, '../../database/migrations', MIGRATION), 'utf8');
 const INSERT = `INSERT INTO nofries.dashboard_contact_requests
     (tenant_id, organisation_id, request_id, subject_key, topic, consent_version, requested_day, requested_at)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
@@ -36,6 +37,7 @@ function localTestUrl(env = process.env) {
 }
 const testUrl = localTestUrl();
 
+module.exports = function registerDashboardContactRequestTests() {
 test('0026 stores no message, email or assessment content and gives runtime no rewrite', () => {
     const table = sql.slice(sql.indexOf('CREATE TABLE nofries.dashboard_contact_requests'), sql.indexOf('ALTER TABLE'));
     expect(table).not.toMatch(/\bemail\b|message|answer|payload|score|jsonb|\bip\b|user_agent|cookie/i);
@@ -72,9 +74,10 @@ test('reset and delete both remove contact requests before the organisation', ()
             return result;
         } finally { client.release(); }
     }
-    const row = (tenantId, organisationId, overrides = {}) => [tenantId, organisationId, overrides.requestId || crypto.randomUUID(),
-        overrides.subject || SUBJECT, overrides.topic || 'results', overrides.consent || 'contact-request-v1',
-        overrides.day || '2026-11-18', overrides.at || '2026-11-18T01:00:00.000Z'];
+    // `??` keeps an empty string an explicit (invalid) value instead of the default.
+    const row = (tenantId, organisationId, overrides = {}) => [tenantId, organisationId, overrides.requestId ?? crypto.randomUUID(),
+        overrides.subject ?? SUBJECT, overrides.topic ?? 'results', overrides.consent ?? 'contact-request-v1',
+        overrides.day ?? '2026-11-18', overrides.at ?? '2026-11-18T01:00:00.000Z'];
     const all = async () => (await ownerPool.query(
         'SELECT tenant_id, topic, requested_day::text AS day FROM nofries.dashboard_contact_requests ORDER BY tenant_id, topic, requested_day')).rows;
 
@@ -182,3 +185,4 @@ test('reset and delete both remove contact requests before the organisation', ()
         expect(after).toEqual(before.filter(item => item.tenant_id === tenantB));
     });
 });
+};
