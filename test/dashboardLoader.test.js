@@ -1285,6 +1285,18 @@ describe('internal dashboard loader protocol', () => {
         } else expect(h.requests).toHaveLength(1);
         expect(h.window.location.assign).not.toHaveBeenCalled();
     });
+    test.each(['text/html', 'application/json'])('offers same-tab sign-in for a session refusal with unreadable %s', async type => {
+        const h = harness(); await flush();
+        const json = jest.fn().mockRejectedValue(new Error('synthetic unreadable response'));
+        await h.reply(0, 403, null, { headers: { get: () => type }, json });
+        expect(h.status).toBe('denied');
+        expect(h.elements.dashboardSignIn.hidden).toBe(false);
+        expect(h.requests).toHaveLength(1);
+        expect(h.mounts).toHaveLength(0);
+        expect(json).not.toHaveBeenCalled();
+        expect(h.window.location.assign).not.toHaveBeenCalled();
+    });
+
     test('a temporary session failure retries with backoff and then opens', async () => {
         const h = harness(); await flush();
         await h.reply(0, 503, { code: 'dashboard_unavailable' });

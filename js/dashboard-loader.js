@@ -511,8 +511,13 @@
                 return fetch(path, options);
             }).then(async function (response) {
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
-                if (!response || response.redirected || ['opaque', 'opaqueredirect'].includes(response.type) ||
-                    !response.headers || !/^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') || '')) throw invalid();
+                if (!response || response.redirected || ['opaque', 'opaqueredirect'].includes(response.type)) throw invalid();
+                // A refused session read needs no response body to withhold access.
+                if (body === undefined && path === '/api/dashboard/session' && response.status === 403) {
+                    finish(resolve, { status: 403, value: null });
+                    return;
+                }
+                if (!response.headers || !/^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') || '')) throw invalid();
                 let value;
                 try { value = await response.json(); } catch (_) { throw invalid(); }
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
