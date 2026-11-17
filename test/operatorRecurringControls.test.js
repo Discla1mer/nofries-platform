@@ -193,3 +193,21 @@ test('a denied bootstrap does not render schedules or make another data request'
     expect(h.section).toBeNull(); expect(h.fetch).toHaveBeenCalledTimes(1);
     expect(h.loadingStatus.textContent).toBe('Access is unavailable');
 });
+
+test('the section menu links only to headings rendered on the page, each with a unique id', async () => {
+    const h = await render();
+    const menu = h.root.querySelector('[aria-label="Sections on this page"]');
+    const links = menu.querySelectorAll('a');
+    expect(links.length).toBeGreaterThan(3);
+    const ids = links.map(link => link.getAttribute('href').slice(1));
+    expect(new Set(ids).size).toBe(ids.length);
+    const headings = h.root.querySelectorAll('h2');
+    ids.forEach((id, index) => {
+        const heading = headings.find(node => node.id === id);
+        expect(heading).toBeTruthy();
+        expect(heading.textContent.startsWith(links[index].textContent)).toBe(true);
+    });
+    expect(links.map(link => link.textContent)).toContain('Recurring service reviews and controls');
+    // The customer accounts panel is not on this page in the harness, so it is not linked.
+    expect(links.map(link => link.textContent)).not.toContain('Customer accounts');
+});

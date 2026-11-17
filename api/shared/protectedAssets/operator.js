@@ -7,6 +7,7 @@
     let dattoStatus = null;
     let dattoSites = [];
     const dattoOnboardingHandoffs = new Map();
+    let sectionLinks = [];
 
     if (!root || !loadingPanel) return;
     load();
@@ -33,13 +34,17 @@
 
     function render() {
         root.replaceChildren();
+        sectionLinks = [];
+        // Build every section first so the menu can list the headings that exist.
+        const sections = [
+            proposalContinuationSection(), metrics(), pipeline(), pilotCustomerSection(),
+            dattoRmmSection(), serviceProofSection(), recurringControlsSection(), operatorTasksSection(),
+            exceptionsSection(), organisationsSection()
+        ].filter(Boolean);
         root.append(heading());
-        const proposalContinuation = proposalContinuationSection();
-        if (proposalContinuation) root.append(proposalContinuation);
-        root.append(metrics(), pipeline());
-        const pilot = pilotCustomerSection();
-        if (pilot) root.append(pilot);
-        root.append(dattoRmmSection(), serviceProofSection(), recurringControlsSection(), operatorTasksSection(), exceptionsSection(), organisationsSection());
+        const menu = sectionMenu();
+        if (menu) root.append(menu);
+        sections.forEach((section) => root.append(section));
         loadingPanel.hidden = true;
         root.hidden = false;
         document.body.classList.remove('operator-loading');
@@ -1782,7 +1787,33 @@
     }
 
     function sectionTitle(title, description) {
-        return el('div', { className: 'section-title' }, [el('h2', { text: title }), el('p', { text: description })]);
+        const headingNode = el('h2', { text: title });
+        // Give each section heading a stable id so the section menu can link to it.
+        const label = String(title).split(' · ')[0];
+        const id = 'work-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        if (id !== 'work-' && !sectionLinks.some((link) => link.id === id)) {
+            headingNode.id = id;
+            headingNode.setAttribute('tabindex', '-1');
+            sectionLinks.push({ id, label });
+        }
+        return el('div', { className: 'section-title' }, [headingNode, el('p', { text: description })]);
+    }
+
+    // In-page menu: one link per section on this page, plus customer accounts when that panel is on.
+    function sectionMenu() {
+        const links = sectionLinks.map((link) => el('a', { href: '#' + link.id, text: link.label }));
+        const accounts = document.getElementById('accountListPanel');
+        if (accounts) {
+            const accountsLink = el('a', { href: '#accountListPanel', text: 'Customer accounts' });
+            accountsLink.hidden = accounts.hidden === true;
+            if (typeof MutationObserver === 'function') {
+                new MutationObserver(() => { accountsLink.hidden = accounts.hidden === true; })
+                    .observe(accounts, { attributes: true, attributeFilter: ['hidden'] });
+            }
+            links.push(accountsLink);
+        }
+        if (!links.length) return null;
+        return el('nav', { className: 'section-menu', ariaLabel: 'Sections on this page' }, links);
     }
 
     function button(label, className, handler) {
