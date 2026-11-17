@@ -465,6 +465,8 @@ describe('plain action names, owners and plan summary', () => {
         const model = presentation(), action = model.actions[0];
         const titles = { [action.controlId]: 'No Fries Critical Control extension — Use a password manager' };
         expect(view.actionTitle(action, titles)).toMatch(/^Use a password manager · /);
+        const dom = createDom(); mount(dom.root, model, { controlTitles: titles });
+        expect(cardFacts(cards(dom)[0])['Framework control']).toBe(titles[action.controlId]);
         expect(titles[action.controlId]).toContain('No Fries Critical Control extension');
         expect(view.actionTitle(action, { [action.controlId]: 'No Fries Critical Control extension · ' })).toMatch(/^Control to review · /);
     });

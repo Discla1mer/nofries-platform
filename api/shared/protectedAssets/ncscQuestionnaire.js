@@ -139,6 +139,9 @@
     function localDate(value) {
         return new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(new Date(value)) + ' NZ time';
     }
+    function controlName(title) {
+        return title.replace(/^No Fries Critical Control extension\s*[—–·:-]\s*/i, '').trim() || 'Control to review';
+    }
     // Plain-text summary of a submitted assessment for an IT provider. The
     // results view and the Overview share it, so both copy the same text.
     // Grouped by answer (No, Partial, Unknown, Not applicable), not by risk.
@@ -151,7 +154,7 @@
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
                 const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
                 const ownerStart = ['no', 'partial'].includes(optionId) && /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(question.id);
-                items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionId), action: action,
+                items.push({ title: (control ? controlName(control.title) : question.prompt) + ' — ' + labels.get(optionId), action: action,
                     owner: ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.' });
             });
         });
@@ -1157,7 +1160,7 @@
                         const control = metadata.controls.find(function (entry) { return entry.id === row.question.controlId; });
                         const label = row.value.optionId === 'not_applicable' ? 'Not applicable, to confirm' :
                             row.value.optionId === null ? 'Unanswered' : optionById.get(row.value.optionId).label;
-                        const jump = button('Question ' + (row.index + 1) + ': ' + (control ? control.title : row.question.prompt) + ' · ' + label,
+                        const jump = button('Question ' + (row.index + 1) + ': ' + (control ? controlName(control.title) : row.question.prompt) + ' · ' + label,
                             function () { if (questionRegion) { activeQuestion = row.index; renderAssessmentQuestion(); } }, 'dashboard-text-button');
                         jump.id = 'ncsc-draft-observation-' + row.question.id;
                         const item = node('li'); item.append(jump); list.append(item);
@@ -1217,7 +1220,7 @@
                 const item = node('li', 'ncsc-review-item' + (row.unsaved ? ' ncsc-review-unsaved' : '') + (!row.option || row.missingRationale ? ' ncsc-review-incomplete' : ''));
                 item.id = 'ncsc-review-item-' + row.question.id;
                 const control = metadata.controls.find(function (entry) { return entry.id === row.question.controlId; });
-                item.append(node('p', 'dashboard-eyebrow', 'Question ' + (row.index + 1) + (control ? ' · ' + control.title : '')), node('h4', '', plainQuestion(row.question)));
+                item.append(node('p', 'dashboard-eyebrow', 'Question ' + (row.index + 1) + (control ? ' · ' + controlName(control.title) : '')), node('h4', '', plainQuestion(row.question)));
                 // The same plain question that was answered; the framework wording stays one click away.
                 if (row.question.smallBusiness) {
                     const wording = node('details', 'ncsc-review-framework'); wording.append(node('summary', '', 'Full framework question'), node('p', '', row.question.prompt));
@@ -1384,7 +1387,8 @@
             results.domains.forEach(function (domain) {
                 const detail = node('details', 'ncsc-result-domain'); detail.append(node('summary', '', domain.title + ' — ' + domain.attainment));
                 domain.controls.forEach(function (control) {
-                    const item = node('details', 'ncsc-result-control'); item.append(node('summary', '', control.title + ' — ' + control.attainment));
+                    const item = node('details', 'ncsc-result-control'); item.append(node('summary', '', controlName(control.title) + ' — ' + control.attainment));
+                    if (controlName(control.title) !== control.title) item.append(node('p', '', 'Framework control: ' + control.title));
                     control.questions.forEach(function (question) {
                         item.append(node('h4', '', question.prompt), node('p', '', 'Saved answer: ' + question.answer + '. Weight: ' + question.weight + '.'));
                         if (question.rationale) item.append(node('p', 'ncsc-preserve-text', 'Why it is marked not applicable: ' + question.rationale));
@@ -1450,7 +1454,7 @@
             const entry = acknowledged.status === 'submitted' ? { value: savedAnswer(question.id) } : drafts.get(question.id);
             const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
             const domain = metadata.domains.find(function (item) { return control && item.id === control.domainId; });
-            questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
+            questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && controlName(control.title)].filter(Boolean).join(' · ')));
             // A stable id lets a save that re-renders the page keep focus on the
             // question text instead of dropping it to the page heading.
             const legend = node('legend', '', plainQuestion(question));
@@ -1466,6 +1470,7 @@
             // after them: open by default on wider screens, closed on narrow ones.
             const help = node('details', 'ncsc-question-help'); help.id = 'ncsc-question-help-' + question.id;
             help.append(node('summary', '', 'Help with this question'));
+            if (control && controlName(control.title) !== control.title) help.append(node('p', '', 'Framework control: ' + control.title));
             if (question.smallBusiness) {
                 help.append(node('p', 'ncsc-input-example', 'Example: ' + question.smallBusiness.example));
                 const checks = node('ul');

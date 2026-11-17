@@ -205,10 +205,12 @@
 
     // Plain names for people. Codes stay in each action's identifiers.
     const plainKinds = { implementation: 'Gap to fix', assessment: 'Answer to check', applicability: 'Answer to check', evidence: 'Evidence to add' };
-    function actionTitle(action, titles) {
-        const retainedTitle = titles && typeof titles === 'object' && own(titles, action.controlId) && typeof titles[action.controlId] === 'string' &&
+    function retainedControlTitle(action, titles) {
+        return titles && typeof titles === 'object' && own(titles, action.controlId) && typeof titles[action.controlId] === 'string' &&
             titles[action.controlId].trim() && titles[action.controlId].length <= 200 ? titles[action.controlId].trim() : '';
-        const title = retainedTitle.replace(/^No Fries Critical Control extension\s*[—–·:-]\s*/i, '').trim() || 'Control to review';
+    }
+    function actionTitle(action, titles) {
+        const title = retainedControlTitle(action, titles).replace(/^No Fries Critical Control extension\s*[—–·:-]\s*/i, '').trim() || 'Control to review';
         return title + ' · ' + (own(plainKinds, action.rationale.kind) ? plainKinds[action.rationale.kind] : action.labels.kind);
     }
     // A gap's concrete follow-up for its topic, as the results show it (F1-R10).
@@ -393,6 +395,8 @@
                     .forEach(pair => fact(assessmentFacts, pair[0], pair[1]));
                 evidence.append(assessmentFacts); card.append(evidence);
                 const identifiers = disclosure('Action identifiers'), idFacts = node('dl');
+                const frameworkTitle = retainedControlTitle(action, titles);
+                if (frameworkTitle) fact(idFacts, 'Framework control', frameworkTitle);
                 [['Owner ID', labelled(action) ? 'Named owner without a platform account' : action.ownerSubjectKey === null ? 'Unassigned' : action.ownerSubjectKey],
                     ['Owner eligibility', 'Current eligibility not checked'], ['Action ID', action.actionId],
                     ['Control ID', action.controlId], ['Item ID', action.itemId], ['Domain ID', action.domainId]]

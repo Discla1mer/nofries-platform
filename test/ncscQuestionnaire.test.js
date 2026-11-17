@@ -1624,6 +1624,11 @@ describe('submitted assessment results', () => {
         }
         expect(panel.textContent).toContain('Not calculated'); expect(panel.textContent).toContain('use Change over time on the Overview');
         expect(panel.querySelectorAll('.ncsc-result-control')).toHaveLength(metadata().controls.length);
+        for (const control of metadata().controls.filter(row => row.title.startsWith('No Fries Critical Control extension'))) {
+            const plain = control.title.split(' — ')[1];
+            const detail = panel.querySelectorAll('.ncsc-result-control').find(row => row.querySelector('summary').textContent.startsWith(plain + ' — '));
+            expect(detail.textContent).toContain('Framework control: ' + control.title);
+        }
         expect(panel.textContent).toContain('Suggested next actions'); expect(panel.textContent).toContain('Useful evidence');
         expect(panel.textContent).toContain('not an audit or certification');
         const before = panel.textContent; ui.controller.destroy(); expect(ui.root.textContent).toBe('');
