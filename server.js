@@ -58,7 +58,7 @@ const { getServiceScope } = require('./api/shared/serviceScope');
 const serverTiming = require('./api/shared/serverTiming');
 const { createEnquiryService, isHoneypotEnquiry } = require('./api/shared/enquiry');
 const { errorResult: enquiryErrorResult } = require('./api/enquiry');
-const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
+const { API_SECURITY_HEADERS, assertSameOriginForMutation, clearDefaultPragmaForImmutable } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
 const { createFunnelCountReader, createFunnelCountWriter, createServerFunnelCounter, funnelCountsEnabled, handleFunnelCountRequest,
     isAssessmentSubmit } = require('./api/shared/funnelCounts');
@@ -1149,6 +1149,7 @@ function applyPrivateHeaders(req, res, next) {
 
 function sendResult(res, result) {
     Object.entries(result.headers || {}).forEach(([name, value]) => res.setHeader(name, value));
+    clearDefaultPragmaForImmutable(res, result.headers);
     if (result.isRaw) {
         res.status(result.status).send(result.body);
         return;
