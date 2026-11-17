@@ -1101,9 +1101,13 @@
         if (!customer) {
             return;
         }
+        const approvedCount = ((app.customerDetail && app.customerDetail.proposals) || []).filter(function (proposal) {
+            return proposal.customerId === customer.id && (proposal.status === 'approved' || proposal.approvalSealStatus === 'sealed');
+        }).length;
         openDialog('Retention control', 'Delete customer data', [
             `<div class="notice notice-danger"><strong>This cannot be undone in the application.</strong><p>It deletes the customer, assessments, proposals, and Dynamics handoff history. The source repository and Azure backups may retain recoverable versions according to the operator’s retention policy.</p></div>`,
             `<form data-form="delete-customer" data-customer-id="${h(customer.id)}">`,
+            approvedCount ? `<div class="notice notice-warning"><strong>${approvedCount} approved or sealed proposal${approvedCount === 1 ? '' : 's'} will also be deleted.</strong><p>These are normally kept as evidence of what was agreed. Export anything you need first.</p></div><label><input type="checkbox" name="deleteApprovedProposals" required> <span>Delete the approved proposal${approvedCount === 1 ? '' : 's'} too</span></label>` : '',
             `<label><span>Type “${h(customer.name)}” to confirm</span><input name="confirmName" required autocomplete="off"></label>`,
             '<div class="button-row"><button class="button button-danger" type="submit">Delete customer and related records</button><button class="button" type="button" data-action="close-dialog">Cancel</button></div>',
             '</form>'
@@ -1251,7 +1255,12 @@
         const id = form.dataset.customerId;
         const result = await api(`/api/sales/customers/${encodeURIComponent(id)}`, {
             method: 'DELETE',
-            body: withRevision({ confirmName: form.elements.confirmName.value })
+            body: withRevision(Object.assign(
+                { confirmName: form.elements.confirmName.value },
+                form.elements.deleteApprovedProposals && form.elements.deleteApprovedProposals.checked
+                    ? { deleteApprovedProposals: true }
+                    : {}
+            ))
         });
         updateRevision(result);
         closeDialog();
