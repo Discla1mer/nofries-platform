@@ -51,10 +51,11 @@ test('the topic list is "results" plus every dashboard service key', () => {
     expect(list).toEqual(['results', ...registry.services.map(service => service.key)]);
 });
 
-test('reset and delete both remove contact requests before the organisation', () => {
-    expect(RESET_TABLES).toContain('dashboard_contact_requests');
-    expect(DELETE_TENANT_TABLES.indexOf('dashboard_contact_requests'))
-        .toBeLessThan(DELETE_TENANT_TABLES.indexOf('dashboard_organisations'));
+// The wipe locks every table in its list, so the table joins that list only in the change that first
+// writes to it, which can ship only after 0026 is applied. Until then nothing can create a row.
+test('the account wipe does not name the table before the migration can be applied', () => {
+    expect(RESET_TABLES).not.toContain('dashboard_contact_requests');
+    expect(DELETE_TENANT_TABLES).not.toContain('dashboard_contact_requests');
 });
 
 (testUrl ? describe : describe.skip)('dashboard contact requests with restricted real PostgreSQL', () => {
