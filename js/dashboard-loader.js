@@ -108,9 +108,27 @@
         const store = lastOrganisationStore();
         try { if (store && UUID.test(bindingId)) store.setItem(LAST_ORGANISATION_KEY, bindingId); } catch (_) { /* optional */ }
     }
+    // D-013: remembers only which organisation last opened with Cyber Security
+    // ready, so the next visit can start that module read one round trip
+    // earlier. A hint: the fresh projection still decides whether it is used.
+    const CYBER_READY_KEY = 'nofries-dashboard-cyber-ready';
+    function cyberReadyHint(bindingId) {
+        const store = lastOrganisationStore();
+        try { return !!store && UUID.test(bindingId || '') && store.getItem(CYBER_READY_KEY) === bindingId; } catch (_) { return false; }
+    }
+    function saveCyberReadyHint(bindingId, ready) {
+        const store = lastOrganisationStore();
+        try {
+            if (!store || !UUID.test(bindingId || '')) return;
+            if (ready) store.setItem(CYBER_READY_KEY, bindingId);
+            else if (store.getItem(CYBER_READY_KEY) === bindingId) store.removeItem(CYBER_READY_KEY);
+        } catch (_) { /* optional */ }
+    }
     function forgetLastOrganisation() {
         const store = lastOrganisationStore();
         try { if (store) store.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
+        // A later sign-in may be a different person: drop the Cyber Security hint too.
+        try { if (store) store.removeItem(CYBER_READY_KEY); } catch (_) { /* optional */ }
     }
     if (hasDirectorySearch) {
         directorySearch.addEventListener('input', function () {
@@ -643,9 +661,21 @@
         const listed = directory(cycle, value, [], null);
         if (early) {
             early.projection = request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess);
+            // D-013: the module read no longer waits for the projection (one
+            // server round trip saved). It is started alongside it, as the focus
+            // refresh already does, when this browser last opened this
+            // organisation with the module ready. Its outcome is used only if the
+            // projection lists the module as ready; otherwise it is discarded.
+            const speculative = !cyberReadyHint(value.selectedBindingId) ? null
+                : request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation)
+                    .then(function (result) { return { result: result }; }, function (error) { return { error: error }; });
             early.cyber = early.projection.then(function (projection) {
-                return current(cycle) && cyberListedReady(projection)
-                    ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess) : null;
+                if (!current(cycle) || !cyberListedReady(projection)) return null;
+                if (!speculative) return request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess);
+                return speculative.then(function (outcome) {
+                    if (outcome.error) throw outcome.error;
+                    return requireSuccess(outcome.result);
+                });
             });
             [early.projection, early.cyber, listed].forEach(function (work) { work.catch(function () {}); });
         }
@@ -696,6 +726,7 @@
         // owns that role only while no protected shell is mounted.
         elements.entry.removeAttribute('role');
         cycle.cyber = !!cyber;
+        saveCyberReadyHint(value.selectedBindingId, cycle.cyber);
         cycle.improvement = !!improvement;
         cycle.displayContract = displayContract(model);
         controller = factory.mount(elements.app, model, { window: window, initialRoute: currentRoute(),

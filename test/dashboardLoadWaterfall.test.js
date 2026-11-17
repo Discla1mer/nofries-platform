@@ -23,7 +23,7 @@ const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dash
     'dashboardSignIn', 'dashboardSignOut', 'dashboardChooser', 'dashboardChoices', 'dashboardMore', 'dashboardApp',
     'dashboardApplicationIntegrity', 'dashboardStyleIntegrity'];
 
-function harness(route, failure, warm = false) {
+function harness(route, failure, warm = false, store = null, cyberState = 'ready') {
     const { document, window } = createDom(), started = Date.now(), trace = [], mounts = [];
     const elements = Object.fromEntries(ids.map(id => [id, document.createElement('div')]));
     document.body = document.createElement('body'); document.head = document.createElement('head');
@@ -36,8 +36,10 @@ function harness(route, failure, warm = false) {
     for (const id of ['dashboardApplicationIntegrity', 'dashboardStyleIntegrity']) elements[id].setAttribute('content', 'sha256-' + 'A'.repeat(43) + '=');
     window.location.hash = '#' + route; window.location.search = '';
     window.setTimeout = setTimeout; window.clearTimeout = clearTimeout;
+    if (store) window.localStorage = { getItem: key => store.has(key) ? store.get(key) : null,
+        setItem: (key, value) => { store.set(key, String(value)); }, removeItem: key => { store.delete(key); } };
     const model = JSON.parse(JSON.stringify(projectDashboard(fixture({ now: NOW }))));
-    model.modules.find(item => item.key === 'cyber_security').state = 'ready';
+    model.modules.find(item => item.key === 'cyber_security').state = cyberState;
     const session = { schemaVersion: 1, authenticated: true, purpose: 'operator_dashboard', generation: GENERATION,
         selectedBindingId: BINDING, expiresAt: '2026-11-11T01:00:00.000Z' };
     const payloads = { [SESSION]: session, [DIRECTORY]: { schemaVersion: 1, bindings: [{ bindingId: BINDING, organisationLabel: 'Synthetic organisation' }], nextAfterBindingId: null },
@@ -130,4 +132,61 @@ test.each(['overview', 'cyber-security'])('%s warm assets preserve the closing w
     expect(h.trace.filter(row => row.url === SESSION)).toHaveLength(2);
     expect(h.trace.find(row => row.url === LIST).end).toBe(520);
     h.window.dispatch('pagehide');
+});
+
+// D-013: a browser that last opened this organisation with Cyber Security ready starts the module read beside the
+// projection, one round trip earlier. With cached assets the shell mounts at 321 ms (was 410 ms). The witness is unchanged.
+describe('remembered Cyber Security hint', () => {
+    const HINT = 'nofries-dashboard-cyber-ready';
+    test('a first visit keeps the original waves and records the hint after mounting', async () => {
+        const store = new Map(), h = harness('overview', null, true, store);
+        await jest.advanceTimersByTimeAsync(600);
+        expect(h.trace.find(row => row.url === MODULE).start).toBe(250);
+        expect(h.mounts).toEqual([410]);
+        expect(store.get(HINT)).toBe(BINDING);
+        h.window.dispatch('pagehide');
+    });
+    test('a repeat visit reads the module beside the projection and still waits for the closing witness', async () => {
+        const h = harness('overview', null, true, new Map([[HINT, BINDING]]));
+        await jest.advanceTimersByTimeAsync(320);
+        expect(h.mounts).toEqual([]);
+        await jest.advanceTimersByTimeAsync(300);
+        expect(h.mounts).toEqual([321]);
+        expect(h.trace.map(({ url, start }) => [url, start])).toEqual([
+            [SESSION, 0], [DIRECTORY, 70], [BOOTSTRAP, 70], [MODULE, 70], [SCRIPT, 250], [STYLE, 250], [SESSION, 251], [LIST, 321]
+        ]);
+        expect(h.trace.filter(row => row.url === MODULE)).toHaveLength(1);
+        expect(h.document.body.dataset.dashboardState).toBe('ready');
+        h.window.dispatch('pagehide');
+    });
+    test('a hint for another organisation is ignored', async () => {
+        const h = harness('overview', null, true, new Map([[HINT, '00000000-0000-4000-8000-000000000009']]));
+        await jest.advanceTimersByTimeAsync(600);
+        expect(h.trace.find(row => row.url === MODULE).start).toBe(250);
+        h.window.dispatch('pagehide');
+    });
+    test('an early read is discarded and the hint cleared when the projection no longer lists the module ready', async () => {
+        const store = new Map([[HINT, BINDING]]), h = harness('overview', null, true, store, 'planned');
+        await jest.advanceTimersByTimeAsync(600);
+        expect(h.trace.filter(row => row.url === MODULE)).toHaveLength(1);
+        expect(h.mounts).toHaveLength(1);
+        expect(h.trace.some(row => row.url === LIST)).toBe(false);
+        expect(store.has(HINT)).toBe(false);
+        h.window.dispatch('pagehide');
+    });
+    test('the hint is dropped with the last-organisation hint when the session is refused', async () => {
+        const store = new Map([[HINT, BINDING], ['nofries-dashboard-last-organisation', BINDING]]);
+        const loader = fs.readFileSync(path.join(__dirname, '../js/dashboard-loader.js'), 'utf8');
+        const forget = loader.slice(loader.indexOf('function forgetLastOrganisation()'), loader.indexOf('if (hasDirectorySearch)'));
+        expect(forget).toContain('store.removeItem(LAST_ORGANISATION_KEY)');
+        expect(forget).toContain('store.removeItem(CYBER_READY_KEY)');
+        expect(store.size).toBe(2);
+    });
+    test('a denied early read still denies the dashboard', async () => {
+        const h = harness('overview', MODULE, true, new Map([[HINT, BINDING]]));
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(h.mounts).toEqual([]);
+        expect(h.document.body.dataset.dashboardState).toBe('denied');
+        h.window.dispatch('pagehide');
+    });
 });
