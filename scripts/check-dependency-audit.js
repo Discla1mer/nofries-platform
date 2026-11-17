@@ -14,6 +14,49 @@ const BLOCKING_SEVERITIES = new Set(['high', 'critical']);
 // filtered here. The lock check below still fails closed if a vulnerable copy
 // returns, even when the advisory database does not report it.
 const MSAL_ADVISORY = 'GHSA-XCX6-JX8P-X3H5';
+// Temporary High acceptance (owner decision: Joel, 18 Nov 2026 NZ time).
+// GHSA-fc5q-39xc-vjpf is a slow-regex flaw in every published picomatch
+// (<= 4.0.7, no fixed release). Here picomatch is installed only by the Jest
+// test runner, so it never ships and never sees untrusted patterns. Until the
+// expiry below, a High finding is accepted only when ALL of these hold:
+//   - it is on a surface that includes development packages: root-all (build) or
+//     root-optional (release pre-flight); never a production-only surface;
+//   - this advisory is the only advisory behind it;
+//   - every installed copy it names is marked dev-only in the lock;
+//   - for picomatch itself, the copies and versions are exactly those listed.
+// Anything else that is High or Critical still blocks, and this acceptance
+// stops working by itself at expiresAt. Remove it once picomatch is patched.
+const TEMPORARY_HIGH_ACCEPTANCE = Object.freeze({
+    id: 'TEMP-HIGH-PICOMATCH-GHSA-FC5Q-39XC-VJPF',
+    advisoryId: 'GHSA-FC5Q-39XC-VJPF',
+    surfaces: Object.freeze(['root-all', 'root-optional']),
+    package: 'picomatch',
+    acceptedAt: '2026-11-17T00:00:00Z',
+    expiresAt: '2026-12-02T00:00:00Z',
+    copies: Object.freeze({
+        'node_modules/anymatch/node_modules/picomatch': '2.3.2',
+        'node_modules/picomatch': '4.0.7'
+    })
+});
+// Lock facts the acceptance needs, kept off the finding's own (compared and printed) fields.
+const findingLockFacts = new WeakMap();
+
+function temporaryHighAcceptanceApplies(finding, now = new Date()) {
+    const rule = TEMPORARY_HIGH_ACCEPTANCE, facts = findingLockFacts.get(finding);
+    if (!facts || finding.severity !== 'high' || !rule.surfaces.includes(finding.surface)) return false;
+    if (!(Date.parse(rule.acceptedAt) <= now.getTime() && now.getTime() < Date.parse(rule.expiresAt))) return false;
+    if (JSON.stringify(finding.advisoryIds) !== JSON.stringify([rule.advisoryId])) return false;
+    if (!facts.devOnly) return false;
+    if (finding.package !== rule.package) return true;
+    return JSON.stringify(facts.copies) === JSON.stringify(Object.entries(rule.copies).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function isAcceptedPicomatchCopySet(surfaceId, packageName, nodePaths, packages) {
+    const rule = TEMPORARY_HIGH_ACCEPTANCE;
+    return rule.surfaces.includes(surfaceId) && packageName === rule.package &&
+        JSON.stringify(nodePaths) === JSON.stringify(Object.keys(rule.copies).sort()) &&
+        nodePaths.every((nodePath) => packages[nodePath].version === rule.copies[nodePath]);
+}
 const SURFACES = Object.freeze([
     {
         id: 'root-all',
@@ -170,21 +213,27 @@ function normaliseAuditReport(surfaceId, report, lock) {
             if (!version) throw new Error(`${surfaceId}/${packageName}: version missing for ${nodePath}`);
             return String(version);
         }));
-        if (versions.length !== 1) {
+        // The one reviewed multi-version case is the exact picomatch copy set of the temporary acceptance.
+        if (versions.length !== 1 && !isAcceptedPicomatchCopySet(surfaceId, packageName, nodePaths, packages)) {
             throw new Error(`${surfaceId}/${packageName}: multiple installed versions require separate review`);
         }
         const advisoryIds = collectAdvisoryIds(packageName, report.vulnerabilities);
         if (advisoryIds.length === 0) {
             throw new Error(`${surfaceId}/${packageName}: no stable advisory identity was found`);
         }
-        return {
+        const finding = {
             surface: surfaceId,
             package: packageName,
-            version: versions[0],
+            version: versions.join(' and '),
             severity,
             advisoryIds,
             nodePaths
         };
+        findingLockFacts.set(finding, {
+            devOnly: nodePaths.every((nodePath) => packages[nodePath].dev === true),
+            copies: nodePaths.map((nodePath) => [nodePath, String(packages[nodePath].version)])
+        });
+        return finding;
     }).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
 }
 
@@ -283,6 +332,10 @@ function evaluateFindings(findings, { dependencyChanged, exceptions, now = new D
     const accepted = [];
     const matchedExceptionSurfaces = new Set();
     for (const finding of findings) {
+        if (temporaryHighAcceptanceApplies(finding, now)) {
+            accepted.push({ finding, exceptionId: TEMPORARY_HIGH_ACCEPTANCE.id });
+            continue;
+        }
         if (BLOCKING_SEVERITIES.has(finding.severity)) {
             blocked.push({ finding, reason: 'High/Critical findings always block the build lane' });
             continue;
@@ -510,10 +563,12 @@ function main() {
     }
 
     const result = releaseReports ? {
-        blocked: findings.filter((finding) =>
+        blocked: findings.filter((finding) => !temporaryHighAcceptanceApplies(finding) &&
             ['moderate', 'high', 'critical'].includes(finding.severity))
             .map((finding) => ({ finding, reason: 'frozen release Moderate/High/Critical gate' })),
-        accepted: [], staleExceptions: []
+        accepted: findings.filter((finding) => temporaryHighAcceptanceApplies(finding))
+            .map((finding) => ({ finding, exceptionId: TEMPORARY_HIGH_ACCEPTANCE.id })),
+        staleExceptions: []
     } : evaluateFindings(findings, {
         dependencyChanged, exceptions: registry.exceptions
     });
@@ -539,8 +594,8 @@ function main() {
         return;
     }
     process.stdout.write(releaseReports
-        ? 'Frozen release dependency audit passed: no Moderate, High or Critical findings.\n'
-        : 'Dependency-changing build passed: no High/Critical findings and every Moderate is exactly dispositioned.\n');
+        ? 'Frozen release dependency audit passed: no unaccepted Moderate, High or Critical findings.\n'
+        : 'Dependency-changing build passed: no unaccepted High/Critical findings and every Moderate is exactly dispositioned.\n');
 }
 
 if (require.main === module) {
@@ -553,6 +608,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+    TEMPORARY_HIGH_ACCEPTANCE,
     assertRemediatedMsalClosure,
     collectAdvisoryIds,
     evaluateFindings,

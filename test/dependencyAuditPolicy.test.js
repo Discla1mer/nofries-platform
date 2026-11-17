@@ -5,6 +5,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const yaml = require('js-yaml');
 
 const {
+    TEMPORARY_HIGH_ACCEPTANCE,
     assertRemediatedMsalClosure,
     evaluateFindings,
     normaliseAuditReport,
@@ -443,3 +444,92 @@ describe('build-lane dependency audit policy', () => {
 
 // These contract checks execute only the actual detector Bash and policy Node
 // entrypoint. Reports are synthetic; no npm, install, audit or network runs.
+// Owner decision (Joel, 18 Nov 2026): GHSA-fc5q-39xc-vjpf in picomatch has no fixed release and is
+// installed only by the Jest test runner. It is accepted until 2 Dec 2026 under exact conditions.
+describe('temporary acceptance of the picomatch advisory', () => {
+    const DURING = new Date('2026-11-20T00:00:00Z');
+    const URL = 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf';
+    const COPIES = { 'node_modules/anymatch/node_modules/picomatch': '2.3.2', 'node_modules/picomatch': '4.0.7' };
+    function lockFixture(change = {}) {
+        const packages = { 'node_modules/jest-util': { version: '30.5.1', dev: true } };
+        for (const [node, version] of Object.entries(COPIES)) packages[node] = { version, dev: true };
+        for (const [node, value] of Object.entries(change)) packages[node] = { ...packages[node], ...value };
+        return { packages };
+    }
+    function report(extra = []) {
+        return { auditReportVersion: 2, vulnerabilities: {
+            picomatch: { severity: 'high', nodes: Object.keys(COPIES),
+                via: [{ source: 1, url: URL, title: 'ReDoS' }, ...extra] },
+            'jest-util': { severity: 'high', nodes: ['node_modules/jest-util'], via: ['picomatch'] } } };
+    }
+    const evaluate = (findings, now = DURING) => evaluateFindings(findings, { dependencyChanged: true, exceptions: [], now });
+
+    test('is bounded to fourteen days and names one advisory, one surface and exact copies', () => {
+        expect(TEMPORARY_HIGH_ACCEPTANCE).toEqual({ id: 'TEMP-HIGH-PICOMATCH-GHSA-FC5Q-39XC-VJPF', advisoryId: 'GHSA-FC5Q-39XC-VJPF',
+            surfaces: ['root-all', 'root-optional'], package: 'picomatch', acceptedAt: '2026-11-17T00:00:00Z', expiresAt: '2026-12-02T00:00:00Z', copies: COPIES });
+        expect(Object.isFrozen(TEMPORARY_HIGH_ACCEPTANCE)).toBe(true); expect(Object.isFrozen(TEMPORARY_HIGH_ACCEPTANCE.copies)).toBe(true);
+        expect(Date.parse(TEMPORARY_HIGH_ACCEPTANCE.expiresAt) - Date.parse(TEMPORARY_HIGH_ACCEPTANCE.acceptedAt)).toBeLessThanOrEqual(15 * 86400000);
+    });
+
+    test('accepts the dev-only picomatch copies and the test-runner packages that depend on them', () => {
+        const result = evaluate(normaliseAuditReport('root-all', report(), lockFixture()));
+        expect(result.blocked).toEqual([]);
+        expect(result.accepted.map(item => [item.finding.package, item.exceptionId])).toEqual([
+            ['jest-util', TEMPORARY_HIGH_ACCEPTANCE.id], ['picomatch', TEMPORARY_HIGH_ACCEPTANCE.id]]);
+    });
+
+    test.each([
+        ['before it starts', new Date('2026-11-16T23:59:59Z')],
+        ['at expiry', new Date('2026-12-02T00:00:00Z')],
+        ['after expiry', new Date('2027-01-01T00:00:00Z')]
+    ])('blocks %s', (_name, now) => {
+        expect(evaluate(normaliseAuditReport('root-all', report(), lockFixture()), now).blocked).toHaveLength(2);
+    });
+
+    test('also applies on the release pre-flight surface that includes development packages', () => {
+        const result = evaluate(normaliseAuditReport('root-optional', report(), lockFixture()));
+        expect(result.blocked).toEqual([]); expect(result.accepted).toHaveLength(2);
+        expect(evaluate(normaliseAuditReport('root-optional', report(), lockFixture({ 'node_modules/picomatch': { dev: false } }))).blocked).toHaveLength(1);
+    });
+
+    test('blocks on any production surface', () => {
+        for (const surface of ['api-runtime', 'api-production', 'root-runtime']) {
+            expect(() => normaliseAuditReport(surface, report(), lockFixture())).toThrow(/multiple installed versions/);
+        }
+        const single = report(); single.vulnerabilities.picomatch.nodes = ['node_modules/picomatch'];
+        for (const surface of ['api-runtime', 'api-production', 'root-runtime']) {
+            expect(evaluate(normaliseAuditReport(surface, single, lockFixture())).blocked).toHaveLength(2);
+        }
+    });
+
+    test('blocks when a copy is not dev-only', () => {
+        const picomatchShipped = evaluate(normaliseAuditReport('root-all', report(), lockFixture({ 'node_modules/picomatch': { dev: false } })));
+        expect(picomatchShipped.blocked.map(item => item.finding.package)).toEqual(['picomatch']);
+        const dependantShipped = evaluate(normaliseAuditReport('root-all', report(), lockFixture({ 'node_modules/jest-util': { dev: undefined } })));
+        expect(dependantShipped.blocked.map(item => item.finding.package)).toEqual(['jest-util']);
+    });
+
+    test('blocks when another advisory is also behind the finding', () => {
+        const other = { source: 2, url: 'https://github.com/advisories/GHSA-aaaa-bbbb-cccc', title: 'Other' };
+        expect(evaluate(normaliseAuditReport('root-all', report([other]), lockFixture())).blocked).toHaveLength(2);
+    });
+
+    test('refuses a different picomatch version or an extra copy', () => {
+        expect(() => normaliseAuditReport('root-all', report(), lockFixture({ 'node_modules/picomatch': { version: '4.0.6' } })))
+            .toThrow(/multiple installed versions/);
+        const extra = report(); extra.vulnerabilities.picomatch.nodes.push('node_modules/other/node_modules/picomatch');
+        const lock = lockFixture(); lock.packages['node_modules/other/node_modules/picomatch'] = { version: '3.0.1', dev: true };
+        expect(() => normaliseAuditReport('root-all', extra, lock)).toThrow(/multiple installed versions/);
+        // A single unexpected copy is a normal finding, and it blocks.
+        const single = report(); single.vulnerabilities.picomatch.nodes = ['node_modules/picomatch'];
+        expect(evaluate(normaliseAuditReport('root-all', single, lockFixture())).blocked.map(item => item.finding.package)).toEqual(['picomatch']);
+    });
+
+    test('does not accept Critical, another package with multiple versions, or a hand-built finding', () => {
+        const critical = report(); critical.vulnerabilities.picomatch.severity = 'critical'; critical.vulnerabilities['jest-util'].severity = 'critical';
+        expect(evaluate(normaliseAuditReport('root-all', critical, lockFixture())).blocked).toHaveLength(2);
+        const renamed = { auditReportVersion: 2, vulnerabilities: { globby: { ...report().vulnerabilities.picomatch } } };
+        expect(() => normaliseAuditReport('root-all', renamed, lockFixture())).toThrow(/multiple installed versions/);
+        expect(evaluate([finding({ severity: 'high', package: 'picomatch', advisoryIds: ['GHSA-FC5Q-39XC-VJPF'] })]).blocked).toHaveLength(1);
+    });
+});
