@@ -190,6 +190,8 @@ test('identical replay returns the original result, and conflicting or foreign a
     await h.execute(command(assigned.plan, 'start'));
     const before = clone(h.committed), calls = h.audit.createEvent.mock.calls.length;
     expect(await h.execute(generate())).toEqual(initial); expect(await h.execute(assign)).toEqual(assigned);
+    const repeatedCreate = await capture(h.execute({ ...generate(), operationId: 'another-create' }));
+    assertPrivateError(repeatedCreate.error, 'improvement_state_conflict', 409);
     const conflict = await capture(h.execute({ ...assign, payload: { ...assign.payload, dueDate: '2026-10-03' } }));
     assertPrivateError(conflict.error, 'improvement_operation_conflict', 409);
     const ownerContext = await createContext(h.scope, h.clock, OWNER);

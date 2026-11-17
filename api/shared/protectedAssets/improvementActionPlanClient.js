@@ -192,6 +192,8 @@
         if (mounted.has(root)) mounted.get(root).destroy();
         let alive = true, denied = false, serial = 0, busy = false, scope = null, rows = [], next = null;
         let selected = null, selectedRevision = null, generatedPlanId = null, pending = null, rendered = null, message = '', controller;
+        let outcomePlanId = target && target.planId === sourcePlanId ? sourcePlanId : null;
+        let createOutcome = outcomePlanId ? options.createOutcome : null;
         let model = null, editor = null, selectedAction = null, draft = null, draftForm = null, staleDraft = false;
         const content = doc.createElement('div'); content.className = 'improvement-plan-content';
         function active() {
@@ -209,15 +211,15 @@
         status.setAttribute('role', 'status'); picker.setAttribute('aria-label', 'Saved improvement plans');
         picker.addEventListener('change', function () { if (active() && !picker.disabled && picker.value) select(picker.value); });
         const refreshControl = button('Refresh improvement plan', refresh), moreControl = button('More saved plans', function () { readPage(next, true); });
-        const existingNote = node('p', 'A plan already exists for this assessment, so it is shown below.'); existingNote.hidden = true;
+        const existingNote = node('p'); existingNote.setAttribute('aria-live', 'polite'); existingNote.hidden = true;
         const createControl = initialSource ? button('Create improvement plan for this assessment', generate) : null;
         const retryControl = button('Retry pending improvement command', retry);
         toolbar.append(picker, refreshControl, moreControl);
         if (initialSource) {
             const selectedSource = node('p', 'Plan for your selected assessment.');
-            selectedSource.className = 'ncsc-preserve-text'; toolbar.append(selectedSource, createControl, existingNote);
+            selectedSource.className = 'ncsc-preserve-text'; toolbar.append(selectedSource, createControl);
         }
-        toolbar.append(retryControl);
+        toolbar.append(existingNote, retryControl);
         const editorPanel = node('section'), actionPicker = node('select'), actionSummary = node('p'), actionState = node('p');
         const actionControls = node('div'), editorMessage = node('p');
         editorPanel.className = 'dashboard-panel'; editorPanel.setAttribute('aria-label', 'Update an improvement action'); editorPanel.hidden = true;
@@ -398,7 +400,10 @@
                 moreControl.hidden = next === null; moreControl.disabled = busy || !!pending || !!draft;
                 const planExists = sourcePlanId !== null && (selected === sourcePlanId || rows.some(row => row.planId === sourcePlanId));
                 if (createControl) { createControl.hidden = planExists; createControl.disabled = busy || !!pending || !!draft || scope === null; }
-                existingNote.hidden = !planExists;
+                const showOutcome = !!model && selected === outcomePlanId && !!createOutcome;
+                existingNote.hidden = !showOutcome;
+                existingNote.textContent = !showOutcome ? '' : createOutcome === 'created' ? 'Your improvement plan has been created.' :
+                    'A plan already exists for this assessment, so it is shown below.';
                 retryControl.hidden = !pending || busy; retryControl.disabled = busy;
                 renderEditor();
                 if (!busy && focusAfterRead) {
@@ -654,7 +659,10 @@
                     // Unexpected intermediary responses do not establish that the
                     // write failed. Retain its identity, as for a lost response.
                     if ([400, 401, 403, 404, 405, 409, 413].includes(result.status)) pending = null;
-                    if (result.status === 409 && captured.type === 'generate') { generatedPlanId = captured.planId; busy = false; return readView(captured.planId); }
+                    if (result.status === 409 && captured.type === 'generate' && errorCode(result.value) === 'improvement_state_conflict') {
+                        generatedPlanId = outcomePlanId = captured.planId; createOutcome = 'existing';
+                        busy = false; return readView(captured.planId);
+                    }
                     if (result.status === 400 && labelled(captured.payload) && draft && draftForm && draftForm.inputs.ownerLabel &&
                         ['owner_label_invalid', 'improvement_input_invalid'].includes(errorCode(result.value))) {
                         busy = false; fieldError('ownerLabel', OWNER_LABEL_HELP); return false;
@@ -670,7 +678,7 @@
                 if (value.schemaVersion !== 1 || !value.plan || value.plan.planId !== captured.planId ||
                     value.plan.tenantId !== scope.tenantId || value.plan.organisationId !== scope.organisationId ||
                     value.plan.revision !== (captured.expectedRevision === null ? 0 : captured.expectedRevision + 1)) invalid();
-                if (captured.type === 'generate') generatedPlanId = captured.planId;
+                if (captured.type === 'generate') { generatedPlanId = outcomePlanId = captured.planId; createOutcome = 'created'; }
                 accepted();
                 pending = null; removeDraft(); selected = captured.planId; selectedRevision = value.plan.revision; busy = false;
                 return readView(selected);
@@ -681,10 +689,9 @@
             const planSource = initialSource || latest;
             if (!active() || busy || pending || draft || !planSource || scope === null) return Promise.resolve(false);
             try {
-                // Same revision-derived IDs as Overview's "Plan this": one plan per
-                // submitted revision, and a repeat create replays idempotently.
+                // One plan per revision. A retry retains this click’s command identity.
                 const planId = identifier('overview-plan-' + planSource.revisionSha256);
-                const operationId = identifier('overview-plan-generate-' + planSource.revisionSha256);
+                const operationId = identifier(newId());
                 pending = command({ planId, type: 'generate', operationId, expectedRevision: null, actionId: null,
                     payload: { assessmentId: planSource.assessmentId, assessmentRevision: planSource.revision,
                         assessmentRevisionSha256: planSource.revisionSha256 } });

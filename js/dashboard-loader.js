@@ -1600,7 +1600,7 @@
                 organisationId: organisationId,
                 ...(cycle.workQueueTarget && cycle.workQueueTarget.bindingId === snapshot.selectedBindingId
                     ? { initialTarget: { planId: cycle.workQueueTarget.planId, actionId: cycle.workQueueTarget.actionId,
-                        planRevision: cycle.workQueueTarget.planRevision } } : {}),
+                        planRevision: cycle.workQueueTarget.planRevision }, createOutcome: cycle.workQueueTarget.createOutcome } : {}),
                 sourceAssessment: presentation && presentation.sourceAssessment,
                 ...(cyber && cyber.controlTitles ? { controlTitles: cyber.controlTitles } : {}),
                 ...(cyber && cyber.itemFollowUps ? { itemFollowUps: cyber.itemFollowUps } : {}),
@@ -1626,9 +1626,7 @@
         };
     }
     // Overview "Plan this": open the improvement editor at one gap's action.
-    // The plan and generate operation IDs derive from the submitted revision
-    // digest, so a repeat or concurrent create replays through the existing
-    // generate idempotency instead of making a second plan for that revision.
+    // The revision identifies the plan. Each explicit create has its own operation ID.
     async function openGapPlan(cycle, snapshot, presentation, source, itemId, stillCurrent) {
         const live = function () { return current(cycle) && !cycle.authorityPending; };
         // The Overview selection can change while this runs. Stop silently,
@@ -1644,17 +1642,19 @@
             return result;
         }
         function view() { return send('/api/dashboard/improvement/view?planId=' + encodeURIComponent(planId)); }
-        let target = null, opened = false;
+        let target = null, opened = false, createOutcome = null;
         try {
             let result = await view();
             if (result.status === 404) {
                 if (!selected()) return false;
                 const created = await send('/api/dashboard/improvement/execute', { planId: planId, type: 'generate',
-                    operationId: 'overview-plan-generate-' + source.revisionSha256, expectedRevision: null, actionId: null,
+                    operationId: secureId(), expectedRevision: null, actionId: null,
                     payload: { assessmentId: source.assessmentId, assessmentRevision: source.revision,
                         assessmentRevisionSha256: source.revisionSha256 } });
                 // 409 can mean another session created it meanwhile: read it again.
-                if (created.status !== 200 && created.status !== 409) return false;
+                if (created.status === 200 && created.value?.plan?.planId === planId) createOutcome = 'created';
+                else if (created.status === 409 && created.value?.code === 'improvement_state_conflict') createOutcome = 'existing';
+                else return false;
                 result = await view();
             }
             const value = result.value;
@@ -1664,7 +1664,7 @@
             const action = value.actions.find(function (row) { return row && row.itemId === itemId; });
             if (!action || typeof action.actionId !== 'string' || !selected()) return false;
             target = Object.freeze({ bindingId: snapshot.selectedBindingId, planId: planId, actionId: action.actionId,
-                planRevision: value.planRevision });
+                planRevision: value.planRevision, createOutcome });
             cycle.workQueueTarget = target;
             opened = await presentation.openImprovement(source) === true;
         } catch (_) { opened = false; }

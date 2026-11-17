@@ -1874,7 +1874,7 @@ describe('ready Cyber composition', () => {
             await h.reply(8, 404, { code: 'improvement_not_found' });
             expect(h.requests[9].url).toBe('/api/dashboard/improvement/execute');
             expect(h.requests[9].init.method).toBe('POST');
-            expect(JSON.parse(h.requests[9].init.body)).toEqual({ planId, type: 'generate', operationId: 'overview-plan-generate-' + record.revisionSha256,
+            expect(JSON.parse(h.requests[9].init.body)).toEqual({ planId, type: 'generate', operationId: expect.any(String),
                 expectedRevision: null, actionId: null, payload: { assessmentId: record.assessmentId,
                     assessmentRevision: record.revision, assessmentRevisionSha256: record.revisionSha256 } });
             await h.reply(9, 200, { schemaVersion: 1, plan: { planId } });
@@ -1882,6 +1882,7 @@ describe('ready Cyber composition', () => {
             await h.reply(10, 200, view);
             expect(h.improvementMounts).toHaveLength(1);
             expect(h.improvementMounts[0].input.initialTarget).toEqual(target(planId));
+            expect(h.improvementMounts[0].input.createOutcome).toBe('created');
             // Plain topic titles come from the same validated Cyber metadata.
             const titles = h.improvementMounts[0].input.controlTitles;
             h.cyberProjection.metadata.controls.forEach(item => expect(titles[item.id]).toBe(item.title));
@@ -1912,7 +1913,7 @@ describe('ready Cyber composition', () => {
             expect(second.requests[9].url).toBe('/api/dashboard/improvement/execute');
             const fromButton = JSON.parse(second.requests[9].init.body);
             expect(fromButton.planId).toBe(planId); expect(fromGap.planId).toBe(planId);
-            expect(fromButton.operationId).toBe(fromGap.operationId);
+            expect(typeof fromButton.operationId).toBe('string');
             expect(planId).toBe('overview-plan-' + record.revisionSha256);
             second.window.dispatch('pagehide');
         });
