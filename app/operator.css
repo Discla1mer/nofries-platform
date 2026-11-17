@@ -77,6 +77,12 @@ main { width: min(1440px, 100%); margin: 0 auto; padding: clamp(28px, 4vw, 56px)
 .console-heading > div { max-width: 850px; }
 .console-heading p:last-child { max-width: 760px; margin: 0; color: var(--muted); font-size: 18px; }
 .console-actions { display: flex; flex-wrap: wrap; gap: 9px; justify-content: flex-end; }
+.section-menu { position: sticky; z-index: 10; top: 84px; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 26px; border: 1px solid var(--line); border-radius: 14px; padding: 8px; background: var(--panel); box-shadow: 0 8px 30px rgba(20, 32, 31, .05); }
+.section-menu a { border-radius: 9px; padding: 8px 12px; color: var(--muted); font-size: 14px; font-weight: 750; text-decoration: none; }
+.section-menu a:hover, .section-menu a:focus-visible { color: var(--teal-dark); background: var(--teal-soft); }
+.section-title h2, #accountListPanel { scroll-margin-top: 160px; }
+.section-title h2:focus { outline: none; }
+@media (max-width: 760px) { .section-menu { flex-wrap: nowrap; overflow-x: auto; top: 0; position: static; } .section-menu a { white-space: nowrap; } }
 .continuation-section { margin-bottom: 28px; }
 .continuation-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; border: 1px solid #d8c36e; border-radius: 18px; padding: 20px; background: var(--yellow-soft); box-shadow: var(--shadow); }
 .continuation-card > div:first-child { display: grid; gap: 3px; }
