@@ -149,12 +149,36 @@
             if (store && UUID.test(bindingId || '') && PICTURE_ID.test(assessmentId || '')) store.setItem(PICTURE_LATEST_KEY, bindingId + ' ' + assessmentId);
         } catch (_) { /* optional */ }
     }
+    // D-013: remembers which plans the Overview Actions card last listed for one organisation, so the
+    // next visit can read their action lists beside the plan index instead of after it. A hint only:
+    // an early list is used only if the fresh index names the same plan at the same revision.
+    const ACTION_PLANS_KEY = 'nofries-dashboard-action-plans';
+    function actionPlansHint(bindingId) {
+        const store = lastOrganisationStore();
+        try {
+            if (!store || !UUID.test(bindingId || '')) return [];
+            const saved = String(store.getItem(ACTION_PLANS_KEY) || '');
+            if (saved.slice(0, bindingId.length + 1) !== bindingId + ' ') return [];
+            const ids = saved.slice(bindingId.length + 1).split(' ');
+            return ids.length <= ACTION_PLAN_LIMIT && new Set(ids).size === ids.length && ids.every(function (id) { return PICTURE_ID.test(id); }) ? ids : [];
+        } catch (_) { return []; }
+    }
+    function saveActionPlansHint(bindingId, planIds) {
+        const store = lastOrganisationStore();
+        try {
+            if (!store || !UUID.test(bindingId || '')) return;
+            if (planIds.length && planIds.length <= ACTION_PLAN_LIMIT && planIds.every(function (id) { return PICTURE_ID.test(id); })) {
+                store.setItem(ACTION_PLANS_KEY, bindingId + ' ' + planIds.join(' '));
+            } else store.removeItem(ACTION_PLANS_KEY);
+        } catch (_) { /* optional */ }
+    }
     function forgetLastOrganisation() {
         const store = lastOrganisationStore();
         try { if (store) store.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
         // A later sign-in may be a different person: drop the Cyber Security hint too.
         try { if (store) store.removeItem(CYBER_READY_KEY); } catch (_) { /* optional */ }
         try { if (store) store.removeItem(PICTURE_LATEST_KEY); } catch (_) { /* optional */ }
+        try { if (store) store.removeItem(ACTION_PLANS_KEY); } catch (_) { /* optional */ }
     }
     if (hasDirectorySearch) {
         directorySearch.addEventListener('input', function () {
@@ -1588,12 +1612,25 @@
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             return value;
         };
+        const listPath = function (planId) { return '/api/dashboard/improvement/list?planId=' + encodeURIComponent(planId); };
+        // Early reads for the plans listed last time. A failure here is ignored; the normal read below decides.
+        const early = new Map(actionPlansHint(snapshot.selectedBindingId).map(function (planId) {
+            return [planId, read(listPath(planId)).then(function (value) { return value; }, function () { return null; })];
+        }));
         const page = await read('/api/dashboard/improvement/plans?limit=' + ACTION_PLAN_LIMIT);
         if (!page || !Array.isArray(page.plans) || page.plans.length > ACTION_PLAN_LIMIT) throw invalid();
         const lists = await Promise.all(page.plans.map(function (plan) {
             if (!plan || typeof plan.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(plan.planId)) throw invalid();
-            return read('/api/dashboard/improvement/list?planId=' + encodeURIComponent(plan.planId));
+            const started = early.get(plan.planId);
+            if (!started) return read(listPath(plan.planId));
+            return started.then(function (value) {
+                // Use the early list only for the exact plan revision the fresh index reports.
+                const same = !!value && !!value.scope && value.scope.planId === plan.planId &&
+                    Number.isSafeInteger(plan.planRevision) && value.planRevision === plan.planRevision;
+                return same ? value : read(listPath(plan.planId));
+            });
         }));
+        if (current(cycle) && !cycle.authorityPending) saveActionPlansHint(snapshot.selectedBindingId, page.plans.map(function (plan) { return plan.planId; }));
         const result = { lists: lists, more: page.nextAfterPlanId !== null };
         // Advance "Information as at" only when the Actions card will accept
         // every list it was given; an invalid list leaves the time unchanged.
