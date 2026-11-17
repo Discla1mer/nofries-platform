@@ -669,6 +669,26 @@ describe('Sales handoff convergence and customer evidence retention', () => {
         ))).toBe(true);
     });
 
+    test('a signed-in person who is not an administrator cannot delete a customer, with or without the confirmation', async () => {
+        const current = await seedRepository.read(access);
+        const name = `Not admin ${current.revision}`;
+        const created = await callSales('POST', '/api/sales/customers', { expectedRevision: current.revision, name });
+        expect(created.status).toBe(201);
+        const admins = process.env.NOFRIES_ADMIN_EMAILS;
+        process.env.NOFRIES_ADMIN_EMAILS = 'someone-else@example.com';
+        try {
+            const refused = await callSales('DELETE', `/api/sales/customers/${created.body.customer.id}`, {
+                expectedRevision: created.body.revision,
+                confirmName: name,
+                deleteApprovedProposals: true
+            });
+            expect(refused.status).toBe(403);
+        } finally {
+            process.env.NOFRIES_ADMIN_EMAILS = admins;
+        }
+        expect((await callSales('GET', `/api/sales/customers/${created.body.customer.id}`)).status).toBe(200);
+    });
+
     test('rejects an unsealed legacy approval before attempting a live Dynamics write', async () => {
         const current = await seedRepository.read(access);
         const created = await callSales('POST', '/api/sales/customers', {
