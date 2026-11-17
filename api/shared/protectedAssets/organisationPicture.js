@@ -970,8 +970,9 @@
             if (!append && !selected && likelyAssessmentId) {
                 // One attempt per mount. Any failure is ignored here; the normal read then decides.
                 const likely = likelyAssessmentId, request = new AbortController(); likelyAssessmentId = null; requests.add(request);
-                early = { assessmentId: likely, response: Promise.resolve().then(() => client.read(likely, { signal: request.signal }))
-                    .then(value => value, () => null).finally(() => { requests.delete(request); }) };
+                early = { assessmentId: likely, cancel() { request.abort(); },
+                    response: Promise.resolve().then(() => client.read(likely, { signal: request.signal }))
+                        .then(value => value, () => null).finally(() => { requests.delete(request); }) };
             }
             try {
                 const response = await call('list', { limit: 50, afterAssessmentId: append ? after : null }, token);
@@ -988,7 +989,9 @@
                 if (!selected) selected = preferredAssessmentId(rows);
             } catch (error) { if (live(token)) failure(error, () => load(append)); }
             finally { if (live(token)) { loading = false; render(); restoreFocus(savedFocus); } }
-            if (live(token) && !message && selected) await read(selected, undefined, early && early.assessmentId === selected ? early : null);
+            const usable = !!early && live(token) && !message && early.assessmentId === selected;
+            if (early && !usable) early.cancel();
+            if (live(token) && !message && selected) await read(selected, undefined, usable ? early : null);
         }
         function newestRow(list) {
             return list.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId))[0] || null;
@@ -1007,7 +1010,12 @@
             try {
                 const started = early ? await early.response : null;
                 if (!live(token)) return;
-                const response = started || await call('read', assessmentId, token); if (!response) return;
+                // The early read ran beside the list. Use it only if it is the exact revision the list reported;
+                // if the assessment was saved or submitted in between, read it again.
+                const row = rows.find(item => item.assessmentId === assessmentId), earlier = started && started.assessment;
+                const same = !!earlier && !!row && earlier.revision === row.revision && earlier.revisionSha256 === row.revisionSha256 &&
+                    earlier.status === row.status && earlier.updatedAt === row.updatedAt;
+                const response = same ? started : await call('read', assessmentId, token); if (!response) return;
                 const value = response.assessment;
                 if (!value || value.assessmentId !== assessmentId || value.moduleId !== metadata.moduleId ||
                     !sameProfile(value.profileRef, metadata.profileRef)) throw new Error('picture_response_invalid');

@@ -32,7 +32,10 @@ function setup(records, options = {}, behaviour = {}) {
         read: jest.fn(async (id, input) => {
             order.push('read:' + id); signals.push(input.signal);
             if (behaviour.failFirstRead && client.read.mock.calls.length === 1) throw Object.assign(new Error('refused'), { statusCode: 403 });
-            return { assessment: clone(records.find(row => row.assessmentId === id)) };
+            const record = clone(records.find(row => row.assessmentId === id));
+            // An early read that saw the assessment before another tab saved it again.
+            if (behaviour.staleFirstRead && client.read.mock.calls.length === 1) Object.assign(record, behaviour.staleFirstRead);
+            return { assessment: record };
         }),
         create: jest.fn(), save: jest.fn(), submit: jest.fn() };
     const onSelection = jest.fn();
@@ -106,4 +109,29 @@ test('a view destroyed while the list is outstanding shows nothing from the earl
     dom.controller.destroy(); dom.releaseList(); await flush();
     expect(dom.onSelection).not.toHaveBeenCalled();
     expect(shown(dom)).not.toContain('Source and calculation details');
+});
+
+test.each([
+    ['revision', { revision: 1 }],
+    ['revision digest', { revisionSha256: 'f'.repeat(64) }],
+    ['status', { status: 'draft' }],
+    ['saved time', { updatedAt: '2020-01-01T00:00:00.000Z' }]
+])('an early read with a different %s from the fresh list is discarded and read again', async (_name, staleFirstRead) => {
+    const dom = setup([newer()], { likelyAssessmentId: 'assessment-newer' }, { staleFirstRead }); await flush();
+    expect(dom.order).toEqual(['list', 'read:assessment-newer', 'read:assessment-newer']);
+    expect(shown(dom)).toContain('Source and calculation details');
+    expect(dom.onSelection).toHaveBeenCalledTimes(1);
+    dom.controller.destroy();
+});
+
+test.each([['an empty list', []], ['a failed list', null]])('the early read is cancelled after %s', async (_name, records) => {
+    const dom = createDom(), fixtures = buildFixtures(), signals = [];
+    const client = { list: jest.fn(async () => { if (!records) throw new Error('unavailable'); return { assessments: records, nextAfterAssessmentId: null }; }),
+        read: jest.fn((_id, input) => { signals.push(input.signal); return new Promise(() => {}); }), create: jest.fn(), save: jest.fn(), submit: jest.fn() };
+    const controller = picture.mount(dom.root, { metadata: fixtures.metadata, organisationId: 'shared-preview-organisation', client,
+        likelyAssessmentId: 'assessment-newer' });
+    await flush();
+    expect(client.read).toHaveBeenCalledTimes(1);
+    expect(signals[0].aborted).toBe(true);
+    controller.destroy();
 });
