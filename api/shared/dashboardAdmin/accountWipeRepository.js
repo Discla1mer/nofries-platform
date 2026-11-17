@@ -14,6 +14,8 @@ const UNTIMED_QUERY_MS = 30000, ROLLBACK_MS = 1000, COMMIT_MIN_MS = 1000;
 // keeps its tenant, membership, entitlement and sign-in bindings, so the
 // account can still sign in and start again.
 const RESET_TABLES = Object.freeze([
+    // Contact requests (0026) reference the organisation, so they go before it.
+    'dashboard_contact_requests',
     'dashboard_improvement_heads', 'dashboard_improvement_revisions',
     'dashboard_evidence_heads', 'dashboard_evidence_receipts', 'dashboard_evidence_revisions',
     'dashboard_ncsc_assessments', 'dashboard_ncsc_assessment_receipts', 'dashboard_ncsc_assessment_revisions'
