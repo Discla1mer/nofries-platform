@@ -19,12 +19,14 @@ const SESSION = '/api/dashboard/session', DIRECTORY = '/api/dashboard/organisati
 const SCRIPT = '/api/dashboard/app.js?v=' + 'A'.repeat(43), STYLE = '/api/dashboard/dashboard.css?v=' + 'A'.repeat(43), MODULE = '/api/dashboard/modules/cyber_security';
 const LIST = '/api/dashboard/ncsc/assessments';
 const READ = LIST + '/assessment-latest';
+const PLANS = '/api/dashboard/improvement/plans?limit=5';
+const PLAN_LIST = planId => '/api/dashboard/improvement/list?planId=' + planId;
 const delays = { [SESSION]: 70, [DIRECTORY]: 100, [BOOTSTRAP]: 180, [SCRIPT]: 80, [STYLE]: 130, [MODULE]: 90, [LIST]: 110, [READ]: 95 };
 const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dashboardMessage', 'dashboardStatus', 'dashboardRetry',
     'dashboardSignIn', 'dashboardSignOut', 'dashboardChooser', 'dashboardChoices', 'dashboardMore', 'dashboardApp',
     'dashboardApplicationIntegrity', 'dashboardStyleIntegrity'];
 
-function harness(route, failure, warm = false, store = null, cyberState = 'ready', saved = null) {
+function harness(route, failure, warm = false, store = null, cyberState = 'ready', saved = null, plans = null) {
     const { document, window } = createDom(), started = Date.now(), trace = [], mounts = [];
     const elements = Object.fromEntries(ids.map(id => [id, document.createElement('div')]));
     document.body = document.createElement('body'); document.head = document.createElement('head');
@@ -41,6 +43,7 @@ function harness(route, failure, warm = false, store = null, cyberState = 'ready
         setItem: (key, value) => { store.set(key, String(value)); }, removeItem: key => { store.delete(key); } };
     const model = JSON.parse(JSON.stringify(projectDashboard(fixture({ now: NOW }))));
     model.modules.find(item => item.key === 'cyber_security').state = cyberState;
+    if (plans) model.modules.find(item => item.key === 'improvement_plan').state = 'ready';
     const session = { schemaVersion: 1, authenticated: true, purpose: 'operator_dashboard', generation: GENERATION,
         selectedBindingId: BINDING, expiresAt: '2026-11-11T01:00:00.000Z' };
     const payloads = { [SESSION]: session, [DIRECTORY]: { schemaVersion: 1, bindings: [{ bindingId: BINDING, organisationLabel: 'Synthetic organisation' }], nextAfterBindingId: null },
@@ -49,15 +52,20 @@ function harness(route, failure, warm = false, store = null, cyberState = 'ready
             services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' },
         [LIST]: { schemaVersion: 1, assessments: saved ? [saved.summary] : [], nextAfterAssessmentId: null },
         [READ]: saved ? { schemaVersion: 1, assessment: saved.detail } : { code: 'dashboard_not_found' } };
+    const timing = { ...delays };
+    if (plans) {
+        payloads[PLANS] = { schemaVersion: 1, plans: plans.index, nextAfterPlanId: null }; timing[PLANS] = 100;
+        for (const [planId, list] of Object.entries(plans.lists)) { payloads[PLAN_LIST(planId)] = list; timing[PLAN_LIST(planId)] = 80; }
+    }
     function schedule(url, options, deliver) {
         const key = url.startsWith(LIST + '?') ? LIST : url;
-        if (!Object.hasOwn(delays, key)) throw new Error('Unexpected request: ' + url);
+        if (!Object.hasOwn(timing, key)) throw new Error('Unexpected request: ' + url);
         const event = { url: key, start: Date.now() - started, options }; trace.push(event);
-        setTimeout(() => { event.end = Date.now() - started; deliver(key); }, warm && [SCRIPT, STYLE].includes(key) ? 0 : delays[key]);
+        setTimeout(() => { event.end = Date.now() - started; deliver(key); }, warm && [SCRIPT, STYLE].includes(key) ? 0 : timing[key]);
     }
     const fetch = (url, options) => new Promise(resolve => schedule(url, options, key => {
         const denied = failure === key && (key !== SESSION || trace.filter(row => row.url === SESSION).length === 2);
-        const missing = key === READ && !saved;
+        const missing = key === READ && !saved || payloads[key] === null;
         const value = denied ? { code: 'dashboard_access_denied' } : payloads[key];
         resolve({ status: denied ? 403 : missing ? 404 : 200, ok: !denied && !missing, redirected: false, type: 'basic',
             headers: { get: name => name.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null },
@@ -73,6 +81,7 @@ function harness(route, failure, warm = false, store = null, cyberState = 'ready
                 window.NoFriesNcscAssessmentClient = { createClient: input => client.createClient({
                     metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch }) };
                 window.NoFriesNcscQuestionnaire = questionnaire; window.NoFriesOrganisationPicture = picture;
+                if (plans) window.NoFriesImprovementActionPlanClient = { mount: () => ({ destroy() {} }) };
             }
             if (node.onload) node.onload();
         });
@@ -258,5 +267,80 @@ describe('remembered Overview assessment hint', () => {
         const loader = fs.readFileSync(path.join(__dirname, '../js/dashboard-loader.js'), 'utf8');
         const forget = loader.slice(loader.indexOf('function forgetLastOrganisation()'), loader.indexOf('if (hasDirectorySearch)'));
         expect(forget).toContain('store.removeItem(PICTURE_LATEST_KEY)');
+    });
+});
+
+// D-013: the Overview Actions card read the plan index and then each plan's action list. A browser that has
+// seen the card remembers the plan IDs and reads those lists beside the index. The fresh index still decides.
+describe('remembered Overview action plans hint', () => {
+    const KEY = 'nofries-dashboard-action-plans', CYBER = 'nofries-dashboard-cyber-ready';
+    const list = (planId, planRevision) => ({ schemaVersion: 1, scope: { planId }, planRevision, asOf: NOW, summary: {}, actions: [] });
+    const two = () => ({ index: [{ planId: 'plan-a', planRevision: 3 }, { planId: 'plan-b', planRevision: 1 }],
+        lists: { 'plan-a': list('plan-a', 3), 'plan-b': list('plan-b', 1) } });
+    const starts = h => h.trace.filter(row => row.url.startsWith('/api/dashboard/improvement/')).map(({ url, start }) => [url, start]);
+    const open = (store, plans) => harness('overview', null, true, store, 'ready', null, plans);
+
+    test('a first visit reads the lists after the index and remembers the plans', async () => {
+        const store = new Map([[CYBER, BINDING]]), h = open(store, two());
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(starts(h)).toEqual([[PLANS, 321], [PLAN_LIST('plan-a'), 421], [PLAN_LIST('plan-b'), 421]]);
+        expect(store.get(KEY)).toBe(BINDING + ' plan-a plan-b');
+        expect(h.document.body.dataset.dashboardState).toBe('ready');
+        h.window.dispatch('pagehide');
+    });
+    test('a repeat visit reads the lists beside the index and does not read them again', async () => {
+        const h = open(new Map([[CYBER, BINDING], [KEY, BINDING + ' plan-a plan-b']]), two());
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(starts(h)).toEqual([[PLAN_LIST('plan-a'), 321], [PLAN_LIST('plan-b'), 321], [PLANS, 321]]);
+        const read = h.trace.find(row => row.url === PLAN_LIST('plan-a'));
+        expect(read.options).toMatchObject({ method: 'GET', credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
+        expect(read.options.headers['X-NoFries-Dashboard-Generation']).toBe(GENERATION);
+        h.window.dispatch('pagehide');
+    });
+    test('an early list at a different revision from the fresh index is read again', async () => {
+        const plans = two(); plans.index[0].planRevision = 4;
+        const h = open(new Map([[CYBER, BINDING], [KEY, BINDING + ' plan-a plan-b']]), plans);
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(starts(h)).toEqual([[PLAN_LIST('plan-a'), 321], [PLAN_LIST('plan-b'), 321], [PLANS, 321], [PLAN_LIST('plan-a'), 421]]);
+        h.window.dispatch('pagehide');
+    });
+    test('an early list that answers for another plan is not used', async () => {
+        const plans = two(); plans.lists['plan-a'] = list('plan-b', 3);
+        const h = open(new Map([[CYBER, BINDING], [KEY, BINDING + ' plan-a']]), plans);
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(starts(h).filter(([url]) => url === PLAN_LIST('plan-a')).map(([, at]) => at)).toEqual([321, 421]);
+        h.window.dispatch('pagehide');
+    });
+    test('a remembered plan that no longer exists costs one refused read; the hint follows the fresh index', async () => {
+        const plans = { index: [{ planId: 'plan-b', planRevision: 1 }], lists: { 'plan-a': null, 'plan-b': list('plan-b', 1) } };
+        const store = new Map([[CYBER, BINDING], [KEY, BINDING + ' plan-a']]), h = open(store, plans);
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(starts(h)).toEqual([[PLAN_LIST('plan-a'), 321], [PLANS, 321], [PLAN_LIST('plan-b'), 421]]);
+        expect(store.get(KEY)).toBe(BINDING + ' plan-b');
+        expect(h.document.body.dataset.dashboardState).toBe('ready');
+        h.window.dispatch('pagehide');
+    });
+    test('no plans clears the hint', async () => {
+        const store = new Map([[CYBER, BINDING], [KEY, BINDING + ' plan-a']]);
+        const h = open(store, { index: [], lists: { 'plan-a': null } });
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(store.has(KEY)).toBe(false);
+        h.window.dispatch('pagehide');
+    });
+    test.each([
+        ['another organisation', '00000000-0000-4000-8000-000000000009 plan-a plan-b'],
+        ['a malformed plan ID', BINDING + ' plan-a ../x'],
+        ['a repeated plan ID', BINDING + ' plan-a plan-a'],
+        ['more plans than the card reads', BINDING + ' a b c d e f']
+    ])('a hint for %s is ignored', async (_name, value) => {
+        const h = open(new Map([[CYBER, BINDING], [KEY, value]]), two());
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(starts(h)).toEqual([[PLANS, 321], [PLAN_LIST('plan-a'), 421], [PLAN_LIST('plan-b'), 421]]);
+        h.window.dispatch('pagehide');
+    });
+    test('the hint is dropped with the other remembered hints', () => {
+        const loader = fs.readFileSync(path.join(__dirname, '../js/dashboard-loader.js'), 'utf8');
+        const forget = loader.slice(loader.indexOf('    function forgetLastOrganisation()'), loader.indexOf('if (hasDirectorySearch)'));
+        expect(forget).toContain('store.removeItem(ACTION_PLANS_KEY)');
     });
 });
