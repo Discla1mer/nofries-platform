@@ -17,6 +17,10 @@
     // Fast 5xx and network failures on the opening session reads. Timeouts
     // already waited REQUEST_MS, so they are not tried again here.
     const SESSION_RETRY_MS = [1000, 2000, 4000];
+    // A release stops the app for a few minutes. The hosting platform then answers 403, 502 or 503 with its
+    // own non-JSON page. That is not a No Fries decision about this person, so the opening session read keeps
+    // trying for about three minutes instead of giving up after seven seconds.
+    const PLATFORM_RETRY_MS = 10000, PLATFORM_RETRY_LIMIT = 18;
     const ACTION_PLAN_LIMIT = 5;
     // One steady message while the dashboard opens (round 2: three changing
     // lines over 6 to 16 seconds read as separate waits). Retries still say so.
@@ -511,8 +515,10 @@
                 return fetch(path, options);
             }).then(async function (response) {
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
-                if (!response || response.redirected || ['opaque', 'opaqueredirect'].includes(response.type) ||
-                    !response.headers || !/^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') || '')) throw invalid();
+                const json = !!response && !!response.headers && /^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') || '');
+                if (response && !response.redirected && !['opaque', 'opaqueredirect'].includes(response.type) && !json &&
+                    [403, 502, 503].includes(response.status)) { const error = invalid(); error.platform = true; throw error; }
+                if (!response || response.redirected || ['opaque', 'opaqueredirect'].includes(response.type) || !json) throw invalid();
                 let value;
                 try { value = await response.json(); } catch (_) { throw invalid(); }
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
@@ -540,11 +546,12 @@
         elements.message.textContent = message;
         elements.status.textContent = detail;
     }
-    function waitForRetry(cycle, ms) {
+    function waitForRetry(cycle, ms, updating) {
         if (current(cycle) && document.body.dataset.dashboardState === 'loading') {
-            elements.heading.textContent = 'No Fries is having a temporary problem';
-            elements.message.textContent = 'We\'ll keep trying…';
-            elements.status.textContent = 'This is a temporary service problem. You do not need to sign in again.';
+            elements.heading.textContent = updating ? 'No Fries is being updated' : 'No Fries is having a temporary problem';
+            elements.message.textContent = updating ? 'This usually takes a couple of minutes. We\'ll keep trying…' : 'We\'ll keep trying…';
+            elements.status.textContent = updating ? 'Your work is saved. You do not need to sign in again.'
+                : 'This is a temporary service problem. You do not need to sign in again.';
         }
         return new Promise(function (resolve) {
             const timer = window.setTimeout(resolve, ms);
@@ -560,6 +567,10 @@
             let result;
             try { result = await request(cycle, '/api/dashboard/session'); }
             catch (error) {
+                if (current(cycle) && error && error.platform && !unresolved && attempt < PLATFORM_RETRY_LIMIT) {
+                    await waitForRetry(cycle, PLATFORM_RETRY_MS, true);
+                    continue;
+                }
                 if (!current(cycle) || !transientSessionFailure(error) || attempt >= SESSION_RETRY_MS.length) throw error;
                 await waitForRetry(cycle, SESSION_RETRY_MS[attempt]);
                 continue;

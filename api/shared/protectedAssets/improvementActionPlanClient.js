@@ -209,7 +209,10 @@
         status.setAttribute('role', 'status'); picker.setAttribute('aria-label', 'Saved improvement plans');
         picker.addEventListener('change', function () { if (active() && !picker.disabled && picker.value) select(picker.value); });
         const refreshControl = button('Refresh improvement plan', refresh), moreControl = button('More saved plans', function () { readPage(next, true); });
-        const existingNote = node('p', 'A plan already exists for this assessment, so it is shown below.'); existingNote.hidden = true;
+        const EXISTING_NOTE = 'A plan already exists for this assessment, so it is shown below.', CREATED_NOTE = 'Your plan has been created and is shown below.';
+        const existingNote = node('p', EXISTING_NOTE); existingNote.hidden = true;
+        // True once this view's own create button was used, so the note confirms the new plan instead of calling it existing.
+        let createdHere = false;
         const createControl = initialSource ? button('Create improvement plan for this assessment', generate) : null;
         const retryControl = button('Retry pending improvement command', retry);
         toolbar.append(picker, refreshControl, moreControl);
@@ -398,7 +401,7 @@
                 moreControl.hidden = next === null; moreControl.disabled = busy || !!pending || !!draft;
                 const planExists = sourcePlanId !== null && (selected === sourcePlanId || rows.some(row => row.planId === sourcePlanId));
                 if (createControl) { createControl.hidden = planExists; createControl.disabled = busy || !!pending || !!draft || scope === null; }
-                existingNote.hidden = !planExists;
+                existingNote.textContent = createdHere ? CREATED_NOTE : EXISTING_NOTE; existingNote.hidden = !planExists;
                 retryControl.hidden = !pending || busy; retryControl.disabled = busy;
                 renderEditor();
                 if (!busy && focusAfterRead) {
@@ -654,7 +657,7 @@
                     // Unexpected intermediary responses do not establish that the
                     // write failed. Retain its identity, as for a lost response.
                     if ([400, 401, 403, 404, 405, 409, 413].includes(result.status)) pending = null;
-                    if (result.status === 409 && captured.type === 'generate') { generatedPlanId = captured.planId; busy = false; return readView(captured.planId); }
+                    if (result.status === 409 && captured.type === 'generate') { generatedPlanId = captured.planId; createdHere = false; busy = false; return readView(captured.planId); }
                     if (result.status === 400 && labelled(captured.payload) && draft && draftForm && draftForm.inputs.ownerLabel &&
                         ['owner_label_invalid', 'improvement_input_invalid'].includes(errorCode(result.value))) {
                         busy = false; fieldError('ownerLabel', OWNER_LABEL_HELP); return false;
@@ -690,6 +693,7 @@
                         assessmentRevisionSha256: planSource.revisionSha256 } });
                 target = null;
             } catch (_) { unavailable(null, false); return Promise.resolve(false); }
+            createdHere = true;
             return submit();
         }
         function execute(input) {

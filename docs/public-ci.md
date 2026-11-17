@@ -36,6 +36,15 @@ and fails closed if a vulnerable MSAL copy is locked again. Remediate a
 dependency rather than widening the policy; an exception needs an explicit,
 bounded review and is not authority to deploy.
 
+One temporary High acceptance is coded in `scripts/check-dependency-audit.js`
+(`TEMPORARY_HIGH_ACCEPTANCE`): GHSA-fc5q-39xc-vjpf
+in picomatch, which has no fixed release and is installed only by the Jest
+test runner. It applies only on the two surfaces that include development packages
+(`root-all` and the release pre-flight's `root-optional`), only when that
+advisory is the sole cause, only to copies the lock marks dev-only, and only to
+the exact picomatch copies and versions listed. It stops applying on
+2026-12-02. Remove it when a fixed picomatch is published.
+
 This repository is the primary home for new application branches and pull
 requests. The proposed main rule requires a pull request, up-to-date `application`,
 `postgres` and `dependencies` checks from GitHub Actions, and resolved review

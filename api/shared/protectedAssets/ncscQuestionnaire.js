@@ -1157,7 +1157,7 @@
                         const control = metadata.controls.find(function (entry) { return entry.id === row.question.controlId; });
                         const label = row.value.optionId === 'not_applicable' ? 'Not applicable, to confirm' :
                             row.value.optionId === null ? 'Unanswered' : optionById.get(row.value.optionId).label;
-                        const jump = button('Question ' + (row.index + 1) + ': ' + (control ? control.title : row.question.prompt) + ' · ' + label,
+                        const jump = button('Question ' + (row.index + 1) + ': ' + (control ? plainControlTitle(control.title) : row.question.prompt) + ' · ' + label,
                             function () { if (questionRegion) { activeQuestion = row.index; renderAssessmentQuestion(); } }, 'dashboard-text-button');
                         jump.id = 'ncsc-draft-observation-' + row.question.id;
                         const item = node('li'); item.append(jump); list.append(item);
@@ -1176,6 +1176,11 @@
         // The plain-language question people answer. The framework prompt is
         // kept for reference but never replaces it where answers are shown.
         function plainQuestion(question) { return question.smallBusiness ? question.smallBusiness.question : question.prompt; }
+        // The four controls No Fries adds carry a framework label in the pinned profile. On screen the
+        // control is named the same way as in the Improvement Plan; the label stays in the source details.
+        function plainControlTitle(title) {
+            return String(title || '').replace(/^No Fries Critical Control extension\s*[—–·:-]\s*/i, '').trim() || String(title || '');
+        }
         function reviewState() {
             return questions.map(function (question, index) {
                 const value = drafts.get(question.id).value, saved = savedAnswer(question.id), option = optionById.get(value.optionId);
@@ -1217,7 +1222,7 @@
                 const item = node('li', 'ncsc-review-item' + (row.unsaved ? ' ncsc-review-unsaved' : '') + (!row.option || row.missingRationale ? ' ncsc-review-incomplete' : ''));
                 item.id = 'ncsc-review-item-' + row.question.id;
                 const control = metadata.controls.find(function (entry) { return entry.id === row.question.controlId; });
-                item.append(node('p', 'dashboard-eyebrow', 'Question ' + (row.index + 1) + (control ? ' · ' + control.title : '')), node('h4', '', plainQuestion(row.question)));
+                item.append(node('p', 'dashboard-eyebrow', 'Question ' + (row.index + 1) + (control ? ' · ' + plainControlTitle(control.title) : '')), node('h4', '', plainQuestion(row.question)));
                 // The same plain question that was answered; the framework wording stays one click away.
                 if (row.question.smallBusiness) {
                     const wording = node('details', 'ncsc-review-framework'); wording.append(node('summary', '', 'Full framework question'), node('p', '', row.question.prompt));
@@ -1384,7 +1389,7 @@
             results.domains.forEach(function (domain) {
                 const detail = node('details', 'ncsc-result-domain'); detail.append(node('summary', '', domain.title + ' — ' + domain.attainment));
                 domain.controls.forEach(function (control) {
-                    const item = node('details', 'ncsc-result-control'); item.append(node('summary', '', control.title + ' — ' + control.attainment));
+                    const item = node('details', 'ncsc-result-control'); item.append(node('summary', '', plainControlTitle(control.title) + ' — ' + control.attainment));
                     control.questions.forEach(function (question) {
                         item.append(node('h4', '', question.prompt), node('p', '', 'Saved answer: ' + question.answer + '. Weight: ' + question.weight + '.'));
                         if (question.rationale) item.append(node('p', 'ncsc-preserve-text', 'Why it is marked not applicable: ' + question.rationale));
@@ -1450,7 +1455,7 @@
             const entry = acknowledged.status === 'submitted' ? { value: savedAnswer(question.id) } : drafts.get(question.id);
             const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
             const domain = metadata.domains.find(function (item) { return control && item.id === control.domainId; });
-            questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
+            questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && plainControlTitle(control.title)].filter(Boolean).join(' · ')));
             // A stable id lets a save that re-renders the page keep focus on the
             // question text instead of dropping it to the page heading.
             const legend = node('legend', '', plainQuestion(question));
