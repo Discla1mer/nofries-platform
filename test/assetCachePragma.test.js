@@ -60,9 +60,10 @@ describe('on the wire, behind the API default headers', () => {
         };
         app.get('/asset', send({ 'Cache-Control': IMMUTABLE }));
         app.get('/json', send({ 'Content-Type': 'application/json' }));
-        server = http.createServer(app).listen(0, '127.0.0.1', () => { base = 'http://127.0.0.1:' + server.address().port; done(); });
+        server = http.createServer(app);
+        server.listen(0, '127.0.0.1', () => { base = 'http://127.0.0.1:' + server.address().port; done(); });
     });
-    afterAll(done => server.close(done));
+    afterAll(done => { server.close(() => done()); });
     const head = route => new Promise((resolve, reject) => http.get(base + route, res => { res.resume(); res.on('end', () => resolve(res.headers)); }).on('error', reject));
 
     test('a versioned asset is cacheable without revalidation', async () => {
