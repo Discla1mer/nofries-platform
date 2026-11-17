@@ -1624,6 +1624,11 @@ describe('submitted assessment results', () => {
         }
         expect(panel.textContent).toContain('Not calculated'); expect(panel.textContent).toContain('use Change over time on the Overview');
         expect(panel.querySelectorAll('.ncsc-result-control')).toHaveLength(metadata().controls.length);
+        // The four added controls are named as in the Improvement Plan; the framework label is not repeated on each row.
+        const controlNames = panel.querySelectorAll('.ncsc-result-control').map(item => item.querySelector('summary').textContent);
+        expect(controlNames.filter(name => /Critical Control extension/.test(name))).toEqual([]);
+        expect(controlNames.some(name => name.startsWith('Provide and use a password manager — '))).toBe(true);
+        expect(metadata().controls.filter(item => item.title.startsWith('No Fries Critical Control extension — '))).toHaveLength(4);
         expect(panel.textContent).toContain('Suggested next actions'); expect(panel.textContent).toContain('Useful evidence');
         expect(panel.textContent).toContain('not an audit or certification');
         const before = panel.textContent; ui.controller.destroy(); expect(ui.root.textContent).toBe('');
