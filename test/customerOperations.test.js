@@ -895,6 +895,43 @@ describe('governed customer onboarding and management controls', () => {
         expect(state.audit[state.audit.length - 1].previousHash).toBe(state.audit[state.audit.length - 2].integritySha256);
     });
 
+    test('external onboarding starts without a CRM record but still needs the service desk account', async () => {
+        useAppLifecycleService();
+        const maker = access('maker@example.com', 'principal-maker');
+        const prepared = await prepareAcceptedCustomer(maker, 'no-crm', 'Customer no-crm Limited', { crm: false });
+        expect(prepared.organisation.customerMaster.externalRefs.some((item) => item.system === 'hubspot')).toBe(false);
+
+        const onboarding = await service.startCustomerOnboarding(maker, prepared.organisation.organisationId, {
+            expectedRevision: prepared.revision,
+            customerMaster: Object.assign(customerMasterFixture(), {
+                externalRefs: [verifiedRef('autotask', 'account', 'autotask-account-no-crm')]
+            }),
+            supportProfile: supportProfileFixture(),
+            devices: [{ id: 'no-crm-device', label: 'No CRM device', platform: 'windows', owner: 'installer@customer-one.example' }]
+        });
+        expect(onboarding.organisation.lifecycleState).toBe('onboarding');
+        expect(onboarding.organisation.onboarding.gates.find((gate) => gate.code === 'G0').status).toBe('complete');
+        const { customerMasterMissing } = require('../api/shared/appLifecycle/customerOperations');
+        const missing = customerMasterMissing(onboarding.organisation.customerMaster, onboarding.organisation.supportProfile, 'external');
+        expect(missing).not.toContain('hubspot_company_crosswalk');
+        expect(missing).not.toContain('autotask_account_crosswalk');
+    });
+
+    test('external onboarding still refuses to start without the service desk account', async () => {
+        useAppLifecycleService();
+        const maker = access('maker@example.com', 'principal-maker');
+        const prepared = await prepareAcceptedCustomer(maker, 'no-desk', 'Customer no-desk Limited', { crm: false, desk: false });
+        await expect(service.startCustomerOnboarding(maker, prepared.organisation.organisationId, {
+            expectedRevision: prepared.revision,
+            customerMaster: Object.assign(customerMasterFixture(), { externalRefs: [] }),
+            supportProfile: supportProfileFixture(),
+            devices: [{ id: 'no-desk-device', label: 'No desk device', platform: 'windows', owner: 'installer@customer-one.example' }]
+        })).rejects.toMatchObject({
+            statusCode: 409,
+            details: { code: 'customer_master_incomplete', missing: ['autotask_account_crosswalk'] }
+        });
+    });
+
     test('external onboarding requires an explicit owner or authorised installer email for every planned device', async () => {
         const maker = access('maker@example.com', 'principal-maker');
         const prepared = await prepareAcceptedCustomer(maker, 'explicit-owner');
@@ -2662,7 +2699,20 @@ describe('governed customer onboarding and management controls', () => {
         });
     });
 
-    async function prepareAcceptedCustomer(actor, suffix = 'one', displayName = `Customer ${suffix} Limited`) {
+    // The App Service runs the appLifecycle copy; `service` above is the pinned connector copy.
+    function useAppLifecycleService() {
+        service = createAppLifecycleService({
+            repository,
+            now: () => new Date(current),
+            approvedProposalVerifier: sealedProposalVerifier(),
+            createId(prefix) {
+                sequence += 1;
+                return `${prefix}_controlled_${sequence}`;
+            }
+        });
+    }
+
+    async function prepareAcceptedCustomer(actor, suffix = 'one', displayName = `Customer ${suffix} Limited`, options = {}) {
         const proposalId = `proposal-${suffix}`;
         let result = await service.createOrganisation(actor, {
             displayName,
@@ -2710,7 +2760,8 @@ describe('governed customer onboarding and management controls', () => {
         for (const reference of [
             verifiedRef('hubspot', 'company', `hubspot-company-${suffix}`),
             verifiedRef('autotask', 'account', `autotask-account-${suffix}`)
-        ]) {
+        ].filter((reference) => (options.crm !== false || reference.system !== 'hubspot') &&
+            (options.desk !== false || reference.system !== 'autotask'))) {
             result = await service.addExternalReference(actor, result.organisation.organisationId, Object.assign({}, reference, {
                 expectedRevision: result.revision,
                 confirmManuallyVerified: true

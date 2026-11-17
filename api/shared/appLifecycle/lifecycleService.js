@@ -3799,7 +3799,8 @@ function assertOnboardingMasterInput(master, support, devices, options = {}) {
     const verified = master.externalRefs.filter((item) => item.status === 'verified');
     const hubspotCompanies = verified.filter((item) => item.system === 'hubspot' && item.recordType === 'company');
     const autotaskAccounts = verified.filter((item) => item.system === 'autotask' && item.recordType === 'account');
-    if (hubspotCompanies.length !== 1) missing.push(hubspotCompanies.length ? 'hubspot_company_crosswalk_ambiguous' : 'hubspot_company_crosswalk');
+    // A CRM record is optional: No Fries runs without one. More than one is still ambiguous.
+    if (hubspotCompanies.length > 1) missing.push('hubspot_company_crosswalk_ambiguous');
     if (autotaskAccounts.length !== 1) missing.push(autotaskAccounts.length ? 'autotask_account_crosswalk_ambiguous' : 'autotask_account_crosswalk');
     if (missing.length) {
         throw lifecycleError(409, 'Complete the required customer master before onboarding', 'customer_master_incomplete', { missing });
@@ -4595,7 +4596,7 @@ function serviceDeskCustomerReadiness(organisation, at = new Date()) {
         isGovernedVerifiedExternalReference(reference, readinessAt)
     ));
     const externalCrosswalksCurrent = onboarding.kind !== 'external' || (
-        currentExternalRefs.filter((reference) => reference.system === 'hubspot' && reference.recordType === 'company').length === 1 &&
+        currentExternalRefs.filter((reference) => reference.system === 'hubspot' && reference.recordType === 'company').length <= 1 &&
         currentExternalRefs.filter((reference) => reference.system === 'autotask' && reference.recordType === 'account').length === 1
     );
     const rmmFresh = datto.status === 'linked' && datto.truncated !== true &&

@@ -1385,19 +1385,19 @@
         ));
         const currentHubspot = currentReference('hubspot', 'company');
         const currentAutotask = currentReference('autotask', 'account');
-        const hubspotCompanyId = window.prompt(
-            'Verified HubSpot company ID:',
+        const hubspotCompanyId = (window.prompt(
+            'Verified HubSpot company ID (optional; leave blank if this customer has no CRM record):',
             currentHubspot && currentHubspot.externalId || ''
-        );
+        ) || '').trim();
         const autotaskAccountId = window.prompt(
             'Verified Autotask account ID:',
             currentAutotask && currentAutotask.externalId || ''
         );
-        const mappingRequired = !currentHubspot || currentHubspot.externalId !== hubspotCompanyId ||
+        const mappingRequired = (Boolean(hubspotCompanyId) && (!currentHubspot || currentHubspot.externalId !== hubspotCompanyId)) ||
             !currentAutotask || currentAutotask.externalId !== autotaskAccountId;
         const crosswalkEvidenceRef = mappingRequired ? window.prompt('Crosswalk verification evidence reference:') : '';
         if (
-            ![sponsorEmail, technicalEmail, securityEmail, billingEmail, emergencyEmail, agreementId, agreementVersion, agreementHash, slaId, supportHours, billingProfileId, hubspotCompanyId, autotaskAccountId].every(Boolean) ||
+            ![sponsorEmail, technicalEmail, securityEmail, billingEmail, emergencyEmail, agreementId, agreementVersion, agreementHash, slaId, supportHours, billingProfileId, autotaskAccountId].every(Boolean) ||
             (mappingRequired && !crosswalkEvidenceRef)
         ) return;
         const now = new Date().toISOString();
@@ -1408,7 +1408,7 @@
             for (const reference of [
                 { system: 'hubspot', recordType: 'company', externalId: hubspotCompanyId },
                 { system: 'autotask', recordType: 'account', externalId: autotaskAccountId }
-            ]) {
+            ].filter((item) => item.externalId)) {
                 const existing = currentReference(reference.system, reference.recordType);
                 if (existing && existing.externalId === reference.externalId) continue;
                 if (!hasCapability('integration:map')) {
