@@ -27,9 +27,23 @@ describe('enquiry validation', () => {
             name: 'Aroha Smith',
             email: 'aroha@example.co.nz',
             organisation: 'Harbourview Logistics',
-            message: VALID.message
+            message: VALID.message,
+            campaign: null
         });
     });
+
+    test.each([
+        ['meta/paid/nov-launch', 'meta / paid / nov-launch'],
+        ['META/paid/', 'meta / paid'],
+        ['meta//', 'meta']
+    ])('keeps a well-formed campaign tag %s', (tag, shown) => {
+        expect(validateEnquiry({ ...VALID, campaign: tag }).campaign).toBe(shown);
+    });
+
+    test.each(['meta', '/paid/x', 'meta/paid/<script>', 'a/b/c/d', 'x'.repeat(41) + '//', 'meta paid/x/y'])(
+        'drops a malformed campaign tag %p instead of rejecting the enquiry', (tag) => {
+            expect(validateEnquiry({ ...VALID, campaign: tag }).campaign).toBeNull();
+        });
 
     test.each([
         ['missing name', { name: '' }],
@@ -64,6 +78,7 @@ describe('enquiry delivery', () => {
         });
         expect(calls[0].body.html).toBeUndefined();
         expect(calls[0].body.text).toContain('Organisation: Harbourview Logistics');
+        expect(calls[0].body.text).not.toContain('Campaign:');
         expect(calls[0].body.text).toContain(VALID.message);
     });
 
@@ -381,4 +396,11 @@ describe('contact form progressive enhancement', () => {
         expect(page.plausible).not.toHaveBeenCalled();
         expect(page.send.disabled).toBe(false);
     });
+});
+
+test('includes the campaign line in the email when the enquiry carries a tag', async () => {
+    const { calls, fetchImpl } = stubFetch();
+    await createEnquiryService({ env: ENV, rateLimiter: { reserve: async () => ({ allowed: true }) }, fetchImpl })
+        .submitEnquiry({ ...VALID, campaign: 'meta/paid/nov-launch' });
+    expect(calls[0].body.text).toContain('Organisation: Harbourview Logistics\nCampaign: meta / paid / nov-launch\n');
 });

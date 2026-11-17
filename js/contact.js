@@ -104,6 +104,8 @@
             ['name', 'email', 'organisation', 'message', 'website'].forEach(function (field) {
                 body[field] = String(data.get(field) || '');
             });
+            const campaign = typeof window.enquiryCampaign === 'function' ? window.enquiryCampaign() : '';
+            if (campaign) body.campaign = campaign;
 
             status.textContent = 'Sending…';
             try {
@@ -123,6 +125,7 @@
                     return;
                 }
                 form.reset();
+                if (typeof window.clearEnquiryCampaign === 'function') window.clearEnquiryCampaign();
                 status.textContent = 'Thanks — your enquiry has been sent. We will reply by email.';
                 if (window.plausible) {
                     window.plausible('Enquiry Sent');

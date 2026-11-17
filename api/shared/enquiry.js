@@ -51,7 +51,15 @@ function validateEnquiry(input = {}) {
     if (message.length < MIN_MESSAGE || message.length > LIMITS.message) {
         throw invalid('Please enter a message between 10 and 4,000 characters.');
     }
-    return { name, email, organisation, message };
+    return { name, email, organisation, message, campaign: campaignTag(input.campaign) };
+}
+
+// "source/medium/campaign" labels from the landing link. Anything else is
+// dropped rather than rejected, so a bad tag never blocks an enquiry.
+const CAMPAIGN_PATTERN = /^[a-z0-9._-]{1,40}\/[a-z0-9._-]{0,40}\/[a-z0-9._-]{0,40}$/;
+function campaignTag(value) {
+    const text = singleLine(value).toLowerCase();
+    return CAMPAIGN_PATTERN.test(text) ? text.split('/').filter(Boolean).join(' / ') : null;
 }
 
 function deliveryConfig(env) {
@@ -89,6 +97,7 @@ function createEnquiryService({ env = process.env, fetchImpl = (...args) => fetc
             `Name: ${enquiry.name}`,
             `Email: ${enquiry.email}`,
             `Organisation: ${enquiry.organisation || '(not given)'}`,
+            ...(enquiry.campaign ? [`Campaign: ${enquiry.campaign}`] : []),
             `Received: ${now().toISOString()}`,
             '',
             enquiry.message
