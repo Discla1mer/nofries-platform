@@ -64,6 +64,60 @@ test('conflict without readable stored proof fails closed', async () => {
     h.proofs.upload.mockRejectedValue(Object.assign(new Error('conflict'), { statusCode: 412 }));
     await expect(h.proofStore.createOriginalProof(SESSION, proof())).rejects.toThrow('dashboard_authority_store_unavailable');
 });
+describe('original proof read cache', () => {
+    afterEach(() => { jest.useRealTimers(); });
+    test('a found proof is read from storage once, and each hit is a fresh equal object', async () => {
+        const h = harness();
+        await h.proofStore.createOriginalProof(SESSION, proof());
+        const first = await h.proofStore.readOriginalProof(SESSION), second = await h.proofStore.readOriginalProof(SESSION);
+        expect(first).toEqual(proof()); expect(second).toEqual(proof()); expect(second).not.toBe(first);
+        expect(h.proofs.download).toHaveBeenCalledTimes(1);
+    });
+    test('a missing proof and a failed read are never kept', async () => {
+        const h = harness();
+        expect(await h.proofStore.readOriginalProof(SESSION)).toBeNull();
+        h.proofs.download.mockRejectedValueOnce(Object.assign(new Error('transient'), { statusCode: 503 }));
+        await expect(h.proofStore.readOriginalProof(SESSION)).rejects.toThrow('dashboard_authority_store_unavailable');
+        await h.proofStore.createOriginalProof(SESSION, proof());
+        expect(await h.proofStore.readOriginalProof(SESSION)).toEqual(proof());
+        expect(h.proofs.download).toHaveBeenCalledTimes(3);
+    });
+    test('an invalid stored proof is rejected and not kept', async () => {
+        const h = harness();
+        h.proofs.records.set(`dashboard-proofs/${SESSION}.json`, Buffer.from(JSON.stringify({ ...proof(), instanceId: uid(8) })));
+        await expect(h.proofStore.readOriginalProof(SESSION)).rejects.toThrow('dashboard_authority_store_unavailable');
+        await expect(h.proofStore.readOriginalProof(SESSION)).rejects.toThrow('dashboard_authority_store_unavailable');
+        expect(h.proofs.download).toHaveBeenCalledTimes(2);
+    });
+    test('the kept proof expires after five minutes and is separate per adapter and per session', async () => {
+        jest.useFakeTimers();
+        const h = harness(), other = 'c'.repeat(64);
+        await h.proofStore.createOriginalProof(SESSION, proof());
+        await h.proofStore.readOriginalProof(SESSION);
+        expect(await h.proofStore.readOriginalProof(other)).toBeNull();
+        jest.advanceTimersByTime(299999);
+        await h.proofStore.readOriginalProof(SESSION);
+        expect(h.proofs.download).toHaveBeenCalledTimes(2);
+        jest.advanceTimersByTime(2);
+        await h.proofStore.readOriginalProof(SESSION);
+        expect(h.proofs.download).toHaveBeenCalledTimes(3);
+        const second = createDashboardAuthorityStore({ proofContainer: h.proofs, epochContainer: h.epochs, instanceId: INSTANCE });
+        await second.proofStore.readOriginalProof(SESSION);
+        expect(h.proofs.download).toHaveBeenCalledTimes(4);
+    });
+    test('the cache is bounded', async () => {
+        const h = harness();
+        const key = n => n.toString(16).padStart(64, '0');
+        for (let n = 0; n < 513; n += 1) {
+            h.proofs.records.set(`dashboard-proofs/${key(n)}.json`, Buffer.from(JSON.stringify({ ...proof(), sessionSha256: key(n) })));
+            await h.proofStore.readOriginalProof(key(n));
+        }
+        await h.proofStore.readOriginalProof(key(512));
+        expect(h.proofs.download).toHaveBeenCalledTimes(513);
+        await h.proofStore.readOriginalProof(key(0));
+        expect(h.proofs.download).toHaveBeenCalledTimes(514);
+    });
+});
 test('every epoch read observes external change and has no write capability', async () => {
     const h = harness();
     expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH });

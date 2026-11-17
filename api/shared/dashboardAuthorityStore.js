@@ -54,6 +54,23 @@ function createDashboardAuthorityStore({ proofContainer, epochContainer, instanc
             return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
         } finally { signal.removeEventListener('abort', abort); stream.destroy(); }
     }
+    // D-013: an original proof is written once and never replaced (see
+    // createOriginalProof), and every request reads it three times. Keep a
+    // found, valid proof in this process for a short time. Missing proofs and
+    // failures are never kept, the session record itself is still read on
+    // every check, and each hit is re-validated into a fresh object.
+    const PROOF_CACHE_MS = 300000, PROOF_CACHE_MAX = 512;
+    const proofCache = new Map();
+    function cachedProof(sessionSha256) {
+        const hit = proofCache.get(sessionSha256);
+        if (!hit) return null;
+        if (performance.now() - hit.at >= PROOF_CACHE_MS) { proofCache.delete(sessionSha256); return null; }
+        return hit.json;
+    }
+    function rememberProof(sessionSha256, proof) {
+        if (proofCache.size >= PROOF_CACHE_MAX && !proofCache.has(sessionSha256)) proofCache.delete(proofCache.keys().next().value);
+        proofCache.set(sessionSha256, { json: JSON.stringify(proof), at: performance.now() });
+    }
     const proofStore = Object.freeze({
         async createOriginalProof(sessionSha256, input) {
             return bounded(async signal => {
@@ -79,10 +96,14 @@ function createDashboardAuthorityStore({ proofContainer, epochContainer, instanc
         async readOriginalProof(sessionSha256) {
             return bounded(async signal => {
                 digest(sessionSha256);
-                const raw = await read(proofContainer.getBlockBlobClient(`dashboard-proofs/${sessionSha256}.json`), signal, true);
+                const kept = cachedProof(sessionSha256);
+                const raw = kept === null
+                    ? await read(proofContainer.getBlockBlobClient(`dashboard-proofs/${sessionSha256}.json`), signal, true)
+                    : JSON.parse(kept);
                 if (raw === MISSING) return null;
                 const proof = normaliseIssuanceProof(raw);
                 if (proof.sessionSha256 !== sessionSha256 || proof.instanceId !== instanceId) throw unavailable();
+                if (kept === null) rememberProof(sessionSha256, proof);
                 return proof;
             });
         }
