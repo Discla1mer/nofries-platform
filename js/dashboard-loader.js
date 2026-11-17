@@ -124,11 +124,33 @@
             else if (store.getItem(CYBER_READY_KEY) === bindingId) store.removeItem(CYBER_READY_KEY);
         } catch (_) { /* optional */ }
     }
+    // D-013: remembers which assessment Overview showed by default for one
+    // organisation, so the next visit can read it beside the assessment list
+    // instead of after it. A hint: the fresh list still decides what is shown.
+    const PICTURE_LATEST_KEY = 'nofries-dashboard-picture-latest';
+    const PICTURE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
+    function pictureLatestHint(bindingId) {
+        const store = lastOrganisationStore();
+        try {
+            if (!store || !UUID.test(bindingId || '')) return null;
+            const saved = String(store.getItem(PICTURE_LATEST_KEY) || '');
+            if (saved.slice(0, bindingId.length + 1) !== bindingId + ' ') return null;
+            const assessmentId = saved.slice(bindingId.length + 1);
+            return PICTURE_ID.test(assessmentId) ? assessmentId : null;
+        } catch (_) { return null; }
+    }
+    function savePictureLatestHint(bindingId, assessmentId) {
+        const store = lastOrganisationStore();
+        try {
+            if (store && UUID.test(bindingId || '') && PICTURE_ID.test(assessmentId || '')) store.setItem(PICTURE_LATEST_KEY, bindingId + ' ' + assessmentId);
+        } catch (_) { /* optional */ }
+    }
     function forgetLastOrganisation() {
         const store = lastOrganisationStore();
         try { if (store) store.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
         // A later sign-in may be a different person: drop the Cyber Security hint too.
         try { if (store) store.removeItem(CYBER_READY_KEY); } catch (_) { /* optional */ }
+        try { if (store) store.removeItem(PICTURE_LATEST_KEY); } catch (_) { /* optional */ }
     }
     if (hasDirectorySearch) {
         directorySearch.addEventListener('input', function () {
@@ -1509,9 +1531,13 @@
                 if (!current(cycle)) throw invalid();
                 return picture.mount(root, { metadata: value.metadata, client: client, organisationId: organisationId,
                     displayName: presentation.displayName,
-                    ...(pictureSelection ? { initialAssessmentId: pictureSelection } : {}),
+                    ...(pictureSelection ? { initialAssessmentId: pictureSelection }
+                        : pictureLatestHint(snapshot.selectedBindingId) ? { likelyAssessmentId: pictureLatestHint(snapshot.selectedBindingId) } : {}),
                     onSelection: function (assessmentId, source) {
-                        if (current(cycle) && source === 'user') pictureSelection = assessmentId;
+                        if (!current(cycle)) return;
+                        if (source === 'user') pictureSelection = assessmentId;
+                        // Only the default choice is remembered, never a manual one.
+                        else if (!pictureSelection) savePictureLatestHint(snapshot.selectedBindingId, assessmentId);
                     },
                     openCyber: presentation.openCyber,
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
