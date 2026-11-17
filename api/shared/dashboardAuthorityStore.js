@@ -108,15 +108,35 @@ function createDashboardAuthorityStore({ proofContainer, epochContainer, instanc
             });
         }
     });
+    // D-013 (owner decision, 17 Nov 2026): every request reads the restore
+    // marker nine times. A successfully read, valid marker is reused for up to
+    // two seconds, counted from when that read started, and callers arriving
+    // while a read younger than that is in flight share it. A disaster-restore
+    // fence can therefore take up to two seconds longer to bite. Failures and
+    // malformed markers are never kept.
+    const EPOCH_REUSE_MS = 2000;
+    let epochKept = null, epochPending = null;
+    function readEpochOnce() {
+        return bounded(async signal => {
+            const value = fields(copy(await read(epochContainer.getBlockBlobClient(`runtime-epochs/${instanceId}.json`), signal, false), LIMIT),
+                ['instanceId', 'restoreEpoch']);
+            uuid(value.instanceId); uuid(value.restoreEpoch);
+            if (value.instanceId !== instanceId) throw unavailable();
+            return freeze(value);
+        });
+    }
     return Object.freeze({ proofStore,
         async readExternalRuntimeEpoch() {
-            return bounded(async signal => {
-                const value = fields(copy(await read(epochContainer.getBlockBlobClient(`runtime-epochs/${instanceId}.json`), signal, false), LIMIT),
-                    ['instanceId', 'restoreEpoch']);
-                uuid(value.instanceId); uuid(value.restoreEpoch);
-                if (value.instanceId !== instanceId) throw unavailable();
-                return freeze(value);
-            });
+            const now = performance.now();
+            if (epochKept && now - epochKept.at < EPOCH_REUSE_MS) return epochKept.value;
+            if (epochPending && now - epochPending.at < EPOCH_REUSE_MS) return epochPending.work;
+            const entry = { at: now, work: null };
+            entry.work = readEpochOnce().then(value => {
+                if (!epochKept || epochKept.at < entry.at) epochKept = { value, at: entry.at };
+                return value;
+            }).finally(() => { if (epochPending === entry) epochPending = null; });
+            epochPending = entry;
+            return entry.work;
         }
     });
 }

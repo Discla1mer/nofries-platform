@@ -118,13 +118,49 @@ describe('original proof read cache', () => {
         expect(h.proofs.download).toHaveBeenCalledTimes(514);
     });
 });
-test('every epoch read observes external change and has no write capability', async () => {
-    const h = harness();
-    expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH });
-    h.epochs.records.set(`runtime-epochs/${INSTANCE}.json`, Buffer.from(JSON.stringify({ instanceId: INSTANCE, restoreEpoch: uid(3) })));
-    expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: uid(3) });
-    expect(h.epochs.download).toHaveBeenCalledTimes(2);
-    expect(h.epochs.upload).not.toHaveBeenCalled();
+describe('restore marker reuse (D-013)', () => {
+    afterEach(() => jest.useRealTimers());
+    const set = value => Buffer.from(JSON.stringify(value));
+    test('a read marker is reused for under two seconds, then external change is observed; no write capability', async () => {
+        jest.useFakeTimers();
+        const h = harness();
+        expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH });
+        h.epochs.records.set(`runtime-epochs/${INSTANCE}.json`, set({ instanceId: INSTANCE, restoreEpoch: uid(3) }));
+        jest.advanceTimersByTime(1999);
+        expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH });
+        expect(h.epochs.download).toHaveBeenCalledTimes(1);
+        jest.advanceTimersByTime(1);
+        expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: uid(3) });
+        expect(h.epochs.download).toHaveBeenCalledTimes(2);
+        expect(h.epochs.upload).not.toHaveBeenCalled();
+    });
+    test('callers arriving together share one read', async () => {
+        const h = harness();
+        const values = await Promise.all([h.readExternalRuntimeEpoch(), h.readExternalRuntimeEpoch(), h.readExternalRuntimeEpoch()]);
+        values.forEach(value => expect(value).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH }));
+        expect(h.epochs.download).toHaveBeenCalledTimes(1);
+    });
+    test('a failed or malformed read is never kept', async () => {
+        const h = harness();
+        h.epochs.download.mockRejectedValueOnce(new Error('private configuration detail'));
+        await expect(h.readExternalRuntimeEpoch()).rejects.toThrow('dashboard_authority_store_unavailable');
+        h.epochs.records.set(`runtime-epochs/${INSTANCE}.json`, set({ instanceId: INSTANCE, restoreEpoch: 'old' }));
+        await expect(h.readExternalRuntimeEpoch()).rejects.toThrow('dashboard_authority_store_unavailable');
+        h.epochs.records.set(`runtime-epochs/${INSTANCE}.json`, set({ instanceId: INSTANCE, restoreEpoch: EPOCH }));
+        expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH });
+        expect(h.epochs.download).toHaveBeenCalledTimes(3);
+    });
+    test('a missing marker after the reuse window is unavailable, and adapters do not share a kept marker', async () => {
+        jest.useFakeTimers();
+        const h = harness();
+        await h.readExternalRuntimeEpoch();
+        const second = createDashboardAuthorityStore({ proofContainer: h.proofs, epochContainer: h.epochs, instanceId: INSTANCE });
+        await second.readExternalRuntimeEpoch();
+        expect(h.epochs.download).toHaveBeenCalledTimes(2);
+        h.epochs.records.clear();
+        jest.advanceTimersByTime(2000);
+        await expect(h.readExternalRuntimeEpoch()).rejects.toThrow('dashboard_authority_store_unavailable');
+    });
 });
 test.each(['ContainerNotFound', 'ResourceNotFound', undefined])('404 %s is an unavailable store, not an absent proof', async code => {
     const h = harness();
