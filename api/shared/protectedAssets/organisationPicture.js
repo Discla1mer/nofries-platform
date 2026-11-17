@@ -165,6 +165,11 @@
         const initialAssessmentId = typeof options.initialAssessmentId === 'string' ? options.initialAssessmentId : null;
         let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null, allowance = null;
         let selected = initialAssessmentId || '', detail = null, loading = false, message = '', denied = false;
+        // D-013: the assessment a previous visit showed by default. Only a hint:
+        // it is read beside the first list and used only if that fresh list
+        // picks the same assessment. The server authorises the read as usual.
+        let likelyAssessmentId = !initialAssessmentId && typeof options.likelyAssessmentId === 'string' &&
+            /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(options.likelyAssessmentId) ? options.likelyAssessmentId : null;
         let loaded = false, retry = null, explanationController = null;
         let trend = null;
         let gapPlan = null;
@@ -961,6 +966,13 @@
             if (!live() || denied || loading) return;
             const savedFocus = captureFocus();
             abort(); const token = ++epoch; loading = true; message = ''; detail = null; retry = null; render();
+            let early = null;
+            if (!append && !selected && likelyAssessmentId) {
+                // One attempt per mount. Any failure is ignored here; the normal read then decides.
+                const likely = likelyAssessmentId, request = new AbortController(); likelyAssessmentId = null; requests.add(request);
+                early = { assessmentId: likely, response: Promise.resolve().then(() => client.read(likely, { signal: request.signal }))
+                    .then(value => value, () => null).finally(() => { requests.delete(request); }) };
+            }
             try {
                 const response = await call('list', { limit: 50, afterAssessmentId: append ? after : null }, token);
                 if (!response) return;
@@ -976,7 +988,7 @@
                 if (!selected) selected = preferredAssessmentId(rows);
             } catch (error) { if (live(token)) failure(error, () => load(append)); }
             finally { if (live(token)) { loading = false; render(); restoreFocus(savedFocus); } }
-            if (live(token) && !message && selected) await read(selected);
+            if (live(token) && !message && selected) await read(selected, undefined, early && early.assessmentId === selected ? early : null);
         }
         function newestRow(list) {
             return list.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId))[0] || null;
@@ -987,11 +999,15 @@
             const draft = newestRow(list.filter(row => row.status !== 'submitted'));
             return draft ? draft.assessmentId : '';
         }
-        async function read(assessmentId, source) {
+        async function read(assessmentId, source, early) {
             if (!live() || denied || !rows.some(row => row.assessmentId === assessmentId) && assessmentId !== initialAssessmentId && assessmentId !== selected) return;
-            abort(); const token = ++epoch; const savedFocus = captureFocus(); selected = assessmentId; detail = null; message = ''; retry = null; loading = true; render();
+            // An early read for this same assessment is still in flight: keep it. Anything else is cancelled.
+            if (early) clearExplanation(); else abort();
+            const token = ++epoch; const savedFocus = captureFocus(); selected = assessmentId; detail = null; message = ''; retry = null; loading = true; render();
             try {
-                const response = await call('read', assessmentId, token); if (!response) return;
+                const started = early ? await early.response : null;
+                if (!live(token)) return;
+                const response = started || await call('read', assessmentId, token); if (!response) return;
                 const value = response.assessment;
                 if (!value || value.assessmentId !== assessmentId || value.moduleId !== metadata.moduleId ||
                     !sameProfile(value.profileRef, metadata.profileRef)) throw new Error('picture_response_invalid');
