@@ -1298,6 +1298,50 @@ describe('internal dashboard loader protocol', () => {
         expect(h.requests.filter(item => item.url === '/api/dashboard/session')).toHaveLength(3);
     });
 
+    // During a release the hosting platform answers with its own HTML page (403 while the app is stopped).
+    const platformPage = { headers: { get: () => 'text/html' } };
+    test.each([403, 502, 503])('a platform HTML %s page while the app is being updated keeps trying and then opens', async status => {
+        const h = harness(); await flush();
+        await h.reply(0, status, null, platformPage);
+        for (let attempt = 1; attempt <= 12; attempt += 1) {
+            expect(h.status).toBe('loading');
+            expect(h.elements.dashboardHeading.textContent).toBe('No Fries is being updated');
+            expect(h.elements.dashboardMessage.textContent).toBe('This usually takes a couple of minutes. We\'ll keep trying…');
+            expect(h.elements.dashboardStatus.textContent).toBe('Your work is saved. You do not need to sign in again.');
+            expect(h.elements.dashboardSignIn.hidden).toBe(true);
+            jest.advanceTimersByTime(9999); await flush(); expect(h.requests).toHaveLength(attempt);
+            jest.advanceTimersByTime(1); await flush(); expect(h.requests).toHaveLength(attempt + 1);
+            if (attempt < 12) await h.reply(attempt, status, null, platformPage);
+        }
+        await h.open(state(), 'Back after the update', 12);
+        expect(h.status).toBe('ready');
+        expect(h.elements.dashboardApp.textContent).toContain('Back after the update');
+        expect(h.window.location.assign).not.toHaveBeenCalled();
+    });
+    test('a platform page that lasts longer than about three minutes ends in the temporary-problem state with Retry', async () => {
+        const h = harness(); await flush();
+        for (let attempt = 0; attempt < 18; attempt += 1) {
+            await h.reply(attempt, 403, null, platformPage);
+            expect(h.status).toBe('loading');
+            jest.advanceTimersByTime(10000); await flush();
+        }
+        expect(h.requests).toHaveLength(19);
+        await h.reply(18, 403, null, platformPage);
+        expect(h.status).toBe('unavailable'); expect(h.requests).toHaveLength(19);
+        expect(h.elements.dashboardSignIn.hidden).toBe(true);
+    });
+    test.each([
+        ['the app\'s own JSON 403', 403, { code: 'dashboard_access_denied' }, undefined, 'denied'],
+        ['an HTML page with status 200', 200, null, platformPage, 'unavailable'],
+        ['an HTML 401', 401, null, platformPage, 'unavailable'],
+        ['a redirected HTML 403', 403, null, { ...platformPage, redirected: true }, 'unavailable']
+    ])('%s is not treated as an update in progress', async (_name, status, body, extra, expected) => {
+        const h = harness(); await flush();
+        await h.reply(0, status, body, extra);
+        expect(h.status).toBe(expected); expect(h.requests).toHaveLength(1);
+        expect(h.elements.dashboardHeading.textContent).not.toBe('No Fries is being updated');
+    });
+
     test.each([
         { authenticated: false }, { purpose: 'customer_dashboard' }, { generation: 'A'.repeat(64) },
         { generation: null }, { selectedBindingId: 'not-a-uuid' }, { expiresAt: '2026-09-09T00:30:00Z' },
