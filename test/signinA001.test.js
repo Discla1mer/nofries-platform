@@ -114,6 +114,11 @@ describe('journey: opening failure is a sign-in error with a working retry', () 
             f.root.querySelector('button').click(); await flush();
             expect(f.client.load).toHaveBeenCalledTimes(2);
             expect(f.root.querySelector('h1').textContent).toBe('We could not open your account');
+            const restart = f.root.querySelectorAll('a').find(link => link.textContent === 'Sign in again');
+            expect(restart.href).toBe('/api/external-customer-auth/login');
+            expect(f.root.children.indexOf(restart)).toBeLessThan(f.root.children.indexOf(f.root.querySelector('button')));
+            expect(f.root.textContent).toContain('same email and password to reopen your existing setup');
+            expect(f.client.completeSetup).not.toHaveBeenCalled();
             expect(buttons(f)).toEqual(['Try again']); expect(f.root.querySelector('button').disabled).toBeFalsy();
         } finally { f.view.dispose(); }
     });
