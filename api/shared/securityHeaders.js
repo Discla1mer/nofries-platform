@@ -14,6 +14,20 @@ function apiSecurityHeaders(extraHeaders = {}) {
     return Object.assign({}, API_SECURITY_HEADERS, extraHeaders);
 }
 
+// The API middleware sets `Pragma: no-cache` on every response before the handler runs. Browsers treat
+// that header as "revalidate every time", even beside a long-lived Cache-Control, so content-versioned
+// assets were re-requested on every page view. A handler that returns an immutable Cache-Control and
+// no Pragma of its own has opted out: remove the default. Nothing else is touched.
+function clearDefaultPragmaForImmutable(res, headers) {
+    const names = Object.keys(headers || {});
+    const cacheControl = names.find((name) => name.toLowerCase() === 'cache-control');
+    if (!cacheControl || names.some((name) => name.toLowerCase() === 'pragma')) return false;
+    const directives = String(headers[cacheControl]).toLowerCase().split(',').map((item) => item.trim());
+    if (!directives.includes('immutable') || directives.includes('no-store') || directives.includes('no-cache')) return false;
+    res.removeHeader('Pragma');
+    return true;
+}
+
 function assertSameOriginForMutation(req, env = process.env) {
     const method = String(req && req.method || 'GET').toUpperCase();
     if (['GET', 'HEAD', 'OPTIONS'].includes(method)) {
@@ -98,6 +112,7 @@ function requestSecurityError(message) {
 }
 
 module.exports = {
+    clearDefaultPragmaForImmutable,
     API_SECURITY_HEADERS,
     apiSecurityHeaders,
     assertSameOriginForMutation
