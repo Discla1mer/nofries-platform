@@ -1,6 +1,6 @@
 'use strict';
 
-// Native checks of migration 0026 (#427), registered by the existing disposable
+// Native checks of migration 0026 (#427, part of #409), registered by the existing disposable
 // PostgreSQL suite. Each run creates and drops its own synthetic database and
 // restricted role; no application database is selected.
 const crypto = require('node:crypto');
@@ -65,11 +65,12 @@ test('the account wipe does not name the table before the migration can be appli
     let controlPool, ownerPool, runtimePool, databaseCreated = false, roleCreated = false;
     const capture = promise => promise.then(value => ({ value }), error => ({ error }));
     // Run statements as the runtime role inside one transaction bound to a tenant.
-    async function asTenant(tenantId, work) {
+    async function asTenant(tenantId, work, bound = {}) {
         const client = await runtimePool.connect();
         try {
             await client.query('BEGIN');
-            await client.query("SELECT set_config('nofries.tenant_id', $1, true)", [tenantId]);
+            await client.query("SELECT set_config('nofries.tenant_id', $1, true), set_config('nofries.organisation_id', $2, true), set_config('nofries.subject_key', $3, true)",
+                [tenantId, bound.organisation ?? ({ [tenantA]: orgA, [tenantB]: orgB })[tenantId] ?? '', bound.subject ?? SUBJECT]);
             const result = await capture(Promise.resolve().then(() => work(client)));
             await client.query(result.error ? 'ROLLBACK' : 'COMMIT');
             return result;
@@ -78,7 +79,7 @@ test('the account wipe does not name the table before the migration can be appli
     // `??` keeps an empty string an explicit (invalid) value instead of the default.
     const row = (tenantId, organisationId, overrides = {}) => [tenantId, organisationId, overrides.requestId ?? crypto.randomUUID(),
         overrides.subject ?? SUBJECT, overrides.topic ?? 'results', overrides.consent ?? 'contact-request-v1',
-        overrides.day ?? '2026-11-18', overrides.at ?? '2026-11-18T01:00:00.000Z'];
+        overrides.day ?? '2026-11-18', overrides.at ?? `${overrides.day ?? '2026-11-18'}T01:00:00.000Z`];
     const all = async () => (await ownerPool.query(
         'SELECT tenant_id, topic, requested_day::text AS day FROM nofries.dashboard_contact_requests ORDER BY tenant_id, topic, requested_day')).rows;
 
@@ -149,12 +150,29 @@ test('the account wipe does not name the table before the migration can be appli
     test('unknown topics, consent versions, subjects and organisations are refused', async () => {
         for (const overrides of [{ topic: 'everything' }, { topic: 'Results' }, { topic: '' }, { consent: 'contact-request-v0' },
             { consent: '' }, { subject: 'someone@example.test' }]) {
-            expect((await asTenant(tenantA, tx => tx.query(INSERT, row(tenantA, orgA, { ...overrides, day: '2026-12-01' })))).error)
-                .toMatchObject({ code: '23514' });
+            expect((await asTenant(tenantA, tx => tx.query(INSERT, row(tenantA, orgA, { ...overrides, day: '2026-12-01' })),
+                { subject: overrides.subject })).error).toMatchObject({ code: '23514' });
         }
-        // Tenant A cannot attach a request to an organisation it does not hold.
-        expect((await asTenant(tenantA, tx => tx.query(INSERT, row(tenantA, orgB, { day: '2026-12-02' })))).error)
+        // Tenant A cannot attach a request to an organisation it does not hold, even if it binds that id.
+        expect((await asTenant(tenantA, tx => tx.query(INSERT, row(tenantA, orgB, { day: '2026-12-02' })), { organisation: orgB })).error)
             .toMatchObject({ code: '23503' });
+    });
+
+    test('a row for another organisation or subject than the bound one is refused', async () => {
+        const other = '60000000-0000-4000-8000-000000000001:60000000-0000-4000-8000-000000000002';
+        // Bound to organisation A, a row naming a different organisation id is refused by policy.
+        expect((await asTenant(tenantA, tx => tx.query(INSERT, row(tenantA, orgB, { day: '2026-12-04' })))).error).toMatchObject({ code: '42501' });
+        // Bound to one subject, a row naming another subject is refused, and so is a row when no subject is bound.
+        expect((await asTenant(tenantA, tx => tx.query(INSERT, row(tenantA, orgA, { subject: other, day: '2026-12-04' })))).error).toMatchObject({ code: '42501' });
+        expect((await asTenant(tenantA, tx => tx.query(INSERT, row(tenantA, orgA, { day: '2026-12-04' })), { subject: '' })).error).toMatchObject({ code: '42501' });
+        expect((await asTenant(tenantA, tx => tx.query(INSERT, row(tenantA, orgA, { day: '2026-12-04' })), { organisation: '' })).error).toMatchObject({ code: '42501' });
+    });
+
+    test('the day must be the Pacific/Auckland date of the request time', async () => {
+        // 11:30 UTC on 4 December is 00:30 on 5 December in Auckland.
+        expect((await asTenant(tenantA, tx => tx.query(INSERT, row(tenantA, orgA, { topic: 'work_file_backup', day: '2026-12-04', at: '2026-12-04T11:30:00.000Z' })))).error)
+            .toMatchObject({ code: '23514', constraint: 'dashboard_contact_requests_day' });
+        expect((await asTenant(tenantA, tx => tx.query(INSERT, row(tenantA, orgA, { topic: 'work_file_backup', day: '2026-12-05', at: '2026-12-04T11:30:00.000Z' })))).error).toBeUndefined();
     });
 
     test('runtime cannot change or remove a request', async () => {

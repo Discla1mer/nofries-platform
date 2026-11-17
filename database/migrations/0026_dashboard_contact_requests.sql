@@ -14,9 +14,11 @@
 -- Bounds enforced here rather than by the caller:
 --   * topic and consent_version are closed lists;
 --   * request_id is the caller's operation id, so a retry is the same row;
---   * one request per organisation, topic and NZ calendar day.
+--   * one request per organisation, topic and NZ calendar day, and the day must
+--     be the Pacific/Auckland date of requested_at, so the caller cannot pick it.
 --
--- nofries_runtime may SELECT and INSERT rows of the transaction's tenant only.
+-- nofries_runtime may SELECT rows of the transaction's tenant, and INSERT only a
+-- row for the transaction's own tenant, organisation and sign-in subject.
 -- It has no UPDATE, DELETE or TRUNCATE. RLS is enabled and forced.
 -- nofries_account_wipe may SELECT and DELETE rows of the tenant being wiped,
 -- exactly as for the other tenant tables in 0025, so reset and delete remove
@@ -53,7 +55,8 @@ CREATE TABLE nofries.dashboard_contact_requests (
     CONSTRAINT dashboard_contact_requests_organisation_fk FOREIGN KEY (tenant_id, organisation_id)
         REFERENCES nofries.dashboard_organisations (tenant_id, organisation_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT dashboard_contact_requests_daily UNIQUE (tenant_id, organisation_id, topic, requested_day)
+    CONSTRAINT dashboard_contact_requests_daily UNIQUE (tenant_id, organisation_id, topic, requested_day),
+    CONSTRAINT dashboard_contact_requests_day CHECK (requested_day = (requested_at AT TIME ZONE 'Pacific/Auckland')::date)
 );
 
 ALTER TABLE nofries.dashboard_contact_requests ENABLE ROW LEVEL SECURITY;
@@ -64,6 +67,12 @@ CREATE POLICY dashboard_contact_requests_tenant_select ON nofries.dashboard_cont
 CREATE POLICY dashboard_contact_requests_tenant_insert ON nofries.dashboard_contact_requests
     FOR INSERT TO nofries_runtime
     WITH CHECK (tenant_id = NULLIF(current_setting('nofries.tenant_id', true), ''));
+-- Restrictive: the supplied ids are not trusted on their own. The row must be for
+-- the organisation and sign-in subject bound to this transaction, as in 0021.
+CREATE POLICY dashboard_contact_requests_runtime_insert ON nofries.dashboard_contact_requests
+    AS RESTRICTIVE FOR INSERT TO nofries_runtime
+    WITH CHECK (organisation_id = NULLIF(current_setting('nofries.organisation_id', true), '')
+        AND subject_key = NULLIF(current_setting('nofries.subject_key', true), ''));
 CREATE POLICY dashboard_contact_requests_account_wipe ON nofries.dashboard_contact_requests
     FOR ALL TO nofries_account_wipe
     USING (tenant_id::text = NULLIF(current_setting('nofries.wipe_tenant_id', true), ''))
