@@ -24,6 +24,30 @@
         }
     } catch (_) { /* storage blocked: no tag */ }
 
+    // Service named by a dashboard "Ask No Fries about this service" link.
+    // Only a known key is accepted and only its fixed label is returned, so
+    // nothing from the address bar is ever written into the form.
+    const SERVICE_TOPICS = {
+        fractional_advisory: 'Fractional CIO, CTO and CISO',
+        managed_endpoint: 'IRMM / RMM monitoring',
+        endpoint_security: 'MDR / endpoint security',
+        tier1_support: 'Tier 1 support',
+        managed_it_core: 'Managed IT',
+        work_file_backup: 'Work-file backup',
+        microsoft_365_admin: 'Microsoft 365 administration',
+        google_workspace_admin: 'Google Workspace administration',
+        supplier_coordination: 'Supplier coordination',
+        monthly_proof: 'Monthly service proof',
+        customer_onboarding: 'Customer onboarding',
+        ai_service_desk: 'AI-assisted service desk'
+    };
+    window.enquiryTopic = function () {
+        try {
+            const key = String(new URLSearchParams(window.location.search).get('service') || '');
+            return Object.prototype.hasOwnProperty.call(SERVICE_TOPICS, key) ? SERVICE_TOPICS[key] : '';
+        } catch (_) { return ''; }
+    };
+
     // Read configuration only. Never submit an enquiry or consume a quota permit.
     window.enquiryAvailability = async function () {
         const controller = new AbortController();

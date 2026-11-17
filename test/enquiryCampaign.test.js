@@ -62,3 +62,29 @@ test('the contact form clears the tag only after a confirmed send', () => {
     expect(cleared).toBeGreaterThan(confirmed);
     expect(contact.indexOf('form.reset();')).toBeLessThan(cleared);
 });
+
+// A dashboard service card links to the contact form as ?service=<key>.
+const registry = require('../api/shared/protectedAssets/dashboardRegistry');
+
+test('the service topic list matches the dashboard service registry', () => {
+    registry.services.forEach(service => {
+        expect(land('?service=' + service.key).window.enquiryTopic()).toBe(service.label);
+    });
+});
+
+test.each([
+    ['?service=not_a_service'],
+    ['?service=%3Cscript%3Ealert(1)%3C%2Fscript%3E'],
+    ['?service=__proto__'],
+    ['?service=constructor'],
+    ['']
+])('an unknown service key %s gives no topic', search => {
+    expect(land(search).window.enquiryTopic()).toBe('');
+});
+
+test('the contact form only prefills an empty message with the fixed service label', () => {
+    const contact = fs.readFileSync(path.join(__dirname, '../js/contact.js'), 'utf8');
+    expect(contact).toContain('window.enquiryTopic()');
+    expect(contact).toContain('!messageField.value');
+    expect(contact).not.toMatch(/location\.search|URLSearchParams/);
+});
