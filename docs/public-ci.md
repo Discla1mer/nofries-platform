@@ -37,7 +37,7 @@ dependency rather than widening the policy; an exception needs an explicit,
 bounded review and is not authority to deploy.
 
 One temporary High acceptance is coded in `scripts/check-dependency-audit.js`
-(`TEMPORARY_HIGH_ACCEPTANCE`, owner decision 18 Nov 2026): GHSA-fc5q-39xc-vjpf
+(`TEMPORARY_HIGH_ACCEPTANCE`): GHSA-fc5q-39xc-vjpf
 in picomatch, which has no fixed release and is installed only by the Jest
 test runner. It applies only on the two surfaces that include development packages
 (`root-all` and the release pre-flight's `root-optional`), only when that

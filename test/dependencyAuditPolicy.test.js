@@ -444,8 +444,8 @@ describe('build-lane dependency audit policy', () => {
 
 // These contract checks execute only the actual detector Bash and policy Node
 // entrypoint. Reports are synthetic; no npm, install, audit or network runs.
-// Owner decision (Joel, 18 Nov 2026): GHSA-fc5q-39xc-vjpf in picomatch has no fixed release and is
-// installed only by the Jest test runner. It is accepted until 2 Dec 2026 under exact conditions.
+// GHSA-fc5q-39xc-vjpf in picomatch has no fixed release and is installed only by the Jest test
+// runner. It is accepted until 2 Dec 2026 under exact conditions.
 describe('temporary acceptance of the picomatch advisory', () => {
     const DURING = new Date('2026-11-20T00:00:00Z');
     const URL = 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf';
@@ -472,7 +472,7 @@ describe('temporary acceptance of the picomatch advisory', () => {
     });
 
     test('accepts the dev-only picomatch copies and the test-runner packages that depend on them', () => {
-        const result = evaluate(normaliseAuditReport('root-all', report(), lockFixture()));
+        const result = evaluate(normaliseAuditReport('root-all', report(), lockFixture(), DURING));
         expect(result.blocked).toEqual([]);
         expect(result.accepted.map(item => [item.finding.package, item.exceptionId])).toEqual([
             ['jest-util', TEMPORARY_HIGH_ACCEPTANCE.id], ['picomatch', TEMPORARY_HIGH_ACCEPTANCE.id]]);
@@ -483,13 +483,23 @@ describe('temporary acceptance of the picomatch advisory', () => {
         ['at expiry', new Date('2026-12-02T00:00:00Z')],
         ['after expiry', new Date('2027-01-01T00:00:00Z')]
     ])('blocks %s', (_name, now) => {
-        expect(evaluate(normaliseAuditReport('root-all', report(), lockFixture()), now).blocked).toHaveLength(2);
+        expect(evaluate(normaliseAuditReport('root-all', report(), lockFixture(), DURING), now).blocked).toHaveLength(2);
+        // Outside the window the two-version picomatch copy set is refused outright again.
+        expect(() => normaliseAuditReport('root-all', report(), lockFixture(), now)).toThrow(/multiple installed versions/);
+    });
+
+    test('a second advisory on a dependant blocks that dependant and nothing hides it', () => {
+        const value = report();
+        value.vulnerabilities['jest-util'].via.push({ source: 3, url: 'https://github.com/advisories/GHSA-dddd-eeee-ffff', title: 'Other' });
+        const result = evaluate(normaliseAuditReport('root-all', value, lockFixture(), DURING));
+        expect(result.blocked.map(item => item.finding.package)).toEqual(['jest-util']);
+        expect(result.accepted.map(item => item.finding.package)).toEqual(['picomatch']);
     });
 
     test('also applies on the release pre-flight surface that includes development packages', () => {
-        const result = evaluate(normaliseAuditReport('root-optional', report(), lockFixture()));
+        const result = evaluate(normaliseAuditReport('root-optional', report(), lockFixture(), DURING));
         expect(result.blocked).toEqual([]); expect(result.accepted).toHaveLength(2);
-        expect(evaluate(normaliseAuditReport('root-optional', report(), lockFixture({ 'node_modules/picomatch': { dev: false } }))).blocked).toHaveLength(1);
+        expect(evaluate(normaliseAuditReport('root-optional', report(), lockFixture({ 'node_modules/picomatch': { dev: false } }), DURING)).blocked).toHaveLength(1);
     });
 
     test('blocks on any production surface', () => {
@@ -503,15 +513,15 @@ describe('temporary acceptance of the picomatch advisory', () => {
     });
 
     test('blocks when a copy is not dev-only', () => {
-        const picomatchShipped = evaluate(normaliseAuditReport('root-all', report(), lockFixture({ 'node_modules/picomatch': { dev: false } })));
+        const picomatchShipped = evaluate(normaliseAuditReport('root-all', report(), lockFixture({ 'node_modules/picomatch': { dev: false } }), DURING));
         expect(picomatchShipped.blocked.map(item => item.finding.package)).toEqual(['picomatch']);
-        const dependantShipped = evaluate(normaliseAuditReport('root-all', report(), lockFixture({ 'node_modules/jest-util': { dev: undefined } })));
+        const dependantShipped = evaluate(normaliseAuditReport('root-all', report(), lockFixture({ 'node_modules/jest-util': { dev: undefined } }), DURING));
         expect(dependantShipped.blocked.map(item => item.finding.package)).toEqual(['jest-util']);
     });
 
     test('blocks when another advisory is also behind the finding', () => {
         const other = { source: 2, url: 'https://github.com/advisories/GHSA-aaaa-bbbb-cccc', title: 'Other' };
-        expect(evaluate(normaliseAuditReport('root-all', report([other]), lockFixture())).blocked).toHaveLength(2);
+        expect(evaluate(normaliseAuditReport('root-all', report([other]), lockFixture(), DURING)).blocked).toHaveLength(2);
     });
 
     test('refuses a different picomatch version or an extra copy', () => {
@@ -527,7 +537,7 @@ describe('temporary acceptance of the picomatch advisory', () => {
 
     test('does not accept Critical, another package with multiple versions, or a hand-built finding', () => {
         const critical = report(); critical.vulnerabilities.picomatch.severity = 'critical'; critical.vulnerabilities['jest-util'].severity = 'critical';
-        expect(evaluate(normaliseAuditReport('root-all', critical, lockFixture())).blocked).toHaveLength(2);
+        expect(evaluate(normaliseAuditReport('root-all', critical, lockFixture(), DURING)).blocked).toHaveLength(2);
         const renamed = { auditReportVersion: 2, vulnerabilities: { globby: { ...report().vulnerabilities.picomatch } } };
         expect(() => normaliseAuditReport('root-all', renamed, lockFixture())).toThrow(/multiple installed versions/);
         expect(evaluate([finding({ severity: 'high', package: 'picomatch', advisoryIds: ['GHSA-FC5Q-39XC-VJPF'] })]).blocked).toHaveLength(1);

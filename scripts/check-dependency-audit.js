@@ -14,7 +14,7 @@ const BLOCKING_SEVERITIES = new Set(['high', 'critical']);
 // filtered here. The lock check below still fails closed if a vulnerable copy
 // returns, even when the advisory database does not report it.
 const MSAL_ADVISORY = 'GHSA-XCX6-JX8P-X3H5';
-// Temporary High acceptance (owner decision: Joel, 18 Nov 2026 NZ time).
+// Temporary High acceptance, in the same form as the retired MSAL one above.
 // GHSA-fc5q-39xc-vjpf is a slow-regex flaw in every published picomatch
 // (<= 4.0.7, no fixed release). Here picomatch is installed only by the Jest
 // test runner, so it never ships and never sees untrusted patterns. Until the
@@ -44,16 +44,21 @@ const findingLockFacts = new WeakMap();
 function temporaryHighAcceptanceApplies(finding, now = new Date()) {
     const rule = TEMPORARY_HIGH_ACCEPTANCE, facts = findingLockFacts.get(finding);
     if (!facts || finding.severity !== 'high' || !rule.surfaces.includes(finding.surface)) return false;
-    if (!(Date.parse(rule.acceptedAt) <= now.getTime() && now.getTime() < Date.parse(rule.expiresAt))) return false;
+    if (!temporaryHighAcceptanceActive(now)) return false;
     if (JSON.stringify(finding.advisoryIds) !== JSON.stringify([rule.advisoryId])) return false;
     if (!facts.devOnly) return false;
     if (finding.package !== rule.package) return true;
     return JSON.stringify(facts.copies) === JSON.stringify(Object.entries(rule.copies).sort(([a], [b]) => a.localeCompare(b)));
 }
 
-function isAcceptedPicomatchCopySet(surfaceId, packageName, nodePaths, packages) {
+function temporaryHighAcceptanceActive(now = new Date()) {
     const rule = TEMPORARY_HIGH_ACCEPTANCE;
-    return rule.surfaces.includes(surfaceId) && packageName === rule.package &&
+    return Date.parse(rule.acceptedAt) <= now.getTime() && now.getTime() < Date.parse(rule.expiresAt);
+}
+
+function isAcceptedPicomatchCopySet(surfaceId, packageName, nodePaths, packages, now) {
+    const rule = TEMPORARY_HIGH_ACCEPTANCE;
+    return temporaryHighAcceptanceActive(now) && rule.surfaces.includes(surfaceId) && packageName === rule.package &&
         JSON.stringify(nodePaths) === JSON.stringify(Object.keys(rule.copies).sort()) &&
         nodePaths.every((nodePath) => packages[nodePath].version === rule.copies[nodePath]);
 }
@@ -188,7 +193,7 @@ function collectAdvisoryIds(packageName, vulnerabilities, visited = new Set()) {
     return uniqueSorted(identities);
 }
 
-function normaliseAuditReport(surfaceId, report, lock) {
+function normaliseAuditReport(surfaceId, report, lock, now = new Date()) {
     if (!report || report.auditReportVersion !== 2 || report.error ||
         !report.vulnerabilities || typeof report.vulnerabilities !== 'object' ||
         Array.isArray(report.vulnerabilities)) {
@@ -214,7 +219,7 @@ function normaliseAuditReport(surfaceId, report, lock) {
             return String(version);
         }));
         // The one reviewed multi-version case is the exact picomatch copy set of the temporary acceptance.
-        if (versions.length !== 1 && !isAcceptedPicomatchCopySet(surfaceId, packageName, nodePaths, packages)) {
+        if (versions.length !== 1 && !isAcceptedPicomatchCopySet(surfaceId, packageName, nodePaths, packages, now)) {
             throw new Error(`${surfaceId}/${packageName}: multiple installed versions require separate review`);
         }
         const advisoryIds = collectAdvisoryIds(packageName, report.vulnerabilities);
