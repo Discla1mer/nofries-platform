@@ -577,6 +577,11 @@
                     ? 'This included service is not available yet. Contact No Fries if you need it.'
                     : 'Next step: verify the agreed assignment, coverage and any required provider connection before activation.'),
                     element('p', 'dashboard-muted', 'This is information only. No request, purchase, assignment or activation has been submitted.'));
+                // A plain link to the public contact form with this service named.
+                // Nothing is sent from the dashboard, and the form does not include assessment answers.
+                const ask = element('a', 'dashboard-button', 'Ask No Fries about this service');
+                ask.href = '/contact.html?service=' + encodeURIComponent(item.key);
+                detail.append(ask, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
                 const control = button(service.state === 'not_included' ? 'How to scope this service'
                     : service.state === 'disabled' ? 'About availability' : 'What is needed for setup', function () {
                     detail.hidden = !detail.hidden; control.setAttribute('aria-expanded', String(!detail.hidden));

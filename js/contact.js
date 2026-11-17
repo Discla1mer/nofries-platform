@@ -71,6 +71,14 @@
         return problems;
     }
 
+    // Arriving from a dashboard service card: start the message with that service.
+    // The visitor can edit or clear it, and nothing is sent until they send the form.
+    const topic = typeof window.enquiryTopic === 'function' ? window.enquiryTopic() : '';
+    const messageField = document.getElementById('contact-message');
+    if (topic && messageField && !messageField.value) {
+        messageField.value = 'I would like to talk about this service: ' + topic + '.\n\n';
+    }
+
     let available = false;
     let checking;
     let submitting = false;

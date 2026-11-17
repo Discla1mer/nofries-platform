@@ -279,6 +279,18 @@ test('service scope control opens information without a purchase/write channel',
     assert.equal(dom.root.querySelectorAll('form').length, 0);
 });
 
+test('each service card links to the contact form with only its own service key', () => {
+    const dom = mount(view(), { initialRoute: 'services' });
+    const links = Array.from(dom.root.querySelectorAll('a')).filter(item => item.textContent === 'Ask No Fries about this service');
+    assert.ok(links.length > 0);
+    const keys = registry.services.map(item => item.key);
+    links.forEach(link => {
+        const match = /^\/contact\.html\?service=([a-z0-9_]+)$/.exec(String(link.href));
+        assert.ok(match && keys.includes(match[1]));
+    });
+    assert.match(dom.root.textContent, /Nothing is sent until you send the form/);
+});
+
 test('disabled services explain policy availability rather than implying provider setup is sufficient', () => {
     const dom = mount(view({ service: 'managed_endpoint', enabled: { 'service:managed_endpoint': false } }), { initialRoute: 'services' });
     buttons(dom).find(item => item.textContent === 'About availability').click();
