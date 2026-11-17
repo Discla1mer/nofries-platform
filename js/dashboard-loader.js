@@ -127,6 +127,8 @@
     function forgetLastOrganisation() {
         const store = lastOrganisationStore();
         try { if (store) store.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
+        // A later sign-in may be a different person: drop the Cyber Security hint too.
+        try { if (store) store.removeItem(CYBER_READY_KEY); } catch (_) { /* optional */ }
     }
     if (hasDirectorySearch) {
         directorySearch.addEventListener('input', function () {

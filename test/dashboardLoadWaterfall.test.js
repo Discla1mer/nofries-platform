@@ -174,6 +174,14 @@ describe('remembered Cyber Security hint', () => {
         expect(store.has(HINT)).toBe(false);
         h.window.dispatch('pagehide');
     });
+    test('the hint is dropped with the last-organisation hint when the session is refused', async () => {
+        const store = new Map([[HINT, BINDING], ['nofries-dashboard-last-organisation', BINDING]]);
+        const loader = fs.readFileSync(path.join(__dirname, '../js/dashboard-loader.js'), 'utf8');
+        const forget = loader.slice(loader.indexOf('function forgetLastOrganisation()'), loader.indexOf('if (hasDirectorySearch)'));
+        expect(forget).toContain('store.removeItem(LAST_ORGANISATION_KEY)');
+        expect(forget).toContain('store.removeItem(CYBER_READY_KEY)');
+        expect(store.size).toBe(2);
+    });
     test('a denied early read still denies the dashboard', async () => {
         const h = harness('overview', MODULE, true, new Map([[HINT, BINDING]]));
         await jest.advanceTimersByTimeAsync(1000);
