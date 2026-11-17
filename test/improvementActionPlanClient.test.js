@@ -239,6 +239,9 @@ test('explicit generation sends the exact submitted revision and independent IDs
         payload: { assessmentId: selected.assessmentId, assessmentRevision: selected.revision, assessmentRevisionSha256: selected.revisionSha256 } }]);
     expect(h.request.mock.calls[2]).toEqual(['/api/dashboard/improvement/view?planId=' + planId]);
     expect(h.root.textContent).toContain('Improvement action plan'); expect(h.options.newId).not.toHaveBeenCalled();
+    // The person just created this plan, so the note confirms it instead of calling it existing.
+    expect(h.root.textContent).toContain('Your plan has been created and is shown below.');
+    expect(h.root.textContent).not.toContain('A plan already exists for this assessment');
 });
 
 test('a generate conflict opens the plan already saved for this revision instead of making another', async () => {
@@ -252,6 +255,8 @@ test('a generate conflict opens the plan already saved for this revision instead
     expect(h.request.mock.calls.filter(call => call[0].endsWith('/execute'))).toHaveLength(1);
     expect(h.request.mock.calls[2]).toEqual(['/api/dashboard/improvement/view?planId=' + planId]);
     expect(h.root.textContent).toContain('Improvement action plan');
+    expect(h.root.textContent).toContain('A plan already exists for this assessment, so it is shown below.');
+    expect(h.root.textContent).not.toContain('Your plan has been created');
 });
 
 test('uncertain writes retain their exact immutable command for explicit retry and hold shell leave', async () => {

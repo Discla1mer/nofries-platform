@@ -13,7 +13,7 @@ const CI_SOURCES = Object.freeze({
     'package.json': '753c0a934e818e5b7636c71b681a18f2c1427dd46b00df65e9c9aa6669a09a9d',
     'scripts/ci-journey-sequencer.js': '0cfe1e2f72d1694b604621b65d85ab7617032dcc985b8f13ce666f2c65f00306',
     'scripts/ci-journey-order.js': 'b09a4f16700a0ea6558b7208375e9d347f6f6a6e23b69922ce63491d7d8d9d81',
-    'scripts/check-dependency-audit.js': 'a9bbbe2c0396acf4d366cc018bdb35355db7a9b957e66ec98c7db2a0035183c8'
+    'scripts/check-dependency-audit.js': 'ec4dac81b82758da23b77054c2686ac4c88223fc193faf364a6673c355f2f2d4'
 });
 const CI_STEPS = Object.freeze({
     'unit (1/4)': Object.freeze(['Run npm ci --ignore-scripts --omit=optional --audit=false',
