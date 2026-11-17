@@ -236,7 +236,7 @@ If a control fails:
 5. Correct the source evidence or mapping, take a fresh snapshot and create a new activation request if the prior fingerprint was revoked.
 6. Resume service only with a recorded reason and customer authority reference.
 
-Approved/sealed Sales proposals and accepted lifecycle evidence are retention records. Customer deletion is blocked when that evidence exists. A draft Sales customer linked only to lifecycle scoping is unlinked before Sales deletion; failure to unlink leaves the Sales source untouched for a safe retry.
+Approved/sealed Sales proposals and accepted lifecycle evidence are retention records. Customer deletion is blocked when that evidence exists, unless a tenant administrator confirms deleting the approved or sealed proposals in the same request (`deleteApprovedProposals: true`, with the exact customer name and current revision). The `customer.deleted` audit entry then records how many were removed and that the administrator confirmed it. A draft Sales customer linked only to lifecycle scoping is unlinked before Sales deletion; failure to unlink leaves the Sales source untouched for a safe retry.
 
 ## Not yet production-complete
 
