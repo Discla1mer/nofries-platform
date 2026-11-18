@@ -32,7 +32,7 @@ module.exports = function registerContactRequestHttpPostgres({ ncscHttpSetup, ht
             const created = await ask(h, first); httpJson(created, 200);
             expect(created.body).toEqual({ schemaVersion: 1, status: 'requested' });
             const [row] = await stored(h);
-            expect(row).toMatchObject({ ...h.binding.scope, request_id: first.operationId, subject_key: subject(h.principal),
+            expect(row).toMatchObject({ tenant_id: h.binding.scope.tenantId, organisation_id: h.binding.scope.organisationId, request_id: first.operationId, subject_key: subject(h.principal),
                 topic: 'results', consent_version: 'contact-request-v1' });
             // The day is the Pacific/Auckland date of the stored time, never a caller value.
             expect(row.day).toBe(row.nz_day);
