@@ -7,7 +7,7 @@
 const { createTenantAggregate } = require('../api/shared/appLifecycle/tenantDomain');
 const store = require('../api/shared/assessmentLifecycle/postgresNcscAssessmentStore');
 const { normaliseNcscCommand, projectNcscSummary } = require('../api/shared/ncscAssessmentService');
-const { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, knownNcscQuestionOptions, ncscProfileV2Enabled,
+const { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, knownNcscQuestionOptions, maximumNcscResponses, ncscProfileV2Enabled,
     readableNcscProfileContext } = require('../api/shared/assessmentEngine/ncscProfileSet');
 
 const ACTOR = '10000000-0000-4000-8000-000000000000:10000000-0000-4000-8000-000000000001';
@@ -82,12 +82,29 @@ describe('assessment store by profile', () => {
             'ncsc_unavailable', 503);
         failure(() => store.makeVersion(intent('submit', 1, {}), 'submit-a', saved, aggregate, AT[2]), 'ncsc_unavailable', 503);
         failure(() => projectNcscSummary(saved), 'ncsc_unavailable', 503);
+        const create = intent('create', null, { scopePopulation: { description: 'Synthetic office systems.' } });
+        failure(() => store.makeVersion(create, 'create-a', null, aggregate, AT[0], NCSC_V2_CONTEXT), 'ncsc_unavailable', 503);
+        failure(() => store.makeVersion(create, 'create-a', null, aggregate, AT[0], null), 'ncsc_unavailable', 503);
+        failure(() => store.makeVersion(create, 'create-a', null, aggregate, AT[0], { profileRef: { ...NCSC_V2_CONTEXT.profileRef } }),
+            'ncsc_unavailable', 503);
     });
 
-    test('command checks accept the shape of either profile and nothing else', () => {
+    test('command checks accept only the accepted shape while the flag is off, and either shape while it is on', () => {
         const command = responses => normaliseNcscCommand({ assessmentId: 'synthetic-assessment', action: 'save',
             idempotencyKey: 'save-a', expectedRevision: 0, payload: { responses } });
-        expect(command([{ itemId: 'NF-NCSC-MCSS-MF-01-Q2', optionId: 'mfa_key', rationale: null }]).payload.responses).toHaveLength(1);
+        const v2Only = [{ itemId: 'NF-NCSC-MCSS-MF-01-Q2', optionId: 'mfa_key', rationale: null }];
+        const v2Answer = [{ itemId: 'NF-NCSC-MCSS-RM-01-Q1', optionId: 'partly', rationale: null }];
+        const fifteen = NCSC_V2_CONTEXT.questionIds.slice(0, 15).map(itemId => ({ itemId, optionId: null, rationale: null }));
+        delete process.env.NOFRIES_NCSC_PROFILE_V2;
+        [v2Only, v2Answer, fifteen].forEach(responses => failure(() => command(responses), 'ncsc_input_invalid', 400));
+        expect(command([{ itemId: 'NF-NCSC-MCSS-SC-01-Q1', optionId: 'partial', rationale: null }]).payload.responses).toHaveLength(1);
+        expect(knownNcscQuestionOptions('NF-NCSC-MCSS-RM-01-Q1').has('partly')).toBe(false);
+        expect(knownNcscQuestionOptions('NF-NCSC-CC-SU-01-Q1')).toBeNull();
+        expect(maximumNcscResponses()).toBe(14);
+
+        process.env.NOFRIES_NCSC_PROFILE_V2 = 'true';
+        expect(command(v2Only).payload.responses).toHaveLength(1);
+        expect(command(v2Answer).payload.responses).toHaveLength(1);
         expect(command([{ itemId: 'NF-NCSC-MCSS-SC-01-Q1', optionId: 'partial', rationale: null }]).payload.responses).toHaveLength(1);
         failure(() => command([{ itemId: 'NF-NCSC-MCSS-MF-01-Q2', optionId: 'yes', rationale: null }]), 'ncsc_input_invalid', 400);
         failure(() => command([{ itemId: 'NF-NCSC-MCSS-MF-01-Q9', optionId: 'yes', rationale: null }]), 'ncsc_input_invalid', 400);
@@ -97,5 +114,6 @@ describe('assessment store by profile', () => {
         expect(knownNcscQuestionOptions('NF-NCSC-MCSS-RM-01-Q1').has('partial')).toBe(true);
         expect(knownNcscQuestionOptions('NF-NCSC-MCSS-RM-01-Q1').has('partly')).toBe(true);
         expect(knownNcscQuestionOptions('unknown-question')).toBeNull();
+        expect(maximumNcscResponses()).toBe(16);
     });
 });

@@ -59,8 +59,9 @@ function makeVersion(intent, idempotencyKey, previous, tenantAggregate, at, crea
     if (previous && intent.expectedRevision !== previous.envelope.revision) fail('ncsc_revision_conflict', 409);
     if (previous && (previous.envelope.revision >= MAX_REVISION ||
         (action === 'save' && previous.envelope.revision >= MAX_SAVE_REVISION))) fail('ncsc_state_conflict', 409);
-    const profileContext = action === 'create' ? createContext
-        : readableNcscProfileContext(previous.envelope.state.profileRef);
+    // The same flag check applies whether the profile comes from the caller or from the stored version.
+    const profileContext = readableNcscProfileContext(action === 'create'
+        ? createContext && createContext.profileRef : previous.envelope.state.profileRef);
     if (!profileContext) fail();
     const { profile, profileRef, registry } = profileContext;
     let scopePopulation, rationales, evidence, risk, payload;

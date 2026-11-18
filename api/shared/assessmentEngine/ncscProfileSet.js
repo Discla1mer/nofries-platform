@@ -74,10 +74,13 @@ function readableNcscProfileContext(profileRef, env = process.env) {
     return found && (found === ACCEPTED_NCSC_CONTEXT || ncscProfileV2Enabled(env)) ? found : null;
 }
 
-/** A question from any profile this build knows, for shape checks before the stored profile is read. */
-function knownNcscQuestionOptions(itemId) {
+/** The answers a question may take in any profile that is switched on, for shape
+ * checks before the stored profile is read. While the v2 flag is off this is the
+ * accepted profile alone, so a request is refused exactly as before.
+ */
+function knownNcscQuestionOptions(itemId, env = process.env) {
     const optionById = new Map();
-    CONTEXTS.forEach(candidate => {
+    enabledContexts(env).forEach(candidate => {
         const question = candidate.profile.questions.find(item => item.id === itemId);
         if (question) question.responseOptionIds.forEach(optionId => optionById.set(optionId,
             candidate.profile.responseOptions.find(option => option.id === optionId)));
@@ -85,5 +88,20 @@ function knownNcscQuestionOptions(itemId) {
     return optionById.size ? optionById : null;
 }
 
-module.exports = { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, knownNcscQuestionOptions, ncscProfileContext,
+/** The most answers one save may carry across the profiles that are switched on. */
+function maximumNcscResponses(env = process.env) {
+    return Math.max(...enabledContexts(env).map(candidate => candidate.questionIds.length));
+}
+
+function enabledContexts(env) {
+    return ncscProfileV2Enabled(env) ? CONTEXTS : [ACCEPTED_NCSC_CONTEXT];
+}
+
+// An answer id shared by two profiles must mean the same thing for applicability in both.
+ACCEPTED_NCSC_CONTEXT.profile.responseOptions.forEach(option => {
+    const other = NCSC_V2_CONTEXT.profile.responseOptions.find(candidate => candidate.id === option.id);
+    if (other && other.applicable !== option.applicable) throw new Error('NCSC profiles disagree on a shared answer');
+});
+
+module.exports = { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, knownNcscQuestionOptions, maximumNcscResponses, ncscProfileContext,
     ncscProfileV2Enabled, readableNcscProfileContext };

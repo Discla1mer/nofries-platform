@@ -4,7 +4,7 @@ const { types } = require('node:util');
 const { requireTenantRequestContext } = require('./appLifecycle/tenantRequestContext');
 const { getAssessmentProgress } = require('./assessmentLifecycle/assessmentDomain');
 const { serialiseAssessmentEvaluation } = require('./assessmentEngine/assessmentEvaluator');
-const { NCSC_V2_CONTEXT, knownNcscQuestionOptions, readableNcscProfileContext } = require('./assessmentEngine/ncscProfileSet');
+const { knownNcscQuestionOptions, maximumNcscResponses, readableNcscProfileContext } = require('./assessmentEngine/ncscProfileSet');
 
 const MAX_INPUT_BYTES = 64 * 1024;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
@@ -128,7 +128,7 @@ function normaliseNcscCommand(input) {
         revision(row.expectedRevision);
         const source = record(row.payload, ['responses']);
         if (!Array.isArray(source.responses) || !source.responses.length ||
-            source.responses.length > NCSC_V2_CONTEXT.questionIds.length) fail();
+            source.responses.length > maximumNcscResponses()) fail();
         const responses = source.responses.map(value => {
             const answer = record(value, ['itemId', 'optionId', 'rationale']);
             const itemId = identifier(answer.itemId);
