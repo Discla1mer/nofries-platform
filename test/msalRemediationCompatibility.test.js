@@ -31,12 +31,9 @@ const rootConsumer = () => consumer('root', 'package.json',
 const consumers = [rootConsumer()];
 if (fullClosure) consumers.push(
     consumer('api', 'api/package.json', 'api/node_modules/@azure/msal-node', 'api/node_modules/@azure/identity'),
-    // promptfoo 0.125 resolves MSAL to the root copy; its Identity keeps its own.
+    // promptfoo 0.125 resolves both Identity and MSAL to the single root copies.
     consumer('promptfoo', 'node_modules/promptfoo/package.json',
-        'node_modules/@azure/msal-node', 'node_modules/promptfoo/node_modules/@azure/identity'),
-    consumer('promptfoo Identity', 'node_modules/promptfoo/node_modules/@azure/identity/package.json',
-        'node_modules/promptfoo/node_modules/@azure/identity/node_modules/@azure/msal-node',
-        'node_modules/promptfoo/node_modules/@azure/identity')
+        'node_modules/@azure/msal-node', 'node_modules/@azure/identity')
 );
 let escapes;
 beforeEach(() => { escapes = denyOutbound(); });
@@ -52,7 +49,7 @@ function tokenBody(nonce = 'trusted-nonce') {
 
 test.each(consumers)('%s confidential client discards hostile routing/cache metadata and preserves trusted PKCE/nonce/cache', async (_name, req) => {
     const msal = req('@azure/msal-node');
-    expect(req('@azure/msal-node/package.json').version).toBe('7.1.1');
+    expect(req('@azure/msal-node/package.json').version).toBe('7.2.2');
     const posts = [], gets = [];
     const app = new msal.ConfidentialClientApplication({ auth: { clientId: client,
         clientSecret: 'OFFLINE_SECRET', authority, knownAuthorities: ['login.microsoftonline.com'],
@@ -88,7 +85,11 @@ test.each(consumers)('%s confidential client discards hostile routing/cache meta
         .rejects.toMatchObject({ errorCode: 'unsupported_cca_instance_aware' });
 });
 
-const identityConsumers = consumers.filter(([name]) => name !== 'promptfoo Identity');
+// Identity tests run once per physical Identity install: promptfoo now shares the
+// root copy, and MSAL's managed-identity token cache is process-wide per install.
+const identityInstall = req => require('node:fs').realpathSync(req.resolve('@azure/identity/package.json'));
+const identityConsumers = consumers.filter(([, req], index) =>
+    consumers.findIndex(([, other]) => identityInstall(other) === identityInstall(req)) === index);
 test.each(identityConsumers)('%s actual Identity secret, assertion and default environment paths retain token/cache contracts', async (_name, req) => {
     const sdk = req('@azure/identity');
     const requests = [];
@@ -157,9 +158,9 @@ test('every governed locked MSAL copy is fixed; full-closure mode requires every
     for (const directory of ['.', 'api']) {
         const lock = JSON.parse(fs.readFileSync(path.resolve(directory, 'package-lock.json')));
         const nodes = Object.entries(lock.packages).filter(([node]) => node.endsWith('/@azure/msal-node'));
-        expect(nodes.length).toBe(directory === '.' ? 2 : 1);
+        expect(nodes.length).toBe(1);
         for (const [node, entry] of nodes) {
-            expect(entry.version).toBe('7.1.1');
+            expect(entry.version).toBe('7.2.2');
             if (fullClosure || (directory === '.' && node === 'node_modules/@azure/msal-node')) {
                 expect(JSON.parse(fs.readFileSync(path.resolve(directory, node, 'package.json'))).version).toBe(entry.version);
             }

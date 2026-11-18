@@ -24,7 +24,7 @@ const ROOT_MSAL_NODES = [
     'node_modules/promptfoo/node_modules/@azure/msal-node'
 ];
 
-// The remediated root closure: every MSAL copy is 7.1.1.
+// A synthetic remediated root closure: every MSAL copy is a fixed release.
 function remediatedLockFixture() {
     const packages = {
         'node_modules/@azure/identity': { version: '4.13.1' },
@@ -183,18 +183,21 @@ describe('build-lane dependency audit policy', () => {
         const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '../api/package-lock.json')));
         expect(() => validateManifestLock('api-runtime', manifest, lock)).not.toThrow();
         for (const overrides of [
-            { '@azure/msal-node': '7.1.1' },
-            { '@azure/identity': { '@azure/msal-node': '^7.1.1' } },
-            { '@azure/identity': { '@azure/msal-node': '7.1.2' } },
-            { '@azure/identity': '4.13.1' },
+            { '@azure/msal-node': '7.2.2' },
+            { '@azure/identity': { '@azure/msal-node': '^7.2.2' } },
+            { '@azure/identity': { '@azure/msal-node': '7.2.1' } },
+            { '@azure/identity': { '@azure/msal-node': '7.1.1' } },
+            { '@azure/identity': '4.14.1' },
             { ...manifest.overrides, other: '1.0.0' },
-            ['7.1.1'], [], null, '7.1.1', ''
+            ['7.2.2'], [], null, '7.2.2', ''
         ]) expect(() => validateManifestLock('api-runtime', { ...manifest, overrides }, lock))
             .toThrow(/explicitly audited/);
         for (const mutate of [
             value => { value.packages['node_modules/@azure/msal-node'].version = '7.0.1'; },
+            value => { value.packages['node_modules/@azure/msal-node'].version = '7.1.1'; },
             value => { value.packages['node_modules/@azure/identity'].version = '4.14.0'; },
-            value => { value.packages['node_modules/other/node_modules/@azure/msal-node'] = { version: '7.1.1' }; }
+            value => { value.packages['node_modules/@azure/identity'].version = '4.13.1'; },
+            value => { value.packages['node_modules/other/node_modules/@azure/msal-node'] = { version: '7.2.2' }; }
         ]) {
             const changed = structuredClone(lock); mutate(changed);
             expect(() => validateManifestLock('api-runtime', manifest, changed)).toThrow(/explicitly audited/);
@@ -212,9 +215,15 @@ describe('build-lane dependency audit policy', () => {
         identityAlias.packages['node_modules/hidden'] = { name: '@azure/msal-node', version: '7.0.1' };
         expect(() => validateManifestLock('api-runtime', manifest, identityAlias)).toThrow(/explicitly audited/);
         const changed = structuredClone(manifest);
-        changed.dependencies['@azure/msal-node'] = '^7.1.1';
+        changed.dependencies['@azure/msal-node'] = '^7.2.2';
         const drift = structuredClone(lock); drift.packages[''].dependencies = changed.dependencies;
         expect(() => validateManifestLock('api-runtime', changed, drift)).toThrow(/explicitly audited/);
+        // The previous direct pin no longer matches the reviewed Identity/MSAL pairing.
+        const previous = structuredClone(manifest);
+        previous.dependencies['@azure/msal-node'] = '7.1.1';
+        previous.overrides = { '@azure/identity': { '@azure/msal-node': '7.1.1' } };
+        const previousLock = structuredClone(lock); previousLock.packages[''].dependencies = previous.dependencies;
+        expect(() => validateManifestLock('api-runtime', previous, previousLock)).toThrow(/explicitly audited/);
         expect(() => validateManifestLock('other', manifest, lock)).toThrow(/explicitly audited/);
     });
 
@@ -353,18 +362,20 @@ describe('build-lane dependency audit policy', () => {
     });
 
     test('requires connector dependencies to be exact and covered by the root lock', () => {
-        const lock = { packages: { 'node_modules/@azure/identity': { version: '4.13.1' } } };
+        const lock = { packages: { 'node_modules/@azure/identity': { version: '4.14.1' } } };
         expect(() => validateConnectorClosure(lock, {
-            dependencies: { '@azure/identity': '4.13.1' }
+            dependencies: { '@azure/identity': '4.14.1' }
         })).not.toThrow();
         expect(() => validateConnectorClosure(lock, {
-            dependencies: { '@azure/identity': '^4.13.1' }
+            dependencies: { '@azure/identity': '^4.14.1' }
         })).toThrow(/exact version/);
+        for (const version of ['4.13.1', '4.14.0']) {
+            expect(() => validateConnectorClosure(lock, {
+                dependencies: { '@azure/identity': version }
+            })).toThrow(/not covered/);
+        }
         expect(() => validateConnectorClosure(lock, {
-            dependencies: { '@azure/identity': '4.14.0' }
-        })).toThrow(/not covered/);
-        expect(() => validateConnectorClosure(lock, {
-            dependencies: { '@azure/identity': '4.13.1' },
+            dependencies: { '@azure/identity': '4.14.1' },
             optionalDependencies: { unsafe: '1.0.0' }
         })).toThrow(/unsupported without its own audited lock closure/);
     });
