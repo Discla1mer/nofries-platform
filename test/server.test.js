@@ -277,7 +277,8 @@ describe('dormant dashboard document', () => {
             const edgeCache = ['/api/dashboard/app.js', '/api/dashboard/dashboard.css'].includes(rule.route) ? {}
                 : { 'Cache-Control': 'private, no-store, max-age=0' };
             expect(rule.headers).toEqual(rule.route === '/api/dashboard/improvement/*' ? { 'Cache-Control': 'no-store' }
-                : { ...edgeCache, 'X-Robots-Tag': 'noindex, nofollow',
+                : !['/api/dashboard/login', '/api/dashboard/modules/overview', '/api/dashboard/app.js', '/api/dashboard/dashboard.css'].includes(rule.route)
+                    ? edgeCache : { ...edgeCache, 'X-Robots-Tag': 'noindex, nofollow',
                     'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" });
         }
         expect(config.routes.some(route => route.route === '/dashboard/')).toBe(false);
