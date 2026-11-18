@@ -1,0 +1,68 @@
+
+> nofries@2.1.0 verify
+> npm run test:ci && npm run eval:prospect && npm run build && npm run check:syntax
+
+
+> nofries@2.1.0 test:ci
+> jest --runInBand
+
+Dashboard request failed: {"route":"logout","status":401,"code":"dashboard_authentication_required"}
+Dashboard request failed: {"route":"logout","status":401,"code":"dashboard_authentication_required"}
+Synthetic connector transport client: curl 8.14.1 (x86_64-pc-linux-gnu) libcurl/8.14.1 OpenSSL/3.5.7 zlib/1.3.1 brotli/1.1.0 zstd/1.5.7 libidn2/2.3.8 libpsl/0.21.2 libssh2/1.11.1 nghttp2/1.64.0 nghttp3/1.8.0 librtmp/2.3 OpenLDAP/2.6.10
+FAIL test/nodeForgePackage.test.js (5.437 s)
+  ● the committed package reproduces from its pinned baseline and exact patch without install scripts
+
+    Command failed: npm pack --ignore-scripts --json --pack-destination /tmp/nofries-forge-build-RDMc6O
+    npm error Log files were not written due to an error writing to the directory: /home/agent/.npm/_logs
+    npm error You can rerun the command with `--loglevel=verbose` to see the logs in your terminal
+
+      80 |     }
+      81 |     invariant(hash(fs.readFileSync(path.join(packageDirectory, 'lib/rsa.js'))) === provenance.patchedRsaSha256, 'patched RSA source mismatch');
+    > 82 |     const packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: packageDirectory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+         |                               ^
+      83 |     invariant(packed.length === 1 && packed[0].filename === provenance.artifact, 'unexpected package identity');
+      84 |     let artifact = fs.readFileSync(path.join(temporary, provenance.artifact));
+      85 |     const entries = readArchive(artifact);
+
+      at execFileSync (vendor/node-forge-rsa-validated/build-package.js:82:31)
+      at Object.build (test/nodeForgePackage.test.js:76:12)
+
+
+Summary of all failing tests
+FAIL test/nodeForgePackage.test.js (5.437 s)
+  ● the committed package reproduces from its pinned baseline and exact patch without install scripts
+
+    Command failed: npm pack --ignore-scripts --json --pack-destination /tmp/nofries-forge-build-RDMc6O
+    npm error Log files were not written due to an error writing to the directory: /home/agent/.npm/_logs
+    npm error You can rerun the command with `--loglevel=verbose` to see the logs in your terminal
+
+      80 |     }
+      81 |     invariant(hash(fs.readFileSync(path.join(packageDirectory, 'lib/rsa.js'))) === provenance.patchedRsaSha256, 'patched RSA source mismatch');
+    > 82 |     const packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: packageDirectory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+         |                               ^
+      83 |     invariant(packed.length === 1 && packed[0].filename === provenance.artifact, 'unexpected package identity');
+      84 |     let artifact = fs.readFileSync(path.join(temporary, provenance.artifact));
+      85 |     const entries = readArchive(artifact);
+
+      at execFileSync (vendor/node-forge-rsa-validated/build-package.js:82:31)
+      at Object.build (test/nodeForgePackage.test.js:76:12)
+
+
+Test Suites: 1 failed, 390 passed, 391 total
+Tests:       1 failed, 679 skipped, 12661 passed, 13341 total
+Snapshots:   0 total
+Time:        978.646 s
+Ran all test suites.
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

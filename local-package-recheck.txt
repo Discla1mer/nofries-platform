@@ -1,0 +1,14 @@
+
+> nofries@2.1.0 test
+> jest --runInBand test/nodeForgePackage.test.js
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        5.499 s, estimated 6 s
+Ran all test suites matching test/nodeForgePackage.test.js.
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

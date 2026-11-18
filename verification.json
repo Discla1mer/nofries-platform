@@ -1,0 +1,267 @@
+{
+  "pullRequest": "https://github.com/Discla1mer/nofries-platform/pull/451",
+  "draft": true,
+  "state": "open",
+  "merged": false,
+  "autoMerge": null,
+  "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+  "base": "3f72ac2c5bc1ebeab6e9716fc98aadc83d065725",
+  "changedFiles": [
+    "app/dashboard.css",
+    "scripts/tests/overview-mobile-browser.cjs"
+  ],
+  "targetedJest": {
+    "suites": 6,
+    "passed": 823
+  },
+  "mobileBrowser": {
+    "observations": 56,
+    "widths": [
+      375,
+      390
+    ],
+    "textPercent": [
+      100,
+      200
+    ],
+    "failures": 0
+  },
+  "checks": [
+    {
+      "name": "postgres",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134853504395"
+    },
+    {
+      "name": "application",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134851651089"
+    },
+    {
+      "name": "unit (2/4)",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134847051920"
+    },
+    {
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134847051721"
+    },
+    {
+      "name": "postgres-elapsed",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134847051717"
+    },
+    {
+      "name": "dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134847051658"
+    },
+    {
+      "name": "unit (3/4)",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134847051597"
+    },
+    {
+      "name": "unit (1/4)",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134847051569"
+    },
+    {
+      "name": "unit (4/4)",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134847051518"
+    },
+    {
+      "name": "postgres-native",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134847050990"
+    },
+    {
+      "name": "public-accessibility",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317333251/job/134846805586"
+    },
+    {
+      "name": "release-preflight",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332755/job/134846803329"
+    },
+    {
+      "name": "runtime-install",
+      "status": "completed",
+      "conclusion": "success",
+      "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
+      "url": "https://github.com/Discla1mer/nofries-platform/actions/runs/44317332695/job/134846803069"
+    }
+  ],
+  "localFullSuite": "12661 passed, 679 native cases skipped, one npm-pack cache-path failure. The affected nodeForgePackage suite passed 5/5 when rerun with npm_config_cache=/tmp/nofries-overview-npm-cache; eval:prospect 11/11, build and check:syntax then passed. Final-head application and native CI all pass.",
+  "baselineControls": "Existing workspace-menu history-dialog and overview-guidance missing-item timeouts reproduced on clean main; included logs.",
+  "images": [
+    {
+      "file": "after-375-actions.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/after-375-actions.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "75147c90d65872512094921bb7aeecbb48a0086d31aeacaf03a978b279e571f7",
+      "width": 319,
+      "height": 1283,
+      "bytes": 99331
+    },
+    {
+      "file": "after-375-full.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/after-375-full.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "761c302e9f43cbefb4689ece944ab430445c4f185f393534acc74e6fdbed7380",
+      "width": 375,
+      "height": 10081,
+      "bytes": 1290133
+    },
+    {
+      "file": "after-375-gaps.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/after-375-gaps.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "d4dc37dbd749e50976de5262e31830455e900f17b5be85f837622ac541c10866",
+      "width": 319,
+      "height": 1814,
+      "bytes": 149672
+    },
+    {
+      "file": "after-375-score.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/after-375-score.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "0ebbb833a09d6ff33cef217e8cd00f787df4e253a78f439f020b16099f3c086f",
+      "width": 319,
+      "height": 765,
+      "bytes": 62036
+    },
+    {
+      "file": "after-375-top.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/after-375-top.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "2c482f32b0687be900c836c9edb63c5b426bbece117a3c80917d77f9fea05b9f",
+      "width": 375,
+      "height": 844,
+      "bytes": 143040
+    },
+    {
+      "file": "after-390-full.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/after-390-full.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "8ffc03507799d25e531f54b52b76515d3dce2218712e3bded566216f4298fc1c",
+      "width": 390,
+      "height": 9801,
+      "bytes": 1283642
+    },
+    {
+      "file": "before-375-actions.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/before-375-actions.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "0ccc801bf23bf24cf2beaf57ceb5962f91dee06738cf43d311de58fe56b30ad9",
+      "width": 319,
+      "height": 1214,
+      "bytes": 98969
+    },
+    {
+      "file": "before-375-full.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/before-375-full.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "77adf7743b15fff651dbe43dce12d806d1c2f2722ced72fa7ebee3585f0e241d",
+      "width": 375,
+      "height": 9953,
+      "bytes": 1280886
+    },
+    {
+      "file": "before-375-gaps.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/before-375-gaps.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "2301ff2843b4a5911e047f9c14eabeeadbed0c47b7f27f390361cdf88c5502f4",
+      "width": 319,
+      "height": 1795,
+      "bytes": 149555
+    },
+    {
+      "file": "before-375-score.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/before-375-score.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "3aac12c3bc6dc254b6633c02fe8e13b9a1ba56c89d4fe2d01ad7b7271c1e19fb",
+      "width": 319,
+      "height": 765,
+      "bytes": 61943
+    },
+    {
+      "file": "before-375-top.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/before-375-top.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "6bf903a8137fae395d2c67bf4a0c47293d6f8c2201ac47871173ee5456c9a8ee",
+      "width": 375,
+      "height": 844,
+      "bytes": 145032
+    },
+    {
+      "file": "before-390-full.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/before-390-full.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "3c5efb6c70dca0f5886f4e49f1d897b538d5be201942475065f8f0c2ae268a79",
+      "width": 390,
+      "height": 9698,
+      "bytes": 1277944
+    },
+    {
+      "file": "rendered-0.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/before-375-top.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "6bf903a8137fae395d2c67bf4a0c47293d6f8c2201ac47871173ee5456c9a8ee",
+      "width": 375,
+      "height": 844,
+      "bytes": 145032
+    },
+    {
+      "file": "rendered-1.png",
+      "url": "https://raw.githubusercontent.com/Discla1mer/nofries-platform/828c96ea670938021cdec26beaeec324872f1f61/after-375-top.png",
+      "status": 200,
+      "type": "image/png",
+      "sha256": "2c482f32b0687be900c836c9edb63c5b426bbece117a3c80917d77f9fea05b9f",
+      "width": 375,
+      "height": 844,
+      "bytes": 143040
+    }
+  ],
+  "question": "https://github.com/Discla1mer/nofries-platform/pull/451#issuecomment-6980351742"
+}

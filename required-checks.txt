@@ -1,0 +1,3 @@
+application	pass	4s	https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134851651089	
+dependencies	pass	20s	https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134847051658	
+postgres	pass	3s	https://github.com/Discla1mer/nofries-platform/actions/runs/44317332764/job/134853504395	
