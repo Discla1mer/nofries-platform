@@ -87,7 +87,7 @@ async function run(browser, origin, name, viewport) {
     assert.equal(await page.getByRole('link', { name: 'Create your account' }).getAttribute('href'), '/login?intent=create');
     assert.equal(await page.locator('h1').innerText(), 'Overview');
     await main(page).getByText('28.6% in place', { exact: true }).first().waitFor();
-    assert.equal(await page.getByRole('link', { name: 'Get help closing these gaps' }).getAttribute('href'), '/contact.html');
+    assert.equal(await page.getByRole('link', { name: 'Fix these with No Fries' }).getAttribute('href'), '/contact.html?service=managed_security_90');
     assert.ok(await fits(page), name + ': no horizontal scroll');
     await checkPalette(page);
     await shot(page, name + '-1-overview.png', !touch);
