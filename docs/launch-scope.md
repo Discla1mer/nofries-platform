@@ -51,9 +51,26 @@ comments are post-launch (issue #11).
    `{ status: 'already_requested' }` and stores nothing; a retry of the same
    `operationId` gets the same answer that day. Only a stored request is
    audited, so replays add no rows. Customer sessions only; staff operator sessions are
-   refused. No email is sent yet and the dashboard has no button yet. Off
+   refused. The dashboard has no button yet. Off
    unless `NOFRIES_CONTACT_REQUESTS_ENABLED` is exactly `true`; off, the route
    is a 404.
+   **Staff email.** When a request stores a new row, and only then, one
+   plain-text email goes to the enquiry mailbox (`NOFRIES_ENQUIRY_TO`, default
+   `hello@nofries.nz`) after the transaction commits
+   (`api/shared/contactRequestEmail.js`). It gives the organisation display
+   name, the topic label and the NZ date, and points staff to the dashboard
+   admin; it has no assessment content, no customer email address and no free
+   text. It uses the enquiry delivery settings, needs
+   `NOFRIES_ENQUIRY_DELIVERY_VERIFIED=true`, and takes one attempt from the
+   shared enquiry email budget (`docs/enquiry-shared-rate-limit.md`); with the
+   budget spent or delivery unavailable it is skipped. A retry, a same-day
+   repeat or a failed send never changes the customer's answer; the outcome is
+   logged as a code only. Off unless `NOFRIES_CONTACT_REQUEST_EMAIL_ENABLED`
+   is exactly `true` (and the route is on).
+   **Retention.** Contact requests are kept for 24 months from `requested_at`,
+   then deleted. Account reset and delete remove them sooner. The automatic
+   24-month purge is not built yet: no database role can delete by age today
+   (#455).
 5. **Payment.** `server.js` answers every `/api/billing/*` request with
    `billing_disabled`. A customer cannot pay inside the app. Until this is
    built, a paid plan has to be approved by an operator and invoiced outside

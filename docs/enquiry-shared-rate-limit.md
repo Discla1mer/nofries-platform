@@ -13,6 +13,9 @@ work fails closed until capacity is released. Streams and deadline timers are
 cleaned up, while ambiguous stored permits are never refunded. Heavy contention fails closed after eight
 conflicts. An attacker can exhaust this global cap; the manual email fallback
 remains available. This cap bounds email attempts, not ingress/storage costs.
+Dashboard contact-request staff notifications (`NOFRIES_CONTACT_REQUEST_EMAIL_ENABLED`)
+reserve from the same budget and are skipped, not queued, when it is spent; the
+dashboard host therefore needs the same blob URL and identity access.
 
 State contains only version, service time and up to 20 expiry timestamps. There
 is no IP, name, email address, enquiry text or per-user key. No local fallback,

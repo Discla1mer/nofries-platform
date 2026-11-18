@@ -138,7 +138,7 @@ function createDashboardRuntimeHandlers(configuration) {
     const ledger = new AsyncLocalStorage(), requests = new WeakMap();
     const ambiguousErrors = new WeakSet(), ambiguousResponses = new WeakSet();
     let supplied, authOptions, options, clock, budget, browser, operator, runtime, logout, resources, ncscQuota = null, customerBrowser = null, customerSession = null, customerLogout = null, activationBinding = null;
-    let activationPort = null, adminSubjects = new Set(), customerIdentityProvider, improvementEnabled = false, contactRequestsEnabled = false;
+    let activationPort = null, adminSubjects = new Set(), customerIdentityProvider, improvementEnabled = false, contactRequestsEnabled = false, contactRequestEmail = null;
     let externalBrowser = null, externalSession = null, externalLogout = null, externalBinding = null, externalAuth = null;
 
     function hostClock() {
@@ -213,7 +213,7 @@ function createDashboardRuntimeHandlers(configuration) {
     }
     try {
         const configurationKeys = dataKeys(configuration);
-        fields(configuration, [...CONFIG, ...['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
+        fields(configuration, [...CONFIG, ...['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
         if (configurationKeys.includes('improvementEnabled')) {
             if (configuration.improvementEnabled !== true) throw unavailable();
             improvementEnabled = true;
@@ -221,6 +221,12 @@ function createDashboardRuntimeHandlers(configuration) {
         if (configurationKeys.includes('contactRequestsEnabled')) {
             if (configuration.contactRequestsEnabled !== true) throw unavailable();
             contactRequestsEnabled = true;
+        }
+        if (configurationKeys.includes('contactRequestEmail')) {
+            // Staff notification for a newly stored request; only with the route on.
+            if (!contactRequestsEnabled || typeof configuration.contactRequestEmail !== 'function' ||
+                isProxy(configuration.contactRequestEmail)) throw unavailable();
+            contactRequestEmail = configuration.contactRequestEmail;
         }
         if (configurationKeys.includes('ncsc')) {
             fields(configuration.ncsc, ['resolveSubmissionQuota']);
@@ -784,7 +790,7 @@ function createDashboardRuntimeHandlers(configuration) {
                     const denied = error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403;
                     throw new ContactRequestError(denied ? 'contact_request_access_denied' : 'contact_request_unavailable', denied ? 403 : 503);
                 }
-                return bound.contact.request(command);
+                return bound.contact.request(command, contactRequestEmail);
             }));
         }
         if (selected.improvementRoute !== null) {
