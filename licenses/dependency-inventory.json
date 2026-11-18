@@ -446,8 +446,8 @@
       "path": "node_modules/@azure/core-process",
       "version": "1.0.0",
       "license": "MIT",
-      "development": true,
-      "optional": true
+      "development": false,
+      "optional": false
     },
     {
       "lockfile": "package-lock.json",
@@ -492,7 +492,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@azure/identity",
-      "version": "4.13.1",
+      "version": "4.14.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -540,7 +540,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@azure/msal-node",
-      "version": "7.1.1",
+      "version": "7.2.2",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -548,7 +548,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@azure/msal-node/node_modules/@azure/msal-common",
-      "version": "16.14.3",
+      "version": "16.16.2",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -3956,7 +3956,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/bundle-name",
-      "version": "4.1.0",
+      "version": "4.1.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -4380,7 +4380,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/default-browser",
-      "version": "5.5.0",
+      "version": "5.5.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -5699,6 +5699,14 @@
     },
     {
       "lockfile": "package-lock.json",
+      "path": "node_modules/is-in-ssh",
+      "version": "1.0.0",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
       "path": "node_modules/is-inside-container",
       "version": "1.0.0",
       "license": "MIT",
@@ -6892,7 +6900,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/open",
-      "version": "10.2.0",
+      "version": "11.0.4",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -7387,6 +7395,14 @@
     },
     {
       "lockfile": "package-lock.json",
+      "path": "node_modules/powershell-utils",
+      "version": "0.2.1",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
       "path": "node_modules/pretty-format",
       "version": "30.5.1",
       "license": "MIT",
@@ -7416,30 +7432,6 @@
       "license": "MIT",
       "development": true,
       "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/@azure/identity",
-      "version": "4.13.3",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/@azure/identity/node_modules/@azure/msal-common",
-      "version": "16.14.3",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/@azure/identity/node_modules/@azure/msal-node",
-      "version": "7.1.1",
-      "license": "MIT",
-      "development": true,
-      "optional": true
     },
     {
       "lockfile": "package-lock.json",
@@ -9012,7 +9004,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/wsl-utils",
-      "version": "0.1.0",
+      "version": "1.0.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9171,6 +9163,14 @@
     },
     {
       "lockfile": "api/package-lock.json",
+      "path": "node_modules/@azure/core-process",
+      "version": "1.0.0",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "api/package-lock.json",
       "path": "node_modules/@azure/core-rest-pipeline",
       "version": "1.25.0",
       "license": "MIT",
@@ -9204,7 +9204,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/@azure/identity",
-      "version": "4.13.1",
+      "version": "4.14.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9252,7 +9252,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/@azure/msal-node",
-      "version": "7.1.1",
+      "version": "7.2.2",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9260,7 +9260,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/@azure/msal-node/node_modules/@azure/msal-common",
-      "version": "16.14.3",
+      "version": "16.16.2",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9324,7 +9324,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/bundle-name",
-      "version": "4.1.0",
+      "version": "4.1.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9340,7 +9340,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/default-browser",
-      "version": "5.5.0",
+      "version": "5.5.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9413,6 +9413,14 @@
       "lockfile": "api/package-lock.json",
       "path": "node_modules/is-docker",
       "version": "3.0.0",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "api/package-lock.json",
+      "path": "node_modules/is-in-ssh",
+      "version": "1.0.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9532,7 +9540,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/open",
-      "version": "10.2.0",
+      "version": "11.0.4",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -9643,6 +9651,14 @@
     },
     {
       "lockfile": "api/package-lock.json",
+      "path": "node_modules/powershell-utils",
+      "version": "0.2.1",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "api/package-lock.json",
       "path": "node_modules/run-applescript",
       "version": "7.1.0",
       "license": "MIT",
@@ -9660,7 +9676,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/semver",
-      "version": "7.8.5",
+      "version": "7.8.6",
       "license": "ISC",
       "development": false,
       "optional": false
@@ -9692,7 +9708,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/wsl-utils",
-      "version": "0.1.0",
+      "version": "1.0.1",
       "license": "MIT",
       "development": false,
       "optional": false
