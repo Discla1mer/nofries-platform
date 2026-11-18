@@ -301,6 +301,39 @@ test.each([undefined, '', 'false', 'TRUE', '1', ' true ', 'true'])('contact requ
     expect([response.status, response.body.code]).toEqual(enabled === 'true' ? [415, 'dashboard_unsupported_media_type'] : [404, 'dashboard_not_found']);
     expect(d.pool.connect).not.toHaveBeenCalled();
 });
+test.each([
+    ['true', undefined, false], ['true', 'TRUE', false], ['true', ' true ', false], ['true', '1', false],
+    ['true', 'true', true], [undefined, 'true', false], ['false', 'true', false]
+])('contact request email is wired only when the route (%p) and its own flag (%p) are exactly true', async (route, email, wired) => {
+    const d = dependencies(), env = environment();
+    if (route === undefined) delete env.NOFRIES_CONTACT_REQUESTS_ENABLED; else env.NOFRIES_CONTACT_REQUESTS_ENABLED = route;
+    if (email === undefined) delete env.NOFRIES_CONTACT_REQUEST_EMAIL_ENABLED; else env.NOFRIES_CONTACT_REQUEST_EMAIL_ENABLED = email;
+    const notify = jest.fn();
+    d.createContactRequestNotifier = jest.fn(() => notify);
+    const configuration = createProductionDashboardConfiguration(env, d);
+    if (wired) {
+        expect(configuration.contactRequestEmail).toBe(notify);
+        expect(d.createContactRequestNotifier).toHaveBeenCalledWith({ env });
+    } else {
+        expect(configuration).not.toHaveProperty('contactRequestEmail');
+        expect(d.createContactRequestNotifier).not.toHaveBeenCalled();
+    }
+    // The genuine host accepts the wiring; constructing it sends nothing.
+    expect(() => require('../server').createNoFriesApp({ dashboard: configuration })).not.toThrow();
+    expect(notify).not.toHaveBeenCalled();
+    expect(d.pool.connect).not.toHaveBeenCalled();
+});
+test('the host refuses a contact request notifier without the route, or one that is not a plain function', () => {
+    const d = dependencies();
+    const base = createProductionDashboardConfiguration(environment(), d);
+    expect(() => require('../server').createNoFriesApp({ dashboard: { ...base, contactRequestEmail: () => {} } }))
+        .toThrow('No Fries could not complete sign-in.');
+    const routed = createProductionDashboardConfiguration(environment({ NOFRIES_CONTACT_REQUESTS_ENABLED: 'true' }), d);
+    for (const value of ['send', null, new Proxy(() => {}, {})]) {
+        expect(() => require('../server').createNoFriesApp({ dashboard: { ...routed, contactRequestEmail: value } }))
+            .toThrow('No Fries could not complete sign-in.');
+    }
+});
 test.each(['TRUE', '1', true, ' true '])('invalid NCSC flag %p fails before provider construction', enabled => {
     const d = dependencies();
     expect(() => createProductionDashboardConfiguration(environment({ NOFRIES_DASHBOARD_NCSC_ENABLED: enabled }), d))
