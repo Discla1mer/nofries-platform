@@ -26,7 +26,7 @@ const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dash
     'dashboardSignIn', 'dashboardSignOut', 'dashboardChooser', 'dashboardChoices', 'dashboardMore', 'dashboardApp',
     'dashboardApplicationIntegrity', 'dashboardStyleIntegrity'];
 
-function harness(route, failure, warm = false, store = null, cyberState = 'ready', saved = null, plans = null) {
+function harness(route, failure, warm = false, store = null, cyberState = 'ready', saved = null, plans = null, combined = false) {
     const { document, window } = createDom(), started = Date.now(), trace = [], mounts = [];
     const elements = Object.fromEntries(ids.map(id => [id, document.createElement('div')]));
     document.body = document.createElement('body'); document.head = document.createElement('head');
@@ -57,6 +57,12 @@ function harness(route, failure, warm = false, store = null, cyberState = 'ready
         payloads[PLANS] = { schemaVersion: 1, plans: plans.index, nextAfterPlanId: null }; timing[PLANS] = 100;
         for (const [planId, list] of Object.entries(plans.lists)) { payloads[PLAN_LIST(planId)] = list; timing[PLAN_LIST(planId)] = 80; }
     }
+    if (combined) {
+        const url = '/api/dashboard/overview' + (plans ? '?actions=1' : '');
+        timing[url] = 100;
+        payloads[url] = { page: payloads[LIST], detail: saved ? payloads[READ] : null,
+            actions: plans ? { lists: Object.values(plans.lists), more: false } : null };
+    }
     function schedule(url, options, deliver) {
         const key = url.startsWith(LIST + '?') ? LIST : url;
         if (!Object.hasOwn(timing, key)) throw new Error('Unexpected request: ' + url);
@@ -66,8 +72,9 @@ function harness(route, failure, warm = false, store = null, cyberState = 'ready
     const fetch = (url, options) => new Promise(resolve => schedule(url, options, key => {
         const denied = failure === key && (key !== SESSION || trace.filter(row => row.url === SESSION).length === 2);
         const missing = key === READ && !saved || payloads[key] === null;
-        const value = denied ? { code: 'dashboard_access_denied' } : payloads[key];
-        resolve({ status: denied ? 403 : missing ? 404 : 200, ok: !denied && !missing, redirected: false, type: 'basic',
+        const unavailable = combined === 'unavailable' && key.startsWith('/api/dashboard/overview');
+        const value = unavailable ? { code: 'dashboard_unavailable' } : denied ? { code: 'dashboard_access_denied' } : payloads[key];
+        resolve({ status: unavailable ? 503 : denied ? 403 : missing ? 404 : 200, ok: !unavailable && !denied && !missing, redirected: false, type: 'basic',
             headers: { get: name => name.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null },
             json: async () => value, text: async () => JSON.stringify(value) });
     }));
@@ -229,6 +236,29 @@ describe('remembered Overview assessment hint', () => {
         expect(h.elements.dashboardApp.textContent).toContain('Source and calculation details');
         expect(store.get(HINT)).toBe(BINDING + ' assessment-latest');
         h.window.dispatch('pagehide');
+    });
+    test('repeat first paint uses eight requests with a saved assessment and one action plan', async () => {
+        const plans = { index: [{ planId: 'plan-a', planRevision: 1 }], lists: {
+            'plan-a': { scope: { planId: 'plan-a' }, planRevision: 1, asOf: NOW, actions: [] } } };
+        const store = new Map([[CYBER, BINDING], [HINT, BINDING + ' assessment-latest']]);
+        const h = harness('overview', null, true, store, 'ready', saved(), plans, true);
+        await jest.advanceTimersByTimeAsync(1500);
+        expect(h.elements.dashboardApp.textContent).toContain('Source and calculation details');
+        expect(h.trace.map(row => row.url)).toEqual([SESSION, DIRECTORY, BOOTSTRAP, MODULE, SCRIPT, STYLE, SESSION,
+            '/api/dashboard/overview?actions=1']);
+        h.window.dispatch('pagehide');
+    });
+    test('an unavailable combined read falls back and an access denial clears the view', async () => {
+        for (const denied of [false, true]) {
+            const url = '/api/dashboard/overview';
+            const h = harness('overview', denied ? url : null, true, new Map([[CYBER, BINDING]]),
+                'ready', saved(), null, denied || 'unavailable');
+            await jest.advanceTimersByTimeAsync(1500);
+            expect(h.trace.some(row => row.url === url)).toBe(true);
+            expect(h.trace.some(row => row.url === LIST)).toBe(!denied);
+            expect(h.elements.dashboardApp.textContent.includes('Source and calculation details')).toBe(!denied);
+            h.window.dispatch('pagehide');
+        }
     });
     test('a repeat visit reads the assessment beside the list and shows it one round trip earlier', async () => {
         const h = harness('overview', null, true, new Map([[CYBER, BINDING], [HINT, BINDING + ' assessment-latest']]), 'ready', saved());

@@ -502,7 +502,7 @@
         refresh.requests.forEach(function (cancel) { cancel(); });
         refresh.requests.clear();
     }
-    function request(cycle, path, body, generation, csrf, refresh) {
+    function request(cycle, path, body, generation, csrf, refresh, readBody) {
         if (!current(cycle) || refresh && !currentRefresh(cycle, refresh)) return Promise.reject(invalid());
         const abort = typeof AbortController === 'function' ? new AbortController() : null;
         return new Promise(function (resolve, reject) {
@@ -544,7 +544,7 @@
                     [403, 502, 503].includes(response.status)) { const error = invalid(); error.platform = true; throw error; }
                 if (!response || response.redirected || ['opaque', 'opaqueredirect'].includes(response.type) || !json) throw invalid();
                 let value;
-                try { value = await response.json(); } catch (_) { throw invalid(); }
+                try { value = readBody ? await readBody(response) : await response.json(); } catch (_) { throw invalid(); }
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
                 finish(resolve, { status: response.status, value: value });
             }).catch(function (error) { finish(reject, error); });
@@ -1566,6 +1566,22 @@
                 if (!current(cycle)) throw invalid();
                 return picture.mount(root, { metadata: value.metadata, client: client, organisationId: organisationId,
                     displayName: presentation.displayName,
+                    ...(!pictureSelection ? { readFirstPaint: async function () {
+                        if (!current(cycle) || cycle.authorityPending) throw invalid();
+                        const actions = typeof presentation.openImprovement === 'function' && cycle.improvement;
+                        const response = await request(cycle, '/api/dashboard/overview' + (actions ? '?actions=1' : ''),
+                            undefined, snapshot.generation, undefined, undefined, client.readOverviewBody);
+                        if (response.status === 401 || response.status === 403 && response.value?.code === 'dashboard_access_denied') {
+                            const error = invalid(); error.status = response.status; failure(cycle, error); throw error;
+                        }
+                        const result = requireSuccess(response);
+                        if (!current(cycle) || cycle.authorityPending || !fields(result, ['page', 'detail', 'actions'])) throw invalid();
+                        const checked = client.validateOverview(result.page, result.detail);
+                        if (actions && (!result.actions || !Array.isArray(result.actions.lists) ||
+                            result.actions.lists.length > ACTION_PLAN_LIMIT || picture.actionSummary(result.actions, value.metadata) === null)) throw invalid();
+                        informationRead(cycle);
+                        return { ...checked, actions: result.actions };
+                    } } : {}),
                     ...(pictureSelection ? { initialAssessmentId: pictureSelection }
                         : pictureLatestHint(snapshot.selectedBindingId) ? { likelyAssessmentId: pictureLatestHint(snapshot.selectedBindingId) } : {}),
                     onSelection: function (assessmentId, source) {

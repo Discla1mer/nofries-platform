@@ -13,7 +13,8 @@ const { createDashboardOperatorLogoutService } = require('./dashboardOperatorLog
 const { createPostgresDashboardRuntimeRepository } = require('./appLifecycle/postgresDashboardRuntimeRepository');
 const { createDashboardResourceRuntime } = require('./dashboardRuntime');
 const { EvidenceMetadataError, normaliseEvidenceMetadataSelector, createEvidenceMetadataService } = require('./evidenceMetadataService');
-const { createNcscAssessmentService } = require('./ncscAssessmentService');
+const { preferredAssessmentId } = require('./protectedAssets/organisationPicture');
+const { createNcscAssessmentService, NcscAssessmentError } = require('./ncscAssessmentService');
 const { createNcscAssessmentHandlers } = require('./ncscAssessmentHandlers');
 const { ImprovementPlanServiceError, normaliseImprovementCommand, normaliseImprovementSelector } = require('./improvementPlan/improvementPlanService');
 const { ImprovementActionListError } = require('./improvementPlan/improvementActionListProjection');
@@ -436,7 +437,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 ncscRoute = id + (parts.length === 2 ? '/' + parts[1] : '');
             }
         }
-        const methods = { session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], evidence: ['GET'] };
+        const methods = { ...(ncscQuota ? { overview: ['GET'] } : {}), session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], evidence: ['GET'] };
         if (!workQueue && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
             try { resource = hostResourceForRoute(route); } catch (_) { fail(404, 'dashboard_not_found'); }
         }
@@ -515,6 +516,8 @@ function createDashboardRuntimeHandlers(configuration) {
                     ncscQuery[key] = id;
                 }
             }
+        } else if (route === 'overview' && query !== null) {
+            if (!improvementEnabled || query !== 'actions=1') bad();
         } else if (route === 'evidence') {
             // One canonical encoded opaque identifier; no alternate keys, form
             // aliases or repeated decoding. It never becomes a path or log field.
@@ -542,7 +545,7 @@ function createDashboardRuntimeHandlers(configuration) {
         } else if (['app.js', 'dashboard.css'].includes(route) && query !== null) {
             if (!/^v=[A-Za-z0-9_-]{43}$/.test(query)) bad();
         } else if (query !== null) bad();
-        return freeze({ route, resource, assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
+        return freeze({ route, resource, overviewActions: route === 'overview' && query === 'actions=1', assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
     }
     async function readWire(original, entry, snapshot) {
         entry.phase = 'wire';
@@ -669,10 +672,46 @@ function createDashboardRuntimeHandlers(configuration) {
                 next: result.phase === 'prepared' ? 'customer_terms' : 'owner_finalisation' });
         }
         let expectedGeneration = null;
-        if (selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
+        if (selected.route === 'overview' || selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
             const generations = snapshot.headers['x-nofries-dashboard-generation'];
             try { if (generations.length !== 1) throw new Error(); expectedGeneration = digest(generations[0]); }
             catch (_) { fail(403, 'dashboard_access_denied'); }
+        }
+        if (selected.route === 'overview') {
+            // The binder memoizes by request identity. Give each subread its own
+            // request so it performs all three session captures, as a separate GET would.
+            const read = work => bounded(async () => {
+                const request = Object.freeze({ ...privateRequest });
+                try {
+                    const bound = await resources.forRequest(request, { expectedGeneration });
+                    return await work(bound, request);
+                } catch (error) {
+                    if (error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403 ||
+                        error instanceof NcscAssessmentError && error.code === 'ncsc_access_denied' && error.statusCode === 403) {
+                        fail(403, 'dashboard_access_denied');
+                    }
+                    throw error;
+                }
+            });
+            const assessment = (method, selector) => read((bound, request) =>
+                createNcscAssessmentService({ repository: bound.ncsc, requestContext: bound.requestContext })[method](request, selector));
+            const page = await assessment('list', { limit: 50, afterAssessmentId: null });
+            const assessmentId = preferredAssessmentId(page.assessments);
+            const detail = assessmentId ? await assessment('read', { assessmentId }) : null;
+            let actions = null;
+            if (selected.overviewActions) {
+                const index = await read(bound => bound.improvement.plans({ limit: 5, afterPlanId: null }));
+                if (index.plans.length > 5) throw unavailable();
+                const lists = [];
+                for (const plan of index.plans) {
+                    const list = await read(bound => bound.improvement.list({ planId: plan.planId,
+                        filters: { status: 'all', owner: 'all', overdueOnly: false } }));
+                    if (list.scope.planId !== plan.planId || list.planRevision !== plan.planRevision) throw unavailable();
+                    lists.push(list);
+                }
+                actions = { lists, more: index.nextAfterPlanId !== null };
+            }
+            return response(200, { page, detail, actions });
         }
         if (selected.workQueueSelector) {
             if (!isCustomer(privateRequest.headers.cookie)) fail(403, 'dashboard_access_denied');
