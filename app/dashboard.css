@@ -335,8 +335,10 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-navigation-actions button { white-space: normal; }
 .ncsc-actions, .ncsc-question-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }
 .ncsc-question-navigation { justify-content: space-between; }
-.ncsc-navigation-more { display: contents; }
-.ncsc-navigation-more-toggle { display: none; }
+/* Previous and Next stay in front. The jump buttons sit behind More at every width. */
+.ncsc-navigation-more { display: flex; flex-wrap: wrap; gap: .65rem; flex-basis: 100%; }
+.ncsc-navigation-more-toggle { display: inline-block; }
+.ncsc-navigation-more.ncsc-navigation-collapsed { display: none; }
 .ncsc-warning, .ncsc-errors, .ncsc-sealed { padding: 1.15rem; margin: 1rem 0; border: 1px solid #c29221; border-left: 4px solid var(--dashboard-yellow); border-radius: .7rem; background: #f2e4bc; }
 .ncsc-warning button { margin: .3rem .6rem .3rem 0; }
 .ncsc-errors { border-color: #a3352a; background: #f6ddd6; }

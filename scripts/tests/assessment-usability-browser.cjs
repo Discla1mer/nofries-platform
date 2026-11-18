@@ -30,8 +30,13 @@ async function openCyber(page) {
     await page.locator('.dashboard-module-link[data-module="cyber_security"]').filter({ visible: true }).click();
     await page.locator('.ncsc-assessment-list button').first().waitFor();
 }
-async function jump(page, index) {
+async function revealJumps(page) {
     const control = page.getByRole('button', { name: 'Next question still to confirm', exact: true });
+    if (!(await control.isVisible())) await page.getByRole('button', { name: 'More', exact: true }).click();
+    return control;
+}
+async function jump(page, index) {
+    const control = await revealJumps(page);
     await control.focus(); await page.keyboard.press('Enter');
     assert.equal(await page.locator('#ncsc-question-index').inputValue(), String(index));
     const legend = page.locator('.ncsc-question legend');
@@ -120,7 +125,7 @@ async function screenshot(page, name, selector = '.ncsc-questionnaire') {
             await page.getByRole('button', { name: 'Back to assessments', exact: true }).click();
             await page.getByRole('button', { name: 'Load more assessments', exact: true }).click();
             await rows.nth(2).locator('button').click();
-            assert.equal(await page.getByRole('button', { name: 'Next question still to confirm', exact: true }).isDisabled(), true);
+            assert.equal(await (await revealJumps(page)).isDisabled(), true);
             await layout(page);
             assert.deepEqual(await page.evaluate(() => window.violations), []);
             results.push({ width, savedReferences: true, keyboardDraftAndSubmittedNavigation: true,

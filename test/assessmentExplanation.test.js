@@ -51,7 +51,8 @@ describe('saved assessment explanation projection', () => {
         expect(source.assessment).toEqual(before);
         expect(content(result)).toContain('Risk priority is not calculated');
         expect(content(result)).toContain('The saved calculation has no trend');
-        expect(content(result)).toContain('this explanation verifies no evidence');
+        expect(content(result)).toContain('This assessment does not ask you to attach evidence, so there is no evidence score.');
+        expect(content(result)).not.toMatch(/substantiated evidence coverage|tested evidence coverage|0\.0% evidence/);
         expect(Object.isFrozen(result)).toBe(true); expect(Object.isFrozen(result.blocks[0].citations)).toBe(true);
     });
     test('citations name exact saved revision, result fields and accepted profile', () => {

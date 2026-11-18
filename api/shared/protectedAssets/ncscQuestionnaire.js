@@ -29,7 +29,7 @@
         partial: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
         no: 'None of this is in place yet, including when work is only planned.',
         unknown: 'You do not have enough information to confirm what is in place.',
-        not_applicable: 'You believe this does not apply to your scope. Explain why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'
+        not_applicable: 'You believe this does not apply to your scope. Explain why. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.'
     };
     // Display aids only. The accepted catalogue still owns each question and
     // answer meaning; these examples neither choose an answer nor prove it.
@@ -513,8 +513,8 @@
             section.addEventListener('toggle', function () { glossaryOpen = section.open; });
             section.append(node('summary', '', 'What these words mean'));
             const list = node('dl');
-            [['To check later', 'Answers marked Unknown, or marked not applicable, to confirm. They are still to confirm and do not count as in place. You can still submit with them.'],
-                ['Marked not applicable, to confirm', 'You answered Not applicable and explained why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'],
+            [['To check later', 'Answers marked Unknown, or Not applicable. They do not count as in place. You can still submit with Unknown and Not applicable answers.'],
+                ['Marked not applicable, to confirm', 'You answered Not applicable and explained why. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.'],
                 ['Saved and not saved yet', 'Saved answers are kept with this draft, so you can come back to them before you submit. Not saved yet means a change is only on this page so far.'],
                 ['Reported implementation range', 'After you submit, your result is shown as a range. It leads with the lower figure. The lower figure is what you reported as in place. The higher figure adds answers still to confirm. It is not a performance score.']
             ].forEach(function (entry) { list.append(node('dt', '', entry[0]), node('dd', '', entry[1])); });
@@ -600,14 +600,14 @@
                 const unsaved = !sealed && !equal(value, savedAnswer(question.id)) ? ' *' : '';
                 questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
             });
-            const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length, saving = savingNow();
-            // One progress line. What is saved and what is still only in this
-            // browser are stated together so the counts cannot disagree.
-            questionProgress.textContent = answered + ' of ' + questions.length + ' answered' + (missing ? ' · ' + missing + ' to go' : '') +
-                (unresolved ? ' · ' + unresolved + ' to check later (unknown, or marked not applicable, to confirm)' : '') +
-                (sealed ? ' · submitted' : !editable ? ' · saved' : saving ? ' · saving…' : dirty ? ' · ' + dirty + ' not saved yet' +
-                    (missingExplanation() ? ' (a not applicable answer needs an explanation)' : '') : ' · all saved') + '.';
-            if (navigationSummary) navigationSummary.textContent = 'Question ' + (activeQuestion + 1) + ' of ' + questions.length + ' · ' + missing + ' unanswered';
+            const dirty = sealed ? 0 : dirtyEntries().length, saving = savingNow();
+            // One progress line: how many questions have an answer, and whether
+            // that work is saved. "To go" repeats the same count. Unknown and
+            // Not applicable stay on each question and in What these words mean.
+            questionProgress.textContent = answered + ' of ' + questions.length + ' answered · ' +
+                (sealed ? 'submitted' : !editable ? 'saved' : saving ? 'saving…' : dirty ? dirty + ' not saved yet' +
+                    (missingExplanation() ? ' (a not applicable answer needs an explanation)' : '') : 'all saved') + '.';
+            if (navigationSummary) navigationSummary.textContent = 'Question ' + (activeQuestion + 1) + ' of ' + questions.length;
             if (nextUnanswered) nextUnanswered.disabled = unansweredIndex(activeQuestion) === -1;
             if (nextUnresolved) nextUnresolved.disabled = unresolvedIndex(activeQuestion) === -1;
         }
@@ -785,7 +785,7 @@
             const dirty = dirtyEntries().length;
             // Keep draft feedback beside Save so changing status text cannot move its pointer target.
             status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
-            status.textContent = statusText || (busy ? 'Saving your answers. ' + saved : loading ?
+            status.textContent = statusText || (busy ? ((pending && pending.command && pending.command.action === 'submit' ? 'Saving and submitting your answers. ' : 'Saving your answers. ') + saved) : loading ?
                 view === 'assessment' && !acknowledged ? 'Loading the selected assessment.' : 'Loading assessments.'
                 : savingNow() ? 'Saving…' : saved + (dirty ? 'Newer changes are not saved yet.' : ''));
             if (saveStatus && root.contains(saveStatus)) saveStatus.textContent = status.textContent;
@@ -843,6 +843,11 @@
         }
         // The page may be discarded after either event, so the request is
         // sent with keepalive and the same cookies and headers as any save.
+        // Moving to another question should not leave a finished answer waiting
+        // for the short pause. Automatic saving is unchanged when it is off.
+        function leaveQuestion() {
+            if (autosaveEnabled && dirtyEntries().length) autosave(true);
+        }
         function autosaveWhenHidden() { if (doc.visibilityState === 'hidden') autosave(true, true); }
         function autosaveOnPageHide() { autosave(true, true); }
         if (autosaveEnabled && typeof doc.addEventListener === 'function') doc.addEventListener('visibilitychange', autosaveWhenHidden);
@@ -1120,7 +1125,7 @@
             go.id = 'ncsc-question-go'; go.setAttribute('aria-label', 'Go to the selected question');
             const picker = node('div', 'ncsc-question-picker'); picker.append(index, go);
             content.append(indexLabel, picker);
-            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable ? ' Answers save automatically a moment after each change.' : ''));
+            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable ? ' Answers save automatically, including when you go to another question.' : ''));
             indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
@@ -1147,7 +1152,7 @@
                 controls.append(final);
             }
             content.append(controls);
-            content.append(node('p', 'dashboard-muted', 'Resolved means answered Yes, Partial or No; it does not mean implemented. To submit, answer every question and explain each not applicable answer. Unknown answers, and answers marked not applicable, to confirm, are allowed. A submitted baseline is read-only and is not a certification.'));
+            content.append(node('p', 'dashboard-muted', 'Answer every question to submit. Unknown is allowed. Explain each Not applicable answer. A submitted assessment is read-only and is not a certification.'));
         }
         // Counts and navigation from acknowledged answers only. Never evaluate a
         // draft, infer a risk ranking, or reuse another assessment's baseline.
@@ -1167,7 +1172,7 @@
             [
                 ['Reported gaps', ['no', 'partial'], 'Check what is missing and agree a next step with your team or IT provider.'],
                 ['Information to confirm', ['unknown'], 'Ask whoever looks after these systems what is in place.'],
-                ['Applicability to confirm', ['not_applicable'], 'These exclusions are not approved. Confirm whether each question applies to this scope.'],
+                ['Applicability to confirm', ['not_applicable'], 'These answers say the question does not apply. Check whether it really is outside this scope. They still count as not yet met.'],
                 ['Not answered in this save', [null], 'Answer these questions, or choose Unknown when you cannot confirm what is in place.']
             ].forEach(function (group) {
                 const matches = rows.filter(function (row) { return group[1].includes(row.value.optionId); });
@@ -1306,7 +1311,7 @@
                 }
             }
             if (count) {
-                section.append(node('p', '', 'Answers marked not applicable still count towards your result until they are approved. Approval is not available yet. If you can confirm what is in place for one of these questions, change its answer to Yes, Partial or No.'));
+                section.append(node('p', '', 'Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that. If you can say what is in place, change the answer to Yes, Partial or No.'));
                 const list = node('ul', 'ncsc-review-pending-list');
                 pendingRows.forEach(function (row) {
                     const change = button('Change question ' + (row.index + 1), function () { editFromReview(row.index); }, 'dashboard-text-button');
@@ -1384,11 +1389,11 @@
             // Describe only what is shown: a range has a lower and higher figure, a single figure does not.
             const rangeHelp = results.lowerCreditUnits === results.upperCreditUnits
                 ? 'This is what you reported as in place. Every answer is Yes, Partial or No, so there is one figure.'
-                : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.';
+                : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable. Those do not count as in place.';
             if (enoughAnswersToEstimate(results)) metric('Reported implementation', results.attainment, rangeHelp);
             // Results exist only for a submitted, read-only assessment, so do not ask the customer to confirm answers here.
             else metric('Reported implementation', 'Not enough answers to estimate yet', 'Only ' + results.completed + ' of ' + results.total +
-                ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + results.attainment + '. ' +
+                ' answers are Yes, Partial or No. Most answers are Unknown or Not applicable, so the range is too wide to be useful. Range so far: ' + results.attainment + '. ' +
                 (editable && !allowanceExhausted() ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp);
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             leadWithLowerBound(metrics.querySelector('.ncsc-result-metric'), '.ncsc-result-value', results);
@@ -1407,7 +1412,7 @@
             // results.unknown already includes answers marked not applicable, so state one total.
             panel.append(node('p', '', results.unknown ? 'Answers still to confirm: ' + results.unknown + ' (' + confirmBreakdown(results.unknown - results.pending, results.pending) + ').'
                 : 'Every answer is confirmed as Yes, Partial or No.'));
-            panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives answers still to confirm 0; the upper end gives them 1. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries calculation, not an NCSC score.'));
+            panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives answers still to confirm 0; the upper end gives them 1. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that. This is a No Fries calculation, not an NCSC score.'));
             panel.append(node('h3', '', 'Explore NCSC functions and assessment topics'));
             results.domains.forEach(function (domain) {
                 const detail = node('details', 'ncsc-result-domain'); detail.append(node('summary', '', domain.title + ' — ' + domain.attainment));
@@ -1552,7 +1557,7 @@
                 };
                 showNeeded();
                 const scopeHelp = writable && inputGuidance && inputGuidance.notApplicable ? inputGuidance.notApplicable + ' ' : '';
-                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'); help.id = 'ncsc-rationale-help-' + question.id;
+                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.'); help.id = 'ncsc-rationale-help-' + question.id;
                 rationale.addEventListener('input', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit()) return;
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });
@@ -1595,16 +1600,16 @@
             renderAssistance(question, writable);
             const nav = node('div', 'ncsc-question-navigation');
             const previous = button('Previous question', function () {
-                if (questionRegion.contains(previous) && activeQuestion > 0) { activeQuestion -= 1; renderAssessmentQuestion(); }
+                if (questionRegion.contains(previous) && activeQuestion > 0) { leaveQuestion(); activeQuestion -= 1; renderAssessmentQuestion(); }
             }); previous.disabled = activeQuestion === 0;
             const next = button('Next question', function () {
-                if (questionRegion.contains(next) && activeQuestion < questions.length - 1) { activeQuestion += 1; renderAssessmentQuestion(); }
+                if (questionRegion.contains(next) && activeQuestion < questions.length - 1) { leaveQuestion(); activeQuestion += 1; renderAssessmentQuestion(); }
             }); next.disabled = activeQuestion === questions.length - 1;
             navigationSummary = node('span', 'ncsc-navigation-summary');
             const navigationActions = node('div', 'ncsc-navigation-actions'); navigationActions.append(previous, next);
-            // On narrow screens the bar sticks to the bottom of the screen with
-            // Previous and Next; the two jump buttons sit behind More. Wider
-            // screens show all four and no More button. DOM order is the tab order.
+            // Previous and Next stay in front. The two jump buttons sit behind
+            // More at every width, so one Next is the obvious step. DOM order
+            // is the tab order. On a narrow screen the bar can stick to the bottom.
             const more = node('div', 'ncsc-navigation-more ncsc-navigation-collapsed'); more.id = 'ncsc-navigation-more';
             const moreToggle = button('More', function () {
                 const expanded = moreToggle.getAttribute('aria-expanded') !== 'true';
@@ -1618,14 +1623,14 @@
                 const jump = button('Next unanswered question', function () {
                     if (!questionRegion.contains(jump)) return;
                     const index = unansweredIndex(activeQuestion);
-                    if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
+                    if (index !== -1) { leaveQuestion(); activeQuestion = index; renderAssessmentQuestion(); }
                 }, 'dashboard-text-button');
                 nextUnanswered = jump; more.append(jump);
             }
             const unresolved = button('Next question still to confirm', function () {
                 if (!questionRegion.contains(unresolved)) return;
                 const index = unresolvedIndex(activeQuestion);
-                if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
+                if (index !== -1) { leaveQuestion(); activeQuestion = index; renderAssessmentQuestion(); }
             }, 'dashboard-text-button');
             nextUnresolved = unresolved; more.append(unresolved);
             nav.append(navigationSummary, navigationActions); questionRegion.append(nav); updateQuestionNavigation();
@@ -1648,7 +1653,6 @@
                 if (watcher) watcher.disconnect();
                 if (win && typeof win.removeEventListener === 'function') win.removeEventListener('resize', fitNavigation);
             };
-            questionRegion.append(node('p', 'dashboard-muted', 'Still to confirm means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
             applyInlineErrors();
             restoreFocus(questionRegion, focused, fieldset.querySelector('legend'));
         }
@@ -2009,20 +2013,37 @@
             } finally { if (live(expected)) { loading = false; refreshing = false; } }
         }
         function renderPending() {
+            const submitting = !!(pending && pending.command && pending.command.action === 'submit');
             const panel = node('section', 'ncsc-warning');
-            panel.append(node('h3', '', busy ? 'Saving your answers' : 'We could not confirm the save'), node('p', '', busy ? 'Please wait and do not submit again. Your answers stay on this page until the save finishes.' : 'Your answers are still on this page. Use the retry button below; do not start again.'));
+            panel.append(node('h3', '', busy
+                ? (submitting ? 'Saving and submitting your answers' : 'Saving your answers')
+                : (submitting ? 'We could not confirm the submission' : 'We could not confirm the save')));
+            panel.append(node('p', '', busy
+                ? (submitting
+                    ? 'We are saving and submitting your answers. Please wait on this page and do not submit again.'
+                    : 'Please wait and do not submit again. Your answers stay on this page until the save finishes.')
+                : 'Your answers are still on this page. Use the retry button below; do not start again.'));
             if (!busy) panel.append(button('Try the save again', function () { if (pending && !busy) perform(pending.command, pending.captures, true); }));
             content.append(panel);
         }
         function renderConflict() {
-            const panel = node('section', 'ncsc-warning'); panel.append(node('h3', '', 'These answers were changed somewhere else'), node('p', '', 'Someone saved newer answers to this assessment, in another tab or on another device, after you opened it. Your unsaved answers are still here.'), node('p', '', 'Keep my answers puts your answers on top of the newer saved ones so you can review and save them. Use saved answers drops your unsaved changes.'));
-            renderConflictDifferences(panel);
-            panel.append(button('Reload current saved answers', async function () { const expected = epoch; await refreshCurrent(true, expected); if (live(expected)) render(); }));
-            if (acknowledged.status !== 'submitted') {
-                const keep = button('Keep my answers', function () { if (!currentChecked) return; conflict = false; statusText = 'Your answers are kept on top of the newer saved ones. Review them, then save.'; render(); });
-                keep.disabled = !currentChecked; panel.append(keep);
+            const panel = node('section', 'ncsc-warning');
+            panel.append(node('h3', '', 'These answers were changed in another tab or by someone else'),
+                node('p', '', 'Newer answers were saved after you opened this assessment. Your unsaved answers are still on this page.'));
+            // Until the newest saved answers have loaded, the only safe step is
+            // to reload them. After that, two choices: keep this page or use the saved answers.
+            if (!currentChecked) {
+                panel.append(node('p', '', 'Reload the saved answers before you choose. Nothing is overwritten until you do.'));
+                panel.append(button('Reload current saved answers', async function () { const expected = epoch; await refreshCurrent(true, expected); if (live(expected)) render(); }));
+            } else {
+                if (acknowledged.status !== 'submitted') {
+                    panel.append(node('p', '', 'Keep my answers leaves yours in place so you can check them and save. Use saved answers drops the answers on this page.'));
+                    renderConflictDifferences(panel);
+                    panel.append(button('Keep my answers', function () { conflict = false; statusText = 'Your answers are kept on top of the newer saved ones. Review them, then save.'; render(); }));
+                }
+                panel.append(button('Use saved answers', function () { resetDrafts(); conflict = false; errors = []; statusText = 'Showing saved answers.'; render(); }, 'dashboard-text-button'));
             }
-            panel.append(button('Use saved answers', function () { resetDrafts(); conflict = !currentChecked; errors = []; statusText = 'Showing saved answers.'; render(); }, 'dashboard-text-button')); content.append(panel);
+            content.append(panel);
         }
         // Once the newest saved answers are loaded, name each question where this
         // page's answer differs from them, with both answers.

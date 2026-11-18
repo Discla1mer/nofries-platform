@@ -67,9 +67,8 @@
                     saved(prefix + 'attainment.lowerCreditUnits'), saved(prefix + 'attainment.upperCreditUnits'),
                     saved(prefix + 'attainment.denominatorWeight'), saved(prefix + 'countsCompletion.unknown'),
                     saved(prefix + 'countsCompletion.claimedNotApplicableAtoms')]);
-                block('Answers confirmed and supporting evidence', result.completed + ' of ' + result.total + ' answers are confirmed (' + result.completion +
-                    '). Resolved means Yes, Partial or No; it does not mean implemented. Saved substantiated evidence coverage: ' + result.substantiated +
-                    '. Saved tested evidence coverage: ' + result.tested + '. Answers alone do not demonstrate effectiveness; this explanation verifies no evidence.',
+                block('Answers confirmed', result.completed + ' of ' + result.total + ' answers are confirmed (' + result.completion +
+                    '). That means Yes, Partial or No. It does not mean the control is in place. This assessment does not ask you to attach evidence, so there is no evidence score.',
                 [saved(prefix + 'countsCompletion.completionNumerator'), saved(prefix + 'countsCompletion.completionDenominator'),
                     saved(prefix + 'countsCompletion.completionDisplay'), saved(prefix + 'evidence.substantiatedCoverage.display'),
                     saved(prefix + 'evidence.testedCoverage.display'), catalogue('responseOptions')]);
