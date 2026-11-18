@@ -253,7 +253,7 @@ describe('dormant dashboard document', () => {
         const methods = {
             login: ['GET'], 'ncsc/assessments': ['GET', 'POST'], 'ncsc/assessments/*': ['GET', 'POST'],
             'improvement/*': ['GET', 'POST'],
-            session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'],
+            session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], 'contact-requests': ['POST'],
             bootstrap: ['GET'], 'app.js': ['GET'], 'dashboard.css': ['GET'],
             'modules/overview': ['GET'], 'modules/ai_governance': ['GET'], 'modules/cyber_security': ['GET'],
             'modules/it_optimisation': ['GET'], 'modules/improvement_plan': ['GET'], 'modules/evidence': ['GET'],
@@ -276,6 +276,9 @@ describe('dormant dashboard document', () => {
             // Content-versioned assets take Cache-Control from App Service (immutable only on an exact hash match).
             const edgeCache = ['/api/dashboard/app.js', '/api/dashboard/dashboard.css'].includes(rule.route) ? {}
                 : { 'Cache-Control': 'private, no-store, max-age=0' };
+            // The 20 KB edge config has no room for this rule's headers; the app sends the
+            // same private no-store, CSP and robots headers on every response (contactRequestHttp.test.js).
+            if (rule.route === '/api/dashboard/contact-requests') { expect(rule.headers).toBeUndefined(); continue; }
             expect(rule.headers).toEqual(rule.route === '/api/dashboard/improvement/*' ? { 'Cache-Control': 'no-store' }
                 : !['/api/dashboard/login', '/api/dashboard/modules/overview', '/api/dashboard/app.js', '/api/dashboard/dashboard.css'].includes(rule.route)
                     ? edgeCache : { ...edgeCache, 'X-Robots-Tag': 'noindex, nofollow',

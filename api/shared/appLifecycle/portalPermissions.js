@@ -24,16 +24,19 @@ const PERMISSIONS = freeze({
     'report.draft': ['board_reports'],
     'report.approve': ['board_reports'],
     'services.read': ['services'],
+    // Ask No Fries to contact the organisation (#409). Normal roles only.
+    'contact.request': ['overview'],
     'membership.manage': ['overview'],
     'advisor.manage': ['overview']
 });
-const VIEWER = ['overview.read', 'services.read', 'report.read_issued'];
+const VIEWER = ['overview.read', 'services.read', 'report.read_issued', 'contact.request'];
 const EDITOR = [...VIEWER, 'assessment.read', 'assessment.write', 'improvement.read',
     'improvement.write', 'decision.read', 'decision.write', 'evidence.read',
     'evidence.link', 'report.read_draft', 'report.draft'];
 const ROLE_PERMISSIONS = freeze({ admin: Object.keys(PERMISSIONS), editor: EDITOR,
     viewer: VIEWER, fractional_advisor: [] });
-const ADVISOR_PERMISSIONS = Object.freeze([...EDITOR, 'evidence.review']);
+// An advisor acts for the organisation's work, not as it: no contact requests.
+const ADVISOR_PERMISSIONS = Object.freeze([...EDITOR.filter(permission => permission !== 'contact.request'), 'evidence.review']);
 const SUBJECT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 class PortalPermissionError extends Error {

@@ -627,6 +627,15 @@
       }
     },
     {
+      "route": "/api/dashboard/contact-requests",
+      "methods": [
+        "POST"
+      ],
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
       "route": "/api/dashboard/selection",
       "methods": [
         "POST"
