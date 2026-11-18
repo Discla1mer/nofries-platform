@@ -760,7 +760,7 @@
         }
         function summaryHandoff() {
             const win = doc.defaultView, handoff = node('details', 'picture-summary');
-            handoff.append(node('summary', '', 'Copy or print this summary'));
+            handoff.append(node('summary', '', 'Copy or print a summary'));
             const label = node('label', '', 'Copy this summary into an email or document');
             const input = node('textarea', 'ncsc-textarea'); input.id = id + '-summary'; label.htmlFor = input.id;
             input.readOnly = true; input.rows = 8; input.value = questionnaire.providerSummary(detail, metadata).text;
@@ -769,6 +769,15 @@
             const status = node('p', 'dashboard-muted'); status.setAttribute('role', 'status');
             const copyButton = button('Copy summary', () => questionnaire.copySummary(win, input, status));
             copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
+            // #441: the same answers, written for a board or insurer.
+            if (typeof questionnaire.boardSummary === 'function') {
+                const boardLabel = node('label', '', 'Summary for your board or insurer');
+                const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
+                board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, metadata).text;
+                const boardPrinted = node('pre', 'picture-summary-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
+                const boardCopy = button('Copy board summary', () => questionnaire.copySummary(win, board, status));
+                boardCopy.classList.add('dashboard-button-secondary'); handoff.append(boardLabel, board, boardPrinted, boardCopy);
+            }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());
                 printButton.classList.add('dashboard-button-secondary'); handoff.append(printButton);
