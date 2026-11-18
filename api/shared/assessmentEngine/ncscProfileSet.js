@@ -63,4 +63,45 @@ function ncscProfileContext(profileRef) {
     return CONTEXTS.find(candidate => REF_FIELDS.every(field => values[field] === candidate.profileRef[field])) || null;
 }
 
-module.exports = { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, ncscProfileContext };
+/** Off unless the environment says exactly `true`. While off, only the accepted profile can be read or written. */
+function ncscProfileV2Enabled(env = process.env) {
+    return Boolean(env) && env.NOFRIES_NCSC_PROFILE_V2 === 'true';
+}
+
+/** Like ncscProfileContext, but the v2 profile resolves only while its flag is on. */
+function readableNcscProfileContext(profileRef, env = process.env) {
+    const found = ncscProfileContext(profileRef);
+    return found && (found === ACCEPTED_NCSC_CONTEXT || ncscProfileV2Enabled(env)) ? found : null;
+}
+
+/** The answers a question may take in any profile that is switched on, for shape
+ * checks before the stored profile is read. While the v2 flag is off this is the
+ * accepted profile alone, so a request is refused exactly as before.
+ */
+function knownNcscQuestionOptions(itemId, env = process.env) {
+    const optionById = new Map();
+    enabledContexts(env).forEach(candidate => {
+        const question = candidate.profile.questions.find(item => item.id === itemId);
+        if (question) question.responseOptionIds.forEach(optionId => optionById.set(optionId,
+            candidate.profile.responseOptions.find(option => option.id === optionId)));
+    });
+    return optionById.size ? optionById : null;
+}
+
+/** The most answers one save may carry across the profiles that are switched on. */
+function maximumNcscResponses(env = process.env) {
+    return Math.max(...enabledContexts(env).map(candidate => candidate.questionIds.length));
+}
+
+function enabledContexts(env) {
+    return ncscProfileV2Enabled(env) ? CONTEXTS : [ACCEPTED_NCSC_CONTEXT];
+}
+
+// An answer id shared by two profiles must mean the same thing for applicability in both.
+ACCEPTED_NCSC_CONTEXT.profile.responseOptions.forEach(option => {
+    const other = NCSC_V2_CONTEXT.profile.responseOptions.find(candidate => candidate.id === option.id);
+    if (other && other.applicable !== option.applicable) throw new Error('NCSC profiles disagree on a shared answer');
+});
+
+module.exports = { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, knownNcscQuestionOptions, maximumNcscResponses, ncscProfileContext,
+    ncscProfileV2Enabled, readableNcscProfileContext };

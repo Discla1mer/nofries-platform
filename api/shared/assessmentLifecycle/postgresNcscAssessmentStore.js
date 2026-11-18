@@ -3,8 +3,9 @@
 // Private fixed storage mechanics. Only the DATA facade holds the transaction
 // and performs current authorization; no request can choose SQL or a callback.
 const { createAssessment, applyAssessmentCommand } = require('./assessmentDomain');
-const { MODULE_ID, ACCEPTED_PROFILE_REF } = require('../assessmentEngine/ncscAssessmentEvaluator');
-const { acceptedRegistry, acceptedProfile, hashNcscRecord, validateNcscSupportingRecords,
+const { MODULE_ID } = require('../assessmentEngine/ncscAssessmentEvaluator');
+const { ACCEPTED_NCSC_CONTEXT, readableNcscProfileContext } = require('../assessmentEngine/ncscProfileSet');
+const { hashNcscRecord, validateNcscSupportingRecords,
     buildNcscSubmission, assertNcscCandidateSize, NcscCandidateSizeError } = require('./ncscAssessmentSubmission');
 const { NcscAssessmentError, normaliseNcscCommand, projectNcscDetail, projectNcscSummary } = require('../ncscAssessmentService');
 
@@ -49,24 +50,31 @@ function stableIntent(context, input) {
         expectedRevision: command.expectedRevision, payload: command.payload });
 }
 
-function makeVersion(intent, idempotencyKey, previous, tenantAggregate, at) {
+// A new assessment uses `createContext`; every later version uses the profile
+// its first version stored. Nothing moves an assessment between profiles.
+function makeVersion(intent, idempotencyKey, previous, tenantAggregate, at, createContext = ACCEPTED_NCSC_CONTEXT) {
     instant(at);
     const scope = scopeOf(intent), action = intent.action;
     if (action === 'create' ? previous !== null : previous === null) fail('ncsc_state_conflict', 409);
     if (previous && intent.expectedRevision !== previous.envelope.revision) fail('ncsc_revision_conflict', 409);
     if (previous && (previous.envelope.revision >= MAX_REVISION ||
         (action === 'save' && previous.envelope.revision >= MAX_SAVE_REVISION))) fail('ncsc_state_conflict', 409);
+    // The same flag check applies whether the profile comes from the caller or from the stored version.
+    const profileContext = readableNcscProfileContext(action === 'create'
+        ? createContext && createContext.profileRef : previous.envelope.state.profileRef);
+    if (!profileContext) fail();
+    const { profile, profileRef, registry } = profileContext;
     let scopePopulation, rationales, evidence, risk, payload;
     if (action === 'create') {
         scopePopulation = record('scope', { schemaVersion: 1, ...scope, recordedRevision: 0,
             actorSubjectKey: intent.actorSubjectKey, recordedAt: at, body: intent.payload.scopePopulation });
         rationales = [];
-        const common = { schemaVersion: 1, ...scope, recordedRevision: 0, profileRef: ACCEPTED_PROFILE_REF,
+        const common = { schemaVersion: 1, ...scope, recordedRevision: 0, profileRef,
             scopePopulationSha256: scopePopulation.sha256, recordedAt: at };
-        const ids = acceptedProfile.questions.map(item => item.id).sort();
+        const ids = profile.questions.map(item => item.id).sort();
         evidence = record('evidence', { ...common, entries: ids.map(itemId => ({ itemId, evidenceState: 'not_provided' })) });
         risk = record('risk', { ...common, entries: ids.map(itemId => ({ itemId, statedImpact: 'unspecified', priorityOverlay: 'none' })) });
-        payload = { moduleId: MODULE_ID, profileRef: ACCEPTED_PROFILE_REF, scopePopulationSha256: scopePopulation.sha256 };
+        payload = { moduleId: MODULE_ID, profileRef, scopePopulationSha256: scopePopulation.sha256 };
     } else {
         ({ scopePopulation, rationales, evidence, risk } = previous.envelope);
         rationales = [...rationales];
@@ -74,6 +82,10 @@ function makeVersion(intent, idempotencyKey, previous, tenantAggregate, at) {
         if (action === 'save') {
             const retained = new Map(rationales.map(row => [row.itemId, row]));
             const responses = intent.payload.responses.map(response => {
+                const question = profile.questions.find(item => item.id === response.itemId);
+                if (!question || (response.optionId !== null && !question.responseOptionIds.includes(response.optionId))) {
+                    fail('ncsc_input_invalid', 400);
+                }
                 let rationale = null;
                 if (response.rationale !== null) {
                     rationale = record('rationale', { schemaVersion: 1, ...scope,
@@ -91,8 +103,8 @@ function makeVersion(intent, idempotencyKey, previous, tenantAggregate, at) {
     const command = { ...scope, action, payload, expectedRevision: intent.expectedRevision,
         actorSubjectKey: intent.actorSubjectKey, now: at, idempotencyKey };
     let state;
-    try { state = action === 'create' ? createAssessment(tenantAggregate, command, acceptedRegistry)
-        : applyAssessmentCommand(previous.envelope.state, tenantAggregate, command, acceptedRegistry); }
+    try { state = action === 'create' ? createAssessment(tenantAggregate, command, registry)
+        : applyAssessmentCommand(previous.envelope.state, tenantAggregate, command, registry); }
     catch (error) {
         if (error.code === 'assessment_revision_conflict') fail('ncsc_revision_conflict', 409);
         fail('ncsc_state_conflict', 409);
@@ -157,6 +169,8 @@ async function readReceipt(tx, scope, key) {
 // ceiling bounds total work without evicting or silently truncating history.
 function validateTransition(previous, current, aggregate) {
     const state = current.envelope.state;
+    const profileContext = readableNcscProfileContext(state.profileRef);
+    if (!profileContext) fail();
     let action, payload;
     if (!previous) {
         action = 'create';
@@ -179,7 +193,7 @@ function validateTransition(previous, current, aggregate) {
             // Removing an already absent answer is a valid nonempty save. When
             // all answers exist, every valid patch leaves a current stamp.
             if (!responses.length) {
-                const absent = acceptedProfile.questions.find(row => !after.has(row.id));
+                const absent = profileContext.profile.questions.find(row => !after.has(row.id));
                 if (!absent) fail();
                 responses.push({ itemId: absent.id, optionId: null, rationale: null });
             }
@@ -189,7 +203,7 @@ function validateTransition(previous, current, aggregate) {
     const intent = { ...scopeOf(current.envelope), actorSubjectKey: state.updatedBy,
         action, expectedRevision: previous?.envelope.revision ?? null, payload };
     let reconstructed;
-    try { reconstructed = makeVersion(intent, 'lineage-validation', previous, aggregate, state.updatedAt); }
+    try { reconstructed = makeVersion(intent, 'lineage-validation', previous, aggregate, state.updatedAt, profileContext); }
     catch { fail(); }
     if (!same(reconstructed.envelope, current.envelope) || reconstructed.revisionSha256 !== current.revisionSha256) fail();
 }
@@ -311,7 +325,8 @@ function validateReceipt(row, intent, key, history, aggregate) {
     const predecessor = intent.action === 'create' ? null : history.get(intent.expectedRevision);
     if (intent.action !== 'create' && !predecessor) fail();
     let reconstructed;
-    try { reconstructed = makeVersion(intent, key, predecessor, aggregate, receipt.executionAt); } catch { fail(); }
+    try { reconstructed = makeVersion(intent, key, predecessor, aggregate, receipt.executionAt,
+        readableNcscProfileContext(resultVersion.envelope.state.profileRef)); } catch { fail(); }
     if (reconstructed.revisionSha256 !== receipt.versionSha256 ||
         !same(reconstructed.envelope, resultVersion.envelope) || !same(reconstructed.command, receipt.command) ||
         !same(publicResult(intent.action, reconstructed), receipt.result)) fail();
