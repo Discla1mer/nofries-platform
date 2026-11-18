@@ -28,6 +28,8 @@ const { hostResourceForRoute } = require('./appLifecycle/dashboardRuntimeEvents'
 const { apiSecurityHeaders } = require('./securityHeaders');
 const { OVERVIEW_PLAN_LIMIT } = require('./dashboardReadCost');
 const { ContactRequestError, normaliseContactRequest } = require('./contactRequests');
+// The current dashboard advertises all three; older open dashboards keep their exact session shape.
+const CONTACT_CAPABILITIES = 'work-queue-v1 account-label-v1 contact-request-v1';
 
 const CONFIG = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
     'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
@@ -855,17 +857,20 @@ function createDashboardRuntimeHandlers(configuration) {
             const customerAccount = value.purpose === 'customer' ? await approvedCustomerBinding(privateRequest) : null;
             const admin = activationPort && value.purpose === 'operator_dashboard' ? await bounded(() => captureRequest(privateRequest)) : null;
             const activationAvailable = admin && adminSubjects.has(admin.identityPayload.identityTenantId + ':' + admin.identityPayload.oid);
+            const capabilities = snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 ? snapshot.headers['x-nofries-dashboard-capabilities'][0] : null;
             return response(200, { schemaVersion: 1, authenticated: true, purpose: value.purpose, expiresAt: value.expiresAt,
                 generation: value.generation, selectedBindingId: value.selectedBindingId,
                 ...(customerAccount?.accountType ? { accountType: customerAccount.accountType } : {}),
-                ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
-                    snapshot.headers['x-nofries-dashboard-capabilities'][0] === 'work-queue-v1 account-label-v1' &&
+                ...(['work-queue-v1 account-label-v1', CONTACT_CAPABILITIES].includes(capabilities) &&
                     customerAccount?.accountLabel ? { accountLabel: customerAccount.accountLabel } : {}),
                 // Existing open dashboards validate an exact session shape.
                 // Negotiate display metadata; this does not grant queue access.
-                ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
-                    ['work-queue-v1', 'work-queue-v1 account-label-v1'].includes(snapshot.headers['x-nofries-dashboard-capabilities'][0]) &&
+                ...(['work-queue-v1', 'work-queue-v1 account-label-v1', CONTACT_CAPABILITIES].includes(capabilities) &&
                     improvementEnabled && customerAccount?.accountType === 'consultant' ? { workQueueAvailable: true } : {}),
+                // Display only (#409): every customer member role holds
+                // contact.request; the browser hides it for an advisor-only
+                // projection and the POST route re-checks the locked membership.
+                ...(capabilities === CONTACT_CAPABILITIES && contactRequestsEnabled && customerAccount ? { contactRequestsAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }
         if (selected.route === 'session') {

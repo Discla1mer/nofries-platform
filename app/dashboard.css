@@ -84,6 +84,10 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .dashboard-service-cards .dashboard-panel { display: flex; flex-direction: column; align-items: start; gap: .4rem; }
 .dashboard-service-cards h2, .dashboard-service-cards p { margin-bottom: .5rem; }
 .dashboard-service-detail { padding-top: .7rem; border-top: 1px solid var(--dashboard-line); }
+.dashboard-contact { margin-top: .75rem; }
+.dashboard-contact .dashboard-button { max-width: 100%; white-space: normal; text-align: center; }
+.dashboard-contact-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.dashboard-contact-status:empty { display: none; }
 .dashboard-subscription-panel { background: var(--dashboard-navy); color: var(--dashboard-ink); }
 .dashboard-subscription-panel .dashboard-muted { color: var(--dashboard-muted); }
 .dashboard-group-links { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.5rem; }
