@@ -291,6 +291,16 @@ test('each service card links to the contact form with only its own service key'
     assert.match(dom.root.textContent, /Nothing is sent until you send the form/);
 });
 
+test('the Services tab leads with the 90-day managed security offer as a plain contact link', () => {
+    const dom = mount(view(), { initialRoute: 'services' });
+    const offer = dom.root.querySelector('.dashboard-offer-panel');
+    assert.ok(offer);
+    assert.match(offer.textContent, /NZ\$1,250 \+ GST for 90 days/);
+    const link = Array.from(offer.querySelectorAll('a')).find(item => item.textContent === 'Ask about 90-day managed security');
+    assert.equal(link.href, '/contact.html?service=managed_security_90');
+    assert.equal(offer.querySelectorAll('form').length, 0);
+});
+
 test('disabled services explain policy availability rather than implying provider setup is sufficient', () => {
     const dom = mount(view({ service: 'managed_endpoint', enabled: { 'service:managed_endpoint': false } }), { initialRoute: 'services' });
     buttons(dom).find(item => item.textContent === 'About availability').click();

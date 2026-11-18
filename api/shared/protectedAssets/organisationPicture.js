@@ -751,8 +751,9 @@
             panel.append(node('h4', '', 'Next step'));
             if (typeof questionnaire.providerSummary === 'function' && typeof questionnaire.copySummary === 'function') panel.append(summaryHandoff());
             const help = node('div', 'picture-next-steps-help'); help.hidden = true;
-            const link = node('a', 'dashboard-button', 'Get help closing these gaps'); link.href = '/contact.html';
-            help.append(node('p', 'dashboard-muted', 'Talk to No Fries about these gaps. The contact form does not include your answers.'), link);
+            const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
+            help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
+                link, node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
             panel.append(help);
             enquiryAvailable().then(available => { if (available && live(token)) help.hidden = false; });
             return panel;

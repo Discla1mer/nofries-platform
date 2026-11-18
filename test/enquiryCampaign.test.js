@@ -72,6 +72,10 @@ test('the service topic list matches the dashboard service registry', () => {
     });
 });
 
+test('the 90-day managed security offer has a fixed topic', () => {
+    expect(land('?service=managed_security_90').window.enquiryTopic()).toBe('90-day managed security');
+});
+
 test.each([
     ['?service=not_a_service'],
     ['?service=%3Cscript%3Ealert(1)%3C%2Fscript%3E'],

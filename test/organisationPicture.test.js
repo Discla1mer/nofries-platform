@@ -1386,8 +1386,10 @@ describe('next step under the top gaps', () => {
         const fetch = jest.fn(async () => reply(200, { available: true, promote: false }));
         const { panel, help, link, controller } = await withEnquiry(fetch);
         assert.equal(panel.hidden, false); assert.equal(help.hidden, false);
-        assert.equal(link.textContent, 'Get help closing these gaps');
-        assert.equal(link.href, '/contact.html');
+        assert.equal(link.textContent, 'Fix these with No Fries');
+        assert.equal(link.href, '/contact.html?service=managed_security_90');
+        assert.match(help.textContent, /90-day managed security: NZ\$1,250 \+ GST/);
+        assert.match(help.textContent, /board or insurer/);
         assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
         controller.destroy();
     });
