@@ -1569,7 +1569,7 @@
                     ...(!pictureSelection ? { readFirstPaint: async function () {
                         if (!current(cycle) || cycle.authorityPending) throw invalid();
                         const actions = typeof presentation.openImprovement === 'function' && cycle.improvement;
-                        const response = await request(cycle, '/api/dashboard/overview' + (actions ? '?actions=1' : ''),
+                        const response = await request(cycle, '/api/dashboard/modules/overview?view=first-paint' + (actions ? '&actions=1' : ''),
                             undefined, snapshot.generation, undefined, undefined, client.readOverviewBody);
                         if (response.status === 401 || response.status === 403 && response.value?.code === 'dashboard_access_denied') {
                             const error = invalid(); error.status = response.status; failure(cycle, error); throw error;

@@ -4970,12 +4970,12 @@ function registerRealPostgresTests() {
                     const index = await h.get('improvement/plans?limit=5', h.generation);
                     const list = await h.improvementGet();
                     for (const part of [page, detail, index, list]) httpJson(part, 200);
-                    const combined = await h.get('overview?actions=1', h.generation);
+                    const combined = await h.get('modules/overview?view=first-paint&actions=1', h.generation);
                     httpJson(combined, 200);
                     expect(combined.body).toEqual({ page: page.body, detail: detail.body,
                         actions: { lists: [list.body], more: index.body.nextAfterPlanId !== null } });
-                    httpJson(await h.get('overview'), 403, 'dashboard_access_denied');
-                    httpJson(await h.get('overview', digest('stale-generation')), 403, 'dashboard_access_denied');
+                    httpJson(await h.get('modules/overview?view=first-paint'), 403, 'dashboard_access_denied');
+                    httpJson(await h.get('modules/overview?view=first-paint', digest('stale-generation')), 403, 'dashboard_access_denied');
                     await loginClean();
                 });
                 async function improvementRows(h) {

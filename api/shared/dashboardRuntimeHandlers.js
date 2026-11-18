@@ -419,7 +419,10 @@ function createDashboardRuntimeHandlers(configuration) {
         const split = snapshot.url.indexOf('?'), path = split < 0 ? snapshot.url : snapshot.url.slice(0, split);
         const query = split < 0 ? null : snapshot.url.slice(split + 1);
         const prefix = '/api/dashboard/';
-        const route = path.startsWith(prefix) ? path.slice(prefix.length) : '';
+        const pathRoute = path.startsWith(prefix) ? path.slice(prefix.length) : '';
+        const firstPaint = ncscQuota && pathRoute === 'modules/overview' && (query === 'view=first-paint' ||
+            improvementEnabled && query === 'view=first-paint&actions=1');
+        const route = firstPaint ? 'overview' : pathRoute;
         const workQueue = improvementEnabled && route === 'work-queue';
         let resource = null, ncscRoute = null, improvementRoute = null;
         if (improvementEnabled && ['improvement/plans', 'improvement/list', 'improvement/view', 'improvement/editor', 'improvement/execute'].includes(route)) {
@@ -437,7 +440,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 ncscRoute = id + (parts.length === 2 ? '/' + parts[1] : '');
             }
         }
-        const methods = { ...(ncscQuota ? { overview: ['GET'] } : {}), session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], evidence: ['GET'] };
+        const methods = { ...(firstPaint ? { overview: ['GET'] } : {}), session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], evidence: ['GET'] };
         if (!workQueue && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
             try { resource = hostResourceForRoute(route); } catch (_) { fail(404, 'dashboard_not_found'); }
         }
@@ -516,8 +519,6 @@ function createDashboardRuntimeHandlers(configuration) {
                     ncscQuery[key] = id;
                 }
             }
-        } else if (route === 'overview' && query !== null) {
-            if (!improvementEnabled || query !== 'actions=1') bad();
         } else if (route === 'evidence') {
             // One canonical encoded opaque identifier; no alternate keys, form
             // aliases or repeated decoding. It never becomes a path or log field.
@@ -544,8 +545,8 @@ function createDashboardRuntimeHandlers(configuration) {
             }
         } else if (['app.js', 'dashboard.css'].includes(route) && query !== null) {
             if (!/^v=[A-Za-z0-9_-]{43}$/.test(query)) bad();
-        } else if (query !== null) bad();
-        return freeze({ route, resource, overviewActions: route === 'overview' && query === 'actions=1', assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
+        } else if (!firstPaint && query !== null) bad();
+        return freeze({ route, resource, overviewActions: firstPaint && query === 'view=first-paint&actions=1', assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
     }
     async function readWire(original, entry, snapshot) {
         entry.phase = 'wire';
