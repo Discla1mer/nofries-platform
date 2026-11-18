@@ -9,6 +9,7 @@ const { buildGatewayDocument } = require('./lib/gatewayDocument');
 const { withFrontendReleaseInformation } = require('./lib/frontendReleaseInfo');
 const {
     checkRateLimit,
+    checkRateLimits,
     getVerifiedDashboardSessionKey,
     getClientKeyFromHeaders,
     isBlockedUserAgent,
@@ -1126,10 +1127,10 @@ function rateLimitApiRequests(req, res, next) {
     if (sessionKey) {
         // Verified dashboard sessions: a generous per-address ceiling first,
         // then the per-session allowance that ordinary use stays within.
-        result = checkRateLimit(write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey, apiEnvironment, cost);
-        if (result.allowed) {
-            result = checkRateLimit(write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey, apiEnvironment, cost);
-        }
+        // Charged only when the cost fits in both, so a request refused by one
+        // bucket never spends the other.
+        result = checkRateLimits([[write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey],
+            [write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey]], apiEnvironment, cost);
     } else {
         result = checkRateLimit(write ? 'apiWrite' : 'apiRead', clientKey, apiEnvironment, cost);
     }

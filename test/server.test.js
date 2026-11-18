@@ -44,7 +44,7 @@ const {
 } = require('../api/shared/nofriesCatalogue');
 const { parseStaticWebAppsPrincipal } = require('../api/shared/identity');
 const { assertSameOriginForMutation } = require('../api/shared/securityHeaders');
-const { getClientKeyFromHeaders } = require('../api/shared/abuseProtection');
+const { getClientKeyFromHeaders, checkRateLimit, checkRateLimits } = require('../api/shared/abuseProtection');
 const { dashboardReadCost } = require('../api/shared/dashboardReadCost');
 const salesBootstrapFunction = require('../api/salesBootstrap');
 
@@ -2555,6 +2555,43 @@ describe('configured dashboard actual HTTP transport', () => {
         const full = await read(second, OVERVIEW + '&actions=1');
         expect(full.status).not.toBe(429); expect(full.headers['x-ratelimit-remaining']).toBe('0');
         expect((await read(second, '/api/dashboard/session')).status).toBe(429);
+    });
+
+    test('requests refused by their own session allowance never spend the shared address allowance', async () => {
+        const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_READ_MAX: '100', NOFRIES_RATE_DASHBOARD_SESSION_READ_MAX: '8',
+            NOFRIES_RATE_DASHBOARD_ADDRESS_READ_MAX: '20' } });
+        const first = (await h.login()).cookie, second = (await h.login()).cookie;
+        const read = (cookie, target) => h.send('get', target).set('Cookie', cookie);
+        const OVERVIEW = '/api/dashboard/modules/overview?view=first-paint&actions=1';
+        expect((await read(first, OVERVIEW)).status).not.toBe(429); // 8 from each bucket
+        for (let i = 0; i < 5; i++) expect((await read(first, OVERVIEW)).status).toBe(429); // session refusals spend nothing
+        // The address still has 12, so a second session at the same address gets its whole allowance.
+        const full = await read(second, OVERVIEW);
+        expect(full.status).not.toBe(429); expect(full.headers['x-ratelimit-remaining']).toBe('0');
+        // Now the address has 4 left: a further bundle is refused by the address and neither bucket is charged.
+        const third = (await h.login()).cookie;
+        expect((await read(third, OVERVIEW)).status).toBe(429);
+        for (let i = 0; i < 4; i++) expect((await read(third, '/api/dashboard/session')).status).not.toBe(429);
+        expect((await read(third, '/api/dashboard/session')).status).toBe(429);
+    });
+
+    test('checkRateLimits charges every bucket by the cost only when it fits in all of them', () => {
+        const env = { NOFRIES_RATE_DASHBOARD_ADDRESS_READ_MAX: '10', NOFRIES_RATE_DASHBOARD_SESSION_READ_MAX: '4' };
+        const unique = 'charge-all-' + crypto.randomUUID();
+        const address = ['dashboardAddressRead', unique], session = ['dashboardSessionRead', unique + ':s1'], other = ['dashboardSessionRead', unique + ':s2'];
+        // Normal path: both charged by the cost; the last bucket's result is reported.
+        expect(checkRateLimits([address, session], env, 3)).toEqual({ allowed: true, limit: 4, remaining: 1 });
+        // Session refusal leaves the address untouched (7 left of 10).
+        const refused = checkRateLimits([address, session], env, 2);
+        expect(refused).toMatchObject({ allowed: false, limit: 4 }); expect(refused.retryAfterSeconds).toBeGreaterThanOrEqual(1);
+        expect(checkRateLimit(address[0], address[1], env, 7)).toMatchObject({ allowed: true, remaining: 0 });
+        // Address refusal leaves the other session untouched (all 4 still free).
+        expect(checkRateLimits([address, other], env, 1)).toMatchObject({ allowed: false, limit: 10 });
+        expect(checkRateLimit(other[0], other[1], env, 4)).toMatchObject({ allowed: true, remaining: 0 });
+        // A cost larger than the limit is refused with a finite retry time and charges nothing.
+        const fresh = ['dashboardSessionRead', unique + ':s3'];
+        expect(checkRateLimits([fresh], env, 5)).toMatchObject({ allowed: false, retryAfterSeconds: 900 });
+        expect(checkRateLimit(fresh[0], fresh[1], env, 4)).toMatchObject({ allowed: true, remaining: 0 });
     });
 
     test('only the two exact combined Overview GET forms cost more than one read', () => {
