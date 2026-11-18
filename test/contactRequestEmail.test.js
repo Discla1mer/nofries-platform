@@ -4,7 +4,7 @@
 // calls it, and what the email may contain. Synthetic values only.
 const { createTenantRequestContext } = require('../api/shared/appLifecycle/tenantRequestContext');
 const { writeContactRequest } = require('../api/shared/contactRequests');
-const { createContactRequestNotifier, contactRequestEmailText, TOPIC_LABELS, ADMIN_LINE } = require('../api/shared/contactRequestEmail');
+const { createContactRequestNotifier, contactRequestEmailText, TOPIC_LABELS, ADMIN_LINE, NAME_NOTE } = require('../api/shared/contactRequestEmail');
 const registry = require('../api/shared/protectedAssets/dashboardRegistry');
 
 const uid = n => `74000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -22,14 +22,20 @@ async function contextFor() {
 }
 // Rows keyed by request id plus the 0026 daily key. "committed" flips only after
 // the transaction callback has settled, as a real COMMIT would.
-function database({ failAudit = false } = {}) {
+function database({ failAudit = false, failName = false, failDay = false } = {}) {
     const rows = new Map(), statements = [], state = { committed: 0 };
     const client = { async query(sql, params) {
         const text = sql.replace(/\s+/g, ' ').trim();
         statements.push(text);
         if (text.includes('FROM nofries.dashboard_organisations')) {
+            if (failName) throw new Error('synthetic display name failure');
             expect(params).toEqual([SCOPE.tenantId, SCOPE.organisationId]);
             return { rows: [{ display_name: 'Synthetic Organisation Ltd' }] };
+        }
+        if (text.startsWith('SELECT EXISTS')) {
+            if (failDay) throw new Error('synthetic day check failure');
+            expect(params.slice(0, 3)).toEqual([SCOPE.tenantId, SCOPE.organisationId, expect.any(String)]);
+            return { rows: [{ found: [...rows.values()].some(row => row[1] === params[1] && row[2] !== params[2] && row[6].slice(0, 10) === params[3].slice(0, 10)) }] };
         }
         if (text.startsWith('SELECT')) {
             const row = rows.get(params[1]);
@@ -74,6 +80,31 @@ describe('writer: when the staff notification is called', () => {
         await writeContactRequest({ ...plain.port, context }, BODY);
         expect(plain.statements.some(sql => sql.includes('dashboard_organisations'))).toBe(false);
     });
+    test('only the organisation\'s first stored row of the NZ day notifies; later topics are stored silently', async () => {
+        const d = database(), context = await contextFor(), onStored = jest.fn();
+        await writeContactRequest({ ...d.port, context, onStored }, BODY);
+        await expect(writeContactRequest({ ...d.port, context, onStored }, { ...BODY, operationId: uid(902), topic: 'tier1_support' }))
+            .resolves.toEqual({ schemaVersion: 1, status: 'requested' });
+        expect(d.rows.size).toBe(2);
+        expect(onStored).toHaveBeenCalledTimes(1);
+        // The second row did not read the display name either.
+        expect(d.statements.filter(sql => sql.includes('dashboard_organisations'))).toHaveLength(1);
+    });
+    test('a failing day check or display-name read fails the request and notifies nobody', async () => {
+        const context = await contextFor();
+        for (const options of [{ failName: true }, { failDay: true }]) {
+            const d = database(options), onStored = jest.fn();
+            await expect(writeContactRequest({ ...d.port, context, onStored }, BODY)).rejects.toThrow('synthetic');
+            expect(onStored).not.toHaveBeenCalled(); expect(d.state.committed).toBe(0);
+        }
+    });
+    test('an operation conflict with the notifier wired notifies nobody', async () => {
+        const d = database(), context = await contextFor(), onStored = jest.fn();
+        await writeContactRequest({ ...d.port, context }, BODY);
+        await expect(writeContactRequest({ ...d.port, context, onStored }, { ...BODY, topic: 'monthly_proof' }))
+            .rejects.toMatchObject({ code: 'contact_request_operation_conflict', statusCode: 409 });
+        expect(onStored).not.toHaveBeenCalled();
+    });
     test('a throwing or rejecting notifier does not change the customer result', async () => {
         const context = await contextFor();
         for (const onStored of [() => { throw new Error('synthetic'); }, async () => { throw new Error('synthetic'); }]) {
@@ -97,7 +128,7 @@ describe('notifier', () => {
         const body = JSON.parse(h.fetchImpl.mock.calls[0][1].body);
         expect(body).toEqual({ from: 'web@example.invalid', to: ['staff@example.invalid'], subject: 'Dashboard contact request',
             text: ['A dashboard customer asked No Fries to contact them.', '', 'Organisation: Synthetic Organisation Ltd',
-                'Topic: Results', 'Requested: 19 November 2026', '', ADMIN_LINE].join('\n') });
+                NAME_NOTE, 'Topic: Results', 'Requested: 19 November 2026', '', ADMIN_LINE].join('\n') });
         expect(h.log).toHaveBeenCalledWith('contact_request_email_sent');
     });
     test('the staff mailbox defaults to the enquiry default when no recipient is set', async () => {
@@ -113,7 +144,18 @@ describe('notifier', () => {
         expect(Object.keys(body).sort()).toEqual(['from', 'subject', 'text', 'to']);
         expect(body.text).not.toMatch(/customer@example|secret-answer|42|free text|\r|\u2028/);
         expect(body.text).toContain('Organisation: Synthetic Bcc: x@example.invalid Org');
-        expect(body.text.split('\n')).toHaveLength(7);
+        expect(body.text.split('\n')).toHaveLength(8);
+    });
+    test('NEL, paragraph separators, C1 controls and Unicode format characters never reach the email', async () => {
+        const h = harness();
+        const name = 'Syn\u0085the\u2029tic\u0080\u009f Org\u202e dlroW\u202c\u200b\u200d\u2066Ltd\u2069\ufeff';
+        await h.notify({ ...NOTICE, organisationName: name });
+        const text = JSON.parse(h.fetchImpl.mock.calls[0][1].body).text;
+        expect(text).not.toMatch(/[\u0080-\u009f\u2028\u2029]/);
+        expect(text).not.toMatch(/\p{Cf}/u);
+        expect(text.split('\n')[2]).toBe('Organisation: Syn the tic Org dlroWLtd');
+        expect(text.split('\n')[3]).toBe(NAME_NOTE);
+        expect(contactRequestEmailText({ ...NOTICE, organisationName: '\u200b\u202e\u0085' })).toContain('Organisation: (no display name)');
     });
     test('every topic has a human label: "Results" or the service display name', () => {
         expect(TOPIC_LABELS).toEqual(Object.fromEntries([['results', 'Results'], ...registry.services.map(s => [s.key, s.label])]));

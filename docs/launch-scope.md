@@ -65,7 +65,10 @@ comments are post-launch (issue #11).
    shared enquiry email budget (`docs/enquiry-shared-rate-limit.md`); with the
    budget spent or delivery unavailable it is skipped. A retry, a same-day
    repeat or a failed send never changes the customer's answer; the outcome is
-   logged as a code only. Off unless `NOFRIES_CONTACT_REQUEST_EMAIL_ENABLED`
+   logged as a code only. At most one email per organisation and NZ day: a
+   second topic that day is stored but sends nothing. The display name is
+   marked as customer-supplied, with control and Unicode format characters
+   (bidi overrides, zero-width) removed. Off unless `NOFRIES_CONTACT_REQUEST_EMAIL_ENABLED`
    is exactly `true` (and the route is on).
    **Retention.** Contact requests are kept for 24 months from `requested_at`,
    then deleted. Account reset and delete remove them sooner. The automatic
