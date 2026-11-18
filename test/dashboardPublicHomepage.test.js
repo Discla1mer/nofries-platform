@@ -95,7 +95,10 @@ test('the homepage keeps only one compact MSP section below its Dashboard entry'
 });
 
 test('service pricing remains server-owned rather than embedded in the homepage', () => {
-    assert.doesNotMatch(html, /managed-it-per-user-price|managed-it-price-summary|managed-it-price-extras|id="pricing-dialog"|NZ\$|\$\d/);
+    assert.doesNotMatch(html, /managed-it-per-user-price|managed-it-price-summary|managed-it-price-extras|id="pricing-dialog"/);
+    // Managed IT tier prices stay off the homepage. The one published 90-day price may be repeated there.
+    assert.doesNotMatch(html, /NZ\$59|NZ\$99|NZ\$119|NZ\$139|NZ\$750|NZ\$895|per user/);
+    assert.deepEqual(html.match(/NZ\$[\d,]+ \+ GST/g), ['NZ$1,250 + GST']);
     const { MANAGED_IT_POLICY } = require('../api/shared/managedItPolicy');
     assert.equal(MANAGED_IT_POLICY.customerFacingServiceName, 'No Fries Managed IT');
     assert.ok(Number.isFinite(MANAGED_IT_POLICY.pricing.perUserMonthly));

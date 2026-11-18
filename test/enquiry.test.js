@@ -171,6 +171,7 @@ describe('contact form progressive enhancement', () => {
         expect(html).toMatch(/id="contact-name-error"/);
         expect(html).toMatch(/id="contact-email-error"/);
         expect(html).toMatch(/id="contact-message-error"/);
+        expect(html + script).not.toMatch(/Checking form availability|Ask Fry|ask-fry/i);
     });
 
     test('the website honeypot stays submittable but hidden from assistive tech, keyboard and page text', () => {
