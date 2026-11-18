@@ -68,26 +68,37 @@ function isBlockedUserAgent(userAgent, env = process.env) {
     return getBlockedUserAgentFragments(env).some((fragment) => text.includes(fragment));
 }
 
-function checkRateLimit(bucketName, clientKey, env = process.env) {
+// cost: how many ordinary requests this one stands for (default 1). A request
+// is allowed only when the whole cost fits; a refused request spends nothing.
+function checkRateLimit(bucketName, clientKey, env = process.env, cost = 1) {
+    return rateLimitDecision(bucketName, clientKey, env, cost, true);
+}
+
+// commit false only reports whether the cost would fit; it changes no bucket.
+function rateLimitDecision(bucketName, clientKey, env, cost, commit) {
     const limit = getRateLimit(bucketName, env);
+    const units = Number.isSafeInteger(cost) && cost >= 1 ? cost : 1;
     const now = Date.now();
     const bucketKey = `${bucketName}:${clientKey || 'unknown'}`;
-    if (!rateLimitBuckets.has(bucketKey) && rateLimitBuckets.size >= MAX_RATE_LIMIT_BUCKETS) {
+    if (commit && !rateLimitBuckets.has(bucketKey) && rateLimitBuckets.size >= MAX_RATE_LIMIT_BUCKETS) {
         cleanupBuckets(now, true);
     }
     const bucket = rateLimitBuckets.get(bucketKey) || [];
     const recent = bucket.filter((timestamp) => now - timestamp < limit.windowMs);
 
-    if (recent.length >= limit.max) {
-        rateLimitBuckets.set(bucketKey, recent);
+    if (recent.length + units > limit.max) {
+        if (commit) rateLimitBuckets.set(bucketKey, recent);
         return {
             allowed: false,
             limit: limit.max,
-            retryAfterSeconds: Math.max(1, Math.ceil((limit.windowMs - (now - recent[0])) / 1000))
+            retryAfterSeconds: Math.max(1, Math.ceil((limit.windowMs - (recent.length ? now - recent[0] : 0)) / 1000))
         };
     }
+    if (!commit) {
+        return { allowed: true, limit: limit.max, remaining: Math.max(0, limit.max - recent.length - units) };
+    }
 
-    recent.push(now);
+    for (let i = 0; i < units; i++) recent.push(now);
     // Re-insert so eviction under the bucket cap drops the least recently
     // used keys first, never an address that is still sending requests.
     rateLimitBuckets.delete(bucketKey);
@@ -99,6 +110,20 @@ function checkRateLimit(bucketName, clientKey, env = process.env) {
         limit: limit.max,
         remaining: Math.max(0, limit.max - recent.length)
     };
+}
+
+// Charges cost to every [bucketName, clientKey] pair only if it fits in all
+// of them; otherwise returns the first refusal and charges none. The checks
+// and charges run synchronously, so no other request can interleave. Returns
+// the last bucket's result, as consecutive checkRateLimit calls would.
+function checkRateLimits(buckets, env = process.env, cost = 1) {
+    for (const [bucketName, clientKey] of buckets) {
+        const result = rateLimitDecision(bucketName, clientKey, env, cost, false);
+        if (!result.allowed) return result;
+    }
+    let result;
+    for (const [bucketName, clientKey] of buckets) result = rateLimitDecision(bucketName, clientKey, env, cost, true);
+    return result;
 }
 
 const DASHBOARD_SESSION_COOKIES = ['__Host-nofries-auth', '__Host-nofries-customer', '__Host-nofries-external-customer'];
@@ -233,6 +258,7 @@ function resetAbuseProtectionForTests() {
 
 module.exports = {
     checkRateLimit,
+    checkRateLimits,
     forgetDashboardSession,
     getVerifiedDashboardSessionKey,
     markDashboardSessionVerified,

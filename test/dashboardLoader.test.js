@@ -135,6 +135,8 @@ function harness(options = {}) {
     window.addEventListener = (name, callback) => { (listeners[name] ||= []).push(callback); originalAdd(name, callback); };
     const requests = [];
     const fetch = jest.fn((url, init) => {
+        // These cases drive the separate-read fallback. The waterfall fixture drives the combined route.
+        if (url.startsWith('/api/dashboard/modules/overview?view=first-paint')) return Promise.resolve(response(404, { code: 'dashboard_not_found' }));
         const work = deferred();
         requests.push({ url, init, ...work });
         return work.promise;

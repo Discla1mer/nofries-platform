@@ -4964,6 +4964,22 @@ function registerRealPostgresTests() {
                     };
                     return h;
                 }
+                test('Overview first paint matches separate authorised reads for the same organisation', async () => {
+                    const h = await improvementHttpSetup();
+                    httpJson(await h.improvementPost(h.generateImprovement()), 200);
+                    const page = await h.get('ncsc/assessments?limit=50', h.generation);
+                    const detail = await h.get('ncsc/assessments/assessment-a', h.generation);
+                    const index = await h.get('improvement/plans?limit=5', h.generation);
+                    const list = await h.improvementGet();
+                    for (const part of [page, detail, index, list]) httpJson(part, 200);
+                    const combined = await h.get('modules/overview?view=first-paint&actions=1', h.generation);
+                    httpJson(combined, 200);
+                    expect(combined.body).toEqual({ page: page.body, detail: detail.body,
+                        actions: { lists: [list.body], more: index.body.nextAfterPlanId !== null } });
+                    httpJson(await h.get('modules/overview?view=first-paint'), 403, 'dashboard_access_denied');
+                    httpJson(await h.get('modules/overview?view=first-paint', digest('stale-generation')), 403, 'dashboard_access_denied');
+                    await loginClean();
+                });
                 async function improvementRows(h) {
                     const values = [h.binding.scope.tenantId, h.binding.scope.organisationId];
                     const result = {};

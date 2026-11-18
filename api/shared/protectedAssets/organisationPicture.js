@@ -149,6 +149,15 @@
     // Read-only presentation over the existing authorised client. A score is
     // displayed only after the submitted-result validator accepts the complete
     // organisation/profile/revision binding. Never score drafts or uploaded files.
+    function newestRow(list) {
+        return list.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId))[0] || null;
+    }
+    function preferredAssessmentId(list) {
+        const submitted = newestRow(list.filter(row => row.status === 'submitted'));
+        if (submitted) return submitted.assessmentId;
+        const draft = newestRow(list.filter(row => row.status !== 'submitted'));
+        return draft ? draft.assessmentId : '';
+    }
     function mount(root, options) {
         if (!root || !root.ownerDocument || !options || !options.client ||
             typeof options.client.list !== 'function' || typeof options.client.read !== 'function' ||
@@ -992,12 +1001,12 @@
             const licence = node('a', '', 'CC BY 4.0'); licence.href = 'https://creativecommons.org/licenses/by/4.0/';
             attribution.append(licence); root.append(attribution);
         }
-        async function load(append) {
+        async function load(append, firstPaint) {
             if (!live() || denied || loading) return;
             const savedFocus = captureFocus();
             abort(); const token = ++epoch; loading = true; message = ''; detail = null; retry = null; render();
             let early = null;
-            if (!append && !selected && likelyAssessmentId) {
+            if (!firstPaint && !append && !selected && likelyAssessmentId) {
                 // One attempt per mount. Any failure is ignored here; the normal read then decides.
                 const likely = likelyAssessmentId, request = new AbortController(); likelyAssessmentId = null; requests.add(request);
                 early = { assessmentId: likely, cancel() { request.abort(); },
@@ -1005,13 +1014,17 @@
                         .then(value => value, () => null).finally(() => { requests.delete(request); }) };
             }
             try {
-                const response = await call('list', { limit: 50, afterAssessmentId: append ? after : null }, token);
+                const response = firstPaint ? firstPaint.page : await call('list', { limit: 50, afterAssessmentId: append ? after : null }, token);
                 if (!response) return;
                 if (!Array.isArray(response.assessments) || response.assessments.some(row =>
                     row.moduleId !== metadata.moduleId || !sameProfile(row.profileRef, metadata.profileRef))) throw new Error('picture_response_invalid');
                 const combined = new Map((append ? rows : []).map(row => [row.assessmentId, row]));
                 response.assessments.forEach(row => combined.set(row.assessmentId, copy(row)));
                 rows = Array.from(combined.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId));
+                if (firstPaint && firstPaint.detail) {
+                    early = { assessmentId: firstPaint.detail.assessment.assessmentId,
+                        response: firstPaint.detail, cancel() {} };
+                }
                 after = response.nextAfterAssessmentId; loaded = true;
                 allowance = response.submissionAllowance ? copy(response.submissionAllowance) : null;
                 // Keep a carried or manual selection across refresh. Otherwise prefer
@@ -1022,15 +1035,6 @@
             const usable = !!early && live(token) && !message && early.assessmentId === selected;
             if (early && !usable) early.cancel();
             if (live(token) && !message && selected) await read(selected, undefined, usable ? early : null);
-        }
-        function newestRow(list) {
-            return list.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId))[0] || null;
-        }
-        function preferredAssessmentId(list) {
-            const submitted = newestRow(list.filter(row => row.status === 'submitted'));
-            if (submitted) return submitted.assessmentId;
-            const draft = newestRow(list.filter(row => row.status !== 'submitted'));
-            return draft ? draft.assessmentId : '';
         }
         async function read(assessmentId, source, early) {
             if (!live() || denied || !rows.some(row => row.assessmentId === assessmentId) && assessmentId !== initialAssessmentId && assessmentId !== selected) return;
@@ -1067,14 +1071,26 @@
             if (disposed) return; disposed = true; epoch++; abort(); rows = []; detail = null; selected = ''; retry = null;
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
         } };
-        mounted.set(root, controller); load(false);
-        if (readActions) {
-            // Started beside the assessment reads, never after them.
-            Promise.resolve().then(readActions).then(value => {
-                if (!live()) return; actions = actionSummary(value, metadata); placeActions();
-            }, () => {});
+        mounted.set(root, controller);
+        function start(firstPaint) {
+            if (!live()) return;
+            load(false, firstPaint);
+            if (readActions) {
+                const result = firstPaint && firstPaint.actions ? Promise.resolve(firstPaint.actions) : Promise.resolve().then(readActions);
+                result.then(value => {
+                    if (!live()) return; actions = actionSummary(value, metadata); placeActions();
+                }, () => {});
+            }
         }
+        if (options.readFirstPaint) {
+            loading = true; render();
+            options.readFirstPaint().then(value => {
+                loading = false; start(value);
+            }, () => {
+                loading = false; start(null);
+            });
+        } else start(null);
         return controller;
     }
-    return Object.freeze({ mount, topGaps, actionSummary });
+    return Object.freeze({ mount, topGaps, actionSummary, preferredAssessmentId });
 }));
