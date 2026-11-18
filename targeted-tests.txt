@@ -6,7 +6,7 @@
 Test Suites: 6 passed, 6 total
 Tests:       823 passed, 823 total
 Snapshots:   0 total
-Time:        146.376 s
+Time:        154.379 s
 Ran all test suites matching test/organisationPicture.test.js|test/organisationPictureInformation.test.js|test/overviewActionReviewDates.test.js|test/dashboardShell.test.js|test/dashboardMenuPresentation.test.js|test/dashboardLoader.test.js.
 npm notice
 npm notice New major version of npm available! 11.9.0 -> 12.2.3

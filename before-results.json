@@ -73,6 +73,7 @@
     "gateway-375-planned: clipped text",
     "gateway-375-planned-expanded: targets below 44px",
     "gateway-375-planned-expanded: clipped text",
+    "/-375-false-services: targets below 44px",
     "/-375-false-services: clipped text",
     "gateway-375-text200-actions: targets below 44px",
     "gateway-375-text200-actions: clipped text",
@@ -99,6 +100,7 @@
     "gateway-390-planned: clipped text",
     "gateway-390-planned-expanded: targets below 44px",
     "gateway-390-planned-expanded: clipped text",
+    "/-390-false-services: targets below 44px",
     "/-390-false-services: clipped text",
     "gateway-390-text200-actions: targets below 44px",
     "gateway-390-text200-actions: clipped text",
@@ -916,6 +918,13 @@
       "small": [
         {
           "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
+          "tag": "A",
           "class": "picture-action-title",
           "text": "Review access",
           "width": 264.203125,
@@ -941,6 +950,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 375,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -963,6 +979,13 @@
       "small": [
         {
           "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
+          "tag": "A",
           "class": "picture-action-title",
           "text": "Review access",
           "width": 264.203125,
@@ -988,6 +1011,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 375,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1009,6 +1039,13 @@
       "overflow": [],
       "small": [
         {
+          "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
           "tag": "SUMMARY",
           "class": "",
           "text": "Copy or print a summary",
@@ -1021,6 +1058,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 375,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1042,6 +1086,13 @@
       "overflow": [],
       "small": [
         {
+          "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
           "tag": "SUMMARY",
           "class": "",
           "text": "Copy or print a summary",
@@ -1054,6 +1105,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 375,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1073,6 +1131,13 @@
       "overflow": [],
       "small": [
         {
+          "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
           "tag": "SUMMARY",
           "class": "",
           "text": "Copy or print a summary",
@@ -1085,6 +1150,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 375,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1104,6 +1176,13 @@
       "overflow": [],
       "small": [
         {
+          "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
           "tag": "SUMMARY",
           "class": "",
           "text": "Copy or print a summary",
@@ -1116,6 +1195,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 375,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1133,7 +1219,22 @@
       "scrollWidth": 375,
       "splitWords": [],
       "overflow": [],
-      "small": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 375,
+          "height": 24.796875
+        }
+      ],
       "clipped": [
         {
           "tag": "HEADER",
@@ -1312,6 +1413,13 @@
       "small": [
         {
           "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
+          "tag": "A",
           "class": "picture-action-title",
           "text": "Review access",
           "width": 279.203125,
@@ -1337,6 +1445,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 390,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1357,6 +1472,13 @@
       "small": [
         {
           "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
+          "tag": "A",
           "class": "picture-action-title",
           "text": "Review access",
           "width": 279.203125,
@@ -1382,6 +1504,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 390,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1401,6 +1530,13 @@
       "overflow": [],
       "small": [
         {
+          "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
           "tag": "SUMMARY",
           "class": "",
           "text": "Copy or print a summary",
@@ -1413,6 +1549,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 390,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1432,6 +1575,13 @@
       "overflow": [],
       "small": [
         {
+          "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
           "tag": "SUMMARY",
           "class": "",
           "text": "Copy or print a summary",
@@ -1444,6 +1594,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 390,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1463,6 +1620,13 @@
       "overflow": [],
       "small": [
         {
+          "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
           "tag": "SUMMARY",
           "class": "",
           "text": "Copy or print a summary",
@@ -1475,6 +1639,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 390,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1494,6 +1665,13 @@
       "overflow": [],
       "small": [
         {
+          "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
           "tag": "SUMMARY",
           "class": "",
           "text": "Copy or print a summary",
@@ -1506,6 +1684,13 @@
           "text": "CC BY 4.0",
           "width": 70.28125,
           "height": 22
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 390,
+          "height": 24.796875
         }
       ],
       "clipped": [
@@ -1523,7 +1708,22 @@
       "scrollWidth": 390,
       "splitWords": [],
       "overflow": [],
-      "small": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "brand",
+          "text": "No Fries Dashboard",
+          "width": 110.765625,
+          "height": 36
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Site version",
+          "width": 390,
+          "height": 24.796875
+        }
+      ],
       "clipped": [
         {
           "tag": "HEADER",

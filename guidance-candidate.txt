@@ -1,0 +1,10 @@
+locator.evaluate: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for locator('.picture-follow-up > details').last().locator('article').first().locator('details').locator('summary')[22m
+
+    at /workspace/nofries-platform/scripts/tests/overview-guidance-browser.cjs:72:60 {
+  log: [
+    "  - waiting for locator('.picture-follow-up > details').last().locator('article').first().locator('details').locator('summary')"
+  ],
+  name: 'TimeoutError'
+}

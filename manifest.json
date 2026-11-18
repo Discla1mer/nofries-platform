@@ -1,6 +1,6 @@
 {
   "base": "3f72ac2c5bc1ebeab6e9716fc98aadc83d065725",
-  "head": "228a5056783619dec80358b07fecac6c063fe41b",
+  "head": "79a519a7b380d01dc063cc2c2197d6055385c1ee",
   "command": "node scripts/tests/overview-mobile-browser.cjs",
   "before": "NOFRIES_MOBILE_CSS retains main CSS; NOFRIES_MOBILE_BASELINE=1 reports known failures",
   "synthetic": true,
@@ -13,23 +13,27 @@
     200
   ],
   "observations": 56,
+  "targetedJestTests": 823,
   "sha256": {
+    "README.md": "b85dac058f1888bcc3aa0a073cb7454bd38664d28d8fab53398cd9b730b48764",
     "after-375-actions.png": "75147c90d65872512094921bb7aeecbb48a0086d31aeacaf03a978b279e571f7",
-    "after-375-full.png": "f24b4d84422cd4eb6a99873119e1aa6ba78cb55dcf2729f9fc6d37027ac2dd06",
+    "after-375-full.png": "761c302e9f43cbefb4689ece944ab430445c4f185f393534acc74e6fdbed7380",
     "after-375-gaps.png": "d4dc37dbd749e50976de5262e31830455e900f17b5be85f837622ac541c10866",
     "after-375-score.png": "0ebbb833a09d6ff33cef217e8cd00f787df4e253a78f439f020b16099f3c086f",
     "after-375-top.png": "2c482f32b0687be900c836c9edb63c5b426bbece117a3c80917d77f9fea05b9f",
-    "after-390-full.png": "e18617910159d14986e409c512da55cec35dce145962ebbaf18bce6fd0cfe22c",
+    "after-390-full.png": "8ffc03507799d25e531f54b52b76515d3dce2218712e3bded566216f4298fc1c",
     "after-results.json": "dbf00001e009ef0554552c123f7f11020987e17656a3859e90a57136992ce4de",
     "before-375-actions.png": "0ccc801bf23bf24cf2beaf57ceb5962f91dee06738cf43d311de58fe56b30ad9",
-    "before-375-full.png": "856dadbdeb0406cac412629449ae60c115a7bafb1d47621b1d5bd46637b2291f",
+    "before-375-full.png": "77adf7743b15fff651dbe43dce12d806d1c2f2722ced72fa7ebee3585f0e241d",
     "before-375-gaps.png": "2301ff2843b4a5911e047f9c14eabeeadbed0c47b7f27f390361cdf88c5502f4",
     "before-375-score.png": "3aac12c3bc6dc254b6633c02fe8e13b9a1ba56c89d4fe2d01ad7b7271c1e19fb",
     "before-375-top.png": "6bf903a8137fae395d2c67bf4a0c47293d6f8c2201ac47871173ee5456c9a8ee",
-    "before-390-full.png": "e475b01b5c6159a60546d29a9ef501fb2424e2272a4c51d7b35c2bdded97d0d8",
-    "before-results.json": "0b07983eb743de0b5cc40def8d0f3989b07c83fe665d051d229d6f63d128d21e",
+    "before-390-full.png": "3c5efb6c70dca0f5886f4e49f1d897b538d5be201942475065f8f0c2ae268a79",
+    "before-results.json": "52980dbed42549480d92de5e15241d051b1c1a114b1bd7463a15cc28cf44d63a",
+    "guidance-baseline.txt": "9167547874b0d443731d44bb4d0a368d2c0088244d0e6056441da1b130d61ca4",
+    "guidance-candidate.txt": "f87d9999370ae880803ba6e6cdb2808195cfb3031d62b0c307c4de3847349bf0",
     "menu-candidate.txt": "91fe8670071d17437f045a905def7a383c6aa683336d40c9e258a2722ea589c1",
     "menu-main-control.txt": "6532ab3ce6b44ccf7a140c1e3388cab768ab285d54c7b710e0560a0c6938e7ae",
-    "targeted-tests.txt": "9f20932ea2fdce8b1d6974b7e60151373c13d0ad07e4d1f820242961519cf875"
+    "targeted-tests.txt": "1fbf0147515f9de51064ceca28ba7b669317d325c97b148f8ad709b1d1180e79"
   }
 }
