@@ -783,15 +783,35 @@
                 const boardLabel = node('label', '', 'Summary for your board or insurer');
                 const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
                 board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, metadata).text;
-                const boardPrinted = node('pre', 'picture-summary-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
+                const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
                 const boardCopy = button('Copy board summary', () => questionnaire.copySummary(win, board, status));
                 boardCopy.classList.add('dashboard-button-secondary'); handoff.append(boardLabel, board, boardPrinted, boardCopy);
+                if (win && typeof win.print === 'function') {
+                    const boardPrint = button('Print board summary', () => printOnly(win, boardPrinted));
+                    boardPrint.classList.add('dashboard-button-secondary'); handoff.append(boardPrint);
+                }
             }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());
                 printButton.classList.add('dashboard-button-secondary'); handoff.append(printButton);
             }
             handoff.append(status); return handoff;
+        }
+        // Prints one block on its own (one A4 page for the board summary): every
+        // sibling along its path to <body> is hidden for print only, then
+        // restored. Nothing leaves the page.
+        function printOnly(win, target) {
+            const hidden = [];
+            for (let element = target; element && element.parentElement && element !== doc.body; element = element.parentElement) {
+                Array.from(element.parentElement.children || []).forEach(sibling => {
+                    if (sibling !== element && !sibling.classList.contains('picture-print-hide')) { sibling.classList.add('picture-print-hide'); hidden.push(sibling); }
+                });
+            }
+            target.classList.add('picture-print-only');
+            try { win.print(); } finally {
+                hidden.forEach(sibling => sibling.classList.remove('picture-print-hide'));
+                target.classList.remove('picture-print-only');
+            }
         }
         // Mirrors js/enquiry-availability.js: a bare read-only GET of the public
         // enquiry status. Any error, non-OK reply or 5-second timeout is unavailable.
