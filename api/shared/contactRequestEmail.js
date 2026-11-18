@@ -15,15 +15,19 @@ const { createResendClient } = require('./lifecycleEmail/resendClient');
 const TOPIC_LABELS = Object.freeze(Object.fromEntries([['results', 'Results'],
     ...registry.services.map(service => [service.key, service.label])]));
 const ADMIN_LINE = 'Open the No Fries dashboard admin to see the request and who to contact.';
+const NAME_NOTE = 'The organisation name is as the customer entered it.';
 const NAME_LIMIT = 180;
 
 function isContactRequestEmailEnabled(env) {
     return env.NOFRIES_CONTACT_REQUEST_EMAIL_ENABLED === 'true';
 }
 
+// Control characters (C0, DEL, C1 including NEL) and line/paragraph separators
+// become spaces; Unicode format characters (bidi overrides, zero-width) are
+// removed, so the customer-supplied name cannot reorder or hide text.
 function singleLine(value, limit) {
-    return String(typeof value === 'string' ? value : '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
-        .replace(/\s+/g, ' ').trim().slice(0, limit);
+    return String(typeof value === 'string' ? value : '').replace(/\p{Cf}+/gu, '')
+        .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, limit);
 }
 
 function nzDate(value) {
@@ -39,6 +43,7 @@ function contactRequestEmailText(notice) {
         'A dashboard customer asked No Fries to contact them.',
         '',
         `Organisation: ${singleLine(notice.organisationName, NAME_LIMIT) || '(no display name)'}`,
+        NAME_NOTE,
         `Topic: ${topic}`,
         `Requested: ${nzDate(notice.requestedAt)}`,
         '',
@@ -81,4 +86,4 @@ function createContactRequestNotifier({ env = process.env, fetchImpl = (...args)
     };
 }
 
-module.exports = { createContactRequestNotifier, contactRequestEmailText, isContactRequestEmailEnabled, TOPIC_LABELS, ADMIN_LINE };
+module.exports = { createContactRequestNotifier, contactRequestEmailText, isContactRequestEmailEnabled, TOPIC_LABELS, ADMIN_LINE, NAME_NOTE };

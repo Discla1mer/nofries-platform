@@ -80,6 +80,50 @@ module.exports = function registerContactRequestHttpPostgres({ ncscHttpSetup, ht
             await loginClean();
         });
 
+        test('at most one staff email per organisation and NZ day: a second topic is stored silently, the next day notifies again', async () => {
+            const contactRequestEmail = jest.fn(async () => {});
+            const h = await ncscHttpSetup({ customerProvider: true, contactRequestsEnabled: true, contactRequestEmail });
+            const first = await ask(h, body()); httpJson(first, 200);
+            const second = await ask(h, body({ topic: 'managed_it_core' })); httpJson(second, 200);
+            expect([first.body.status, second.body.status]).toEqual(['requested', 'requested']);
+            expect((await stored(h)).map(row => row.topic).sort()).toEqual(['managed_it_core', 'results']);
+            expect(contactRequestEmail).toHaveBeenCalledTimes(1);
+            expect(contactRequestEmail.mock.calls[0][0].topic).toBe('results');
+            // Move both rows to the previous NZ day; a request today is the first of its day again.
+            const moved = await getOwnerPool().query(`UPDATE nofries.dashboard_contact_requests
+                SET requested_at = requested_at - interval '1 day', requested_day = requested_day - 1 WHERE tenant_id = $1`, [h.binding.scope.tenantId]);
+            expect(moved.rowCount).toBe(2);
+            httpJson(await ask(h, body({ topic: 'tier1_support' })), 200);
+            httpJson(await ask(h, body({ topic: 'monthly_proof' })), 200);
+            expect(await stored(h)).toHaveLength(4);
+            expect(contactRequestEmail).toHaveBeenCalledTimes(2);
+            expect(contactRequestEmail.mock.calls[1][0].topic).toBe('tier1_support');
+            await loginClean();
+        });
+
+        test('a failing display-name read with the email on is a 503 with no row and no email', async () => {
+            const contactRequestEmail = jest.fn(async () => {});
+            const h = await ncscHttpSetup({ customerProvider: true, contactRequestsEnabled: true, contactRequestEmail });
+            h.f.state.hook = event => {
+                if (event.phase === 'before' && event.sql.includes("payload->>'displayName'")) throw new Error('synthetic display name failure');
+            };
+            try { httpJson(await ask(h, body()), 503, 'contact_request_unavailable'); }
+            finally { h.f.state.hook = null; }
+            expect(await stored(h)).toEqual([]);
+            expect(contactRequestEmail).not.toHaveBeenCalled();
+            await loginClean();
+        });
+
+        test('an advisor-only member is refused with no row and no email', async () => {
+            const contactRequestEmail = jest.fn(async () => {});
+            const h = await ncscHttpSetup({ customerProvider: true, contactRequestsEnabled: true, contactRequestEmail,
+                role: 'fractional_advisor', separateAdvisorWriteUntil: '2027-09-07T00:00:00.000Z' });
+            httpJson(await ask(h, body()), 403, 'contact_request_access_denied');
+            expect(await stored(h)).toEqual([]);
+            expect(contactRequestEmail).not.toHaveBeenCalled();
+            await loginClean();
+        });
+
         test('another tenant neither sees nor collides with these requests, and a viewer may ask', async () => {
             const a = await ncscHttpSetup({ customerProvider: true, contactRequestsEnabled: true });
             const shared = body();
@@ -96,12 +140,13 @@ module.exports = function registerContactRequestHttpPostgres({ ncscHttpSetup, ht
             await loginClean();
         });
 
-        test('staff sessions, stale generations, foreign origins and invalid input are refused without a row', async () => {
-            const operator = await ncscHttpSetup({ contactRequestsEnabled: true });
+        test('staff sessions, stale generations, foreign origins and invalid input are refused without a row or email', async () => {
+            const contactRequestEmail = jest.fn(async () => {});
+            const operator = await ncscHttpSetup({ contactRequestsEnabled: true, contactRequestEmail });
             httpJson(await ask(operator, body()), 403, 'dashboard_access_denied');
             expect(await stored(operator)).toEqual([]);
             await loginClean();
-            const h = await ncscHttpSetup({ customerProvider: true, contactRequestsEnabled: true });
+            const h = await ncscHttpSetup({ customerProvider: true, contactRequestsEnabled: true, contactRequestEmail });
             httpJson(await ask(h, body(), 'a'.repeat(64)), 403, 'contact_request_access_denied');
             httpJson(await ask(h, body()).set('Origin', 'https://foreign.invalid'), 403, 'dashboard_access_denied');
             for (const value of [body({ topic: 'everything' }), body({ consentVersion: 'contact-request-v0' }),
@@ -109,6 +154,7 @@ module.exports = function registerContactRequestHttpPostgres({ ncscHttpSetup, ht
                 httpJson(await ask(h, value), 400, 'dashboard_input_invalid');
             }
             expect(await stored(h)).toEqual([]);
+            expect(contactRequestEmail).not.toHaveBeenCalled();
             await loginClean();
         });
     });

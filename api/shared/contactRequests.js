@@ -46,8 +46,8 @@ function resolveContactAccess(snapshot, contextInput, at) {
 // later call with it is judged afresh (a new NZ day may then store it).
 // The NZ day is derived in SQL from the same timestamp the table CHECK uses.
 // onStored (optional) is told about a newly stored row only after the
-// transaction has committed; a retry or repeat that stores nothing never calls
-// it. It receives the organisation display name, topic and time only, and its
+// transaction has committed, and only for the organisation's first stored row
+// of that NZ day; a retry or repeat that stores nothing never calls it. It receives the organisation display name, topic and time only, and its
 // outcome never changes the customer's result.
 async function writeContactRequest({ database, clock, audit, context: contextInput, onStored }, commandInput) {
     const context = requireTenantRequestContext(contextInput), command = normaliseContactRequest(commandInput);
@@ -82,7 +82,14 @@ async function writeContactRequest({ database, clock, audit, context: contextInp
             status = 'requested';
         }
         if (inserted) await audit.writeEvent(audit.createEvent(context, { ...CONTACT_AUDIT, result: 'succeeded' }));
-        if (inserted && typeof onStored === 'function') {
+        // At most one staff email per organisation and NZ day: a later topic that
+        // day is still stored, but only the first row of the day notifies.
+        const firstToday = inserted && typeof onStored === 'function' && !(await client.query(`SELECT EXISTS (
+                SELECT 1 FROM nofries.dashboard_contact_requests earlier
+                WHERE earlier.tenant_id = $1 AND earlier.organisation_id = $2 AND earlier.request_id <> $3
+                    AND earlier.requested_day = ($4::timestamptz AT TIME ZONE 'Pacific/Auckland')::date) AS found`,
+            [scope.tenantId, scope.organisationId, command.operationId, at])).rows[0].found;
+        if (firstToday) {
             const organisation = await client.query(`SELECT payload->>'displayName' AS display_name
                 FROM nofries.dashboard_organisations WHERE tenant_id = $1 AND organisation_id = $2`, [scope.tenantId, scope.organisationId]);
             const row = organisation.rows[0];
