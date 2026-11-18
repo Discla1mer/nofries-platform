@@ -1,0 +1,1697 @@
+{
+  "baseline": true,
+  "failures": [
+    "dashboard-375-actions: targets below 44px",
+    "dashboard-375-actions: clipped text",
+    "dashboard-375-actions: navigation splits words",
+    "dashboard-375-actions-expanded: targets below 44px",
+    "dashboard-375-actions-expanded: clipped text",
+    "dashboard-375-actions-expanded: navigation splits words",
+    "dashboard-375-empty: targets below 44px",
+    "dashboard-375-empty: clipped text",
+    "dashboard-375-empty: navigation splits words",
+    "dashboard-375-empty-expanded: targets below 44px",
+    "dashboard-375-empty-expanded: clipped text",
+    "dashboard-375-empty-expanded: navigation splits words",
+    "dashboard-375-planned: targets below 44px",
+    "dashboard-375-planned: clipped text",
+    "dashboard-375-planned-expanded: targets below 44px",
+    "dashboard-375-planned-expanded: clipped text",
+    "/dashboard-375-false-services: clipped text",
+    "dashboard-375-text200-actions: targets below 44px",
+    "dashboard-375-text200-actions: clipped text",
+    "dashboard-375-text200-actions-expanded: targets below 44px",
+    "dashboard-375-text200-actions-expanded: clipped text",
+    "dashboard-375-text200-empty: targets below 44px",
+    "dashboard-375-text200-empty: clipped text",
+    "dashboard-375-text200-empty-expanded: targets below 44px",
+    "dashboard-375-text200-empty-expanded: clipped text",
+    "dashboard-375-text200-planned: targets below 44px",
+    "dashboard-375-text200-planned: clipped text",
+    "dashboard-375-text200-planned-expanded: targets below 44px",
+    "dashboard-375-text200-planned-expanded: clipped text",
+    "/dashboard-375-true-services: clipped text",
+    "dashboard-390-actions: targets below 44px",
+    "dashboard-390-actions: clipped text",
+    "dashboard-390-actions-expanded: targets below 44px",
+    "dashboard-390-actions-expanded: clipped text",
+    "dashboard-390-empty: targets below 44px",
+    "dashboard-390-empty: clipped text",
+    "dashboard-390-empty-expanded: targets below 44px",
+    "dashboard-390-empty-expanded: clipped text",
+    "dashboard-390-planned: targets below 44px",
+    "dashboard-390-planned: clipped text",
+    "dashboard-390-planned-expanded: targets below 44px",
+    "dashboard-390-planned-expanded: clipped text",
+    "/dashboard-390-false-services: clipped text",
+    "dashboard-390-text200-actions: targets below 44px",
+    "dashboard-390-text200-actions: clipped text",
+    "dashboard-390-text200-actions-expanded: targets below 44px",
+    "dashboard-390-text200-actions-expanded: clipped text",
+    "dashboard-390-text200-empty: targets below 44px",
+    "dashboard-390-text200-empty: clipped text",
+    "dashboard-390-text200-empty-expanded: targets below 44px",
+    "dashboard-390-text200-empty-expanded: clipped text",
+    "dashboard-390-text200-planned: targets below 44px",
+    "dashboard-390-text200-planned: clipped text",
+    "dashboard-390-text200-planned-expanded: targets below 44px",
+    "dashboard-390-text200-planned-expanded: clipped text",
+    "/dashboard-390-true-services: clipped text",
+    "gateway-375-actions: targets below 44px",
+    "gateway-375-actions: clipped text",
+    "gateway-375-actions: navigation splits words",
+    "gateway-375-actions-expanded: targets below 44px",
+    "gateway-375-actions-expanded: clipped text",
+    "gateway-375-actions-expanded: navigation splits words",
+    "gateway-375-empty: targets below 44px",
+    "gateway-375-empty: clipped text",
+    "gateway-375-empty: navigation splits words",
+    "gateway-375-empty-expanded: targets below 44px",
+    "gateway-375-empty-expanded: clipped text",
+    "gateway-375-empty-expanded: navigation splits words",
+    "gateway-375-planned: targets below 44px",
+    "gateway-375-planned: clipped text",
+    "gateway-375-planned-expanded: targets below 44px",
+    "gateway-375-planned-expanded: clipped text",
+    "/-375-false-services: clipped text",
+    "gateway-375-text200-actions: targets below 44px",
+    "gateway-375-text200-actions: clipped text",
+    "gateway-375-text200-actions-expanded: targets below 44px",
+    "gateway-375-text200-actions-expanded: clipped text",
+    "gateway-375-text200-empty: targets below 44px",
+    "gateway-375-text200-empty: clipped text",
+    "gateway-375-text200-empty-expanded: targets below 44px",
+    "gateway-375-text200-empty-expanded: clipped text",
+    "gateway-375-text200-planned: targets below 44px",
+    "gateway-375-text200-planned: clipped text",
+    "gateway-375-text200-planned-expanded: targets below 44px",
+    "gateway-375-text200-planned-expanded: clipped text",
+    "/-375-true-services: clipped text",
+    "gateway-390-actions: targets below 44px",
+    "gateway-390-actions: clipped text",
+    "gateway-390-actions-expanded: targets below 44px",
+    "gateway-390-actions-expanded: clipped text",
+    "gateway-390-empty: targets below 44px",
+    "gateway-390-empty: clipped text",
+    "gateway-390-empty-expanded: targets below 44px",
+    "gateway-390-empty-expanded: clipped text",
+    "gateway-390-planned: targets below 44px",
+    "gateway-390-planned: clipped text",
+    "gateway-390-planned-expanded: targets below 44px",
+    "gateway-390-planned-expanded: clipped text",
+    "/-390-false-services: clipped text",
+    "gateway-390-text200-actions: targets below 44px",
+    "gateway-390-text200-actions: clipped text",
+    "gateway-390-text200-actions-expanded: targets below 44px",
+    "gateway-390-text200-actions-expanded: clipped text",
+    "gateway-390-text200-empty: targets below 44px",
+    "gateway-390-text200-empty: clipped text",
+    "gateway-390-text200-empty-expanded: targets below 44px",
+    "gateway-390-text200-empty-expanded: clipped text",
+    "gateway-390-text200-planned: targets below 44px",
+    "gateway-390-text200-planned: clipped text",
+    "gateway-390-text200-planned-expanded: targets below 44px",
+    "gateway-390-text200-planned-expanded: clipped text",
+    "/-390-true-services: clipped text"
+  ],
+  "errors": [],
+  "blocked": [],
+  "observations": [
+    {
+      "label": "dashboard-375-actions",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [
+        "Improvement"
+      ],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "picture-action-title",
+          "text": "Review access",
+          "width": 264.203125,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "picture-actions-plan",
+          "text": "View the full plan",
+          "width": 128.65625,
+          "height": 25.59375
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-actions-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [
+        "Improvement"
+      ],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "picture-action-title",
+          "text": "Review access",
+          "width": 264.203125,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "picture-actions-plan",
+          "text": "View the full plan",
+          "width": 128.65625,
+          "height": 25.59375
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-empty",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [
+        "Improvement"
+      ],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-empty-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [
+        "Improvement"
+      ],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-planned",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-planned-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "/dashboard-375-false-services",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-text200-actions",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-text200-actions-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-text200-empty",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-text200-empty-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-text200-planned",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-375-text200-planned-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "/dashboard-375-true-services",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-actions",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "picture-action-title",
+          "text": "Review access",
+          "width": 279.203125,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "picture-actions-plan",
+          "text": "View the full plan",
+          "width": 128.65625,
+          "height": 25.59375
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-actions-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "picture-action-title",
+          "text": "Review access",
+          "width": 279.203125,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "picture-actions-plan",
+          "text": "View the full plan",
+          "width": 128.65625,
+          "height": 25.59375
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-empty",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-empty-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-planned",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-planned-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "/dashboard-390-false-services",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-text200-actions",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-text200-actions-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-text200-empty",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-text200-empty-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-text200-planned",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "dashboard-390-text200-planned-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "/dashboard-390-true-services",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-actions",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [
+        "Improvement"
+      ],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "picture-action-title",
+          "text": "Review access",
+          "width": 264.203125,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "picture-actions-plan",
+          "text": "View the full plan",
+          "width": 128.65625,
+          "height": 25.59375
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-actions-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [
+        "Improvement"
+      ],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "picture-action-title",
+          "text": "Review access",
+          "width": 264.203125,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "picture-actions-plan",
+          "text": "View the full plan",
+          "width": 128.65625,
+          "height": 25.59375
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-empty",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [
+        "Improvement"
+      ],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-empty-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [
+        "Improvement"
+      ],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-planned",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-planned-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 285,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "/-375-false-services",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-text200-actions",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-text200-actions-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-text200-empty",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-text200-empty-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-text200-planned",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-375-text200-planned-expanded",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "/-375-true-services",
+      "width": 375,
+      "scrollWidth": 375,
+      "splitWords": [],
+      "overflow": [],
+      "small": [],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-actions",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "picture-action-title",
+          "text": "Review access",
+          "width": 279.203125,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "picture-actions-plan",
+          "text": "View the full plan",
+          "width": 128.65625,
+          "height": 25.59375
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-actions-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "picture-action-title",
+          "text": "Review access",
+          "width": 279.203125,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "picture-actions-plan",
+          "text": "View the full plan",
+          "width": 128.65625,
+          "height": 25.59375
+        },
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-empty",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-empty-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-planned",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-planned-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "SUMMARY",
+          "class": "",
+          "text": "Copy or print a summary",
+          "width": 300,
+          "height": 25.59375
+        },
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 70.28125,
+          "height": 22
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "/-390-false-services",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "Synthetic regional organisation for community technology and shared cloud services Synthetic regiona"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-text200-actions",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-text200-actions-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-text200-empty",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-text200-empty-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-text200-planned",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "gateway-390-text200-planned-expanded",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [
+        {
+          "tag": "A",
+          "class": "",
+          "text": "CC BY 4.0",
+          "width": 140.546875,
+          "height": 43
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    },
+    {
+      "label": "/-390-true-services",
+      "width": 390,
+      "scrollWidth": 390,
+      "splitWords": [],
+      "overflow": [],
+      "small": [],
+      "clipped": [
+        {
+          "tag": "HEADER",
+          "class": "dashboard-topbar",
+          "text": "SyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbrokenOrganisationSyntheticUnbr"
+        }
+      ],
+      "violations": []
+    }
+  ]
+}
