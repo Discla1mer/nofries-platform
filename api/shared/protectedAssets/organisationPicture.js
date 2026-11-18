@@ -168,6 +168,7 @@
         const organisationId = options.organisationId, organisationName = options.displayName || organisationId;
         const openImprovement = typeof options.openImprovement === 'function' ? options.openImprovement : null;
         const planGap = typeof options.planGap === 'function' ? options.planGap : null;
+        const contactControl = typeof options.contactControl === 'function' ? options.contactControl : null;
         const readActions = openImprovement && typeof options.readActions === 'function' ? options.readActions : null;
         let actions = null;
         const id = 'picture-assessment-' + (++sequence);
@@ -764,6 +765,8 @@
             help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
                 link, node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
             panel.append(help);
+            // #409: present only when the host negotiated contact requests.
+            if (contactControl) panel.append(contactControl());
             enquiryAvailable().then(available => { if (available && live(token)) help.hidden = false; });
             return panel;
         }
