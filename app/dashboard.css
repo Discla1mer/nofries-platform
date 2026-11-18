@@ -523,7 +523,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 @media (max-width: 48rem) {
     .nofries-dashboard .dashboard-mobile-nav .dashboard-menu-primary { display: flex; flex-wrap: wrap; flex: 1 1 100%; min-width: 0; gap: .25rem; }
     .nofries-dashboard .dashboard-mobile-nav .dashboard-menu-primary > .dashboard-eyebrow { flex-basis: 100%; }
-    .nofries-dashboard .dashboard-mobile-nav .dashboard-menu-primary > .dashboard-task { flex-basis: 6rem; }
+    .nofries-dashboard .dashboard-mobile-nav .dashboard-menu-primary > .dashboard-task { flex-basis: 8rem; }
     .nofries-dashboard .dashboard-mobile-nav .dashboard-menu-other { flex: 1 1 100%; margin-top: 0; }
     /* The grouped menu grows when disclosed, so keep its full height in flow. */
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden]) > .dashboard-menu-primary):not(:has(#dashboardApp .ncsc-questionnaire)) .dashboard-mobile-nav { position: static; }
@@ -576,6 +576,16 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 @media (max-width: 30rem) { .nofries-dashboard .ncsc-questionnaire .ncsc-question { scroll-margin-top: 6rem; } }
 
 .nofries-dashboard .dashboard-topbar { max-height: 9rem; overflow: auto; }
+/* Let long organisation names remain fully readable on phones without a
+   nested scroll area or a sticky header covering the Overview controls. */
+@media screen and (max-width: 48rem) {
+    body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .site-header .brand { min-height: 44px; }
+    body[data-dashboard-gateway="true"][data-dashboard-state="ready"] .site-release > summary { min-height: 44px; padding-block: .6rem; }
+    .nofries-dashboard .dashboard-topbar { position: static; max-height: none; overflow: visible; }
+    .picture-actions a { display: block; min-width: 44px; min-height: 44px; max-width: 100%; padding-block: .6rem; }
+    .picture-summary > summary { min-height: 44px; padding-block: .6rem; }
+    .organisation-picture > .dashboard-muted a { display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; max-width: 100%; }
+}
 /* Improvement Plan choices stay readable on 320px phones. */
 @media (max-width: 25rem) {
     .nofries-dashboard .dashboard-improvement-workspace .picture-toolbar { padding: .6rem .5rem; }
