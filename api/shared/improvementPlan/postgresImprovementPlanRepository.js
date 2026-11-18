@@ -104,7 +104,9 @@ function createPostgresImprovementPlanRepository(options) {
                 const next = applyImprovementActionCommand(from, domain, { ...context.scope, actorSubjectKey: context.identity.subjectKey,
                     eligibleOwnerSubjectKeys: action.ownerSubjectKey ? [action.ownerSubjectKey] : [] });
                 return { state: next, record: store.makeRecord(intent, at, source, last.payloadSha256, next, domain) };
-            }, error => error instanceof ImprovementPlanError || error instanceof ImprovementPlanServiceError);
+            }, error => (error instanceof ImprovementPlanServiceError && error.code === 'improvement_input_invalid') ||
+                (error instanceof ImprovementPlanError && ['improvement_owner_ineligible', 'improvement_transition_invalid',
+                    'improvement_note_invalid'].includes(error.code)));
             if (!carried) continue;
             records.push(...carried.records); ({ state, head } = carried);
             if (action.ownerSubjectKey) owners.push(action.ownerSubjectKey);
