@@ -35,6 +35,11 @@ const AUTH = ['env', 'store', 'clientApplication', 'cryptoProvider', 'randomByte
 const STORE = ['createTransaction', 'consumeTransaction', 'deleteTransaction', 'createSession', 'loadSession', 'deleteSession'];
 const HEADER_NAMES = ['cookie', 'origin', 'sec-fetch-site', 'x-nofries-dashboard-generation', 'x-nofries-dashboard-purpose',
     'x-nofries-dashboard-capabilities', 'content-type', 'content-encoding'];
+// Older dashboards send the shorter values. account-identity-v1 adds the signed-in name
+// beside the email; it does not grant access.
+const QUEUE_CAPABILITY = 'work-queue-v1';
+const LABEL_CAPABILITY = 'work-queue-v1 account-label-v1';
+const IDENTITY_CAPABILITY = 'work-queue-v1 account-label-v1 account-identity-v1';
 const MAX_WIRE = 524288;
 const unavailable = () => new BrowserAuthError(503, 'browser_auth_dashboard_unavailable');
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -643,9 +648,10 @@ function createDashboardRuntimeHandlers(configuration) {
         const binding = await bounded(() => selected.binding(req));
         try {
             const value = copy(binding, 8192);
-            fields(value, ['bindingId', 'scope', ...(own(value, 'accountLabel') ? ['accountLabel'] : []), ...(own(value, 'accountType') ? ['accountType'] : []),
+            fields(value, ['bindingId', 'scope', ...(own(value, 'accountLabel') ? ['accountLabel'] : []), ...(own(value, 'accountName') ? ['accountName'] : []), ...(own(value, 'accountType') ? ['accountType'] : []),
                 ...(own(value, 'clientSetupAvailable') ? ['clientSetupAvailable'] : [])]);
             if (own(value, 'accountLabel') && (typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel))) throw new Error();
+            if (own(value, 'accountName') && (typeof value.accountName !== 'string' || value.accountName !== value.accountName.trim() || !value.accountName || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountName))) throw new Error();
             uuid(value.bindingId); fields(value.scope, ['tenantId', 'organisationId']);
             if (own(value, 'accountType') && !['company', 'consultant'].includes(value.accountType)) throw new Error();
             if (own(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant')) throw new Error();
@@ -859,12 +865,15 @@ function createDashboardRuntimeHandlers(configuration) {
                 generation: value.generation, selectedBindingId: value.selectedBindingId,
                 ...(customerAccount?.accountType ? { accountType: customerAccount.accountType } : {}),
                 ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
-                    snapshot.headers['x-nofries-dashboard-capabilities'][0] === 'work-queue-v1 account-label-v1' &&
+                    [LABEL_CAPABILITY, IDENTITY_CAPABILITY].includes(snapshot.headers['x-nofries-dashboard-capabilities'][0]) &&
                     customerAccount?.accountLabel ? { accountLabel: customerAccount.accountLabel } : {}),
+                ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
+                    snapshot.headers['x-nofries-dashboard-capabilities'][0] === IDENTITY_CAPABILITY &&
+                    customerAccount?.accountName ? { accountName: customerAccount.accountName } : {}),
                 // Existing open dashboards validate an exact session shape.
                 // Negotiate display metadata; this does not grant queue access.
                 ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
-                    ['work-queue-v1', 'work-queue-v1 account-label-v1'].includes(snapshot.headers['x-nofries-dashboard-capabilities'][0]) &&
+                    [QUEUE_CAPABILITY, LABEL_CAPABILITY, IDENTITY_CAPABILITY].includes(snapshot.headers['x-nofries-dashboard-capabilities'][0]) &&
                     improvementEnabled && customerAccount?.accountType === 'consultant' ? { workQueueAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }
