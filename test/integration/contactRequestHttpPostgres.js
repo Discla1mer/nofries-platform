@@ -58,6 +58,28 @@ module.exports = function registerContactRequestHttpPostgres({ ncscHttpSetup, ht
             await loginClean();
         });
 
+        test('the staff notification fires once after a new row commits, never for a retry or a same-day repeat', async () => {
+            const notices = [], states = [];
+            let h;
+            const contactRequestEmail = jest.fn(async notice => {
+                notices.push(notice);
+                // Committed: the row is visible to a separate connection when the notifier runs.
+                states.push((await stored(h)).length);
+            });
+            h = await ncscHttpSetup({ customerProvider: true, contactRequestsEnabled: true, contactRequestEmail });
+            const first = body();
+            httpJson(await ask(h, first), 200);
+            httpJson(await ask(h, first), 200);
+            const again = await ask(h, body()); httpJson(again, 200);
+            expect(again.body).toEqual({ schemaVersion: 1, status: 'already_requested' });
+            expect(contactRequestEmail).toHaveBeenCalledTimes(1);
+            await contactRequestEmail.mock.results[0].value;
+            expect(notices).toEqual([{ organisationName: expect.any(String), topic: 'results', requestedAt: expect.any(String) }]);
+            expect(notices[0].organisationName.length).toBeGreaterThan(0);
+            expect(states).toEqual([1]);
+            await loginClean();
+        });
+
         test('another tenant neither sees nor collides with these requests, and a viewer may ask', async () => {
             const a = await ncscHttpSetup({ customerProvider: true, contactRequestsEnabled: true });
             const shared = body();

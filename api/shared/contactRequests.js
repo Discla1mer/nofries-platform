@@ -45,15 +45,20 @@ function resolveContactAccess(snapshot, contextInput, at) {
 // table. A repeat that stored no row leaves no claim on its operation id: a
 // later call with it is judged afresh (a new NZ day may then store it).
 // The NZ day is derived in SQL from the same timestamp the table CHECK uses.
-async function writeContactRequest({ database, clock, audit, context: contextInput }, commandInput) {
+// onStored (optional) is told about a newly stored row only after the
+// transaction has committed; a retry or repeat that stores nothing never calls
+// it. It receives the organisation display name, topic and time only, and its
+// outcome never changes the customer's result.
+async function writeContactRequest({ database, clock, audit, context: contextInput, onStored }, commandInput) {
     const context = requireTenantRequestContext(contextInput), command = normaliseContactRequest(commandInput);
     const { scope, identity } = context;
-    return database.withTenantTransaction(scope.tenantId, async client => {
+    let stored = null;
+    const result = await database.withTenantTransaction(scope.tenantId, async client => {
         const existing = async () => (await client.query(`SELECT organisation_id, subject_key, topic, consent_version
             FROM nofries.dashboard_contact_requests WHERE tenant_id = $1 AND request_id = $2`, [scope.tenantId, command.operationId])).rows;
-        let found = await existing(), status = null, inserted = false;
+        let found = await existing(), status = null, inserted = false, at = null;
         if (!found.length) {
-            const at = clock();
+            at = clock();
             const insert = await client.query(`INSERT INTO nofries.dashboard_contact_requests
                 (tenant_id, organisation_id, request_id, subject_key, topic, consent_version, requested_day, requested_at)
                 VALUES ($1, $2, $3, $4, $5, $6, ($7::timestamptz AT TIME ZONE 'Pacific/Auckland')::date, $7::timestamptz)
@@ -77,8 +82,19 @@ async function writeContactRequest({ database, clock, audit, context: contextInp
             status = 'requested';
         }
         if (inserted) await audit.writeEvent(audit.createEvent(context, { ...CONTACT_AUDIT, result: 'succeeded' }));
+        if (inserted && typeof onStored === 'function') {
+            const organisation = await client.query(`SELECT payload->>'displayName' AS display_name
+                FROM nofries.dashboard_organisations WHERE tenant_id = $1 AND organisation_id = $2`, [scope.tenantId, scope.organisationId]);
+            const row = organisation.rows[0];
+            stored = Object.freeze({ organisationName: row && typeof row.display_name === 'string' ? row.display_name : '',
+                topic: command.topic, requestedAt: String(at) });
+        }
         return Object.freeze({ schemaVersion: 1, status });
     });
+    if (stored) {
+        try { Promise.resolve(onStored(stored)).catch(() => {}); } catch (_) { /* never changes the result */ }
+    }
+    return result;
 }
 
 module.exports = { CONTACT_TOPICS, CONSENT_VERSIONS, CONTACT_AUDIT, ContactRequestError,
