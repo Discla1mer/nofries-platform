@@ -97,7 +97,7 @@ async function measure(page, label) {
     const result = await page.evaluate(() => {
         const visible = node => !!node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden';
         const describe = node => ({ tag: node.tagName, class: node.className, text: node.textContent.trim().slice(0, 100) });
-        const controls = [...document.querySelectorAll('.dashboard-main :is(a, button, select, summary), .dashboard-mobile-nav :is(a, summary)')].filter(visible);
+        const controls = [...document.querySelectorAll('body :is(a, button, select, summary)')].filter(visible);
         const splitWords = [];
         for (const label of document.querySelectorAll('.dashboard-mobile-nav .dashboard-task > span:last-child')) {
             const text = label.firstChild;

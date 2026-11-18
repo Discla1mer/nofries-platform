@@ -577,6 +577,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 /* Let long organisation names remain fully readable on phones without a
    nested scroll area or a sticky header covering the Overview controls. */
 @media screen and (max-width: 48rem) {
+    body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .site-header .brand { min-height: 44px; }
+    body[data-dashboard-gateway="true"][data-dashboard-state="ready"] .site-release > summary { min-height: 44px; padding-block: .6rem; }
     .nofries-dashboard .dashboard-topbar { position: static; max-height: none; overflow: visible; }
     .picture-actions a { display: block; min-width: 44px; min-height: 44px; max-width: 100%; padding-block: .6rem; }
     .picture-summary > summary { min-height: 44px; padding-block: .6rem; }
