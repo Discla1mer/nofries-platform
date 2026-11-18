@@ -60,6 +60,15 @@ describe('profile set', () => {
         [null, undefined, 'x', [], {}, mixed, short, { ...NCSC_V2_CONTEXT.profileRef, extra: 'x' },
             { ...NCSC_V2_CONTEXT.profileRef, profileVersion: '2026-11-18.2' },
             Object.create(NCSC_V2_CONTEXT.profileRef)].forEach(ref => expect(ncscProfileContext(ref)).toBeNull());
+        // Called directly it is still self-defending: no proxy, getter, hidden key or class instance resolves.
+        const getter = { ...NCSC_V2_CONTEXT.profileRef };
+        Object.defineProperty(getter, 'profileVersion', { enumerable: true, get() { throw new Error('getter invoked'); } });
+        const hidden = { ...NCSC_V2_CONTEXT.profileRef };
+        Object.defineProperty(hidden, 'extra', { enumerable: false, value: 'x' });
+        const instance = Object.assign(new (class Ref {})(), NCSC_V2_CONTEXT.profileRef);
+        [new Proxy({ ...NCSC_V2_CONTEXT.profileRef }, {}), getter, hidden, instance,
+            { ...NCSC_V2_CONTEXT.profileRef, [Symbol('x')]: 'x' }].forEach(ref => expect(ncscProfileContext(ref)).toBeNull());
+        expect(ncscProfileContext(Object.assign(Object.create(null), NCSC_V2_CONTEXT.profileRef))).toBe(NCSC_V2_CONTEXT);
     });
 });
 

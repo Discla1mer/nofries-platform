@@ -114,7 +114,10 @@ function buildNcscSubmission(envelopeInput) {
         error.statusCode = 409;
         throw error;
     }
-    return envelope.submission || constructSubmission(envelope, ncscProfileContext(envelope.state.profileRef));
+    if (envelope.submission) return envelope.submission;
+    const context = ncscProfileContext(envelope.state.profileRef);
+    if (!context) invalid();
+    return constructSubmission(envelope, context);
 }
 
 function constructSubmission(envelope, context) {
