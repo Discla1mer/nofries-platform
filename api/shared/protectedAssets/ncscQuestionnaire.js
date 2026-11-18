@@ -172,7 +172,8 @@
             const titles = [];
             metadata.questions.filter(function (question) { return optionOf(question.id) === group[0]; }).forEach(function (question) {
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
-                const title = control ? control.title : question.prompt;
+                // Plain titles for a board: drop the internal extension prefix.
+                const title = (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, '');
                 if (titles.indexOf(title) === -1) titles.push(title);
             });
             if (titles.length) lines.push('', group[1] + ':', ...titles.map(function (title) { return '- ' + title; }));
