@@ -101,3 +101,30 @@
         });
     });
 }());
+
+// Ad landing (#441): match the headline to the trigger a Meta campaign was
+// written for. Reads only utm_campaign from this page's address and checks
+// it against a closed list; only fixed sentences are written. Nothing is
+// stored or sent. Any other visitor sees the page unchanged.
+(function () {
+    const MESSAGES = {
+        insurance: ['Get your cyber insurance answers right in about 15 minutes.',
+            'Insurers now ask about multi-factor sign-in, backups and patching. Check where your business stands against New Zealand’s National Cyber Security Centre (NCSC) guidance before you fill in the renewal form. Free for New Zealand small businesses.'],
+        supplier: ['Answer your customer’s security questionnaire with confidence.',
+            'Supplier security questionnaires ask about the same basics. See where your business stands against New Zealand’s National Cyber Security Centre (NCSC) guidance, and what to fix first. Free for New Zealand small businesses.'],
+        board: ['Give your board a straight answer on cyber security.',
+            'See where your business stands against New Zealand’s National Cyber Security Centre (NCSC) guidance, with your top gaps ranked in plain English. Free for New Zealand small businesses.'],
+        scam: ['Would your business stop a fake invoice? Find out in about 15 minutes.',
+            'Fake invoices and bank-detail changes are a common way businesses lose money. Check your payment and sign-in controls against New Zealand’s National Cyber Security Centre (NCSC) guidance. Free for New Zealand small businesses.']
+    };
+    try {
+        if (!document.body || document.body.dataset.page !== 'dashboard-home') return;
+        const campaign = String(new URLSearchParams(window.location.search).get('utm_campaign') || '').toLowerCase();
+        const key = campaign.split(/[-_ ]/)[0];
+        if (!Object.prototype.hasOwnProperty.call(MESSAGES, key)) return;
+        const headline = document.getElementById('home-title');
+        const lead = document.getElementById('homepageLead');
+        if (headline) headline.textContent = MESSAGES[key][0];
+        if (lead) lead.textContent = MESSAGES[key][1];
+    } catch (_) { /* leave the page unchanged */ }
+}());
