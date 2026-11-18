@@ -498,6 +498,12 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         const progress = element('p', label);
         progress.className = 'signup-progress'; progress.setAttribute('role', 'status');
         root.append(progress);
+        controller.signal.addEventListener('releasewait', () => {
+            clearTimeout(timer);
+            timer = setTimeout(cancelOperation, 180000);
+            progress.textContent = 'We’re updating No Fries, this will take a minute or two';
+            progress.classList.add('signup-release-wait');
+        }, { once: true });
         try {
             const state = await Promise.race([action(controller.signal), cancelled]);
             if (!disposed && current === generation) { opening = false; show(state, state, restoreDraft); }

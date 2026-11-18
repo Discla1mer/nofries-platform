@@ -60,6 +60,10 @@ function createSignupClient({ fetch: fetchImpl, createAccount, customerTransport
             clearTimeout(timer);
             timer = setTimeout(abort, ms);
         };
+        operation.beginReleaseWait = () => {
+            resetDeadline(180000);
+            signal?.dispatchEvent(new Event('releasewait'));
+        };
         resetDeadline(timeoutMs);
         try {
             return await Promise.race([action(controller.signal, resetDeadline), cancellation]);
@@ -79,13 +83,34 @@ function createSignupClient({ fetch: fetchImpl, createAccount, customerTransport
         const token = csrf;
         csrf = null;
         if (body && !token) throw failure();
-        const response = await fetchImpl(path, {
+        const options = {
             method: body ? 'POST' : 'GET', mode: 'same-origin', credentials: 'same-origin',
             redirect: 'error', cache: 'no-store', referrerPolicy: 'same-origin', signal,
             headers: { Accept: 'application/json', ...(body ? {
                 'Content-Type': 'application/json', 'X-CSRF-Token': token
             } : {}) }, ...(body ? { body: JSON.stringify(body) } : {})
-        });
+        };
+        let response = await fetchImpl(path, options);
+        let delay = 1000;
+        // As in the dashboard loader, exclude redirected and opaque responses.
+        // Only the HTML 403 returned by the stopped host permits replay here.
+        while (response.status === 403 && !response.redirected &&
+            !['opaque', 'opaqueredirect'].includes(response.type) &&
+            /^text\/html(?:\s*;|\s*$)/i.test(response.headers?.get('content-type') || '')) {
+            if (signal.aborted || disposed) throw failure();
+            if (delay === 1000) operations.get(signal).beginReleaseWait();
+            await new Promise((resolve, reject) => {
+                const abort = () => { clearTimeout(timer); reject(failure()); };
+                const timer = setTimeout(() => {
+                    signal.removeEventListener('abort', abort);
+                    resolve();
+                }, delay);
+                signal.addEventListener('abort', abort, { once: true });
+            });
+            if (signal.aborted || disposed) throw failure();
+            delay = Math.min(delay * 2, 10000);
+            response = await fetchImpl(path, options);
+        }
         if (signal.aborted || disposed || response.redirected) throw failure();
         const operation = operations.get(signal);
         const metadata = responseDiagnostic(response.headers);
