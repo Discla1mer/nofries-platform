@@ -302,6 +302,40 @@ describe('generic framework-profile schema', () => {
 });
 
 describe('immutable framework registry', () => {
+    test('republishing owned profiles preserves values, independent copies and deep immutability', () => {
+        const registry = createFrameworkRegistry([syntheticFrameworkProfile]);
+        const first = registry.getProfile(syntheticFrameworkProfile.profile.id, syntheticFrameworkProfile.profile.version);
+        const second = publishFrameworkProfile(first), third = publishFrameworkProfile(second);
+        for (const value of [second, third]) {
+            expect(value).toEqual(first);
+            expect(value).not.toBe(first);
+            expect(value.questions).not.toBe(first.questions);
+            expect(Object.isFrozen(value.questions[0].guidance)).toBe(true);
+            expect(() => { value.questions[0].weight = 999; }).toThrow(TypeError);
+            expect(calculateFrameworkProfileSha256(value)).toBe(first.catalogueSha256);
+        }
+    });
+
+    test('successful publication never trusts a later mutation of the input or a copied frozen output', () => {
+        const input = clone(syntheticFrameworkProfile), published = publishFrameworkProfile(input);
+        input.questions[0].weight = 0.5;
+        expectValidationCode(() => publishFrameworkProfile(input), 'catalogue_digest_mismatch');
+        const copied = clone(published);
+        copied.questions[0].weight = 0.5;
+        const freeze = value => { if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); } };
+        freeze(copied);
+        expectValidationCode(() => publishFrameworkProfile(copied), 'catalogue_digest_mismatch');
+    });
+
+    test('wrapping an owned profile never transfers validation to a proxy or accessor', () => {
+        const published = publishFrameworkProfile(syntheticFrameworkProfile), getter = jest.fn(() => published.questions);
+        expectValidationCode(() => publishFrameworkProfile(new Proxy(published, {})), 'proxy_rejected');
+        const copied = { ...published };
+        Object.defineProperty(copied, 'questions', { enumerable: true, get: getter });
+        expectValidationCode(() => publishFrameworkProfile(copied), 'accessor_rejected');
+        expect(getter).not.toHaveBeenCalled();
+    });
+
     test('resolves NCSC and synthetic profiles only by exact version and lists them deterministically', () => {
         const registry = createFrameworkRegistry([
             syntheticFrameworkProfile,
