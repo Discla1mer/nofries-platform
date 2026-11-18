@@ -855,16 +855,19 @@ function createDashboardRuntimeHandlers(configuration) {
             const customerAccount = value.purpose === 'customer' ? await approvedCustomerBinding(privateRequest) : null;
             const admin = activationPort && value.purpose === 'operator_dashboard' ? await bounded(() => captureRequest(privateRequest)) : null;
             const activationAvailable = admin && adminSubjects.has(admin.identityPayload.identityTenantId + ':' + admin.identityPayload.oid);
+            const advertised = snapshot.headers['x-nofries-dashboard-capabilities'];
+            const capability = advertised.length === 1 ? advertised[0] : '';
+            const contactClient = capability === 'work-queue-v1 account-label-v1 contact-request-v1';
+            const labelClient = contactClient || capability === 'work-queue-v1 account-label-v1';
             return response(200, { schemaVersion: 1, authenticated: true, purpose: value.purpose, expiresAt: value.expiresAt,
                 generation: value.generation, selectedBindingId: value.selectedBindingId,
                 ...(customerAccount?.accountType ? { accountType: customerAccount.accountType } : {}),
-                ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
-                    snapshot.headers['x-nofries-dashboard-capabilities'][0] === 'work-queue-v1 account-label-v1' &&
+                ...(contactClient && contactRequestsEnabled && value.purpose === 'customer' ? { contactRequestsEnabled: true } : {}),
+                ...(labelClient &&
                     customerAccount?.accountLabel ? { accountLabel: customerAccount.accountLabel } : {}),
                 // Existing open dashboards validate an exact session shape.
                 // Negotiate display metadata; this does not grant queue access.
-                ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
-                    ['work-queue-v1', 'work-queue-v1 account-label-v1'].includes(snapshot.headers['x-nofries-dashboard-capabilities'][0]) &&
+                ...((labelClient || capability === 'work-queue-v1') &&
                     improvementEnabled && customerAccount?.accountType === 'consultant' ? { workQueueAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }

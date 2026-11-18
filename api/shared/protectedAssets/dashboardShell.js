@@ -414,6 +414,7 @@
             try {
                 const result = options.mountPicture(childRoot, { generation: generation,
                     displayName: model.context.displayName,
+                    contactControl: options.contactRequest ? contactControl : undefined,
                     openCyber: cyber ? function (assessmentId, intent) {
                         if (!active() || !pictureChild || child !== pictureChild) return Promise.resolve(false);
                         // The first-use action opens the new-assessment step directly.
@@ -466,6 +467,7 @@
                         return navigate(improvementReady.route, true, undefined, undefined, sourceAssessment);
                     };
                 }
+                if (options.contactRequest) presentation.contactControl = contactControl;
                 presentation.onLocation = function (location) {
                     if (!active() || child !== mountedChild || !managedHistory || navigation || travelling || !committedEntry ||
                         location !== null && !validCyberLocation(location)) return;
@@ -561,17 +563,37 @@
             }
             main.append(section);
         }
+        function contactControl(topic) {
+            const group = element('div', 'dashboard-contact-request');
+            const consent = element('p', '', 'No Fries staff will see your organisation name, your sign-in email and a summary of your results, and will contact you by email.');
+            const status = element('p', 'dashboard-muted');
+            status.setAttribute('role', 'status');
+            let send;
+            const ask = button('Ask No Fries to contact me', async function () {
+                if (ask.disabled || !active()) return;
+                ask.disabled = true;
+                try {
+                    if (!send) send = options.contactRequest(topic);
+                    await send();
+                    status.textContent = 'Your request has been received. No Fries will contact you by email.';
+                } catch (_) {
+                    status.textContent = 'We could not confirm your request. Please try again.';
+                    ask.disabled = false;
+                }
+            });
+            group.append(consent, ask, status);
+            return group;
+        }
         function renderServices() {
             main.append(element('p', 'dashboard-intro', 'What is included, what needs setup and what can be scoped separately?'));
             const subscription = panel('Your plan: ' + planNames[model.subscription], 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
             subscription.classList.add('dashboard-subscription-panel'); main.append(subscription);
-            // The standing paid offer (pricing.html). A plain link to the contact
-            // form with the offer named; nothing is sent from the dashboard.
             const offer = panel('90-day managed security', 'NZ$1,250 + GST for 90 days. We set your baseline, fix three gaps with you, review progress at two month-ends and give you a written summary for your board or insurer. No automatic renewal.');
             offer.classList.add('dashboard-offer-panel');
             const offerLink = element('a', 'dashboard-button', 'Ask about 90-day managed security');
             offerLink.href = '/contact.html?service=managed_security_90';
-            offer.append(offerLink, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
+            if (options.contactRequest) offer.append(contactControl('results'));
+            else offer.append(offerLink, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
             main.append(offer);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {
@@ -585,11 +607,10 @@
                     ? 'This included service is not available yet. Contact No Fries if you need it.'
                     : 'Next step: verify the agreed assignment, coverage and any required provider connection before activation.'),
                     element('p', 'dashboard-muted', 'This is information only. No request, purchase, assignment or activation has been submitted.'));
-                // A plain link to the public contact form with this service named.
-                // Nothing is sent from the dashboard, and the form does not include assessment answers.
                 const ask = element('a', 'dashboard-button', 'Ask No Fries about this service');
                 ask.href = '/contact.html?service=' + encodeURIComponent(item.key);
-                detail.append(ask, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
+                if (options.contactRequest) detail.append(contactControl(item.key));
+                else detail.append(ask, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
                 const control = button(service.state === 'not_included' ? 'How to scope this service'
                     : service.state === 'disabled' ? 'About availability' : 'What is needed for setup', function () {
                     detail.hidden = !detail.hidden; control.setAttribute('aria-expanded', String(!detail.hidden));

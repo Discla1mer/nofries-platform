@@ -1465,7 +1465,9 @@
             const copy = button('Copy summary', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary');
             handoff.append(copy);
             if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
-            handoff.append(copied); section.append(handoff); panel.append(section);
+            handoff.append(copied); section.append(handoff);
+            if (options.contactControl) section.append(options.contactControl('results'));
+            panel.append(section);
         }
         function renderQuestion() {
             if (!live() || !questionRegion || !acknowledged) return;

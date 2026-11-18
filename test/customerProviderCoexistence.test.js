@@ -103,6 +103,7 @@ async function login(services) {
 const queueCapabilityHeader = 'X-NoFries-Dashboard-Capabilities';
 const queueCapabilityRequests = [
     { name: 'old client without header', raw: [], advertised: false },
+    { name: 'contact capability', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1 contact-request-v1'], advertised: true, label: true, contact: true },
     { name: 'account label capability', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1'], advertised: true, label: true },
     { name: 'exact capability', raw: [queueCapabilityHeader, 'work-queue-v1'], advertised: true }
 ];
@@ -132,7 +133,7 @@ const queueCapabilityCases = [
 test.each(queueCapabilityCases)
 ('session capability preserves old wire shape unless negotiated ($enabled, $provider, $accountType, $header)', async ({ enabled, provider, accountType, request: capability }) => {
     const h = fixture();
-    if (enabled) h.options.improvementEnabled = true;
+    if (enabled) Object.assign(h.options, { improvementEnabled: true, contactRequestsEnabled: true });
     const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', bindingId: id(90), scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
         ...(accountType ? { accountType } : {}) }));
     h.options.customer.resolveActivationBinding = binding;
@@ -169,6 +170,7 @@ test.each(queueCapabilityCases)
     expect(response.body).toEqual({ schemaVersion: 1, authenticated: true,
         purpose: provider === 'staff' ? 'operator_dashboard' : 'customer',
         expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90),
+        ...(enabled && provider !== 'staff' && capability.contact ? { contactRequestsEnabled: true } : {}),
         ...(accountType ? { accountType } : {}), ...(capability.label && provider !== 'staff' ? { accountLabel: 'synthetic@example.test' } : {}), ...(advertised ? { workQueueAvailable: true } : {}) });
     expect(binding).toHaveBeenCalledTimes(provider === 'staff' ? 0 : 1);
     expect(readSession).toHaveBeenCalledTimes(1);

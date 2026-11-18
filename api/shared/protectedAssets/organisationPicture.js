@@ -664,6 +664,7 @@
                 section.append(node('p', '', 'You did not report any controls as not in place or partly in place.'));
                 if (result.unknown > 0) section.append(node('p', 'dashboard-muted', result.unknown + (result.unknown === 1 ? ' answer is' : ' answers are') +
                     ' still unknown or to confirm. Confirm ' + (result.unknown === 1 ? 'it' : 'them') + ' to check for gaps.'));
+                if (options.contactControl) section.append(options.contactControl('results'));
                 return section;
             }
             section.append(node('p', 'dashboard-muted', 'Ranked from your saved answers. Multi-factor authentication, patching, backups and checking payment changes come first, because they help protect against common attacks on small businesses, such as stolen accounts, ransomware and invoice fraud. Then controls not in place before partly in place. This is a fixed order, not a risk assessment of your business.'));
@@ -759,6 +760,7 @@
             const panel = node('div', 'picture-next-steps'), token = epoch;
             panel.append(node('h4', '', 'Next step'));
             if (typeof questionnaire.providerSummary === 'function' && typeof questionnaire.copySummary === 'function') panel.append(summaryHandoff());
+            if (options.contactControl) { panel.append(options.contactControl('results')); return panel; }
             const help = node('div', 'picture-next-steps-help'); help.hidden = true;
             const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
             help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),

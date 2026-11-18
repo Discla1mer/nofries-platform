@@ -397,11 +397,13 @@
     }
     function session(value) {
         if (!fields(value, ['schemaVersion', 'authenticated', 'purpose', 'expiresAt', 'generation', 'selectedBindingId',
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsEnabled') ? ['contactRequestsEnabled'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountLabel') ? ['accountLabel'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
+            Object.prototype.hasOwnProperty.call(value, 'contactRequestsEnabled') && (value.contactRequestsEnabled !== true || value.purpose !== 'customer') ||
             Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
             value.schemaVersion !== 1 || value.authenticated !== true || !['operator_dashboard', 'customer'].includes(value.purpose) ||
             Object.prototype.hasOwnProperty.call(value, 'activationAvailable') && (value.activationAvailable !== true || value.purpose !== 'operator_dashboard') ||
@@ -412,6 +414,7 @@
             value.selectedBindingId !== null && (typeof value.selectedBindingId !== 'string' || !UUID.test(value.selectedBindingId))) throw invalid();
         if (Date.parse(value.expiresAt) <= Date.now()) { const error = invalid(); error.expired = true; throw error; }
         return Object.freeze({ purpose: value.purpose, generation: value.generation, selectedBindingId: value.selectedBindingId, expiresAt: value.expiresAt,
+            ...(value.contactRequestsEnabled === true ? { contactRequestsEnabled: true } : {}),
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
@@ -419,7 +422,7 @@
             ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType', 'accountLabel']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsEnabled', 'accountType', 'accountLabel']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -525,7 +528,7 @@
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
@@ -787,6 +790,15 @@
         cycle.improvement = !!improvement;
         cycle.displayContract = displayContract(model);
         controller = factory.mount(elements.app, model, { window: window, initialRoute: currentRoute(),
+            ...(fresh.contactRequestsEnabled ? { contactRequest: function (topic) {
+                const body = { operationId: secureId(), consentVersion: 'contact-request-v1', topic: topic };
+                return async function () {
+                    if (!current(cycle) || cycle.authorityPending || cycle.busy || unresolved) throw invalid();
+                    const result = requireSuccess(await request(cycle, '/api/dashboard/contact-requests', body, fresh.generation));
+                    if (!fields(result, ['schemaVersion', 'status']) || result.schemaVersion !== 1 ||
+                        !['requested', 'already_requested'].includes(result.status)) throw invalid();
+                };
+            } } : {}),
             ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
@@ -1476,6 +1488,7 @@
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
+                contactControl: presentation && presentation.contactControl,
                 onLocation: presentation && presentation.onLocation, onFunnelStep: funnelStep,
                 // Overview's first-use action opens the new-assessment step directly.
                 startNew: !!(presentation && presentation.startNew === true),
@@ -1565,7 +1578,7 @@
             mountCyber.mountPicture = function (root, presentation) {
                 if (!current(cycle)) throw invalid();
                 return picture.mount(root, { metadata: value.metadata, client: client, organisationId: organisationId,
-                    displayName: presentation.displayName,
+                    displayName: presentation.displayName, contactControl: presentation.contactControl,
                     ...(!pictureSelection ? { readFirstPaint: async function () {
                         if (!current(cycle) || cycle.authorityPending) throw invalid();
                         const actions = typeof presentation.openImprovement === 'function' && cycle.improvement;

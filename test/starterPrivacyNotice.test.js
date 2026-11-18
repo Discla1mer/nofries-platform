@@ -12,6 +12,11 @@ function section(title) {
 }
 
 describe('starter signup privacy disclosure', () => {
+    test('explains what staff see and why when a dashboard customer asks for contact', () => {
+        const wording = 'If you ask us to contact you from the dashboard, No Fries staff see your organisation name, sign-in email and a summary of your results, and use them only to reply to you.';
+        expect(section('Website enquiries')).toContain(wording);
+        expect(fs.readFileSync(path.join(__dirname, '../docs/privacy/page-drafts/privacy.html'), 'utf8')).toContain(wording);
+    });
     test('names the durable representative data for own and consultant client signup', () => {
         const text = section('Organisation and representative details');
         for (const field of ['full name', 'your role', 'business address', 'optional company registration number',
@@ -31,7 +36,7 @@ describe('starter signup privacy disclosure', () => {
     test('retains a request contact without claiming automatic or immediate deletion', () => {
         expect(section('Organisation and representative details')).toContain('request access, correction or deletion');
         expect(section('Access, correction and complaints')).toContain('mailto:hello@nofries.nz');
-        expect(notice).toContain('Last updated: 11 November 2026');
+        expect(notice).toContain('Last updated: 19 November 2026');
         expect(notice).not.toContain('Setup and security records are stored in private Azure authentication storage. Expired records are removed');
     });
 });

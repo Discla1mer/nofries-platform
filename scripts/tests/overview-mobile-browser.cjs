@@ -200,4 +200,5 @@ async function main() {
         if (browser) await browser.close(); await new Promise(resolve => server.close(resolve));
     }
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+if (require.main !== module) module.exports = { server, model };
+else main().catch(error => { console.error(error); process.exitCode = 1; });
