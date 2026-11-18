@@ -158,6 +158,28 @@
         const lines = ['Cyber security assessment', 'Scope: ' + assessment.scopePopulation.description, 'Submitted: ' + localDate(assessment.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
         return { items: items, text: lines.concat(items.map(function (item) { return item.title + ': ' + item.owner + ' ' + item.action; })).join('\n') };
     }
+    // Plain-text summary of a submitted assessment for a board or insurer
+    // (#441): what is in place, partly in place, not in place and not yet
+    // known, by control, in the customer's own words. Self-reported, so it
+    // says so, and the next-step line is left for the customer to fill in.
+    function boardSummary(assessment, metadata) {
+        const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
+        const groups = [['yes', 'In place'], ['partial', 'Partly in place'], ['no', 'Not in place yet'], ['unknown', 'Not yet confirmed'], ['not_applicable', 'Marked not applicable (to be confirmed)']];
+        const lines = ['Cyber security position: summary for the board or insurer', 'Scope: ' + assessment.scopePopulation.description,
+            'Assessed: ' + localDate(assessment.submission.submittedAt),
+            'Basis: self-assessment using the No Fries questionnaire adapted from New Zealand NCSC guidance. Not certification or independent assurance.'];
+        groups.forEach(function (group) {
+            const titles = [];
+            metadata.questions.filter(function (question) { return optionOf(question.id) === group[0]; }).forEach(function (question) {
+                const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
+                const title = control ? control.title : question.prompt;
+                if (titles.indexOf(title) === -1) titles.push(title);
+            });
+            if (titles.length) lines.push('', group[1] + ':', ...titles.map(function (title) { return '- ' + title; }));
+        });
+        lines.push('', 'Next steps agreed (owner and date): ');
+        return { text: lines.join('\n') };
+    }
     // Copies with the clipboard when the browser allows it; otherwise selects
     // the read-only text so the person can copy it themselves.
     function copySummary(win, input, status) {
@@ -2106,5 +2128,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));

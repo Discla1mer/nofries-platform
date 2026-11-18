@@ -100,7 +100,8 @@ test('saved Overview identifies source, scope, framework and revision without in
         'SHA-256', 'evaluatorSourceSha256', 'Evaluator', 'Score contract']) assert.ok(!dom.root.textContent.includes(hidden), hidden);
     assert.equal(dom.root.querySelectorAll('input').length, 0);
     assert.doesNotMatch(dom.root.textContent, /board snapshot|draft presentation|PDF export|management review/i);
-    assert.ok(!dom.root.querySelectorAll('button').some(b => /board|download|export|issue/i.test(b.textContent)));
+    // #441 adds one plain copy control for a board or insurer summary; no board mode, download or export.
+    assert.ok(!dom.root.querySelectorAll('button').some(b => b.textContent !== 'Copy board summary' && /board|download|export|issue/i.test(b.textContent)));
 });
 
 test('freshness copy distinguishes the saved baseline from a live organisation check', async () => {
@@ -310,7 +311,7 @@ test('legacy Board options cannot expose another presentation mode or navigation
     assert.equal(dom.root.querySelector('.picture-follow-up-filter').querySelectorAll('select').length, 1);
     assert.equal(dom.root.querySelector('label').textContent, 'Saved assessment');
     assert.deepEqual(dom.root.querySelectorAll('button').map(button => button.textContent),
-        ['Refresh', 'Copy summary', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
+        ['Refresh', 'Copy summary', 'Copy board summary', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
     assert.equal(opened, 0);
 });
 
@@ -1333,7 +1334,11 @@ test('top three gaps put priority-tier controls first, then not-in-place before 
     const printed = section.querySelector('.picture-summary-print');
     assert.match(printed.textContent, /\nSelf-reported gaps; not a risk ranking or certification\.\n/);
     assert.equal(printed.textContent.match(/certif|complian/gi).length, 1);
-    assert.doesNotMatch(section.textContent.replace(printed.textContent, ''), /certif|complian/i);
+    // #441: the board or insurer summary carries one disclaimer of its own.
+    const boardPrinted = section.querySelectorAll('.picture-summary-print')[1];
+    assert.match(boardPrinted.textContent, /\nBasis: self-assessment [^\n]*Not certification or independent assurance\.\n/);
+    assert.equal(boardPrinted.textContent.match(/certif|complian/gi).length, 1);
+    assert.doesNotMatch(section.textContent.replace(printed.textContent, '').replace(boardPrinted.textContent, ''), /certif|complian/i);
 });
 
 test('top gaps show fewer than three when that is all there is', async () => {
@@ -1412,7 +1417,7 @@ describe('next step under the top gaps', () => {
         const { panel, help, controller } = await withEnquiry(fetch);
         assert.equal(help.hidden, true);
         assert.equal(panel.hidden, false);
-        assert.equal(panel.querySelector('summary').textContent, 'Copy or print this summary');
+        assert.equal(panel.querySelector('summary').textContent, 'Copy or print a summary');
         controller.destroy();
     });
     test('hides the help link and aborts when the status read takes longer than 5 seconds', async () => {
@@ -1428,12 +1433,28 @@ describe('next step under the top gaps', () => {
             controller.destroy();
         } finally { jest.useRealTimers(); }
     });
+    test('offers a board or insurer summary built from the same answers, self-reported and without the score', async () => {
+        const fetch = jest.fn(async () => reply(200, { available: false }));
+        const { panel, controller } = await withEnquiry(fetch);
+        const handoff = panel.querySelector('details');
+        const board = handoff.querySelectorAll('textarea')[1], labels = handoff.querySelectorAll('label');
+        assert.ok(board); assert.equal(labels[1].htmlFor, board.id); assert.equal(board.readOnly, true);
+        const { questionnaire, record, metadata } = summarySource();
+        assert.equal(board.value, questionnaire.boardSummary(record, metadata).text);
+        assert.match(board.value, /^Cyber security position: summary for the board or insurer\nScope: Synthetic office and cloud scope\./);
+        assert.match(board.value, /Not certification or independent assurance\./);
+        assert.match(board.value, /Next steps agreed \(owner and date\): $/);
+        assert.doesNotMatch(board.value, /Synthetic organisation A|shared-preview-organisation|46\.4%/);
+        assert.equal(handoff.querySelectorAll('pre')[1].textContent, board.value);
+        assert.equal(handoff.querySelectorAll('a').length, 0);
+        controller.destroy();
+    });
     test('offers Copy or print this summary with the same text as the results view', async () => {
         const fetch = jest.fn(async () => reply(200, { available: false }));
         const { dom, panel, controller } = await withEnquiry(fetch);
         const handoff = panel.querySelector('details');
         assert.equal(handoff.className, 'picture-summary');
-        assert.equal(handoff.querySelector('summary').textContent, 'Copy or print this summary');
+        assert.equal(handoff.querySelector('summary').textContent, 'Copy or print a summary');
         const input = handoff.querySelector('textarea'), label = handoff.querySelector('label');
         assert.equal(label.htmlFor, input.id); assert.equal(input.readOnly, true);
         const { questionnaire, record, metadata } = summarySource();
@@ -1449,7 +1470,7 @@ describe('next step under the top gaps', () => {
         assert.match(css, /\.picture-summary-print \{ display: none;[^}]*white-space: pre-wrap;/);
         assert.match(css, /@media print \{ \.picture-summary textarea \{ display: none; \} \.picture-summary-print \{ display: block; \} \}/);
         assert.equal(dom.window.print, undefined);
-        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary']);
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Copy board summary']);
         controller.destroy();
     });
     test('copies with the shared clipboard behaviour, falls back to selecting, prints, and calls no new endpoint', async () => {
@@ -1464,7 +1485,7 @@ describe('next step under the top gaps', () => {
         const handoff = dom.root.querySelector('.picture-next-steps').querySelector('details');
         const input = handoff.querySelector('textarea'), status = handoff.querySelector('[role="status"]');
         const press = label => handoff.querySelectorAll('button').find(button => button.textContent === label).click();
-        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Print these results']);
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Copy board summary', 'Print these results']);
         press('Copy summary'); await flush();
         expect(writeText).toHaveBeenCalledWith(input.value); assert.equal(status.textContent, 'Summary copied.');
         writeText.mockRejectedValueOnce(new Error('denied'));
