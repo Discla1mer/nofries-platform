@@ -68,8 +68,11 @@ function isBlockedUserAgent(userAgent, env = process.env) {
     return getBlockedUserAgentFragments(env).some((fragment) => text.includes(fragment));
 }
 
-function checkRateLimit(bucketName, clientKey, env = process.env) {
+// cost: how many ordinary requests this one stands for (default 1). A request
+// is allowed only when the whole cost fits; a refused request spends nothing.
+function checkRateLimit(bucketName, clientKey, env = process.env, cost = 1) {
     const limit = getRateLimit(bucketName, env);
+    const units = Number.isSafeInteger(cost) && cost >= 1 ? cost : 1;
     const now = Date.now();
     const bucketKey = `${bucketName}:${clientKey || 'unknown'}`;
     if (!rateLimitBuckets.has(bucketKey) && rateLimitBuckets.size >= MAX_RATE_LIMIT_BUCKETS) {
@@ -78,7 +81,7 @@ function checkRateLimit(bucketName, clientKey, env = process.env) {
     const bucket = rateLimitBuckets.get(bucketKey) || [];
     const recent = bucket.filter((timestamp) => now - timestamp < limit.windowMs);
 
-    if (recent.length >= limit.max) {
+    if (recent.length + units > limit.max) {
         rateLimitBuckets.set(bucketKey, recent);
         return {
             allowed: false,
@@ -87,7 +90,7 @@ function checkRateLimit(bucketName, clientKey, env = process.env) {
         };
     }
 
-    recent.push(now);
+    for (let i = 0; i < units; i++) recent.push(now);
     // Re-insert so eviction under the bucket cap drops the least recently
     // used keys first, never an address that is still sending requests.
     rateLimitBuckets.delete(bucketKey);

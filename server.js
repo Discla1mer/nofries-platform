@@ -78,6 +78,7 @@ const {
 } = require('./lib/publicAssets');
 const { startStandaloneHost } = require('./lib/hostStartup');
 const { createDashboardRuntimeHandlers } = require('./api/shared/dashboardRuntimeHandlers');
+const { dashboardReadCost } = require('./api/shared/dashboardReadCost');
 const { createDashboardAdminService } = require('./api/shared/dashboardAdmin/service');
 const { createSignupListService } = require('./api/shared/dashboardAdmin/signupService');
 const { createDashboardAdminHandlers } = require('./api/shared/dashboardAdmin/handlers');
@@ -1119,16 +1120,18 @@ function rateLimitApiRequests(req, res, next) {
     // Only a session the server has already issued or verified selects the
     // dashboard allowance; a fabricated cookie stays on the address limit.
     const sessionKey = req.path.startsWith('/dashboard/') ? getVerifiedDashboardSessionKey(req.headers) : null;
+    // A combined dashboard read is charged as the separate reads it replaces.
+    const cost = write ? 1 : dashboardReadCost(method, req.originalUrl);
     let result;
     if (sessionKey) {
         // Verified dashboard sessions: a generous per-address ceiling first,
         // then the per-session allowance that ordinary use stays within.
-        result = checkRateLimit(write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey, apiEnvironment);
+        result = checkRateLimit(write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey, apiEnvironment, cost);
         if (result.allowed) {
-            result = checkRateLimit(write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey, apiEnvironment);
+            result = checkRateLimit(write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey, apiEnvironment, cost);
         }
     } else {
-        result = checkRateLimit(write ? 'apiWrite' : 'apiRead', clientKey, apiEnvironment);
+        result = checkRateLimit(write ? 'apiWrite' : 'apiRead', clientKey, apiEnvironment, cost);
     }
     Object.entries(rateLimitHeaders(result)).forEach(([name, value]) => {
         if (value) {

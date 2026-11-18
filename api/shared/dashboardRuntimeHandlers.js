@@ -26,6 +26,7 @@ const { DashboardOnboardingError } = require('./appLifecycle/dashboardOnboarding
 const { copy, fields, freeze, uuid, digest, instant } = require('./appLifecycle/dashboardRuntimeRecords');
 const { hostResourceForRoute } = require('./appLifecycle/dashboardRuntimeEvents');
 const { apiSecurityHeaders } = require('./securityHeaders');
+const { OVERVIEW_PLAN_LIMIT } = require('./dashboardReadCost');
 
 const CONFIG = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
     'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
@@ -716,8 +717,8 @@ function createDashboardRuntimeHandlers(configuration) {
                 });
                 let index = null, lists = null;
                 try {
-                    index = await improvement(service => service.plans({ limit: 5, afterPlanId: null }));
-                    if (index.plans.length <= 5) {
+                    index = await improvement(service => service.plans({ limit: OVERVIEW_PLAN_LIMIT, afterPlanId: null }));
+                    if (index.plans.length <= OVERVIEW_PLAN_LIMIT) {
                         lists = [];
                         for (const plan of index.plans) {
                             lists.push(await improvement(service => service.list({ planId: plan.planId,

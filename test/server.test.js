@@ -45,6 +45,7 @@ const {
 const { parseStaticWebAppsPrincipal } = require('../api/shared/identity');
 const { assertSameOriginForMutation } = require('../api/shared/securityHeaders');
 const { getClientKeyFromHeaders } = require('../api/shared/abuseProtection');
+const { dashboardReadCost } = require('../api/shared/dashboardReadCost');
 const salesBootstrapFunction = require('../api/salesBootstrap');
 
 function principal(email, tenantId = 'tenant-one', name = 'Test User') {
@@ -2528,6 +2529,41 @@ describe('configured dashboard actual HTTP transport', () => {
         await h.store.deleteSession(secondId);
         expect((await read(second)).status).toBe(401);
         expect((await read(second)).status).toBe(429);
+    });
+
+    test('the combined Overview read is charged as the separate reads it replaces, before any work', async () => {
+        const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_READ_MAX: '100', NOFRIES_RATE_DASHBOARD_SESSION_READ_MAX: '8',
+            NOFRIES_RATE_DASHBOARD_ADDRESS_READ_MAX: '100' } });
+        const first = (await h.login()).cookie, second = (await h.login()).cookie;
+        const read = (cookie, target) => h.send('get', target).set('Cookie', cookie);
+        const OVERVIEW = '/api/dashboard/modules/overview?view=first-paint';
+        // Other routes still cost one.
+        const ordinary = await read(first, '/api/dashboard/session');
+        expect(ordinary.status).not.toBe(429); expect(ordinary.headers['x-ratelimit-remaining']).toBe('7');
+        // With Actions the bundle costs eight; with seven left it is refused before any work and spends nothing.
+        h.resetObservations();
+        const refused = await read(first, OVERVIEW + '&actions=1');
+        expect(refused.status).toBe(429);
+        expect(refused.body).toEqual({ error: 'Too many requests. Please try again later.', retryAfterSeconds: expect.any(Number) });
+        expect(h.configuration.clock).not.toHaveBeenCalled(); h.expectNoAuthorityWork();
+        // Without Actions it costs two.
+        const plain = await read(first, OVERVIEW);
+        expect(plain.status).not.toBe(429); expect(plain.headers['x-ratelimit-remaining']).toBe('5');
+        for (let i = 0; i < 5; i++) expect((await read(first, '/api/dashboard/session')).status).not.toBe(429);
+        expect((await read(first, '/api/dashboard/session')).status).toBe(429);
+        // A fresh session spends its whole allowance on one bundle with Actions.
+        const full = await read(second, OVERVIEW + '&actions=1');
+        expect(full.status).not.toBe(429); expect(full.headers['x-ratelimit-remaining']).toBe('0');
+        expect((await read(second, '/api/dashboard/session')).status).toBe(429);
+    });
+
+    test('only the two exact combined Overview GET forms cost more than one read', () => {
+        const OVERVIEW = '/api/dashboard/modules/overview?view=first-paint';
+        expect(dashboardReadCost('GET', OVERVIEW)).toBe(2);
+        expect(dashboardReadCost('GET', OVERVIEW + '&actions=1')).toBe(8);
+        for (const [method, url] of [['HEAD', OVERVIEW], ['POST', OVERVIEW + '&actions=1'], ['GET', '/api/dashboard/modules/overview?actions=1&view=first-paint'],
+            ['GET', OVERVIEW + '&actions=1&extra=1'], ['GET', '/api/dashboard/modules/overview'], ['GET', '/api/dashboard/session'],
+            ['GET', '/api/dashboard/ncsc/assessments?limit=50'], ['GET', undefined]]) expect(dashboardReadCost(method, url)).toBe(1);
     });
 
     test('verified dashboard session writes are counted per session and other API writes stay per address', async () => {
