@@ -764,6 +764,18 @@
       }
     },
     {
+      "route": "/api/dashboard/work-queue",
+      "methods": [
+        "GET"
+      ],
+      "allowedRoles": [
+        "anonymous"
+      ],
+      "headers": {
+        "Cache-Control": "private, no-store, max-age=0"
+      }
+    },
+    {
       "route": "/api/dashboard/contact-requests",
       "methods": [
         "POST"
