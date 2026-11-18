@@ -12,6 +12,12 @@ const { applyMembershipCommand } = require('../api/shared/appLifecycle/membershi
 const { ncscFixture, createClock, createContext, createNcscAdapters, initialiseNcsc,
     allResponses, createCommand, saveCommand, submitCommand, NOW, SUBJECT, clone } = require('./fixtures/ncscAssessmentFixture');
 
+// Inject a record-construction failure only during carry-forward, after the source plan exists.
+jest.mock('../api/shared/improvementPlan/improvementPlanStore', () => {
+    const store = jest.requireActual('../api/shared/improvementPlan/improvementPlanStore');
+    return { ...store, makeRecord: jest.fn(store.makeRecord) };
+});
+
 const CANDIDATE = path.join(__dirname, '../database/proposals/improvement-plan-stage-a.sql');
 const TABLES = ['dashboard_improvement_revisions', 'dashboard_improvement_heads'];
 const OWNER = '10000000-0000-4000-8000-000000000000:10000000-0000-4000-8000-000000000002';
@@ -757,6 +763,25 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             expect(await planRows(example, previous.planId)).toEqual(before);
             expect(await repository.executeImprovementPlan(example.context, generate)).toEqual(created);
             expect(await planRows(example, 'plan-b')).toEqual(stored);
+        });
+
+        test('a carried record construction failure aborts generation and leaves no partial plan', async () => {
+            const { example, generate } = await reassessed();
+            const path = '../api/shared/improvementPlan/improvementPlanStore';
+            const { makeRecord } = require(path);
+            const original = jest.requireActual(path).makeRecord;
+            const { ImprovementPlanServiceError } = require('../api/shared/improvementPlan/improvementPlanService');
+            makeRecord.mockImplementation((intent, ...args) => {
+                if (intent.command.type === 'start') throw new ImprovementPlanServiceError();
+                return original(intent, ...args);
+            });
+            try {
+                await expect(repository.executeImprovementPlan(example.context, generate))
+                    .rejects.toMatchObject({ code: 'improvement_unavailable' });
+                expect(await planRows(example, generate.planId)).toEqual([]);
+            } finally {
+                makeRecord.mockImplementation(original);
+            }
         });
 
         test('an owner who is no longer a member is not carried, and labelled owners still are', async () => {

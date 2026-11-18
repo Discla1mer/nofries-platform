@@ -68,7 +68,7 @@ describe('email settings handler', () => {
     test('POST enforces same-origin before reading the session', async () => {
         const readSubject = jest.fn(async () => SUBJECT), store = fakeStore();
         const body = { type: 'result_summary', action: 'off' };
-        for (const headers of [{}, { origin: ENV.NOFRIES_PUBLIC_URL }, { 'sec-fetch-site': 'cross-site', origin: 'null' },
+        for (const headers of [{}, { origin: 'null' }, { origin: 'https://attacker.example.test' }, { 'sec-fetch-site': 'cross-site', origin: 'null' },
             { 'sec-fetch-site': 'same-site', origin: ENV.NOFRIES_PUBLIC_URL },
             { 'sec-fetch-site': 'same-origin', origin: 'https://attacker.example.test' },
             { 'sec-fetch-site': 'same-origin', origin: `${ENV.NOFRIES_PUBLIC_URL}/` }]) {
@@ -78,6 +78,16 @@ describe('email settings handler', () => {
         expect(store.change).not.toHaveBeenCalled();
         const ok = await run(post(body, { 'sec-fetch-site': 'same-origin', origin: ENV.NOFRIES_PUBLIC_URL }), { readSubject, store });
         expect(ok.status).toBe(303);
+    });
+
+    test('a browser without Fetch Metadata can save from the email settings form', async () => {
+        const store = fakeStore();
+        const page = await run({ method: 'GET' }, { store });
+        expect(page.headers['Referrer-Policy']).toBe('same-origin');
+        const saved = await run(post({ type: 'result_summary', action: 'off' },
+            { cookie: SAME.cookie, origin: ENV.NOFRIES_PUBLIC_URL }), { store });
+        expect(saved.status).toBe(303);
+        expect(store.change).toHaveBeenCalledTimes(1);
     });
 
     test('POST rejects unknown types, actions and extra fields', async () => {

@@ -305,3 +305,21 @@ test('read-only response does not prevent a later fresh normal state from author
     expect(await f.client.completeSetup({resume:true})).toEqual({status:'continue_authentication'});
     expect(f.fetch.mock.calls.filter(([,init])=>init.method==='POST')).toHaveLength(1);
 });
+
+test.each([
+    [403, 'application/json', false, 'basic'],
+    [403, 'text/html', true, 'basic'],
+    [403, 'text/html', false, 'opaque'],
+    [403, 'text/plain', false, 'basic'],
+    [401, 'text/html', false, 'basic'],
+    [503, 'text/html', false, 'basic']
+])('ordinary response %s %s redirected=%s type=%s retains immediate recovery', async (status, type, redirected, responseType) => {
+    const f = setup();
+    f.fetch.mockResolvedValueOnce({ status, redirected, type: responseType, headers: new Headers({ 'content-type': type }) });
+    const controller = new AbortController();
+    const waiting = jest.fn();
+    controller.signal.addEventListener('releasewait', waiting);
+    await expect(f.client.load({ signal: controller.signal })).rejects.toThrow('signup_unavailable');
+    expect(waiting).not.toHaveBeenCalled();
+    expect(f.fetch).toHaveBeenCalledTimes(1);
+});

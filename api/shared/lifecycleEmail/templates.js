@@ -7,7 +7,7 @@ const { TEMPLATE_VERSIONS: V } = require('./templateVersions');
 
 const PLACEHOLDERS = Object.freeze(['signInUrl', 'unsubscribeUrl']);
 const FOOTER = ['', '--', 'No Fries, nofries.nz',
-    'You are getting this because you have a No Fries account. To stop these emails, unsubscribe: {{unsubscribeUrl}}'];
+    'You are getting this because you have a No Fries account. To stop this kind of email, unsubscribe: {{unsubscribeUrl}}'];
 const template = (subject, ...body) => Object.freeze({ subject, lines: Object.freeze(['Kia ora,', '', ...body]) });
 const TEMPLATES = Object.freeze({
     welcome: Object.freeze({ [V.welcome]: template('Welcome to No Fries',

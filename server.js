@@ -138,7 +138,7 @@ function createNoFriesApp(configuration = {}) {
             const supplied = configuration.dashboard;
             const names = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
                 'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
-            for (const optional of ['ncsc', 'improvementEnabled', 'customer', 'externalCustomer', 'activation']) if (supplied && !isProxy(supplied) && Object.prototype.hasOwnProperty.call(supplied, optional)) names.push(optional);
+            for (const optional of ['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'customer', 'externalCustomer', 'activation']) if (supplied && !isProxy(supplied) && Object.prototype.hasOwnProperty.call(supplied, optional)) names.push(optional);
             fields(supplied, names);
             const snapshot = Object.fromEntries(names.map(name => [name, supplied[name]]));
             const auth = snapshot.browserAuthOptions;
@@ -1104,7 +1104,8 @@ function blockSuspiciousUserAgents(req, res, next) {
         return next();
     }
     if (req.path.startsWith('/api/')) {
-        return res.status(403).json({ error: 'Request blocked' });
+        // Runs before the /api middleware; API route rules rely on App Service for these headers.
+        return applyApiSecurityHeaders(req, res, () => res.status(403).json({ error: 'Request blocked' }));
     }
     return res.status(403).type('text/plain').send('Request blocked');
 }

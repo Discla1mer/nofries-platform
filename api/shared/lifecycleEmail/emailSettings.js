@@ -48,6 +48,7 @@ ${body}
 `;
     return { status, isRaw: true, body: html, headers: apiSecurityHeaders({ 'Content-Type': 'text/html; charset=utf-8',
         // No script; styles are the site's own; the forms post back here only.
+        'Referrer-Policy': 'same-origin',
         'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; style-src 'self'; img-src 'self'" }) };
 }
 
@@ -85,14 +86,14 @@ ${items}
 </ul>`);
 }
 
-// Native forms send "Origin: null" under the site's no-referrer policy, so,
-// like the sign-out form, a POST must carry Sec-Fetch-Site: same-origin, and any
-// real Origin must be the configured public origin.
+// Browsers without Fetch Metadata must supply the configured public Origin.
+// The form page permits same-origin referrers so its native POST retains Origin.
 function sameOrigin(req, env) {
     const headers = (req && req.headers) || {};
     const origin = String(headers.origin || '').trim();
-    if (String(headers['sec-fetch-site'] || '').trim().toLowerCase() !== 'same-origin') return false;
-    if (!origin || origin === 'null') return true;
+    const site = headers['sec-fetch-site'];
+    if (site !== undefined && String(site).trim().toLowerCase() !== 'same-origin') return false;
+    if (!origin || origin === 'null') return site !== undefined;
     try {
         const expected = new URL(String(env.NOFRIES_PUBLIC_URL || '')).origin;
         return new URL(origin).origin === origin && origin === expected;

@@ -78,7 +78,7 @@ Signup listing (`NOFRIES_DASHBOARD_ADMIN_ENABLED`, `NOFRIES_DASHBOARD_ADMIN_BIND
 
 Next to suspend, the console offers two more account actions, one account at a time:
 
-- **Reset** clears the account's assessments, evidence and improvement plans in every organisation it owns (clients included). Sign-in, email and organisations are kept, so the customer can sign in and start again. Only the database changes: the Blob records hold no assessment, evidence or plan data.
+- **Reset** clears the account's assessments, evidence, improvement plans and contact requests in every organisation it owns (clients included). Sign-in, email and organisations are kept, so the customer can sign in and start again. Only the database changes: the Blob records hold no assessment, evidence or plan data.
 - **Delete** removes the account completely, in this order: the database rows, then the Blob records (account, organisation, client, sign-in authority and email-proof records, with their stored versions), then the customer's Microsoft Entra External ID user. That user is also permanently removed from deleted items, so it cannot be restored.
 
 ### How staff use it
