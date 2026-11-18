@@ -4,7 +4,7 @@ const { types } = require('node:util');
 const { requireTenantRequestContext } = require('./appLifecycle/tenantRequestContext');
 const { getAssessmentProgress } = require('./assessmentLifecycle/assessmentDomain');
 const { serialiseAssessmentEvaluation } = require('./assessmentEngine/assessmentEvaluator');
-const { acceptedRegistry, acceptedProfile } = require('./assessmentLifecycle/ncscAssessmentSubmission');
+const { NCSC_V2_CONTEXT, knownNcscQuestionOptions, readableNcscProfileContext } = require('./assessmentEngine/ncscProfileSet');
 
 const MAX_INPUT_BYTES = 64 * 1024;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
@@ -128,17 +128,18 @@ function normaliseNcscCommand(input) {
         revision(row.expectedRevision);
         const source = record(row.payload, ['responses']);
         if (!Array.isArray(source.responses) || !source.responses.length ||
-            source.responses.length > acceptedProfile.questions.length) fail();
+            source.responses.length > NCSC_V2_CONTEXT.questionIds.length) fail();
         const responses = source.responses.map(value => {
             const answer = record(value, ['itemId', 'optionId', 'rationale']);
             const itemId = identifier(answer.itemId);
-            const question = acceptedProfile.questions.find(item => item.id === itemId);
-            if (!question) fail();
+            // Shape only: the store checks each answer against the assessment's own profile.
+            const options = knownNcscQuestionOptions(itemId);
+            if (!options) fail();
             const optionId = answer.optionId === null ? null : identifier(answer.optionId);
             let rationale = null;
             if (optionId !== null) {
-                if (!question.responseOptionIds.includes(optionId)) fail();
-                const option = acceptedProfile.responseOptions.find(item => item.id === optionId);
+                const option = options.get(optionId);
+                if (!option) fail();
                 if (!option.applicable) rationale = { text: text(record(answer.rationale, ['text']).text) };
                 else if (answer.rationale !== null) fail();
             } else if (answer.rationale !== null) fail();
@@ -177,6 +178,11 @@ function requireNcscContext(input) {
 
 // The durable adapter validates ownership, record hashes and submitted evaluator
 // output before projection. These named public fields never include raw state.
+function registryFor(state) {
+    const context = readableNcscProfileContext(state.profileRef);
+    if (!context) fail('ncsc_unavailable', 503);
+    return context.registry;
+}
 function projectNcscSummary({ envelope, revisionSha256 }) {
     const state = envelope.state;
     // Keep a full 100-row page within the browser's bounded response budget.
@@ -191,7 +197,7 @@ function projectNcscSummary({ envelope, revisionSha256 }) {
         status: state.status, revision: state.revision, revisionSha256,
         createdAt: state.createdAt, updatedAt: state.updatedAt,
         scopePopulation: { description: scopeDescription },
-        progress: getAssessmentProgress(state, acceptedRegistry) });
+        progress: getAssessmentProgress(state, registryFor(state)) });
 }
 function projectNcscDetail({ envelope, revisionSha256 }) {
     const summary = projectNcscSummary({ envelope, revisionSha256 }), state = envelope.state;

@@ -63,4 +63,27 @@ function ncscProfileContext(profileRef) {
     return CONTEXTS.find(candidate => REF_FIELDS.every(field => values[field] === candidate.profileRef[field])) || null;
 }
 
-module.exports = { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, ncscProfileContext };
+/** Off unless the environment says exactly `true`. While off, only the accepted profile can be read or written. */
+function ncscProfileV2Enabled(env = process.env) {
+    return Boolean(env) && env.NOFRIES_NCSC_PROFILE_V2 === 'true';
+}
+
+/** Like ncscProfileContext, but the v2 profile resolves only while its flag is on. */
+function readableNcscProfileContext(profileRef, env = process.env) {
+    const found = ncscProfileContext(profileRef);
+    return found && (found === ACCEPTED_NCSC_CONTEXT || ncscProfileV2Enabled(env)) ? found : null;
+}
+
+/** A question from any profile this build knows, for shape checks before the stored profile is read. */
+function knownNcscQuestionOptions(itemId) {
+    const optionById = new Map();
+    CONTEXTS.forEach(candidate => {
+        const question = candidate.profile.questions.find(item => item.id === itemId);
+        if (question) question.responseOptionIds.forEach(optionId => optionById.set(optionId,
+            candidate.profile.responseOptions.find(option => option.id === optionId)));
+    });
+    return optionById.size ? optionById : null;
+}
+
+module.exports = { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, knownNcscQuestionOptions, ncscProfileContext,
+    ncscProfileV2Enabled, readableNcscProfileContext };

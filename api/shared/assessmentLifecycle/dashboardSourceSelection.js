@@ -4,7 +4,7 @@
 // This is not an authority check, a new score, or a current-state inference.
 const { validateNcscSupportingRecords, hashNcscRecord } = require('./ncscAssessmentSubmission');
 const { getAssessmentProgress } = require('./assessmentDomain');
-const { acceptedRegistry } = require('./ncscAssessmentSubmission');
+const { readableNcscProfileContext } = require('../assessmentEngine/ncscProfileSet');
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
 const HASH = /^[a-f0-9]{64}$/;
 function fail() { throw new Error('dashboard_source_selection_invalid'); }
@@ -52,6 +52,8 @@ function selectDashboardSources(input) {
         const version = versions.get(`${ref.assessmentId}:${ref.revision}`);
         if (!version) return { status: input.complete ? 'not_found' : 'not_loaded', source: null };
         const { envelope, revisionSha256 } = version, state = envelope.state;
+        const profileContext = readableNcscProfileContext(state.profileRef);
+        if (!profileContext) fail();
         if (revisionSha256 !== ref.revisionSha256 || state.scopePopulationSha256 !== ref.scopePopulationSha256) fail();
         if (baseline ? state.status !== 'submitted' : !['created', 'in-progress'].includes(state.status)) fail();
         return { status: 'selected', source: {
@@ -59,7 +61,7 @@ function selectDashboardSources(input) {
             scopePopulationSha256: state.scopePopulationSha256,
             scopeDescription: envelope.scopePopulation.body.description,
             profileRef: { ...state.profileRef }, status: state.status, savedAt: state.updatedAt,
-            progress: getAssessmentProgress(state, acceptedRegistry),
+            progress: getAssessmentProgress(state, profileContext.registry),
             submittedAt: baseline ? state.submission.submittedAt : null,
             evaluationSha256: baseline ? envelope.submission.evaluation.outputSha256 : null
         } };
