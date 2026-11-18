@@ -949,7 +949,8 @@ describe('combined Overview first-paint read', () => {
             errors = { NcscAssessmentError: ncsc.NcscAssessmentError,
                 DashboardPersistenceError: require('../api/shared/appLifecycle/postgresDashboardBootstrap').DashboardPersistenceError,
                 TenantRequestContextError: require('../api/shared/appLifecycle/tenantRequestContext').TenantRequestContextError,
-                ImprovementActionListError: require('../api/shared/improvementPlan/improvementActionListProjection').ImprovementActionListError };
+                ImprovementActionListError: require('../api/shared/improvementPlan/improvementActionListProjection').ImprovementActionListError,
+                ImprovementPlanServiceError: require('../api/shared/improvementPlan/improvementPlanService').ImprovementPlanServiceError };
         });
         jest.dontMock('../api/shared/dashboardRuntime'); jest.dontMock('../api/shared/ncscAssessmentService');
         return { handler: factory(h.options), calls, errors };
@@ -1078,14 +1079,44 @@ describe('combined Overview first-paint read', () => {
         const h = configured(); const host = await signedIn(h, script(overrides));
         expectError(await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1')), 503, 'dashboard_unavailable');
     }));
-    test.each(['improvement.plans', 'improvement.list'])('a failed optional %s read returns the bundle with no Actions', async step => {
+    test.each([['improvement.plans', 'ImprovementActionListError', 'improvement_list_unavailable'], ['improvement.list', 'ImprovementActionListError', 'improvement_list_unavailable'],
+        ['improvement.plans', 'ImprovementPlanServiceError', 'improvement_unavailable']])('an unavailable optional %s read (%s) returns the bundle with no Actions', async (step, type, code) => {
         const h = configured(); let errors;
-        const host = await signedIn(h, script({ [step]: async () => { throw new errors.ImprovementActionListError('improvement_list_unavailable', 503); } }));
+        const host = await signedIn(h, script({ [step]: async () => { throw new errors[type](code, 503); } }));
         errors = host.errors;
         const result = await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1'));
         expect(result.status).toBe(200); expectSecure(result);
         expect(result.body).toEqual({ page: PAGE, detail: DETAIL, actions: null });
     });
+    test('an Actions binding that is unavailable, not refused, returns the bundle with no Actions', async () => {
+        const h = configured();
+        const host = await signedIn(h, { ...script(), bind: async index => { if (index === 2) throw new Error('synthetic binding outage'); } });
+        const result = await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1'));
+        expect(result.status).toBe(200); expectSecure(result);
+        expect(result.body).toEqual({ page: PAGE, detail: DETAIL, actions: null });
+    });
+    test.each([
+        ['plans read list refusal', 'improvement.plans', errors => new errors.ImprovementActionListError('improvement_list_access_denied', 403)],
+        ['list read list refusal', 'improvement.list', errors => new errors.ImprovementActionListError('improvement_list_access_denied', 403)],
+        ['plans read service refusal', 'improvement.plans', errors => new errors.ImprovementPlanServiceError('improvement_access_denied', 403)],
+        ['list read persistence refusal', 'improvement.list', errors => new errors.DashboardPersistenceError('access_denied', 403)],
+        ['plans read tenant context refusal', 'improvement.plans', errors => new errors.TenantRequestContextError()]
+    ])('a %s fails the whole bundle without returning earlier reads', async (_name, step, error) => withExpectedWarning({ route: 'overview', status: 403, code: 'improvement_list_access_denied' }, async () => {
+        const h = configured(); let errors;
+        const host = await signedIn(h, script({ [step]: async () => { throw error(errors); } }));
+        errors = host.errors;
+        expectError(await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1')), 403, 'improvement_list_access_denied');
+    }));
+    test.each([
+        ['not found', errors => new errors.ImprovementActionListError('improvement_list_not_found', 404)],
+        ['time conflict', errors => new errors.ImprovementActionListError('improvement_list_time_conflict', 409)],
+        ['unknown provider error', () => new Error('synthetic provider failure')]
+    ])('an unproven Actions failure (%s) fails the whole bundle', async (_name, error) => withExpectedWarning({ route: 'overview', status: 503, code: 'dashboard_unavailable' }, async () => {
+        const h = configured(); let errors;
+        const host = await signedIn(h, script({ 'improvement.list': async () => { throw error(errors); } }));
+        errors = host.errors;
+        expectError(await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1')), 503, 'dashboard_unavailable');
+    }));
     test('an expired request budget during the Actions read still fails the bundle', async () => withExpectedWarning({ route: 'overview', status: 503, code: 'dashboard_unavailable' }, async () => {
         const h = configured();
         const host = await signedIn(h, script({ 'improvement.plans': async () => { h.state.now += 1000; throw new Error('synthetic late failure'); } }));

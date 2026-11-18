@@ -725,10 +725,20 @@ function createDashboardRuntimeHandlers(configuration) {
                         }
                     }
                 } catch (error) {
-                    if (error instanceof HostError && error.status === 403 && error.code === 'dashboard_access_denied') throw error;
-                    // The optional Actions card is omitted, as the separate reads allow.
+                    if (error instanceof HostError) throw error;
                     // An expired request budget still fails the whole bundle.
-                    hostClock(); index = null; lists = null;
+                    hostClock();
+                    // Omit the optional Actions card only for a proven availability
+                    // failure, as the separate reads allow. A refusal may mean access
+                    // was revoked mid-bundle, so no earlier read is returned.
+                    const availability = (error instanceof ImprovementActionListError && error.code === 'improvement_list_unavailable' ||
+                        error instanceof ImprovementPlanServiceError && error.code === 'improvement_unavailable' ||
+                        error instanceof BrowserAuthError && error.code === 'browser_auth_dashboard_unavailable') && error.statusCode === 503;
+                    if (!availability) {
+                        if (error && error.statusCode === 403 || error instanceof TenantRequestContextError) fail(403, 'improvement_list_access_denied');
+                        throw unavailable();
+                    }
+                    index = null; lists = null;
                 }
                 if (index !== null) {
                     // An inconsistent index or plan revision is not a partial answer.
