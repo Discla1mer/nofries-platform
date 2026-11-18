@@ -141,6 +141,20 @@ describe('bounded writer', () => {
         expect(fresh.release).toHaveBeenCalledWith(false);
     });
 
+    test('a failed late connection frees its slot without releasing a client', async () => {
+        let rejectConnect;
+        const first = okClient(), second = okClient();
+        const pool = { connect: jest.fn().mockImplementationOnce(() => new Promise((_, reject) => { rejectConnect = reject; }))
+            .mockResolvedValueOnce(first).mockResolvedValueOnce(second) };
+        const record = createFunnelCountWriter({ pool, acquireTimeoutMs: 20 });
+        await expect(record('visit', '2026-11-13')).rejects.toMatchObject({ code: 'funnel_count_acquire_timeout' });
+        rejectConnect(new Error('connection failed'));
+        await flush();
+        await Promise.all([record('visit', '2026-11-13'), record('submitted', '2026-11-13')]);
+        expect(first.release).toHaveBeenCalledTimes(1);
+        expect(second.release).toHaveBeenCalledTimes(1);
+    });
+
     test('a statement or lock timeout rolls back, keeps a clean connection and frees the slot', async () => {
         const client = { query: jest.fn(async sql => { if (String(sql).startsWith('INSERT')) throw Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }); }),
             release: jest.fn() };

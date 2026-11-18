@@ -62,7 +62,7 @@ test('the privacy notice describes service emails and action-owner names as the 
     const privacy = read('privacy.html');
     const section = privacy.match(/<section id="service-emails">([\s\S]*?)<\/section>/);
     expect(section).not.toBeNull();
-    for (const text of ['four service emails', 'about 7 days later', 'about 90 days after', 'Resend delivers them',
+    for (const text of ['four kinds of service email', 'about 7 days later', 'about 90 days after', 'Resend delivers them',
         'do not greet you by name', 'do not contain your answers, gap titles, results or scores',
         'Resend’s message id', 'how many gaps it found', 'does not hold the text of the email or your email address',
         'stops that type of email', 'one-click unsubscribe', 'Unsubscribing is permanent']) expect(section[1]).toContain(text);
