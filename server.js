@@ -1102,7 +1102,8 @@ function blockSuspiciousUserAgents(req, res, next) {
         return next();
     }
     if (req.path.startsWith('/api/')) {
-        return res.status(403).json({ error: 'Request blocked' });
+        // Runs before the /api middleware; API route rules rely on App Service for these headers.
+        return applyApiSecurityHeaders(req, res, () => res.status(403).json({ error: 'Request blocked' }));
     }
     return res.status(403).type('text/plain').send('Request blocked');
 }
