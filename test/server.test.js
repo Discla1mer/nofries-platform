@@ -1919,7 +1919,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(fs.existsSync(path.join(dist, 'js', 'lead-form.js'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'founder.html'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'sample-report.html'))).toBe(false);
-        expect(fs.existsSync(path.join(dist, 'sitemap.xml'))).toBe(false);
+        expect(fs.existsSync(path.join(dist, 'sitemap.xml'))).toBe(true);
         const staticConfig = JSON.parse(fs.readFileSync(path.join(dist, 'staticwebapp.config.json'), 'utf8'));
         // Static Web Apps defaults an omitted allowedRoles field to anonymous.
         staticConfig.routes = staticConfig.routes.map(route => ({
