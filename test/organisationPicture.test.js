@@ -1487,7 +1487,7 @@ describe('next step under the top gaps', () => {
         const handoff = dom.root.querySelector('.picture-next-steps').querySelector('details');
         const input = handoff.querySelector('textarea'), status = handoff.querySelector('[role="status"]');
         const press = label => handoff.querySelectorAll('button').find(button => button.textContent === label).click();
-        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Copy board summary', 'Print these results']);
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Copy board summary', 'Print board summary', 'Print these results']);
         press('Copy summary'); await flush();
         expect(writeText).toHaveBeenCalledWith(input.value); assert.equal(status.textContent, 'Summary copied.');
         writeText.mockRejectedValueOnce(new Error('denied'));
@@ -1495,6 +1495,15 @@ describe('next step under the top gaps', () => {
         assert.equal(status.textContent, 'Summary selected. Press Ctrl+C or Cmd+C to copy it.');
         assert.equal(dom.document.activeElement, input);
         press('Print these results'); assert.equal(print.mock.calls.length, 1);
+        // Print board summary hides everything else for print only, then restores the page.
+        const boardPrinted = handoff.querySelector('.picture-board-print');
+        print.mockImplementationOnce(() => {
+            assert.ok(boardPrinted.classList.contains('picture-print-only'));
+            assert.ok(handoff.querySelector('textarea').classList.contains('picture-print-hide'));
+        });
+        press('Print board summary'); assert.equal(print.mock.calls.length, 2);
+        assert.equal(boardPrinted.classList.contains('picture-print-only'), false);
+        assert.equal(dom.root.querySelectorAll('.picture-print-hide').length, 0);
         expect(fetch.mock.calls.map(call => call[0])).toEqual(['/api/enquiry']);
         controller.destroy();
     });
