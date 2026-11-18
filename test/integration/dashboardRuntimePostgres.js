@@ -701,11 +701,11 @@ function registerRealPostgresTests() {
                 'dashboard_evidence_revisions', 'dashboard_evidence_heads', 'dashboard_evidence_receipts',
                 'signup_acceptance_receipts', 'signup_registrations', 'dashboard_starter_scopes', 'dashboard_starter_accounts',
                 'dashboard_improvement_revisions', 'dashboard_improvement_heads', 'email_outbox', 'email_preferences',
-                'dashboard_contact_requests'];
+                'dashboard_contact_requests', 'dashboard_representative_details', 'dashboard_deferred_agreements'];
             await ownerPool.query('TRUNCATE ' + tables.map(table => 'nofries.' + table).join(', '));
             fixture = harness();
         });
-        test.each([[false, false], [true, false], [false, true], [true, true]])('new starter signup atomically grants fixed allowances and replays after lost COMMIT=%s (lifecycle email enqueue: %s)', async (loseCommit, enqueue) => {
+        test.each([[false, false, false], [true, false, false], [false, true, false], [true, true, false], [false, false, true], [true, false, true]])('new starter signup atomically grants fixed allowances and replays after lost COMMIT=%s (lifecycle email enqueue: %s, deferred details: %s)', async (loseCommit, enqueue, deferred) => {
             const f = fixture; f.state.now = new Date().toISOString(); await f.initialize();
             if (enqueue) process.env.NOFRIES_LIFECYCLE_EMAIL_ENQUEUE_ENABLED = 'true';
             const { createStarterAccountAllocator } = require('../../api/shared/customerSignup/starterAccountAllocation');
@@ -726,6 +726,10 @@ function registerRealPostgresTests() {
                 accountType: 'company', contact: { name: 'Synthetic User', role: 'Owner', address: 'Synthetic address', registrationId: null,
                     email: account.email, authorityEvidenceId: nextId() }, framework: { moduleId: 'cyber_security', profileId: 'synthetic', version: '1', scoringVersion: '1' } },
                 subjectKey: customer, issuerSubjectKey: customer, invitationId: nextId(), createdAt: new Date().toISOString() };
+            if (deferred) {
+                source.offerInput.detailsPolicy = 'after-first-result-v1';
+                source.offerInput.contact = { email: account.email, authorityEvidenceId: source.offerInput.contact.authorityEvidenceId };
+            }
             const provisioning = { account, requestId, source }, p = compileStarterProvisioning(provisioning);
             const runtime = instantiate({ ...f.options, clock: () => new Date().toISOString(),
                 readStarterProvisioning: async () => ({ provisioning, deadline: new Date(Date.now() + 60000).toISOString() }) });
@@ -4088,7 +4092,7 @@ function registerRealPostgresTests() {
             // Administration below is explicit synthetic setup, never a route.
             async function httpSetup({ rawRuntimePool = runtimePool, base = null, principal: suppliedPrincipal = null,
                 requestBudgetMs = 60000, publish = true, prepareCanonical = null, ncsc = null, membershipValidUntil = END,
-                customerProvider = false, customerAccountType = null, improvementEnabled = false, contactRequestsEnabled = false, contactRequestEmail = null, scope = null,
+                customerProvider = false, customerAccountType = null, improvementEnabled = false, contactRequestsEnabled = false, representativeDetailsEnabled = false, contactRequestEmail = null, scope = null,
                 appFactory = options => require('../../server').createNoFriesApp(options) } = {}) {
                 const { MemoryBrowserSessionStore } = require('../../api/shared/browserSessionStore');
                 const tenant = base ? base.operatorIdentity.identityTenantId : nextId();
@@ -4170,6 +4174,7 @@ function registerRealPostgresTests() {
                 if (ncsc) dashboard.ncsc = ncsc;
                 if (improvementEnabled) dashboard.improvementEnabled = true;
                 if (contactRequestsEnabled) dashboard.contactRequestsEnabled = true;
+                if (representativeDetailsEnabled) dashboard.representativeDetailsEnabled = true;
                 if (contactRequestEmail) dashboard.contactRequestEmail = contactRequestEmail;
                 if (externalProfile) {
                     const { oid: customerOid, ...customerIdentityPolicy } = principal;
@@ -4345,9 +4350,9 @@ function registerRealPostgresTests() {
             });
             async function ncscHttpSetup({ capacity = 1, role = 'admin', configured = true, membershipValidUntil = END,
                 separateAdvisorWriteUntil = null, customerProvider = false, customerAccountType = null, improvementEnabled = false,
-                contactRequestsEnabled = false, contactRequestEmail = null, appFactory, scope = null } = {}) {
+                contactRequestsEnabled = false, representativeDetailsEnabled = false, contactRequestEmail = null, appFactory, scope = null } = {}) {
                 const quota = createNcscAdapters({ now: () => NOW });
-                const h = await httpSetup({ membershipValidUntil, customerProvider, customerAccountType, improvementEnabled, contactRequestsEnabled, contactRequestEmail, appFactory, scope, ncsc: configured ? { resolveSubmissionQuota: quota.resolveSubmissionQuota } : null, prepareCanonical(initial) {
+                const h = await httpSetup({ membershipValidUntil, customerProvider, customerAccountType, improvementEnabled, contactRequestsEnabled, representativeDetailsEnabled, contactRequestEmail, appFactory, scope, ncsc: configured ? { resolveSubmissionQuota: quota.resolveSubmissionQuota } : null, prepareCanonical(initial) {
                     // Domain-created membership rows are frozen. Replace this
                     // synthetic seed's values without mutating domain output.
                     initial.membershipState = { ...initial.membershipState,
@@ -5004,6 +5009,7 @@ function registerRealPostgresTests() {
                     createCommand, saveCommand, submitCommand, evidenceSeedDatabase });
                 require('./accountWipeHttpPostgres')({ improvementHttpSetup, httpJson, getOwnerPool: () => ownerPool,
                     loginClean, subject, evidenceSeedDatabase });
+                require('./deferredDetailsHttpPostgres')({ ncscHttpSetup, httpJson, getOwnerPool: () => ownerPool, loginClean, subject, nextId, generationHeader, createCommand, saveCommand, submitCommand });
                 require('./contactRequestHttpPostgres')({ ncscHttpSetup, httpJson, getOwnerPool: () => ownerPool,
                     loginClean, subject, nextId, generationHeader });
 

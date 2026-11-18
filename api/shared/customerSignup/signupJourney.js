@@ -153,6 +153,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 ['address', 'Business address', 500, true, 'Enter your business address.', 'street-address'],
                 ['registrationId', 'NZBN (optional)', 160, false, 'Enter your NZBN, or leave this field empty.']
             ]) {
+                if (state.deferredDetails === true && name !== 'organisationName') continue;
                 const label = element('label', title), input = element('input');
                 input.name = name; input.type = 'text'; input.maxLength = maximum; input.required = required;
                 if (autocomplete) input.setAttribute('autocomplete', autocomplete);
@@ -224,7 +225,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                     text: Object.fromEntries(Object.entries(controls).map(([name, control]) => [name, control.value])) };
                 const input = { accountType: reservation ? reservation.accountType : accountType.value,
                     organisationName: reservation ? reservation.organisationName : controls.organisationName.value.trim().normalize('NFC'),
-                    details: { name: controls.name.value, role: controls.role.value, address: controls.address.value,
+                    details: state.deferredDetails === true ? { authorityConfirmed: authority.checked } : { name: controls.name.value, role: controls.role.value, address: controls.address.value,
                         registrationId: controls.registrationId.value, authorityConfirmed: authority.checked } };
                 run(signal => client.completeSetup(input, { signal }), undefined, false, SAVING_DETAILS);
             });
@@ -438,7 +439,9 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
     }
     function validSetup(s) {
         const reserved = s.status === 'setup_details' && Object.hasOwn(s, 'reservation');
-        const keys = ['status', 'email', ...(reserved ? ['reservation'] : []), ...(s.status === 'resume_setup' ? ['accountType', 'organisationName'] : [])];
+        const deferred = s.status === 'setup_details' && Object.hasOwn(s, 'deferredDetails');
+        if (deferred && s.deferredDetails !== true) return false;
+        const keys = ['status', 'email', ...(deferred ? ['deferredDetails'] : []), ...(reserved ? ['reservation'] : []), ...(s.status === 'resume_setup' ? ['accountType', 'organisationName'] : [])];
         if (!customerTransport || Object.keys(s).length !== keys.length || Object.keys(s).some(key => !keys.includes(key)) ||
             typeof s.email !== 'string' || s.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+(?![\s\S])/.test(s.email)) return false;
         const account = s.status === 'resume_setup' ? s : reserved ? s.reservation : null;
@@ -450,12 +453,12 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             account.organisationName === account.organisationName.trim().normalize('NFC') && !/[\u0000-\u001f\u007f-\u009f<>]/u.test(account.organisationName);
     }
     function setupBinding(state) {
-        return { email: state.email, reservation: Object.hasOwn(state, 'reservation')
+        return { email: state.email, deferredDetails: state.deferredDetails === true, reservation: Object.hasOwn(state, 'reservation')
             ? { accountType: state.reservation.accountType, organisationName: state.reservation.organisationName } : null };
     }
     function sameSetup(binding, state) {
         const next = setupBinding(state);
-        return binding.email === next.email && (binding.reservation === null ? next.reservation === null
+        return binding.email === next.email && binding.deferredDetails === next.deferredDetails && (binding.reservation === null ? next.reservation === null
             : next.reservation !== null && binding.reservation.accountType === next.reservation.accountType &&
                 binding.reservation.organisationName === next.reservation.organisationName);
     }

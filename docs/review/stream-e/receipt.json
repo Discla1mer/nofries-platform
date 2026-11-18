@@ -1,0 +1,30 @@
+{
+  "viewport": {
+    "width": 375,
+    "height": 844
+  },
+  "captures": [
+    "01-flag-off-signup",
+    "02-flag-on-signup",
+    "03-terms",
+    "04-question-one",
+    "05-first-result",
+    "06-summary-gate",
+    "07-later-details",
+    "08-summary-ready"
+  ],
+  "writes": 1,
+  "audits": 1,
+  "assertions": [
+    "flag off full fields",
+    "flag on minimal signup through question one",
+    "first result before capture",
+    "summary gate",
+    "cancel",
+    "lost response retry",
+    "reload",
+    "agreement bytes unchanged"
+  ],
+  "errors": [],
+  "blocked": []
+}

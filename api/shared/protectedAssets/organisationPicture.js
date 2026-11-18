@@ -168,6 +168,7 @@
         const organisationId = options.organisationId, organisationName = options.displayName || organisationId;
         const openImprovement = typeof options.openImprovement === 'function' ? options.openImprovement : null;
         const planGap = typeof options.planGap === 'function' ? options.planGap : null;
+        const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
         const contactControl = typeof options.contactControl === 'function' ? options.contactControl : null;
         const readActions = openImprovement && typeof options.readActions === 'function' ? options.readActions : null;
         let actions = null;
@@ -763,7 +764,7 @@
             const help = node('div', 'picture-next-steps-help'); help.hidden = true;
             const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
             help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
-                link, node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
+                gated(() => link), node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
             panel.append(help);
             // #409: present only when the host negotiated contact requests.
             if (contactControl) panel.append(contactControl());
@@ -783,16 +784,20 @@
             copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
             // #441: the same answers, written for a board or insurer.
             if (typeof questionnaire.boardSummary === 'function') {
-                const boardLabel = node('label', '', 'Summary for your board or insurer');
-                const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
-                board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, metadata).text;
-                const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
-                const boardCopy = button('Copy board summary', () => questionnaire.copySummary(win, board, status));
-                boardCopy.classList.add('dashboard-button-secondary'); handoff.append(boardLabel, board, boardPrinted, boardCopy);
-                if (win && typeof win.print === 'function') {
-                    const boardPrint = button('Print board summary', () => printOnly(win, boardPrinted));
-                    boardPrint.classList.add('dashboard-button-secondary'); handoff.append(boardPrint);
-                }
+                handoff.append(gated(() => {
+                    const boardBlock = node('div', 'picture-board-summary');
+                    const boardLabel = node('label', '', 'Summary for your board or insurer');
+                    const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
+                    board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, metadata).text;
+                    const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
+                    const boardCopy = button('Copy board summary', () => questionnaire.copySummary(win, board, status));
+                    boardCopy.classList.add('dashboard-button-secondary'); boardBlock.append(boardLabel, board, boardPrinted, boardCopy);
+                    if (win && typeof win.print === 'function') {
+                        const boardPrint = button('Print board summary', () => printOnly(win, boardPrinted));
+                        boardPrint.classList.add('dashboard-button-secondary'); boardBlock.append(boardPrint);
+                    }
+                    return boardBlock;
+                }));
             }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());

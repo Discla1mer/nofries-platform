@@ -605,3 +605,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     .nofries-dashboard .dashboard-improvement-workspace .picture-toolbar { padding: .6rem .5rem; }
     .dashboard-improvement-workspace .picture-toolbar select { flex-basis: 100%; padding: .5rem .4rem; }
 }
+
+/* Deferred representative details, shown only at the later handoff gate. */
+.dashboard-details-gate form { display: grid; gap: 1rem; max-width: 36rem; }
+.dashboard-details-gate label { display: grid; gap: .35rem; }
+.dashboard-details-gate input { width: 100%; min-width: 0; box-sizing: border-box; }
