@@ -24,6 +24,7 @@ const { DashboardOnboardingError } = require('./appLifecycle/dashboardOnboarding
 const { copy, fields, freeze, uuid, digest, instant } = require('./appLifecycle/dashboardRuntimeRecords');
 const { hostResourceForRoute } = require('./appLifecycle/dashboardRuntimeEvents');
 const { apiSecurityHeaders } = require('./securityHeaders');
+const { ContactRequestError, normaliseContactRequest } = require('./contactRequests');
 
 const CONFIG = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
     'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
@@ -95,6 +96,11 @@ function failure(error, category) {
         const known = { evidence_input_invalid: 400, evidence_access_denied: 403,
             evidence_not_found: 404, evidence_unavailable: 503 };
         if (own(known, error.code) && known[error.code] === error.statusCode) { status = error.statusCode; code = error.code; }
+    } else if (error instanceof ContactRequestError) {
+        const known = { contact_request_input_invalid: 400, contact_request_access_denied: 403,
+            contact_request_operation_conflict: 409, contact_request_unavailable: 503 };
+        code = 'contact_request_unavailable';
+        if (own(known, error.code) && known[error.code] === error.statusCode) { status = error.statusCode; code = error.code; }
     } else if (error instanceof ConsultantWorkQueueError) {
         const known = { work_queue_input_invalid: 400, work_queue_access_denied: 403,
             work_queue_changed: 409, work_queue_unavailable: 503 };
@@ -127,7 +133,7 @@ function createDashboardRuntimeHandlers(configuration) {
     const ledger = new AsyncLocalStorage(), requests = new WeakMap();
     const ambiguousErrors = new WeakSet(), ambiguousResponses = new WeakSet();
     let supplied, authOptions, options, clock, budget, browser, operator, runtime, logout, resources, ncscQuota = null, customerBrowser = null, customerSession = null, customerLogout = null, activationBinding = null;
-    let activationPort = null, adminSubjects = new Set(), customerIdentityProvider, improvementEnabled = false;
+    let activationPort = null, adminSubjects = new Set(), customerIdentityProvider, improvementEnabled = false, contactRequestsEnabled = false;
     let externalBrowser = null, externalSession = null, externalLogout = null, externalBinding = null, externalAuth = null;
 
     function hostClock() {
@@ -202,10 +208,14 @@ function createDashboardRuntimeHandlers(configuration) {
     }
     try {
         const configurationKeys = dataKeys(configuration);
-        fields(configuration, [...CONFIG, ...['ncsc', 'improvementEnabled', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
+        fields(configuration, [...CONFIG, ...['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
         if (configurationKeys.includes('improvementEnabled')) {
             if (configuration.improvementEnabled !== true) throw unavailable();
             improvementEnabled = true;
+        }
+        if (configurationKeys.includes('contactRequestsEnabled')) {
+            if (configuration.contactRequestsEnabled !== true) throw unavailable();
+            contactRequestsEnabled = true;
         }
         if (configurationKeys.includes('ncsc')) {
             fields(configuration.ncsc, ['resolveSubmissionQuota']);
@@ -353,7 +363,8 @@ function createDashboardRuntimeHandlers(configuration) {
         resources = createDashboardResourceRuntime({ pool: options.pool, clock: hostClock, instanceId: options.instanceId,
             historyBudget: options.historyBudget, captureRequest, readExternalRuntimeEpoch: epoch,
             newId: options.newId, resolveSubmissionQuota: ncscQuota || (() => null),
-            ...(ncscQuota ? { ncscEnabled: true } : {}), ...(improvementEnabled ? { improvementEnabled: true } : {}) });
+            ...(ncscQuota ? { ncscEnabled: true } : {}), ...(improvementEnabled ? { improvementEnabled: true } : {}),
+            ...(contactRequestsEnabled ? { contactRequestsEnabled: true } : {}) });
     } catch (_) { throw unavailable(); }
 
     function selectedCustomer(cookie) {
@@ -420,6 +431,8 @@ function createDashboardRuntimeHandlers(configuration) {
         const prefix = '/api/dashboard/';
         const route = path.startsWith(prefix) ? path.slice(prefix.length) : '';
         const workQueue = improvementEnabled && route === 'work-queue';
+        // Default off: without the flag this path stays an unknown route (404), before any body is read.
+        const contact = contactRequestsEnabled && route === 'contact-requests';
         let resource = null, ncscRoute = null, improvementRoute = null;
         if (improvementEnabled && ['improvement/plans', 'improvement/list', 'improvement/view', 'improvement/editor', 'improvement/execute'].includes(route)) {
             improvementRoute = route.slice('improvement/'.length);
@@ -437,11 +450,11 @@ function createDashboardRuntimeHandlers(configuration) {
             }
         }
         const methods = { session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], evidence: ['GET'] };
-        if (!workQueue && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
+        if (!workQueue && !contact && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
             try { resource = hostResourceForRoute(route); } catch (_) { fail(404, 'dashboard_not_found'); }
         }
         entry.category = improvementRoute !== null ? 'improvement' : ncscRoute === null ? route : 'ncsc';
-        const allow = workQueue ? ['GET'] : improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
+        const allow = workQueue ? ['GET'] : contact ? ['POST'] : improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
             : ncscRoute !== null ? (ncscRoute === '' ? ['GET', 'POST'] : ncscRoute.includes('/') ? ['POST'] : ['GET']) : resource ? ['GET'] : methods[route];
         if (!allow.includes(snapshot.method)) fail(405, 'dashboard_method_not_allowed', { Allow: allow.join(', ') });
         const directory = { limit: 50, afterBindingId: null };
@@ -542,7 +555,7 @@ function createDashboardRuntimeHandlers(configuration) {
         } else if (['app.js', 'dashboard.css'].includes(route) && query !== null) {
             if (!/^v=[A-Za-z0-9_-]{43}$/.test(query)) bad();
         } else if (query !== null) bad();
-        return freeze({ route, resource, assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
+        return freeze({ route, contact, resource, assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
     }
     async function readWire(original, entry, snapshot) {
         entry.phase = 'wire';
@@ -600,6 +613,7 @@ function createDashboardRuntimeHandlers(configuration) {
             else if (route === 'session') { fields(input, ['operationId']); uuid(input.operationId); }
             else if (route === 'selection') { fields(input, ['bindingId', 'expectedGeneration', 'operationId']); uuid(input.bindingId); digest(input.expectedGeneration); uuid(input.operationId); }
             else if (route === 'logout') fields(input, []);
+            else if (route === 'contact-requests') return normaliseContactRequest(input);
             return freeze(copy(input, MAX_WIRE));
         } catch (_) { bad(); }
     }
@@ -669,7 +683,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 next: result.phase === 'prepared' ? 'customer_terms' : 'owner_finalisation' });
         }
         let expectedGeneration = null;
-        if (selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
+        if (selected.contact || selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
             const generations = snapshot.headers['x-nofries-dashboard-generation'];
             try { if (generations.length !== 1) throw new Error(); expectedGeneration = digest(generations[0]); }
             catch (_) { fail(403, 'dashboard_access_denied'); }
@@ -681,6 +695,19 @@ function createDashboardRuntimeHandlers(configuration) {
             entry.disclosureCheck = () => resources.assertWorkQueueDisclosure(privateRequest);
             return response(200, await bounded(() => resources.readWorkQueue(privateRequest,
                 { expectedGeneration }, selected.workQueueSelector)));
+        }
+        if (selected.contact) {
+            // Customer sessions only: a staff operator cannot ask on a customer's behalf.
+            if (!isCustomer(privateRequest.headers.cookie)) fail(403, 'dashboard_access_denied');
+            return response(200, await bounded(async () => {
+                let bound;
+                try { bound = await resources.forRequest(privateRequest, { expectedGeneration }); }
+                catch (error) {
+                    const denied = error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403;
+                    throw new ContactRequestError(denied ? 'contact_request_access_denied' : 'contact_request_unavailable', denied ? 403 : 503);
+                }
+                return bound.contact.request(command);
+            }));
         }
         if (selected.improvementRoute !== null) {
             return response(200, await bounded(async () => {

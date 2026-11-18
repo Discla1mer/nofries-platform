@@ -288,6 +288,19 @@ test.each([undefined, '', 'false', 'true'])('Improvement flag %p controls queue 
     expect(d.pool.connect).not.toHaveBeenCalled();
 });
 
+test.each([undefined, '', 'false', 'TRUE', '1', ' true ', 'true'])('contact request flag %p enables the route only for exactly true, before body, authentication or SQL', async enabled => {
+    const d = dependencies(), env = environment();
+    if (enabled === undefined) delete env.NOFRIES_CONTACT_REQUESTS_ENABLED;
+    else env.NOFRIES_CONTACT_REQUESTS_ENABLED = enabled;
+    const configuration = createProductionDashboardConfiguration(env, d);
+    if (enabled === 'true') expect(configuration.contactRequestsEnabled).toBe(true);
+    else expect(configuration).not.toHaveProperty('contactRequestsEnabled');
+    const response = await require('supertest')(require('../server').createNoFriesApp({ dashboard: configuration }))
+        .post('/api/dashboard/contact-requests').set('Content-Type', 'text/plain').send('not json');
+    // Off: an unknown route, decided before the body is read. On: the media type is refused before sign-in is checked.
+    expect([response.status, response.body.code]).toEqual(enabled === 'true' ? [415, 'dashboard_unsupported_media_type'] : [404, 'dashboard_not_found']);
+    expect(d.pool.connect).not.toHaveBeenCalled();
+});
 test.each(['TRUE', '1', true, ' true '])('invalid NCSC flag %p fails before provider construction', enabled => {
     const d = dependencies();
     expect(() => createProductionDashboardConfiguration(environment({ NOFRIES_DASHBOARD_NCSC_ENABLED: enabled }), d))

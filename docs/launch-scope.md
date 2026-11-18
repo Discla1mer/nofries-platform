@@ -43,6 +43,16 @@ comments are post-launch (issue #11).
    A new plan carries owners, due dates and open status from the newest
    same-scope plan; if that plan does not validate, nothing is carried, even
    if an older valid plan exists.
+   **Contact request.** `POST /api/dashboard/contact-requests` with
+   `{ operationId, topic, consentVersion }` records that a signed-in customer
+   asked No Fries to contact them, about their results or one listed service
+   (`api/shared/contactRequests.js`, table from migration 0026). One request
+   per organisation, topic and New Zealand day; a repeat that day answers
+   `{ status: 'already_requested' }`, and a retry of the same `operationId`
+   gets the same answer. Customer sessions only; staff operator sessions are
+   refused. No email is sent yet and the dashboard has no button yet. Off
+   unless `NOFRIES_CONTACT_REQUESTS_ENABLED` is exactly `true`; off, the route
+   is a 404.
 5. **Payment.** `server.js` answers every `/api/billing/*` request with
    `billing_disabled`. A customer cannot pay inside the app. Until this is
    built, a paid plan has to be approved by an operator and invoiced outside
