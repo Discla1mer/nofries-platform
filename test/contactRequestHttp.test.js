@@ -188,11 +188,11 @@ describe('writer outcomes', () => {
         expect(insert[1]).toEqual(['tenant-a', 'organisation-a', BODY.operationId, SUBJECT, 'results', 'contact-request-v1', '2026-11-18T22:00:00.000Z']);
         expect(d.events).toEqual([{ context, action: 'contact.request', module: 'overview', result: 'succeeded' }]);
     });
-    test('a retry of the same operation id returns the same result without a second row', async () => {
+    test('a retry of the same operation id returns the same result without a second row or audit event', async () => {
         const d = database(), context = await contextFor();
         await writeContactRequest({ ...d.port, context }, BODY);
         await expect(writeContactRequest({ ...d.port, context }, BODY)).resolves.toEqual({ schemaVersion: 1, status: 'requested' });
-        expect(d.rows.size).toBe(1);
+        expect(d.rows.size).toBe(1); expect(d.events).toHaveLength(1);
         expect(d.statements.filter(([sql]) => sql.startsWith('INSERT'))).toHaveLength(1);
     });
     test('a second request for the same topic and day is "already requested", not an error', async () => {
@@ -204,7 +204,8 @@ describe('writer outcomes', () => {
         await expect(writeContactRequest({ ...d.port, context }, second)).resolves.toEqual({ schemaVersion: 1, status: 'already_requested' });
         await expect(writeContactRequest({ ...d.port, context }, { ...BODY, operationId: uid(902), topic: 'tier1_support' }))
             .resolves.toEqual({ schemaVersion: 1, status: 'requested' });
-        expect(d.rows.size).toBe(2);
+        // Only stored requests are audited: replays add no durable rows.
+        expect(d.rows.size).toBe(2); expect(d.events).toHaveLength(2);
     });
     test('reusing an operation id for other content, or another subject\'s id, is a conflict and writes no audit', async () => {
         const d = database(), context = await contextFor();

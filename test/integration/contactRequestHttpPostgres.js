@@ -26,7 +26,7 @@ module.exports = function registerContactRequestHttpPostgres({ ncscHttpSetup, ht
             await loginClean();
         });
 
-        test('a customer asks once per topic and day; a retry is the same request and each success is audited with its row', async () => {
+        test('a customer asks once per topic and day; a retry is the same request and each stored request is audited with its row', async () => {
             const h = await ncscHttpSetup({ customerProvider: true, contactRequestsEnabled: true });
             const first = body();
             const created = await ask(h, first); httpJson(created, 200);
@@ -47,8 +47,10 @@ module.exports = function registerContactRequestHttpPostgres({ ncscHttpSetup, ht
             expect(again.body).toEqual({ schemaVersion: 1, status: 'already_requested' });
             const other = await ask(h, body({ topic: 'managed_it_core' })); httpJson(other, 200);
             expect(other.body).toEqual({ schemaVersion: 1, status: 'requested' });
-            expect((await stored(h)).map(item => item.topic)).toEqual(['results', 'managed_it_core']);
-            expect(await audits(h)).toHaveLength(4);
+            const rows = await stored(h);
+            expect(rows.map(item => item.topic).sort()).toEqual(['managed_it_core', 'results']);
+            // Retries and same-day repeats write no audit row; each stored request has exactly one, in its transaction.
+            expect((await audits(h)).map(item => item.tx).sort()).toEqual(rows.map(item => item.tx).sort());
 
             // The same operation id with different content is a conflict and writes nothing.
             httpJson(await ask(h, { ...first, topic: 'monthly_proof' }), 409, 'contact_request_operation_conflict');

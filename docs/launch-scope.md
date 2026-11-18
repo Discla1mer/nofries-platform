@@ -48,8 +48,9 @@ comments are post-launch (issue #11).
    asked No Fries to contact them, about their results or one listed service
    (`api/shared/contactRequests.js`, table from migration 0026). One request
    per organisation, topic and New Zealand day; a repeat that day answers
-   `{ status: 'already_requested' }`, and a retry of the same `operationId`
-   gets the same answer. Customer sessions only; staff operator sessions are
+   `{ status: 'already_requested' }` and stores nothing; a retry of the same
+   `operationId` gets the same answer that day. Only a stored request is
+   audited, so replays add no rows. Customer sessions only; staff operator sessions are
    refused. No email is sent yet and the dashboard has no button yet. Off
    unless `NOFRIES_CONTACT_REQUESTS_ENABLED` is exactly `true`; off, the route
    is a 404.

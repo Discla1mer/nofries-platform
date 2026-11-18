@@ -40,24 +40,27 @@ function resolveContactAccess(snapshot, contextInput, at) {
         { ...context.scope, subjectKey: context.identity.subjectKey, permission: 'contact.request', module: 'overview' }, null, at);
 }
 
-// One transaction: the request row (or the existing one for this operation id)
-// and its audit event commit together. The NZ day is derived in SQL from the
-// same timestamp the table CHECK uses, so the caller cannot choose it.
+// One transaction: a new request row and its audit event commit together. A
+// retry or a same-day repeat writes nothing, so replays cannot grow the audit
+// table. A repeat that stored no row leaves no claim on its operation id: a
+// later call with it is judged afresh (a new NZ day may then store it).
+// The NZ day is derived in SQL from the same timestamp the table CHECK uses.
 async function writeContactRequest({ database, clock, audit, context: contextInput }, commandInput) {
     const context = requireTenantRequestContext(contextInput), command = normaliseContactRequest(commandInput);
     const { scope, identity } = context;
     return database.withTenantTransaction(scope.tenantId, async client => {
         const existing = async () => (await client.query(`SELECT organisation_id, subject_key, topic, consent_version
             FROM nofries.dashboard_contact_requests WHERE tenant_id = $1 AND request_id = $2`, [scope.tenantId, command.operationId])).rows;
-        let found = await existing(), status = null;
+        let found = await existing(), status = null, inserted = false;
         if (!found.length) {
             const at = clock();
-            const inserted = await client.query(`INSERT INTO nofries.dashboard_contact_requests
+            const insert = await client.query(`INSERT INTO nofries.dashboard_contact_requests
                 (tenant_id, organisation_id, request_id, subject_key, topic, consent_version, requested_day, requested_at)
                 VALUES ($1, $2, $3, $4, $5, $6, ($7::timestamptz AT TIME ZONE 'Pacific/Auckland')::date, $7::timestamptz)
                 ON CONFLICT DO NOTHING`, [scope.tenantId, scope.organisationId, command.operationId, identity.subjectKey,
                 command.topic, command.consentVersion, at]);
-            if (inserted.rowCount === 1) status = 'requested';
+            inserted = insert.rowCount === 1;
+            if (inserted) status = 'requested';
             else {
                 // Either this organisation already asked about this topic today,
                 // or a concurrent retry of this same operation id committed first.
@@ -73,7 +76,7 @@ async function writeContactRequest({ database, clock, audit, context: contextInp
             }
             status = 'requested';
         }
-        await audit.writeEvent(audit.createEvent(context, { ...CONTACT_AUDIT, result: 'succeeded' }));
+        if (inserted) await audit.writeEvent(audit.createEvent(context, { ...CONTACT_AUDIT, result: 'succeeded' }));
         return Object.freeze({ schemaVersion: 1, status });
     });
 }
