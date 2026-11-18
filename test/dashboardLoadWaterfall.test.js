@@ -61,7 +61,7 @@ function harness(route, failure, warm = false, store = null, cyberState = 'ready
         const url = '/api/dashboard/modules/overview?view=first-paint' + (plans ? '&actions=1' : '');
         timing[url] = 100;
         payloads[url] = { page: payloads[LIST], detail: saved ? payloads[READ] : null,
-            actions: plans ? { lists: Object.values(plans.lists), more: false } : null };
+            actions: plans && combined !== 'no_actions' ? { lists: Object.values(plans.lists), more: false } : null };
     }
     function schedule(url, options, deliver) {
         const key = url.startsWith(LIST + '?') ? LIST : url;
@@ -72,9 +72,12 @@ function harness(route, failure, warm = false, store = null, cyberState = 'ready
     const fetch = (url, options) => new Promise(resolve => schedule(url, options, key => {
         const denied = failure === key && (key !== SESSION || trace.filter(row => row.url === SESSION).length === 2);
         const missing = key === READ && !saved || payloads[key] === null;
-        const unavailable = combined === 'unavailable' && key.startsWith('/api/dashboard/modules/overview?view=first-paint');
-        const value = unavailable ? { code: 'dashboard_unavailable' } : denied ? { code: 'dashboard_access_denied' } : payloads[key];
-        resolve({ status: unavailable ? 503 : denied ? 403 : missing ? 404 : 200, ok: !unavailable && !denied && !missing, redirected: false, type: 'basic',
+        const unavailable = ['unavailable', 'ncsc_denied_separately'].includes(combined) && key.startsWith('/api/dashboard/modules/overview?view=first-paint');
+        // An assessment refusal (entitlement, role or timing) on the combined read and the separate list read.
+        const refused = combined === 'ncsc_denied' && key.startsWith('/api/dashboard/modules/overview?view=first-paint') ||
+            ['ncsc_denied', 'ncsc_denied_separately'].includes(combined) && key === LIST;
+        const value = unavailable ? { code: 'dashboard_unavailable' } : refused ? { code: 'ncsc_access_denied' } : denied ? { code: 'dashboard_access_denied' } : payloads[key];
+        resolve({ status: unavailable ? 503 : refused || denied ? 403 : missing ? 404 : 200, ok: !unavailable && !refused && !denied && !missing, redirected: false, type: 'basic',
             headers: { get: name => name.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null },
             json: async () => value, text: async () => JSON.stringify(value) });
     }));
@@ -259,6 +262,31 @@ describe('remembered Overview assessment hint', () => {
             expect(h.elements.dashboardApp.textContent.includes('Source and calculation details')).toBe(!denied);
             h.window.dispatch('pagehide');
         }
+    });
+    test('an assessment refusal on the combined read falls back so the separate read decides', async () => {
+        const url = '/api/dashboard/modules/overview?view=first-paint', outcome = [];
+        for (const mode of ['ncsc_denied', 'ncsc_denied_separately']) {
+            const h = harness('overview', null, true, new Map([[CYBER, BINDING]]), 'ready', saved(), null, mode);
+            await jest.advanceTimersByTimeAsync(1500);
+            // The combined refusal alone never ends the view; the separate list read is still made.
+            expect(h.trace.map(row => row.url).filter(value => [url, LIST].includes(value))).toEqual([url, LIST]);
+            outcome.push([h.document.body.dataset.dashboardState, h.elements.dashboardApp.textContent]);
+            h.window.dispatch('pagehide');
+        }
+        expect(outcome[0]).toEqual(outcome[1]);
+    });
+    test('a combined read without Actions keeps the assessment and reads the Actions card separately', async () => {
+        const plans = { index: [{ planId: 'plan-a', planRevision: 1 }], lists: {
+            'plan-a': { scope: { planId: 'plan-a' }, planRevision: 1, asOf: NOW, actions: [] } } };
+        const h = harness('overview', null, true, new Map([[CYBER, BINDING]]), 'ready', saved(), plans, 'no_actions');
+        await jest.advanceTimersByTimeAsync(1500);
+        const urls = h.trace.map(row => row.url);
+        expect(urls).toContain('/api/dashboard/modules/overview?view=first-paint&actions=1');
+        expect(urls).toEqual(expect.arrayContaining([PLANS, PLAN_LIST('plan-a')]));
+        expect(urls.includes(LIST) || urls.includes(READ)).toBe(false);
+        expect(h.document.body.dataset.dashboardState).not.toBe('denied');
+        expect(h.elements.dashboardApp.textContent).toContain('Source and calculation details');
+        h.window.dispatch('pagehide');
     });
     test('a repeat visit reads the assessment beside the list and shows it one round trip earlier', async () => {
         const h = harness('overview', null, true, new Map([[CYBER, BINDING], [HINT, BINDING + ' assessment-latest']]), 'ready', saved());

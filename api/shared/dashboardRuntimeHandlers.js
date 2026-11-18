@@ -21,6 +21,7 @@ const { ImprovementActionListError } = require('./improvementPlan/improvementAct
 const { normaliseImprovementActionListSelector, normaliseImprovementPlanPage } = require('./improvementPlan/improvementActionListService');
 const { ConsultantWorkQueueError, normaliseConsultantWorkQueuePage } = require('./improvementPlan/consultantWorkQueueService');
 const { DashboardPersistenceError } = require('./appLifecycle/postgresDashboardBootstrap');
+const { TenantRequestContextError } = require('./appLifecycle/tenantRequestContext');
 const { DashboardOnboardingError } = require('./appLifecycle/dashboardOnboardingDomain');
 const { copy, fields, freeze, uuid, digest, instant } = require('./appLifecycle/dashboardRuntimeRecords');
 const { hostResourceForRoute } = require('./appLifecycle/dashboardRuntimeEvents');
@@ -681,36 +682,60 @@ function createDashboardRuntimeHandlers(configuration) {
         if (selected.route === 'overview') {
             // The binder memoizes by request identity. Give each subread its own
             // request so it performs all three session captures, as a separate GET would.
-            const read = work => bounded(async () => {
-                const request = Object.freeze({ ...privateRequest });
-                try {
-                    const bound = await resources.forRequest(request, { expectedGeneration });
-                    return await work(bound, request);
-                } catch (error) {
-                    if (error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403 ||
-                        error instanceof NcscAssessmentError && error.code === 'ncsc_access_denied' && error.statusCode === 403) {
+            // Only a binding denial is a confirmed loss of dashboard access.
+            const bind = async request => {
+                try { return await resources.forRequest(request, { expectedGeneration }); }
+                catch (error) {
+                    if (error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403) {
                         fail(403, 'dashboard_access_denied');
                     }
-                    throw error;
+                    throw unavailable();
+                }
+            };
+            // An assessment refusal answers as the separate NCSC route does, so the
+            // browser keeps its picture-local refusal instead of clearing the dashboard.
+            const assessment = (method, selector) => bounded(async () => {
+                const request = Object.freeze({ ...privateRequest });
+                const bound = await bind(request);
+                try {
+                    return await createNcscAssessmentService({ repository: bound.ncsc, requestContext: bound.requestContext })[method](request, selector);
+                } catch (error) {
+                    if (error instanceof TenantRequestContextError ||
+                        error instanceof NcscAssessmentError && error.code === 'ncsc_access_denied' && error.statusCode === 403) fail(403, 'ncsc_access_denied');
+                    throw unavailable();
                 }
             });
-            const assessment = (method, selector) => read((bound, request) =>
-                createNcscAssessmentService({ repository: bound.ncsc, requestContext: bound.requestContext })[method](request, selector));
             const page = await assessment('list', { limit: 50, afterAssessmentId: null });
             const assessmentId = preferredAssessmentId(page.assessments);
             const detail = assessmentId ? await assessment('read', { assessmentId }) : null;
             let actions = null;
             if (selected.overviewActions) {
-                const index = await read(bound => bound.improvement.plans({ limit: 5, afterPlanId: null }));
-                if (index.plans.length > 5) throw unavailable();
-                const lists = [];
-                for (const plan of index.plans) {
-                    const list = await read(bound => bound.improvement.list({ planId: plan.planId,
-                        filters: { status: 'all', owner: 'all', overdueOnly: false } }));
-                    if (list.scope.planId !== plan.planId || list.planRevision !== plan.planRevision) throw unavailable();
-                    lists.push(list);
+                const improvement = work => bounded(async () => {
+                    const bound = await bind(Object.freeze({ ...privateRequest }));
+                    return work(bound.improvement);
+                });
+                let index = null, lists = null;
+                try {
+                    index = await improvement(service => service.plans({ limit: 5, afterPlanId: null }));
+                    if (index.plans.length <= 5) {
+                        lists = [];
+                        for (const plan of index.plans) {
+                            lists.push(await improvement(service => service.list({ planId: plan.planId,
+                                filters: { status: 'all', owner: 'all', overdueOnly: false } })));
+                        }
+                    }
+                } catch (error) {
+                    if (error instanceof HostError && error.status === 403 && error.code === 'dashboard_access_denied') throw error;
+                    // The optional Actions card is omitted, as the separate reads allow.
+                    // An expired request budget still fails the whole bundle.
+                    hostClock(); index = null; lists = null;
                 }
-                actions = { lists, more: index.nextAfterPlanId !== null };
+                if (index !== null) {
+                    // An inconsistent index or plan revision is not a partial answer.
+                    if (lists === null || lists.some((list, i) => list.scope.planId !== index.plans[i].planId ||
+                        list.planRevision !== index.plans[i].planRevision)) throw unavailable();
+                    actions = { lists, more: index.nextAfterPlanId !== null };
+                }
             }
             return response(200, { page, detail, actions });
         }

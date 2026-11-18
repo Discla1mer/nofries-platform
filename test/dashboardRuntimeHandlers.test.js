@@ -915,3 +915,180 @@ describe('versioned dashboard asset cache policy', () => {
         expect(read).not.toHaveBeenCalled();
     });
 });
+
+describe('combined Overview first-paint read', () => {
+    const OVERVIEW = '/api/dashboard/modules/overview';
+    const GENERATION = { 'x-nofries-dashboard-generation': digest('generation') };
+    function configured(improvement = true) {
+        const h = harness(); h.options.ncsc = { resolveSubmissionQuota: jest.fn(() => null) };
+        if (improvement) h.options.improvementEnabled = true;
+        return h;
+    }
+    // Resource binding and the NCSC service are controlled here; genuine host
+    // authentication, URL parsing, generation checks and error projection run.
+    function stubbedHost(h, script) {
+        let factory, errors;
+        const calls = [];
+        jest.isolateModules(() => {
+            const ncsc = jest.requireActual('../api/shared/ncscAssessmentService');
+            jest.doMock('../api/shared/dashboardRuntime', () => ({
+                createDashboardResourceRuntime: () => ({ forRequest: async (req, transport) => {
+                    const step = calls.length;
+                    calls.push({ req, transport });
+                    if (script.bind) await script.bind(step, errors);
+                    const record = (name, method) => async (...args) => {
+                        calls[step].operation = name + '.' + method; calls[step].args = args;
+                        return script[name + '.' + method](...args);
+                    };
+                    return { requestContext: {}, ncsc: { list: record('ncsc', 'list'), read: record('ncsc', 'read') },
+                        improvement: { plans: record('improvement', 'plans'), list: record('improvement', 'list') } };
+                } })
+            }));
+            jest.doMock('../api/shared/ncscAssessmentService', () => ({ ...ncsc, createNcscAssessmentService: ({ repository }) => repository }));
+            factory = require('../api/shared/dashboardRuntimeHandlers').createDashboardRuntimeHandlers;
+            errors = { NcscAssessmentError: ncsc.NcscAssessmentError,
+                DashboardPersistenceError: require('../api/shared/appLifecycle/postgresDashboardBootstrap').DashboardPersistenceError,
+                TenantRequestContextError: require('../api/shared/appLifecycle/tenantRequestContext').TenantRequestContextError,
+                ImprovementActionListError: require('../api/shared/improvementPlan/improvementActionListProjection').ImprovementActionListError };
+        });
+        jest.dontMock('../api/shared/dashboardRuntime'); jest.dontMock('../api/shared/ncscAssessmentService');
+        return { handler: factory(h.options), calls, errors };
+    }
+    const row = (assessmentId, status, updatedAt) => ({ assessmentId, status, updatedAt });
+    const PAGE = { assessments: [row('draft-new', 'draft', '2026-09-08T21:00:00.000Z'), row('submitted-old', 'submitted', '2026-09-01T00:00:00.000Z')],
+        nextAfterAssessmentId: null };
+    const DETAIL = { assessment: { assessmentId: 'submitted-old' } };
+    const PLANS = { plans: [{ planId: 'plan-a', planRevision: 2 }, { planId: 'plan-b', planRevision: 1 }], nextAfterPlanId: 'plan-c' };
+    const LIST = ({ planId }) => ({ scope: { planId }, planRevision: PLANS.plans.find(plan => plan.planId === planId).planRevision, actions: [] });
+    function script(overrides = {}) {
+        return { 'ncsc.list': async () => clone(PAGE), 'ncsc.read': async () => clone(DETAIL),
+            'improvement.plans': async () => clone(PLANS), 'improvement.list': async selector => LIST(selector), ...overrides };
+    }
+    async function signedIn(h, steps) {
+        h.build(); const issued = await h.login();
+        return { issued, ...stubbedHost(h, steps) };
+    }
+    function get(issued, query, extra = {}) {
+        return request({ url: OVERVIEW + query, cookieHeader: issued.cookie, headers: GENERATION, ...extra });
+    }
+    function expectSecure(result) {
+        expect(result.headers['Cache-Control']).toBe('private, no-store, max-age=0');
+        expect(result.headers['Content-Type']).toBe('application/json; charset=utf-8');
+        expect(result.headers['X-Content-Type-Options']).toBe('nosniff');
+        expect(result.headers.Location).toBeUndefined();
+    }
+
+    test.each(['?view=first-paint', '?view=first-paint&actions=1'])('exact query %s reaches authentication', async query => withExpectedWarning({ route: 'overview', status: 401, code: 'dashboard_authentication_required' }, async () => {
+        const h = configured(), handler = h.build();
+        expectError(await handler.handleRequest(request({ url: OVERVIEW + query })), 401, 'dashboard_authentication_required');
+        expect(h.options.pool.connect).not.toHaveBeenCalled();
+    }));
+    test.each(['?actions=1&view=first-paint', '?view=first-paint&actions=1&extra=1', '?view=first-paint&', '?view=first-paint&actions=0',
+        '?view=first-paint&actions=1&actions=1', '?view=First-paint', '?view=first%2Dpaint', '?', '?view=first-paint&view=first-paint'])
+    ('reordered, extra or noncanonical query %s is rejected before authority providers', async query => {
+        const h = configured(), handler = h.build(), warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        try { expectError(await handler.handleRequest(request({ url: OVERVIEW + query })), 400, 'dashboard_input_invalid'); }
+        finally { warn.mockRestore(); }
+        expectNoAuthorityIo(h);
+    });
+    test.each([['actions=1 while improvement is disabled', false, '?view=first-paint&actions=1'], ['without NCSC configuration', null, '?view=first-paint']])
+    ('rejects %s before authority providers', async (_name, improvement, query) => {
+        const h = improvement === null ? harness() : configured(improvement), handler = h.build();
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        try { expectError(await handler.handleRequest(request({ url: OVERVIEW + query })), 400, 'dashboard_input_invalid'); }
+        finally { warn.mockRestore(); }
+        expectNoAuthorityIo(h);
+    });
+    test.each(['POST', 'HEAD', 'PUT'])('%s is not allowed before authority providers', async method => withExpectedWarning({ route: 'overview', status: 405, code: 'dashboard_method_not_allowed' }, async () => {
+        const h = configured(), handler = h.build();
+        const result = await handler.handleRequest(request({ method, url: OVERVIEW + '?view=first-paint&actions=1', ...(method === 'POST' ? { body: {} } : {}) }));
+        expectError(result, 405, 'dashboard_method_not_allowed'); expect(result.headers.Allow).toBe('GET');
+        expectNoAuthorityIo(h);
+    }));
+    test('an authenticated request without a generation is denied before binding', async () => withExpectedWarning({ route: 'overview', status: 403, code: 'dashboard_access_denied' }, async () => {
+        const h = configured(); const { issued, handler, calls } = await signedIn(h, script());
+        expectError(await handler.handleRequest(request({ url: OVERVIEW + '?view=first-paint', cookieHeader: issued.cookie })), 403, 'dashboard_access_denied');
+        expect(calls).toEqual([]);
+    }));
+    test('an operator session the binder refuses is denied before any read', async () => withExpectedWarning({ route: 'overview', status: 403, code: 'dashboard_access_denied' }, async () => {
+        // A genuine operator sign-in; the binder refuses a session with no selected customer binding.
+        const h = configured(); const { issued, handler, calls } = await signedIn(h,
+            { ...script(), bind: async (_step, errors) => { throw new errors.DashboardPersistenceError('access_denied', 403); } });
+        expectError(await handler.handleRequest(get(issued, '?view=first-paint&actions=1')), 403, 'dashboard_access_denied');
+        expect(calls.map(call => call.operation)).toEqual([undefined]);
+    }));
+    test('returns the page, default assessment and Actions in order, each read with its own bound request', async () => {
+        const h = configured(); const { issued, handler, calls } = await signedIn(h, script());
+        const result = await handler.handleRequest(get(issued, '?view=first-paint&actions=1'));
+        expect(result.status).toBe(200); expectSecure(result);
+        expect(result.body).toEqual({ page: PAGE, detail: DETAIL,
+            actions: { lists: [LIST({ planId: 'plan-a' }), LIST({ planId: 'plan-b' })], more: true } });
+        expect(calls.map(call => call.operation)).toEqual(['ncsc.list', 'ncsc.read', 'improvement.plans', 'improvement.list', 'improvement.list']);
+        expect(calls[0].args[1]).toEqual({ limit: 50, afterAssessmentId: null });
+        expect(calls[1].args[1]).toEqual({ assessmentId: 'submitted-old' });
+        expect(calls[2].args[0]).toEqual({ limit: 5, afterPlanId: null });
+        expect(calls[3].args[0]).toEqual({ planId: 'plan-a', filters: { status: 'all', owner: 'all', overdueOnly: false } });
+        expect(new Set(calls.map(call => call.req)).size).toBe(calls.length);
+        expect(calls.every(call => Object.isFrozen(call.req) && call.transport.expectedGeneration === digest('generation'))).toBe(true);
+    });
+    test('without actions=1 no improvement read runs and an empty page has no detail', async () => {
+        const h = configured(false); const { issued, handler, calls } = await signedIn(h, script({ 'ncsc.list': async () => ({ assessments: [], nextAfterAssessmentId: null }) }));
+        const result = await handler.handleRequest(get(issued, '?view=first-paint'));
+        expect(result.status).toBe(200); expectSecure(result);
+        expect(result.body).toEqual({ page: { assessments: [], nextAfterAssessmentId: null }, detail: null, actions: null });
+        expect(calls.map(call => call.operation)).toEqual(['ncsc.list']);
+    });
+    test.each(['ncsc.list', 'ncsc.read', 'improvement.plans', 'improvement.list'])('a binding denial during %s is a confirmed loss of access', async step => withExpectedWarning({ route: 'overview', status: 403, code: 'dashboard_access_denied' }, async () => {
+        const order = ['ncsc.list', 'ncsc.read', 'improvement.plans', 'improvement.list'];
+        const h = configured();
+        const host = await signedIn(h, { ...script(), bind: async (index, errors) => {
+            if (index === order.indexOf(step)) throw new errors.DashboardPersistenceError('access_denied', 403);
+        } });
+        expectError(await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1')), 403, 'dashboard_access_denied');
+        expect(host.calls).toHaveLength(order.indexOf(step) + 1);
+    }));
+    test.each([
+        ['NCSC list refusal', 'ncsc.list', errors => new errors.NcscAssessmentError('ncsc_access_denied', 403)],
+        ['NCSC detail refusal', 'ncsc.read', errors => new errors.NcscAssessmentError('ncsc_access_denied', 403)],
+        ['tenant context refusal', 'ncsc.list', errors => new errors.TenantRequestContextError()]
+    ])('%s answers as the separate NCSC route, not as revoked access', async (_name, step, error) => withExpectedWarning({ route: 'overview', status: 403, code: 'ncsc_access_denied' }, async () => {
+        const h = configured(); let errors;
+        const host = await signedIn(h, script({ [step]: async () => { throw error(errors); } }));
+        errors = host.errors;
+        expectError(await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1')), 403, 'ncsc_access_denied');
+        expect(host.calls.map(call => call.operation).includes('improvement.plans')).toBe(false);
+    }));
+    test.each([
+        ['detail not found', 'ncsc.read', errors => new errors.NcscAssessmentError('ncsc_not_found', 404)],
+        ['detail unavailable', 'ncsc.read', errors => new errors.NcscAssessmentError('ncsc_unavailable', 503)],
+        ['list failure', 'ncsc.list', () => new Error('synthetic provider failure')],
+        ['binding failure', 'bind', () => new Error('synthetic binding failure')]
+    ])('%s fails the whole bundle without a partial body', async (_name, step, error) => withExpectedWarning({ route: 'overview', status: 503, code: 'dashboard_unavailable' }, async () => {
+        const h = configured(); let errors;
+        const host = await signedIn(h, step === 'bind' ? { ...script(), bind: async (_index, scoped) => { throw error(scoped); } }
+            : script({ [step]: async () => { throw error(errors); } }));
+        errors = host.errors;
+        expectError(await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1')), 503, 'dashboard_unavailable');
+    }));
+    test.each([
+        ['plan revision mismatch', { 'improvement.list': async selector => ({ ...LIST(selector), planRevision: 9 }) }],
+        ['plan scope mismatch', { 'improvement.list': async selector => ({ ...LIST(selector), scope: { planId: 'other' } }) }],
+        ['oversized plan index', { 'improvement.plans': async () => ({ plans: Array.from({ length: 6 }, (_, i) => ({ planId: 'p' + i, planRevision: 1 })), nextAfterPlanId: null }) }]
+    ])('%s fails the whole bundle without a partial body', async (_name, overrides) => withExpectedWarning({ route: 'overview', status: 503, code: 'dashboard_unavailable' }, async () => {
+        const h = configured(); const host = await signedIn(h, script(overrides));
+        expectError(await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1')), 503, 'dashboard_unavailable');
+    }));
+    test.each(['improvement.plans', 'improvement.list'])('a failed optional %s read returns the bundle with no Actions', async step => {
+        const h = configured(); let errors;
+        const host = await signedIn(h, script({ [step]: async () => { throw new errors.ImprovementActionListError('improvement_list_unavailable', 503); } }));
+        errors = host.errors;
+        const result = await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1'));
+        expect(result.status).toBe(200); expectSecure(result);
+        expect(result.body).toEqual({ page: PAGE, detail: DETAIL, actions: null });
+    });
+    test('an expired request budget during the Actions read still fails the bundle', async () => withExpectedWarning({ route: 'overview', status: 503, code: 'dashboard_unavailable' }, async () => {
+        const h = configured();
+        const host = await signedIn(h, script({ 'improvement.plans': async () => { h.state.now += 1000; throw new Error('synthetic late failure'); } }));
+        expectError(await host.handler.handleRequest(get(host.issued, '?view=first-paint&actions=1')), 503, 'dashboard_unavailable');
+    }));
+});

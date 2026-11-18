@@ -1076,7 +1076,7 @@
             if (!live()) return;
             load(false, firstPaint);
             if (readActions) {
-                const result = firstPaint ? Promise.resolve(firstPaint.actions) : Promise.resolve().then(readActions);
+                const result = firstPaint && firstPaint.actions ? Promise.resolve(firstPaint.actions) : Promise.resolve().then(readActions);
                 result.then(value => {
                     if (!live()) return; actions = actionSummary(value, metadata); placeActions();
                 }, () => {});

@@ -1577,7 +1577,8 @@
                         const result = requireSuccess(response);
                         if (!current(cycle) || cycle.authorityPending || !fields(result, ['page', 'detail', 'actions'])) throw invalid();
                         const checked = client.validateOverview(result.page, result.detail);
-                        if (actions && (!result.actions || !Array.isArray(result.actions.lists) ||
+                        // A null Actions value means the optional card was not read; the picture reads it separately.
+                        if (!actions && result.actions !== null || actions && result.actions !== null && (!Array.isArray(result.actions.lists) ||
                             result.actions.lists.length > ACTION_PLAN_LIMIT || picture.actionSummary(result.actions, value.metadata) === null)) throw invalid();
                         informationRead(cycle);
                         return { ...checked, actions: result.actions };
