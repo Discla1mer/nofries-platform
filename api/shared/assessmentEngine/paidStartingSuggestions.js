@@ -55,11 +55,18 @@ function paidStartingSuggestions({ access, target, selectedSource, retained }, e
     nistCrosswalk ??= createNistNcscCrosswalk();
     const links = startingLinks(target.profileRef, nistCrosswalk);
     if (!links.length) return [];
-    const envelope = validateNcscSupportingRecords(retained.envelope);
+    let envelope;
+    try {
+        envelope = validateNcscSupportingRecords(retained.envelope);
+    } catch (error) {
+        if (error.code === 'ncsc_record_invalid') return [];
+        throw error;
+    }
     if (envelope.tenantId !== access.tenantId || envelope.organisationId !== access.organisationId ||
         envelope.tenantId !== target.tenantId || envelope.organisationId !== target.organisationId ||
         envelope.assessmentId !== selectedSource.assessmentId || envelope.revision !== selectedSource.revision ||
         envelope.scopePopulation.sha256 !== selectedSource.scopePopulationSha256 ||
+        !isDeepStrictEqual(target.scopePopulation, envelope.scopePopulation.body) ||
         envelope.state.status !== 'submitted' || !envelope.submission ||
         !isDeepStrictEqual(envelope.state.profileRef, nistCrosswalk.fromProfileRef) ||
         retained.revisionSha256 !== selectedSource.revisionSha256 ||
