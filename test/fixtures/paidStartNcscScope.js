@@ -2,7 +2,7 @@
 
 const { makeVersion, appendVersion, moveHead, readHead, readHistory } =
     require('../../api/shared/assessmentLifecycle/postgresNcscAssessmentStore');
-const { createAssessment } = require('../../api/shared/assessmentLifecycle/assessmentDomain');
+const { createAssessment, applyAssessmentCommand } = require('../../api/shared/assessmentLifecycle/assessmentDomain');
 const { hash } = require('../../api/shared/appLifecycle/dashboardRuntimeRecords');
 const { createNistFrameworkProfile } = require('../../api/shared/assessmentEngine/nistFrameworkProfile');
 const { createFrameworkRegistry } = require('../../api/shared/assessmentEngine/frameworkProfileRegistry');
@@ -47,4 +47,17 @@ async function insertStart(db, scope, actor, scopePopulation, selection, options
         hash({ command, selection }), hash(record), record, ...selection]);
 }
 
-module.exports = { seedSource, selectedSource, insertStart };
+async function saveUnbound(db, scope, actor, assessmentId) {
+    const keys = [scope.tenantId, scope.organisationId, profileRef.profileId, profileRef.profileVersion, assessmentId];
+    const { rows } = await db.query(`SELECT record FROM nofries.dashboard_framework_revisions
+        WHERE tenant_id=$1 AND organisation_id=$2 AND profile_id=$3 AND profile_version=$4 AND assessment_id=$5 AND revision=0`, keys);
+    const command = { ...scope, assessmentId, now, actorSubjectKey: actor, action: 'save', expectedRevision: 0,
+        idempotencyKey: 'save-one', payload: { responses: [{ itemId: 'PR.DS-11-Q1', optionId: 'partial', applicabilityRationaleSha256: null }] } };
+    const state = applyAssessmentCommand(rows[0].record.state, ncscFixture({ ...scope, now }).state.tenantAggregate, command, registry);
+    const record = { ...rows[0].record, state };
+    return db.query(`INSERT INTO nofries.dashboard_framework_revisions
+        (tenant_id,organisation_id,profile_id,profile_version,assessment_id,revision,idempotency_key,intent_sha256,record_sha256,record)
+        VALUES ($1,$2,$3,$4,$5,1,'save-one',$6,$7,$8)`, [...keys, hash(command), hash(record), record]);
+}
+
+module.exports = { seedSource, selectedSource, insertStart, saveUnbound };

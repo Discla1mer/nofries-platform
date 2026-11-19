@@ -17,6 +17,15 @@ ALTER TABLE nofries.dashboard_framework_revisions
         REFERENCES nofries.dashboard_ncsc_assessment_revisions
         (tenant_id, organisation_id, assessment_id, revision, payload_sha256);
 
+-- 0030 grants SELECT and INSERT on the whole table. Those privileges cover new
+-- columns too. Keep ordinary runtime on unlinked rows until a separate decision
+-- authorises a serving path. Staff wipe has a different role and policy.
+CREATE POLICY framework_runtime_unbound ON nofries.dashboard_framework_revisions
+    AS RESTRICTIVE TO nofries_runtime
+    USING (ncsc_assessment_id IS NULL)
+    WITH CHECK (ncsc_assessment_id IS NULL AND ncsc_revision IS NULL
+        AND ncsc_revision_sha256 IS NULL AND ncsc_scope_sha256 IS NULL);
+
 -- Invoker rights and both owner keys also apply to the source read. The NCSC
 -- scope digest covers its owner, assessment and capture, alongside the body.
 CREATE FUNCTION nofries.check_paid_start_ncsc_scope() RETURNS trigger
@@ -52,7 +61,8 @@ BEGIN
 END;
 $$;
 REVOKE ALL ON FUNCTION nofries.check_paid_start_ncsc_scope() FROM PUBLIC;
+-- The runtime RLS check must run before any source lookup.
 CREATE TRIGGER paid_start_ncsc_scope
-    BEFORE INSERT OR UPDATE ON nofries.dashboard_framework_revisions
+    AFTER INSERT OR UPDATE ON nofries.dashboard_framework_revisions
     FOR EACH ROW
     EXECUTE FUNCTION nofries.check_paid_start_ncsc_scope();
