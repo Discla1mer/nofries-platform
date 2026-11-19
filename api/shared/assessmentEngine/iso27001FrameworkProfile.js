@@ -6,8 +6,8 @@ const { publishFrameworkProfile } = require('./frameworkProfileRegistry');
 const SOURCE_ID = 'iso-iec-27001-2022';
 const DATE = '2026-11-19';
 const TITLE = 'ISO 27001 readiness self-assessment';
-const SOURCE_SHA256 = '66ce68bdf0d8ea2d271c52f68d6505b7a50f69f8d8d5ce40bcf833320caef1fd';
-const PROFILE_SHA256 = '1971ad65405f1c20d8e13a65a26a7b40e9ff48b63505db4f0336d32d64fae73d';
+const SOURCE_SHA256 = '0221ff4667e5471a50711bd4e64ae56b5f253889cdcc9817ce3bfdfda4dc5654';
+const PROFILE_SHA256 = '58e37797ea4bf926ab0477522857cb9dd0ac2a84d3e1815829dee9b2390bd107';
 
 const DOMAINS = [
     ['C4', 'Clause 4 · Scope and expectations', 'Describe the work, people and services covered by your answers.'],
@@ -36,8 +36,8 @@ const OPTIONS = [
 const ITEMS = [
     ["C4.1", "What shapes our risks", "Have you identified changes inside and outside the organisation that could affect how you protect information?",
         "Changes in customers, technology or climate can upset yesterday's assumptions.", "Notes from a planning meeting that link a change to a risk.", "Discuss one recent change with a service owner and record its effect."],
-    ["C4.2", "Promises to others", "Do you know who relies on your information and which of their expectations you have agreed to meet?",
-        "A missed promise can disrupt a customer's work even when your own service runs normally.", "A customer promise recorded beside the team responsible for it.", "Ask a customer-facing colleague to trace one promise to its owner."],
+    ["C4.2", "Know whose requirements apply", "Have you identified whose information security requirements apply to your organisation, including duties set by law and by contract?",
+        "A team can miss a duty if it only tracks what customers have asked for.", "A register showing who sets each requirement, where it is written and who looks after it.", "Trace one legal duty and one contract term to the teams responsible for meeting them."],
     ["C4.3", "Draw the boundary", "Have you written down which teams, sites and services you cover, including their dependencies?",
         "A vague boundary lets two teams assume the other protects the same information.", "A scope note showing a hosted service and the team that manages it.", "Walk through one customer journey and mark where information crosses the boundary."],
     ["C4.4", "How the work fits together", "Can staff follow how security decisions move from a concern through to a checked result?",
@@ -120,8 +120,8 @@ const ITEMS = [
         "A small supplier may hold the only working copy of an essential record.", "A supplier assessment linked to the service it supports.", "Rank suppliers by the harm their loss or misuse could cause."],
     ["A.5.20", "Put promises in supplier terms", "Do supplier agreements state the security duties each side has accepted?",
         "During an incident, an unwritten expectation is difficult to rely on.", "An agreed contract schedule covering incident notices and data return.", "Compare one live agreement with the risks identified at purchase."],
-    ["A.5.21", "Look beyond the direct supplier", "Do you consider who makes, distributes and supports the technology you buy?",
-        "A dependency several steps away can interrupt your service.", "A supplier's dependency list and a decision on a critical component.", "Ask how a key supplier checks changes to its own supply chain."],
+    ["A.5.21", "Follow risks through the supply chain", "Do you work with your technology suppliers to identify risks further up their supply chains and check that agreed actions are completed?",
+        "A fault at a supplier's supplier can interrupt your service even when your direct supplier is ready to help.", "A review of a key supplier's reliance on one component, with a named owner and a test of the agreed fallback.", "Ask a supplier which dependency could stop delivery, agree what to do about it and set a date to check the result."],
     ["A.5.22", "Check suppliers over time", "Do owners review the service actually delivered and assess security effects of supplier changes?",
         "A supplier may change hosting or support arrangements after the contract starts.", "A service review noting a hosting change and follow-up.", "Put the next security review on the supplier owner's calendar."],
     ["A.5.23", "Plan the cloud service lifecycle", "Have you agreed who secures a cloud service from selection through use and exit?",
@@ -170,8 +170,8 @@ const ITEMS = [
         "Private conversations and screens can be exposed outside the usual workspace.", "A remote-work checklist covering devices, calls and lost equipment.", "Ask a remote colleague to test the lost-device reporting route."],
     ["A.6.8", "Make concerns easy to report", "Can everyone quickly report something suspicious through a route that gets a response?",
         "An early report can give the team time to limit harm.", "A sample staff report with a response time and acknowledgement.", "Ask a new starter to find the reporting route without help."],
-    ["A.7.1", "Mark the protected boundary", "Have you identified where public space ends and protected work areas begin?",
-        "An unclear boundary lets visitors drift into sensitive areas.", "A floor plan showing public and restricted areas.", "Walk the route from reception to a sensitive room and mark each boundary."],
+    ["A.7.1", "Control entry at the boundary", "Do the barriers around your protected work areas prevent people from entering without permission?",
+        "A person who can walk straight from a public area into a restricted room can reach the equipment inside.", "A site check showing that a visitor can reach reception but needs staff assistance to go further.", "Walk each public approach with the site owner and check that doors, gates or staffed entry points restrict access."],
     ["A.7.2", "Control who comes in", "Do you check who enters protected spaces and remove entry rights when they expire?",
         "A borrowed pass or unescorted visitor can bypass digital access checks.", "A visitor sign-in matched to a host and departure time.", "Sample a day's visitor records against the entry rules."],
     ["A.7.3", "Secure the rooms you use", "Are doors, windows and room arrangements suited to the information and equipment inside?",
@@ -190,8 +190,8 @@ const ITEMS = [
         "Items in transit can be lost without anyone noticing promptly.", "A loan record with an assigned holder and expected return date.", "Check who holds each device lent out this month."],
     ["A.7.10", "Follow removable media from issue to disposal", "Do you control how storage media are issued, carried, stored and retired?",
         "A tiny drive can carry a large volume of sensitive records.", "A media register with an encrypted drive's issue and destruction records.", "Follow one drive through every stage of its use."],
-    ["A.7.11", "Keep essential utilities available", "Have you checked how power, cooling and communications failures would affect critical equipment?",
-        "A working server can still stop if its room overheats.", "A backup power test showing the run time under load.", "Test one utility fallback during an agreed maintenance window."],
+    ["A.7.11", "Keep equipment running in an outage", "Have you tested how you will keep critical equipment running if power, cooling or another essential service fails?",
+        "Backup power may keep a server on while a loss of cooling forces it to shut down.", "An exercise record showing how long backup power and cooling kept a critical system running under load.", "Agree a safe test with the site owner, compare the measured run time with the time the service needs and address any shortfall."],
     ["A.7.12", "Protect cables and connections", "Are important power and data cables protected from damage, interference and unauthorised connection?",
         "An exposed cable can interrupt a whole floor or connect an unexpected device.", "A site inspection noting a secured patch cabinet.", "Trace one critical cable and protect its most exposed section."],
     ["A.7.13", "Maintain equipment safely", "Do you service equipment on time and control who can handle it during repairs?",
@@ -309,8 +309,10 @@ function createIso27001FrameworkProfile() {
         statements: {
             attribution: 'ISO and IEC publish the standard. No Fries wrote the questions, titles, examples and guidance.',
             basis: 'Use the scope you declared for this assessment. Consider each question across that whole scope.',
-            claim: 'This is an ISO 27001 readiness self-assessment. Certification comes only from an accredited certification body.',
+            claim: 'This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.',
             limitations: [
+                'The 23 management questions sample the requirements in clauses 4 to 10. Use the standard to check the full set.',
+                'Use this Annex A view as a starting point. Your organisation still needs its own full Statement of Applicability, including any extra controls its risks require.',
                 'Read each clause group and Annex A theme separately. Each applicable answer carries equal weight within its group. There is no overall pass mark.',
                 'In place with evidence means you can point to a current example. Both in-place answers give full readiness credit.',
                 'For an Annex A exclusion, record why the control does not apply to your scope. Keep the reason with its entry in your Statement of Applicability.',

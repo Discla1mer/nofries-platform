@@ -8,8 +8,8 @@ const { createAssessment } = require('../api/shared/assessmentLifecycle/assessme
 const { act, creation, reference, response, tenant } = require('./fixtures/assessmentLifecycle');
 
 const profile = createIso27001FrameworkProfile();
-const profilePin = '1971ad65405f1c20d8e13a65a26a7b40e9ff48b63505db4f0336d32d64fae73d';
-const sourcePin = '66ce68bdf0d8ea2d271c52f68d6505b7a50f69f8d8d5ce40bcf833320caef1fd';
+const profilePin = '58e37797ea4bf926ab0477522857cb9dd0ac2a84d3e1815829dee9b2390bd107';
+const sourcePin = '0221ff4667e5471a50711bd4e64ae56b5f253889cdcc9817ce3bfdfda4dc5654';
 const clauseIds = '4.1 4.2 4.3 4.4 5.1 5.2 5.3 6.1.2 6.1.3 6.2 6.3 7.1 7.2 7.4 7.5 8.1 8.2 8.3 9.1 9.2 9.3 10.1 10.2'
     .split(' ').map(id => `C${id}`);
 const themes = [['A.5', 37], ['A.6', 8], ['A.7', 14], ['A.8', 34]];
@@ -30,6 +30,14 @@ test('pins the edition, source and complete publication without registering it f
     const changed = JSON.parse(JSON.stringify(profile));
     changed.questions[0].weight = 2;
     expect(() => publishFrameworkProfile(changed)).toThrow(expect.objectContaining({ code: 'catalogue_digest_mismatch' }));
+});
+
+test('refuses a reference to the earlier wording even with the same reserved draft version', () => {
+    const start = creation(profile, { now: '2026-11-19T12:00:00.000Z' });
+    start.payload.profileRef.catalogueSha256 = '1971ad65405f1c20d8e13a65a26a7b40e9ff48b63505db4f0336d32d64fae73d';
+    start.payload.profileRef.sourceCatalogueSha256 = '66ce68bdf0d8ea2d271c52f68d6505b7a50f69f8d8d5ce40bcf833320caef1fd';
+    expect(() => createAssessment(tenant(), start, createFrameworkRegistry([profile]))).toThrow(
+        expect.objectContaining({ code: 'assessment_profile_mismatch' }));
 });
 
 test('covers seven clause groups and exactly the four 2022 themes, with each item in sequence', () => {
