@@ -138,7 +138,18 @@ test.each([true, false])('read-only results show the selected submission without
     expect(view.buttons()).toHaveLength(0);
     expect(view.root.textContent).toContain('Board summary');
     expect(view.root.querySelector('ul').children).toHaveLength(iso ? 11 : 6);
-    if (iso) expect(view.root.textContent).toContain(reason);
+    const gaps = view.root.querySelector('ol').children;
+    expect(gaps).toHaveLength(3);
+    expect(gaps.every(item => item.children[0].textContent.endsWith(iso ? 'Not started' : 'No'))).toBe(true);
+    if (iso) {
+        expect(view.root.textContent).toContain(reason);
+        expect(view.root.querySelectorAll('article')).toHaveLength(93);
+    } else {
+        const govern = view.root.querySelector('ul').children[0];
+        expect(govern.textContent).toContain('32.3%–71.0%');
+        expect(govern.textContent).toContain('31 outcomes · 6 marked not applicable, to confirm');
+        expect(view.root.textContent).toContain('Republished courtesy');
+    }
     expect(view.root.querySelectorAll('input')).toHaveLength(0);
     expect(view.copied).not.toHaveBeenCalled();
     expect(view.printed).not.toHaveBeenCalled();
@@ -161,7 +172,12 @@ test.each(['switch', 'replace'])('a pending issued read cannot disclose after %s
     const pending = click(view, 1);
     await click(view, 1);
     if (operation === 'switch') current = false;
-    else mount(view.root, { ...fixture(false), isCurrent: () => true });
+    else {
+        mount(view.root, { ...fixture(false), isCurrent: () => true });
+        view.handle.destroy();
+        expect(view.root.textContent).toContain('NIST CSF 2.0');
+        expect(view.root.textContent).not.toContain(reason);
+    }
     release(); await pending;
     expect(issued.read).toHaveBeenCalledTimes(1);
     expect(view.printed).not.toHaveBeenCalled();
