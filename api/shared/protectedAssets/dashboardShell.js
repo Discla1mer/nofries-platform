@@ -386,7 +386,7 @@
             stamp.hidden = true;
             footer.append(stamp,
                 element('p', '', current.key === 'cyber_security' && options.paidFrameworks
-                    ? 'Only an accredited certification body can provide certification.'
+                    ? 'This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.'
                     : 'Assessment indicators are not audit, assurance or certification.'));
             main.append(footer);
         }
