@@ -45,3 +45,26 @@ test('a changed staff session and an unavailable attempt audit each prevent the 
     h.config.readContext.mockResolvedValue(clone(h.context)); h.state.fail = 'attempt.json';
     await expect(h.call(apply)).rejects.toBeDefined(); expect(h.change).toHaveBeenCalledTimes(1);
 });
+
+test.each([
+    ['off', 404], ['case', 404], ['account-actions-off', 404], ['nonstaff', 403], ['anonymous', 401],
+    ['origin', 403], ['allowed', 200]
+])('existing staff endpoint checks %s before dispatching a paid change', async (mode, expected) => {
+    const { Readable } = require('node:stream');
+    const { createDashboardAdminHandlers } = require('../api/shared/dashboardAdmin/handlers');
+    const h = staff(), env = { NOFRIES_REQUIRE_AUTH: 'true', NOFRIES_PUBLIC_URL: 'https://actions.invalid',
+        NOFRIES_ENTRA_TENANT_ID: actor.subjectKey.slice(0, 36), NOFRIES_ALLOWED_SUBJECTS: actor.subjectKey,
+        NOFRIES_ADMIN_SUBJECTS: mode === 'nonstaff' ? '' : actor.subjectKey,
+        NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS: mode === 'account-actions-off' ? 'false' : 'true',
+        NOFRIES_PAID_FRAMEWORKS_ENABLED: mode === 'case' ? 'TRUE' : mode === 'off' ? '' : 'true' };
+    const execute = jest.fn(() => ({ outcome: 'succeeded' })), authorise = jest.fn();
+    const handler = createDashboardAdminHandlers({ env, accountActions: { execute }, service: { authorise, lookup: jest.fn(), capabilities: jest.fn() },
+        readOperatorSession: async () => ({ identity: mode === 'anonymous' ? null :
+            { ...actor, tenantId: actor.subjectKey.slice(0,36), principalId: actor.subjectKey.slice(37) } }) });
+    const req = Object.assign(Readable.from([Buffer.from(JSON.stringify({ frameworkAccess: h.input }))]), {
+        method: 'POST', headers: { 'content-type': 'application/json', origin: mode === 'origin' ? 'https://other.invalid' : env.NOFRIES_PUBLIC_URL,
+            'sec-fetch-site': 'same-origin' } });
+    expect((await handler.handle(req, 'lookup')).status).toBe(expected);
+    expect(execute).toHaveBeenCalledTimes(mode === 'allowed' ? 1 : 0);
+    if (expected === 200) expect(authorise).toHaveBeenCalledWith(expect.objectContaining({ subjectKey: actor.subjectKey }), h.input.selector);
+});

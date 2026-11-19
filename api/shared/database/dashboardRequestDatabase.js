@@ -403,10 +403,7 @@ async function loadAuthority(inv, operation, context, shared = false) {
     try {
         const snapshot = await (!shared && ['ncsc.execute', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ? dataStorage.loadSnapshotForUpdate : dataStorage.loadSnapshotForShare)(
             Object.freeze({ query: (sql, params) => inv.query(context.tx, sql, params) }), context.scope);
-        const paidRead = operation.name === 'framework.read' || operation.name === 'framework.write';
-        const paidPicker = operation.name === 'host.resource' && operation.resource.moduleKey === 'cyber_security' &&
-            operation.resource.requiresGeneration;
-        if (inv.options.paidFrameworksEnabled === true && (paidRead || paidPicker)) {
+        if (inv.options.paidFrameworksEnabled === true && ['framework.read', 'framework.write'].includes(operation.name)) {
             const tx = { query: (sql, params) => inv.query(context.tx, sql, params) };
             return await require('../appLifecycle/paidFrameworkDecisions').paidSnapshot(tx, context.scope, snapshot, inv.now());
         }
@@ -900,6 +897,20 @@ function prepareHostFacts(inv, context, input, resource, writeAuthority = null, 
 }
 
 function hostProjectionAt(frame, at, configured = true) {
+    const projected = baseHostProjectionAt(frame, at, configured);
+    if (!frame.frameworkDecisions || !Array.isArray(projected.vector?.paidFrameworks)) return projected;
+    const product = currentProductGrant(frame.grants, at);
+    if (product?.grantId !== frame.frameworkDecisions.productGrantId) return projected;
+    const { tuples, sameTuple } = require('../appLifecycle/paidFrameworkDecisions');
+    const paidFrameworks = tuples.filter(tuple => {
+        const decision = frame.frameworkDecisions.rows.find(row => sameTuple(tuple, row));
+        return decision ? decision.granted && frame.flags.frameworks.some(row => sameTuple(tuple, row))
+            : projected.vector.paidFrameworks.some(row => sameTuple(tuple, row));
+    });
+    return { ...projected, vector: { ...projected.vector, paidFrameworks } };
+}
+
+function baseHostProjectionAt(frame, at, configured = true) {
     const live = grant => grant.status === 'active' && grant.validFrom <= at && at < grant.validUntil;
     const product = currentProductGrant(frame.grants, at);
     const service = code => code !== 'managed_it_core' && frame.grants.some(grant => grant.code === code && live(grant));
@@ -1177,7 +1188,14 @@ async function hostOperation(inv, routing, resource) {
                                 ...Object.fromEntries(['membershipId', 'invitationId', 'grantEvidenceId', 'validFrom', 'validUntil']
                                     .map(key => [key, binding[key]])) }, inv.now());
                         }
-                        return prepareHostFacts(inv, active.context, snapshot, resource, writeAuthority, profile);
+                        const facts = prepareHostFacts(inv, active.context, snapshot, resource, writeAuthority, profile);
+                        if (inv.options.paidFrameworksEnabled !== true || resource.moduleKey !== 'cyber_security' ||
+                            !resource.requiresGeneration) return facts;
+                        const product = currentProductGrant(facts.grants, inv.now());
+                        if (!product) return facts;
+                        const rows = await require('../appLifecycle/paidFrameworkDecisions').latestDecisions(
+                            { query: (sql, params) => inv.query(tx, sql, params) }, active.context.scope, product.grantId);
+                        return rows.length ? freeze({ ...facts, frameworkDecisions: { productGrantId: product.grantId, rows } }) : facts;
                     }
                     if (!recovery) {
                         const initial = await presentationFacts();
