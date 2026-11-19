@@ -84,6 +84,10 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .dashboard-service-cards .dashboard-panel { display: flex; flex-direction: column; align-items: start; gap: .4rem; }
 .dashboard-service-cards h2, .dashboard-service-cards p { margin-bottom: .5rem; }
 .dashboard-service-detail { padding-top: .7rem; border-top: 1px solid var(--dashboard-line); }
+.dashboard-contact { margin-top: .75rem; }
+.dashboard-contact .dashboard-button { max-width: 100%; white-space: normal; text-align: center; }
+.dashboard-contact-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.dashboard-contact-status:empty { display: none; }
 .dashboard-subscription-panel { background: var(--dashboard-navy); color: var(--dashboard-ink); }
 .dashboard-subscription-panel .dashboard-muted { color: var(--dashboard-muted); }
 .dashboard-group-links { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.5rem; }
@@ -173,7 +177,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-actions { background: var(--dashboard-surface); border: 1px solid var(--dashboard-line); border-radius: .8rem; padding: clamp(1rem, 2vw, 1.25rem); margin: 0 0 1.25rem; overflow-wrap: anywhere; }
 .picture-actions h3 { margin-top: 0; }
 .picture-actions h4 { margin: 1rem 0 .4rem; }
-.picture-actions-list { padding-left: 1.3rem; margin: 0; }
+.picture-actions-list, .picture-actions-next { padding-left: 1.3rem; margin: 0; }
+a.picture-action-title { font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .picture-action { margin: .5rem 0; }
 .picture-action-title, .picture-action-meta { display: block; }
 .picture-actions-plan { display: inline-block; margin-top: 1rem; }
@@ -190,12 +195,17 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-top-gap .picture-gap-plan { min-height: 44px; min-width: 44px; max-width: 100%; margin-top: .5rem; }
 .picture-next-steps { border-top: 1px solid var(--dashboard-line); margin-top: 1.25rem; padding-top: 1rem; }
 .picture-next-steps .dashboard-button { display: inline-block; max-width: 100%; text-align: center; text-decoration: none; }
+.picture-offer { font-weight: var(--dashboard-weight-emphasis); margin: 0 0 .75rem; }
+.dashboard-offer-panel { border-left: 4px solid var(--dashboard-yellow); }
+.dashboard-offer-panel .dashboard-button { display: inline-block; max-width: 100%; text-align: center; text-decoration: none; margin-top: .5rem; }
 .picture-summary { margin: .75rem 0; }
 .picture-summary summary { cursor: pointer; font-weight: 700; }
 .picture-summary textarea { display: block; box-sizing: border-box; width: 100%; max-width: 100%; resize: vertical; min-height: 8rem; line-height: 1.5; margin: .5rem 0; }
 .picture-summary .dashboard-button { margin: 0 .5rem .5rem 0; }
 .picture-summary-print { display: none; margin: .5rem 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 @media print { .picture-summary textarea { display: none; } .picture-summary-print { display: block; } }
+.picture-summary label { display: block; margin-top: .75rem; }
+@media print { .picture-print-hide { display: none !important; } .picture-print-only { display: block; margin: 0; font-size: 11pt; line-height: 1.45; } }
 @media (max-width: 60rem) {
     .picture-metrics { grid-template-columns: minmax(0, 1fr); }
     .picture-metric h3 { min-height: 0; }
@@ -360,8 +370,8 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-leave-dialog .dashboard-text-button { border-color: var(--dashboard-control-border, #7d7262); }
 .ncsc-leave-dialog .dashboard-text-button:hover { background: var(--dashboard-navy, #f2e4bc); }
 @media (max-width: 30rem) {
-    /* A compact bar that stays at the bottom of the screen while the question is in view. */
-    .ncsc-question-navigation { position: sticky; bottom: 0; z-index: 2; gap: .4rem; margin: 1rem 0 0; padding: .5rem 0; align-items: stretch;
+    /* A compact bar below the choices. */
+    .ncsc-question-navigation { gap: .4rem; margin: 1rem 0 0; padding: .5rem 0; align-items: stretch;
         background: var(--dashboard-paper, #fffdf8); border-top: 1px solid var(--dashboard-line, #d3c9b7); }
     .ncsc-question-navigation .ncsc-navigation-summary { flex: 1 1 100%; text-align: center; }
     .ncsc-navigation-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr auto; gap: .4rem; }
@@ -370,8 +380,6 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .ncsc-navigation-more-toggle { display: block; }
     .ncsc-navigation-more { display: grid; grid-column: 1 / -1; gap: .4rem; }
     .ncsc-navigation-more.ncsc-navigation-collapsed { display: none; }
-    /* Keep a focused control clear of the sticky bar. */
-    .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-bottom: 9rem; }
     .ncsc-actions > button { width: 100%; text-align: center; }
     .ncsc-review-item .dashboard-text-button { width: 100%; text-align: center; }
     .ncsc-review-counts { flex-direction: column; }
@@ -383,6 +391,14 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .ncsc-answer > p { margin: 0 0 .6rem; }
     .ncsc-leave-dialog { padding: 1rem; }
     .ncsc-leave-dialog[open] { grid-template-columns: minmax(0, 1fr); }
+}
+/* The bar stays at the bottom of the screen only on a tall enough screen and
+   while it is no taller than a quarter of it (the script marks a taller bar
+   static); otherwise it stays below the choices and never covers an answer. */
+@media (max-width: 30rem) and (min-height: 34rem) {
+    .ncsc-question-navigation:not(.ncsc-navigation-static) { position: sticky; bottom: 0; z-index: 2; }
+    /* Keep a focused control clear of the sticky bar. */
+    .ncsc-question :is(a, button, input, textarea, select, summary) { scroll-margin-bottom: 9rem; }
 }
 @media print { .ncsc-actions, .ncsc-review-item button, .ncsc-question-navigation, .ncsc-leave-dialog, .ncsc-leave-dialog[open] { display: none; } }
 @media (forced-colors: active) {
@@ -511,7 +527,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 @media (max-width: 48rem) {
     .nofries-dashboard .dashboard-mobile-nav .dashboard-menu-primary { display: flex; flex-wrap: wrap; flex: 1 1 100%; min-width: 0; gap: .25rem; }
     .nofries-dashboard .dashboard-mobile-nav .dashboard-menu-primary > .dashboard-eyebrow { flex-basis: 100%; }
-    .nofries-dashboard .dashboard-mobile-nav .dashboard-menu-primary > .dashboard-task { flex-basis: 6rem; }
+    .nofries-dashboard .dashboard-mobile-nav .dashboard-menu-primary > .dashboard-task { flex-basis: 8rem; }
     .nofries-dashboard .dashboard-mobile-nav .dashboard-menu-other { flex: 1 1 100%; margin-top: 0; }
     /* The grouped menu grows when disclosed, so keep its full height in flow. */
     body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"]:has(#dashboardApp:not([hidden]) .dashboard-mobile-nav:not([hidden]) > .dashboard-menu-primary):not(:has(#dashboardApp .ncsc-questionnaire)) .dashboard-mobile-nav { position: static; }
@@ -564,6 +580,16 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 @media (max-width: 30rem) { .nofries-dashboard .ncsc-questionnaire .ncsc-question { scroll-margin-top: 6rem; } }
 
 .nofries-dashboard .dashboard-topbar { max-height: 9rem; overflow: auto; }
+/* Let long organisation names remain fully readable on phones without a
+   nested scroll area or a sticky header covering the Overview controls. */
+@media screen and (max-width: 48rem) {
+    body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] .site-header .brand { min-height: 44px; }
+    body[data-dashboard-gateway="true"][data-dashboard-state="ready"] .site-release > summary { min-height: 44px; padding-block: .6rem; }
+    .nofries-dashboard .dashboard-topbar { position: static; max-height: none; overflow: visible; }
+    .picture-actions a { display: block; min-width: 44px; min-height: 44px; max-width: 100%; padding-block: .6rem; }
+    .picture-summary > summary { min-height: 44px; padding-block: .6rem; }
+    .organisation-picture > .dashboard-muted a { display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; max-width: 100%; }
+}
 /* Improvement Plan choices stay readable on 320px phones. */
 @media (max-width: 25rem) {
     .nofries-dashboard .dashboard-improvement-workspace .picture-toolbar { padding: .6rem .5rem; }

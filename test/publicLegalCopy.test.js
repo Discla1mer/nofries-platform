@@ -62,7 +62,7 @@ test('the privacy notice describes service emails and action-owner names as the 
     const privacy = read('privacy.html');
     const section = privacy.match(/<section id="service-emails">([\s\S]*?)<\/section>/);
     expect(section).not.toBeNull();
-    for (const text of ['four service emails', 'about 7 days later', 'about 90 days after', 'Resend delivers them',
+    for (const text of ['four kinds of service email', 'about 7 days later', 'about 90 days after', 'Resend delivers them',
         'do not greet you by name', 'do not contain your answers, gap titles, results or scores',
         'Resend’s message id', 'how many gaps it found', 'does not hold the text of the email or your email address',
         'stops that type of email', 'one-click unsubscribe', 'Unsubscribing is permanent']) expect(section[1]).toContain(text);
@@ -117,4 +117,14 @@ test('the privacy notice describes anonymous funnel totals in the visitor tracki
         'are not used to identify you or your organisation',
         'If your browser sends a Global Privacy Control or Do Not Track signal, your visit is not counted.']) expect(section[1]).toContain(text);
     expect(section[1]).not.toContain('cannot be linked to you');
+});
+
+test('the privacy notice describes dashboard contact requests and their retention (#409)', () => {
+    const privacy = read('privacy.html');
+    const section = privacy.match(/<section id="contact-requests">([\s\S]*?)<\/section>/);
+    expect(section).not.toBeNull();
+    expect(section[1]).toContain('If you ask No Fries to contact you from your dashboard, we record the request (your organisation, your sign-in, the topic and the date). No Fries staff use your sign-in email address and a summary of your results to contact you about it. We don’t use it for marketing. We keep contact requests for 24 months.');
+    expect(privacy).toContain('<li><a href="#contact-requests">Contact requests</a></li>');
+    expect(privacy).toContain('Last updated: 19 November 2026.');
+    expect(privacy.indexOf('id="contact-requests"')).toBeLessThan(privacy.indexOf('id="staff-workspaces"'));
 });

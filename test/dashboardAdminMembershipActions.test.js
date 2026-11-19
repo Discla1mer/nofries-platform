@@ -163,9 +163,10 @@ test.each([1, 100, 101])('%s verified different-member changes preserve restore 
     const invitation = h.state.snapshot.membershipState.invitations.find(row => row.invitationId === member.invitationId);
     h.state.snapshot.membershipState.invitations.push({ ...invitation, subjectKey: other, invitationId: 'other-invite', membershipId: 'other-member', updatedBy: other });
     await h.run('suspend'); const stale = h.input();
-    h.selector.subjectKey = h.record.subjectKey = other;
+    // The operator holds a separate current administration grant for the other member.
+    h.selector.subjectKey = h.record.subjectKey = h.administration.selector.subjectKey = other;
     for (let i = 0; i < count; i++) await h.run(i % 2 ? 'restore' : 'suspend');
-    h.selector.subjectKey = h.record.subjectKey = SUBJECT;
+    h.selector.subjectKey = h.record.subjectKey = h.administration.selector.subjectKey = SUBJECT;
     await expect(h.run('restore', stale)).rejects.toMatchObject({ statusCode: 409 });
     if (count > 100) await expect(h.run('restore')).rejects.toMatchObject({ statusCode: 409 });
     else await h.run('restore');

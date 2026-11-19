@@ -38,11 +38,18 @@
             <p id="loadingStatus">Checking your Microsoft identity, tenant and role.</p>
         </section>
         <section id="accountListPanel" aria-labelledby="accountListHeading" hidden>
-            <h2 id="accountListHeading">Signups</h2>
-            <p>Every customer account, newest first, with when it was formed, its sign-in state and its organisations. Open an account to see its dashboard access and actions.</p>
-            <button id="accountListLoad" type="button">Load signups</button>
+            <h2 id="accountListHeading">Customer accounts</h2>
+            <p>Every customer account, newest first. Open shows its dashboard access. Reset and Delete ask you to confirm first and cannot be undone.</p>
+            <button id="accountListLoad" type="button">Refresh list</button>
             <p id="accountListStatus" role="status" aria-live="polite" aria-atomic="true"></p>
             <div id="accountListResults" role="region" aria-label="Signups" tabindex="0" aria-busy="false"></div>
+        </section>
+        <section id="contactRequestsPanel" aria-labelledby="contactRequestsHeading" hidden>
+            <h2 id="contactRequestsHeading">Contact requests</h2>
+            <p>Customers who asked No Fries to contact them from the dashboard in the last 90 days, newest first. Read only.</p>
+            <button id="contactRequestsLoad" type="button">Load contact requests</button>
+            <p id="contactRequestsStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="contactRequestsResults" role="region" aria-label="Contact requests" tabindex="0" aria-busy="false"></div>
         </section>
         <section id="accountLookupPanel" aria-labelledby="accountLookupHeading" hidden>
             <h2 id="accountLookupHeading">Account lookup</h2>
@@ -67,6 +74,22 @@
                 <button id="accountActionsApply" type="button" disabled>Apply</button>
             </form>
             <p id="accountActionsStatus" role="status" aria-live="polite"></p>
+        </section>
+        <section id="accountWipePanel" class="operator-loading-panel" hidden aria-labelledby="accountWipeHeading">
+            <h2 id="accountWipeHeading">Reset or delete account</h2>
+            <p>Reset clears the selected account's assessments, evidence and improvement plans and keeps its sign-in, email and organisations. Delete removes the account, its email and all its data, including its External ID sign-in user. Neither can be undone. Approve by typing the account email and the action word; the approval lasts 15 minutes in this staff session and works once.</p>
+            <p id="accountWipeSummary" aria-live="polite"></p>
+            <form id="accountWipeForm" autocomplete="off">
+                <button id="accountWipeReset" type="button" aria-pressed="false" disabled>Reset</button>
+                <button id="accountWipeDelete" type="button" aria-pressed="false" disabled>Delete</button>
+                <label>Type the account email <input id="accountWipeEmail" type="email" required maxlength="254" autocomplete="off" spellcheck="false" disabled></label>
+                <label>Type <span id="accountWipeWordHint">RESET or DELETE</span> <input id="accountWipeWord" type="text" required maxlength="6" autocomplete="off" spellcheck="false" disabled></label>
+                <button id="accountWipeApprove" type="submit" disabled>Approve</button>
+                <button id="accountWipeApply" type="button" disabled>Apply</button>
+            </form>
+            <p><label>Reset or delete by email (for an account lookup cannot select, or to finish a partial delete) <input id="accountWipeResumeEmail" type="email" maxlength="254" autocomplete="off" spellcheck="false"></label>
+                <button id="accountWipeResume" type="button">Use this email</button></p>
+            <p id="accountWipeStatus" role="status" aria-live="polite"></p>
         </section>
     </main>
     <div class="operator-toast" id="operatorToast" role="status" aria-live="polite" hidden></div>

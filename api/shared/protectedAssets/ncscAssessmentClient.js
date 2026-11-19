@@ -388,6 +388,17 @@
             return request(url, kind, command, config.signal, body, config.keepalive === true);
         }
         return Object.freeze({ normaliseCommand, commandByteLength,
+            readOverviewBody(response) {
+                // Up to two assessment payloads and five bounded action lists.
+                return readJson(response, RESPONSE_BYTES * 7, 32768 * 7);
+            },
+            validateOverview(page, detail) {
+                const checkedPage = validateResult(copyJson(page, RESPONSE_BYTES, 32768, 32).value,
+                    'list', { limit: 50, afterAssessmentId: null });
+                const checkedDetail = detail === null ? null : validateResult(copyJson(detail, RESPONSE_BYTES, 32768, 32).value,
+                    'read', { assessmentId: identifier(detail.assessment.assessmentId) });
+                return { page: checkedPage, detail: checkedDetail };
+            },
             async list(input) {
                 const config = record(input === undefined ? {} : input, [], ['limit', 'afterAssessmentId', 'signal']);
                 const limit = config.limit === undefined ? 50 : integer(config.limit, 100);
@@ -408,11 +419,11 @@
         });
     }
 
-    async function readJson(response) {
+    async function readJson(response, maximum = RESPONSE_BYTES, maxNodes = 32768) {
         const type = response.headers?.get('Content-Type');
         if (typeof type !== 'string' || !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(type)) invalid();
         const length = response.headers.get('Content-Length');
-        if (length !== null && /^\d+$/.test(length) && Number(length) > RESPONSE_BYTES) invalid();
+        if (length !== null && /^\d+$/.test(length) && Number(length) > maximum) invalid();
         let source;
         if (response.body && typeof response.body.getReader === 'function') {
             const reader = response.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
@@ -422,7 +433,7 @@
                     const chunk = await reader.read();
                     if (chunk.done) break;
                     if (!(chunk.value instanceof Uint8Array)) invalid();
-                    bytes += chunk.value.byteLength; if (bytes > RESPONSE_BYTES) invalid();
+                    bytes += chunk.value.byteLength; if (bytes > maximum) invalid();
                     parts.push(decoder.decode(chunk.value, { stream: true }));
                 }
                 parts.push(decoder.decode()); source = parts.join('');
@@ -434,9 +445,9 @@
             // An injected synthetic transport may implement text() without a
             // stream. Real Fetch responses take the bounded streaming path.
             source = await response.text();
-            if (typeof source !== 'string' || source.length > RESPONSE_BYTES || utf8Length(source) > RESPONSE_BYTES) invalid();
+            if (typeof source !== 'string' || source.length > maximum || utf8Length(source) > maximum) invalid();
         }
-        return copyJson(JSON.parse(source), RESPONSE_BYTES, 32768, 32).value;
+        return copyJson(JSON.parse(source), maximum, maxNodes, 32).value;
     }
 
     return Object.freeze({ createClient });

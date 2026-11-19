@@ -14,6 +14,61 @@
             if (typeof event.stopPropagation === 'function') event.stopPropagation();
         });
     }
+    // #409: "Ask No Fries to contact me". The host's send(topic) owns the
+    // request, its operation id and retries, and resolves to 'requested',
+    // 'already_requested' or anything else for a failure. This control only
+    // shows the consent wording and asks for confirmation before sending.
+    const CONTACT_CONSENT = 'No Fries staff will see your organisation name, your sign-in email and a summary of your results, and will contact you by email.';
+    const CONTACT_OUTCOMES = { requested: 'Request sent. We’ll be in touch by email.',
+        already_requested: 'Someone in your organisation has already asked about this today. We’ll be in touch.' };
+    let contactSequence = 0;
+    function contactControl(doc, topic, send, subject) {
+        const make = function (tag, className, text) {
+            const node = doc.createElement(tag); node.className = className;
+            if (text) node.textContent = text;
+            if (tag === 'button') node.type = 'button';
+            return node;
+        };
+        const id = 'dashboard-contact-' + (++contactSequence);
+        const control = make('div', 'dashboard-contact');
+        const ask = make('button', 'dashboard-button dashboard-button-secondary', 'Ask No Fries to contact me');
+        if (subject) ask.setAttribute('aria-label', 'Ask No Fries to contact me about ' + subject);
+        const confirm = make('div', 'dashboard-contact-confirm'); confirm.id = id; confirm.hidden = true;
+        ask.setAttribute('aria-controls', id); ask.setAttribute('aria-expanded', 'false');
+        const consent = make('p', '', CONTACT_CONSENT); consent.id = id + '-consent';
+        const sendButton = make('button', 'dashboard-button', 'Send request');
+        sendButton.setAttribute('aria-describedby', consent.id);
+        const cancel = make('button', 'dashboard-button dashboard-button-secondary', 'Cancel');
+        const actions = make('div', 'dashboard-contact-actions'); actions.append(sendButton, cancel);
+        confirm.append(consent, actions);
+        const status = make('p', 'dashboard-contact-status'); status.id = id + '-status';
+        status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.tabIndex = -1;
+        let pending = false;
+        function closeConfirm() { confirm.hidden = true; ask.setAttribute('aria-expanded', 'false'); }
+        ask.addEventListener('click', function () {
+            if (pending) return;
+            status.textContent = ''; ask.hidden = true; confirm.hidden = false;
+            ask.setAttribute('aria-expanded', 'true'); sendButton.focus();
+        });
+        cancel.addEventListener('click', function () {
+            if (pending) return;
+            closeConfirm(); ask.hidden = false; ask.focus();
+        });
+        sendButton.addEventListener('click', function () {
+            if (pending) return;
+            pending = true; sendButton.disabled = true; cancel.disabled = true;
+            status.textContent = 'Sending your request…';
+            Promise.resolve().then(function () { return send(topic); }).then(null, function () { return 'failed'; }).then(function (outcome) {
+                pending = false; sendButton.disabled = false; cancel.disabled = false; closeConfirm();
+                const message = Object.prototype.hasOwnProperty.call(CONTACT_OUTCOMES, outcome) ? CONTACT_OUTCOMES[outcome] : null;
+                // A sent request keeps the button hidden; a failure offers it again.
+                if (message) { status.textContent = message; status.focus(); }
+                else { status.textContent = 'Your request could not be sent. Please try again later.'; ask.hidden = false; ask.focus(); }
+            });
+        });
+        control.append(ask, confirm, status);
+        return control;
+    }
     const mounted = new WeakMap();
     const START_NEW_ASSESSMENT = Object.freeze({ startNew: true });
     let mountSequence = 0;
@@ -48,6 +103,9 @@
         const pictureAvailable = typeof options.mountPicture === 'function' && model.modules.some(function (item) {
             return item.key === 'cyber_security' && item.state === 'ready';
         });
+        // The host passes send only when the session negotiated contact requests.
+        // An advisor-only projection has no contact.request permission.
+        const contactSend = typeof options.contactRequest === 'function' && model.audience !== 'Scoped advisor' ? options.contactRequest : null;
         const first = available.find(function (item) { return item.key === 'overview'; }) || available[0];
         let current = first;
         let disposed = false;
@@ -124,8 +182,10 @@
             secondary.forEach(function (item) {
                 const labels = { ready: 'Available', planned: 'Coming next', disabled: 'Unavailable' };
                 // D-010: the Improvement Plan is part of every plan, so say so while it is planned.
+                // The public demo has no local plan, so its menu does not say the plan is coming next.
                 const state = stateFor(item.key);
-                other.append(routeLink(item, null, item.key === 'improvement_plan' && state === 'planned' ? 'Included · coming next' : labels[state]));
+                const plannedLabel = options.demoGuide === true ? 'With an account' : 'Included · coming next';
+                other.append(routeLink(item, null, item.key === 'improvement_plan' && state === 'planned' ? plannedLabel : labels[state]));
             });
             nav.append(other);
         }
@@ -343,6 +403,12 @@
             informationAt = value; showInformationTime();
         }
         function renderOverview() {
+            if (options.demoGuide === true) {
+                const guide = panel('Start here', 'Take the assessment for this fictional business. The result already on screen is only an example.');
+                const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
+                if (cyber) guide.append(button('Take the assessment', function () { navigate(cyber.route, true, undefined, START_NEW_ASSESSMENT); }));
+                main.append(guide);
+            }
             const connectedPicture = pictureAvailable;
             if (connectedPicture) renderPicture();
             if (model.summary.state === 'stale') {
@@ -406,6 +472,7 @@
             try {
                 const result = options.mountPicture(childRoot, { generation: generation,
                     displayName: model.context.displayName,
+                    contactControl: contactSend ? function () { return contactControl(doc, 'results', contactSend); } : undefined,
                     openCyber: cyber ? function (assessmentId, intent) {
                         if (!active() || !pictureChild || child !== pictureChild) return Promise.resolve(false);
                         // The first-use action opens the new-assessment step directly.
@@ -448,7 +515,16 @@
                 }
                 if (initialAssessmentId === START_NEW_ASSESSMENT) presentation.startNew = true;
                 else if (initialAssessmentId !== undefined) presentation.initialAssessmentId = initialAssessmentId;
+                const improvementReady = typeof options.mountImprovement === 'function' && available.find(function (item) {
+                    return item.key === 'improvement_plan' && stateFor(item.key) === 'ready';
+                });
                 let mountedChild;
+                if (improvementReady) {
+                    presentation.openImprovement = function (sourceAssessment) {
+                        if (!active() || child !== mountedChild) return Promise.resolve(false);
+                        return navigate(improvementReady.route, true, undefined, undefined, sourceAssessment);
+                    };
+                }
                 presentation.onLocation = function (location) {
                     if (!active() || child !== mountedChild || !managedHistory || navigation || travelling || !committedEntry ||
                         location !== null && !validCyberLocation(location)) return;
@@ -481,6 +557,17 @@
         }
         function renderModule(baselineToken) {
             const plan = current.key === 'improvement_plan';
+            if (plan && options.demoGuide === true) {
+                const section = panel('An improvement plan lists what to fix',
+                    'After an assessment, the plan lists what to fix. You can give each item an owner and a due date. This demo keeps everything in your browser and does not build that plan. Create an account to make one from your own result and keep it.');
+                const account = element('a', 'dashboard-button', 'Create an account');
+                account.setAttribute('href', '/login?intent=create');
+                section.append(account);
+                const home = available.find(function (item) { return item.key === 'overview'; });
+                if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
+                main.append(section);
+                return;
+            }
             const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
             const home = available.find(function (item) { return item.key === 'overview'; });
             if (!plan) {
@@ -537,6 +624,14 @@
             main.append(element('p', 'dashboard-intro', 'What is included, what needs setup and what can be scoped separately?'));
             const subscription = panel('Your plan: ' + planNames[model.subscription], 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
             subscription.classList.add('dashboard-subscription-panel'); main.append(subscription);
+            // The standing paid offer (pricing.html). A plain link to the contact
+            // form with the offer named; nothing is sent from the dashboard.
+            const offer = panel('90-day managed security', 'NZ$1,250 + GST for 90 days. We set your baseline, fix three gaps with you, review progress at two month-ends and give you a written summary for your board or insurer. No automatic renewal.');
+            offer.classList.add('dashboard-offer-panel');
+            const offerLink = element('a', 'dashboard-button', 'Ask about 90-day managed security');
+            offerLink.href = '/contact.html?service=managed_security_90';
+            offer.append(offerLink, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
+            main.append(offer);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {
                 const item = registry.services.find(function (entry) { return entry.key === service.key; });
@@ -549,13 +644,20 @@
                     ? 'This included service is not available yet. Contact No Fries if you need it.'
                     : 'Next step: verify the agreed assignment, coverage and any required provider connection before activation.'),
                     element('p', 'dashboard-muted', 'This is information only. No request, purchase, assignment or activation has been submitted.'));
+                // A plain link to the public contact form with this service named.
+                // Nothing is sent from the dashboard, and the form does not include assessment answers.
+                const ask = element('a', 'dashboard-button', 'Ask No Fries about this service');
+                ask.href = '/contact.html?service=' + encodeURIComponent(item.key);
+                detail.append(ask, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
                 const control = button(service.state === 'not_included' ? 'How to scope this service'
                     : service.state === 'disabled' ? 'About availability' : 'What is needed for setup', function () {
                     detail.hidden = !detail.hidden; control.setAttribute('aria-expanded', String(!detail.hidden));
                 }, 'dashboard-text-button');
                 control.setAttribute('aria-expanded', 'false');
                 detail.id = 'dashboard-service-' + item.key; control.setAttribute('aria-controls', detail.id);
-                card.append(control, detail); cards.append(card);
+                card.append(control, detail);
+                if (contactSend) card.append(contactControl(doc, item.key, contactSend, item.label));
+                cards.append(card);
             });
             main.append(cards);
         }
@@ -721,5 +823,5 @@
         } };
         mounted.set(root, controller); return controller;
     }
-    return Object.freeze({ mount: mount, showState: showState, validate: validate });
+    return Object.freeze({ mount: mount, showState: showState, validate: validate, contactControl: contactControl });
 }));

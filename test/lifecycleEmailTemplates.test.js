@@ -43,7 +43,7 @@ describe('lifecycle email templates', () => {
                 const text = renderTemplate(type, version, { signInUrl: 'https://nofries.nz/dashboard', unsubscribeUrl: 'https://nofries.nz/dashboard' }).text;
                 expect(text).not.toMatch(/\{\{/);
                 expect(text).toMatch(/^Kia ora,\n/);
-                expect(text).toContain('unsubscribe: https://nofries.nz/dashboard');
+                expect(text).toContain('To stop this kind of email, unsubscribe: https://nofries.nz/dashboard');
                 expect(text).not.toMatch(/<[a-z]/i);
             }
         }

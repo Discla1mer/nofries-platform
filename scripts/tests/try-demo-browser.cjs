@@ -86,8 +86,8 @@ async function run(browser, origin, name, viewport) {
     assert.match(await page.locator('.try-demo-banner').innerText(), /fictional business/);
     assert.equal(await page.getByRole('link', { name: 'Create your account' }).getAttribute('href'), '/login?intent=create');
     assert.equal(await page.locator('h1').innerText(), 'Overview');
-    await main(page).getByText('28.6%–42.9%').first().waitFor();
-    assert.equal(await page.getByRole('link', { name: 'Get help closing these gaps' }).getAttribute('href'), '/contact.html');
+    await main(page).getByText('28.6% in place', { exact: true }).first().waitFor();
+    assert.equal(await page.getByRole('link', { name: 'Fix these with No Fries' }).getAttribute('href'), '/contact.html?service=managed_security_90');
     assert.ok(await fits(page), name + ': no horizontal scroll');
     await checkPalette(page);
     await shot(page, name + '-1-overview.png', !touch);
@@ -96,24 +96,24 @@ async function run(browser, origin, name, viewport) {
         await tabTo(page, () => document.activeElement.matches('.dashboard-rail a') && document.activeElement.textContent.includes('Cyber Security'));
         await page.keyboard.press('Enter');
     } else await page.locator('.dashboard-mobile-nav a', { hasText: 'Cyber Security' }).tap();
-    await press(page.getByRole('button', { name: 'Start an assessment' }));
+    await press(page.getByRole('button', { name: 'Start an assessment', exact: true }));
     await page.locator('#ncsc-scope').fill('Brightwater Joinery (fictional): all 9 staff, workshop and office laptops, Microsoft 365.');
-    await press(page.getByRole('button', { name: 'Create assessment' }));
+    await press(page.getByRole('button', { name: 'Create assessment', exact: true }));
     await main(page).getByText('0 of 14 answered').waitFor();
     for (let index = 0; index < ANSWERS.length; index++) {
         await press(page.locator('main fieldset label').filter({ has: page.locator('input[value="' + ANSWERS[index] + '"]') }).first());
         if (index === 1) await shot(page, name + '-2-question.png');
-        if (index < ANSWERS.length - 1) await press(page.getByRole('button', { name: 'Next question' }));
+        if (index < ANSWERS.length - 1) await press(page.getByRole('button', { name: 'Next question', exact: true }));
     }
-    await press(page.getByRole('button', { name: 'Save progress' }));
+    await press(page.getByRole('button', { name: 'Save progress', exact: true }));
     await main(page).getByText(/14 of 14 answered.*all saved/).waitFor();
-    await press(page.getByRole('button', { name: 'Review and submit' }));
+    await press(page.getByRole('button', { name: 'Review and submit', exact: true }));
     await page.getByRole('heading', { name: 'Review your answers before submitting' }).waitFor();
-    await press(page.getByRole('button', { name: 'Save and submit assessment' }));
+    await press(page.getByRole('button', { name: 'Save and submit assessment', exact: true }));
     await press(page.getByRole('button', { name: 'Submit', exact: true }));
     await page.getByRole('heading', { name: 'Assessment results' }).waitFor();
     const results = await main(page).innerText();
-    assert.match(results, /Reported implementation\s+67\.9%–75\.0%/, 'real scoring, lower bound first');
+    assert.match(results, /Reported implementation\s+67\.9% in place\s+Up to 75\.0%/, 'real scoring, lower bound first');
     assert.match(results, /Suggested follow-ups/);
     await press(page.getByText('Summary to share with your IT provider'));
     for (const label of ['Copy summary', 'Print these results']) assert.equal(await main(page).getByRole('button', { name: label }).first().isVisible(), true, label);
@@ -122,18 +122,18 @@ async function run(browser, origin, name, viewport) {
 
     await page.reload();
     await (touch ? page.locator('.dashboard-mobile-nav a', { hasText: 'Overview' }).tap() : page.locator('.dashboard-rail a', { hasText: 'Overview' }).click());
-    await press(page.getByRole('button', { name: 'Compare with previous assessment' }));
+    await press(page.getByRole('button', { name: 'Compare with previous assessment', exact: true }));
     await page.getByText(/Compared with the previous assessment/).waitFor();
     assert.match(await main(page).innerText(), /Overall\s+28\.6%–42\.9%\s+67\.9%–75\.0%/, 'saved answers survive reload and compare');
     await shot(page, name + '-4-compare.png');
 
-    const reset = page.getByRole('button', { name: 'Reset demo' });
+    const reset = page.getByRole('button', { name: 'Reset demo', exact: true });
     if (name === 'desktop') { await reset.focus(); await page.keyboard.press('Enter'); } else await reset.tap();
     assert.match(await page.locator('#try-demo-status').innerText(), /Demo reset/);
     assert.equal(await page.locator('h1').innerText(), 'Overview');
     assert.deepEqual(await page.evaluate(key => [localStorage.getItem(key), localStorage.getItem('nofries.unrelated')], STORAGE_KEY), [null, 'kept']);
-    await main(page).getByText('28.6%–42.9%').first().waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Compare with previous assessment' }).count(), 0, 'reset removed the visitor assessment');
+    await main(page).getByText('28.6% in place', { exact: true }).first().waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Compare with previous assessment', exact: true }).count(), 0, 'reset removed the visitor assessment');
     assert.deepEqual(await context.cookies(), []);
     assert.deepEqual(unexpected, [], name + ': no network, console, CSP or script errors');
     await context.close();

@@ -54,7 +54,7 @@ test.each(['', '#cyber-security'])('delivered dashboard initializes and renders 
     expect(rendered.trace).toEqual(expect.arrayContaining([
         { url: '/api/dashboard/session', method: 'get', status: 409 },
         { url: '/api/dashboard/session', method: 'post', status: 200 },
-        { url: '/api/dashboard/app.js', method: 'get', status: 200 },
+        { url: expect.stringMatching(/^\/api\/dashboard\/app\.js\?v=[A-Za-z0-9_-]{43}$/), method: 'get', status: 200 },
         { url: '/api/dashboard/modules/cyber_security', method: 'get', status: 200 }
     ]));
     expect({ state: rendered.state, hidden: rendered.hidden }).toEqual({ state: 'ready', hidden: false });

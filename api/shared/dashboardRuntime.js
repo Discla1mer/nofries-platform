@@ -18,6 +18,7 @@ const { ImprovementActionListError } = require('./improvementPlan/improvementAct
 const { ConsultantWorkQueueError, normaliseConsultantWorkQueuePage,
     createConsultantWorkQueueService } = require('./improvementPlan/consultantWorkQueueService');
 const { apiSecurityHeaders } = require('./securityHeaders');
+const { ContactRequestError, normaliseContactRequest, writeContactRequest } = require('./contactRequests');
 
 const denied = () => new DashboardPersistenceError('access_denied', 403);
 const unavailable = () => new DashboardPersistenceError('unavailable', 503);
@@ -29,6 +30,7 @@ function createDashboardResourceRuntime(options) {
     // production host forwards its explicit Improvement setting; each release
     // must qualify schema/audit readiness before enabling that setting.
     const improvementEnabled = options.improvementEnabled === true;
+    const contactRequestsEnabled = options.contactRequestsEnabled === true;
     const queueClock = options.clock;
     const requests = new WeakMap();
     // Correlation only. Authority and active SQL handles never enter this store.
@@ -147,8 +149,24 @@ function createDashboardResourceRuntime(options) {
                 }
                 finally { if (pair) pair.finish(); }
             }
+            async function contactRequest(input, onStored) {
+                // Capture caller data before the first await or pair ownership.
+                const command = normaliseContactRequest(input);
+                let pair;
+                try {
+                    pair = binding.createOperation('contact.request', context);
+                    const result = await writeContactRequest({ database: pair.database, clock: pair.clock,
+                        audit: pair.audit, context, ...(typeof onStored === 'function' ? { onStored } : {}) }, command);
+                    pair.clock();
+                    return result;
+                } catch (error) {
+                    if (error instanceof ContactRequestError) throw error;
+                    throw new ContactRequestError();
+                } finally { if (pair) pair.finish(); }
+            }
             return Object.freeze({
                 requestContext,
+                ...(contactRequestsEnabled ? { contact: Object.freeze({ request: (input, onStored) => contactRequest(input, onStored) }) } : {}),
                 ...(improvementEnabled ? { improvement: Object.freeze({
                     plans: input => improvement('plans', input),
                     list: input => improvement('list', input),

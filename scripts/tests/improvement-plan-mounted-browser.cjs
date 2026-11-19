@@ -464,8 +464,10 @@ async function main() {
                 const rendered = await page.locator('[aria-label="Improvement action plan"]').innerText();
                 assert.ok(rendered.includes(SELECTED));
                 assert.ok(rendered.includes(selectedSource.outputSha256));
-                assert.match(rendered, /Risk priority has not been calculated/);
-                assert.match(rendered, /unverified[\s\S]*scores are unchanged/);
+                await page.locator('[aria-label="Improvement action plan"] summary').filter({ hasText: /^About this plan$/ }).click();
+                const explained = await page.locator('[aria-label="Improvement action plan"]').innerText();
+                assert.match(explained, /Risk priority has not been calculated/);
+                assert.match(explained, /unverified[\s\S]*scores are unchanged/);
                 const picker = page.getByRole('combobox', { name: 'Saved improvement plans', exact: true });
                 await picker.focus(); await page.keyboard.press('Home'); await page.keyboard.press('ArrowDown');
                 await page.getByRole('heading', { name: 'Improvement action plan', exact: true }).waitFor();

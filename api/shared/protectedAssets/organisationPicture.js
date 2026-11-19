@@ -21,9 +21,20 @@
     //      Unknown and not-applicable answers are unresolved, not gaps.
     //   2. Higher existing profile weight first (the accepted profile weights
     //      every question 1, so this does not reorder today).
-    //   3. "no" before "partial", matching the saved credit (0 before 1).
-    //   4. Then accepted profile question order.
+    //   3. Fixed priority tier (GAP_TIER): the controls that stop the most
+    //      common attacks on small businesses (account takeover, ransomware,
+    //      invoice fraud) first. Display order only; scores are unchanged.
+    //   4. "no" before "partial", matching the saved credit (0 before 1).
+    //   5. Then accepted profile question order.
     const GAP_LIMIT = 3;
+    // Tier 1: MFA, patching, data recovery, sensitive-request (payment change) checks.
+    // Tier 2: least privilege, password manager, awareness, secure configuration.
+    // Anything else, including future questions, is tier 3.
+    const GAP_TIER = Object.freeze({ MF: 1, PA: 1, DR: 1, SV: 1, LP: 2, PM: 2, SA: 2, SC: 2 });
+    const gapTier = itemId => {
+        const code = /^NF-NCSC-(?:MCSS|CC)-([A-Z]{2})-\d\d-Q\d+$/.exec(itemId);
+        return code && Object.hasOwn(GAP_TIER, code[1]) ? GAP_TIER[code[1]] : 3;
+    };
     const ENQUIRY_TIMEOUT_MS = 5000;
     const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
     const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
@@ -38,6 +49,7 @@
         return metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }))
             .filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
             .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
+                gapTier(a.question.id) - gapTier(b.question.id) ||
                 GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position)
             .slice(0, limit)
             .map(({ question, row }) => {
@@ -51,8 +63,9 @@
             });
     }
     // "Actions" card: display-only over improvement/list responses the host
-    // already read. Overdue uses the server's isOverdue; due-soon uses the same
-    // UTC calendar day basis. Owner names come only from ownerLabel.
+    // already read. Overdue uses the server's isOverdue. Due-soon and review
+    // windows use the Pacific/Auckland calendar day of each list's asOf, matching
+    // the rest of the dashboard. Owner names come only from ownerLabel.
     const ACTION_LIMIT = 3, DUE_SOON_DAYS = 14;
     const DAY = /^\d{4}-\d\d-\d\d$/;
     function calendarDay(value) {
@@ -60,12 +73,24 @@
         const parsed = new Date(value + 'T00:00:00.000Z');
         return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
     }
-    function actionSummary(input) {
+    // Plain control name for an action's question, from the same metadata the
+    // results view uses ("Patching", "Sensitive-request verification check").
+    function controlName(metadata, itemId) {
+        if (!metadata || !Array.isArray(metadata.questions) || typeof itemId !== 'string') return null;
+        const question = metadata.questions.find(entry => entry && entry.id === itemId);
+        const control = question && (metadata.controls || []).find(entry => entry && entry.id === question.controlId);
+        const title = control && typeof control.title === 'string' ? control.title.split(' — ').pop().trim() : '';
+        return title || null;
+    }
+    function actionSummary(input, metadata) {
         if (!input || !Array.isArray(input.lists) || typeof input.more !== 'boolean') return null;
         let today = null; const rows = [];
         for (const list of input.lists) {
             if (!list || typeof list.asOf !== 'string' || !calendarDay(list.asOf.slice(0, 10)) || !Array.isArray(list.actions)) return null;
-            if (today === null || list.asOf.slice(0, 10) < today) today = list.asOf.slice(0, 10);
+            const day = nzCalendarDay(list.asOf) || list.asOf.slice(0, 10);
+            const planId = list.scope && typeof list.scope.planId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(list.scope.planId) ? list.scope.planId : null;
+            const planRevision = Number.isSafeInteger(list.planRevision) && list.planRevision >= 0 && list.planRevision <= 1024 ? list.planRevision : null;
+            if (today === null || day < today) today = day;
             for (const action of list.actions) {
                 if (!action || typeof action.actionId !== 'string' || typeof action.status !== 'string' ||
                     typeof action.isOverdue !== 'boolean' || action.isOverdue && action.dueDate === null || action.dueDate !== null && !calendarDay(action.dueDate) ||
@@ -73,13 +98,20 @@
                     Object.hasOwn(action, 'ownerLabel') && typeof action.ownerLabel !== 'string') return null;
                 if (Object.hasOwn(action.completion || {}, 'nextReviewDate') &&
                     (action.status !== 'completed' || !calendarDay(action.completion.nextReviewDate))) return null;
-                rows.push(action);
+                rows.push({ ...action, planId, planRevision });
             }
         }
         const horizon = today && new Date(Date.parse(today + 'T00:00:00.000Z') + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
         const byDue = (a, b) => a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.actionId < b.actionId ? -1 : a.actionId > b.actionId ? 1 : 0;
-        const item = action => ({ title: action.rationale.suggestedAction, dueDate: action.dueDate,
+        const item = action => ({ title: (name => name ? name + ': ' + action.rationale.suggestedAction.charAt(0).toLowerCase() +
+                action.rationale.suggestedAction.slice(1) : action.rationale.suggestedAction)(controlName(metadata, action.itemId)),
+            dueDate: action.dueDate, status: action.status,
+            actionId: action.actionId, planId: action.planId, planRevision: action.planRevision,
             owner: Object.hasOwn(action, 'ownerLabel') && action.ownerLabel.trim() ? action.ownerLabel : null });
+        const dueKey = action => action.dueDate || '9999-99-99';
+        const byOpen = (a, b) => (a.status === 'in_progress' ? 0 : 1) - (b.status === 'in_progress' ? 0 : 1) ||
+            (dueKey(a) < dueKey(b) ? -1 : dueKey(a) > dueKey(b) ? 1 : a.actionId < b.actionId ? -1 : a.actionId > b.actionId ? 1 : 0);
+        const next = rows.filter(action => action.status !== 'completed').sort(byOpen).slice(0, ACTION_LIMIT).map(item);
         const overdue = rows.filter(action => action.isOverdue).sort(byDue);
         const dueSoon = rows.filter(action => !action.isOverdue && action.status !== 'completed' && action.dueDate !== null &&
             action.dueDate >= today && action.dueDate <= horizon).sort(byDue);
@@ -91,14 +123,24 @@
             .map(action => ({ ...item(action), reviewDate: action.completion.nextReviewDate }));
         const reviewsDue = reviews.filter(action => action.reviewDate <= today);
         const reviewsSoon = reviews.filter(action => action.reviewDate > today && action.reviewDate <= horizon);
-        return { total: rows.length, more: input.more,
+        return { total: rows.length, more: input.more, next,
             overdue: { count: overdue.length, items: overdue.slice(0, ACTION_LIMIT).map(item) },
             dueSoon: { count: dueSoon.length, items: dueSoon.slice(0, ACTION_LIMIT).map(item) },
             reviews: { total: reviews.length, asOfDay: today,
                 due: { count: reviewsDue.length, items: reviewsDue.slice(0, ACTION_LIMIT) },
                 soon: { count: reviewsSoon.length, items: reviewsSoon.slice(0, ACTION_LIMIT) } } };
     }
-    const displayDay = value => new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeZone: 'UTC' })
+    function nzCalendarDay(iso) {
+        try {
+            const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(iso));
+            const part = type => parts.find(item => item.type === type);
+            const day = part('year').value + '-' + part('month').value + '-' + part('day').value;
+            return calendarDay(day) ? day : null;
+        } catch (_) { return null; }
+    }
+    // A saved due date is a calendar day. Midnight UTC is still that day in
+    // New Zealand (the zone is ahead of UTC), matching the rest of the dashboard.
+    const displayDay = value => new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeZone: 'Pacific/Auckland' })
         .format(new Date(value + 'T00:00:00.000Z'));
     function sameProfile(actual, expected) {
         return actual && expected && Object.keys(expected).every(key => actual[key] === expected[key]);
@@ -107,6 +149,15 @@
     // Read-only presentation over the existing authorised client. A score is
     // displayed only after the submitted-result validator accepts the complete
     // organisation/profile/revision binding. Never score drafts or uploaded files.
+    function newestRow(list) {
+        return list.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId))[0] || null;
+    }
+    function preferredAssessmentId(list) {
+        const submitted = newestRow(list.filter(row => row.status === 'submitted'));
+        if (submitted) return submitted.assessmentId;
+        const draft = newestRow(list.filter(row => row.status !== 'submitted'));
+        return draft ? draft.assessmentId : '';
+    }
     function mount(root, options) {
         if (!root || !root.ownerDocument || !options || !options.client ||
             typeof options.client.list !== 'function' || typeof options.client.read !== 'function' ||
@@ -117,12 +168,18 @@
         const organisationId = options.organisationId, organisationName = options.displayName || organisationId;
         const openImprovement = typeof options.openImprovement === 'function' ? options.openImprovement : null;
         const planGap = typeof options.planGap === 'function' ? options.planGap : null;
+        const contactControl = typeof options.contactControl === 'function' ? options.contactControl : null;
         const readActions = openImprovement && typeof options.readActions === 'function' ? options.readActions : null;
         let actions = null;
         const id = 'picture-assessment-' + (++sequence);
         const initialAssessmentId = typeof options.initialAssessmentId === 'string' ? options.initialAssessmentId : null;
         let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null, allowance = null;
         let selected = initialAssessmentId || '', detail = null, loading = false, message = '', denied = false;
+        // D-013: the assessment a previous visit showed by default. Only a hint:
+        // it is read beside the first list and used only if that fresh list
+        // picks the same assessment. The server authorises the read as usual.
+        let likelyAssessmentId = !initialAssessmentId && typeof options.likelyAssessmentId === 'string' &&
+            /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(options.likelyAssessmentId) ? options.likelyAssessmentId : null;
         let loaded = false, retry = null, explanationController = null;
         let trend = null;
         let gapPlan = null;
@@ -269,6 +326,29 @@
                 } else empty.append(node('span', '', 'Start with your top three gaps.'));
                 card.append(empty); root.prepend(card); return;
             }
+            if (actions.next && actions.next.length) {
+                card.append(node('h4', '', 'Next open actions'));
+                const list = node('ul', 'picture-actions-next');
+                const statusLabel = { in_progress: 'In progress', blocked: 'Blocked', open: 'Open' };
+                actions.next.forEach(entry => {
+                    const row = node('li', 'picture-action');
+                    const link = node('a', 'picture-action-title', entry.title);
+                    link.setAttribute('href', '#improvement-plan');
+                    link.href = '#improvement-plan';
+                    link.addEventListener('click', event => {
+                        event.preventDefault();
+                        if (!live() || denied) return;
+                        if (entry.planId && entry.actionId && Number.isSafeInteger(entry.planRevision) && typeof options.openAction === 'function') {
+                            options.openAction({ planId: entry.planId, actionId: entry.actionId, planRevision: entry.planRevision });
+                        } else if (openImprovement) openImprovement();
+                    });
+                    row.append(link, node('span', 'picture-action-meta dashboard-muted',
+                        (statusLabel[entry.status] || 'Open') + (entry.dueDate ? ' · Due ' + displayDay(entry.dueDate) : ' · No due date') +
+                        (entry.owner ? ' · Owner: ' + entry.owner : '')));
+                    list.append(row);
+                });
+                card.append(list);
+            }
             const groups = [['Overdue', actions.overdue], ['Due in the next 14 days', actions.dueSoon]];
             if (actions.reviews.total) groups.push(['Reviews due', actions.reviews.due], ['Reviews in the next 14 days', actions.reviews.soon]);
             groups.forEach(([label, group]) => {
@@ -285,7 +365,7 @@
                 card.append(list);
             });
             if (actions.reviews.total) card.append(node('p', 'picture-review-note dashboard-muted',
-                'Review dates use saved action records, checked against ' + displayDay(actions.reviews.asOfDay) + ' (UTC). ' +
+                'Review dates use saved action records, checked against ' + displayDay(actions.reviews.asOfDay) + ' (New Zealand time). ' +
                 'A review date does not confirm a review took place, verify evidence or change a score.'));
             if (actions.more) card.append(node('p', 'dashboard-muted', 'Counts cover the first five saved plans.'));
             const full = node('a', 'picture-actions-plan', 'View the full plan'); full.href = '#improvement-plan';
@@ -587,7 +667,7 @@
                     ' still unknown or to confirm. Confirm ' + (result.unknown === 1 ? 'it' : 'them') + ' to check for gaps.'));
                 return section;
             }
-            section.append(node('p', 'dashboard-muted', 'Chosen by a fixed rule from your saved answers. Controls not in place come first, then partly in place, then in NCSC framework order.'));
+            section.append(node('p', 'dashboard-muted', 'Ranked from your saved answers. Multi-factor authentication, patching, backups and checking payment changes come first, because they help protect against common attacks on small businesses, such as stolen accounts, ransomware and invoice fraud. Then controls not in place before partly in place. This is a fixed order, not a risk assessment of your business.'));
             const list = node('ol', 'picture-top-gaps-list');
             gaps.forEach(gap => {
                 const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
@@ -681,15 +761,18 @@
             panel.append(node('h4', '', 'Next step'));
             if (typeof questionnaire.providerSummary === 'function' && typeof questionnaire.copySummary === 'function') panel.append(summaryHandoff());
             const help = node('div', 'picture-next-steps-help'); help.hidden = true;
-            const link = node('a', 'dashboard-button', 'Get help closing these gaps'); link.href = '/contact.html';
-            help.append(node('p', 'dashboard-muted', 'Talk to No Fries about these gaps. The contact form does not include your answers.'), link);
+            const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
+            help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
+                link, node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
             panel.append(help);
+            // #409: present only when the host negotiated contact requests.
+            if (contactControl) panel.append(contactControl());
             enquiryAvailable().then(available => { if (available && live(token)) help.hidden = false; });
             return panel;
         }
         function summaryHandoff() {
             const win = doc.defaultView, handoff = node('details', 'picture-summary');
-            handoff.append(node('summary', '', 'Copy or print this summary'));
+            handoff.append(node('summary', '', 'Copy or print a summary'));
             const label = node('label', '', 'Copy this summary into an email or document');
             const input = node('textarea', 'ncsc-textarea'); input.id = id + '-summary'; label.htmlFor = input.id;
             input.readOnly = true; input.rows = 8; input.value = questionnaire.providerSummary(detail, metadata).text;
@@ -698,11 +781,40 @@
             const status = node('p', 'dashboard-muted'); status.setAttribute('role', 'status');
             const copyButton = button('Copy summary', () => questionnaire.copySummary(win, input, status));
             copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
+            // #441: the same answers, written for a board or insurer.
+            if (typeof questionnaire.boardSummary === 'function') {
+                const boardLabel = node('label', '', 'Summary for your board or insurer');
+                const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
+                board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, metadata).text;
+                const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
+                const boardCopy = button('Copy board summary', () => questionnaire.copySummary(win, board, status));
+                boardCopy.classList.add('dashboard-button-secondary'); handoff.append(boardLabel, board, boardPrinted, boardCopy);
+                if (win && typeof win.print === 'function') {
+                    const boardPrint = button('Print board summary', () => printOnly(win, boardPrinted));
+                    boardPrint.classList.add('dashboard-button-secondary'); handoff.append(boardPrint);
+                }
+            }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());
                 printButton.classList.add('dashboard-button-secondary'); handoff.append(printButton);
             }
             handoff.append(status); return handoff;
+        }
+        // Prints one block on its own (one A4 page for the board summary): every
+        // sibling along its path to <body> is hidden for print only, then
+        // restored. Nothing leaves the page.
+        function printOnly(win, target) {
+            const hidden = [];
+            for (let element = target; element && element.parentElement && element !== doc.body; element = element.parentElement) {
+                Array.from(element.parentElement.children || []).forEach(sibling => {
+                    if (sibling !== element && !sibling.classList.contains('picture-print-hide')) { sibling.classList.add('picture-print-hide'); hidden.push(sibling); }
+                });
+            }
+            target.classList.add('picture-print-only');
+            try { win.print(); } finally {
+                hidden.forEach(sibling => sibling.classList.remove('picture-print-hide'));
+                target.classList.remove('picture-print-only');
+            }
         }
         // Mirrors js/enquiry-availability.js: a bare read-only GET of the public
         // enquiry status. Any error, non-OK reply or 5-second timeout is unavailable.
@@ -892,18 +1004,30 @@
             const licence = node('a', '', 'CC BY 4.0'); licence.href = 'https://creativecommons.org/licenses/by/4.0/';
             attribution.append(licence); root.append(attribution);
         }
-        async function load(append) {
+        async function load(append, firstPaint) {
             if (!live() || denied || loading) return;
             const savedFocus = captureFocus();
             abort(); const token = ++epoch; loading = true; message = ''; detail = null; retry = null; render();
+            let early = null;
+            if (!firstPaint && !append && !selected && likelyAssessmentId) {
+                // One attempt per mount. Any failure is ignored here; the normal read then decides.
+                const likely = likelyAssessmentId, request = new AbortController(); likelyAssessmentId = null; requests.add(request);
+                early = { assessmentId: likely, cancel() { request.abort(); },
+                    response: Promise.resolve().then(() => client.read(likely, { signal: request.signal }))
+                        .then(value => value, () => null).finally(() => { requests.delete(request); }) };
+            }
             try {
-                const response = await call('list', { limit: 50, afterAssessmentId: append ? after : null }, token);
+                const response = firstPaint ? firstPaint.page : await call('list', { limit: 50, afterAssessmentId: append ? after : null }, token);
                 if (!response) return;
                 if (!Array.isArray(response.assessments) || response.assessments.some(row =>
                     row.moduleId !== metadata.moduleId || !sameProfile(row.profileRef, metadata.profileRef))) throw new Error('picture_response_invalid');
                 const combined = new Map((append ? rows : []).map(row => [row.assessmentId, row]));
                 response.assessments.forEach(row => combined.set(row.assessmentId, copy(row)));
                 rows = Array.from(combined.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId));
+                if (firstPaint && firstPaint.detail) {
+                    early = { assessmentId: firstPaint.detail.assessment.assessmentId,
+                        response: firstPaint.detail, cancel() {} };
+                }
                 after = response.nextAfterAssessmentId; loaded = true;
                 allowance = response.submissionAllowance ? copy(response.submissionAllowance) : null;
                 // Keep a carried or manual selection across refresh. Otherwise prefer
@@ -911,22 +1035,24 @@
                 if (!selected) selected = preferredAssessmentId(rows);
             } catch (error) { if (live(token)) failure(error, () => load(append)); }
             finally { if (live(token)) { loading = false; render(); restoreFocus(savedFocus); } }
-            if (live(token) && !message && selected) await read(selected);
+            const usable = !!early && live(token) && !message && early.assessmentId === selected;
+            if (early && !usable) early.cancel();
+            if (live(token) && !message && selected) await read(selected, undefined, usable ? early : null);
         }
-        function newestRow(list) {
-            return list.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId))[0] || null;
-        }
-        function preferredAssessmentId(list) {
-            const submitted = newestRow(list.filter(row => row.status === 'submitted'));
-            if (submitted) return submitted.assessmentId;
-            const draft = newestRow(list.filter(row => row.status !== 'submitted'));
-            return draft ? draft.assessmentId : '';
-        }
-        async function read(assessmentId, source) {
+        async function read(assessmentId, source, early) {
             if (!live() || denied || !rows.some(row => row.assessmentId === assessmentId) && assessmentId !== initialAssessmentId && assessmentId !== selected) return;
-            abort(); const token = ++epoch; const savedFocus = captureFocus(); selected = assessmentId; detail = null; message = ''; retry = null; loading = true; render();
+            // An early read for this same assessment is still in flight: keep it. Anything else is cancelled.
+            if (early) clearExplanation(); else abort();
+            const token = ++epoch; const savedFocus = captureFocus(); selected = assessmentId; detail = null; message = ''; retry = null; loading = true; render();
             try {
-                const response = await call('read', assessmentId, token); if (!response) return;
+                const started = early ? await early.response : null;
+                if (!live(token)) return;
+                // The early read ran beside the list. Use it only if it is the exact revision the list reported;
+                // if the assessment was saved or submitted in between, read it again.
+                const row = rows.find(item => item.assessmentId === assessmentId), earlier = started && started.assessment;
+                const same = !!earlier && !!row && earlier.revision === row.revision && earlier.revisionSha256 === row.revisionSha256 &&
+                    earlier.status === row.status && earlier.updatedAt === row.updatedAt;
+                const response = same ? started : await call('read', assessmentId, token); if (!response) return;
                 const value = response.assessment;
                 if (!value || value.assessmentId !== assessmentId || value.moduleId !== metadata.moduleId ||
                     !sameProfile(value.profileRef, metadata.profileRef)) throw new Error('picture_response_invalid');
@@ -948,14 +1074,26 @@
             if (disposed) return; disposed = true; epoch++; abort(); rows = []; detail = null; selected = ''; retry = null;
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
         } };
-        mounted.set(root, controller); load(false);
-        if (readActions) {
-            // Started beside the assessment reads, never after them.
-            Promise.resolve().then(readActions).then(value => {
-                if (!live()) return; actions = actionSummary(value); placeActions();
-            }, () => {});
+        mounted.set(root, controller);
+        function start(firstPaint) {
+            if (!live()) return;
+            load(false, firstPaint);
+            if (readActions) {
+                const result = firstPaint && firstPaint.actions ? Promise.resolve(firstPaint.actions) : Promise.resolve().then(readActions);
+                result.then(value => {
+                    if (!live()) return; actions = actionSummary(value, metadata); placeActions();
+                }, () => {});
+            }
         }
+        if (options.readFirstPaint) {
+            loading = true; render();
+            options.readFirstPaint().then(value => {
+                loading = false; start(value);
+            }, () => {
+                loading = false; start(null);
+            });
+        } else start(null);
         return controller;
     }
-    return Object.freeze({ mount, topGaps, actionSummary });
+    return Object.freeze({ mount, topGaps, actionSummary, preferredAssessmentId });
 }));

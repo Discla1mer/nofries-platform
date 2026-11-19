@@ -209,13 +209,15 @@
         status.setAttribute('role', 'status'); picker.setAttribute('aria-label', 'Saved improvement plans');
         picker.addEventListener('change', function () { if (active() && !picker.disabled && picker.value) select(picker.value); });
         const refreshControl = button('Refresh improvement plan', refresh), moreControl = button('More saved plans', function () { readPage(next, true); });
-        const existingNote = node('p', 'A plan already exists for this assessment, so it is shown below.'); existingNote.hidden = true;
+        const EXISTING_NOTE = 'A plan already exists for this assessment, so it is shown below.', CREATED_NOTE = 'Your plan has been created and is shown below.';
+        const existingNote = node('p', EXISTING_NOTE); existingNote.hidden = true;
+        // True once this view's own create button was used, so the note confirms the new plan instead of calling it existing.
+        let createdHere = false;
         const createControl = initialSource ? button('Create improvement plan for this assessment', generate) : null;
         const retryControl = button('Retry pending improvement command', retry);
         toolbar.append(picker, refreshControl, moreControl);
         if (initialSource) {
-            const selectedSource = node('p', 'Plan for the assessment you chose on Overview. ' +
-                'It uses your saved self-reported answers; creating a plan does not check controls or change your results.');
+            const selectedSource = node('p', 'Plan for your selected assessment.');
             selectedSource.className = 'ncsc-preserve-text'; toolbar.append(selectedSource, createControl, existingNote);
         }
         toolbar.append(retryControl);
@@ -262,8 +264,8 @@
             actionSummary.textContent = draft ? draft.name + ': ' + draft.work : detail ? actionName(detail) + ': ' + actionWork(detail) : '';
             actionSummary.hidden = !draft && !permitted;
             actionState.textContent = detail ? 'Status: ' + detail.labels.status + '. Owner: ' + (labelled(detail) ? detail.ownerLabel :
-                detail.ownerSubjectKey === null ? 'not set' : typeof currentOwner !== 'string' ? 'someone in your organisation' :
-                detail.ownerSubjectKey === currentOwner ? 'you' : 'someone else in your organisation') + '. Due date: ' + day(detail.dueDate) + '.' : '';
+                detail.ownerSubjectKey === null ? 'Unassigned' : typeof currentOwner !== 'string' ? 'someone in your organisation' :
+                detail.ownerSubjectKey === currentOwner ? 'You' : 'someone else in your organisation') + '. Due date: ' + day(detail.dueDate) + '.' : '';
             actionState.hidden = !!draft || !permitted || !detail;
             ACTION_BUTTONS.forEach(type => {
                 const control = actionButtons[type], command = type === 'assignNamed' ? 'assign' : type;
@@ -290,6 +292,9 @@
                 work: actionWork(detail), ownerSubjectKey: choice === 'assign' ? editor.ownerChoices[0].subjectKey : null };
             staleDraft = false;
             const form = node('form'); form.setAttribute('aria-label', 'Improvement action update'); form.className = 'ncsc-questionnaire improvement-action-form';
+            // Custom messages replace the browser's native bubble, which does not
+            // explain a blank field and can block submit without an inline error.
+            form.noValidate = true;
             const inputs = {}, feedback = {};
             function input(name, label, kind, maximum, initial) {
                 const container = node('label', label), field = node(kind === 'textarea' ? 'textarea' : 'input');
@@ -309,11 +314,11 @@
             else if (type === 'block') input('reason', 'Block reason', 'textarea', 1000);
             else if (type === 'reopen') input('reason', 'Reopen reason', 'textarea', 1000);
             else if (type === 'complete') {
-                input('note', 'Completion note', 'textarea', 1000); input('evidenceReference', 'Completion evidence reference (unverified)', 'text', 180);
+                input('note', 'Completion note', 'textarea', 1000); input('evidenceReference', 'Where the proof is kept (required)', 'text', 180);
                 input('nextReviewDate', 'Next review date (optional)', 'date'); inputs.nextReviewDate.required = false;
                 inputs.nextReviewDate.min = model.asOf.slice(0, 10);
                 form.append(node('p', 'Choose today or a later date to review the completed work and evidence. This records a date, not a reminder or verification.'));
-                form.append(node('p', 'The evidence reference is an unverified record ID. Workflow completion does not verify the control or change scores.'));
+                form.append(node('p', 'Say where you keep the proof, such as a screenshot, invoice or ticket. Use a short name or number, not a web address or file path. No Fries does not check it, and completing this action does not change your score.'));
             } else form.append(node('p', 'Start the assigned action using this displayed plan revision.'));
             const save = node('button', SAVE_LABELS[choice]); save.type = 'submit'; save.className = 'dashboard-button';
             const cancel = button('Cancel changes', cancelDraft); form.append(save, cancel);
@@ -356,8 +361,10 @@
                     if (key === 'nextReviewDate' && input.value < model.asOf.slice(0, 10)) invalid();
                 }
                 catch (_) {
+                    const evidenceBlank = key === 'evidenceReference' && input.value.trim() === '';
                     fieldError(key, key === 'ownerLabel' ? OWNER_LABEL_HELP : key === 'nextReviewDate' ? 'Choose today or a later review date, or leave it empty.' : key === 'dueDate' ? 'Enter a valid due date, then save again.' :
-                        key === 'evidenceReference' ? 'Enter an unverified record ID of up to 180 characters without surrounding spaces. URLs and file paths cannot be used.' :
+                        evidenceBlank ? 'Enter where the proof is kept, such as a screenshot, invoice or ticket. This is required.' :
+                        key === 'evidenceReference' ? 'Use a short reference of up to 180 characters, with no spaces at the start or end. Web addresses and file paths cannot be used.' :
                             'Enter a ' + (key === 'note' ? 'completion note' : draft.type === 'block' ? 'block reason' : 'reopen reason') +
                             ' of up to 1000 characters using plain text, then save again.'); return Promise.resolve(false);
                 }
@@ -394,7 +401,7 @@
                 moreControl.hidden = next === null; moreControl.disabled = busy || !!pending || !!draft;
                 const planExists = sourcePlanId !== null && (selected === sourcePlanId || rows.some(row => row.planId === sourcePlanId));
                 if (createControl) { createControl.hidden = planExists; createControl.disabled = busy || !!pending || !!draft || scope === null; }
-                existingNote.hidden = !planExists;
+                existingNote.textContent = createdHere ? CREATED_NOTE : EXISTING_NOTE; existingNote.hidden = !planExists;
                 retryControl.hidden = !pending || busy; retryControl.disabled = busy;
                 renderEditor();
                 if (!busy && focusAfterRead) {
@@ -510,8 +517,8 @@
                 create.disabled = busy || !!pending || scope === null; panel.append(create);
                 message = 'No improvement plan yet. You can create one from your latest submitted assessment.';
             } else if (latest === null) {
-                panel.append(node('p', 'Submit an assessment first. Your improvement plan is built from its results.'));
-                message = 'No improvement plan yet. Submit an assessment to create one.';
+                panel.append(node('p', 'Submit an assessment first. After you submit, come back here and create your improvement plan from those results. Submitting does not create the plan by itself.'));
+                message = 'No improvement plan yet. Submit an assessment, then create a plan from the results.';
             } else {
                 panel.append(node('p', 'We could not check your submitted assessments just now. Select Refresh improvement plan to try again, ' +
                     'or open Overview and choose Plan improvements for this assessment.'));
@@ -650,7 +657,7 @@
                     // Unexpected intermediary responses do not establish that the
                     // write failed. Retain its identity, as for a lost response.
                     if ([400, 401, 403, 404, 405, 409, 413].includes(result.status)) pending = null;
-                    if (result.status === 409 && captured.type === 'generate') { generatedPlanId = captured.planId; busy = false; return readView(captured.planId); }
+                    if (result.status === 409 && captured.type === 'generate') { generatedPlanId = captured.planId; createdHere = false; busy = false; return readView(captured.planId); }
                     if (result.status === 400 && labelled(captured.payload) && draft && draftForm && draftForm.inputs.ownerLabel &&
                         ['owner_label_invalid', 'improvement_input_invalid'].includes(errorCode(result.value))) {
                         busy = false; fieldError('ownerLabel', OWNER_LABEL_HELP); return false;
@@ -686,6 +693,7 @@
                         assessmentRevisionSha256: planSource.revisionSha256 } });
                 target = null;
             } catch (_) { unavailable(null, false); return Promise.resolve(false); }
+            createdHere = true;
             return submit();
         }
         function execute(input) {

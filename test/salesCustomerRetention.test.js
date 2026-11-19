@@ -604,7 +604,7 @@ describe('Sales handoff convergence and customer evidence retention', () => {
     test.each([
         ['approved', null],
         ['draft', { schemaVersion: 1, status: 'sealed', version: 'v1', sha256: 'a'.repeat(64) }]
-    ])('blocks deletion when customer evidence is %s or sealed', async (status, approvalSeal) => {
+    ])('keeps %s or sealed customer evidence unless an administrator confirms its deletion', async (status, approvalSeal) => {
         const current = await seedRepository.read(access);
         const name = `Retained ${status} ${current.revision}`;
         const created = await callSales('POST', '/api/sales/customers', {
@@ -642,8 +642,51 @@ describe('Sales handoff convergence and customer evidence retention', () => {
             code: 'approved_proposal_retention_required',
             proposalId: `proposal-${created.body.customer.id}`
         });
+        expect(blocked.body.approvedProposalCount).toBe(1);
         expect((await callSales('GET', `/api/sales/customers/${created.body.customer.id}`)).status).toBe(200);
         expect(mockLifecycleService.unlinkScopingRecords).not.toHaveBeenCalled();
+
+        const truthy = await callSales('DELETE', `/api/sales/customers/${created.body.customer.id}`, {
+            expectedRevision: seeded.state.revision,
+            confirmName: name,
+            deleteApprovedProposals: 'true'
+        });
+        expect(truthy.status).toBe(409);
+
+        const confirmed = await callSales('DELETE', `/api/sales/customers/${created.body.customer.id}`, {
+            expectedRevision: seeded.state.revision,
+            confirmName: name,
+            deleteApprovedProposals: true
+        });
+        expect(confirmed.status).toBe(200);
+        expect(confirmed.body.deleted).toBe(true);
+        const after = await seedRepository.read(access);
+        expect(after.proposals.some((proposal) => proposal.customerId === created.body.customer.id)).toBe(false);
+        expect(after.audit.some((entry) => (
+            entry.action === 'customer.deleted' &&
+            entry.targetId === created.body.customer.id &&
+            /1 approved or sealed, deletion confirmed by administrator/.test(entry.summary)
+        ))).toBe(true);
+    });
+
+    test('a signed-in person who is not an administrator cannot delete a customer, with or without the confirmation', async () => {
+        const current = await seedRepository.read(access);
+        const name = `Not admin ${current.revision}`;
+        const created = await callSales('POST', '/api/sales/customers', { expectedRevision: current.revision, name });
+        expect(created.status).toBe(201);
+        const admins = process.env.NOFRIES_ADMIN_EMAILS;
+        process.env.NOFRIES_ADMIN_EMAILS = 'someone-else@example.com';
+        try {
+            const refused = await callSales('DELETE', `/api/sales/customers/${created.body.customer.id}`, {
+                expectedRevision: created.body.revision,
+                confirmName: name,
+                deleteApprovedProposals: true
+            });
+            expect(refused.status).toBe(403);
+        } finally {
+            process.env.NOFRIES_ADMIN_EMAILS = admins;
+        }
+        expect((await callSales('GET', `/api/sales/customers/${created.body.customer.id}`)).status).toBe(200);
     });
 
     test('rejects an unsealed legacy approval before attempting a live Dynamics write', async () => {

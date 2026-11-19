@@ -864,7 +864,6 @@ function customerMasterMissing(master, supportProfile, kind) {
     const activeRefs = master.externalRefs.filter((item) => item.status === 'verified');
     if (!activeRefs.some((item) => item.system === 'datto_rmm' && item.recordType === 'site')) missing.push('datto_site_crosswalk');
     if (kind === 'external') {
-        if (!activeRefs.some((item) => item.system === 'hubspot' && item.recordType === 'company')) missing.push('hubspot_company_crosswalk');
         if (!activeRefs.some((item) => item.system === 'autotask' && item.recordType === 'account')) missing.push('autotask_account_crosswalk');
     }
     return uniqueStrings(missing, 40, 120);

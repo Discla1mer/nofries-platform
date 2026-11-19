@@ -242,6 +242,7 @@
         let pictureSelection = null;
         return {
             window: win,
+            demoGuide: true,
             mountCyber: function (root, presentation) {
                 return questionnaire.mount(root, { window: win, metadata: backend.metadata, client: client, presentationMode: 'editable',
                     organisationId: ORGANISATION_ID, initialAssessmentId: presentation && presentation.initialAssessmentId,

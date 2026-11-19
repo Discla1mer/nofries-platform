@@ -27,12 +27,26 @@ No Fries operator roles in `tenantAccess.js`; no existing `admin`, `customer_adm
 | `report.read_draft`, `report.draft` | Board Reports | Yes | Yes | No | Explicit grant |
 | `report.approve` | Board Reports | Yes | No | No | No |
 | `services.read` | Services | Yes | Yes | Yes | Explicit grant |
+| `contact.request` | Overview | Yes | Yes | Yes | No |
 | `membership.manage`, `advisor.manage` | Overview | Yes | No | No | No |
 
 Canonical module IDs are `overview`, `cyber_security`, `ai_governance`,
 `it_optimisation`, `improvement_plan`, `evidence`, `board_reports` and `services`.
 Every permission is restricted to the listed module(s); unknown names, wildcards
 and mismatched pairs deny. Permissions never make an unfinished module available.
+
+`contact.request` lets a member ask No Fries to contact the organisation
+(`POST /api/dashboard/contact-requests`, behind `NOFRIES_CONTACT_REQUESTS_ENABLED`).
+An advisor acts for the organisation's work, not as the organisation, so no
+assignment can carry it.
+
+The dashboard shows "Ask No Fries to contact me" (results and each Services
+card) only when the session response carries `contactRequestsAvailable: true`.
+The server adds that field only for a customer session, with the flag on, that
+sent the `work-queue-v1 account-label-v1 contact-request-v1` capability header;
+older open dashboards keep their exact session shape. The shell also hides it
+for an advisor-only projection. It is display only: the POST route re-checks
+`contact.request` on the locked membership.
 
 A viewer consumes the overview, Services information and issued board reports.
 It does not receive draft assessments, raw evidence or draft reports by default.

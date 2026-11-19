@@ -2,7 +2,8 @@
 
 const crypto = require('node:crypto');
 const request = require('supertest');
-const { handleEmailSettingsRequest, resetEmailSettingsForTests, PATH, MAX_IN_FLIGHT } = require('../api/shared/lifecycleEmail/emailSettings');
+const { handleEmailSettingsRequest, resetEmailSettingsForTests, PATH, MAX_IN_FLIGHT, SUBJECT_WRITE_MAX, SUBJECT_WINDOW_MS,
+    MAX_SUBJECT_BUCKETS } = require('../api/shared/lifecycleEmail/emailSettings');
 
 process.env.NOFRIES_REQUIRE_AUTH = 'false';
 const app = require('../server');
@@ -67,7 +68,7 @@ describe('email settings handler', () => {
     test('POST enforces same-origin before reading the session', async () => {
         const readSubject = jest.fn(async () => SUBJECT), store = fakeStore();
         const body = { type: 'result_summary', action: 'off' };
-        for (const headers of [{}, { origin: ENV.NOFRIES_PUBLIC_URL }, { 'sec-fetch-site': 'cross-site', origin: 'null' },
+        for (const headers of [{}, { origin: 'null' }, { origin: 'https://attacker.example.test' }, { 'sec-fetch-site': 'cross-site', origin: 'null' },
             { 'sec-fetch-site': 'same-site', origin: ENV.NOFRIES_PUBLIC_URL },
             { 'sec-fetch-site': 'same-origin', origin: 'https://attacker.example.test' },
             { 'sec-fetch-site': 'same-origin', origin: `${ENV.NOFRIES_PUBLIC_URL}/` }]) {
@@ -77,6 +78,16 @@ describe('email settings handler', () => {
         expect(store.change).not.toHaveBeenCalled();
         const ok = await run(post(body, { 'sec-fetch-site': 'same-origin', origin: ENV.NOFRIES_PUBLIC_URL }), { readSubject, store });
         expect(ok.status).toBe(303);
+    });
+
+    test('a browser without Fetch Metadata can save from the email settings form', async () => {
+        const store = fakeStore();
+        const page = await run({ method: 'GET' }, { store });
+        expect(page.headers['Referrer-Policy']).toBe('same-origin');
+        const saved = await run(post({ type: 'result_summary', action: 'off' },
+            { cookie: SAME.cookie, origin: ENV.NOFRIES_PUBLIC_URL }), { store });
+        expect(saved.status).toBe(303);
+        expect(store.change).toHaveBeenCalledTimes(1);
     });
 
     test('POST rejects unknown types, actions and extra fields', async () => {
@@ -126,6 +137,39 @@ describe('email settings handler', () => {
         release();
         expect((await Promise.all(pending)).map(item => item.status)).toEqual(Array(MAX_IN_FLIGHT).fill(200));
         expect((await run({ method: 'GET' }, { store })).status).toBe(200);
+    });
+
+    test('limits writes per signed-in subject, with Retry-After, and leaves reads and other subjects alone', async () => {
+        const now = jest.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+        try {
+            const store = fakeStore();
+            const off = { type: 'result_summary', action: 'off' };
+            for (let i = 0; i < SUBJECT_WRITE_MAX; i += 1) expect((await run(post(off), { store })).status).toBe(303);
+            now.mockReturnValue(1_800_000_000_000 + 60_000);
+            const limited = await run(post(off), { store });
+            expect(limited.status).toBe(429);
+            expect(limited.headers['Retry-After']).toBe(String(SUBJECT_WINDOW_MS / 1000 - 60));
+            expect(limited.body).not.toContain(SUBJECT);
+            expect(store.change).toHaveBeenCalledTimes(SUBJECT_WRITE_MAX);
+            expect((await run({ method: 'GET' }, { store })).status).toBe(200);
+            const other = `${crypto.randomUUID()}:${crypto.randomUUID()}`;
+            expect((await run(post(off), { store, readSubject: async () => other })).status).toBe(303);
+            now.mockReturnValue(1_800_000_000_000 + SUBJECT_WINDOW_MS);
+            expect((await run(post(off), { store })).status).toBe(303);
+        } finally { now.mockRestore(); }
+    });
+
+    test('keeps the per-subject memory bounded', async () => {
+        const store = fakeStore();
+        const first = `${crypto.randomUUID()}:${crypto.randomUUID()}`;
+        const off = { type: 'result_summary', action: 'off' };
+        for (let i = 0; i < SUBJECT_WRITE_MAX; i += 1) await run(post(off), { store, readSubject: async () => first });
+        expect((await run(post(off), { store, readSubject: async () => first })).status).toBe(429);
+        // Filling the map evicts the oldest bucket, so the first subject starts again.
+        for (let i = 0; i < MAX_SUBJECT_BUCKETS; i += 1) {
+            await run(post(off), { store, readSubject: async () => `${crypto.randomUUID()}:${crypto.randomUUID()}` });
+        }
+        expect((await run(post(off), { store, readSubject: async () => first })).status).toBe(303);
     });
 });
 

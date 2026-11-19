@@ -1,7 +1,7 @@
 'use strict';
 
-const { createImprovementPlan, getImprovementPlanView, applyImprovementActionCommand } = require('../api/shared/improvementPlan/improvementPlanDomain');
-const { planCarryForward, carryOperationId } = require('../api/shared/improvementPlan/improvementPlanCarryForward');
+const { createImprovementPlan, getImprovementPlanView, applyImprovementActionCommand, ImprovementPlanError } = require('../api/shared/improvementPlan/improvementPlanDomain');
+const { planCarryForward, carryOperationId, applyCarriedSteps } = require('../api/shared/improvementPlan/improvementPlanCarryForward');
 const { createFrameworkRegistry } = require('../api/shared/assessmentEngine/frameworkProfileRegistry');
 const { createAcceptedNcscFrameworkProfile } = require('../api/shared/assessmentEngine/ncscAcceptedFrameworkProfile');
 const fixture = require('./fixtures/ncscAcceptedEvaluation.json');
@@ -88,4 +88,53 @@ test('carry operation IDs name the exact source revision and stay valid identifi
     const id = carryOperationId('a'.repeat(64), 1024);
     expect(id).toBe(`carry:${'a'.repeat(64)}:1024`);
     expect(id).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/);
+});
+
+describe('applying one carried action', () => {
+    const rejection = error => error instanceof ImprovementPlanError;
+    // Mirrors the repository: each step is an ordinary command at the next revision.
+    const through = (owners = [OWNER]) => (step, state, head) => {
+        const next = applyImprovementActionCommand(state, { tenantId: state.tenantId, organisationId: state.organisationId,
+            planId: state.planId, evaluationOutputSha256: state.source.evaluationOutputSha256, actionId: step.actionId,
+            operationId: carryOperationId('a'.repeat(64), head.revision + 1), expectedRevision: head.revision,
+            actorSubjectKey: ACTOR, at: AT, type: step.type, payload: step.payload }, { tenantId: state.tenantId,
+            organisationId: state.organisationId, actorSubjectKey: ACTOR, eligibleOwnerSubjectKeys: owners });
+        return { state: next, record: { revision: head.revision + 1, type: step.type } };
+    };
+    function blockedAction(state, reason) {
+        const actionId = state.proposals[0].actionId;
+        return [{ type: 'assign', payload: { ownerSubjectKey: OWNER, dueDate: '2026-11-01' } },
+            { type: 'start', payload: {} }, { type: 'block', payload: { reason } }].map(step => ({ ...step, actionId }));
+    }
+
+    test('a blocked action whose reason is now rejected is still carried as assigned with its owner and due date', () => {
+        const start = plan('next-plan');
+        const carried = applyCarriedSteps(blockedAction(start, 'x'.repeat(1001)), start, { revision: 0 }, through(), rejection);
+        expect(carried.records).toEqual([{ revision: 1, type: 'assign' }]);
+        expect(carried.head).toEqual({ revision: 1, type: 'assign' });
+        expect(carried.state.commands).toHaveLength(1);
+        expect(getImprovementPlanView(carried.state).actions[0]).toMatchObject({ status: 'open',
+            ownerSubjectKey: OWNER, dueDate: '2026-11-01', blockedReason: null });
+    });
+
+    test('a valid blocked action carries every step', () => {
+        const start = plan('next-plan');
+        const carried = applyCarriedSteps(blockedAction(start, 'Waiting on supplier.'), start, { revision: 0 }, through(), rejection);
+        expect(carried.records.map(record => record.type)).toEqual(['assign', 'start', 'block']);
+        expect(getImprovementPlanView(carried.state).actions[0]).toMatchObject({ status: 'blocked', blockedReason: 'Waiting on supplier.' });
+    });
+
+    test('a rejected assign carries nothing', () => {
+        const start = plan('next-plan');
+        expect(applyCarriedSteps(blockedAction(start, 'Waiting on supplier.'), start, { revision: 0 }, through([]), rejection)).toBeNull();
+    });
+
+    test('an error that is not a rejection still aborts', () => {
+        const start = plan('next-plan'), failure = new Error('synthetic database failure');
+        const steps = blockedAction(start, 'Waiting on supplier.');
+        expect(() => applyCarriedSteps(steps, start, { revision: 0 }, (step, ...rest) => {
+            if (step.type === 'start') throw failure;
+            return through()(step, ...rest);
+        }, rejection)).toThrow(failure);
+    });
 });

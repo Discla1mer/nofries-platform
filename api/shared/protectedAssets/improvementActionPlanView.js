@@ -206,8 +206,9 @@
     // Plain names for people. Codes stay in each action's identifiers.
     const plainKinds = { implementation: 'Gap to fix', assessment: 'Answer to check', applicability: 'Answer to check', evidence: 'Evidence to add' };
     function actionTitle(action, titles) {
-        const title = titles && typeof titles === 'object' && own(titles, action.controlId) && typeof titles[action.controlId] === 'string' &&
-            titles[action.controlId].trim() && titles[action.controlId].length <= 200 ? titles[action.controlId] : action.controlId;
+        const retainedTitle = titles && typeof titles === 'object' && own(titles, action.controlId) && typeof titles[action.controlId] === 'string' &&
+            titles[action.controlId].trim() && titles[action.controlId].length <= 200 ? titles[action.controlId].trim() : '';
+        const title = retainedTitle.replace(/^No Fries Critical Control extension\s*[—–·:-]\s*/i, '').trim() || 'Control to review';
         return title + ' · ' + (own(plainKinds, action.rationale.kind) ? plainKinds[action.rationale.kind] : action.labels.kind);
     }
     // A gap's concrete follow-up for its topic, as the results show it (F1-R10).
@@ -280,14 +281,18 @@
             if (unfiltered && model.actions.length) panel.append(node('p', '', planSummary(model.actions)));
             panel.append(node('p', '', 'Showing ' + model.counts.visible.total + ' of ' + model.counts.all.total + ' actions. ' +
                 'Visible overdue: ' + model.counts.visible.overdue + ' · Unassigned: ' + model.counts.visible.unassigned + '.'));
-            panel.append(node('p', 'dashboard-muted', model.notices.priority + ' ' + model.notices.order),
-                node('p', 'dashboard-muted', model.notices.evidence + ' ' + model.notices.owner));
+            panel.append(node('p', 'dashboard-muted',
+                'Self-reported progress: completing actions does not verify controls or change your score.'));
             const guidance = options && options.actionEditorAbove === true ?
                 'Plan details are read-only. Review each action’s next step, owner and due date. ' +
                     'Open Action history for earlier updates. Where available, use Update an improvement action above to make changes.' :
                 'Read-only plan. Review each action’s next step, owner and due date. ' +
                     'Open Action history for earlier updates. Changes cannot be made in this view.';
-            panel.append(node('p', '', guidance));
+            const about = disclosure('About this plan');
+            about.append(node('p', '', guidance),
+                node('p', '', model.notices.priority + ' ' + model.notices.order),
+                node('p', '', model.notices.evidence + ' ' + model.notices.owner));
+            panel.append(about);
             const sourceDetails = disclosure('Technical details for support');
             sourceDetails.append(record('Retained source', [
                 ['Plan ID', model.scope.planId], ['Plan revision', String(model.planRevision)], ['Plan last updated (UTC)', model.updatedAt],
@@ -315,8 +320,7 @@
                 const recent = node('section', 'dashboard-panel');
                 recent.setAttribute('aria-label', 'Latest saved action updates');
                 recent.append(node('h3', '', 'Latest saved action updates'));
-                recent.append(node('p', 'dashboard-muted', 'Only actions shown in this view are included; current filters apply. ' +
-                    'Workflow updates do not verify evidence or change assessment scores. Full records remain in each action’s Action history below.'));
+                recent.append(node('p', 'dashboard-muted', 'Updates for the actions shown. Open Action history below for the full record.'));
                 if (!updates.length) recent.append(node('p', '', 'No saved updates for the actions shown.'));
                 else {
                     recent.append(node('p', 'dashboard-muted', 'Latest ' + Math.min(5, updates.length) + ' of ' + updates.length +

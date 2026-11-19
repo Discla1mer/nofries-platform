@@ -180,6 +180,67 @@ test.each(queueCapabilityCases)
     expect(binding).toHaveBeenCalledTimes(provider === 'staff' ? 0 : 1);
 });
 
+// #409 stage 1c: contactRequestsAvailable is negotiated like the queue field.
+// Older open dashboards (no header, or the earlier tokens) keep their exact shape.
+const contactCapability = 'work-queue-v1 account-label-v1 contact-request-v1';
+const contactCapabilityRequests = [
+    { name: 'old client without header', raw: [], queue: false, label: false, contact: false },
+    { name: 'queue only', raw: [queueCapabilityHeader, 'work-queue-v1'], queue: true, label: false, contact: false },
+    { name: 'queue and label', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1'], queue: true, label: true, contact: false },
+    { name: 'current client', raw: [queueCapabilityHeader, contactCapability], queue: true, label: true, contact: true },
+    { name: 'contact token alone', raw: [queueCapabilityHeader, 'contact-request-v1'], queue: false, label: false, contact: false },
+    { name: 'reordered tokens', raw: [queueCapabilityHeader, 'contact-request-v1 work-queue-v1 account-label-v1'], queue: false, label: false, contact: false },
+    { name: 'duplicate current value', raw: [queueCapabilityHeader, contactCapability, queueCapabilityHeader, contactCapability], queue: false, label: false, contact: false },
+    { name: 'unknown contact version', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1 contact-request-v2'], queue: false, label: false, contact: false },
+    { name: 'trailing whitespace', raw: [queueCapabilityHeader, contactCapability + ' '], queue: false, label: false, contact: false }
+];
+const contactCapabilityCases = [true, false].flatMap(enabled => ['staff', 'legacy', 'external'].flatMap(provider =>
+    (provider === 'staff' ? [null] : ['consultant', 'company']).flatMap(accountType =>
+        contactCapabilityRequests.map(request => ({ enabled, provider, accountType, request, header: request.name })))));
+test.each(contactCapabilityCases)
+('contact capability is offered only to a negotiated customer session with the flag on ($enabled, $provider, $accountType, $header)', async ({ enabled, provider, accountType, request: capability }) => {
+    const h = fixture();
+    h.options.improvementEnabled = true;
+    if (enabled) h.options.contactRequestsEnabled = true;
+    const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', bindingId: id(90), scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
+        ...(accountType ? { accountType } : {}) }));
+    h.options.customer.resolveActivationBinding = binding;
+    h.options.externalCustomer.resolveActivationBinding = binding;
+    const readSession = jest.fn(async () => ({ purpose: provider === 'staff' ? 'operator_dashboard' : 'customer',
+        expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90) }));
+    let host;
+    jest.isolateModules(() => {
+        const runtime = require('../api/shared/appLifecycle/postgresDashboardRuntimeRepository');
+        const replacement = jest.spyOn(runtime, 'createPostgresDashboardRuntimeRepository').mockReturnValue({ readSession });
+        try { host = require('../api/shared/dashboardRuntimeHandlers').createDashboardRuntimeHandlers(h.options); }
+        finally { replacement.mockRestore(); }
+    });
+    const services = provider === 'staff' ? host.authServices : provider === 'legacy' ? host.authServices.customer : host.authServices.externalCustomer;
+    const issued = await login(services);
+    const request = () => {
+        const req = new (require('node:http').IncomingMessage)(new (require('node:net').Socket)());
+        req.method = 'GET'; req.url = '/api/dashboard/session';
+        req.headers = { cookie: issued.cookie }; req.rawHeaders = ['cookie', issued.cookie, ...capability.raw];
+        for (let index = 0; index < capability.raw.length; index += 2) {
+            const name = capability.raw[index].toLowerCase(), value = capability.raw[index + 1];
+            req.headers[name] = Object.hasOwn(req.headers, name) ? req.headers[name] + ', ' + value : value;
+        }
+        req.complete = true; req.push(null); return req;
+    };
+    const response = await host.handleRequest(request());
+    expect(response.status).toBe(200);
+    const customer = provider !== 'staff';
+    expect(response.body).toEqual({ schemaVersion: 1, authenticated: true,
+        purpose: customer ? 'customer' : 'operator_dashboard',
+        expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90),
+        ...(accountType ? { accountType } : {}), ...(capability.label && customer ? { accountLabel: 'synthetic@example.test' } : {}),
+        ...(capability.queue && accountType === 'consultant' ? { workQueueAvailable: true } : {}),
+        ...(enabled && capability.contact && customer ? { contactRequestsAvailable: true } : {}) });
+    h.store.sessions.clear();
+    const denied = await host.handleRequest(request());
+    expect(denied.status).toBe(401); expect(denied.body).not.toHaveProperty('contactRequestsAvailable');
+});
+
 test('direct dashboard composer rejects an environment secret accessor without invoking it', () => {
     const h = fixture(), read = jest.fn(() => { throw new Error('legacy secret read'); });
     h.options.externalCustomer.client = { clientAssertion: jest.fn() };

@@ -64,13 +64,103 @@ test('conflict without readable stored proof fails closed', async () => {
     h.proofs.upload.mockRejectedValue(Object.assign(new Error('conflict'), { statusCode: 412 }));
     await expect(h.proofStore.createOriginalProof(SESSION, proof())).rejects.toThrow('dashboard_authority_store_unavailable');
 });
-test('every epoch read observes external change and has no write capability', async () => {
-    const h = harness();
-    expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH });
-    h.epochs.records.set(`runtime-epochs/${INSTANCE}.json`, Buffer.from(JSON.stringify({ instanceId: INSTANCE, restoreEpoch: uid(3) })));
-    expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: uid(3) });
-    expect(h.epochs.download).toHaveBeenCalledTimes(2);
-    expect(h.epochs.upload).not.toHaveBeenCalled();
+describe('original proof read cache', () => {
+    afterEach(() => { jest.useRealTimers(); });
+    test('a found proof is read from storage once, and each hit is a fresh equal object', async () => {
+        const h = harness();
+        await h.proofStore.createOriginalProof(SESSION, proof());
+        const first = await h.proofStore.readOriginalProof(SESSION), second = await h.proofStore.readOriginalProof(SESSION);
+        expect(first).toEqual(proof()); expect(second).toEqual(proof()); expect(second).not.toBe(first);
+        expect(h.proofs.download).toHaveBeenCalledTimes(1);
+    });
+    test('a missing proof and a failed read are never kept', async () => {
+        const h = harness();
+        expect(await h.proofStore.readOriginalProof(SESSION)).toBeNull();
+        h.proofs.download.mockRejectedValueOnce(Object.assign(new Error('transient'), { statusCode: 503 }));
+        await expect(h.proofStore.readOriginalProof(SESSION)).rejects.toThrow('dashboard_authority_store_unavailable');
+        await h.proofStore.createOriginalProof(SESSION, proof());
+        expect(await h.proofStore.readOriginalProof(SESSION)).toEqual(proof());
+        expect(h.proofs.download).toHaveBeenCalledTimes(3);
+    });
+    test('an invalid stored proof is rejected and not kept', async () => {
+        const h = harness();
+        h.proofs.records.set(`dashboard-proofs/${SESSION}.json`, Buffer.from(JSON.stringify({ ...proof(), instanceId: uid(8) })));
+        await expect(h.proofStore.readOriginalProof(SESSION)).rejects.toThrow('dashboard_authority_store_unavailable');
+        await expect(h.proofStore.readOriginalProof(SESSION)).rejects.toThrow('dashboard_authority_store_unavailable');
+        expect(h.proofs.download).toHaveBeenCalledTimes(2);
+    });
+    test('the kept proof expires after five minutes and is separate per adapter and per session', async () => {
+        jest.useFakeTimers();
+        const h = harness(), other = 'c'.repeat(64);
+        await h.proofStore.createOriginalProof(SESSION, proof());
+        await h.proofStore.readOriginalProof(SESSION);
+        expect(await h.proofStore.readOriginalProof(other)).toBeNull();
+        jest.advanceTimersByTime(299999);
+        await h.proofStore.readOriginalProof(SESSION);
+        expect(h.proofs.download).toHaveBeenCalledTimes(2);
+        jest.advanceTimersByTime(2);
+        await h.proofStore.readOriginalProof(SESSION);
+        expect(h.proofs.download).toHaveBeenCalledTimes(3);
+        const second = createDashboardAuthorityStore({ proofContainer: h.proofs, epochContainer: h.epochs, instanceId: INSTANCE });
+        await second.proofStore.readOriginalProof(SESSION);
+        expect(h.proofs.download).toHaveBeenCalledTimes(4);
+    });
+    test('the cache is bounded', async () => {
+        const h = harness();
+        const key = n => n.toString(16).padStart(64, '0');
+        for (let n = 0; n < 513; n += 1) {
+            h.proofs.records.set(`dashboard-proofs/${key(n)}.json`, Buffer.from(JSON.stringify({ ...proof(), sessionSha256: key(n) })));
+            await h.proofStore.readOriginalProof(key(n));
+        }
+        await h.proofStore.readOriginalProof(key(512));
+        expect(h.proofs.download).toHaveBeenCalledTimes(513);
+        await h.proofStore.readOriginalProof(key(0));
+        expect(h.proofs.download).toHaveBeenCalledTimes(514);
+    });
+});
+describe('restore marker reuse (D-013)', () => {
+    afterEach(() => jest.useRealTimers());
+    const set = value => Buffer.from(JSON.stringify(value));
+    test('a read marker is reused for under two seconds, then external change is observed; no write capability', async () => {
+        jest.useFakeTimers();
+        const h = harness();
+        expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH });
+        h.epochs.records.set(`runtime-epochs/${INSTANCE}.json`, set({ instanceId: INSTANCE, restoreEpoch: uid(3) }));
+        jest.advanceTimersByTime(1999);
+        expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH });
+        expect(h.epochs.download).toHaveBeenCalledTimes(1);
+        jest.advanceTimersByTime(1);
+        expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: uid(3) });
+        expect(h.epochs.download).toHaveBeenCalledTimes(2);
+        expect(h.epochs.upload).not.toHaveBeenCalled();
+    });
+    test('callers arriving together share one read', async () => {
+        const h = harness();
+        const values = await Promise.all([h.readExternalRuntimeEpoch(), h.readExternalRuntimeEpoch(), h.readExternalRuntimeEpoch()]);
+        values.forEach(value => expect(value).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH }));
+        expect(h.epochs.download).toHaveBeenCalledTimes(1);
+    });
+    test('a failed or malformed read is never kept', async () => {
+        const h = harness();
+        h.epochs.download.mockRejectedValueOnce(new Error('private configuration detail'));
+        await expect(h.readExternalRuntimeEpoch()).rejects.toThrow('dashboard_authority_store_unavailable');
+        h.epochs.records.set(`runtime-epochs/${INSTANCE}.json`, set({ instanceId: INSTANCE, restoreEpoch: 'old' }));
+        await expect(h.readExternalRuntimeEpoch()).rejects.toThrow('dashboard_authority_store_unavailable');
+        h.epochs.records.set(`runtime-epochs/${INSTANCE}.json`, set({ instanceId: INSTANCE, restoreEpoch: EPOCH }));
+        expect(await h.readExternalRuntimeEpoch()).toEqual({ instanceId: INSTANCE, restoreEpoch: EPOCH });
+        expect(h.epochs.download).toHaveBeenCalledTimes(3);
+    });
+    test('a missing marker after the reuse window is unavailable, and adapters do not share a kept marker', async () => {
+        jest.useFakeTimers();
+        const h = harness();
+        await h.readExternalRuntimeEpoch();
+        const second = createDashboardAuthorityStore({ proofContainer: h.proofs, epochContainer: h.epochs, instanceId: INSTANCE });
+        await second.readExternalRuntimeEpoch();
+        expect(h.epochs.download).toHaveBeenCalledTimes(2);
+        h.epochs.records.clear();
+        jest.advanceTimersByTime(2000);
+        await expect(h.readExternalRuntimeEpoch()).rejects.toThrow('dashboard_authority_store_unavailable');
+    });
 });
 test.each(['ContainerNotFound', 'ResourceNotFound', undefined])('404 %s is an unavailable store, not an absent proof', async code => {
     const h = harness();
@@ -198,6 +288,52 @@ test.each([undefined, '', 'false', 'true'])('Improvement flag %p controls queue 
     expect(d.pool.connect).not.toHaveBeenCalled();
 });
 
+test.each([undefined, '', 'false', 'TRUE', '1', ' true ', 'true'])('contact request flag %p enables the route only for exactly true, before body, authentication or SQL', async enabled => {
+    const d = dependencies(), env = environment();
+    if (enabled === undefined) delete env.NOFRIES_CONTACT_REQUESTS_ENABLED;
+    else env.NOFRIES_CONTACT_REQUESTS_ENABLED = enabled;
+    const configuration = createProductionDashboardConfiguration(env, d);
+    if (enabled === 'true') expect(configuration.contactRequestsEnabled).toBe(true);
+    else expect(configuration).not.toHaveProperty('contactRequestsEnabled');
+    const response = await require('supertest')(require('../server').createNoFriesApp({ dashboard: configuration }))
+        .post('/api/dashboard/contact-requests').set('Content-Type', 'text/plain').send('not json');
+    // Off: an unknown route, decided before the body is read. On: the media type is refused before sign-in is checked.
+    expect([response.status, response.body.code]).toEqual(enabled === 'true' ? [415, 'dashboard_unsupported_media_type'] : [404, 'dashboard_not_found']);
+    expect(d.pool.connect).not.toHaveBeenCalled();
+});
+test.each([
+    ['true', undefined, false], ['true', 'TRUE', false], ['true', ' true ', false], ['true', '1', false],
+    ['true', 'true', true], [undefined, 'true', false], ['false', 'true', false]
+])('contact request email is wired only when the route (%p) and its own flag (%p) are exactly true', async (route, email, wired) => {
+    const d = dependencies(), env = environment();
+    if (route === undefined) delete env.NOFRIES_CONTACT_REQUESTS_ENABLED; else env.NOFRIES_CONTACT_REQUESTS_ENABLED = route;
+    if (email === undefined) delete env.NOFRIES_CONTACT_REQUEST_EMAIL_ENABLED; else env.NOFRIES_CONTACT_REQUEST_EMAIL_ENABLED = email;
+    const notify = jest.fn();
+    d.createContactRequestNotifier = jest.fn(() => notify);
+    const configuration = createProductionDashboardConfiguration(env, d);
+    if (wired) {
+        expect(configuration.contactRequestEmail).toBe(notify);
+        expect(d.createContactRequestNotifier).toHaveBeenCalledWith({ env });
+    } else {
+        expect(configuration).not.toHaveProperty('contactRequestEmail');
+        expect(d.createContactRequestNotifier).not.toHaveBeenCalled();
+    }
+    // The genuine host accepts the wiring; constructing it sends nothing.
+    expect(() => require('../server').createNoFriesApp({ dashboard: configuration })).not.toThrow();
+    expect(notify).not.toHaveBeenCalled();
+    expect(d.pool.connect).not.toHaveBeenCalled();
+});
+test('the host refuses a contact request notifier without the route, or one that is not a plain function', () => {
+    const d = dependencies();
+    const base = createProductionDashboardConfiguration(environment(), d);
+    expect(() => require('../server').createNoFriesApp({ dashboard: { ...base, contactRequestEmail: () => {} } }))
+        .toThrow('No Fries could not complete sign-in.');
+    const routed = createProductionDashboardConfiguration(environment({ NOFRIES_CONTACT_REQUESTS_ENABLED: 'true' }), d);
+    for (const value of ['send', null, new Proxy(() => {}, {})]) {
+        expect(() => require('../server').createNoFriesApp({ dashboard: { ...routed, contactRequestEmail: value } }))
+            .toThrow('No Fries could not complete sign-in.');
+    }
+});
 test.each(['TRUE', '1', true, ' true '])('invalid NCSC flag %p fails before provider construction', enabled => {
     const d = dependencies();
     expect(() => createProductionDashboardConfiguration(environment({ NOFRIES_DASHBOARD_NCSC_ENABLED: enabled }), d))

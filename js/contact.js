@@ -71,6 +71,14 @@
         return problems;
     }
 
+    // Arriving from a dashboard service card: start the message with that service.
+    // The visitor can edit or clear it, and nothing is sent until they send the form.
+    const topic = typeof window.enquiryTopic === 'function' ? window.enquiryTopic() : '';
+    const messageField = document.getElementById('contact-message');
+    if (topic && messageField && !messageField.value) {
+        messageField.value = 'I would like to talk about this service: ' + topic + '.\n\n';
+    }
+
     let available = false;
     let checking;
     let submitting = false;
@@ -104,6 +112,8 @@
             ['name', 'email', 'organisation', 'message', 'website'].forEach(function (field) {
                 body[field] = String(data.get(field) || '');
             });
+            const campaign = typeof window.enquiryCampaign === 'function' ? window.enquiryCampaign() : '';
+            if (campaign) body.campaign = campaign;
 
             status.textContent = 'Sending…';
             try {
@@ -123,6 +133,7 @@
                     return;
                 }
                 form.reset();
+                if (typeof window.clearEnquiryCampaign === 'function') window.clearEnquiryCampaign();
                 status.textContent = 'Thanks — your enquiry has been sent. We will reply by email.';
                 if (window.plausible) {
                     window.plausible('Enquiry Sent');

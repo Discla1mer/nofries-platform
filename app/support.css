@@ -1,19 +1,22 @@
 :root {
-    --ink: #14201f;
-    --muted: #5d6f6c;
-    --paper: #f7f5ef;
-    --panel: #ffffff;
-    --line: #d8dfdc;
-    --teal: #187b73;
-    --teal-dark: #0d5e58;
-    --teal-soft: #e5f2ef;
-    --yellow: #f6c84b;
-    --yellow-soft: #fff7d6;
-    --red: #a4382f;
-    --red-soft: #fbe9e6;
-    --green: #2d7456;
-    --green-soft: #e8f4ed;
-    --shadow: 0 18px 50px rgba(20, 32, 31, 0.09);
+    /* No Fries brand palette, matching style.css and the customer dashboard.
+       The variable names are historical: "teal" is the brown accent. */
+    --ink: #151816;
+    --muted: #544c41;
+    --paper: #ece6da;
+    --panel: #f6f2ea;
+    --line: #d3c9b7;
+    --teal: #7a5711;
+    --teal-dark: #5c410c;
+    --teal-soft: #f2e4bc;
+    --yellow: #dbb157;
+    --yellow-soft: #f2e4bc;
+    --red: #8a2b21;
+    --red-soft: #f6ddd6;
+    --green: #3d6b35;
+    --green-soft: #e6edd9;
+    --shadow: 0 18px 50px rgba(72, 54, 22, .1);
+    --font-serif: "Iowan Old Style", "Charter", "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
     color-scheme: light;
 }
 
@@ -66,8 +69,8 @@ a {
     justify-content: space-between;
     min-height: 74px;
     padding: 12px clamp(20px, 4vw, 56px);
-    border-bottom: 1px solid rgba(216, 223, 220, 0.9);
-    background: rgba(247, 245, 239, 0.94);
+    border-bottom: 1px solid rgba(211, 201, 183, 0.9);
+    background: rgba(246, 242, 234, 0.94);
     backdrop-filter: blur(16px);
 }
 
@@ -351,7 +354,7 @@ h3 {
 .ticket-rail {
     padding: 24px 18px;
     border-right: 1px solid var(--line);
-    background: #f1f0ea;
+    background: #e8dfd2;
 }
 
 .rail-heading,
@@ -377,7 +380,7 @@ h3 {
 
 .empty-list {
     padding: 18px;
-    border: 1px dashed #bcc8c4;
+    border: 1px dashed #b9a98f;
     border-radius: 14px;
     color: var(--muted);
     font-size: 14px;
@@ -396,14 +399,14 @@ h3 {
 
 .ticket-list-button:hover,
 .ticket-list-button:focus-visible {
-    border-color: #b8c8c4;
+    border-color: #b9a98f;
     background: rgba(255, 255, 255, 0.7);
 }
 
 .ticket-list-button.is-active {
     border-color: var(--teal);
     background: white;
-    box-shadow: 0 8px 24px rgba(20, 32, 31, 0.07);
+    box-shadow: 0 8px 24px rgba(72, 54, 22, 0.07);
 }
 
 .ticket-list-button strong,
@@ -453,7 +456,7 @@ select,
 textarea {
     width: 100%;
     padding: 12px 13px;
-    border: 1px solid #bfcac7;
+    border: 1px solid #b9a98f;
     border-radius: 10px;
     color: var(--ink);
     background: white;
@@ -464,7 +467,7 @@ input:focus,
 select:focus,
 textarea:focus {
     border-color: var(--teal);
-    box-shadow: 0 0 0 3px rgba(24, 123, 115, 0.14);
+    box-shadow: 0 0 0 3px rgba(122, 87, 17, 0.14);
 }
 
 textarea {
@@ -530,7 +533,7 @@ label small {
 }
 
 .button-secondary {
-    border-color: #b8c4c1;
+    border-color: #b9a98f;
     color: var(--ink);
     background: white;
 }
@@ -610,7 +613,7 @@ label small {
     border: 1px solid var(--line);
     border-radius: 12px;
     color: var(--muted);
-    background: #fafaf7;
+    background: #faf7f1;
     font-size: 12px;
     font-weight: 750;
 }
@@ -618,7 +621,7 @@ label small {
 .workflow-step span {
     display: block;
     margin-bottom: 5px;
-    color: #8b9996;
+    color: #6c6152;
     font-size: 11px;
 }
 
@@ -641,9 +644,9 @@ label small {
     min-height: 52px;
     margin-bottom: 24px;
     padding: 15px;
-    border: 1px dashed #b7c6c2;
+    border: 1px dashed #b9a98f;
     border-radius: 14px;
-    background: #f8faf9;
+    background: #faf7f1;
 }
 
 .ticket-action-bar p {
@@ -657,7 +660,7 @@ label small {
     padding: 22px;
     border: 1px solid var(--line);
     border-radius: 16px;
-    background: #fbfcfb;
+    background: #faf7f1;
 }
 
 .approval-card {
@@ -667,7 +670,7 @@ label small {
 
 .detail-card p,
 .detail-card li {
-    color: #42524f;
+    color: #3a342b;
 }
 
 .detail-card ul {
@@ -780,7 +783,7 @@ label small {
 
 .timeline-copy small {
     margin-top: 5px;
-    color: #84918f;
+    color: #6c6152;
     font-size: 12px;
 }
 
@@ -797,7 +800,7 @@ label small {
     width: 48px;
     height: 48px;
     margin: 0 auto 22px;
-    border: 5px solid #d7e2df;
+    border: 5px solid #d3c9b7;
     border-top-color: var(--teal);
     border-radius: 50%;
     animation: spin 0.9s linear infinite;
@@ -980,3 +983,7 @@ label small {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* Brand alignment: serif headings at the dashboard's scale. */
+h1, h2 { font-family: var(--font-serif); font-weight: 600; letter-spacing: -.01em; }
+.support-brand img { border-radius: 0; object-fit: contain; }

@@ -142,6 +142,21 @@ test('native discovery accepts only explicit loopback test URLs', () => {
         expect(await countFor('2026-11-06', 'result_viewed')).toEqual([]);
     });
 
+    test('the staff reader returns the 30-day window under the runtime role, read-only', async () => {
+        const { createFunnelCountReader } = require('../api/shared/funnelCounts');
+        const view = await createFunnelCountReader({ pool: runtimePool, now: () => new Date('2026-11-06T11:30:00Z') })();
+        expect(view.to).toBe('2026-11-07');
+        expect(view.days).toHaveLength(30);
+        expect(view.days.find(row => row.day === '2026-11-07').counts.result_viewed).toBe(2);
+        expect(view.days.find(row => row.day === '2026-11-05').counts).toMatchObject({ visit: 10000000, first_answer: 0 });
+        const client = await runtimePool.connect();
+        try {
+            await client.query('BEGIN READ ONLY');
+            await client.query('SET LOCAL ROLE nofries_runtime');
+            expect((await capture(client.query(UPSERT, ['2026-11-07', 'visit']))).error).toMatchObject({ code: '25006' });
+        } finally { await client.query('ROLLBACK'); client.release(); }
+    });
+
     test('migrating twice is clean and records 0022 once', async () => {
         const again = await applyMigrations({ pool: ownerPool });
         expect(again.applied).toEqual([]);

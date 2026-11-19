@@ -46,8 +46,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -59,8 +58,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -72,8 +70,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -101,9 +98,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -120,22 +115,14 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
       "route": "/api/telemetry",
-      "methods": [
-        "POST"
-      ],
       "allowedRoles": [
         "anonymous"
-      ],
-      "headers": {
-        "Cache-Control": "no-store"
-      }
+      ]
     },
     {
       "route": "/api/scope/request",
@@ -143,9 +130,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -154,9 +139,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -165,9 +148,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -176,9 +157,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -187,9 +166,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, no-transform",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, no-transform"
       }
     },
     {
@@ -360,9 +337,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -371,9 +346,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -418,9 +391,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -429,9 +400,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -440,9 +409,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -565,9 +532,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -579,9 +544,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -593,9 +556,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -607,9 +568,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -621,9 +580,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -662,9 +619,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -677,9 +632,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -744,9 +697,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -766,9 +717,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -777,9 +726,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -788,9 +735,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -803,9 +748,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -817,10 +760,29 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
+    },
+    {
+      "route": "/api/dashboard/work-queue",
+      "methods": [
+        "GET"
+      ],
+      "allowedRoles": [
+        "anonymous"
+      ],
+      "headers": {
+        "Cache-Control": "private, no-store, max-age=0"
+      }
+    },
+    {
+      "route": "/api/dashboard/contact-requests",
+      "methods": [
+        "POST"
+      ],
+      "allowedRoles": [
+        "anonymous"
+      ]
     },
     {
       "route": "/api/dashboard/selection",
@@ -831,9 +793,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -845,9 +805,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -859,9 +817,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -873,7 +829,6 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
         "X-Robots-Tag": "noindex, nofollow",
         "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
       }
@@ -887,7 +842,6 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
         "X-Robots-Tag": "noindex, nofollow",
         "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
       }
@@ -915,9 +869,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -929,9 +881,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -943,9 +893,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -957,9 +905,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -971,9 +917,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -985,9 +929,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -999,9 +941,7 @@
         "anonymous"
       ],
       "headers": {
-        "Cache-Control": "private, no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow",
-        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     },
     {
@@ -1141,6 +1081,11 @@
     },
     {
       "route": "/api/dashboard-admin/accounts/app.js",
+      "methods": ["GET"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/dashboard-admin/funnel",
       "methods": ["GET"],
       "allowedRoles": ["anonymous"]
     },

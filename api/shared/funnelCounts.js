@@ -18,10 +18,17 @@ const UPSERT_SQL = `INSERT INTO nofries.funnel_daily_counts (day, event, count) 
 // endpoint can never evict the shared enquiry and signup buckets. IPv6
 // clients are keyed on their /64 so rotating addresses inside one network
 // share a bucket.
+// L4 (#441): behind the front end, many visitors may arrive with the same
+// client key, so the per-key cap is sized for ad traffic sharing one bucket
+// (about one event a second). A process-wide cap bounds the total number of
+// count writes whatever the keys. Counts are aggregate, so a capped or
+// skipped event only lowers a daily total.
 const RATE_WINDOW_MS = 10 * 60 * 1000;
-const RATE_MAX = 90;
+const RATE_MAX = 600;
+const GLOBAL_RATE_MAX = 3000;
 const MAX_TELEMETRY_BUCKETS = 2000;
 const telemetryBuckets = new Map();
+let globalBucket = { start: 0, count: 0 };
 
 function expandIpv6(address) {
     const value = address.split('%')[0].toLowerCase();
@@ -49,6 +56,8 @@ function telemetryKey(clientKey) {
 }
 
 function allowTelemetry(clientKey, nowMs = Date.now()) {
+    if (nowMs - globalBucket.start >= RATE_WINDOW_MS) globalBucket = { start: nowMs, count: 0 };
+    if (globalBucket.count >= GLOBAL_RATE_MAX) return false;
     const key = telemetryKey(clientKey);
     let bucket = telemetryBuckets.get(key);
     if (!bucket || nowMs - bucket.start >= RATE_WINDOW_MS) {
@@ -63,10 +72,12 @@ function allowTelemetry(clientKey, nowMs = Date.now()) {
         telemetryBuckets.set(key, bucket);
     }
     bucket.count += 1;
-    return bucket.count <= RATE_MAX;
+    if (bucket.count > RATE_MAX) return false;
+    globalBucket.count += 1;
+    return true;
 }
 
-function resetTelemetryRateLimitForTests() { telemetryBuckets.clear(); }
+function resetTelemetryRateLimitForTests() { telemetryBuckets.clear(); globalBucket = { start: 0, count: 0 }; }
 
 const NZ_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland', year: 'numeric', month: '2-digit', day: '2-digit' });
 
@@ -92,7 +103,7 @@ function resetFunnelWritesForTests() { writesInFlight = 0; }
 
 function codedError(code) { const error = new Error(code); error.code = code; return error; }
 
-async function acquireClient(pool, timeoutMs) {
+async function acquireClient(pool, timeoutMs, onAbandoned = null) {
     let timer = null, timedOut = false;
     const connecting = Promise.resolve().then(() => pool.connect());
     const timeout = new Promise((_, reject) => {
@@ -103,7 +114,11 @@ async function acquireClient(pool, timeoutMs) {
         return await Promise.race([connecting, timeout]);
     } catch (error) {
         // A client that arrives after we gave up goes straight back to the pool.
-        if (timedOut) connecting.then(client => client.release(), () => {});
+        if (timedOut) {
+            const settle = () => { if (typeof onAbandoned === 'function') onAbandoned(); };
+            connecting.then(client => { client.release(); settle(); }, settle);
+            error.abandoned = true;
+        }
         throw error;
     } finally {
         clearTimeout(timer);
@@ -115,8 +130,12 @@ function createFunnelCountWriter({ pool, acquireTimeoutMs = ACQUIRE_TIMEOUT_MS }
     return async function record(event, day) {
         if (writesInFlight >= MAX_IN_FLIGHT) throw codedError('funnel_count_busy');
         writesInFlight += 1;
+        // After an acquire timeout the slot stays held until the abandoned
+        // connect settles, so the cap counts every pending pool request.
+        let release = true;
         try {
-            const client = await acquireClient(pool, acquireTimeoutMs);
+            const client = await acquireClient(pool, acquireTimeoutMs, () => { writesInFlight -= 1; })
+                .catch(error => { if (error && error.abandoned) release = false; throw error; });
             let discard = false;
             try {
                 await client.query('BEGIN');
@@ -134,7 +153,7 @@ function createFunnelCountWriter({ pool, acquireTimeoutMs = ACQUIRE_TIMEOUT_MS }
                 client.release(discard);
             }
         } finally {
-            writesInFlight -= 1;
+            if (release) writesInFlight -= 1;
         }
     };
 }
@@ -183,6 +202,62 @@ function createServerFunnelCounter({ env = process.env, record = null, log = nul
 function isAssessmentSubmit(method, path, result) {
     return method === 'POST' && typeof path === 'string' && /^\/ncsc\/assessments\/[^/]+\/submit$/.test(path) &&
         Boolean(result) && result.status === 200 && result.body?.assessment?.status === 'submitted';
+}
+
+// Staff view (#151 F5): the last 30 Pacific/Auckland days, oldest first,
+// with a zero for every allow-listed event that has no row.
+const FUNNEL_VIEW_DAYS = 30;
+const READ_SQL = `SELECT to_char(day, 'YYYY-MM-DD') AS day, event, count FROM nofries.funnel_daily_counts
+    WHERE day BETWEEN $1::date AND $2::date ORDER BY day, event`;
+
+function funnelWindow(now = new Date()) {
+    const to = aucklandDay(now);
+    const [year, month, date] = to.split('-').map(Number);
+    const days = [];
+    for (let offset = FUNNEL_VIEW_DAYS - 1; offset >= 0; offset -= 1) {
+        days.push(new Date(Date.UTC(year, month - 1, date - offset)).toISOString().slice(0, 10));
+    }
+    return Object.freeze({ from: days[0], to, days: Object.freeze(days) });
+}
+
+function projectFunnelView(rows, window) {
+    const byDay = new Map(window.days.map(day => [day, Object.fromEntries(FUNNEL_EVENTS.map(event => [event, 0]))]));
+    for (const row of Array.isArray(rows) ? rows : []) {
+        const counts = row && byDay.get(row.day);
+        const value = Number(row && row.count);
+        if (!counts || !FUNNEL_EVENTS.includes(row.event) || !Number.isSafeInteger(value) || value < 0 || value > 10000000) {
+            throw new Error('funnel_counts_row_invalid');
+        }
+        counts[row.event] = value;
+    }
+    return { from: window.from, to: window.to, events: [...FUNNEL_EVENTS],
+        days: window.days.map(day => ({ day, counts: byDay.get(day) })) };
+}
+
+// Read-only, under the runtime role, with the same short timeouts as writes.
+function createFunnelCountReader({ pool, now = () => new Date(), acquireTimeoutMs = ACQUIRE_TIMEOUT_MS }) {
+    if (!pool || typeof pool.connect !== 'function') throw new Error('funnel_counts_pool_invalid');
+    return async function readFunnelView() {
+        const window = funnelWindow(now());
+        // Same bounded wait for a pooled client as the count writes.
+        const client = await acquireClient(pool, acquireTimeoutMs);
+        let discard = false;
+        try {
+            await client.query('BEGIN READ ONLY');
+            try {
+                await client.query('SET LOCAL ROLE nofries_runtime');
+                await client.query("SET LOCAL statement_timeout = '1000ms'");
+                const result = await client.query(READ_SQL, [window.from, window.to]);
+                await client.query('COMMIT');
+                return projectFunnelView(result.rows, window);
+            } catch (error) {
+                try { await client.query('ROLLBACK'); } catch (_) { discard = true; }
+                throw error;
+            }
+        } finally {
+            client.release(discard);
+        }
+    };
 }
 
 function retired() {
@@ -239,6 +314,9 @@ function result(status, body, extraHeaders = {}) {
 
 module.exports = {
     BROWSER_FUNNEL_EVENTS,
+    RATE_MAX,
+    GLOBAL_RATE_MAX,
+    allowTelemetry,
     privacySignal,
     MAX_IN_FLIGHT,
     STATEMENT_TIMEOUT_SQL,
@@ -247,6 +325,11 @@ module.exports = {
     SERVER_FUNNEL_EVENTS,
     createServerFunnelCounter,
     isAssessmentSubmit,
+    FUNNEL_VIEW_DAYS,
+    READ_SQL,
+    createFunnelCountReader,
+    funnelWindow,
+    projectFunnelView,
     resetTelemetryRateLimitForTests,
     telemetryKey,
     FUNNEL_EVENTS,

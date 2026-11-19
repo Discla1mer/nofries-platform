@@ -501,6 +501,9 @@ async function handleCustomers(method, segments, body, access) {
         });
         const claimedCustomer = claimed.result.customer;
         const lifecycleRelink = claimed.result.lifecycleRelink;
+        const approvedProposalsConfirmed = body.deleteApprovedProposals === true
+            ? customerRetainedProposals(claimed.state, claimedCustomer).length
+            : 0;
         let lifecycleUnlink = { status: 'not_linked' };
         let lifecycleCompletionRequired = false;
         if (claimedCustomer.lifecycleOrganisationId) {
@@ -604,7 +607,9 @@ async function handleCustomers(method, segments, body, access) {
                 action: 'customer.deleted',
                 targetType: 'customer',
                 targetId: customerId,
-                summary: 'Customer, assessments, proposals, handoff history, and durable handoff operations deleted'
+                summary: approvedProposalsConfirmed
+                    ? `Customer, assessments, proposals (including ${approvedProposalsConfirmed} approved or sealed, deletion confirmed by administrator), handoff history, and durable handoff operations deleted`
+                    : 'Customer, assessments, proposals, handoff history, and durable handoff operations deleted'
             }, (state) => {
                 const customer = findCustomer(state, customerId);
                 assertCustomerDeletionAllowed(state, customer, body, { deletionClaimId });
@@ -3088,18 +3093,25 @@ function assertCustomerDeletionAllowed(state, customer, body, options = {}) {
             code: 'deletion_confirmation_required'
         });
     }
-    const retainedProposal = state.proposals.find((proposal) => (
-        proposal.customerId === customer.id && (
-            proposal.status === 'approved' ||
-            proposal.approvalSeal && proposal.approvalSeal.status === 'sealed'
-        )
-    ));
-    if (retainedProposal) {
+    const retainedProposals = customerRetainedProposals(state, customer);
+    // Approved or sealed proposals are kept unless the tenant administrator
+    // explicitly confirms their deletion in the same request.
+    if (retainedProposals.length && body.deleteApprovedProposals !== true) {
         throw salesError(409, 'Approved and sealed proposal evidence must be retained', {
             code: 'approved_proposal_retention_required',
-            proposalId: retainedProposal.id
+            proposalId: retainedProposals[0].id,
+            approvedProposalCount: retainedProposals.length
         });
     }
+}
+
+function customerRetainedProposals(state, customer) {
+    return state.proposals.filter((proposal) => (
+        proposal.customerId === customer.id && (
+            proposal.status === 'approved' ||
+            Boolean(proposal.approvalSeal && proposal.approvalSeal.status === 'sealed')
+        )
+    ));
 }
 
 function assertCustomerNotDeletionClaimed(customer) {

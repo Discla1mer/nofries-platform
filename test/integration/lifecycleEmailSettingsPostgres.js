@@ -5,7 +5,7 @@
 // unsubscribe stays off, and another subject can neither read nor change rows.
 const crypto = require('node:crypto');
 const { createEmailSettingsStore } = require('../../api/shared/lifecycleEmail/emailSettingsStore');
-const { createUnsubscribeWriter } = require('../../api/shared/lifecycleEmail/unsubscribeEndpoint');
+const { createUnsubscribeWriter, UPSERT_SQL } = require('../../api/shared/lifecycleEmail/unsubscribeEndpoint');
 
 const target = String(process.env.NOFRIES_TEST_DATABASE_URL || '').trim();
 
@@ -29,7 +29,7 @@ module.exports = function registerLifecycleEmailSettingsTests() {
         const url = new URL(target);
         if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('disposable_loopback_database_required');
         const { Pool } = require('pg');
-        pool = new Pool({ connectionString: target, max: 2, application_name: 'email-settings-native' });
+        pool = new Pool({ connectionString: target, max: 3, application_name: 'email-settings-native' });
         store = createEmailSettingsStore({ pool });
         record = createUnsubscribeWriter({ pool });
         for (const [index, a] of accounts.entries()) {
@@ -89,6 +89,33 @@ module.exports = function registerLifecycleEmailSettingsTests() {
         expect(await store.read(pending.subjectKey)).toBeNull();
         expect(await store.change(pending.subjectKey, 'result_summary', 'off')).toBeNull();
         expect(await row(pending.accountId, 'result_summary')).toBeUndefined();
+    });
+
+    test('a settings re-enable that waits on an open link unsubscribe sees the link and stays off', async () => {
+        const [, other] = accounts;
+        expect(await store.change(other.subjectKey, 'result_summary', 'off')).toBe('changed');
+        const before = await row(other.accountId, 'result_summary');
+        const link = await pool.connect();
+        try {
+            await link.query('BEGIN');
+            await link.query('SET LOCAL ROLE nofries_runtime');
+            await link.query("SELECT set_config('nofries.subject_key', $1, true)", [other.subjectKey]);
+            await link.query(UPSERT_SQL, [other.accountId, 'result_summary']);
+            const reenable = store.change(other.subjectKey, 'result_summary', 'on');
+            for (let i = 0; ; i += 1) {
+                const waiting = (await pool.query(`SELECT count(*)::int AS n FROM pg_stat_activity
+                    WHERE application_name = 'email-settings-native' AND wait_event_type = 'Lock'`)).rows[0].n;
+                if (waiting === 1) break;
+                if (i > 200) throw new Error('settings_reenable_never_waited');
+                await new Promise(resolve => setTimeout(resolve, 25));
+            }
+            await link.query('COMMIT');
+            expect(await reenable).toBe('link_locked');
+        } finally {
+            await link.query('ROLLBACK').catch(() => {});
+            link.release();
+        }
+        expect(await row(other.accountId, 'result_summary')).toEqual({ source: 'link', unsubscribed_at: before.unsubscribed_at });
     });
 });
 };

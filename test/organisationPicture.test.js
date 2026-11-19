@@ -100,7 +100,8 @@ test('saved Overview identifies source, scope, framework and revision without in
         'SHA-256', 'evaluatorSourceSha256', 'Evaluator', 'Score contract']) assert.ok(!dom.root.textContent.includes(hidden), hidden);
     assert.equal(dom.root.querySelectorAll('input').length, 0);
     assert.doesNotMatch(dom.root.textContent, /board snapshot|draft presentation|PDF export|management review/i);
-    assert.ok(!dom.root.querySelectorAll('button').some(b => /board|download|export|issue/i.test(b.textContent)));
+    // #441 adds one plain copy control for a board or insurer summary; no board mode, download or export.
+    assert.ok(!dom.root.querySelectorAll('button').some(b => b.textContent !== 'Copy board summary' && /board|download|export|issue/i.test(b.textContent)));
 });
 
 test('freshness copy distinguishes the saved baseline from a live organisation check', async () => {
@@ -310,7 +311,7 @@ test('legacy Board options cannot expose another presentation mode or navigation
     assert.equal(dom.root.querySelector('.picture-follow-up-filter').querySelectorAll('select').length, 1);
     assert.equal(dom.root.querySelector('label').textContent, 'Saved assessment');
     assert.deepEqual(dom.root.querySelectorAll('button').map(button => button.textContent),
-        ['Refresh', 'Copy summary', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
+        ['Refresh', 'Copy summary', 'Copy board summary', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
     assert.equal(opened, 0);
 });
 
@@ -1275,7 +1276,9 @@ test('the Overview loads through the real client when the plan includes no asses
         return { ...response, text: async () => patched };
     };
     const dom = setup({ client: createClient({ metadata: fixtures.metadata, fetch }) }); await flush();
-    assert.doesNotMatch(dom.root.textContent, /unavailable/i);
+    // Gap guidance may itself say "unavailable" (Patching: "unavailable patch"); check the rest of the view.
+    const gapSection = dom.root.querySelector('.picture-top-gaps');
+    assert.doesNotMatch(dom.root.textContent.replace(gapSection ? gapSection.textContent : '', ''), /unavailable/i);
     assert.ok(dom.root.querySelector('select'));
     const usage = dom.root.querySelector('.picture-allowance');
     assert.ok(usage);
@@ -1306,14 +1309,15 @@ function gapView(dom) {
         items: section.querySelectorAll('li').map(item => ({ id: item.dataset.gapItem, title: item.querySelector('h4').textContent, text: item.textContent })) };
 }
 
-test('top three gaps put not-in-place answers first, then partial, in profile order, above the metrics', async () => {
+test('top three gaps put priority-tier controls first, then not-in-place before partial, above the metrics', async () => {
     const dom = setup(); await flush();
     const { section, heading, items } = gapView(dom), questions = dom.fixtures.metadata.questions;
     assert.equal(heading, 'Your top three gaps');
-    assert.deepEqual(items.map(item => item.id), [questions[10].id, questions[11].id, questions[3].id]);
-    assert.deepEqual(items.map(item => item.title), ['Provide and use a password manager', 'Sensitive-request verification check', 'Secure Configuration of Software']);
+    // Tier 1 (sensitive-request checks, patching, MFA) outranks the tier 2 password manager "No".
+    assert.deepEqual(items.map(item => item.id), [questions[11].id, questions[4].id, questions[5].id]);
+    assert.deepEqual(items.map(item => item.title), ['Sensitive-request verification check', 'Patching', 'Multi-factor Authentication']);
     items.forEach((item, index) => {
-        const question = questions[[10, 11, 3][index]];
+        const question = questions[[11, 4, 5][index]];
         assert.ok(item.text.includes('Why it matters:') && item.text.includes(question.guidance.summary));
         assert.ok(item.text.includes('What to do next:') && item.text.includes(question.smallBusiness.meaning));
         assert.match(item.text, /You can start this with your team\.|Ask your IT provider to help with this\./);
@@ -1330,7 +1334,11 @@ test('top three gaps put not-in-place answers first, then partial, in profile or
     const printed = section.querySelector('.picture-summary-print');
     assert.match(printed.textContent, /\nSelf-reported gaps; not a risk ranking or certification\.\n/);
     assert.equal(printed.textContent.match(/certif|complian/gi).length, 1);
-    assert.doesNotMatch(section.textContent.replace(printed.textContent, ''), /certif|complian/i);
+    // #441: the board or insurer summary carries one disclaimer of its own.
+    const boardPrinted = section.querySelectorAll('.picture-summary-print')[1];
+    assert.match(boardPrinted.textContent, /\nBasis: self-assessment [^\n]*Not certification or independent assurance\.\n/);
+    assert.equal(boardPrinted.textContent.match(/certif|complian/gi).length, 1);
+    assert.doesNotMatch(section.textContent.replace(printed.textContent, '').replace(boardPrinted.textContent, ''), /certif|complian/i);
 });
 
 test('top gaps show fewer than three when that is all there is', async () => {
@@ -1383,8 +1391,10 @@ describe('next step under the top gaps', () => {
         const fetch = jest.fn(async () => reply(200, { available: true, promote: false }));
         const { panel, help, link, controller } = await withEnquiry(fetch);
         assert.equal(panel.hidden, false); assert.equal(help.hidden, false);
-        assert.equal(link.textContent, 'Get help closing these gaps');
-        assert.equal(link.href, '/contact.html');
+        assert.equal(link.textContent, 'Fix these with No Fries');
+        assert.equal(link.href, '/contact.html?service=managed_security_90');
+        assert.match(help.textContent, /90-day managed security: NZ\$1,250 \+ GST/);
+        assert.match(help.textContent, /board or insurer/);
         assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
         controller.destroy();
     });
@@ -1409,7 +1419,7 @@ describe('next step under the top gaps', () => {
         const { panel, help, controller } = await withEnquiry(fetch);
         assert.equal(help.hidden, true);
         assert.equal(panel.hidden, false);
-        assert.equal(panel.querySelector('summary').textContent, 'Copy or print this summary');
+        assert.equal(panel.querySelector('summary').textContent, 'Copy or print a summary');
         controller.destroy();
     });
     test('hides the help link and aborts when the status read takes longer than 5 seconds', async () => {
@@ -1425,12 +1435,28 @@ describe('next step under the top gaps', () => {
             controller.destroy();
         } finally { jest.useRealTimers(); }
     });
+    test('offers a board or insurer summary built from the same answers, self-reported and without the score', async () => {
+        const fetch = jest.fn(async () => reply(200, { available: false }));
+        const { panel, controller } = await withEnquiry(fetch);
+        const handoff = panel.querySelector('details');
+        const board = handoff.querySelectorAll('textarea')[1], labels = handoff.querySelectorAll('label');
+        assert.ok(board); assert.equal(labels[1].htmlFor, board.id); assert.equal(board.readOnly, true);
+        const { questionnaire, record, metadata } = summarySource();
+        assert.equal(board.value, questionnaire.boardSummary(record, metadata).text);
+        assert.match(board.value, /^Cyber security position: summary for the board or insurer\nScope: Synthetic office and cloud scope\./);
+        assert.match(board.value, /Not certification or independent assurance\./);
+        assert.match(board.value, /Next steps agreed \(owner and date\): $/);
+        assert.doesNotMatch(board.value, /Synthetic organisation A|shared-preview-organisation|46\.4%/);
+        assert.equal(handoff.querySelectorAll('pre')[1].textContent, board.value);
+        assert.equal(handoff.querySelectorAll('a').length, 0);
+        controller.destroy();
+    });
     test('offers Copy or print this summary with the same text as the results view', async () => {
         const fetch = jest.fn(async () => reply(200, { available: false }));
         const { dom, panel, controller } = await withEnquiry(fetch);
         const handoff = panel.querySelector('details');
         assert.equal(handoff.className, 'picture-summary');
-        assert.equal(handoff.querySelector('summary').textContent, 'Copy or print this summary');
+        assert.equal(handoff.querySelector('summary').textContent, 'Copy or print a summary');
         const input = handoff.querySelector('textarea'), label = handoff.querySelector('label');
         assert.equal(label.htmlFor, input.id); assert.equal(input.readOnly, true);
         const { questionnaire, record, metadata } = summarySource();
@@ -1446,7 +1472,7 @@ describe('next step under the top gaps', () => {
         assert.match(css, /\.picture-summary-print \{ display: none;[^}]*white-space: pre-wrap;/);
         assert.match(css, /@media print \{ \.picture-summary textarea \{ display: none; \} \.picture-summary-print \{ display: block; \} \}/);
         assert.equal(dom.window.print, undefined);
-        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary']);
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Copy board summary']);
         controller.destroy();
     });
     test('copies with the shared clipboard behaviour, falls back to selecting, prints, and calls no new endpoint', async () => {
@@ -1461,7 +1487,7 @@ describe('next step under the top gaps', () => {
         const handoff = dom.root.querySelector('.picture-next-steps').querySelector('details');
         const input = handoff.querySelector('textarea'), status = handoff.querySelector('[role="status"]');
         const press = label => handoff.querySelectorAll('button').find(button => button.textContent === label).click();
-        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Print these results']);
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Copy board summary', 'Print board summary', 'Print these results']);
         press('Copy summary'); await flush();
         expect(writeText).toHaveBeenCalledWith(input.value); assert.equal(status.textContent, 'Summary copied.');
         writeText.mockRejectedValueOnce(new Error('denied'));
@@ -1469,6 +1495,15 @@ describe('next step under the top gaps', () => {
         assert.equal(status.textContent, 'Summary selected. Press Ctrl+C or Cmd+C to copy it.');
         assert.equal(dom.document.activeElement, input);
         press('Print these results'); assert.equal(print.mock.calls.length, 1);
+        // Print board summary hides everything else for print only, then restores the page.
+        const boardPrinted = handoff.querySelector('.picture-board-print');
+        print.mockImplementationOnce(() => {
+            assert.ok(boardPrinted.classList.contains('picture-print-only'));
+            assert.ok(handoff.querySelector('textarea').classList.contains('picture-print-hide'));
+        });
+        press('Print board summary'); assert.equal(print.mock.calls.length, 2);
+        assert.equal(boardPrinted.classList.contains('picture-print-only'), false);
+        assert.equal(dom.root.querySelectorAll('.picture-print-hide').length, 0);
         expect(fetch.mock.calls.map(call => call[0])).toEqual(['/api/enquiry']);
         controller.destroy();
     });
@@ -1490,10 +1525,11 @@ function planAction(actionId, status, dueDate, extra = {}) {
 }
 const planList = actions => ({ schemaVersion: 1, asOf: ACTIONS_AS_OF, actions });
 function actionsCard(settings = {}) {
-    const opened = [], reads = [];
+    const opened = [], reads = [], targeted = [];
     const readActions = settings.readActions || (() => { reads.push(1); return Promise.resolve(settings.value); });
-    const dom = setup({ ...settings, options: { openImprovement: value => opened.push(value), readActions, ...settings.options } });
-    return { ...dom, opened, reads };
+    const dom = setup({ ...settings, options: { openImprovement: value => opened.push(value),
+        openAction: value => targeted.push(value), readActions, ...settings.options } });
+    return { ...dom, opened, reads, targeted };
 }
 
 test('Actions card shows overdue and next-14-day counts with up to three titles and label owners only', async () => {
@@ -1507,13 +1543,24 @@ test('Actions card shows overdue and next-14-day counts with up to three titles 
         planAction('late', 'open', '2026-11-27')
     ])] };
     value.lists[0].actions[2].rationale.suggestedAction = '<img src=x onerror=alert(1)>';
+    value.lists[0].scope = { planId: 'plan-first' }; value.lists[0].planRevision = 4;
+    value.lists[1].scope = { planId: 'plan-second' }; value.lists[1].planRevision = 1;
     const dom = actionsCard({ value }); await flush();
     const card = dom.root.querySelector('.picture-actions');
     assert.ok(card); assert.equal(dom.root.children[0], card);
     assert.equal(card.getAttribute('aria-labelledby'), card.querySelector('h3').id);
     assert.equal(card.querySelector('h3').textContent, 'Actions');
-    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Overdue (4)', 'Due in the next 14 days (2)']);
-    const [overdue, soon] = card.querySelectorAll('ul');
+    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Next open actions', 'Overdue (4)', 'Due in the next 14 days (2)']);
+    const next = card.querySelector('.picture-actions-next');
+    assert.deepEqual([...next.querySelectorAll('a')].map(node => node.textContent),
+        ['<img src=x onerror=alert(1)>', 'Synthetic action o1', 'Synthetic action o2']);
+    assert.match(next.textContent, /In progress · Due 3 Nov 2026/);
+    assert.match(next.textContent, /Open · Due 1 Nov 2026 · Owner: Aroha \(office manager\)/);
+    assert.match(next.textContent, /Blocked · Due 2 Nov 2026/);
+    assert.equal(next.querySelector('img'), null);
+    next.querySelector('a').click();
+    assert.deepEqual(dom.targeted, [{ planId: 'plan-first', actionId: 'o3', planRevision: 4 }]);
+    const [overdue, soon] = card.querySelectorAll('.picture-actions-list');
     assert.deepEqual(overdue.querySelectorAll('.picture-action-title').map(node => node.textContent),
         ['Synthetic action o1', 'Synthetic action o2', '<img src=x onerror=alert(1)>']);
     assert.equal(card.querySelector('img'), null);

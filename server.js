@@ -9,6 +9,7 @@ const { buildGatewayDocument } = require('./lib/gatewayDocument');
 const { withFrontendReleaseInformation } = require('./lib/frontendReleaseInfo');
 const {
     checkRateLimit,
+    checkRateLimits,
     getVerifiedDashboardSessionKey,
     getClientKeyFromHeaders,
     isBlockedUserAgent,
@@ -55,11 +56,12 @@ const {
     ScopeAccessError
 } = require('./api/shared/scopeAccess');
 const { getServiceScope } = require('./api/shared/serviceScope');
+const serverTiming = require('./api/shared/serverTiming');
 const { createEnquiryService, isHoneypotEnquiry } = require('./api/shared/enquiry');
 const { errorResult: enquiryErrorResult } = require('./api/enquiry');
-const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
+const { API_SECURITY_HEADERS, assertSameOriginForMutation, clearDefaultPragmaForImmutable } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
-const { createFunnelCountWriter, createServerFunnelCounter, funnelCountsEnabled, handleFunnelCountRequest,
+const { createFunnelCountReader, createFunnelCountWriter, createServerFunnelCounter, funnelCountsEnabled, handleFunnelCountRequest,
     isAssessmentSubmit } = require('./api/shared/funnelCounts');
 const { PATH: UNSUBSCRIBE_PATH, MAX_BODY_BYTES: UNSUBSCRIBE_BODY_BYTES, createUnsubscribeWriter, handleUnsubscribeRequest } = require('./api/shared/lifecycleEmail/unsubscribeEndpoint');
 const { PATH: EMAIL_SETTINGS_PATH, MAX_BODY_BYTES: EMAIL_SETTINGS_BODY_BYTES, handleEmailSettingsRequest } = require('./api/shared/lifecycleEmail/emailSettings');
@@ -77,6 +79,7 @@ const {
 } = require('./lib/publicAssets');
 const { startStandaloneHost } = require('./lib/hostStartup');
 const { createDashboardRuntimeHandlers } = require('./api/shared/dashboardRuntimeHandlers');
+const { dashboardReadCost } = require('./api/shared/dashboardReadCost');
 const { createDashboardAdminService } = require('./api/shared/dashboardAdmin/service');
 const { createSignupListService } = require('./api/shared/dashboardAdmin/signupService');
 const { createDashboardAdminHandlers } = require('./api/shared/dashboardAdmin/handlers');
@@ -135,7 +138,7 @@ function createNoFriesApp(configuration = {}) {
             const supplied = configuration.dashboard;
             const names = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
                 'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
-            for (const optional of ['ncsc', 'improvementEnabled', 'customer', 'externalCustomer', 'activation']) if (supplied && !isProxy(supplied) && Object.prototype.hasOwnProperty.call(supplied, optional)) names.push(optional);
+            for (const optional of ['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation']) if (supplied && !isProxy(supplied) && Object.prototype.hasOwnProperty.call(supplied, optional)) names.push(optional);
             fields(supplied, names);
             const snapshot = Object.fromEntries(names.map(name => [name, supplied[name]]));
             const auth = snapshot.browserAuthOptions;
@@ -215,7 +218,7 @@ function createNoFriesApp(configuration = {}) {
         if (keys.includes('dashboardAdminAccountLookup') && configuration.dashboardAdminAccountLookup !== null) {
             // Email lookup needs the same staff administration service that
             // validates the native operator session; a reader alone is inert.
-            const lookupKeys = Object.hasOwn(configuration.dashboardAdminAccountLookup, 'list') ? ['read', 'list', 'audit', 'targetDigest'] : ['read', 'audit', 'targetDigest'];
+            const lookupKeys = ['read', 'list', 'wipe', 'contactRequests', 'audit', 'targetDigest'].filter(key => !['list', 'wipe', 'contactRequests'].includes(key) || Object.hasOwn(configuration.dashboardAdminAccountLookup, key));
             const port = fields(configuration.dashboardAdminAccountLookup, lookupKeys);
             if (!dashboardAdminService || Object.values(port).some(value => typeof value !== 'function' || isProxy(value))) throw new Error();
             dashboardAdminAccountLookup = Object.freeze({ ...port });
@@ -246,6 +249,8 @@ function createNoFriesApp(configuration = {}) {
         signupListService: dashboardAdminSignupListService,
         accountLookupReader: dashboardAdminAccountLookup,
         readOperatorSession: dashboard ? cookie => dashboard.authServices.session.readSessionDetails(cookie) : null,
+        // #151 F5: aggregate counts only; the handler adds the route only with the flag on.
+        funnelReader: funnelPool ? createFunnelCountReader({ pool: funnelPool }) : null,
         env: apiEnvironment, requestBudgetMs: dashboardAdminRequestBudgetMs });
 
 const app = express();
@@ -499,7 +504,7 @@ async function sendDashboardAdmin(req, res, route) {
     }));
     app.use('/api/dashboard-admin', asyncRoute(async (req, res) => {
     const route = /^\/(?:app\.js|app\.css|capabilities|lookup|suspend|restore|approve-suspend|approve-restore|entry\.js|entry-capabilities|accounts\/lookup|accounts\/app\.js)$/.test(req.path) ||
-        dashboardAdminSignupListService && req.path === '/signups' ? req.path.slice(1) : null;
+        dashboardAdminSignupListService && req.path === '/signups' || req.path === '/funnel' ? req.path.slice(1) : null;
     await sendDashboardAdmin(req, res, route);
 }));
 app.all(['/dashboard-admin', '/dashboard-admin/'], asyncRoute(async (req, res) => {
@@ -557,7 +562,9 @@ if (retainedTrialRead) {
 const recordFunnelCount = funnelPool ? createFunnelCountWriter({ pool: funnelPool }) : null;
 const countFunnelEvent = createServerFunnelCounter({ env: apiEnvironment, record: recordFunnelCount, log: console });
 if (dashboard) app.use('/api/dashboard', asyncRoute(async (req, res) => {
-    const result = await dashboard.handleRequest(req);
+    // D-013: stage durations only (see api/shared/serverTiming.js).
+    const { result, timing } = await serverTiming.run(async state => ({ result: await dashboard.handleRequest(req), timing: state }));
+    if (!res.destroyed && !res.writableEnded && !res.headersSent) res.setHeader('Server-Timing', serverTiming.header(timing));
     if (!res.destroyed && !res.writableEnded) sendResult(res, result);
     if (isAssessmentSubmit(req.method, req.path, result)) countFunnelEvent('submitted', req.headers);
 }));
@@ -1097,7 +1104,8 @@ function blockSuspiciousUserAgents(req, res, next) {
         return next();
     }
     if (req.path.startsWith('/api/')) {
-        return res.status(403).json({ error: 'Request blocked' });
+        // Runs before the /api middleware; API route rules rely on App Service for these headers.
+        return applyApiSecurityHeaders(req, res, () => res.status(403).json({ error: 'Request blocked' }));
     }
     return res.status(403).type('text/plain').send('Request blocked');
 }
@@ -1114,16 +1122,18 @@ function rateLimitApiRequests(req, res, next) {
     // Only a session the server has already issued or verified selects the
     // dashboard allowance; a fabricated cookie stays on the address limit.
     const sessionKey = req.path.startsWith('/dashboard/') ? getVerifiedDashboardSessionKey(req.headers) : null;
+    // A combined dashboard read is charged as the separate reads it replaces.
+    const cost = write ? 1 : dashboardReadCost(method, req.originalUrl);
     let result;
     if (sessionKey) {
         // Verified dashboard sessions: a generous per-address ceiling first,
         // then the per-session allowance that ordinary use stays within.
-        result = checkRateLimit(write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey, apiEnvironment);
-        if (result.allowed) {
-            result = checkRateLimit(write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey, apiEnvironment);
-        }
+        // Charged only when the cost fits in both, so a request refused by one
+        // bucket never spends the other.
+        result = checkRateLimits([[write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey],
+            [write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey]], apiEnvironment, cost);
     } else {
-        result = checkRateLimit(write ? 'apiWrite' : 'apiRead', clientKey, apiEnvironment);
+        result = checkRateLimit(write ? 'apiWrite' : 'apiRead', clientKey, apiEnvironment, cost);
     }
     Object.entries(rateLimitHeaders(result)).forEach(([name, value]) => {
         if (value) {
@@ -1144,6 +1154,7 @@ function applyPrivateHeaders(req, res, next) {
 
 function sendResult(res, result) {
     Object.entries(result.headers || {}).forEach(([name, value]) => res.setHeader(name, value));
+    clearDefaultPragmaForImmutable(res, result.headers);
     if (result.isRaw) {
         res.status(result.status).send(result.body);
         return;

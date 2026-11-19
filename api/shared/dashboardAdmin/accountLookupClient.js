@@ -122,30 +122,74 @@
         }
     });
 
-    // Signup list: every starter account, newest first. "Open" runs the
-    // normal email lookup above, which shows dashboard access and actions.
+    // Signup list: every customer account, newest first. It loads as soon as
+    // the page opens. Each row has Open (the email lookup above, for dashboard
+    // access) and, when the staff wipe is on, Reset and Delete behind one
+    // confirmation dialog that names the account and the action.
     const listPanel = document.getElementById('accountListPanel');
     if (!listPanel) return;
     const listButton = document.getElementById('accountListLoad');
     const listStatus = document.getElementById('accountListStatus');
     const listResult = document.getElementById('accountListResults');
     const SIGN_IN = { active: 'Active', revoked: 'Revoked', missing: 'No sign-in record', none: 'Not created yet', invalid: 'Record does not match', unavailable: 'Could not be read' };
+    const CONFIRM = {
+        reset: { title: 'Reset this account?', yes: 'Yes, reset', working: 'Resetting…',
+            body: email => `${email}: clears its assessments, evidence and improvement plans in every organisation. Sign-in, email and organisations are kept. This cannot be undone.` },
+        delete: { title: 'Delete this account?', yes: 'Yes, delete', working: 'Deleting… keep this page open.',
+            body: email => `${email}: removes the account, its organisations and all their data, and its sign-in. This cannot be undone.` }
+    };
     const date = value => value ? new Date(value).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+    const wipe = () => window.nofriesAccountWipe && window.nofriesAccountWipe.available() ? window.nofriesAccountWipe : null;
     function open(row) {
         email.value = row.email;
         listPanel.blur?.();
         form.requestSubmit();
         panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-    let listActive = null;
+    let listActive = null, working = false;
+    const dialog = document.createElement('dialog'); dialog.className = 'account-confirm';
+    dialog.setAttribute('aria-labelledby', 'accountConfirmTitle'); dialog.setAttribute('aria-describedby', 'accountConfirmBody');
+    const dialogTitle = Object.assign(document.createElement('h2'), { id: 'accountConfirmTitle' });
+    const dialogBody = Object.assign(document.createElement('p'), { id: 'accountConfirmBody' });
+    const dialogYes = Object.assign(document.createElement('button'), { type: 'button' });
+    const dialogNo = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Cancel' });
+    dialog.append(dialogTitle, dialogBody, dialogYes, dialogNo);
+    listPanel.append(dialog);
+    let pending = null;
+    function close() { pending = null; if (dialog.open) dialog.close(); }
+    dialogNo.addEventListener('click', close);
+    dialog.addEventListener('cancel', () => { pending = null; });
+    dialogYes.addEventListener('click', () => { const next = pending; close(); if (next) next(); });
+    function ask(action, row, cells) {
+        if (working || !wipe()) return;
+        const words = CONFIRM[action];
+        dialogTitle.textContent = words.title; dialogBody.textContent = words.body(row.email); dialogYes.textContent = words.yes;
+        dialogYes.className = action === 'delete' ? 'danger' : '';
+        pending = () => act(action, row, cells);
+        dialog.showModal(); dialogNo.focus();
+    }
+    async function act(action, row, cells) {
+        const service = wipe();
+        if (working || !service) return;
+        working = true; setRowButtons(true); cells.status.textContent = CONFIRM[action].working;
+        try {
+            const result = await service.perform(action, row.email, row.provider);
+            cells.status.textContent = result.text;
+            if (result.done && action === 'delete') { cells.row.classList.add('account-deleted'); cells.buttons.forEach(button => { button.hidden = true; button.dataset.gone = 'true'; }); }
+        } finally { working = false; setRowButtons(false); }
+    }
+    function setRowButtons(disabled) { listResult.querySelectorAll('[data-wipe]').forEach(button => { button.disabled = disabled; }); }
+    function showWipe() { const on = Boolean(wipe()); listResult.querySelectorAll('[data-wipe]').forEach(button => { if (!button.dataset.gone) button.hidden = !on; }); }
+    window.addEventListener('nofries-account-wipe', () => { if (!wipe()) close(); showWipe(); });
     function listReset() {
-        listActive?.abort(); listActive = null; listResult.replaceChildren(); listStatus.textContent = '';
+        listActive?.abort(); listActive = null; close(); listResult.replaceChildren(); listStatus.textContent = '';
         listButton.disabled = false; listResult.setAttribute('aria-busy', 'false');
     }
     listPanel.hidden = false;
     window.addEventListener('pagehide', listReset);
-    window.addEventListener('pageshow', event => { if (event?.persisted) listReset(); });
-    listButton.addEventListener('click', async () => {
+    window.addEventListener('pageshow', event => { if (event?.persisted) { listReset(); load(); } });
+    async function load() {
+        if (working) return;
         listReset();
         const controller = new AbortController(); listActive = controller;
         const timer = setTimeout(() => controller.abort(), 30000);
@@ -154,27 +198,27 @@
         try {
             await ready(controller.signal);
             if (listActive !== controller) return;
-            listStatus.textContent = 'Loading signups…';
+            listStatus.textContent = 'Loading accounts…';
             const response = await request('/api/dashboard-admin/accounts/lookup', {}, controller.signal);
             // A pagehide or newer load abandons this response unrendered.
             if (listActive !== controller) return;
             if (response.status !== 200) throw Object.assign(new Error('refused'), { status: response.status });
             const value = response.value;
-            if (!value.rows.length) { listStatus.textContent = 'No signups found.'; return; }
+            if (!value.rows.length) { listStatus.textContent = 'No accounts found.'; return; }
             const table = document.createElement('table');
-            table.createCaption().textContent = 'Signups, newest first (read only)';
+            table.createCaption().textContent = 'Customer accounts, newest first';
             const head = table.createTHead().insertRow();
-            ['Email', 'Type', 'Account formed', 'Signup', 'Sign-in record', 'Organisations', 'Plan', ''].forEach(label => {
+            ['Email', 'Type', 'Account formed', 'Signup', 'Sign-in record', 'Organisations', 'Plan', 'Actions'].forEach(label => {
                 const cell = document.createElement('th'); cell.scope = 'col'; cell.textContent = label; head.append(cell);
             });
             const body = table.createTBody();
             value.rows.forEach(row => {
                 const tr = body.insertRow();
                 if (!row.readable) { const cell = tr.insertCell(); cell.colSpan = 8; cell.textContent = 'An account record could not be read.'; return; }
-                tr.insertCell().textContent = row.email;
+                Object.assign(tr.insertCell(), { className: 'account-email', textContent: row.email });
                 tr.insertCell().textContent = row.accountType === 'consultant' ? 'Consultant' : 'Company';
-                tr.insertCell().textContent = date(row.createdAt);
-                tr.insertCell().textContent = row.signup === 'activated' ? `Activated ${date(row.activatedAt)}` : 'Unfinished';
+                Object.assign(tr.insertCell(), { className: 'account-date', textContent: date(row.createdAt) });
+                Object.assign(tr.insertCell(), { className: 'account-signup', textContent: row.signup === 'activated' ? `Activated ${date(row.activatedAt)}` : 'Unfinished' });
                 tr.insertCell().textContent = SIGN_IN[row.signIn] || text(row.signIn);
                 const orgs = tr.insertCell();
                 const list = document.createElement('ul');
@@ -182,23 +226,40 @@
                     { textContent: org.kind === 'client' ? `${org.name} (client)` : org.name })));
                 orgs.append(list);
                 if (!row.organisationsComplete) orgs.append(Object.assign(document.createElement('p'), { textContent: 'Client list could not be read in full.' }));
-                tr.insertCell().textContent = text(row.plan);
+                Object.assign(tr.insertCell(), { className: 'account-plan', textContent: text(row.plan) });
+                // The cell stays a table cell; the flex layout lives on a wrapper inside it.
+                const actionsCell = tr.insertCell(); actionsCell.className = 'account-actions-cell';
+                const actions = document.createElement('div'); actions.className = 'account-actions'; actionsCell.append(actions);
                 const openButton = document.createElement('button'); openButton.type = 'button'; openButton.textContent = 'Open';
                 openButton.setAttribute('aria-label', `Open ${row.email}`);
                 openButton.addEventListener('click', () => open(row));
-                tr.insertCell().append(openButton);
+                const rowStatus = document.createElement('p'); rowStatus.setAttribute('role', 'status'); rowStatus.setAttribute('aria-live', 'polite');
+                const cells = { row: tr, status: rowStatus, buttons: [] };
+                actions.append(openButton);
+                ['reset', 'delete'].forEach(action => {
+                    const button = document.createElement('button'); button.type = 'button'; button.dataset.wipe = action;
+                    button.textContent = action === 'reset' ? 'Reset' : 'Delete'; if (action === 'delete') button.className = 'danger';
+                    button.setAttribute('aria-label', `${button.textContent} ${row.email}`);
+                    button.hidden = !wipe();
+                    button.addEventListener('click', () => ask(action, row, cells));
+                    cells.buttons.push(button); actions.append(button);
+                });
+                actions.append(rowStatus);
             });
             listResult.append(table);
-            listStatus.textContent = `${value.rows.length} signup${value.rows.length === 1 ? '' : 's'}` +
-                (value.truncated ? ', capped at 200. Older signups are not shown.' : '.');
+            listStatus.textContent = `${value.rows.length} account${value.rows.length === 1 ? '' : 's'}` +
+                (value.truncated ? ', capped at 200. Older accounts are not shown.' : '.');
         } catch (error) {
             if (listActive !== controller) return;
-            listStatus.textContent = error.name === 'AbortError' ? 'Loading signups timed out. Try again.' :
+            listStatus.textContent = error.name === 'AbortError' ? 'Loading accounts timed out. Try again.' :
                 error.status === 429 ? 'Too many requests. Try again in a minute.' :
-                [401, 403].includes(error.status) ? 'Staff admin access is required. Sign in again.' : 'The signup list is unavailable.';
+                [401, 403].includes(error.status) ? 'Staff admin access is required. Sign in again.' : 'The account list is unavailable.';
         } finally {
             clearTimeout(timer);
             if (listActive === controller) { listActive = null; listButton.disabled = false; listResult.setAttribute('aria-busy', 'false'); }
         }
-    });
+    }
+    listButton.addEventListener('click', load);
+    // Open the list straight away, after the page has rendered.
+    setTimeout(load, 0);
 }());

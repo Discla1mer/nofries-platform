@@ -472,7 +472,10 @@ test('normal host reads authority and population together while retaining all na
         sqlCalls: h.state.trace.length,
         transactions: h.state.trace.filter(x => x.sql.startsWith('BEGIN')).length,
         commits: h.state.trace.filter(x => x.sql === 'COMMIT').length })
-        .toEqual({ downloads: 2172, approvalWalks: 98, sqlCalls: 308, transactions: 14, commits: 14 });
+        // 2145 since D-013 keeps found original proofs in memory (was 2172): 27 repeat proof reads no longer reach storage.
+        // 1278 since the restore marker is reused for up to two seconds (owner decision, 17 Nov 2026): this
+        // synthetic request finishes inside one window, so 867 repeat marker reads no longer reach storage.
+        .toEqual({ downloads: 1278, approvalWalks: 98, sqlCalls: 308, transactions: 14, commits: 14 });
     expect(h.trace.writes).toEqual([]); expect(h.trace.lists).toEqual([]);
 }, HOST_TEST_TIMEOUT_MS);
 

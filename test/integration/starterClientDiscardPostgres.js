@@ -155,7 +155,8 @@ test('migration 0019 adds one column grant, rewrites no rows and keeps every 001
         expect(await rows(db, "SELECT has_table_privilege('nofries_runtime','nofries.dashboard_starter_scopes','DELETE') AS d, has_table_privilege('nofries_runtime','nofries.dashboard_starter_scopes','TRUNCATE') AS t"))
             .toEqual([{ d: false, t: false }]);
         expect((await rows(db, "SELECT policyname,cmd FROM pg_policies WHERE schemaname='nofries' AND tablename='dashboard_starter_scopes' ORDER BY policyname")))
-            .toEqual([{ policyname: 'starter_scopes_activate', cmd: 'UPDATE' }, { policyname: 'starter_scopes_discard', cmd: 'UPDATE' },
+            .toEqual([{ policyname: 'dashboard_starter_scopes_account_wipe', cmd: 'ALL' },
+                { policyname: 'starter_scopes_activate', cmd: 'UPDATE' }, { policyname: 'starter_scopes_discard', cmd: 'UPDATE' },
                 { policyname: 'starter_scopes_new', cmd: 'INSERT' }, { policyname: 'starter_scopes_subject_read', cmd: 'SELECT' }]);
         const checks = await rows(db, "SELECT conname,pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid='nofries.dashboard_starter_scopes'::regclass ORDER BY conname");
         expect(checks.filter(r => /ordinal <= 3/.test(r.def))).toEqual([]);

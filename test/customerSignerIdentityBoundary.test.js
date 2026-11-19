@@ -1,5 +1,5 @@
 'use strict';
-// Real identity4.13.1 + MSAL managed-identity internals, synthetic HTTP only.
+// Real Identity 4.14.1 + MSAL managed-identity internals, synthetic HTTP only.
 const { denyOutbound, syntheticIdentityEnvironment, realIdentityBoundary, signerHarness,
     captureIdentityLogs, response, flush, GENERIC, CONTEXT, IDENTITY_HEADER, ERROR_DETAIL,
     apiRequire, id } = require('./helpers/offlineCustomerSigner');
@@ -15,7 +15,7 @@ test.each([{ kind: 'system-assigned' }, { kind: 'user-assigned', clientId: id(7)
     'actual managed identity SDK %j reaches only synthetic App Service HTTP and fails closed', async identity => {
         const real = realIdentityBoundary(), h = signerHarness({ identityBoundary: real, managedIdentity: identity });
         const error = await h.callback(CONTEXT).catch(value => value);
-        expect(apiRequire('@azure/identity/package.json').version).toBe('4.13.1');
+        expect(apiRequire('@azure/identity/package.json').version).toBe('4.14.1');
         expect(real.instances[0]).toBeInstanceOf(apiRequire('@azure/identity').ManagedIdentityCredential);
         expect(real.optionsReceived).toEqual([{ retryOptions: { maxRetries: 0 },
             ...(identity.clientId ? { clientId: identity.clientId } : {}) }]);

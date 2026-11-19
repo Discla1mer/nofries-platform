@@ -17,6 +17,12 @@
     // Fast 5xx and network failures on the opening session reads. Timeouts
     // already waited REQUEST_MS, so they are not tried again here.
     const SESSION_RETRY_MS = [1000, 2000, 4000];
+    // A release stops the app for a few minutes. The hosting platform then answers 403, 502 or 503 with its
+    // own non-JSON page. That is not a No Fries decision about this person, so the opening session read keeps
+    // trying for about three minutes instead of giving up after seven seconds.
+    const PLATFORM_RETRY_MS = 10000, PLATFORM_RETRY_LIMIT = 18;
+    // Contact requests: three attempts in all, about 1s then 2s apart.
+    const CONTACT_ATTEMPTS = 3, CONTACT_RETRY_MS = 1000;
     const ACTION_PLAN_LIMIT = 5;
     // One steady message while the dashboard opens (round 2: three changing
     // lines over 6 to 16 seconds read as separate waits). Retries still say so.
@@ -108,9 +114,73 @@
         const store = lastOrganisationStore();
         try { if (store && UUID.test(bindingId)) store.setItem(LAST_ORGANISATION_KEY, bindingId); } catch (_) { /* optional */ }
     }
+    // D-013: remembers only which organisation last opened with Cyber Security
+    // ready, so the next visit can start that module read one round trip
+    // earlier. A hint: the fresh projection still decides whether it is used.
+    const CYBER_READY_KEY = 'nofries-dashboard-cyber-ready';
+    function cyberReadyHint(bindingId) {
+        const store = lastOrganisationStore();
+        try { return !!store && UUID.test(bindingId || '') && store.getItem(CYBER_READY_KEY) === bindingId; } catch (_) { return false; }
+    }
+    function saveCyberReadyHint(bindingId, ready) {
+        const store = lastOrganisationStore();
+        try {
+            if (!store || !UUID.test(bindingId || '')) return;
+            if (ready) store.setItem(CYBER_READY_KEY, bindingId);
+            else if (store.getItem(CYBER_READY_KEY) === bindingId) store.removeItem(CYBER_READY_KEY);
+        } catch (_) { /* optional */ }
+    }
+    // D-013: remembers which assessment Overview showed by default for one
+    // organisation, so the next visit can read it beside the assessment list
+    // instead of after it. A hint: the fresh list still decides what is shown.
+    const PICTURE_LATEST_KEY = 'nofries-dashboard-picture-latest';
+    const PICTURE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
+    function pictureLatestHint(bindingId) {
+        const store = lastOrganisationStore();
+        try {
+            if (!store || !UUID.test(bindingId || '')) return null;
+            const saved = String(store.getItem(PICTURE_LATEST_KEY) || '');
+            if (saved.slice(0, bindingId.length + 1) !== bindingId + ' ') return null;
+            const assessmentId = saved.slice(bindingId.length + 1);
+            return PICTURE_ID.test(assessmentId) ? assessmentId : null;
+        } catch (_) { return null; }
+    }
+    function savePictureLatestHint(bindingId, assessmentId) {
+        const store = lastOrganisationStore();
+        try {
+            if (store && UUID.test(bindingId || '') && PICTURE_ID.test(assessmentId || '')) store.setItem(PICTURE_LATEST_KEY, bindingId + ' ' + assessmentId);
+        } catch (_) { /* optional */ }
+    }
+    // D-013: remembers which plans the Overview Actions card last listed for one organisation, so the
+    // next visit can read their action lists beside the plan index instead of after it. A hint only:
+    // an early list is used only if the fresh index names the same plan at the same revision.
+    const ACTION_PLANS_KEY = 'nofries-dashboard-action-plans';
+    function actionPlansHint(bindingId) {
+        const store = lastOrganisationStore();
+        try {
+            if (!store || !UUID.test(bindingId || '')) return [];
+            const saved = String(store.getItem(ACTION_PLANS_KEY) || '');
+            if (saved.slice(0, bindingId.length + 1) !== bindingId + ' ') return [];
+            const ids = saved.slice(bindingId.length + 1).split(' ');
+            return ids.length <= ACTION_PLAN_LIMIT && new Set(ids).size === ids.length && ids.every(function (id) { return PICTURE_ID.test(id); }) ? ids : [];
+        } catch (_) { return []; }
+    }
+    function saveActionPlansHint(bindingId, planIds) {
+        const store = lastOrganisationStore();
+        try {
+            if (!store || !UUID.test(bindingId || '')) return;
+            if (planIds.length && planIds.length <= ACTION_PLAN_LIMIT && planIds.every(function (id) { return PICTURE_ID.test(id); })) {
+                store.setItem(ACTION_PLANS_KEY, bindingId + ' ' + planIds.join(' '));
+            } else store.removeItem(ACTION_PLANS_KEY);
+        } catch (_) { /* optional */ }
+    }
     function forgetLastOrganisation() {
         const store = lastOrganisationStore();
         try { if (store) store.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
+        // A later sign-in may be a different person: drop the Cyber Security hint too.
+        try { if (store) store.removeItem(CYBER_READY_KEY); } catch (_) { /* optional */ }
+        try { if (store) store.removeItem(PICTURE_LATEST_KEY); } catch (_) { /* optional */ }
+        try { if (store) store.removeItem(ACTION_PLANS_KEY); } catch (_) { /* optional */ }
     }
     if (hasDirectorySearch) {
         directorySearch.addEventListener('input', function () {
@@ -333,6 +403,7 @@
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsAvailable') ? ['contactRequestsAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
             Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
             value.schemaVersion !== 1 || value.authenticated !== true || !['operator_dashboard', 'customer'].includes(value.purpose) ||
@@ -340,6 +411,7 @@
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
             Object.prototype.hasOwnProperty.call(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant') ||
             Object.prototype.hasOwnProperty.call(value, 'workQueueAvailable') && (value.workQueueAvailable !== true || value.accountType !== 'consultant') ||
+            Object.prototype.hasOwnProperty.call(value, 'contactRequestsAvailable') && (value.contactRequestsAvailable !== true || value.purpose !== 'customer') ||
             !canonicalDate(value.expiresAt) || typeof value.generation !== 'string' || !DIGEST.test(value.generation) ||
             value.selectedBindingId !== null && (typeof value.selectedBindingId !== 'string' || !UUID.test(value.selectedBindingId))) throw invalid();
         if (Date.parse(value.expiresAt) <= Date.now()) { const error = invalid(); error.expired = true; throw error; }
@@ -347,11 +419,12 @@
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
+            ...(value.contactRequestsAvailable === true ? { contactRequestsAvailable: true } : {}),
             ...(value.accountType ? { accountType: value.accountType } : {}),
             ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType', 'accountLabel']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsAvailable', 'accountType', 'accountLabel']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -434,7 +507,7 @@
         refresh.requests.forEach(function (cancel) { cancel(); });
         refresh.requests.clear();
     }
-    function request(cycle, path, body, generation, csrf, refresh) {
+    function request(cycle, path, body, generation, csrf, refresh, readBody) {
         if (!current(cycle) || refresh && !currentRefresh(cycle, refresh)) return Promise.reject(invalid());
         const abort = typeof AbortController === 'function' ? new AbortController() : null;
         return new Promise(function (resolve, reject) {
@@ -457,7 +530,7 @@
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
@@ -471,10 +544,12 @@
                 return fetch(path, options);
             }).then(async function (response) {
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
-                if (!response || response.redirected || ['opaque', 'opaqueredirect'].includes(response.type) ||
-                    !response.headers || !/^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') || '')) throw invalid();
+                const json = !!response && !!response.headers && /^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') || '');
+                if (response && !response.redirected && !['opaque', 'opaqueredirect'].includes(response.type) && !json &&
+                    [403, 502, 503].includes(response.status)) { const error = invalid(); error.platform = true; throw error; }
+                if (!response || response.redirected || ['opaque', 'opaqueredirect'].includes(response.type) || !json) throw invalid();
                 let value;
-                try { value = await response.json(); } catch (_) { throw invalid(); }
+                try { value = readBody ? await readBody(response) : await response.json(); } catch (_) { throw invalid(); }
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
                 finish(resolve, { status: response.status, value: value });
             }).catch(function (error) { finish(reject, error); });
@@ -500,11 +575,12 @@
         elements.message.textContent = message;
         elements.status.textContent = detail;
     }
-    function waitForRetry(cycle, ms) {
+    function waitForRetry(cycle, ms, updating) {
         if (current(cycle) && document.body.dataset.dashboardState === 'loading') {
-            elements.heading.textContent = 'No Fries is having a temporary problem';
-            elements.message.textContent = 'We\'ll keep trying…';
-            elements.status.textContent = 'This is a temporary service problem. You do not need to sign in again.';
+            elements.heading.textContent = updating ? 'No Fries is being updated' : 'No Fries is having a temporary problem';
+            elements.message.textContent = updating ? 'This usually takes a couple of minutes. We\'ll keep trying…' : 'We\'ll keep trying…';
+            elements.status.textContent = updating ? 'Your work is saved. You do not need to sign in again.'
+                : 'This is a temporary service problem. You do not need to sign in again.';
         }
         return new Promise(function (resolve) {
             const timer = window.setTimeout(resolve, ms);
@@ -520,6 +596,10 @@
             let result;
             try { result = await request(cycle, '/api/dashboard/session'); }
             catch (error) {
+                if (current(cycle) && error && error.platform && !unresolved && attempt < PLATFORM_RETRY_LIMIT) {
+                    await waitForRetry(cycle, PLATFORM_RETRY_MS, true);
+                    continue;
+                }
                 if (!current(cycle) || !transientSessionFailure(error) || attempt >= SESSION_RETRY_MS.length) throw error;
                 await waitForRetry(cycle, SESSION_RETRY_MS[attempt]);
                 continue;
@@ -643,9 +723,21 @@
         const listed = directory(cycle, value, [], null);
         if (early) {
             early.projection = request(cycle, '/api/dashboard/bootstrap', undefined, snapshot.generation).then(requireSuccess);
+            // D-013: the module read no longer waits for the projection (one
+            // server round trip saved). It is started alongside it, as the focus
+            // refresh already does, when this browser last opened this
+            // organisation with the module ready. Its outcome is used only if the
+            // projection lists the module as ready; otherwise it is discarded.
+            const speculative = !cyberReadyHint(value.selectedBindingId) ? null
+                : request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation)
+                    .then(function (result) { return { result: result }; }, function (error) { return { error: error }; });
             early.cyber = early.projection.then(function (projection) {
-                return current(cycle) && cyberListedReady(projection)
-                    ? request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess) : null;
+                if (!current(cycle) || !cyberListedReady(projection)) return null;
+                if (!speculative) return request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation).then(requireSuccess);
+                return speculative.then(function (outcome) {
+                    if (outcome.error) throw outcome.error;
+                    return requireSuccess(outcome.result);
+                });
             });
             [early.projection, early.cyber, listed].forEach(function (work) { work.catch(function () {}); });
         }
@@ -696,6 +788,7 @@
         // owns that role only while no protected shell is mounted.
         elements.entry.removeAttribute('role');
         cycle.cyber = !!cyber;
+        saveCyberReadyHint(value.selectedBindingId, cycle.cyber);
         cycle.improvement = !!improvement;
         cycle.displayContract = displayContract(model);
         controller = factory.mount(elements.app, model, { window: window, initialRoute: currentRoute(),
@@ -704,7 +797,8 @@
             ...(cyber ? { mountCyber: cyber } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
-            ...(improvement ? { mountImprovement: improvement } : {}) });
+            ...(improvement ? { mountImprovement: improvement } : {}),
+            ...(fresh.contactRequestsAvailable === true ? { contactRequest: contactSender(cycle, snapshot) } : {}) });
         if (!controller || typeof controller.destroy !== 'function') throw invalid();
         elements.app.hidden = false;
         cycle.busy = false;
@@ -1390,7 +1484,11 @@
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
                 onLocation: presentation && presentation.onLocation, onFunnelStep: funnelStep,
                 // Overview's first-use action opens the new-assessment step directly.
-                startNew: !!(presentation && presentation.startNew === true) });
+                startNew: !!(presentation && presentation.startNew === true),
+                ...(presentation && typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
+                    if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
+                    return presentation.openImprovement(sourceAssessment);
+                } } : {}) });
         };
         mountCyber.readBaseline = async function () {
             if (!current(cycle) || cycle.authorityPending) throw invalid();
@@ -1474,14 +1572,51 @@
                 if (!current(cycle)) throw invalid();
                 return picture.mount(root, { metadata: value.metadata, client: client, organisationId: organisationId,
                     displayName: presentation.displayName,
-                    ...(pictureSelection ? { initialAssessmentId: pictureSelection } : {}),
+                    ...(typeof presentation.contactControl === 'function' ? { contactControl: presentation.contactControl } : {}),
+                    ...(!pictureSelection ? { readFirstPaint: async function () {
+                        if (!current(cycle) || cycle.authorityPending) throw invalid();
+                        const actions = typeof presentation.openImprovement === 'function' && cycle.improvement;
+                        const response = await request(cycle, '/api/dashboard/modules/overview?view=first-paint' + (actions ? '&actions=1' : ''),
+                            undefined, snapshot.generation, undefined, undefined, client.readOverviewBody);
+                        if (response.status === 401 || response.status === 403 && response.value?.code === 'dashboard_access_denied') {
+                            const error = invalid(); error.status = response.status; failure(cycle, error); throw error;
+                        }
+                        const result = requireSuccess(response);
+                        if (!current(cycle) || cycle.authorityPending || !fields(result, ['page', 'detail', 'actions'])) throw invalid();
+                        const checked = client.validateOverview(result.page, result.detail);
+                        // A null Actions value means the optional card was not read; the picture reads it separately.
+                        if (!actions && result.actions !== null || actions && result.actions !== null && (!Array.isArray(result.actions.lists) ||
+                            result.actions.lists.length > ACTION_PLAN_LIMIT || picture.actionSummary(result.actions, value.metadata) === null)) throw invalid();
+                        informationRead(cycle);
+                        return { ...checked, actions: result.actions };
+                    } } : {}),
+                    ...(pictureSelection ? { initialAssessmentId: pictureSelection }
+                        : pictureLatestHint(snapshot.selectedBindingId) ? { likelyAssessmentId: pictureLatestHint(snapshot.selectedBindingId) } : {}),
                     onSelection: function (assessmentId, source) {
-                        if (current(cycle) && source === 'user') pictureSelection = assessmentId;
+                        if (!current(cycle)) return;
+                        if (source === 'user') pictureSelection = assessmentId;
+                        // Only the default choice is remembered, never a manual one.
+                        else if (!pictureSelection) savePictureLatestHint(snapshot.selectedBindingId, assessmentId);
                     },
                     openCyber: presentation.openCyber,
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
                         return presentation.openImprovement(sourceAssessment);
+                    }, openAction: function (target) {
+                        if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
+                        if (!target || typeof target.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(target.planId) ||
+                            typeof target.actionId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(target.actionId) ||
+                            !Number.isSafeInteger(target.planRevision) || target.planRevision < 0 || target.planRevision > 1024) return Promise.resolve(false);
+                        const chosen = Object.freeze({ bindingId: snapshot.selectedBindingId, planId: target.planId,
+                            actionId: target.actionId, planRevision: target.planRevision });
+                        cycle.workQueueTarget = chosen;
+                        return Promise.resolve(presentation.openImprovement()).then(function (opened) {
+                            if (opened !== true && cycle.workQueueTarget === chosen) cycle.workQueueTarget = null;
+                            return opened === true;
+                        }, function () {
+                            if (cycle.workQueueTarget === chosen) cycle.workQueueTarget = null;
+                            return false;
+                        });
                     } } : {}),
                     ...(typeof presentation.openImprovement === 'function' ? { planGap: function (sourceAssessment, itemId, stillCurrent) {
                         return openGapPlan(cycle, snapshot, presentation, sourceAssessment, itemId, stillCurrent);
@@ -1501,12 +1636,25 @@
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             return value;
         };
+        const listPath = function (planId) { return '/api/dashboard/improvement/list?planId=' + encodeURIComponent(planId); };
+        // Early reads for the plans listed last time. A failure here is ignored; the normal read below decides.
+        const early = new Map(actionPlansHint(snapshot.selectedBindingId).map(function (planId) {
+            return [planId, read(listPath(planId)).then(function (value) { return value; }, function () { return null; })];
+        }));
         const page = await read('/api/dashboard/improvement/plans?limit=' + ACTION_PLAN_LIMIT);
         if (!page || !Array.isArray(page.plans) || page.plans.length > ACTION_PLAN_LIMIT) throw invalid();
         const lists = await Promise.all(page.plans.map(function (plan) {
             if (!plan || typeof plan.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(plan.planId)) throw invalid();
-            return read('/api/dashboard/improvement/list?planId=' + encodeURIComponent(plan.planId));
+            const started = early.get(plan.planId);
+            if (!started) return read(listPath(plan.planId));
+            return started.then(function (value) {
+                // Use the early list only for the exact plan revision the fresh index reports.
+                const same = !!value && !!value.scope && value.scope.planId === plan.planId &&
+                    Number.isSafeInteger(plan.planRevision) && value.planRevision === plan.planRevision;
+                return same ? value : read(listPath(plan.planId));
+            });
         }));
+        if (current(cycle) && !cycle.authorityPending) saveActionPlansHint(snapshot.selectedBindingId, page.plans.map(function (plan) { return plan.planId; }));
         const result = { lists: lists, more: page.nextAfterPlanId !== null };
         // Advance "Information as at" only when the Actions card will accept
         // every list it was given; an invalid list leaves the time unchanged.
@@ -1514,6 +1662,34 @@
         if (current(cycle) && !cycle.authorityPending && picture && typeof picture.actionSummary === 'function' &&
             picture.actionSummary(result) !== null) informationRead(cycle);
         return result;
+    }
+    // #409: one "Ask No Fries to contact me" action. A fresh operation id per
+    // user action; a network failure or 503 retries that same id, which the
+    // server replays as the original outcome. Nothing is stored in the browser.
+    function contactSender(cycle, snapshot) {
+        return async function (topic) {
+            const body = { operationId: secureId(), topic: topic, consentVersion: 'contact-request-v1' };
+            for (let attempt = 0; attempt < CONTACT_ATTEMPTS; attempt += 1) {
+                if (attempt) {
+                    await new Promise(function (resolve) {
+                        const timer = window.setTimeout(resolve, CONTACT_RETRY_MS * attempt);
+                        cycle.cleanup.push(function () { window.clearTimeout(timer); resolve(); });
+                    });
+                }
+                if (!current(cycle) || cycle.authorityPending) return 'failed';
+                let result;
+                try { result = await request(cycle, '/api/dashboard/contact-requests', body, snapshot.generation); }
+                catch (_) { continue; }
+                if (!current(cycle)) return 'failed';
+                if (result.status === 503) continue;
+                if (result.status === 401) { const error = invalid(); error.status = 401; failure(cycle, error); return 'failed'; }
+                const value = result.value;
+                if (result.status === 200 && fields(value, ['schemaVersion', 'status']) && value.schemaVersion === 1 &&
+                    ['requested', 'already_requested'].includes(value.status)) return value.status;
+                return 'failed';
+            }
+            return 'failed';
+        };
     }
     function improvementOptions(cycle, snapshot, organisationId, cyber) {
         const factory = window.NoFriesImprovementActionPlanClient;
@@ -1792,6 +1968,8 @@
                 const meta = document.getElementById(metadata);
                 const integrity = meta && meta.getAttribute('content');
                 if (!/^sha256-[A-Za-z0-9+/]{43}=$/.test(integrity || '')) { reject(invalid()); return; }
+                // The content-derived URL changes whenever SRI changes; the SRI check still runs.
+                path += '?v=' + integrity.slice(7).replace(/\+/g, '-').replace(/\//g, '_').replace(/=$/, '');
                 const node = document.createElement(tag);
                 let settled = false;
                 function finish(error) {
