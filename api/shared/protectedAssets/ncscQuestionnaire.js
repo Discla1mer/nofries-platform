@@ -288,8 +288,7 @@
     }
     // Shared with Overview so campaign presentation keeps the same copy, print,
     // enquiry availability and representative-details controls.
-    function boardSummaryBlock(node, button, win, detail, metadata, inputId, status) {
-        const boardBlock = node('div', 'picture-board-summary');
+    function boardSummaryBlock(node, button, win, detail, metadata, inputId, status, boardBlock = node('div', 'picture-board-summary')) {
         const boardLabel = node('label', '', 'Summary for your board or insurer');
         const board = node('textarea', 'ncsc-textarea'); board.id = inputId; boardLabel.htmlFor = board.id;
         board.readOnly = true; board.rows = 8; board.value = boardSummary(detail, metadata).text;
