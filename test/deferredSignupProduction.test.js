@@ -11,6 +11,9 @@ test.each([undefined, 'false', 'TRUE', 'true'])('production enrollment is defaul
             dependencies.clock = () => new Date(state.now).toISOString();
         } });
     const login = await h.loginExternal(); expect(login.response.status).toBe(303);
+    const { createProductionDashboardConfiguration } = require('../lib/dashboardProduction');
+    const dashboard = createProductionDashboardConfiguration(h.env, h.dependencies);
+    expect(dashboard.questionnaireExportGateEnabled).toBe(flag === 'true' ? true : undefined);
     const state = await request(h.app).get(ROUTE + '/state').set('Cookie', login.cookie);
     expect(state.status).toBe(200);
     expect(state.body.state).toEqual({ status: 'setup_details', email: h.state.externalEmail,

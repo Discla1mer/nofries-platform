@@ -138,7 +138,7 @@ function createNoFriesApp(configuration = {}) {
             const supplied = configuration.dashboard;
             const names = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
                 'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
-            for (const optional of ['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation']) if (supplied && !isProxy(supplied) && Object.prototype.hasOwnProperty.call(supplied, optional)) names.push(optional);
+            for (const optional of ['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled', 'questionnaireExportGateEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation']) if (supplied && !isProxy(supplied) && Object.prototype.hasOwnProperty.call(supplied, optional)) names.push(optional);
             fields(supplied, names);
             const snapshot = Object.fromEntries(names.map(name => [name, supplied[name]]));
             const auth = snapshot.browserAuthOptions;

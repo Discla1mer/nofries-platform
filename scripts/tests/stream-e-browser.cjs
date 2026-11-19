@@ -3,6 +3,7 @@
 // Only loopback synthetic fixtures; no identity provider or real acceptance.
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
+const { execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
 const { buildSignupDocument } = require('../../lib/signupDocument');
 const { buildDashboardDocument } = require('../../lib/dashboardDocument');
@@ -31,19 +32,23 @@ for (const command of [createCommand('assessment-submitted', 'fixture-create', '
 }
 seed.assessments[2] = projectNcscDetail(version);
 const transport = createSyntheticTransport({ ...seed, assessments: [] }, fixtures.metadata, fixtures);
-let enabled = true, phase = 'setup_details', showResult = false, evidence = null, loseSave = false, audits = 0, writes = 0;
-const blocked = [], errors = [], captures = [], requests = [];
+let enabled = true, phase = 'setup_details', showResult = false, loseSave = false, denyRead = false, audits = 0, writes = 0, detailReads = 0;
+const blocked = [], errors = [], captures = [], requests = [], prints = [];
 (async () => {
+    const evidenceFile = path.join(artifacts, 'synthetic-details-store.json');
+    if (fs.existsSync(evidenceFile)) fs.unlinkSync(evidenceFile);
+    const evidence = () => fs.existsSync(evidenceFile) ? JSON.parse(fs.readFileSync(evidenceFile, 'utf8')) : null;
     const f = await deferredFixture(), before = JSON.stringify([f.saved, f.receipt, f.activation]);
     const deps = { context: f.context, clock: () => AT, audit: { createEvent: (_, x) => x, writeEvent: async () => { audits++; } },
         database: { async withTenantTransaction(_, work) { return work({ async query(sql, args) {
             if (sql.includes('FROM nofries.dashboard_starter_scopes')) return { rows: [{ preparation: f.preparation, activation: f.activation }] };
             if (sql.includes('FROM nofries.signup_acceptance_receipts')) return { rows: [{ payload: { receipt: f.receipt } }] };
-            if (sql.includes('SELECT payload, payload_sha256')) return { rows: evidence ? [evidence] : [] };
+            if (sql.includes('SELECT payload, payload_sha256')) { const row = evidence(); return { rows: row ? [row] : [] }; }
             if (sql.includes('SELECT EXISTS')) return { rows: [{ found: showResult }] };
             if (sql.includes('INSERT INTO nofries.dashboard_representative_details')) {
-                if (evidence) return { rowCount: 0 };
-                evidence = { payload: JSON.parse(args[4]), payload_sha256: args[5] }; writes++; return { rowCount: 1 };
+                if (evidence()) return { rowCount: 0 };
+                fs.writeFileSync(evidenceFile, JSON.stringify({ payload: JSON.parse(args[4]), payload_sha256: args[5] }), { flag: 'wx' });
+                writes++; return { rowCount: 1 };
             }
             throw new Error('Unexpected fixture SQL');
         } }); } } };
@@ -70,7 +75,8 @@ const blocked = [], errors = [], captures = [], requests = [];
         } else if (pathname === '/api/dashboard/app.js') { body = app; type = 'text/javascript'; }
         else if (pathname === '/api/dashboard/dashboard.css') { body = read('app/dashboard.css'); type = 'text/css'; }
         else if (pathname === '/api/dashboard/session') body = { schemaVersion: 1, authenticated: true, purpose: 'customer', accountType: 'company',
-            representativeDetailsAvailable: true, generation: 'a'.repeat(64), selectedBindingId: f.preparation.slot.bindingId, expiresAt: new Date(Date.now() + 3600000).toISOString() };
+            representativeDetailsAvailable: true, ...(enabled ? { questionnaireExportGateAvailable: true } : {}),
+            generation: 'a'.repeat(64), selectedBindingId: f.preparation.slot.bindingId, expiresAt: new Date(Date.now() + 3600000).toISOString() };
         else if (pathname === '/api/dashboard/organisations') body = { schemaVersion: 1, bindings: [{ bindingId: f.preparation.slot.bindingId,
             organisationLabel: model.context.displayName }], nextAfterBindingId: null };
         else if (pathname === '/api/dashboard/bootstrap') body = model;
@@ -78,7 +84,9 @@ const blocked = [], errors = [], captures = [], requests = [];
             module: model.modules.find(item => item.key === pathname.split('/').pop()), summary: model.summary, services: model.services,
             admissionGranted: false, providerAccessGranted: false, metadata: fixtures.metadata, presentationMode: 'editable' };
         else if (pathname === '/api/dashboard/representative-details') {
-            body = await representativeDetails(deps, input);
+            if (!input) detailReads++;
+            if (!input && denyRead) { status = 503; body = { code: 'synthetic_read_unavailable' }; }
+            else body = await representativeDetails(deps, input);
             if (input && loseSave) { loseSave = false; status = 503; body = { code: 'synthetic_response_unconfirmed' }; }
         } else if (pathname.startsWith('/api/dashboard/ncsc/assessments')) {
             if (showResult) {
@@ -99,13 +107,47 @@ const blocked = [], errors = [], captures = [], requests = [];
     let browser;
     try {
         browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
-        const page = await browser.newPage({ viewport: { width: 375, height: 844 }, reducedMotion: 'reduce' }); page.setDefaultTimeout(15000);
+        const page = await browser.newPage({ viewport: { width: 375, height: 844 }, reducedMotion: 'reduce', permissions: ['clipboard-read', 'clipboard-write'] }); page.setDefaultTimeout(15000);
+        await page.addInitScript(() => {
+            window.syntheticPrints = 0; window.syntheticBeforePrint = 0;
+            addEventListener('beforeprint', () => { window.syntheticBeforePrint++; });
+            const print = window.print.bind(window); window.print = () => { window.syntheticPrints++; print(); };
+        });
         page.on('pageerror', error => errors.push(error.message));
         await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : (blocked.push('OUTSIDE'), route.abort()));
         async function capture(name, locator) {
             if (locator) await locator.scrollIntoViewIfNeeded();
             assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), '375px overflow: ' + name);
             await page.screenshot({ path: path.join(artifacts, name + '.png'), fullPage: false }); captures.push(name);
+        }
+        async function openResult() {
+            await page.goto(origin + '/dashboard#cyber-security');
+            // A hash-only navigation keeps the existing session witness. Reload
+            // so each simulated server flag change obtains a fresh witness.
+            await page.reload();
+            await page.locator('.ncsc-questionnaire-answers, .ncsc-assessment-list').first().waitFor();
+            if (!await page.locator('.ncsc-questionnaire-answers').count()) {
+                await page.locator('.ncsc-assessment-list li').filter({ hasText: 'Submitted' }).getByRole('button').first().click();
+            }
+            await page.locator('.ncsc-questionnaire-answers').waitFor();
+            return page.locator('.ncsc-questionnaire-answers');
+        }
+        async function printEvidence(name, section, expected) {
+            await page.emulateMedia({ media: 'print' });
+            assert.equal(await section.isVisible(), expected);
+            const pdf = path.join(artifacts, name + '.pdf');
+            await page.pdf({ path: pdf, format: 'A4', printBackground: true, margin: { top: '12mm', right: '12mm', bottom: '12mm', left: '12mm' } });
+            const printed = execFileSync('pdftotext', ['-layout', pdf, '-'], { encoding: 'utf8' }).replace(/\s+/g, ' ');
+            assert.equal(printed.includes('Answers for your insurer or customer questionnaire'), expected);
+            assert.equal(printed.includes('not a guarantee an insurer or customer accepts them'), expected);
+            for (const question of await section.locator('h4').allTextContents()) assert.equal(printed.includes(question), expected);
+            prints.push({ file: name + '.pdf', questionnaireIncluded: expected });
+            await page.emulateMedia({ media: 'screen' });
+        }
+        async function copyAnswers(section) {
+            await section.getByRole('button', { name: 'Copy answers', exact: true }).click();
+            await section.getByRole('status').filter({ hasText: 'Summary copied.' }).waitFor();
+            assert.equal(await page.evaluate(() => navigator.clipboard.readText()), await section.getByLabel('Answers to copy').inputValue());
         }
         enabled = false; await page.goto(origin + '/signup'); await page.locator('[name="name"]').waitFor();
         await capture('01-flag-off-signup', page.locator('form').first());
@@ -122,14 +164,41 @@ const blocked = [], errors = [], captures = [], requests = [];
         await page.locator('#ncsc-scope').fill('Synthetic office and cloud services.');
         await page.getByRole('button', { name: 'Create assessment', exact: true }).click();
         await page.locator('#ncsc-question-index').waitFor(); await capture('04-question-one', page.locator('#ncsc-question-index'));
-        assert.equal(evidence, null);
+        assert.equal(evidence(), null);
         showResult = true; await page.goto(origin + '/dashboard#overview'); await page.locator('.picture-top-gaps').waitFor();
         await page.locator('.picture-top-gaps').evaluate(node => node.scrollIntoView({ block: 'start' }));
         await capture('05-first-result');
         await page.locator('.picture-summary > summary').click();
         assert.equal(await page.getByText('Summary for your board or insurer', { exact: true }).count(), 0);
-        const gate = page.locator('.picture-summary .dashboard-details-gate'); await gate.getByRole('button', { name: 'Add your details' }).waitFor();
-        await capture('06-summary-gate', gate);
+        const boardGate = page.locator('.picture-summary .dashboard-details-gate'); await boardGate.getByRole('button', { name: 'Add your details' }).waitFor();
+        await capture('06-summary-gate', boardGate);
+        // D has no flag. With E off, its original exports work even with outstanding details.
+        enabled = false; let section = await openResult();
+        assert.equal(await section.locator('li').count(), 9); assert.equal(evidence(), null);
+        await copyAnswers(section);
+        await section.getByRole('button', { name: 'Print answers', exact: true }).click();
+        assert.equal(await page.evaluate(() => window.syntheticPrints), 1);
+        assert.ok(await page.evaluate(() => window.syntheticBeforePrint > 0));
+        await printEvidence('questionnaire-flag-off', section, true);
+        assert.equal(writes, 0);
+        // With E on, a failed server read cannot expose export controls or print output.
+        enabled = true; denyRead = true; section = await openResult();
+        await section.getByText('Your details could not be checked.').waitFor();
+        assert.equal(await section.locator('li').count(), 9);
+        assert.equal(await section.getByRole('button', { name: /^(Copy|Print) answers$/ }).count(), 0);
+        await page.emulateMedia({ media: 'print' }); assert.equal(await section.isVisible(), false); await page.emulateMedia({ media: 'screen' });
+        denyRead = false; await section.getByRole('button', { name: 'Retry', exact: true }).click();
+        const gate = section.locator('.dashboard-details-gate'); await gate.getByRole('button', { name: 'Add your details' }).waitFor();
+        assert.equal(await section.locator('li').count(), 9);
+        assert.equal(await section.locator('textarea').count(), 0);
+        await section.locator('h3').evaluate(node => node.scrollIntoView({ block: 'start' }));
+        await capture('09-questionnaire-readable'); await capture('10-questionnaire-export-gate', gate);
+        // Whole-page app printing and browser/PDF printing both apply the print CSS.
+        await page.locator('.ncsc-next-steps > details > summary').click();
+        await page.getByRole('button', { name: 'Print these results', exact: true }).first().click();
+        assert.equal(await page.evaluate(() => window.syntheticPrints), 1);
+        assert.ok(await page.evaluate(() => window.syntheticBeforePrint > 0));
+        await printEvidence('questionnaire-before-details', section, false);
         await gate.getByRole('button', { name: 'Add your details' }).click();
         for (const [name, value] of Object.entries(DATA)) await gate.locator('[name="' + name + '"]').fill(value);
         await capture('07-later-details', gate);
@@ -140,15 +209,30 @@ const blocked = [], errors = [], captures = [], requests = [];
         loseSave = true; await gate.getByRole('button', { name: 'Save details and continue' }).click();
         await gate.getByText(/Your details could not be confirmed/).waitFor();
         await gate.getByRole('button', { name: 'Save details and continue' }).click();
-        await gate.getByText('Summary for your board or insurer', { exact: true }).waitFor();
-        await page.reload(); await page.locator('.picture-summary > summary').click();
+        await gate.getByRole('button', { name: 'Copy answers', exact: true }).waitFor();
+        assert.deepEqual(evidence().payload.details, DATA);
+        await copyAnswers(section); await capture('11-questionnaire-exports-ready', gate);
+        await section.getByRole('button', { name: 'Print answers', exact: true }).click();
+        assert.equal(await page.evaluate(() => window.syntheticPrints), 2);
+        await printEvidence('questionnaire-after-details', section, true);
+        const readsBeforeReload = detailReads, storedBytes = fs.readFileSync(evidenceFile, 'utf8');
+        await page.reload();
+        section = page.locator('.ncsc-questionnaire-answers');
+        await section.getByRole('button', { name: 'Copy answers', exact: true }).waitFor();
+        assert.ok(detailReads > readsBeforeReload); assert.equal(fs.readFileSync(evidenceFile, 'utf8'), storedBytes);
+        await copyAnswers(section); await printEvidence('questionnaire-after-reload', section, true);
+        await page.goto(origin + '/dashboard#overview'); await page.locator('.picture-summary > summary').click();
         await page.getByText('Summary for your board or insurer', { exact: true }).waitFor();
         await page.locator('.picture-board-summary').evaluate(node => node.scrollIntoView({ block: 'start' }));
         await capture('08-summary-ready');
         assert.equal(writes, 1); assert.equal(audits, 1); assert.equal(JSON.stringify([f.saved, f.receipt, f.activation]), before);
         assert.deepEqual(errors, []); assert.deepEqual(blocked, []);
-        fs.writeFileSync(path.join(artifacts, 'receipt.json'), JSON.stringify({ viewport: { width: 375, height: 844 }, captures, writes, audits,
-            assertions: ['flag off full fields', 'flag on minimal signup through question one', 'first result before capture', 'summary gate', 'cancel', 'lost response retry', 'reload', 'agreement bytes unchanged'], errors, blocked }, null, 2));
+        fs.writeFileSync(path.join(artifacts, 'receipt.json'), JSON.stringify({ viewport: { width: 375, height: 844 }, captures, prints, writes, audits, detailReads,
+            persistence: 'Synthetic supplemental row written to disk and validated on each service read, including after reload',
+            assertions: ['flag off full fields', 'flag on minimal signup through question one', 'first result before capture', 'summary gate',
+                'D suggestions readable with E on', 'E off questionnaire Copy/Print unchanged with outstanding details', 'failed details read withholds exports',
+                'whole-page and browser print exclude questionnaire before capture', 'cancel', 'lost response retry', 'post-save persisted confirmation',
+                'questionnaire Copy/Print after save and reload', 'agreement bytes unchanged'], errors, blocked }, null, 2));
         console.log(JSON.stringify({ passed: true, captures, artifacts }));
     } finally { if (browser) await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

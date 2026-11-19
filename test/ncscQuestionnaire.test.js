@@ -3766,6 +3766,28 @@ describe('insurer and customer questionnaire answers', () => {
             expect(h.calls).toHaveLength(before);
         } finally { ui.controller.destroy(); }
     });
+    test.each(['details_required', 'unavailable'])('the trusted export gate leaves suggestions readable while %s and unlocks only after a ready read', async initial => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand()); await h.execute(submitCommand());
+        const dom = interactiveDom(); let status = initial;
+        const port = { isCurrent: () => true, read: jest.fn(async () => {
+            if (status === 'unavailable') throw new Error('Synthetic read failure');
+            return { status };
+        }), save: jest.fn() };
+        const ui = await resumeUi(h, { dom, questionnaireExportGate: content =>
+            require('../api/shared/protectedAssets/dashboardShell').detailsGate(dom.document, port, content, 'questionnaire') });
+        try {
+            const section = ui.root.querySelector('.ncsc-questionnaire-answers');
+            await until(() => control(ui, initial === 'unavailable' ? 'Retry' : 'Add your details'));
+            expect(section.querySelectorAll('li')).toHaveLength(9);
+            expect(section.getAttribute('data-export-ready')).toBe('false');
+            expect(byId(ui, 'ncsc-questionnaire-answer-text')).toBeFalsy();
+            expect(control(ui, 'Copy answers')).toBeFalsy(); expect(control(ui, 'Print answers')).toBeFalsy();
+            status = 'ready'; control(ui, initial === 'unavailable' ? 'Retry' : 'Add your details').click();
+            await until(() => control(ui, 'Copy answers'));
+            expect(section.getAttribute('data-export-ready')).toBe('true');
+            expect(port.read.mock.calls.length).toBeGreaterThanOrEqual(2); expect(port.save).not.toHaveBeenCalled();
+        } finally { ui.controller.destroy(); }
+    });
 });
 
 describe('plan submission allowance', () => {

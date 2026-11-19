@@ -6,6 +6,7 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
     const save = (h, data = DATA, generation = h.generation) => h.post('representative-details', data).set(generationHeader, generation);
     async function enrolled() {
         const h = await ncscHttpSetup({ customerProvider: true, customerAccountType: 'consultant', representativeDetailsEnabled: true,
+            questionnaireExportGateEnabled: true,
             contactRequestsEnabled: true, scope: { tenantId: nextId(), organisationId: nextId() } });
         h.state.now = AT; await h.login(); await h.initialize();
         h.generation = (await h.get('session')).body.generation;
@@ -23,6 +24,8 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
     describe('Stream E native selected-organisation gate', () => {
         test('historical account is ready without creating any supplemental evidence', async () => {
             const h = await ncscHttpSetup({ customerProvider: true, representativeDetailsEnabled: true });
+            const session = await h.get('session').set('X-NoFries-Dashboard-Capabilities', 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1');
+            expect(session.body.questionnaireExportGateAvailable).toBeUndefined();
             const result = await read(h); httpJson(result, 200); expect(result.body.status).toBe('ready');
             httpJson(await save(h), 409, 'representative_details_not_required');
             expect((await getOwnerPool().query('SELECT * FROM nofries.dashboard_representative_details')).rows).toEqual([]);
@@ -30,6 +33,12 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
         });
         test('first result precedes capture; direct contact is gated; save/retry is immutable and audited in the same transaction', async () => {
             const { h, f, pool } = await enrolled();
+            const capabilities = 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1';
+            const oldSession = await h.get('session').set('X-NoFries-Dashboard-Capabilities', capabilities);
+            expect(oldSession.body.representativeDetailsAvailable).toBe(true);
+            expect(oldSession.body.questionnaireExportGateAvailable).toBeUndefined();
+            const newSession = await h.get('session').set('X-NoFries-Dashboard-Capabilities', capabilities + ' questionnaire-details-v1');
+            expect(newSession.body.questionnaireExportGateAvailable).toBe(true);
             const original = JSON.stringify((await pool.query('SELECT payload FROM nofries.signup_acceptance_receipts')).rows);
             httpJson(await read(h), 200); expect((await read(h)).body.status).toBe('result_required');
             httpJson(await save(h), 409, 'representative_details_result_required');

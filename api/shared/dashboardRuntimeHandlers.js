@@ -31,6 +31,7 @@ const { ContactRequestError, normaliseContactRequest } = require('./contactReque
 // The current dashboard advertises all three; older open dashboards keep their exact session shape.
 const CONTACT_CAPABILITIES = 'work-queue-v1 account-label-v1 contact-request-v1';
 const DETAILS_CAPABILITIES = CONTACT_CAPABILITIES + ' starter-details-v1';
+const QUESTIONNAIRE_CAPABILITIES = DETAILS_CAPABILITIES + ' questionnaire-details-v1';
 const { RepresentativeDetailsError, normaliseRepresentativeDetails } = require('./customerSignup/deferredRepresentativeDetails');
 
 const CONFIG = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
@@ -145,7 +146,7 @@ function createDashboardRuntimeHandlers(configuration) {
     const ledger = new AsyncLocalStorage(), requests = new WeakMap();
     const ambiguousErrors = new WeakSet(), ambiguousResponses = new WeakSet();
     let supplied, authOptions, options, clock, budget, browser, operator, runtime, logout, resources, ncscQuota = null, customerBrowser = null, customerSession = null, customerLogout = null, activationBinding = null;
-    let representativeDetailsEnabled = false;
+    let representativeDetailsEnabled = false, questionnaireExportGateEnabled = false;
     let activationPort = null, adminSubjects = new Set(), customerIdentityProvider, improvementEnabled = false, contactRequestsEnabled = false, contactRequestEmail = null;
     let externalBrowser = null, externalSession = null, externalLogout = null, externalBinding = null, externalAuth = null;
 
@@ -221,7 +222,7 @@ function createDashboardRuntimeHandlers(configuration) {
     }
     try {
         const configurationKeys = dataKeys(configuration);
-        fields(configuration, [...CONFIG, ...['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
+        fields(configuration, [...CONFIG, ...['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled', 'questionnaireExportGateEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
         if (configurationKeys.includes('improvementEnabled')) {
             if (configuration.improvementEnabled !== true) throw unavailable();
             improvementEnabled = true;
@@ -229,6 +230,10 @@ function createDashboardRuntimeHandlers(configuration) {
         if (configurationKeys.includes('representativeDetailsEnabled')) {
             if (configuration.representativeDetailsEnabled !== true) throw unavailable();
             representativeDetailsEnabled = true;
+        }
+        if (configurationKeys.includes('questionnaireExportGateEnabled')) {
+            if (configuration.questionnaireExportGateEnabled !== true || !representativeDetailsEnabled) throw unavailable();
+            questionnaireExportGateEnabled = true;
         }
         if (configurationKeys.includes('contactRequestsEnabled')) {
             if (configuration.contactRequestsEnabled !== true) throw unavailable();
@@ -894,17 +899,18 @@ function createDashboardRuntimeHandlers(configuration) {
             return response(200, { schemaVersion: 1, authenticated: true, purpose: value.purpose, expiresAt: value.expiresAt,
                 generation: value.generation, selectedBindingId: value.selectedBindingId,
                 ...(customerAccount?.accountType ? { accountType: customerAccount.accountType } : {}),
-                ...(['work-queue-v1 account-label-v1', CONTACT_CAPABILITIES, DETAILS_CAPABILITIES].includes(capabilities) &&
+                ...(['work-queue-v1 account-label-v1', CONTACT_CAPABILITIES, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES].includes(capabilities) &&
                     customerAccount?.accountLabel ? { accountLabel: customerAccount.accountLabel } : {}),
                 // Existing open dashboards validate an exact session shape.
                 // Negotiate display metadata; this does not grant queue access.
-                ...(['work-queue-v1', 'work-queue-v1 account-label-v1', CONTACT_CAPABILITIES, DETAILS_CAPABILITIES].includes(capabilities) &&
+                ...(['work-queue-v1', 'work-queue-v1 account-label-v1', CONTACT_CAPABILITIES, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES].includes(capabilities) &&
                     improvementEnabled && customerAccount?.accountType === 'consultant' ? { workQueueAvailable: true } : {}),
                 // Display only (#409): every customer member role holds
                 // contact.request; the browser hides it for an advisor-only
                 // projection and the POST route re-checks the locked membership.
-                ...(capabilities === DETAILS_CAPABILITIES && representativeDetailsEnabled && customerAccount ? { representativeDetailsAvailable: true } : {}),
-                ...([CONTACT_CAPABILITIES, DETAILS_CAPABILITIES].includes(capabilities) && contactRequestsEnabled && customerAccount ? { contactRequestsAvailable: true } : {}),
+                ...([DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES].includes(capabilities) && representativeDetailsEnabled && customerAccount ? { representativeDetailsAvailable: true } : {}),
+                ...(capabilities === QUESTIONNAIRE_CAPABILITIES && questionnaireExportGateEnabled && customerAccount ? { questionnaireExportGateAvailable: true } : {}),
+                ...([CONTACT_CAPABILITIES, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES].includes(capabilities) && contactRequestsEnabled && customerAccount ? { contactRequestsAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }
         if (selected.route === 'session') {

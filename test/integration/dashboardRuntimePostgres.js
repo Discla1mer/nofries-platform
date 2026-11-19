@@ -4092,7 +4092,7 @@ function registerRealPostgresTests() {
             // Administration below is explicit synthetic setup, never a route.
             async function httpSetup({ rawRuntimePool = runtimePool, base = null, principal: suppliedPrincipal = null,
                 requestBudgetMs = 60000, publish = true, prepareCanonical = null, ncsc = null, membershipValidUntil = END,
-                customerProvider = false, customerAccountType = null, improvementEnabled = false, contactRequestsEnabled = false, representativeDetailsEnabled = false, contactRequestEmail = null, scope = null,
+                customerProvider = false, customerAccountType = null, improvementEnabled = false, contactRequestsEnabled = false, representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, contactRequestEmail = null, scope = null,
                 appFactory = options => require('../../server').createNoFriesApp(options) } = {}) {
                 const { MemoryBrowserSessionStore } = require('../../api/shared/browserSessionStore');
                 const tenant = base ? base.operatorIdentity.identityTenantId : nextId();
@@ -4175,6 +4175,7 @@ function registerRealPostgresTests() {
                 if (improvementEnabled) dashboard.improvementEnabled = true;
                 if (contactRequestsEnabled) dashboard.contactRequestsEnabled = true;
                 if (representativeDetailsEnabled) dashboard.representativeDetailsEnabled = true;
+                if (questionnaireExportGateEnabled) dashboard.questionnaireExportGateEnabled = true;
                 if (contactRequestEmail) dashboard.contactRequestEmail = contactRequestEmail;
                 if (externalProfile) {
                     const { oid: customerOid, ...customerIdentityPolicy } = principal;
@@ -4350,9 +4351,9 @@ function registerRealPostgresTests() {
             });
             async function ncscHttpSetup({ capacity = 1, role = 'admin', configured = true, membershipValidUntil = END,
                 separateAdvisorWriteUntil = null, customerProvider = false, customerAccountType = null, improvementEnabled = false,
-                contactRequestsEnabled = false, representativeDetailsEnabled = false, contactRequestEmail = null, appFactory, scope = null } = {}) {
+                contactRequestsEnabled = false, representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, contactRequestEmail = null, appFactory, scope = null } = {}) {
                 const quota = createNcscAdapters({ now: () => NOW });
-                const h = await httpSetup({ membershipValidUntil, customerProvider, customerAccountType, improvementEnabled, contactRequestsEnabled, representativeDetailsEnabled, contactRequestEmail, appFactory, scope, ncsc: configured ? { resolveSubmissionQuota: quota.resolveSubmissionQuota } : null, prepareCanonical(initial) {
+                const h = await httpSetup({ membershipValidUntil, customerProvider, customerAccountType, improvementEnabled, contactRequestsEnabled, representativeDetailsEnabled, questionnaireExportGateEnabled, contactRequestEmail, appFactory, scope, ncsc: configured ? { resolveSubmissionQuota: quota.resolveSubmissionQuota } : null, prepareCanonical(initial) {
                     // Domain-created membership rows are frozen. Replace this
                     // synthetic seed's values without mutating domain output.
                     initial.membershipState = { ...initial.membershipState,

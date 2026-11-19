@@ -71,7 +71,7 @@
     }
     // All inputs stay in this mount. No storage, automatic submission or legal
     // re-acceptance. A scoped host read must succeed before content is created.
-    function detailsGate(doc, port, content) {
+    function detailsGate(doc, port, content, purpose) {
         const root = doc.createElement('div'); root.className = 'dashboard-details-gate';
         const status = doc.createElement('p'); status.setAttribute('role', 'status');
         root.append(status);
@@ -99,6 +99,7 @@
                 try {
                     const result = await port.save(Object.fromEntries(Object.entries(controls).map(([name, input]) => [name, input.value])));
                     if (result.status !== 'ready') throw new Error();
+                    if ((await port.read()).status !== 'ready') throw new Error();
                     ready();
                 } catch (_) {
                     if (live()) status.textContent = 'Your details could not be confirmed. Retry with the same details, or cancel and check what was saved.';
@@ -112,7 +113,9 @@
                 if (value.status === 'ready') return ready();
                 if (value.status === 'result_required') { status.textContent = 'Complete your first assessment before continuing.'; return; }
                 if (value.status !== 'details_required') throw new Error();
-                status.textContent = 'Add your name, role and business address before sharing a board or insurer summary or requesting a service.';
+                status.textContent = purpose === 'questionnaire'
+                    ? 'Add your name, role and business address before copying or printing questionnaire answers.'
+                    : 'Add your name, role and business address before sharing a board or insurer summary or requesting a service.';
                 const open = button('Add your details'); open.addEventListener('click', async () => {
                     if (busy) return; busy = true;
                     try { const current = await port.read(); if (live()) current.status === 'ready' ? ready() : current.status === 'details_required' ? form() : check(); }
