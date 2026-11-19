@@ -1095,6 +1095,17 @@
       "allowedRoles": ["anonymous"]
     },
     {
+      "route": "/account/email",
+      "methods": ["GET", "POST"],
+      "rewrite": "/api/account/email-page",
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/account/email-page",
+      "methods": ["GET", "POST"],
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/api/account/email",
       "methods": ["GET", "POST"],
       "allowedRoles": ["anonymous"]
