@@ -21,7 +21,7 @@ const { projectNcscDetail } = require('../api/shared/ncscAssessmentService');
 const CONSENT = 'No Fries staff will see your organisation name, your sign-in email and a summary of your results, and will contact you by email.';
 const ASK = 'Ask No Fries to contact me';
 const SENT = 'Request sent. We’ll be in touch by email.';
-const ALREADY = 'You’ve already asked about this today. We’ll be in touch.';
+const ALREADY = 'Someone in your organisation has already asked about this today. We’ll be in touch.';
 const FAILED = 'Your request could not be sent. Please try again later.';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const settle = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
