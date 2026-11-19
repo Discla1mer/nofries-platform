@@ -14,13 +14,12 @@ const UNTIMED_QUERY_MS = 30000, ROLLBACK_MS = 1000, COMMIT_MIN_MS = 1000;
 // keeps its tenant, membership, entitlement and sign-in bindings, so the
 // account can still sign in and start again.
 const RESET_TABLES = Object.freeze([
-    // Issued decisions reference artifacts, which reference paid assessment revisions.
-    'dashboard_iso_report_decisions', 'dashboard_iso_report_artifacts',
     // A contact request is the organisation's own working data (0026); nothing references it.
     'dashboard_contact_requests',
-    'dashboard_framework_revisions',
     'dashboard_improvement_heads', 'dashboard_improvement_revisions',
+    'dashboard_iso_report_decisions', 'dashboard_iso_report_artifacts',
     'dashboard_evidence_heads', 'dashboard_evidence_receipts', 'dashboard_evidence_revisions',
+    'dashboard_framework_revisions',
     'dashboard_ncsc_assessments', 'dashboard_ncsc_assessment_receipts', 'dashboard_ncsc_assessment_revisions'
 ]);
 // Delete also removes everything that records the organisation itself.
