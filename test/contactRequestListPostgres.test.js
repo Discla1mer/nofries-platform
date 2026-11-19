@@ -67,9 +67,10 @@ test('native discovery accepts only explicit loopback test URLs', () => {
         await controlPool.query(`CREATE DATABASE ${quoteIdentifier(databaseName)}`); databaseCreated = true;
         ownerPool = new Pool({ connectionString: urlFor(testUrl, { database: databaseName }), max: 4 });
         await applyMigrations({ pool: ownerPool });
-        await controlPool.query(`CREATE ROLE ${quoteIdentifier(role)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD ${quoteLiteral(password)}`);
+        await controlPool.query(`CREATE ROLE ${quoteIdentifier(role)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT PASSWORD ${quoteLiteral(password)}`);
         roleCreated = true;
-        await controlPool.query(`GRANT nofries_runtime TO ${quoteIdentifier(role)}`);
+        // As in production: SET-only membership, so reads must switch role.
+        await controlPool.query(`GRANT nofries_runtime TO ${quoteIdentifier(role)} WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`);
         runtimePool = new Pool({ connectionString: urlFor(testUrl, { database: databaseName, username: role, password }), max: 2 });
         for (const org of Object.values(orgs)) await organisation(org);
         await request(orgs.a, owner, 'results', '2026-11-18T22:30:00Z');
@@ -103,11 +104,32 @@ test('native discovery accepts only explicit loopback test URLs', () => {
         expect(JSON.stringify(view)).not.toContain('Unlisted');
     });
 
-    test('the runtime role sees nothing without a tenant setting and the read transaction cannot write', async () => {
-        expect((await runtimePool.query('SELECT count(*)::integer AS n FROM nofries.dashboard_contact_requests')).rows[0].n).toBe(0);
+    test('the SET-only login cannot read without switching role; with the switch it can', async () => {
         const client = await runtimePool.connect();
         try {
             await client.query('BEGIN READ ONLY');
+            await client.query("SELECT set_config('nofries.tenant_id', $1, true)", [orgs.a.tenantId]);
+            await expect(client.query('SELECT count(*) FROM nofries.dashboard_contact_requests')).rejects.toMatchObject({ code: '42501' });
+        } finally { await client.query('ROLLBACK'); }
+        try {
+            await client.query('BEGIN READ ONLY');
+            await client.query('SET LOCAL ROLE nofries_runtime');
+            await client.query("SELECT set_config('nofries.tenant_id', $1, true)", [orgs.a.tenantId]);
+            expect((await client.query('SELECT count(*)::integer AS n FROM nofries.dashboard_contact_requests')).rows[0].n).toBe(3);
+        } finally { await client.query('ROLLBACK'); client.release(); }
+    });
+
+    test('the runtime role sees nothing without a tenant setting and the read transaction cannot write', async () => {
+        const plain = await runtimePool.connect();
+        try {
+            await plain.query('BEGIN READ ONLY');
+            await plain.query('SET LOCAL ROLE nofries_runtime');
+            expect((await plain.query('SELECT count(*)::integer AS n FROM nofries.dashboard_contact_requests')).rows[0].n).toBe(0);
+        } finally { await plain.query('ROLLBACK'); plain.release(); }
+        const client = await runtimePool.connect();
+        try {
+            await client.query('BEGIN READ ONLY');
+            await client.query('SET LOCAL ROLE nofries_runtime');
             await client.query("SELECT set_config('nofries.tenant_id', $1, true)", [orgs.a.tenantId]);
             expect((await client.query('SELECT count(*)::integer AS n FROM nofries.dashboard_contact_requests')).rows[0].n).toBe(3);
             await expect(client.query(`INSERT INTO nofries.dashboard_contact_requests
@@ -115,8 +137,8 @@ test('native discovery accepts only explicit loopback test URLs', () => {
                 VALUES ($1, $2, $3, $4, 'results', 'contact-request-v1', '2026-11-19', '2026-11-19T00:00:00Z')`,
             [orgs.a.tenantId, orgs.a.organisationId, id(), owner])).rejects.toMatchObject({ code: '25006' });
         } finally { await client.query('ROLLBACK'); client.release(); }
-        const privileges = (await runtimePool.query(`SELECT has_table_privilege(current_user, 'nofries.dashboard_contact_requests', 'UPDATE') AS update,
-            has_table_privilege(current_user, 'nofries.dashboard_contact_requests', 'DELETE') AS delete`)).rows[0];
+        const privileges = (await ownerPool.query(`SELECT has_table_privilege('nofries_runtime', 'nofries.dashboard_contact_requests', 'UPDATE') AS update,
+            has_table_privilege('nofries_runtime', 'nofries.dashboard_contact_requests', 'DELETE') AS delete`)).rows[0];
         expect(privileges).toEqual({ update: false, delete: false });
     });
 });

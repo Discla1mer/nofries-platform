@@ -29,6 +29,9 @@ async function readTenantRows(pool, tenantIds, since, signal) {
     let discard = false;
     try {
         await client.query('BEGIN READ ONLY');
+        // The runtime login is NOINHERIT with SET-only membership, as for every
+        // other runtime read (funnelCounts, accountActionsRepository).
+        await client.query('SET LOCAL ROLE nofries_runtime');
         await client.query("SET LOCAL statement_timeout = '2000ms'");
         const found = [];
         for (const tenantId of tenantIds) {
@@ -59,10 +62,14 @@ function createContactRequestReader({ list, pool, now = Date.now }) {
             if (!account || account.readable !== true || typeof account.email !== 'string') { truncated = true; continue; }
             if (account.organisationsComplete === false) truncated = true;
             if (typeof account.subjectKey === 'string' && !subjects.has(account.subjectKey)) subjects.set(account.subjectKey, account.email);
-            for (const scope of Array.isArray(account.scopes) ? account.scopes : []) {
-                if (typeof scope?.tenantId !== 'string' || !TENANT.test(scope.tenantId) || tenants.has(scope.tenantId)) continue;
-                tenants.set(scope.tenantId, { name: typeof scope.name === 'string' ? scope.name : '', email: account.email });
-            }
+            // scopes[0] is the account's own organisation; later scopes are a
+            // consultant's clients. The owning account wins over a consultant.
+            (Array.isArray(account.scopes) ? account.scopes : []).forEach((scope, index) => {
+                if (typeof scope?.tenantId !== 'string' || !TENANT.test(scope.tenantId)) return;
+                const known = tenants.get(scope.tenantId);
+                if (known && (known.own || index !== 0)) return;
+                tenants.set(scope.tenantId, { name: typeof scope.name === 'string' ? scope.name : '', email: account.email, own: index === 0 });
+            });
         }
         if (tenants.size > MAX_TENANTS) truncated = true;
         const at = now();

@@ -127,6 +127,7 @@ describe('reader', () => {
             { requestedAt: '2026-11-19T00:00:00.000Z', organisation: 'Client (blob)', topic: 'Other', contactEmail: 'owner@example.test', contactBasis: 'account' },
             { requestedAt: '2026-11-18T22:30:00.000Z', organisation: 'Alpha Ltd', topic: 'Results', contactEmail: 'owner@example.test', contactBasis: 'requester' }] });
         expect(log[0][0]).toBe('BEGIN READ ONLY');
+        expect(log[1][0]).toBe('SET LOCAL ROLE nofries_runtime');
         expect(log.at(-1)[0]).toBe('COMMIT');
         expect(log.filter(([sql]) => /^(INSERT|UPDATE|DELETE)/i.test(sql.trim()))).toEqual([]);
         expect(log.filter(([sql]) => sql.includes('FROM nofries.dashboard_contact_requests')).map(([, values]) => values))
@@ -138,6 +139,18 @@ describe('reader', () => {
         const { pool } = fakePool({});
         const view = await createContactRequestReader({ list: accounts([partial]), pool, now })(signal());
         expect(view).toEqual({ rows: [], truncated: true, windowDays: 90 });
+    });
+
+    test('a tenant listed as a consultant client is attributed to the account that owns it', async () => {
+        const rows = { [tenant(5)]: [{ subject_key: 'unknown', topic: 'results', requested_at: new Date('2026-11-18T00:00:00Z'), display_name: 'Client Co' }] };
+        const consultant = { readable: true, email: 'consultant@example.test', subjectKey: 'c', scopes: [{ tenantId: tenant(4), name: 'Consultancy' }, { tenantId: tenant(5), name: 'Client Co' }] };
+        const company = { readable: true, email: 'company@example.test', subjectKey: 'o', scopes: [{ tenantId: tenant(5), name: 'Client Co' }] };
+        for (const order of [[consultant, company], [company, consultant]]) {
+            const view = await createContactRequestReader({ list: accounts(order), pool: fakePool(rows).pool, now })(signal());
+            expect(view.rows.map(row => [row.contactEmail, row.contactBasis])).toEqual([['company@example.test', 'account']]);
+        }
+        const only = await createContactRequestReader({ list: accounts([consultant]), pool: fakePool(rows).pool, now })(signal());
+        expect(only.rows[0].contactEmail).toBe('consultant@example.test');
     });
 
     test('no listed organisations: no database connection', async () => {
