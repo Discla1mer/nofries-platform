@@ -97,7 +97,7 @@ test.each([
         expect(page.replies[0].headers['cache-control']).toContain('no-store');
         expect(page.replies[0].headers['set-cookie']).toBeUndefined();
         if (reauthenticate) expect(page.replace).toHaveBeenCalledWith('/api/' + (expected === 'external' ? 'external-' : '') + 'customer-auth/login');
-        else if (expected === 'external') expect(page.replace).toHaveBeenCalledWith('/signup?provider=external');
+        else if (expected === 'external') expect(page.replace).toHaveBeenCalledWith('/login?provider=external');
         else { expect(page.replace).not.toHaveBeenCalled(); expect(page.nodes['organisation-form'].hidden).toBe(false); }
         expect(snapshot()).toEqual(before);
         expect(server.state.delivered).toEqual([]); expect(server.state.authRequests).toEqual([]);
@@ -288,7 +288,7 @@ test('an external customer with old valid setup bypasses unavailable legacy read
         expect(page.replies[0].body).toEqual({ state: 'sign_in' });
         expect(page.replies[0].headers['x-nofries-customer-entry']).toBe('external');
         expect(page.replies[0].headers['set-cookie']).toBeUndefined();
-        expect(page.replace).toHaveBeenCalledWith('/signup?provider=external');
+        expect(page.replace).toHaveBeenCalledWith('/login?provider=external');
         expect(legacyRead).not.toHaveBeenCalled();
         expect(snapshot()).toEqual(before);
         expect(server.state.delivered).toHaveLength(deliveredBefore);
@@ -468,14 +468,17 @@ test.each(['login', 'create'])('fresh public selector propagates %s only after t
     const page = executeBuiltLogin(server.app, { search: '?intent=' + intent });
     try {
         await settle(page); expect(page.fetch.mock.calls.map(([url]) => url)).toEqual(['/api/organisation-setup/state']);
-        expect(page.replace).toHaveBeenCalledWith('/signup?provider=external&intent=' + intent);
+        expect(page.replace).toHaveBeenCalledWith(intent === 'login' ? '/login?provider=external' : '/signup?provider=external&intent=create');
         expect(server.state.delivered).toEqual([]); expect(server.state.authRequests).toEqual([]);
     } finally { page.close(); }
 });
 
 test.each(['login', 'create'])('explicit external entry propagates public %s without a legacy email request', async intent => {
     const page = executeBuiltLogin(null, { search: '?provider=external&intent=' + intent });
-    try { await settle(); expect(page.fetch).not.toHaveBeenCalled(); expect(page.replace).toHaveBeenCalledWith('/signup?provider=external&intent=' + intent); }
+    try { await settle(); expect(page.fetch).not.toHaveBeenCalled(); if (intent === 'login') {
+            expect(page.replace).not.toHaveBeenCalled();
+            expect(page.nodes['organisation-returning-sign-in'].href).toBe('/api/external-customer-auth/login');
+        } else expect(page.replace).toHaveBeenCalledWith('/signup?provider=external&intent=create'); }
     finally { page.close(); }
 });
 
@@ -663,7 +666,6 @@ test.each(['', '?provider=legacy'])('hosted legacy recovery %s preserves invitat
 });
 
 test.each([
-    ['?provider=external', '', '/signup?provider=external'],
     ['?signin=retry&provider=external', '', '/signup?provider=external&signin=retry'],
     ['?signin=expired&provider=external', '', '/signup?provider=external&signin=expired'],
     ['?signin=expired&signin=retry&provider=external', '', '/signup?provider=external'],
@@ -738,7 +740,10 @@ test.each([undefined, 'false'])('actual built external entry with ENABLED=%s can
 test.each(['login', 'create'])('server-selected external body propagates %s without a redundant selector request', async intent => {
     const page = executeBuiltLogin(null, { search: '?intent=' + intent, customerProvider: 'external' });
     try { await settle(page); expect(page.fetch).not.toHaveBeenCalled();
-        expect(page.replace).toHaveBeenCalledWith('/signup?provider=external&intent=' + intent);
+        if (intent === 'login') {
+            expect(page.replace).not.toHaveBeenCalled();
+            expect(page.nodes['organisation-returning-sign-in'].href).toBe('/api/external-customer-auth/login');
+        } else expect(page.replace).toHaveBeenCalledWith('/signup?provider=external&intent=create');
     } finally { page.close(); }
 });
 

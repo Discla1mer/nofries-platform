@@ -23,7 +23,7 @@ function fixture({ external = false, search = '', hash = '', beacon, navigator }
     window.history.back = () => { if (historyIndex > 0) lifecycle('popstate', { state: historyStates[--historyIndex] }); };
     window.history.forward = () => { if (historyIndex < historyStates.length - 1) lifecycle('popstate', { state: historyStates[++historyIndex] }); };
     const representativeNames = ['representative-name', 'representative-role', 'representative-address', 'representative-registration', 'representative-authority'];
-    const names = ['form', 'code-form', 'profile-form', 'details-form', 'verified', 'verified-title', 'status', 'email-hint', 'verified-name', 'name', 'email', 'code', 'restart', 'refresh', 'continue', 'choice', 'company', 'consultant', 'back', 'title', 'intro', 'name-label', 'switch', 'leave', 'returning', 'returning-sign-in', 'errors', 'verify', 'details-summary', 'name-count', 'step-email', 'step-code', 'step-account', 'step-signin', 'step-organisation', ...representativeNames, ...['email', 'name', 'code', ...representativeNames].map(name => name + '-error')];
+    const names = ['signup-code-notice', 'form', 'code-form', 'profile-form', 'details-form', 'verified', 'verified-title', 'status', 'email-hint', 'verified-name', 'name', 'email', 'code', 'restart', 'refresh', 'continue', 'choice', 'company', 'consultant', 'back', 'title', 'intro', 'name-label', 'switch', 'leave', 'returning', 'returning-sign-in', 'errors', 'verify', 'details-summary', 'name-count', 'step-email', 'step-code', 'step-account', 'step-signin', 'step-organisation', ...representativeNames, ...['email', 'name', 'code', ...representativeNames].map(name => name + '-error')];
     const nodes = Object.fromEntries(names.map(name => [name, document.createElement(name.includes('form') ? 'form' : ['name','email','code', ...representativeNames].includes(name) ? 'input' : 'div')]));
     document.getElementById = id => nodes[id.replace('organisation-', '')];
     document.querySelectorAll = () => [nodes.name, nodes.email, nodes.code, nodes.restart, nodes.refresh, nodes.company, nodes.consultant, nodes.back, nodes.leave, ...representativeNames.map(name => nodes[name])];
@@ -105,7 +105,7 @@ test.each([
     const h = fixture();
     await h.reply(0, 200, state, true, { 'x-nofries-customer-entry': 'external' });
     expect(h.window.location.replace).toHaveBeenCalledTimes(1);
-    expect(h.window.location.replace).toHaveBeenCalledWith('/signup?provider=external');
+    expect(h.window.location.replace).toHaveBeenCalledWith('/login?provider=external');
     expect(h.nodes['verified-name'].textContent).toBe('');
     expect(h.nodes['email-hint'].textContent).toBe('');
     h.submit('form'); h.submit('code-form'); h.fillDetails(); h.submit('details-form');
@@ -215,7 +215,7 @@ test.each(['network', 'timeout'])('unresolved default %s keeps mutations blocked
     h.submit('form'); expect(h.requests).toHaveLength(1);
     expect(h.window.location.replace).not.toHaveBeenCalled();
     h.nodes.refresh.click(); await h.reply(1, 200, { state: 'sign_in' }, false, { 'x-nofries-customer-entry': 'external' });
-    expect(h.window.location.replace).toHaveBeenCalledWith('/signup?provider=external');
+    expect(h.window.location.replace).toHaveBeenCalledWith('/login?provider=external');
     expect(h.requests.every(item => item.options.method === 'GET')).toBe(true);
     h.lifecycle('pagehide');
 });
@@ -255,7 +255,7 @@ test('automatic selection exposes no legacy action while its body is delayed or 
     await h.reply(1, 200, { state: 'sign_in' }, false, { 'x-nofries-customer-entry': 'external' });
     releaseBody(JSON.stringify({ state: 'start' })); await flush();
     expect(h.window.location.replace).toHaveBeenCalledTimes(1);
-    expect(h.window.location.replace).toHaveBeenCalledWith('/signup?provider=external');
+    expect(h.window.location.replace).toHaveBeenCalledWith('/login?provider=external');
     expect(h.nodes.form.hidden).toBe(true); expect(h.nodes.returning.hidden).toBe(true);
     expect(h.requests.every(item => item.options.method === 'GET')).toBe(true);
     h.lifecycle('pagehide');
@@ -1033,4 +1033,13 @@ describe('anonymous signup_started count (#151 F4)', () => {
         await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' }, true, ON);
         expect(beacon).toHaveBeenCalledTimes(1);
     });
+});
+
+test('P-003 P-007 D-047 existing customer entry explains Microsoft and links directly to sign in', () => {
+    const h = fixture({ search: '?provider=external' });
+    expect(h.nodes.intro.textContent).toContain("You'll sign in securely with Microsoft");
+    expect(h.nodes.returning.hidden).toBe(false);
+    expect(h.nodes['returning-sign-in'].href).toBe('/api/external-customer-auth/login');
+    expect(h.requests).toHaveLength(0);
+    expect(h.window.location.replace).not.toHaveBeenCalled();
 });
