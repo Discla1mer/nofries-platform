@@ -52,30 +52,34 @@
                     factor: option.implementationFactor, weight: question.weight, action: question.guidance.startingActions[0] };
                 groups.get(control.domainId).rows.push(row);
                 if (annex) statement.push(row);
-                if (row.applies && row.factor !== 1) gaps.push(row);
+                if ((row.applies || !iso) && row.factor !== 1) gaps.push(row);
             }
         }
         // Known gaps first, then uncertain answers. A tie stays in publication order.
         const rank = row => row.factor === null ? 2 : row.factor;
         gaps.sort((a, b) => rank(a) - rank(b));
         return { title: expected[3], iso, identity: 'Assessment ' + a.assessmentId + ' · Revision ' + a.revision + ' · Submitted ' + a.submission.submittedAt.slice(0, 10) + ' UTC',
-            groups: domains.map(groupSummary), statement, gaps: gaps.slice(0, 3) };
+            groups: domains.map(domain => groupSummary(domain, iso)), statement, gaps: gaps.slice(0, 3) };
     }
 
-    function groupSummary(domain) {
+    function groupSummary(domain, iso) {
         let weight = 0, credit = 0, unknown = 0, excluded = 0;
         for (const row of domain.rows) {
-            if (!row.applies) { excluded++; continue; }
+            if (!row.applies) {
+                excluded++;
+                if (iso) continue;
+            }
             weight += row.weight;
             if (row.factor === null) unknown += row.weight;
             else credit += row.weight * row.factor;
         }
-        const percent = value => Math.round(100 * value / weight) + '%';
+        const percent = value => (iso ? Math.round(100 * value / weight) : (100 * value / weight).toFixed(1)) + '%';
         let readiness = 'No applicable controls';
         if (weight) readiness = unknown ? percent(credit) + '–' + percent(credit + unknown) : percent(credit);
         const applicable = domain.rows.length - excluded;
         return { title: domain.id + ' · ' + domain.title, readiness,
-            detail: applicable + ' applicable · ' + excluded + ' marked not applicable' };
+            detail: iso ? applicable + ' applicable · ' + excluded + ' marked not applicable' :
+                domain.rows.length + ' outcomes · ' + excluded + ' marked not applicable, to confirm' };
     }
 
     function mount(container, { record, publication, isCurrent, authoriseExport }) {
@@ -119,7 +123,8 @@
             list.append(item);
         }
         const explanation = 'Figures use the answers in this submission. Partly in place counts as half. ' +
-            'Items marked not applicable are excluded.' + (model.iso ? '' : ' A range shows the effect of unknown answers.');
+            (model.iso ? 'Items marked not applicable are excluded.' :
+                'Unknown answers and claims of non-applicability stay in the range until confirmed.');
         board.append(list, node('p', explanation), node('h4', 'Top gaps'));
         const gapList = node('ol'), gapLines = [];
         for (const gap of model.gaps) {
@@ -133,7 +138,7 @@
             'No gaps were identified in the applicable answers.';
         board.append(node('p', gapNote), gapList);
         const limit = model.iso ? 'This summary reflects your own answers. Certification comes only from an accredited certification body.' :
-            'This summary reflects your own answers about the functions in scope.';
+            'This summary reflects your own answers about the functions in scope. ' + publication.statements.attribution;
         board.append(node('p', limit));
         panel.append(board);
 

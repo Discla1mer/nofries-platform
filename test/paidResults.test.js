@@ -33,7 +33,10 @@ test.each([true, false])('sealed grouped results and explicit exports, ISO=%s', 
         expect(view.copied.mock.calls[0][0]).toContain('50% (3 applicable');
         expect(view.copied.mock.calls[1][0]).toContain(reason);
         expect(view.root.querySelector('em')).toBeNull();
-    } else expect(view.copied.mock.calls[0][0]).toMatch(/\d+%–\d+%/);
+    } else {
+        expect(view.copied.mock.calls[0][0]).toContain('GV · Govern — 32.3%–71.0% (31 outcomes · 6 marked not applicable, to confirm)');
+        expect(view.copied.mock.calls[0][0]).toContain('Republished courtesy');
+    }
 });
 
 test.each([
