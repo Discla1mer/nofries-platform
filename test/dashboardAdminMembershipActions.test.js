@@ -100,6 +100,16 @@ test('late independent administration revocation prevents the membership write',
     await expect(h.run('suspend')).rejects.toMatchObject({ statusCode: 403 });
     expect(calls).toBeGreaterThan(2); expect(h.state.committed).toBe(0); expect(h.state.snapshot).toEqual(h.snapshot);
 });
+test('an administration grant that expires while its final read is pending cannot authorise the write', async () => {
+    const probe = fixture(); await probe.run('suspend'); const reads = probe.config.readApprovedBinding.mock.calls.length;
+    const h = fixture(), read = h.config.readApprovedBinding.getMockImplementation(); let now = NOW, calls = 0;
+    h.administration.validUntil = new Date(Date.parse(NOW) + 300000).toISOString(); h.config.clock = () => now;
+    h.config.readApprovedBinding.mockImplementation(async args => {
+        const grant = await read(args); if (++calls === reads) now = h.administration.validUntil; return grant;
+    });
+    await expect(h.run('suspend')).rejects.toMatchObject({ statusCode: 403 });
+    expect(calls).toBe(reads); expect(h.state.committed).toBe(0); expect(h.state.snapshot).toEqual(h.snapshot);
+});
 test.each(['suspend', 'restore', 'approve-suspend', 'approve-restore'])('%s HTTP route is default-off and uses staff auth and same origin', async action => {
     const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try { for (const mode of ['off', 'anonymous', 'nonstaff', 'origin', 'allowed']) {

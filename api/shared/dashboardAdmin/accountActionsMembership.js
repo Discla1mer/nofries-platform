@@ -49,10 +49,12 @@ function createMembershipAction({ source: rawSource, authorityContainer, auditCo
             if (fresh.operatorSubjectKey !== actor.subjectKey || fresh.identityPolicySha256 !== hash(identityPolicy) ||
                 context && !equal(context, fresh)) fail(403, 'access_denied');
             context = fresh;
-            const at = check();
+            check();
             const currentAdministration = accountActionApproval(await readApprovedBinding(
                 { operatorSubjectKey: actor.subjectKey, selector, action }, { signal }));
-            check();
+            // Validity is judged at the instant after the read returns, so a grant
+            // that expires while the reader is pending cannot authorise a write.
+            const at = check();
             if (currentAdministration.operatorSubjectKey !== actor.subjectKey || currentAdministration.instanceId !== context.instanceId ||
                 currentAdministration.restoreEpoch !== context.restoreEpoch || !equal(currentAdministration.selector, selector) ||
                 !currentAdministration.actions.includes(action) || !equal(currentAdministration.identityPolicy,

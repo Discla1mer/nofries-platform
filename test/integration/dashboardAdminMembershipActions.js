@@ -24,7 +24,7 @@ module.exports = function registerAccountActionPostgresTests() {
             } finally { client.release(); }
         }));
         h.state.snapshot = JSON.parse(JSON.stringify(h.snapshot).replaceAll('synthetic-tenant', tenantId));
-        h.selector.tenantId = h.record.tenantId = tenantId;
+        h.selector.tenantId = h.record.tenantId = h.administration.selector.tenantId = tenantId;
         h.config.createRepository = (guard, allowed) => createAccountActionsRepository(pool, () => NOW, guard, allowed, h.context);
         const repo = h.config.createRepository(async () => {}, () => true);
         try {
