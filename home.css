@@ -949,7 +949,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .dashboard-account-menu { position: relative; align-self: start; justify-self: end; min-width: 0; max-width: 100%; }
 .dashboard-account-identity { margin: 0 0 .4rem; max-width: min(18rem, 100%); min-width: 0; color: var(--ink); font-size: .875rem; line-height: 1.45; overflow-wrap: anywhere; }
 .dashboard-account-identity-label { display: block; color: var(--ink-soft); }
-.dashboard-account-identity :is(strong, .dashboard-account-identity-email) { display: block; }
+.dashboard-account-identity :is(strong, .dashboard-account-identity-email) { display: block; unicode-bidi: isolate; }
 .dashboard-account-menu[hidden], .dashboard-account-menu [hidden] { display: none !important; }
 .dashboard-account-menu > #dashboardAccountToggle { max-width: 100%; overflow-wrap: anywhere; min-height: 44px; box-sizing: border-box; padding: .65rem .9rem; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--paper); font: inherit; font-size: .875rem; font-weight: 650; text-align: left; cursor: pointer; }
 .dashboard-account-menu > #dashboardAccountToggle:focus-visible, .dashboard-account-actions > .button:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
