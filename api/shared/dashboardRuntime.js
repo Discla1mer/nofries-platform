@@ -166,11 +166,11 @@ function createDashboardResourceRuntime(options) {
                     throw new ContactRequestError();
                 } finally { if (pair) pair.finish(); }
             }
-            async function details(input) {
+            async function details(input, enrolledScope) {
                 let pair;
                 try {
                     pair = binding.createOperation(input === undefined ? 'representative.read' : 'representative.record', context);
-                    const result = await representativeDetails({ database: pair.database, clock: pair.clock, audit: pair.audit, context }, input);
+                    const result = await representativeDetails({ database: pair.database, clock: pair.clock, audit: pair.audit, context, enrolledScope }, input);
                     pair.clock(); return result;
                 } catch (error) { throw error instanceof RepresentativeDetailsError ? error : new RepresentativeDetailsError(); }
                 finally { if (pair) pair.finish(); }

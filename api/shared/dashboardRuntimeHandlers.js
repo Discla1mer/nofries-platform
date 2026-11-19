@@ -818,7 +818,11 @@ function createDashboardRuntimeHandlers(configuration) {
                     const denied = error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403;
                     throw new RepresentativeDetailsError(denied ? 'representative_details_access_denied' : 'representative_details_unavailable', denied ? 403 : 503);
                 }
-                return bound.representativeDetails(command);
+                // Only the read projection uses the authenticated enrolled scope.
+                // Writes retain their existing authority and evidence checks.
+                const account = command === undefined && questionnaireExportGateEnabled
+                    ? await approvedCustomerBinding(privateRequest) : null;
+                return bound.representativeDetails(command, account?.ownDeferredAgreement ? account.scope : null);
             }));
         }
         if (selected.contact) {
