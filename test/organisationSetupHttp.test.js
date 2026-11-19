@@ -32,7 +32,7 @@ test('root serves the real dashboard loader and index canonicalises to root with
     expect(login.status).toBe(200); expect(login.headers['cache-control']).toContain('no-store');
     expect(login.text).toContain('<form id="organisation-form" hidden novalidate>');
     expect(login.text).toContain('id="organisation-steps"');
-    expect(login.text).toContain('Opening account setup');
+    expect(login.text).toContain('Checking account access');
     expect(login.text).toContain('Personal and work email');
     expect(login.text).not.toContain('Operator account');
     expect(root.text).not.toContain('NoFriesDashboard = factory');

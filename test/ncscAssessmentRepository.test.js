@@ -1068,3 +1068,121 @@ describe('lifecycle email enqueue at submit (#151)', () => {
         expect((await h.read()).assessment.status).toBe('in-progress');
     });
 });
+
+// Scoring v2 (#399): quota, policy and entitlement follow the profile each
+// assessment stored. With NOFRIES_NCSC_PROFILE_V2 off, only the accepted profile exists.
+describe('quota and entitlement by stored profile', () => {
+    const { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT } = require('../api/shared/assessmentEngine/ncscProfileSet');
+    const ACCEPTED = ACCEPTED_NCSC_CONTEXT.profileRef, V2 = NCSC_V2_CONTEXT.profileRef;
+    // The v2 profile takes effect on 18 Nov 2026.
+    const LATER = '2026-11-19T09:00:00.000Z';
+    const EXAMPLE = ['no', 'ad_hoc', 'partly', 'partly', 'partly', 'mfa_text_code', 'unknown', 'partly', 'partly', 'no', 'no',
+        'no', 'ad_hoc', 'partly', 'no', 'unknown'];
+    const v2Responses = () => NCSC_V2_CONTEXT.questionIds.map((itemId, index) => ({ itemId, optionId: EXAMPLE[index], rationale: null }));
+    const original = process.env.NOFRIES_NCSC_PROFILE_V2;
+    afterEach(() => {
+        if (original === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2;
+        else process.env.NOFRIES_NCSC_PROFILE_V2 = original;
+    });
+    // The fixture policy names a fixed profile; this one names the profile it is asked for.
+    function policyFor(h, ref = null) {
+        h.policy.mockImplementation(selection => ({ ...h.adapters.resolveSubmissionQuota(selection),
+            profileRef: clone(ref || selection.profileRef) }));
+    }
+    // Tables exist up front so a seeded row is part of the committed state.
+    const seeded = () => memoryDatabase({ [HEAD]: [], [VERSION]: [] });
+    // Store a v2 first version directly: creation itself still uses the accepted profile.
+    function seedV2(h, assessmentId = 'assessment-v2') {
+        const command = createCommand(assessmentId, 'create-v2');
+        const created = store.makeVersion(store.stableIntent(h.context, command), command.idempotencyKey, null,
+            h.fixture.state.tenantAggregate, h.fixture.now, NCSC_V2_CONTEXT);
+        const where = { tenant_id: h.fixture.scope.tenantId, organisation_id: h.fixture.scope.organisationId, assessment_id: assessmentId };
+        h.memory.rows(VERSION).push({ ...where, revision: 0, schema_version: 1, payload_sha256: created.revisionSha256,
+            parent_revision: null, parent_sha256: null, payload: clone(created.envelope) });
+        h.memory.rows(HEAD).push({ ...where, schema_version: 1, revision: 0, payload_sha256: created.revisionSha256 });
+    }
+    const save = (h, id, responses) => h.repository.executeNcscAssessment(h.context, saveCommand(id, 0, 'save-' + id, responses));
+    const submit = (h, id) => h.repository.executeNcscAssessment(h.context, submitCommand(id, 1, 'submit-' + id));
+
+    test('flag off: an accepted submission charges exactly as before, whatever else the flag is set to', async () => {
+        const runs = [];
+        for (const value of [undefined, 'TRUE', 'true']) {
+            if (value === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2; else process.env.NOFRIES_NCSC_PROFILE_V2 = value;
+            const h = await ready({ now: LATER }); const submitted = await h.submit();
+            expect(h.adapters.policySelections).toHaveLength(1);
+            expect(h.adapters.policySelections[0].profileRef).toEqual(ACCEPTED);
+            runs.push({ submitted, selections: h.adapters.policySelections, quota: receipt(h).payload.quota,
+                versions: h.memory.rows(VERSION), heads: h.memory.rows(HEAD), usage: h.memory.rows(USAGE) });
+        }
+        // An accepted assessment is handled identically with the flag off, mistyped or on.
+        expect(runs[1]).toEqual(runs[0]); expect(runs[2]).toEqual(runs[0]);
+        expect(runs[0].quota.after.counters.assessment_runs - runs[0].quota.before.counters.assessment_runs).toBe(1);
+    });
+
+    test('flag off: a product listing only the v2 profile is denied, as it was before', async () => {
+        delete process.env.NOFRIES_NCSC_PROFILE_V2;
+        const h = await setup({ now: LATER, profileRefs: [V2] });
+        await expectCode(h.create(), 'ncsc_access_denied');
+        await expectCode(h.list(), 'ncsc_access_denied');
+        expect(counts(h)).toEqual([0, 0, 0]);
+    });
+
+    test('flag on: a v2 submission selects, charges and replays against the v2 policy and framework', async () => {
+        process.env.NOFRIES_NCSC_PROFILE_V2 = 'true';
+        const h = await setup({ now: LATER, profileRefs: [ACCEPTED, V2] }, seeded()); policyFor(h); seedV2(h);
+        await save(h, 'assessment-v2', v2Responses());
+        const submitted = await submit(h, 'assessment-v2');
+        expect(submitted.assessment.profileRef).toEqual(V2);
+        expect(submitted.assessment.submission.evaluation.attainment.lowerDisplay).toBe('25.3%');
+        expect(h.adapters.policySelections).toHaveLength(1);
+        expect(h.adapters.policySelections[0].profileRef).toEqual(V2);
+        const quota = receipt(h, 'submit-assessment-v2').payload.quota;
+        expect(quota.selection.profileRef).toEqual(V2); expect(quota.policy.profileRef).toEqual(V2);
+        expect(h.memory.rows(USAGE)[0].payload.counters.assessment_runs).toBe(1);
+        // The retained receipt is checked against the stored profile on replay.
+        const committed = h.memory.snapshot();
+        expect(await submit(h, 'assessment-v2')).toEqual(submitted);
+        expect(h.memory.snapshot()).toEqual(committed); expect(h.policy).toHaveBeenCalledTimes(1);
+        // An accepted assessment in the same organisation still uses the accepted policy.
+        await h.create(); await h.save(); await h.submit();
+        expect(h.adapters.policySelections[1].profileRef).toEqual(ACCEPTED);
+        expect(h.memory.rows(USAGE)[0].payload.counters.assessment_runs).toBe(2);
+    });
+
+    test('flag on: a v2 submission is refused without writes when the policy names another profile', async () => {
+        process.env.NOFRIES_NCSC_PROFILE_V2 = 'true';
+        const h = await setup({ now: LATER, profileRefs: [ACCEPTED, V2] }, seeded()); policyFor(h, ACCEPTED); seedV2(h);
+        await save(h, 'assessment-v2', v2Responses());
+        const before = h.memory.snapshot();
+        await expect(submit(h, 'assessment-v2')).rejects.toMatchObject({ code: 'ncsc_unavailable', statusCode: 503 });
+        expect(h.memory.snapshot()).toEqual(before);
+    });
+
+    test('flag on: writes need the product to list the assessment\'s own profile', async () => {
+        process.env.NOFRIES_NCSC_PROFILE_V2 = 'true';
+        // Accepted-only product: a stored v2 assessment cannot be saved; accepted work continues.
+        const accepted = await setup({ now: LATER, profileRefs: [ACCEPTED] }, seeded()); policyFor(accepted); seedV2(accepted);
+        const before = accepted.memory.snapshot();
+        await expectCode(save(accepted, 'assessment-v2', v2Responses()), 'ncsc_access_denied');
+        expect(accepted.memory.snapshot()).toEqual(before);
+        await accepted.create(); await accepted.save(); await accepted.submit();
+        // V2-only product: the module opens, a new (accepted) assessment is refused, v2 work proceeds.
+        const v2 = await setup({ now: LATER, profileRefs: [V2] }, seeded()); policyFor(v2); seedV2(v2);
+        await expectCode(v2.create(), 'ncsc_access_denied');
+        expect(counts(v2)).toEqual([1, 1, 0]);
+        await save(v2, 'assessment-v2', v2Responses());
+        await submit(v2, 'assessment-v2');
+        expect(v2.adapters.policySelections.map(row => row.profileRef)).toEqual([V2]);
+        expect((await v2.list()).assessments.map(row => row.profileRef)).toEqual([V2]);
+    });
+
+    test('flag turned off again: a stored v2 assessment is not written or charged', async () => {
+        process.env.NOFRIES_NCSC_PROFILE_V2 = 'true';
+        const h = await setup({ now: LATER, profileRefs: [ACCEPTED, V2] }, seeded()); policyFor(h); seedV2(h);
+        await save(h, 'assessment-v2', v2Responses());
+        delete process.env.NOFRIES_NCSC_PROFILE_V2;
+        const before = h.memory.snapshot();
+        await expect(submit(h, 'assessment-v2')).rejects.toMatchObject({ code: 'ncsc_unavailable', statusCode: 503 });
+        expect(h.memory.snapshot()).toEqual(before); expect(h.policy).not.toHaveBeenCalled();
+    });
+});

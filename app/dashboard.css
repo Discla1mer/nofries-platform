@@ -127,6 +127,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-heading h2 { font-size: var(--dashboard-font-section); }
 .picture-heading .dashboard-eyebrow { font-size: var(--dashboard-font-small); }
 .picture-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; margin-bottom: .7rem; }
+.picture-selected-title { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
 .picture-toolbar label { font-weight: var(--dashboard-weight-regular); font-size: var(--dashboard-font-body); }
 .picture-toolbar select { min-width: 0; max-width: 100%; flex: 1 1 18rem; min-height: 2.875rem; padding: .6rem; border: 1px solid var(--dashboard-line); border-radius: .5rem; color: var(--dashboard-ink); background: var(--dashboard-surface); font: inherit; }
 .picture-source { margin: 1.25rem 0 .6rem !important; font-size: var(--dashboard-font-small); color: var(--dashboard-muted); }
@@ -246,6 +247,16 @@ a.picture-action-title { font-weight: 600; text-decoration: underline; text-unde
    A pending heading smooth-scroll can otherwise carry the next Tab target away. */
 html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-dashboard-state="ready"] #dashboardApp:not([hidden]) .ncsc-questionnaire) { scroll-behavior: auto; }
 .ncsc-results { margin: 1.5rem 0; min-width: 0; overflow-wrap: anywhere; }
+.ncsc-questionnaire-answers { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--dashboard-line); border-radius: .5rem; }
+.ncsc-questionnaire-answers ol { padding-left: 1.3rem; }
+.ncsc-questionnaire-answers li { margin: 1.25rem 0; }
+.ncsc-questionnaire-answers h4, .ncsc-questionnaire-answers li p { margin: .5rem 0; }
+.ncsc-questionnaire-answer-controls button { margin: .5rem .5rem .5rem 0; }
+@media print {
+    .ncsc-questionnaire-answers { break-before: page; padding: 0; border: 0; font-size: 11pt; line-height: 1.4; }
+    .ncsc-questionnaire-answers li, .ncsc-questionnaire-answers footer { break-inside: avoid; }
+    .ncsc-questionnaire-answer-controls { display: none; }
+}
 .ncsc-result-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
 .ncsc-result-metric { padding: 1rem; border: 1px solid var(--dashboard-line, #d3c9b7); border-radius: .5rem; background: var(--dashboard-surface, #f6f2ea); color: var(--dashboard-ink, #17140f); }
 .ncsc-result-metric h3 { margin-top: 0; }

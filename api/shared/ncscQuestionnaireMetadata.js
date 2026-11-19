@@ -1,6 +1,7 @@
 'use strict';
 
 const { createAcceptedNcscFrameworkProfile } = require('./assessmentEngine/ncscAcceptedFrameworkProfile');
+const { createNcscFrameworkProfileV2 } = require('./assessmentEngine/ncscFrameworkProfileV2');
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
 const SOURCE_DISCLOSURE = 'These questions are No Fries adaptations, not official NCSC questions. Source verification dates come from the accepted catalogue; linked pages may have changed since those dates.';
@@ -100,7 +101,18 @@ const SMALL_BUSINESS = {
  * pins; this projection grants no access and exposes no scoring implementation.
  */
 function createNcscQuestionnaireMetadata() {
-    const accepted = createAcceptedNcscFrameworkProfile();
+    return project(createAcceptedNcscFrameworkProfile(), smallBusiness);
+}
+
+/** Scoring v2 (#399): the same projection of the 16-question profile 2026-11-18.1.
+ * Its questions are already written in plain words, so it carries no separate
+ * small-business wording. Served only while NOFRIES_NCSC_PROFILE_V2 is on.
+ */
+function createNcscQuestionnaireMetadataV2() {
+    return project(createNcscFrameworkProfileV2(), null);
+}
+
+function project(accepted, plainWording) {
     identifiers(accepted.sources);
     const sourceById = new Map(accepted.sources.map(source => [source.id, source]));
     const licenceSource = accepted.sources.find(source => source.id === 'ncsc-framework');
@@ -112,9 +124,13 @@ function createNcscQuestionnaireMetadata() {
         title: displayText(domain.title), guidance: guidance(domain.guidance) }));
     const controls = ordered(accepted.controls).map(control => ({ id: control.id, domainId: control.domainId,
         order: control.order, title: displayText(control.title), guidance: guidance(control.guidance) }));
-    const questions = ordered(accepted.questions).map(question => ({ id: question.id, controlId: question.controlId,
+    // Profile order: by control, then by question within it. For the accepted
+    // profile, where each control has one question, this is question order.
+    const controlOrder = new Map(controls.map(control => [control.id, control.order]));
+    const questions = ordered(accepted.questions).sort((left, right) =>
+        (controlOrder.get(left.controlId) ?? -1) - (controlOrder.get(right.controlId) ?? -1)).map(question => ({ id: question.id, controlId: question.controlId,
         order: question.order, prompt: displayText(question.prompt), guidance: guidance(question.guidance),
-        smallBusiness: smallBusiness(question.id),
+        ...(plainWording ? { smallBusiness: plainWording(question.id) } : {}),
         responseOptionIds: [...question.responseOptionIds], sources: questionSources(question, sourceById) }));
     const responseOptions = accepted.responseOptions.map(option => {
         if (typeof option.applicable !== 'boolean') invalid();
@@ -188,4 +204,4 @@ function freeze(value) {
 }
 function invalid() { throw new Error('ncsc_metadata_invalid'); }
 
-module.exports = { createNcscQuestionnaireMetadata };
+module.exports = { createNcscQuestionnaireMetadata, createNcscQuestionnaireMetadataV2 };

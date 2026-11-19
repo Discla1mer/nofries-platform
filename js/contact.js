@@ -71,6 +71,11 @@
         return problems;
     }
 
+    if (typeof window.enquiryCampaign === 'function' && window.enquiryCampaign()) {
+        document.getElementById('contact-heading').textContent = '90-day managed security';
+        document.getElementById('contact-intro').textContent = 'NZ$1,250 + GST for 90 days. We help you fix three security gaps and give you a written summary for your board or insurer. Tell us about your organisation below.';
+    }
+
     // Arriving from a dashboard service card: start the message with that service.
     // The visitor can edit or clear it, and nothing is sent until they send the form.
     const topic = typeof window.enquiryTopic === 'function' ? window.enquiryTopic() : '';

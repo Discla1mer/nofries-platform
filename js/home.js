@@ -102,6 +102,22 @@
     });
 }());
 
+// Carry campaign labels only on the four public ad pages. Reuse this script:
+// no storage, click IDs, requests or changes to sign-in/service parameters.
+(function () {
+    if (!document.body || document.body.dataset.page !== 'ad-landing') return;
+    const campaign = [...new URLSearchParams(window.location.search)]
+        .filter(([name]) => /^utm_[a-z0-9_]+$/i.test(name));
+    if (!campaign.length) return;
+    document.querySelectorAll('a[href^="/"]').forEach(function (link) {
+        const target = new URL(link.getAttribute('href'), window.location.href);
+        if (target.origin !== window.location.origin) return;
+        for (const name of new Set(campaign.map(([name]) => name))) target.searchParams.delete(name);
+        for (const [name, value] of campaign) target.searchParams.append(name, value);
+        link.setAttribute('href', target.pathname + target.search + target.hash);
+    });
+}());
+
 // Ad landing (#441): match the headline to the trigger a Meta campaign was
 // written for. Reads only utm_campaign from this page's address and checks
 // it against a closed list; only fixed sentences are written. Nothing is

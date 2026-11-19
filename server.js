@@ -377,10 +377,13 @@ app.get('/login', (req, res) => {
         return res.redirect(303, selected.external ? '/api/external-customer-auth/login' : '/api/customer-auth/login');
     }
     if (selected.external) {
-        if (!configuration.externalOrganisationSetup) return sendSignupPage(res, selected);
+        const returningEntry = selected.runtime && (req.query.intent === undefined || req.query.intent === 'login') &&
+            Object.keys(req.query).every(key => ['intent', 'provider'].includes(key));
+        if (!configuration.externalOrganisationSetup && !returningEntry) return sendSignupPage(res, selected);
         const html = withCustomerProvider(fs.readFileSync(path.join(__dirname, 'login.html'), 'utf8'), 'external')
             .replaceAll('href="/api/customer-auth/login"', 'href="/api/external-customer-auth/login"');
-        return res.type('html').send(html);
+        return res.type('html').send(returningEntry
+            ? html.replace('data-customer-provider="external"', 'data-customer-provider="external" data-customer-entry="signin"') : html);
     }
     // Legacy deployments may allow customer sign-in while new email setup is
     // disabled. Reuse the authenticated signup-state document, whose explicit
