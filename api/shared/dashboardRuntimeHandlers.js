@@ -144,6 +144,7 @@ function createDashboardRuntimeHandlers(configuration) {
     const ledger = new AsyncLocalStorage(), requests = new WeakMap();
     const ambiguousErrors = new WeakSet(), ambiguousResponses = new WeakSet();
     let supplied, authOptions, options, clock, budget, browser, operator, runtime, logout, resources, ncscQuota = null, customerBrowser = null, customerSession = null, customerLogout = null, activationBinding = null;
+    let paidFrameworksEnabled = false;
     let activationPort = null, adminSubjects = new Set(), customerIdentityProvider, improvementEnabled = false, contactRequestsEnabled = false, contactRequestEmail = null;
     let externalBrowser = null, externalSession = null, externalLogout = null, externalBinding = null, externalAuth = null;
 
@@ -219,7 +220,11 @@ function createDashboardRuntimeHandlers(configuration) {
     }
     try {
         const configurationKeys = dataKeys(configuration);
-        fields(configuration, [...CONFIG, ...['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
+        fields(configuration, [...CONFIG, ...['ncsc', 'paidFrameworksEnabled', 'improvementEnabled', 'contactRequestsEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
+        if (configurationKeys.includes('paidFrameworksEnabled')) {
+            if (configuration.paidFrameworksEnabled !== true) throw unavailable();
+            paidFrameworksEnabled = true;
+        }
         if (configurationKeys.includes('improvementEnabled')) {
             if (configuration.improvementEnabled !== true) throw unavailable();
             improvementEnabled = true;
@@ -381,6 +386,7 @@ function createDashboardRuntimeHandlers(configuration) {
             historyBudget: options.historyBudget, captureRequest, readExternalRuntimeEpoch: epoch,
             newId: options.newId, resolveSubmissionQuota: ncscQuota || (() => null),
             ...(ncscQuota ? { ncscEnabled: true } : {}), ...(improvementEnabled ? { improvementEnabled: true } : {}),
+            ...(paidFrameworksEnabled ? { paidFrameworksEnabled: true } : {}),
             ...(contactRequestsEnabled ? { contactRequestsEnabled: true } : {}) });
     } catch (_) { throw unavailable(); }
 

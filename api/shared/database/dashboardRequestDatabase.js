@@ -101,7 +101,7 @@ function mapped(error, operation = 'admission.read', denial = null) {
 function configuration(input) {
     try {
         if (!input || isProxy(input)) throw new Error();
-        const optional = ['ncscEnabled', 'improvementEnabled', 'contactRequestsEnabled'].filter(key => Object.prototype.hasOwnProperty.call(input, key));
+        const optional = ['paidFrameworksEnabled', 'ncscEnabled', 'improvementEnabled', 'contactRequestsEnabled'].filter(key => Object.prototype.hasOwnProperty.call(input, key));
         fields(input, ['pool', 'clock', 'instanceId', 'historyBudget', 'captureRequest',
             'readExternalRuntimeEpoch', 'newId', 'resolveSubmissionQuota', ...optional]);
         if (optional.some(key => input[key] !== true)) throw new Error();
@@ -888,6 +888,7 @@ function prepareHostFacts(inv, context, input, resource, writeAuthority = null, 
         membershipUpdatedAt: base.state.updatedAt, grants: base.grants, flags: snapshot.flags,
         advisors, normal, resource, snapshot, jobTitle: currentUserProfile?.jobTitle ?? null,
         ncscEnabled: inv.options.ncscEnabled === true, ncscNormalWrite, ncscWriteAdvisors,
+        paidFrameworksEnabled: inv.options.paidFrameworksEnabled === true,
         improvementEnabled: inv.options.improvementEnabled === true });
 }
 
@@ -939,7 +940,7 @@ function hostProjectionAt(frame, at, configured = true) {
     }) : [];
     // Display only. Re-evaluate the exact current grant and activation at each
     // authority witness, including when the product changes during the read.
-    const paidFrameworks = presentationMode !== null && process.env.NOFRIES_PAID_FRAMEWORKS_ENABLED === 'true'
+    const paidFrameworks = presentationMode !== null && frame.paidFrameworksEnabled
         ? registry.paidFrameworks.filter(ref => product.frameworks.some(row => registry.sameFramework(ref, row)) &&
             frame.flags.frameworks.some(row => registry.sameFramework(ref, row)))
             .map(({ moduleId, profileId, version }) => ({ moduleId, profileId, version })) : null;
