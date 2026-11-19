@@ -851,7 +851,7 @@
             ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
-            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, readPaidFramework: cyber.readPaidFramework } : {}),
+            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, readPaidFramework: cyber.readPaidFramework, paidHost: cyber.paidHost } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}),
@@ -1572,7 +1572,55 @@
                     previous = row.assessmentId;
                 }
                 if (page.nextAfterAssessmentId !== null && (!page.assessments.length || page.nextAfterAssessmentId !== previous)) throw invalid();
-                return { assessments: page.assessments, nextAfterAssessmentId: page.nextAfterAssessmentId };
+                return page;
+            };
+            mountCyber.paidHost = function (ref, selected) {
+                const registry = window.NoFriesDashboardRegistry;
+                const live = () => current(cycle) && !cycle.authorityPending && selected() &&
+                    value.paidFrameworks.some(row => registry.sameFramework(row, ref));
+                const prefix = '/api/dashboard/frameworks/' + encodeURIComponent(ref.profileId) + '/' + encodeURIComponent(ref.version);
+                const collection = prefix + '/assessments';
+                const cleanups = new Set();
+                async function renderer(name) {
+                    if (!live() || !['questionnaire', 'results'].includes(name)) throw invalid();
+                    const sri = registry.rendererIntegrity[name], message = registry.rendererSelection(snapshot.generation, ref, name);
+                    const hash = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
+                    const fingerprint = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+                    if (!live()) throw invalid();
+                    return new Promise((resolve, reject) => {
+                        const node = document.createElement('script');
+                        const key = name === 'results' ? 'NoFriesPaidResults' : 'NoFriesPaidQuestionnaire';
+                        const cancel = () => finish(null);
+                        const timer = window.setTimeout(cancel, REQUEST_MS);
+                        function finish(factory) {
+                            cleanups.delete(cancel); window.clearTimeout(timer);
+                            node.remove();
+                            if (factory && typeof factory.mount === 'function' && live()) resolve(factory);
+                            else reject(invalid());
+                        }
+                        node.onload = () => {
+                            const factory = window[key]; delete window[key]; finish(factory);
+                        };
+                        node.onerror = cancel; cleanups.add(cancel);
+                        node.integrity = sri; node.crossOrigin = 'anonymous'; node.referrerPolicy = 'no-referrer';
+                        node.src = prefix + '/assets/' + name + '.js?v=' + sri.slice(7, -1).replace(/\+/g, '-').replace(/\//g, '_') + '&s=' + fingerprint;
+                        document.head.append(node);
+                    });
+                }
+                async function record(id, action, body) {
+                    if (!live() || typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(id)) throw invalid();
+                    const detail = collection + '/' + encodeURIComponent(id);
+                    const path = action === 'start' ? collection : action === 'read' ? detail : action;
+                    if (action !== 'start' && action !== 'read' && path !== detail + '/save' && path !== detail + '/submit') throw invalid();
+                    const result = await request(cycle, path, body, snapshot.generation);
+                    if (!live()) throw invalid();
+                    const envelope = requireSuccess(result), item = envelope?.assessment;
+                    if (envelope.schemaVersion !== 1 || item?.assessmentId !== id || item.moduleId !== ref.moduleId ||
+                        item.profileRef?.profileId !== ref.profileId || item.profileRef.profileVersion !== ref.version) throw invalid();
+                    return envelope;
+                }
+                return { live, renderer, record, newId: secureId, editable: value.presentationMode === 'editable',
+                    destroy() { for (const cancel of cleanups) cancel(); } };
             };
         }
         mountCyber.readBaseline = async function () {
