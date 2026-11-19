@@ -3738,13 +3738,36 @@ describe('insurer and customer questionnaire answers', () => {
         const report = questionnaireAnswers(assessment, display);
         expect(report.items.map(item => item.answer)).toEqual(expected);
         expect(new Set(report.items.map(item => item.id)).size).toBe(9);
-        for (const item of report.items) {
+        const blocks = report.text.split('\n\n').slice(2, -1);
+        expect(blocks).toHaveLength(expected.length);
+        report.items.forEach((item, index) => {
             expect(item.question).toMatch(/\?$/); expect(item.action).toMatch(/^To answer Yes: /);
-            expect(report.text).toContain(item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis + '\n' + item.action);
-        }
+            const lines = [item.question, 'Suggested answer: ' + item.answer, item.basis, item.action];
+            if (item.answer === 'Yes') expect(item.evidence).toBe('');
+            else {
+                expect(item.evidence).toMatch(/^Evidence: [^\n]+\.$/);
+                lines.push(item.evidence);
+            }
+            expect(blocks[index]).toBe(lines.join('\n'));
+        });
         expect(report.text.endsWith(report.footer)).toBe(true);
         expect(report.footer).toBe('These are self-assessed answers to check before submitting, not a guarantee an insurer or customer accepts them.');
         expect(assessment).toEqual(before); expect(display).toEqual(metadata());
+    });
+    test('each unanswered item points to evidence for its own control', () => {
+        const { items } = questionnaireAnswers(sample('unknown'), metadata());
+        const byId = Object.fromEntries(items.map(item => [item.id, item.evidence]));
+        expect(byId).toEqual({
+            mfa: expect.stringContaining('MFA coverage report'),
+            'backup-storage': expect.stringContaining('offline or locked'),
+            'restore-tests': expect.stringContaining('restore test record'),
+            'patch-speed': expect.stringContaining('installation dates'),
+            endpoint: expect.stringContaining('device list'),
+            training: expect.stringContaining('completion records'),
+            'incident-plan': expect.stringContaining('current response plan'),
+            'admin-rights': expect.stringContaining('access review'),
+            'payment-checks': expect.stringContaining('payment-change record')
+        });
     });
     test('missing, ambiguous, draft and unsupported-profile inputs do not imply assurance', () => {
         const assessment = sample('yes'); assessment.responses = [];

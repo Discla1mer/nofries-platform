@@ -255,6 +255,7 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 @media print {
     .ncsc-questionnaire-answers { break-before: page; padding: 0; border: 0; font-size: 11pt; line-height: 1.4; }
     .ncsc-questionnaire-answers li, .ncsc-questionnaire-answers footer { break-inside: avoid; }
+    body:has(.ncsc-questionnaire-answers) #dashboardSkipLink,
     .ncsc-questionnaire-answer-controls { display: none; }
 }
 .ncsc-result-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
