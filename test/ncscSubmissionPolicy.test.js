@@ -76,3 +76,39 @@ test('the shipped empty manifest permits draft routes but cannot select a submis
     expect(() => resolve(selection({ tenantId: 'another-tenant', organisationId: 'another-org' })))
         .toThrow('ncsc_submission_policy_unavailable');
 });
+
+// Scoring v2 (#399): the policy is chosen by the assessment's own stored profile.
+describe('submission policy by stored profile', () => {
+    const { NCSC_V2_CONTEXT } = require('../api/shared/assessmentEngine/ncscProfileSet');
+    const original = process.env.NOFRIES_NCSC_PROFILE_V2;
+    const v2 = () => ({ ...NCSC_V2_CONTEXT.profileRef });
+    afterEach(() => {
+        if (original === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2;
+        else process.env.NOFRIES_NCSC_PROFILE_V2 = original;
+    });
+
+    test.each([undefined, '', 'TRUE', '1'])('with the flag %p, a v2 selection or policy is refused exactly as before', value => {
+        if (value === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2; else process.env.NOFRIES_NCSC_PROFILE_V2 = value;
+        expect(() => createResolver(manifest(policy({ profileRef: v2() })))).toThrow('ncsc_submission_policy_unavailable');
+        expect(() => createResolver(manifest(policy()))(selection({ profileRef: v2() }))).toThrow('ncsc_submission_policy_unavailable');
+        expect(createResolver(manifest(policy()))(selection())).toEqual(policy());
+    });
+
+    test('with the flag on, each profile resolves only its own policy', () => {
+        process.env.NOFRIES_NCSC_PROFILE_V2 = 'true';
+        const accepted = policy(), second = policy({ policyId: 'synthetic-v2-policy', profileRef: v2(), amount: 1 });
+        const resolver = createResolver(manifest(accepted, second));
+        expect(resolver(selection())).toEqual(accepted);
+        expect(resolver(selection({ profileRef: v2() }))).toEqual(second);
+        // No fallback across profiles: a v2 assessment never charges the accepted policy.
+        expect(() => createResolver(manifest(accepted))(selection({ profileRef: v2() }))).toThrow('ncsc_submission_policy_unavailable');
+        expect(() => createResolver(manifest(second))(selection())).toThrow('ncsc_submission_policy_unavailable');
+        // A partial or extended reference is not a known profile.
+        const { catalogueSha256, ...partial } = v2();
+        expect(catalogueSha256).toBeTruthy();
+        expect(() => resolver(selection({ profileRef: partial }))).toThrow('ncsc_submission_policy_unavailable');
+        expect(() => resolver(selection({ profileRef: { ...v2(), extra: 'x' } }))).toThrow('ncsc_submission_policy_unavailable');
+        expect(() => createResolver(manifest(policy({ profileRef: { ...v2(), profileVersion: '2099-01-01.1' } }))))
+            .toThrow('ncsc_submission_policy_unavailable');
+    });
+});
