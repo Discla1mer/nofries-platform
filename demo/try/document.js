@@ -64,7 +64,7 @@ function buildTryDemoDocument() {
     const html = '<!doctype html><html lang="en-NZ"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
         '<meta name="robots" content="noindex,nofollow"><title>Try No Fries · Interactive demo (fictional data)</title><style>' + style + '</style></head><body>' +
         '<section class="try-demo-banner" aria-label="About this demo"><div class="try-demo-copy"><strong>Interactive demo · fictional business</strong>' +
-        '<p>Brightwater Joinery is made up. This is the real dashboard and the full assessment, but everything stays in this browser: no account, no emails and nothing sent to No Fries.</p></div>' +
+        '<p>Try the full assessment without an account. Your answers stay in this browser.</p></div>' +
         '<div class="try-demo-controls"><button type="button" id="try-demo-reset">Reset demo</button><a class="try-demo-cta" href="/login?intent=create">Create your account</a>' +
         '<a href="/contact.html">Talk to No Fries</a><a href="/">No Fries home</a></div>' +
         '<p id="try-demo-status" class="try-demo-status" role="status"></p></section><div id="try-demo-dashboard"></div><script>' + script + '</script></body></html>';
