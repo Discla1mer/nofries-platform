@@ -855,6 +855,59 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             expect((await planRows(example, 'plan-c')).slice(1).map(row => row.operation_id)).toEqual([`carry:${sourceHead}:1`]);
         });
 
+        // The previous-plan query on main (2b00084) with the flag off, verbatim: it
+        // had no profile condition. The query is now always profile-scoped; on
+        // v1-only data both must pick the same plan, as each v1 assessment stores
+        // the full accepted profileRef.
+        const MAIN_FLAG_OFF_SQL = `SELECT p.plan_id FROM nofries.dashboard_improvement_revisions p
+        JOIN nofries.dashboard_ncsc_assessment_revisions a ON a.tenant_id=p.tenant_id AND a.organisation_id=p.organisation_id AND a.assessment_id=p.assessment_id AND a.revision=p.assessment_revision AND a.payload_sha256=p.assessment_sha256
+        JOIN nofries.dashboard_ncsc_assessment_revisions n ON n.tenant_id=p.tenant_id AND n.organisation_id=p.organisation_id AND n.assessment_id=$4 AND n.revision=$5 AND n.payload_sha256=$6
+        WHERE p.tenant_id=$1 AND p.organisation_id=$2 AND p.plan_id<>$3 AND p.revision=0 AND p.assessment_id<>$4
+        AND a.payload->'scopePopulation'->'body' = n.payload->'scopePopulation'->'body'
+        AND a.payload#>>'{submission,input,moduleId}' = n.payload#>>'{submission,input,moduleId}'
+        AND (a.payload#>>'{submission,input,scoreAsOf}') COLLATE "C" <= (n.payload#>>'{submission,input,scoreAsOf}') COLLATE "C"
+        ORDER BY (a.payload#>>'{submission,input,scoreAsOf}') COLLATE "C" DESC, (p.payload->>'at') COLLATE "C" DESC, p.plan_id COLLATE "C" DESC LIMIT 1`;
+
+        test('flag off, v1-only data: the profile-scoped lookup picks the same previous plan as main', async () => {
+            const store = require('../api/shared/improvementPlan/improvementPlanStore');
+            const { ACCEPTED_NCSC_CONTEXT } = require('../api/shared/assessmentEngine/ncscProfileSet');
+            const flag = process.env.NOFRIES_NCSC_PROFILE_V2;
+            delete process.env.NOFRIES_NCSC_PROFILE_V2;
+            try {
+                const example = await seed({ capacity: 5 });
+                const sources = { 'assessment-a': { assessmentId: 'assessment-a', assessmentRevision: example.submitted.assessment.revision,
+                    assessmentRevisionSha256: example.submitted.assessment.revisionSha256 } };
+                sources['assessment-b'] = await submitAssessment(example, 'assessment-b');
+                sources['assessment-w'] = await submitAssessment(example, 'assessment-w', 'Synthetic warehouse systems only.');
+                sources['assessment-c'] = await submitAssessment(example, 'assessment-c');
+                // Plans generated out of assessment order, plus one for another scope.
+                const order = [['plan-b', 'assessment-b'], ['plan-a', 'assessment-a'], ['plan-w', 'assessment-w'], ['plan-c', 'assessment-c'],
+                    ['plan-b2', 'assessment-b']];
+                const chosen = [];
+                for (const [planId, assessmentId] of order) {
+                    const payload = sources[assessmentId];
+                    const source = { assessmentId, revision: payload.assessmentRevision, revisionSha256: payload.assessmentRevisionSha256 };
+                    const scope = { ...example.scope, planId };
+                    const [now, main] = await rawTransaction(example.scope, async tx => [await store.previousPlanId(tx, scope, source),
+                        (await tx.query(MAIN_FLAG_OFF_SQL, [example.scope.tenantId, example.scope.organisationId, planId,
+                            source.assessmentId, source.revision, source.revisionSha256])).rows.map(row => row.plan_id)[0] ?? null]);
+                    expect(now).toBe(main);
+                    chosen.push([planId, now]);
+                    clock.advance(1000);
+                    await repository.executeImprovementPlan(example.context, planFrom(planId, payload));
+                }
+                expect(chosen).toEqual([['plan-b', null], ['plan-a', null], ['plan-w', null], ['plan-c', 'plan-b'], ['plan-b2', 'plan-a']]);
+                // Every v1 assessment stored the full accepted reference, so the profile condition holds for each pair.
+                const refs = (await ownerPool.query("SELECT DISTINCT payload#>'{submission,input,profileRef}' AS ref FROM nofries.dashboard_ncsc_assessment_revisions WHERE tenant_id=$1 AND payload->'submission' <> 'null'::jsonb",
+                    [example.scope.tenantId])).rows.map(row => row.ref);
+                expect(refs).toEqual([{ ...ACCEPTED_NCSC_CONTEXT.profileRef }]);
+                expect(Object.keys(refs[0]).sort()).toEqual(['catalogueSha256', 'frameworkId', 'frameworkVersion', 'profileId',
+                    'profileVersion', 'sourceCatalogueSha256']);
+            } finally {
+                if (flag === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2; else process.env.NOFRIES_NCSC_PROFILE_V2 = flag;
+            }
+        });
+
         test('plans from another organisation or another tenant are never selected', async () => {
             const store = require('../api/shared/improvementPlan/improvementPlanStore');
             const { example, second } = await reassessed(), other = await seed();
@@ -987,6 +1040,86 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             expect(read.history).toHaveLength(2);
             expect(actionFor(read.plan, 'NF-NCSC-CC-SU-01-Q1')).toMatchObject({ ownerLabel: 'Office manager', dueDate: '2026-12-01', status: 'open' });
             expect(actionFor(read.plan, 'NF-NCSC-MCSS-MF-01-Q1')).toMatchObject({ ownerSubjectKey: null, dueDate: null });
+        });
+
+        // #399 item 5 (flag rollback): a v2 plan exists, the flag is turned off,
+        // and a v1 assessment is submitted. Its plan must be made fresh, not
+        // fail with 503 trying to read the v2 plan as its previous plan.
+        test('flag rolled back after a v2 plan: a v1 plan generates fresh and never carries from the v2 plan', async () => {
+            const store = require('../api/shared/improvementPlan/improvementPlanStore');
+            const example = await organisation();
+            const v2 = await submitV2(example, 'assessment-v2');
+            clock.advance(1000);
+            const v2Plan = await repository.executeImprovementPlan(example.context, generateFor(v2, 'plan-v2'));
+            clock.advance(1000);
+            await repository.executeImprovementPlan(example.context, assignLabel(v2Plan.plan, 'NF-NCSC-MCSS-MF-01-Q1', 'assign-v2'));
+            const v2Rows = await planRows(example, 'plan-v2');
+            setFlag(undefined);
+            clock.advance(1000);
+            const v1 = await submitV1(example, 'assessment-v1');
+            expect(v1.assessment.profileRef).toEqual(ACCEPTED_NCSC_CONTEXT.profileRef);
+            clock.advance(1000);
+            const source = { assessmentId: 'assessment-v1', revision: v1.assessment.revision, revisionSha256: v1.assessment.revisionSha256 };
+            expect(await rawTransaction(example.scope, tx => store.previousPlanId(tx, { ...example.scope, planId: 'plan-v1' }, source))).toBeNull();
+            const created = await repository.executeImprovementPlan(example.context, generateFor(v1, 'plan-v1'));
+            expect(created.plan.revision).toBe(0);
+            expect(created.plan.source.provenance).toMatchObject({ scoreContractVersion: 'PROD-003-R1',
+                profileRef: ACCEPTED_NCSC_CONTEXT.profileRef, assessmentId: 'assessment-v1' });
+            expect(actionFor(created.plan, 'NF-NCSC-MCSS-MF-01-Q1')).toMatchObject({ status: 'open', ownerSubjectKey: null, dueDate: null });
+            expect(created.plan.counts.unassigned).toBe(created.plan.counts.total);
+            expect(await planRows(example, 'plan-v1')).toHaveLength(1);
+            expect((await repository.readImprovementPlan(example.context, { planId: 'plan-v1' })).history).toHaveLength(1);
+            // The v2 plan is left as it was, and reads again once the flag is back on.
+            expect(await planRows(example, 'plan-v2')).toEqual(v2Rows);
+            setFlag('true');
+            expect((await repository.readImprovementPlan(example.context, { planId: 'plan-v2' })).history).toHaveLength(2);
+        });
+
+        test('flag rolled back: a v2 plan reached as previous is skipped, a same-profile assessment error still aborts', async () => {
+            const store = require('../api/shared/improvementPlan/improvementPlanStore');
+            const example = await organisation();
+            const v2 = await submitV2(example, 'assessment-v2');
+            clock.advance(1000);
+            await repository.executeImprovementPlan(example.context, generateFor(v2, 'plan-v2'));
+            setFlag(undefined);
+            clock.advance(1000);
+            const first = await submitV1(example, 'assessment-v1');
+            clock.advance(1000);
+            const spy = jest.spyOn(store, 'previousPlanId');
+            let load = null;
+            try {
+                // As if the lookup still picked the v2 plan (main with the flag off): the
+                // carry-forward read fails on the v2 profile and the plan starts fresh.
+                spy.mockResolvedValueOnce('plan-v2');
+                const created = await repository.executeImprovementPlan(example.context, generateFor(first, 'plan-v1'));
+                expect(spy).toHaveBeenCalledTimes(1);
+                expect(created.plan.revision).toBe(0);
+                expect(await planRows(example, 'plan-v1')).toHaveLength(1);
+                // An unreadable previous source on the same profile is not swallowed:
+                // corrupt the first v1 assessment's history and generate from a second.
+                clock.advance(1000);
+                const second = await submitV1(example, 'assessment-v1b');
+                clock.advance(1000);
+                expect(await rawTransaction(example.scope, tx => store.previousPlanId(tx, { ...example.scope, planId: 'plan-v1b' },
+                    { assessmentId: 'assessment-v1b', revision: second.assessment.revision, revisionSha256: second.assessment.revisionSha256 })))
+                    .toBe('plan-v1');
+                await ownerPool.query("UPDATE nofries.dashboard_ncsc_assessment_revisions SET payload=jsonb_set(payload,'{state,updatedAt}',to_jsonb('2026-01-01T00:00:00.000Z'::text)) WHERE tenant_id=$1 AND organisation_id=$2 AND assessment_id='assessment-v1' AND revision=0",
+                    [example.scope.tenantId, example.scope.organisationId]);
+                await expect(repository.executeImprovementPlan(example.context, generateFor(second, 'plan-v1b')))
+                    .rejects.toMatchObject({ code: 'improvement_unavailable', statusCode: 503 });
+                expect(await planRows(example, 'plan-v1b')).toEqual([]);
+                // A database error while reading the previous plan still aborts too.
+                const actual = store.loadHistory;
+                load = jest.spyOn(store, 'loadHistory').mockImplementation((tx, scope, ...rest) => (scope.planId === 'plan-v1'
+                    ? Promise.reject(Object.assign(new Error('Synthetic database failure'), { code: '57P01' })) : actual(tx, scope, ...rest)));
+                await expect(repository.executeImprovementPlan(example.context, generateFor(second, 'plan-v1b')))
+                    .rejects.toMatchObject({ code: 'improvement_unavailable' });
+                expect(load.mock.calls.some(([, scope]) => scope.planId === 'plan-v1')).toBe(true);
+                expect(await planRows(example, 'plan-v1b')).toEqual([]);
+            } finally {
+                spy.mockRestore();
+                if (load) load.mockRestore();
+            }
         });
     });
 });
