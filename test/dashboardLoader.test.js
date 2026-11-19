@@ -1711,6 +1711,26 @@ describe('ready Cyber composition', () => {
         return h;
     }
     const pickButton = (h, text) => h.elements.dashboardApp.querySelectorAll('button').find(button => button.textContent === text);
+    const previewHref = '/fictional-iso-example.html';
+    test.each([{ included: [] }, { included: [0] }, { included: [1] }, { included: [0, 1] }])(
+        'fictional example links appear only on locked cards (included indices $included)', async ({ included }) => {
+            const h = await pick(included.map(index => tuple(registry.paidFrameworks[index])));
+            const root = h.elements.dashboardApp;
+            for (const [index, ref] of registry.paidFrameworks.entries()) {
+                const card = root.querySelectorAll('.dashboard-panel').find(panel => panel.querySelector('h2')?.textContent === ref.label);
+                const links = card.querySelectorAll('a').filter(link => link.href === previewHref);
+                expect(links).toHaveLength(included.includes(index) ? 0 : 1);
+                if (links.length) expect(links[0].textContent).toBe('View a fictional ISO 27001 example');
+            }
+            expect(root.querySelectorAll('a').filter(link => link.href === previewHref)).toHaveLength(2 - included.length);
+            expect(h.requests.some(row => row.url.includes('/frameworks/'))).toBe(false);
+        });
+    test('the flag-off Cyber Security view has no buyer example entry', async () => {
+        const h = harness({ cyber: true, hash: '#cyber-security' });
+        await ready(h, 'editable', {});
+        expect(h.elements.dashboardApp.textContent).not.toContain('Choose an assessment');
+        expect(h.elements.dashboardApp.querySelectorAll('a').some(link => link.href === previewHref)).toBe(false);
+    });
     test('locked choices open the contact form and the free choice opens the existing questionnaire', async () => {
         const h = await pick([]), root = h.elements.dashboardApp;
         expect(root.textContent.match(/Locked/g)).toHaveLength(2);
