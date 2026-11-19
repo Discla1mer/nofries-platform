@@ -1552,7 +1552,7 @@ describe('submitted assessment results', () => {
                 if (upTo) expect(card.querySelector('.ncsc-result-upper').textContent).toContain(upTo);
                 else expect(card.querySelector('.ncsc-result-upper')).toBeNull();
             } else {
-                expect(shown).toBe('Not enough answers to estimate yet');
+                expect(shown).toBe('Not enough answers to estimate yet, confirm your Unknowns first');
                 expect(card.querySelector('.ncsc-result-upper')).toBeNull();
                 expect(card.textContent).toContain('Only 6 of 14 answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + model.attainment + '. Start a new assessment once more answers are known.');
                 // Submitted answers cannot be changed, so the customer is not asked to confirm them.
@@ -1569,7 +1569,7 @@ describe('submitted assessment results', () => {
         try {
             const card = ui.root.querySelector('.ncsc-results').querySelectorAll('.ncsc-result-metric')
                 .find(item => item.querySelector('h3').textContent === 'Reported implementation');
-            expect(card.querySelector('.ncsc-result-value').textContent).toBe('Not enough answers to estimate yet');
+            expect(card.querySelector('.ncsc-result-value').textContent).toBe('Not enough answers to estimate yet, confirm your Unknowns first');
             expect(card.textContent).toContain('Only 1 of 14 answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ');
             expect(card.textContent).not.toContain('Start a new assessment');
         } finally { ui.controller.destroy(); }
@@ -3355,7 +3355,7 @@ describe('final submission review step', () => {
         } finally { clean.controller.destroy(); }
     });
 
-    test('submitted results link to creating an improvement plan without claiming one was built', async () => {
+    test('D-044 submitted results distinguish assessment follow-ups from plan actions and link to the matching submission', async () => {
         const h = await backend();
         await h.execute(createCommand());
         await h.execute(saveCommand());
@@ -3364,13 +3364,16 @@ describe('final submission review step', () => {
         const opened = [];
         const ui = await resumeUi(h, { openImprovement(source) { opened.push(source); return Promise.resolve(true); } });
         try {
-            expect(ui.root.textContent).toContain('Submitting does not create the plan by itself.');
+            expect(ui.root.textContent).toContain('Assessment follow-ups (');
+            expect(ui.root.textContent).toContain('Open Improvement Plan to review proposed actions, including evidence to update for Yes answers.');
             expect(ui.root.textContent).toContain('You can give each item an owner and a due date.');
             expect(ui.root.textContent).not.toContain('with an owner and a due date for each item');
             expect(ui.root.textContent).not.toContain('improvement plan was built');
             const panel = ui.root.querySelector('.ncsc-results');
             expect(panel.children.indexOf(panel.querySelector('.ncsc-plan-followup'))).toBeGreaterThan(panel.children.indexOf(panel.querySelector('.ncsc-result-metrics')));
-            control(ui, 'Open improvement plan').click();
+            const link = panel.querySelector('.ncsc-plan-followup').querySelector('a');
+            expect(link.href).toBe('#improvement-plan');
+            link.click();
             const keys = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
             expect(opened).toEqual([{ assessmentId: assessment.assessmentId, revision: assessment.revision,
                 revisionSha256: assessment.revisionSha256,
