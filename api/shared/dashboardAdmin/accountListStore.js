@@ -53,19 +53,24 @@ async function signIn(source, container, account, signal, at) {
 
 // Detached client records are not bounded by the reservation ceiling, so the
 // read is budgeted to two pages and reports when more remain.
+// Scopes (tenant ids) are server-side only: the contact request list uses them
+// to read each organisation's rows; they are never sent to the browser.
+const scopeOf = slot => ({ tenantId: slot.tenantId, name: slot.organisationName });
 async function organisations(store, account) {
     const names = account.organisations.map(slot => ({ name: slot.organisationName, kind: slot.kind }));
-    if (account.accountType !== 'consultant' || !account.activation) return { names, complete: true };
+    const scopes = account.organisations.map(scopeOf);
+    if (account.accountType !== 'consultant' || !account.activation) return { names, scopes, complete: true };
     let cursor = null;
     for (let page = 0; page < CLIENT_PAGES; page += 1) {
         const result = await store.listClients(account.accountId, { cursor, limit: 50 });
         for (const slot of result.clients) {
             if (!names.some(item => item.kind === 'client' && item.name === slot.organisationName)) names.push({ name: slot.organisationName, kind: 'client' });
+            if (!scopes.some(item => item.tenantId === slot.tenantId)) scopes.push(scopeOf(slot));
         }
-        if (!result.nextCursor) return { names, complete: true };
+        if (!result.nextCursor) return { names, scopes, complete: true };
         cursor = result.nextCursor;
     }
-    return { names, complete: false };
+    return { names, scopes, complete: false };
 }
 
 const MAX_LISTED_NAMES = 5000;
@@ -76,7 +81,9 @@ const CONCURRENCY = 8;
 // record reads). Records are then loaded for the newest MAX_ACCOUNTS.
 function createAccountListReader(sources, now = Date.now) {
     const starters = sources.filter(({ source }) => source.kind !== 'legacy_admin');
-    return async function list(signal, includeSelector = false) {
+    // withScopes is for server-side callers only (contactRequestList); the
+    // lookup route never sets it, so tenant ids and subjects never reach a page.
+    return async function list(signal, includeSelector = false, withScopes = false) {
         const names = [];
         for (const entry of starters) {
             for await (const blob of entry.container.listBlobsFlat({ prefix: PREFIX, abortSignal: signal })) {
@@ -102,8 +109,13 @@ function createAccountListReader(sources, now = Date.now) {
                 plan: account.planId, createdAt: account.createdAt, activatedAt: account.activation?.activatedAt ?? null,
                 signup: account.activation ? 'activated' : 'unfinished', signIn: login.status, organisationsComplete: true,
                 organisations: account.organisations.map(slot => ({ name: slot.organisationName, kind: slot.kind })) };
-            try { const found = await organisations(store, account); row.organisations = found.names; row.organisationsComplete = found.complete; }
+            let scopes = account.organisations.map(scopeOf);
+            try { const found = await organisations(store, account); row.organisations = found.names; row.organisationsComplete = found.complete; scopes = found.scopes; }
             catch (_) { row.organisationsComplete = false; }
+            if (withScopes === true) {
+                row.scopes = scopes;
+                row.subjectKey = ['active', 'revoked'].includes(login.status) ? login.subjectKey : null;
+            }
             if (includeSelector && login.subjectKey && login.status !== 'invalid') row.selector = { provider: provider(source),
                 subjectKey: login.subjectKey, tenantId: account.organisations[0].tenantId, organisationId: account.organisations[0].organisationId };
             return row;

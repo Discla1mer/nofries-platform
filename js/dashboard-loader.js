@@ -21,6 +21,8 @@
     // own non-JSON page. That is not a No Fries decision about this person, so the opening session read keeps
     // trying for about three minutes instead of giving up after seven seconds.
     const PLATFORM_RETRY_MS = 10000, PLATFORM_RETRY_LIMIT = 18;
+    // Contact requests: three attempts in all, about 1s then 2s apart.
+    const CONTACT_ATTEMPTS = 3, CONTACT_RETRY_MS = 1000;
     const ACTION_PLAN_LIMIT = 5;
     // One steady message while the dashboard opens (round 2: three changing
     // lines over 6 to 16 seconds read as separate waits). Retries still say so.
@@ -436,6 +438,7 @@
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsAvailable') ? ['contactRequestsAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
             Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
             Object.prototype.hasOwnProperty.call(value, 'accountName') && (value.purpose !== 'customer' || typeof value.accountName !== 'string' || !value.accountName.trim() || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountName)) ||
@@ -444,6 +447,7 @@
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
             Object.prototype.hasOwnProperty.call(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant') ||
             Object.prototype.hasOwnProperty.call(value, 'workQueueAvailable') && (value.workQueueAvailable !== true || value.accountType !== 'consultant') ||
+            Object.prototype.hasOwnProperty.call(value, 'contactRequestsAvailable') && (value.contactRequestsAvailable !== true || value.purpose !== 'customer') ||
             !canonicalDate(value.expiresAt) || typeof value.generation !== 'string' || !DIGEST.test(value.generation) ||
             value.selectedBindingId !== null && (typeof value.selectedBindingId !== 'string' || !UUID.test(value.selectedBindingId))) throw invalid();
         if (Date.parse(value.expiresAt) <= Date.now()) { const error = invalid(); error.expired = true; throw error; }
@@ -451,12 +455,13 @@
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
+            ...(value.contactRequestsAvailable === true ? { contactRequestsAvailable: true } : {}),
             ...(value.accountType ? { accountType: value.accountType } : {}),
             ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}),
             ...(value.accountName ? { accountName: value.accountName } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType', 'accountLabel', 'accountName']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsAvailable', 'accountType', 'accountLabel', 'accountName']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -562,7 +567,7 @@
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 account-identity-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 account-identity-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
@@ -829,7 +834,8 @@
             ...(cyber ? { mountCyber: cyber } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
-            ...(improvement ? { mountImprovement: improvement } : {}) });
+            ...(improvement ? { mountImprovement: improvement } : {}),
+            ...(fresh.contactRequestsAvailable === true ? { contactRequest: contactSender(cycle, snapshot) } : {}) });
         if (!controller || typeof controller.destroy !== 'function') throw invalid();
         elements.app.hidden = false;
         cycle.busy = false;
@@ -1603,6 +1609,7 @@
                 if (!current(cycle)) throw invalid();
                 return picture.mount(root, { metadata: value.metadata, client: client, organisationId: organisationId,
                     displayName: presentation.displayName,
+                    ...(typeof presentation.contactControl === 'function' ? { contactControl: presentation.contactControl } : {}),
                     ...(!pictureSelection ? { readFirstPaint: async function () {
                         if (!current(cycle) || cycle.authorityPending) throw invalid();
                         const actions = typeof presentation.openImprovement === 'function' && cycle.improvement;
@@ -1692,6 +1699,34 @@
         if (current(cycle) && !cycle.authorityPending && picture && typeof picture.actionSummary === 'function' &&
             picture.actionSummary(result) !== null) informationRead(cycle);
         return result;
+    }
+    // #409: one "Ask No Fries to contact me" action. A fresh operation id per
+    // user action; a network failure or 503 retries that same id, which the
+    // server replays as the original outcome. Nothing is stored in the browser.
+    function contactSender(cycle, snapshot) {
+        return async function (topic) {
+            const body = { operationId: secureId(), topic: topic, consentVersion: 'contact-request-v1' };
+            for (let attempt = 0; attempt < CONTACT_ATTEMPTS; attempt += 1) {
+                if (attempt) {
+                    await new Promise(function (resolve) {
+                        const timer = window.setTimeout(resolve, CONTACT_RETRY_MS * attempt);
+                        cycle.cleanup.push(function () { window.clearTimeout(timer); resolve(); });
+                    });
+                }
+                if (!current(cycle) || cycle.authorityPending) return 'failed';
+                let result;
+                try { result = await request(cycle, '/api/dashboard/contact-requests', body, snapshot.generation); }
+                catch (_) { continue; }
+                if (!current(cycle)) return 'failed';
+                if (result.status === 503) continue;
+                if (result.status === 401) { const error = invalid(); error.status = 401; failure(cycle, error); return 'failed'; }
+                const value = result.value;
+                if (result.status === 200 && fields(value, ['schemaVersion', 'status']) && value.schemaVersion === 1 &&
+                    ['requested', 'already_requested'].includes(value.status)) return value.status;
+                return 'failed';
+            }
+            return 'failed';
+        };
     }
     function improvementOptions(cycle, snapshot, organisationId, cyber) {
         const factory = window.NoFriesImprovementActionPlanClient;

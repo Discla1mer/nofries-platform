@@ -149,14 +149,14 @@ function createDashboardResourceRuntime(options) {
                 }
                 finally { if (pair) pair.finish(); }
             }
-            async function contactRequest(input) {
+            async function contactRequest(input, onStored) {
                 // Capture caller data before the first await or pair ownership.
                 const command = normaliseContactRequest(input);
                 let pair;
                 try {
                     pair = binding.createOperation('contact.request', context);
                     const result = await writeContactRequest({ database: pair.database, clock: pair.clock,
-                        audit: pair.audit, context }, command);
+                        audit: pair.audit, context, ...(typeof onStored === 'function' ? { onStored } : {}) }, command);
                     pair.clock();
                     return result;
                 } catch (error) {
@@ -166,7 +166,7 @@ function createDashboardResourceRuntime(options) {
             }
             return Object.freeze({
                 requestContext,
-                ...(contactRequestsEnabled ? { contact: Object.freeze({ request: input => contactRequest(input) }) } : {}),
+                ...(contactRequestsEnabled ? { contact: Object.freeze({ request: (input, onStored) => contactRequest(input, onStored) }) } : {}),
                 ...(improvementEnabled ? { improvement: Object.freeze({
                     plans: input => improvement('plans', input),
                     list: input => improvement('list', input),

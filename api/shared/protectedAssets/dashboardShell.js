@@ -14,6 +14,61 @@
             if (typeof event.stopPropagation === 'function') event.stopPropagation();
         });
     }
+    // #409: "Ask No Fries to contact me". The host's send(topic) owns the
+    // request, its operation id and retries, and resolves to 'requested',
+    // 'already_requested' or anything else for a failure. This control only
+    // shows the consent wording and asks for confirmation before sending.
+    const CONTACT_CONSENT = 'No Fries staff will see your organisation name, your sign-in email and a summary of your results, and will contact you by email.';
+    const CONTACT_OUTCOMES = { requested: 'Request sent. We’ll be in touch by email.',
+        already_requested: 'Someone in your organisation has already asked about this today. We’ll be in touch.' };
+    let contactSequence = 0;
+    function contactControl(doc, topic, send, subject) {
+        const make = function (tag, className, text) {
+            const node = doc.createElement(tag); node.className = className;
+            if (text) node.textContent = text;
+            if (tag === 'button') node.type = 'button';
+            return node;
+        };
+        const id = 'dashboard-contact-' + (++contactSequence);
+        const control = make('div', 'dashboard-contact');
+        const ask = make('button', 'dashboard-button dashboard-button-secondary', 'Ask No Fries to contact me');
+        if (subject) ask.setAttribute('aria-label', 'Ask No Fries to contact me about ' + subject);
+        const confirm = make('div', 'dashboard-contact-confirm'); confirm.id = id; confirm.hidden = true;
+        ask.setAttribute('aria-controls', id); ask.setAttribute('aria-expanded', 'false');
+        const consent = make('p', '', CONTACT_CONSENT); consent.id = id + '-consent';
+        const sendButton = make('button', 'dashboard-button', 'Send request');
+        sendButton.setAttribute('aria-describedby', consent.id);
+        const cancel = make('button', 'dashboard-button dashboard-button-secondary', 'Cancel');
+        const actions = make('div', 'dashboard-contact-actions'); actions.append(sendButton, cancel);
+        confirm.append(consent, actions);
+        const status = make('p', 'dashboard-contact-status'); status.id = id + '-status';
+        status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.tabIndex = -1;
+        let pending = false;
+        function closeConfirm() { confirm.hidden = true; ask.setAttribute('aria-expanded', 'false'); }
+        ask.addEventListener('click', function () {
+            if (pending) return;
+            status.textContent = ''; ask.hidden = true; confirm.hidden = false;
+            ask.setAttribute('aria-expanded', 'true'); sendButton.focus();
+        });
+        cancel.addEventListener('click', function () {
+            if (pending) return;
+            closeConfirm(); ask.hidden = false; ask.focus();
+        });
+        sendButton.addEventListener('click', function () {
+            if (pending) return;
+            pending = true; sendButton.disabled = true; cancel.disabled = true;
+            status.textContent = 'Sending your request…';
+            Promise.resolve().then(function () { return send(topic); }).then(null, function () { return 'failed'; }).then(function (outcome) {
+                pending = false; sendButton.disabled = false; cancel.disabled = false; closeConfirm();
+                const message = Object.prototype.hasOwnProperty.call(CONTACT_OUTCOMES, outcome) ? CONTACT_OUTCOMES[outcome] : null;
+                // A sent request keeps the button hidden; a failure offers it again.
+                if (message) { status.textContent = message; status.focus(); }
+                else { status.textContent = 'Your request could not be sent. Please try again later.'; ask.hidden = false; ask.focus(); }
+            });
+        });
+        control.append(ask, confirm, status);
+        return control;
+    }
     const mounted = new WeakMap();
     const START_NEW_ASSESSMENT = Object.freeze({ startNew: true });
     let mountSequence = 0;
@@ -48,6 +103,9 @@
         const pictureAvailable = typeof options.mountPicture === 'function' && model.modules.some(function (item) {
             return item.key === 'cyber_security' && item.state === 'ready';
         });
+        // The host passes send only when the session negotiated contact requests.
+        // An advisor-only projection has no contact.request permission.
+        const contactSend = typeof options.contactRequest === 'function' && model.audience !== 'Scoped advisor' ? options.contactRequest : null;
         const first = available.find(function (item) { return item.key === 'overview'; }) || available[0];
         let current = first;
         let disposed = false;
@@ -414,6 +472,7 @@
             try {
                 const result = options.mountPicture(childRoot, { generation: generation,
                     displayName: model.context.displayName,
+                    contactControl: contactSend ? function () { return contactControl(doc, 'results', contactSend); } : undefined,
                     openCyber: cyber ? function (assessmentId, intent) {
                         if (!active() || !pictureChild || child !== pictureChild) return Promise.resolve(false);
                         // The first-use action opens the new-assessment step directly.
@@ -596,7 +655,9 @@
                 }, 'dashboard-text-button');
                 control.setAttribute('aria-expanded', 'false');
                 detail.id = 'dashboard-service-' + item.key; control.setAttribute('aria-controls', detail.id);
-                card.append(control, detail); cards.append(card);
+                card.append(control, detail);
+                if (contactSend) card.append(contactControl(doc, item.key, contactSend, item.label));
+                cards.append(card);
             });
             main.append(cards);
         }
@@ -762,5 +823,5 @@
         } };
         mounted.set(root, controller); return controller;
     }
-    return Object.freeze({ mount: mount, showState: showState, validate: validate });
+    return Object.freeze({ mount: mount, showState: showState, validate: validate, contactControl: contactControl });
 }));
