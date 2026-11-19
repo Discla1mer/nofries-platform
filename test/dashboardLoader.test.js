@@ -1714,6 +1714,7 @@ describe('ready Cyber composition', () => {
     test('locked choices open the contact form and the free choice opens the existing questionnaire', async () => {
         const h = await pick([]), root = h.elements.dashboardApp;
         expect(root.textContent.match(/Locked/g)).toHaveLength(2);
+        expect(root.textContent).toContain('This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.');
         const link = root.querySelectorAll('a').find(a => a.textContent === 'Ask No Fries about the paid dashboard');
         expect(link.href).toBe('/contact.html'); expect(h.requests).toHaveLength(5);
         pickButton(h, 'Open NCSC check').click(); await flush();
