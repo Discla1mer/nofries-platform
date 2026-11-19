@@ -52,15 +52,19 @@ function createContactRequestReader({ list, pool, now = Date.now }) {
         const accounts = await list(signal, false, true);
         if (!accounts || !Array.isArray(accounts.rows) || typeof accounts.truncated !== 'boolean') unavailable();
         const subjects = new Map(), tenants = new Map();
+        // An unreadable account or a partial client scan means some
+        // organisations were not checked: report the list as incomplete.
+        let truncated = accounts.truncated;
         for (const account of accounts.rows) {
-            if (!account || account.readable !== true || typeof account.email !== 'string') continue;
+            if (!account || account.readable !== true || typeof account.email !== 'string') { truncated = true; continue; }
+            if (account.organisationsComplete === false) truncated = true;
             if (typeof account.subjectKey === 'string' && !subjects.has(account.subjectKey)) subjects.set(account.subjectKey, account.email);
             for (const scope of Array.isArray(account.scopes) ? account.scopes : []) {
                 if (typeof scope?.tenantId !== 'string' || !TENANT.test(scope.tenantId) || tenants.has(scope.tenantId)) continue;
                 tenants.set(scope.tenantId, { name: typeof scope.name === 'string' ? scope.name : '', email: account.email });
             }
         }
-        let truncated = accounts.truncated || tenants.size > MAX_TENANTS;
+        if (tenants.size > MAX_TENANTS) truncated = true;
         const at = now();
         if (!Number.isFinite(at)) unavailable();
         const since = new Date(at - WINDOW_DAYS * 86400000).toISOString();

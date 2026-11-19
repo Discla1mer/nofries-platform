@@ -120,7 +120,7 @@ describe('reader', () => {
         const { pool, log, released } = fakePool({
             [tenant(1)]: [{ subject_key: 'owner-subject', topic: 'results', requested_at: new Date('2026-11-18T22:30:00Z'), display_name: 'Alpha Ltd' }],
             [tenant(2)]: [{ subject_key: 'someone-else', topic: 'no_such_topic', requested_at: new Date('2026-11-19T00:00:00Z'), display_name: null }] });
-        const list = accounts([owner, { readable: false }, { readable: true, email: 'x@example.test', subjectKey: null, scopes: [{ tenantId: 'not-a-uuid', name: 'Bad' }] }]);
+        const list = accounts([owner, { readable: true, email: 'x@example.test', subjectKey: null, scopes: [{ tenantId: 'not-a-uuid', name: 'Bad' }] }]);
         const view = await createContactRequestReader({ list, pool, now })(signal());
         expect(list).toHaveBeenCalledWith(expect.anything(), false, true);
         expect(view).toEqual({ truncated: false, windowDays: 90, rows: [
@@ -132,6 +132,12 @@ describe('reader', () => {
         expect(log.filter(([sql]) => sql.includes('FROM nofries.dashboard_contact_requests')).map(([, values]) => values))
             .toEqual([[tenant(1), '2026-08-21T00:00:00.000Z'], [tenant(2), '2026-08-21T00:00:00.000Z']]);
         expect(released).toEqual([false]);
+    });
+
+    test.each([[{ readable: false }], [{ ...{ readable: true, email: 'c@example.test', subjectKey: null, scopes: [] }, organisationsComplete: false }]])('an incomplete account scan (%j) is reported as truncated', async partial => {
+        const { pool } = fakePool({});
+        const view = await createContactRequestReader({ list: accounts([partial]), pool, now })(signal());
+        expect(view).toEqual({ rows: [], truncated: true, windowDays: 90 });
     });
 
     test('no listed organisations: no database connection', async () => {

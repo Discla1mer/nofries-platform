@@ -49,7 +49,7 @@
             const value = response.value;
             const days = Number.isSafeInteger(value.windowDays) ? value.windowDays : 90;
             if (!value.rows.length) {
-                status.textContent = `No contact requests in the last ${days} days` + (value.truncated ? ' among the accounts checked. Older accounts were not checked.' : '.');
+                status.textContent = `No contact requests in the last ${days} days` + (value.truncated ? ' among the accounts checked. Older or unreadable accounts were not checked.' : '.');
                 return;
             }
             const table = document.createElement('table');
@@ -72,7 +72,7 @@
             });
             result.append(table);
             status.textContent = `${value.rows.length} request${value.rows.length === 1 ? '' : 's'} in the last ${days} days` +
-                (value.truncated ? '. The list is capped, so older accounts or requests may be missing.' : '.');
+                (value.truncated ? '. The list may be incomplete: it is capped, or some accounts could not be read in full.' : '.');
         } catch (error) {
             if (active !== controller) return;
             status.textContent = error.name === 'AbortError' ? 'Loading contact requests timed out. Try again.' :
