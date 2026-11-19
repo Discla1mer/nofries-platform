@@ -103,9 +103,7 @@ test('consultant switching clients cannot reuse the previous source, even with t
 });
 
 test('owner responding to a customer sees only three partly-in-place ISO starting points and the evidence still to check', () => {
-    const iso = { frameworkId: 'iso-iec-27001', frameworkVersion: '2022', profileId: 'nf-iso-27001-2022-readiness',
-        profileVersion: '2026-11-19.1', catalogueSha256: '1971ad65405f1c20d8e13a65a26a7b40e9ff48b63505db4f0336d32d64fae73d',
-        sourceCatalogueSha256: '66ce68bdf0d8ea2d271c52f68d6505b7a50f69f8d8d5ce40bcf833320caef1fd' };
+    const iso = require('./fixtures/paidIsoSuggestionPublication.json');
     const input = inputs(history('synthetic-owner')[2]);
     input.target.profileRef = iso;
     expect(read(input)).toEqual([]); // NIST access is not transferable.
@@ -121,6 +119,12 @@ test('owner responding to a customer sees only three partly-in-place ISO startin
         expect(hint.furtherCheck).toMatch(/^Check /);
     }
     expect(input.target.responses).toEqual([]);
+    const retired = { catalogueSha256: '1971ad65405f1c20d8e13a65a26a7b40e9ff48b63505db4f0336d32d64fae73d',
+        sourceCatalogueSha256: '66ce68bdf0d8ea2d271c52f68d6505b7a50f69f8d8d5ce40bcf833320caef1fd' };
+    for (const stale of [retired, { catalogueSha256: retired.catalogueSha256 }, { sourceCatalogueSha256: retired.sourceCatalogueSha256 }]) {
+        input.target.profileRef = { ...iso, ...stale };
+        expect(read(input)).toEqual([]);
+    }
     for (const field of Object.keys(iso)) {
         input.target.profileRef = { ...iso, [field]: 'different' };
         expect(read(input)).toEqual([]);

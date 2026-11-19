@@ -5,6 +5,7 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const request = require('supertest');
+const reviewedIso = require('../../test/fixtures/paidIsoSuggestionPublication.json');
 
 const profiles = [
     { profileId: 'nf-nist-csf-2-0-core', version: '2026-09-08.1' },
@@ -55,6 +56,10 @@ async function checkLifecycle(call, profile) {
     const publication = collection.body.publication;
     assert.equal(publication.profile.id, profile.profileId);
     assert.equal(publication.profile.version, profile.version);
+    if (profile.profileId === reviewedIso.profileId) {
+        assert.equal(publication.catalogueSha256, reviewedIso.catalogueSha256);
+        assert.equal(publication.sourceCatalogueSha256, reviewedIso.sourceCatalogueSha256);
+    }
     assert.ok(publication.questions.length > 1);
     const applicable = new Set(publication.responseOptions.filter(option => option.applicable).map(option => option.id));
     const answers = publication.questions.map(q => {
@@ -92,6 +97,7 @@ async function checkLifecycle(call, profile) {
     assert.equal(submit.status, 200);
     record = submit.body.assessment;
     assert.equal(record.status, 'submitted');
+    if (profile.profileId === reviewedIso.profileId) assert.deepEqual(record.profileRef, reviewedIso);
     assert.match(record.submission.responseSetSha256, /^[0-9a-f]{64}$/);
     assert.equal(record.submission.revision, record.revision);
     assert.equal(record.responses.length, answers.length);

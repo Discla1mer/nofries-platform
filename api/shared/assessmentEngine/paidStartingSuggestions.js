@@ -18,8 +18,8 @@ const NIST_LINKS = new Set([
 const ISO_PROFILE_REF = Object.freeze({
     frameworkId: 'iso-iec-27001', frameworkVersion: '2022',
     profileId: 'nf-iso-27001-2022-readiness', profileVersion: '2026-11-19.1',
-    catalogueSha256: '1971ad65405f1c20d8e13a65a26a7b40e9ff48b63505db4f0336d32d64fae73d',
-    sourceCatalogueSha256: '66ce68bdf0d8ea2d271c52f68d6505b7a50f69f8d8d5ce40bcf833320caef1fd'
+    catalogueSha256: '58e37797ea4bf926ab0477522857cb9dd0ac2a84d3e1815829dee9b2390bd107',
+    sourceCatalogueSha256: '0221ff4667e5471a50711bd4e64ae56b5f253889cdcc9817ce3bfdfda4dc5654'
 });
 const ISO_LINKS = [
     { sourceQuestionId: 'NF-NCSC-MCSS-AI-01-Q1', targetQuestionId: 'A.5.9-Q1',
