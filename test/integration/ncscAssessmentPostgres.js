@@ -916,7 +916,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 const expected = [
                     { ...s.scope, email_type: 'reassess_reminder', dedupe_key: head, template_version: 'reassess-reminder-v1',
                         params: {}, status: 'pending', not_before: '2026-12-06T09:00:00.000Z' },
-                    { ...s.scope, email_type: 'result_summary', dedupe_key: head, template_version: 'result-summary-v1',
+                    { ...s.scope, email_type: 'result_summary', dedupe_key: head, template_version: 'result-summary-v2',
                         params: { assessmentId: 'email-a', gapCount }, status: 'pending', not_before: NOW }]
                     .map(({ tenantId, organisationId, ...row }) => ({ tenant_id: tenantId, organisation_id: organisationId, ...row }));
                 expect(await outboxRows()).toEqual(expected);
