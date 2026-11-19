@@ -785,7 +785,8 @@
             copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
             // #441: the same answers, written for a board or insurer.
             if (typeof questionnaire.boardSummary === 'function') {
-                handoff.append(gated(() => questionnaire.boardSummaryBlock(node, button, win, detail, metadata, id + '-board-summary', status)));
+                const boardExportGate = options.boardExportGate || (content => content());
+                handoff.append(boardExportGate(() => questionnaire.boardSummaryBlock(node, button, win, detail, metadata, id + '-board-summary', status)));
             }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());

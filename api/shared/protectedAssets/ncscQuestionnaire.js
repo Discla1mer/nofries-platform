@@ -1497,12 +1497,13 @@
             panel.append(node('h2', '', 'Assessment results'));
             content.append(panel);
             const campaign = resultsCampaign(win);
+            const boardExportGate = options.boardExportGate || (content => content());
             const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
             if (campaign === 'board') {
                 const section = node('section', 'ncsc-board-next-step picture-summary');
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
                 section.append(node('h3', '', 'Summary for your board or insurer'),
-                    gated(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied)), copied);
+                    boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied)), copied);
                 panel.append(section);
             } else if (campaign === 'scam') {
                 const payment = questionnaireAnswers(acknowledged, metadata).items.find(item => item.id === 'payment-checks');

@@ -679,11 +679,12 @@ function createDashboardRuntimeHandlers(configuration) {
         try {
             const value = copy(binding, 8192);
             fields(value, ['bindingId', 'scope', ...(own(value, 'accountLabel') ? ['accountLabel'] : []), ...(own(value, 'accountName') ? ['accountName'] : []), ...(own(value, 'accountType') ? ['accountType'] : []),
-                ...(own(value, 'clientSetupAvailable') ? ['clientSetupAvailable'] : [])]);
+                ...(own(value, 'ownDeferredAgreement') ? ['ownDeferredAgreement'] : []), ...(own(value, 'clientSetupAvailable') ? ['clientSetupAvailable'] : [])]);
             if (own(value, 'accountLabel') && (typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel))) throw new Error();
             if (own(value, 'accountName') && (typeof value.accountName !== 'string' || value.accountName !== value.accountName.trim() || !value.accountName || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountName))) throw new Error();
             uuid(value.bindingId); fields(value.scope, ['tenantId', 'organisationId']);
             if (own(value, 'accountType') && !['company', 'consultant'].includes(value.accountType)) throw new Error();
+            if (own(value, 'ownDeferredAgreement') && (value.ownDeferredAgreement !== true || value.accountType !== 'company')) throw new Error();
             if (own(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant')) throw new Error();
             return freeze(value);
         } catch (_) { fail(403, 'dashboard_access_denied'); }
@@ -919,7 +920,8 @@ function createDashboardRuntimeHandlers(configuration) {
                 // contact.request; the browser hides it for an advisor-only
                 // projection and the POST route re-checks the locked membership.
                 ...([DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && representativeDetailsEnabled && customerAccount ? { representativeDetailsAvailable: true } : {}),
-                ...([QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && questionnaireExportGateEnabled && customerAccount ? { questionnaireExportGateAvailable: true } : {}),
+                ...([QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && questionnaireExportGateEnabled && customerAccount?.ownDeferredAgreement &&
+                    customerAccount.bindingId === value.selectedBindingId ? { questionnaireExportGateAvailable: true } : {}),
                 ...([CONTACT_CAPABILITIES, IDENTITY_CAPABILITY, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && contactRequestsEnabled && customerAccount ? { contactRequestsAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }

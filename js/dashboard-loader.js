@@ -826,7 +826,8 @@
         if (model.admissionGranted !== false || model.providerAccessGranted !== false) throw invalid();
         cycle.selectedOrganisationName = model.context.displayName;
         const cyberReady = model.modules.some(function (item) { return item.key === 'cyber_security' && item.state === 'ready'; });
-        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1], value.questionnaireExportGateAvailable === true) : null;
+        const gateOwnExports = value.questionnaireExportGateAvailable === true && value.accountType === 'company' && model.audience !== 'Scoped advisor';
+        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1], gateOwnExports) : null;
         const improvementReady = model.modules.some(function (item) { return item.key === 'improvement_plan' && item.state === 'ready'; });
         const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId, cyber) : null;
         const witnessed = await sessionForReconcile(cycle, OPENING_MESSAGE, OPENING_DETAIL);
@@ -1543,6 +1544,7 @@
                     return window.NoFriesDashboard.detailsGate(document, detailsPort(cycle, snapshot), content, 'questionnaire');
                 } } : {}),
                 detailsGate: presentation && presentation.detailsGate,
+                boardExportGate: questionnaireExportGateAvailable && presentation ? presentation.detailsGate : undefined,
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
@@ -1663,6 +1665,7 @@
                         else if (!pictureSelection) savePictureLatestHint(snapshot.selectedBindingId, assessmentId);
                     },
                     detailsGate: presentation.detailsGate,
+                    boardExportGate: questionnaireExportGateAvailable ? presentation.detailsGate : undefined,
                     openCyber: presentation.openCyber,
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);

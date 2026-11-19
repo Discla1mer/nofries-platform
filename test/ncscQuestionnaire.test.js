@@ -3870,7 +3870,7 @@ describe('campaign Results next steps', () => {
         const dom = campaignDom(campaign); let status = initial;
         const port = { read: async () => { if (status === 'unavailable') throw new Error('Synthetic failure'); return { status }; }, isCurrent: () => true };
         const gate = content => require('../api/shared/protectedAssets/dashboardShell').detailsGate(dom.document, port, content);
-        const ui = await resumeUi(h, { dom, detailsGate: gate, questionnaireExportGate: gate });
+        const ui = await resumeUi(h, { dom, detailsGate: gate, boardExportGate: gate, questionnaireExportGate: gate });
         try {
             const label = initial === 'unavailable' ? 'Retry' : 'Add your details';
             await until(() => control(ui, label));
