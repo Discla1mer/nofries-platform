@@ -77,6 +77,7 @@ BEGIN
     RETURN NULL;
 END
 $guard$;
+REVOKE ALL ON FUNCTION nofries.check_plan_gap_source() FROM PUBLIC;
 CREATE TRIGGER plan_gap_source AFTER INSERT ON nofries.dashboard_improvement_revisions
     FOR EACH ROW EXECUTE FUNCTION nofries.check_plan_gap_source();
 

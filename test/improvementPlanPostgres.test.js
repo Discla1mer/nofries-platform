@@ -201,6 +201,13 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             const privileges = (await runtimePool.query("SELECT has_table_privilege(current_user,$1,'SELECT') AS read,has_table_privilege(current_user,$1,'INSERT') AS insert,has_table_privilege(current_user,$1,'UPDATE') AS update,has_table_privilege(current_user,$1,'DELETE') AS delete,has_table_privilege(current_user,$1,'TRUNCATE') AS truncate", [`nofries.${table}`])).rows[0];
             expect(privileges).toEqual({ read: true, insert: true, update: table.endsWith('heads'), delete: false, truncate: false });
         }
+        const trigger = (await ownerPool.query(`SELECT p.prosecdef AS definer,
+            EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f',p.proowner))) a
+                    WHERE a.grantee=0 AND a.privilege_type='EXECUTE') AS public_execute,
+            has_function_privilege('nofries_runtime',p.oid,'EXECUTE') AS runtime_execute,
+            has_function_privilege('nofries_account_wipe',p.oid,'EXECUTE') AS wipe_execute
+            FROM pg_proc p WHERE p.oid='nofries.check_plan_gap_source()'::regprocedure`)).rows;
+        expect(trigger).toEqual([{ definer: false, public_execute: false, runtime_execute: false, wipe_execute: false }]);
         const keys = (await ownerPool.query("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid='nofries.dashboard_improvement_revisions'::regclass AND contype='f'")).rows;
         expect(keys).toHaveLength(3);
         expect(keys.some(row => row.definition.includes('ncsc_assessment_id, assessment_revision, assessment_sha256) REFERENCES nofries.dashboard_ncsc_assessment_revisions'))).toBe(true);
