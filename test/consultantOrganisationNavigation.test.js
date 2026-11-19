@@ -36,8 +36,9 @@ async function flush() { for (let i = 0; i < 35; i += 1) await Promise.resolve()
 
 // Actual loader and dashboard shell, with controlled DOM and transport. This
 // proves navigation and request identity, not browser layout or live access.
-function harness(hash = '#organisations') {
+function harness(hash = '#organisations', localStorage) {
     const { document, window } = createDom();
+    if (localStorage) window.localStorage = localStorage;
     const createElement = document.createElement;
     document.createElement = tag => {
         const node = createElement(tag);
@@ -656,4 +657,49 @@ test('Sign in with another account forgets the remembered organisation, but a ne
     click({ ctrlKey: true, preventDefault: jest.fn() }); expect(store.values.size).toBe(1);
     const event = { preventDefault: jest.fn() }; click(event);
     expect(event.preventDefault).not.toHaveBeenCalled(); expect(store.values.size).toBe(0);
+});
+
+// D-013 hints (#471) are kept browser-wide; a later sign-in may be a different
+// person, so signing out and Switch account clear all of them. The old
+// browser-wide last-organisation copy is no longer read and goes on load.
+function seededHints() {
+    const store = memoryStorage();
+    store.setItem('nofries-dashboard-cyber-ready', C + ' ' + D);
+    store.setItem('nofries-dashboard-picture-latest', C + ' assessment-1');
+    store.setItem('nofries-dashboard-action-plans', C + ' plan-1 plan-2');
+    store.setItem('nofries-dashboard-last-organisation', B + ' ' + state().expiresAt);
+    return store;
+}
+const HINT_KEYS = ['nofries-dashboard-cyber-ready', 'nofries-dashboard-picture-latest', 'nofries-dashboard-action-plans'];
+
+test('the unused browser-wide last-organisation key is removed on load and the other hints are kept', async () => {
+    const local = seededHints();
+    const h = lastOpened(harness('', local), memoryStorage()); await flush();
+    expect(local.values.has('nofries-dashboard-last-organisation')).toBe(false);
+    expect([...local.values.keys()].sort()).toEqual([...HINT_KEYS].sort());
+    expect(local.values.get('nofries-dashboard-cyber-ready')).toBe(C + ' ' + D);
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(B, 'Client')]));
+    expect(h.status).toBe('selection'); expect(h.requests).toHaveLength(2);
+});
+
+test('signing out clears the readiness, picture and action-plan hints', async () => {
+    const local = seededHints();
+    const h = lastOpened(harness('#organisations', local), memoryStorage(B)); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    expect([...local.values.keys()].sort()).toEqual([...HINT_KEYS].sort());
+    h.elements.dashboardSignOut.click(); await flush();
+    expect(h.requests[2].url).toBe('/api/dashboard/logout');
+    await h.reply(2, 200, { schemaVersion: 1, loggedOut: true });
+    expect(local.values.size).toBe(0);
+});
+
+test('Switch account clears the readiness, picture and action-plan hints, but a new-tab click keeps them', async () => {
+    const local = seededHints();
+    const h = lastOpened(harness('#organisations', local), memoryStorage(B)); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    const click = event => { for (const fn of h.switchAccount.events.click) fn(event); };
+    click({ ctrlKey: true, preventDefault: jest.fn() });
+    expect([...local.values.keys()].sort()).toEqual([...HINT_KEYS].sort());
+    click({ preventDefault: jest.fn() });
+    expect(local.values.size).toBe(0);
 });
