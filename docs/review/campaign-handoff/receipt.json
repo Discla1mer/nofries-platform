@@ -1,0 +1,261 @@
+{
+  "passed": true,
+  "syntheticOnly": true,
+  "viewport": {
+    "width": 375,
+    "height": 844
+  },
+  "browser": "154.0.8037.57",
+  "results": [
+    {
+      "name": "insurance",
+      "tag": "meta/paid/insurance",
+      "first": "Answers for your insurer or customer questionnaire",
+      "requests": [
+        "/insurance.html",
+        "/style.css",
+        "/home.css",
+        "/js/home.js",
+        "/images/nofrieslogo.png",
+        "/images/paper-texture.webp",
+        "/assets/fonts/fraunces-latin-opsz-normal.woff2",
+        "/favicon.svg",
+        "/login",
+        "/js/enquiry-availability.js",
+        "/js/organisation-setup.js",
+        "/signup",
+        "/api/external-customer-signup/state",
+        "/dashboard",
+        "/app/dashboard.css",
+        "/api/shared/protectedAssets/dashboardShell.js",
+        "/api/shared/protectedAssets/ncscAssessmentClient.js",
+        "/api/shared/protectedAssets/ncscQuestionnaire.js",
+        "/contact.html",
+        "/js/contact.js",
+        "/api/enquiry"
+      ]
+    },
+    {
+      "name": "supplier",
+      "tag": "meta/paid/supplier",
+      "first": "Answers for your insurer or customer questionnaire",
+      "requests": [
+        "/supplier-questionnaire.html",
+        "/style.css",
+        "/home.css",
+        "/js/home.js",
+        "/images/nofrieslogo.png",
+        "/images/paper-texture.webp",
+        "/assets/fonts/fraunces-latin-opsz-normal.woff2",
+        "/login",
+        "/js/enquiry-availability.js",
+        "/js/organisation-setup.js",
+        "/signup",
+        "/api/external-customer-signup/state",
+        "/dashboard",
+        "/app/dashboard.css",
+        "/api/shared/protectedAssets/dashboardShell.js",
+        "/api/shared/protectedAssets/ncscAssessmentClient.js",
+        "/api/shared/protectedAssets/ncscQuestionnaire.js",
+        "/contact.html",
+        "/js/contact.js",
+        "/api/enquiry"
+      ]
+    },
+    {
+      "name": "board",
+      "tag": "meta/paid/board",
+      "first": "Summary for your board or insurer",
+      "requests": [
+        "/board.html",
+        "/style.css",
+        "/home.css",
+        "/js/home.js",
+        "/images/nofrieslogo.png",
+        "/images/paper-texture.webp",
+        "/assets/fonts/fraunces-latin-opsz-normal.woff2",
+        "/login",
+        "/js/enquiry-availability.js",
+        "/js/organisation-setup.js",
+        "/signup",
+        "/api/external-customer-signup/state",
+        "/dashboard",
+        "/app/dashboard.css",
+        "/api/shared/protectedAssets/dashboardShell.js",
+        "/api/shared/protectedAssets/ncscAssessmentClient.js",
+        "/api/shared/protectedAssets/ncscQuestionnaire.js",
+        "/contact.html",
+        "/js/contact.js",
+        "/api/enquiry"
+      ]
+    },
+    {
+      "name": "scam",
+      "tag": "meta/paid/scam",
+      "first": "Payment-check gap and next step",
+      "requests": [
+        "/invoice-scams.html",
+        "/style.css",
+        "/home.css",
+        "/js/home.js",
+        "/images/nofrieslogo.png",
+        "/images/paper-texture.webp",
+        "/assets/fonts/fraunces-latin-opsz-normal.woff2",
+        "/login",
+        "/js/enquiry-availability.js",
+        "/js/organisation-setup.js",
+        "/signup",
+        "/api/external-customer-signup/state",
+        "/dashboard",
+        "/app/dashboard.css",
+        "/api/shared/protectedAssets/dashboardShell.js",
+        "/api/shared/protectedAssets/ncscAssessmentClient.js",
+        "/api/shared/protectedAssets/ncscQuestionnaire.js",
+        "/api/enquiry",
+        "/contact.html",
+        "/js/contact.js"
+      ]
+    },
+    {
+      "name": "untagged",
+      "tag": null,
+      "first": "Suggested follow-ups",
+      "requests": [
+        "/insurance.html",
+        "/style.css",
+        "/home.css",
+        "/js/home.js",
+        "/images/nofrieslogo.png",
+        "/images/paper-texture.webp",
+        "/assets/fonts/fraunces-latin-opsz-normal.woff2",
+        "/login",
+        "/js/enquiry-availability.js",
+        "/js/organisation-setup.js",
+        "/signup",
+        "/api/external-customer-signup/state",
+        "/dashboard",
+        "/app/dashboard.css",
+        "/api/shared/protectedAssets/dashboardShell.js",
+        "/api/shared/protectedAssets/ncscAssessmentClient.js",
+        "/api/shared/protectedAssets/ncscQuestionnaire.js",
+        "/contact.html",
+        "/js/contact.js",
+        "/api/enquiry"
+      ]
+    },
+    {
+      "name": "other",
+      "tag": "meta/paid/other",
+      "first": "Suggested follow-ups",
+      "requests": [
+        "/insurance.html",
+        "/style.css",
+        "/home.css",
+        "/js/home.js",
+        "/images/nofrieslogo.png",
+        "/images/paper-texture.webp",
+        "/assets/fonts/fraunces-latin-opsz-normal.woff2",
+        "/login",
+        "/js/enquiry-availability.js",
+        "/js/organisation-setup.js",
+        "/signup",
+        "/api/external-customer-signup/state",
+        "/dashboard",
+        "/app/dashboard.css",
+        "/api/shared/protectedAssets/dashboardShell.js",
+        "/api/shared/protectedAssets/ncscAssessmentClient.js",
+        "/api/shared/protectedAssets/ncscQuestionnaire.js",
+        "/contact.html",
+        "/js/contact.js",
+        "/api/enquiry"
+      ]
+    },
+    {
+      "name": "stale",
+      "tag": "meta/paid/scam",
+      "first": "Payment-check gap and next step",
+      "requests": [
+        "/contact.html",
+        "/style.css",
+        "/home.css",
+        "/js/enquiry-availability.js",
+        "/js/contact.js",
+        "/images/nofrieslogo.png",
+        "/assets/fonts/fraunces-latin-opsz-normal.woff2",
+        "/api/enquiry",
+        "/board.html",
+        "/js/home.js",
+        "/images/paper-texture.webp",
+        "/login",
+        "/js/organisation-setup.js",
+        "/signup",
+        "/api/external-customer-signup/state",
+        "/dashboard",
+        "/app/dashboard.css",
+        "/api/shared/protectedAssets/dashboardShell.js",
+        "/api/shared/protectedAssets/ncscAssessmentClient.js",
+        "/api/shared/protectedAssets/ncscQuestionnaire.js"
+      ]
+    },
+    {
+      "name": "malformed",
+      "tag": "broken",
+      "first": "Suggested follow-ups",
+      "requests": [
+        "/contact.html",
+        "/style.css",
+        "/home.css",
+        "/js/enquiry-availability.js",
+        "/js/contact.js",
+        "/images/nofrieslogo.png",
+        "/assets/fonts/fraunces-latin-opsz-normal.woff2",
+        "/api/enquiry",
+        "/board.html",
+        "/js/home.js",
+        "/images/paper-texture.webp",
+        "/login",
+        "/js/organisation-setup.js",
+        "/signup",
+        "/api/external-customer-signup/state",
+        "/dashboard",
+        "/app/dashboard.css",
+        "/api/shared/protectedAssets/dashboardShell.js",
+        "/api/shared/protectedAssets/ncscAssessmentClient.js",
+        "/api/shared/protectedAssets/ncscQuestionnaire.js"
+      ]
+    }
+  ],
+  "errors": [],
+  "transportWrites": 0,
+  "sources": [
+    {
+      "path": "style.css",
+      "sha256": "864fa278e6cf54a69306b7e1d4f0316b6b72ec152ee0c4a1a1074f33970609d6"
+    },
+    {
+      "path": "home.css",
+      "sha256": "67a73f0001c29ed15d2deede594b1e7d9b563f76d28edd4d8f1e9eda9a80815d"
+    },
+    {
+      "path": "app/dashboard.css",
+      "sha256": "ade0e6c39b2022b02a8b5885ceffe3943e15fbfae22aa3ce9dc19bb11b2fad1c"
+    },
+    {
+      "path": "api/shared/protectedAssets/dashboardShell.js",
+      "sha256": "921dc460d40d1ade8b6d9ba462bef80c00179c6eaec53eb657712a2584e7c4c7"
+    },
+    {
+      "path": "api/shared/protectedAssets/ncscAssessmentClient.js",
+      "sha256": "bde1e5918f587be543437d89fc443f4df83b4f6099154de0b8c4e7cc9cad242c"
+    },
+    {
+      "path": "api/shared/protectedAssets/ncscQuestionnaire.js",
+      "sha256": "a1b6cd17b9a01fc34495ef801711857b6b853914637e0ae625a39cd1fef4dc53"
+    }
+  ],
+  "snapshots": {
+    "main": "b383ff09b5b82e62bf38d10f29417a75f150d5a3",
+    "459": "d91c1cd50137ebb8826ac6b6382cd3803080c39a",
+    "477": "12c41125c7d261b05c8b1de3cbc6d323b2a92831"
+  }
+}
