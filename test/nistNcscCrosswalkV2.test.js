@@ -15,7 +15,7 @@ const { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT } = require('../api/shared/assess
 // Pins written out by hand so a change to either publication shows up here.
 const V1_CROSSWALK_SHA = '61f68fba7bfd3ce9480a0db5f6e4d297bdcf1aff63e80073bffd27dc2abf1e17';
 const V1_PUBLICATION_FILE_SHA = '4fd74a503472b531d9a408041c9b11178ae360cebe67a756ec9e754af122e54e';
-const V2_CROSSWALK_SHA = 'abf04ee3e9d6ebc8e4a3b71f4e1135abd9b33bb7360cc40298989e6fed0038b3';
+const V2_CROSSWALK_SHA = '0c609059e63a1235af2796cc23dd1b5d9fcd2cb3e575c97cdb17281047fcc5d8';
 const V1_REF = {
     frameworkId: 'nz-ncsc-cyber-security-framework', frameworkVersion: 'beta-verified-2026-09-02',
     profileId: 'nz-ncsc-mcss-2025-v3-sme', profileVersion: '2026-09-02.1',
@@ -47,7 +47,7 @@ const POSITIVES = [
     ['NF-NCSC-MCSS-MF-01-Q1', 'PR.AA-03:restated'],
     ['NF-NCSC-MCSS-MF-01-Q2', 'PR.AA-03:restated'],
     ['NF-NCSC-MCSS-DU-01-Q1', 'PR.PS-04:restated DE.CM-03:new DE.CM-09:restated DE.AE-06:new'],
-    ['NF-NCSC-MCSS-LP-01-Q1', 'PR.AA-01:restated PR.AA-05:reused'],
+    ['NF-NCSC-MCSS-LP-01-Q1', 'PR.AA-01:restated PR.AA-05:restated'],
     ['NF-NCSC-MCSS-DR-01-Q1', 'PR.DS-11:restated PR.IR-03:restated'],
     ['NF-NCSC-MCSS-DR-01-Q2', 'PR.DS-11:restated'],
     ['NF-NCSC-MCSS-RP-01-Q1', 'GV.SC-08:new ID.IM-04:restated'],
@@ -89,7 +89,7 @@ describe('v2 crosswalk publication', () => {
 
     test('is keyed to the exact v2 profile and NIST catalogue and pins its digest', () => {
         expect(Object.keys(v2Module).sort()).toEqual(['NistNcscCrosswalkError', 'createNistNcscCrosswalkV2']);
-        expect(crosswalk).toMatchObject({ schemaVersion: 2, id: 'nf-ncsc-to-nist-csf-2-0', version: '2026-11-20.1',
+        expect(crosswalk).toMatchObject({ schemaVersion: 2, id: 'nf-ncsc-to-nist-csf-2-0', version: '2026-11-20.2',
             fromProfileRef: V2_REF, toProfileRef: NIST_REF, crosswalkSha256: V2_CROSSWALK_SHA });
         expect(crosswalk.fromProfileRef).toEqual(NCSC_V2_CONTEXT.profileRef);
         expect(crosswalk.toProfileRef).toEqual(v1.toProfileRef);
@@ -249,20 +249,43 @@ describe('flag off: output unchanged', () => {
     });
 
     test('adds no browser-visible output: no protected asset or handler reads a crosswalk', () => {
-        const roots = ['api', 'src', 'public'].map(dir => path.join(__dirname, '..', dir)).filter(fs.existsSync);
-        const readers = [];
-        const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).forEach(entry => {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) { if (entry.name !== 'node_modules') walk(full); }
-            else if (/\.(c|m)?js$/.test(entry.name) && /nistNcscCrosswalk/.test(fs.readFileSync(full, 'utf8'))) {
-                readers.push(path.relative(path.join(__dirname, '..'), full));
-            }
-        });
-        roots.forEach(walk);
-        expect(readers.sort()).toEqual([
+        const repo = path.join(__dirname, '..');
+        const scan = roots => {
+            const files = [];
+            const walk = full => {
+                if (fs.statSync(full).isDirectory()) {
+                    fs.readdirSync(full, { withFileTypes: true }).forEach(entry => {
+                        if (entry.name !== 'node_modules') walk(path.join(full, entry.name));
+                    });
+                } else if (/\.(c|m)?js$/.test(full)) files.push(full);
+            };
+            roots.map(root => path.join(repo, root)).filter(fs.existsSync).forEach(walk);
+            return files.map(full => [path.relative(repo, full).split(path.sep).join('/'), fs.readFileSync(full, 'utf8')]);
+        };
+        const served = scan(['api', 'src', 'public', 'js', 'app', 'lib', 'server.js', 'connector-functions']);
+        // Any served or handler file that names the crosswalk modules at all.
+        expect(served.filter(([, source]) => /nistNcscCrosswalk/.test(source)).map(([file]) => file).sort()).toEqual([
             'api/shared/assessmentEngine/nistNcscCrosswalkSet.js',
             'api/shared/assessmentEngine/nistNcscCrosswalkV2.js'
         ]);
+        // Any file that names either factory or loads either crosswalk module directly. Only the
+        // selector consumes them; the crosswalk modules themselves (v2 builds on v1) and their own
+        // tests are the only other files allowed.
+        const importsFactory = source => /\bcreateNistNcscCrosswalk(V2)?\b/.test(source)
+            || /(require\s*\(|import\s*\(|\bfrom)\s*['"`][^'"`]*nistNcscCrosswalk(V2)?(\.js)?['"`]/.test(source);
+        const importers = [...served, ...scan(['test'])].filter(([, source]) => importsFactory(source))
+            .map(([file]) => file).sort();
+        expect(importers).toEqual([
+            'api/shared/assessmentEngine/nistNcscCrosswalk.js',
+            'api/shared/assessmentEngine/nistNcscCrosswalkSet.js',
+            'api/shared/assessmentEngine/nistNcscCrosswalkV2.js',
+            'test/nistNcscCrosswalk.test.js',
+            'test/nistNcscCrosswalkV2.test.js'
+        ]);
+        // The v2 module loads only the v1 crosswalk, never the selector.
+        const v2Source = served.find(([file]) => file === 'api/shared/assessmentEngine/nistNcscCrosswalkV2.js')[1];
+        expect(v2Source.match(/require\(\s*['"][^'"]*nistNcscCrosswalk[^'"]*['"]\s*\)/g))
+            .toEqual(["require('./nistNcscCrosswalk')"]);
     });
 });
 
