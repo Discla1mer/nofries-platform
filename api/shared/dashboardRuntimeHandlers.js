@@ -28,7 +28,7 @@ const { hostResourceForRoute } = require('./appLifecycle/dashboardRuntimeEvents'
 const { apiSecurityHeaders } = require('./securityHeaders');
 const { OVERVIEW_PLAN_LIMIT } = require('./dashboardReadCost');
 const { ContactRequestError, normaliseContactRequest } = require('./contactRequests');
-// The current dashboard advertises all three; older open dashboards keep their exact session shape.
+// Dashboards before the signed-in name advertise all three; they keep their exact session shape.
 const CONTACT_CAPABILITIES = 'work-queue-v1 account-label-v1 contact-request-v1';
 const DETAILS_CAPABILITIES = CONTACT_CAPABILITIES + ' starter-details-v1';
 const QUESTIONNAIRE_CAPABILITIES = DETAILS_CAPABILITIES + ' questionnaire-details-v1';
@@ -40,6 +40,13 @@ const AUTH = ['env', 'store', 'clientApplication', 'cryptoProvider', 'randomByte
 const STORE = ['createTransaction', 'consumeTransaction', 'deleteTransaction', 'createSession', 'loadSession', 'deleteSession'];
 const HEADER_NAMES = ['cookie', 'origin', 'sec-fetch-site', 'x-nofries-dashboard-generation', 'x-nofries-dashboard-purpose',
     'x-nofries-dashboard-capabilities', 'content-type', 'content-encoding'];
+// Older dashboards send the shorter values and keep their exact session shape.
+// The current dashboard adds account-identity-v1, which returns the signed-in name
+// beside the email; it does not grant access.
+const CURRENT_CAPABILITIES = QUESTIONNAIRE_CAPABILITIES + ' account-identity-v1';
+const QUEUE_CAPABILITY = 'work-queue-v1';
+const LABEL_CAPABILITY = 'work-queue-v1 account-label-v1';
+const IDENTITY_CAPABILITY = CONTACT_CAPABILITIES + ' account-identity-v1';
 const MAX_WIRE = 524288;
 const unavailable = () => new BrowserAuthError(503, 'browser_auth_dashboard_unavailable');
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -671,9 +678,10 @@ function createDashboardRuntimeHandlers(configuration) {
         const binding = await bounded(() => selected.binding(req));
         try {
             const value = copy(binding, 8192);
-            fields(value, ['bindingId', 'scope', ...(own(value, 'accountLabel') ? ['accountLabel'] : []), ...(own(value, 'accountType') ? ['accountType'] : []),
+            fields(value, ['bindingId', 'scope', ...(own(value, 'accountLabel') ? ['accountLabel'] : []), ...(own(value, 'accountName') ? ['accountName'] : []), ...(own(value, 'accountType') ? ['accountType'] : []),
                 ...(own(value, 'clientSetupAvailable') ? ['clientSetupAvailable'] : [])]);
             if (own(value, 'accountLabel') && (typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel))) throw new Error();
+            if (own(value, 'accountName') && (typeof value.accountName !== 'string' || value.accountName !== value.accountName.trim() || !value.accountName || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountName))) throw new Error();
             uuid(value.bindingId); fields(value.scope, ['tenantId', 'organisationId']);
             if (own(value, 'accountType') && !['company', 'consultant'].includes(value.accountType)) throw new Error();
             if (own(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant')) throw new Error();
@@ -899,18 +907,20 @@ function createDashboardRuntimeHandlers(configuration) {
             return response(200, { schemaVersion: 1, authenticated: true, purpose: value.purpose, expiresAt: value.expiresAt,
                 generation: value.generation, selectedBindingId: value.selectedBindingId,
                 ...(customerAccount?.accountType ? { accountType: customerAccount.accountType } : {}),
-                ...(['work-queue-v1 account-label-v1', CONTACT_CAPABILITIES, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES].includes(capabilities) &&
+                ...([LABEL_CAPABILITY, CONTACT_CAPABILITIES, IDENTITY_CAPABILITY, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) &&
                     customerAccount?.accountLabel ? { accountLabel: customerAccount.accountLabel } : {}),
+                // The signed-in name is display only, for the current dashboard's exact value.
+                ...([IDENTITY_CAPABILITY, CURRENT_CAPABILITIES].includes(capabilities) && customerAccount?.accountName ? { accountName: customerAccount.accountName } : {}),
                 // Existing open dashboards validate an exact session shape.
                 // Negotiate display metadata; this does not grant queue access.
-                ...(['work-queue-v1', 'work-queue-v1 account-label-v1', CONTACT_CAPABILITIES, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES].includes(capabilities) &&
+                ...([QUEUE_CAPABILITY, LABEL_CAPABILITY, CONTACT_CAPABILITIES, IDENTITY_CAPABILITY, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) &&
                     improvementEnabled && customerAccount?.accountType === 'consultant' ? { workQueueAvailable: true } : {}),
                 // Display only (#409): every customer member role holds
                 // contact.request; the browser hides it for an advisor-only
                 // projection and the POST route re-checks the locked membership.
-                ...([DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES].includes(capabilities) && representativeDetailsEnabled && customerAccount ? { representativeDetailsAvailable: true } : {}),
-                ...(capabilities === QUESTIONNAIRE_CAPABILITIES && questionnaireExportGateEnabled && customerAccount ? { questionnaireExportGateAvailable: true } : {}),
-                ...([CONTACT_CAPABILITIES, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES].includes(capabilities) && contactRequestsEnabled && customerAccount ? { contactRequestsAvailable: true } : {}),
+                ...([DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && representativeDetailsEnabled && customerAccount ? { representativeDetailsAvailable: true } : {}),
+                ...([QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && questionnaireExportGateEnabled && customerAccount ? { questionnaireExportGateAvailable: true } : {}),
+                ...([CONTACT_CAPABILITIES, IDENTITY_CAPABILITY, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && contactRequestsEnabled && customerAccount ? { contactRequestsAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }
         if (selected.route === 'session') {
