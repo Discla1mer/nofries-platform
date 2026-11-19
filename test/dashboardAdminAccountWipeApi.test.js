@@ -101,6 +101,7 @@ test('the approval is bound to the staff browser session cookie', async () => {
 test.each([
     [{ wipe: { step: 'approve', action: 'delete', email: EMAIL } }, 400, 'account_wipe_input_invalid'],
     [{ wipe: { step: 'other' } }, 400, 'account_wipe_input_invalid'],
+    [{ wipe: { ...execute(uid(9)).wipe, action: 'delete' } }, 400, 'account_wipe_input_invalid'],
     [approve('delete', { confirmWord: 'RESET' }), 400, 'account_wipe_confirmation_mismatch'],
     [{ wipe: approve('delete').wipe, email: EMAIL }, 400, 'dashboard_admin_account_lookup_400']
 ])('malformed body %# is refused with %s', async (input, status, code) => {

@@ -64,7 +64,7 @@ const { requestBodySize } = require('./api/shared/requestLimits');
 const { createFunnelCountReader, createFunnelCountWriter, createServerFunnelCounter, funnelCountsEnabled, handleFunnelCountRequest,
     isAssessmentSubmit } = require('./api/shared/funnelCounts');
 const { PATH: UNSUBSCRIBE_PATH, MAX_BODY_BYTES: UNSUBSCRIBE_BODY_BYTES, createUnsubscribeWriter, handleUnsubscribeRequest } = require('./api/shared/lifecycleEmail/unsubscribeEndpoint');
-const { PATH: EMAIL_SETTINGS_PATH, MAX_BODY_BYTES: EMAIL_SETTINGS_BODY_BYTES, handleEmailSettingsRequest } = require('./api/shared/lifecycleEmail/emailSettings');
+const { PATH: EMAIL_SETTINGS_PAGE, LEGACY_PATH: EMAIL_SETTINGS_LEGACY, REWRITE_PATH: EMAIL_SETTINGS_REWRITE, MAX_BODY_BYTES: EMAIL_SETTINGS_BODY_BYTES, handleEmailSettingsRequest, legacyEmailSettingsRedirect } = require('./api/shared/lifecycleEmail/emailSettings');
 const { createEmailSettingsStore } = require('./api/shared/lifecycleEmail/emailSettingsStore');
 const { logSafeFailure: logStaffAuthFailure } = require('./api/shared/browserAuthDiagnostics');
 const { createAuthLoginFunction } = require('./api/authLogin');
@@ -218,7 +218,7 @@ function createNoFriesApp(configuration = {}) {
         if (keys.includes('dashboardAdminAccountLookup') && configuration.dashboardAdminAccountLookup !== null) {
             // Email lookup needs the same staff administration service that
             // validates the native operator session; a reader alone is inert.
-            const lookupKeys = ['read', 'list', 'wipe', 'audit', 'targetDigest'].filter(key => !['list', 'wipe'].includes(key) || Object.hasOwn(configuration.dashboardAdminAccountLookup, key));
+            const lookupKeys = ['read', 'list', 'wipe', 'contactRequests', 'audit', 'targetDigest'].filter(key => !['list', 'wipe', 'contactRequests'].includes(key) || Object.hasOwn(configuration.dashboardAdminAccountLookup, key));
             const port = fields(configuration.dashboardAdminAccountLookup, lookupKeys);
             if (!dashboardAdminService || Object.values(port).some(value => typeof value !== 'function' || isProxy(value))) throw new Error();
             dashboardAdminAccountLookup = Object.freeze({ ...port });
@@ -675,12 +675,23 @@ async function readEmailSettingsSubject(cookie) {
     const details = await reader.session.readSessionDetails(cookie);
     return details && details.identity && details.identity.isAuthenticated === true ? details.identity.subjectKey : null;
 }
-app.all(EMAIL_SETTINGS_PATH, (req, res, next) => emailSettingsStore ? next()
-    : sendResult(res, { status: 404, body: { error: 'Not found', code: 'not_found' } }),
-express.urlencoded({ extended: false, limit: EMAIL_SETTINGS_BODY_BYTES, parameterLimit: 4 }), asyncRoute(async (req, res) => {
+const emailSettingsParser = express.urlencoded({ extended: false, limit: EMAIL_SETTINGS_BODY_BYTES, parameterLimit: 4 });
+function emailSettingsReady(req, res, next) {
+    if (emailSettingsStore) return next();
+    sendResult(res, { status: 404, body: { error: 'Not found', code: 'not_found' } });
+}
+const emailSettingsResponse = asyncRoute(async (req, res) => {
     sendResult(res, await handleEmailSettingsRequest(req, { env: authEnvironment || {}, readSubject: readEmailSettingsSubject,
         store: emailSettingsStore, log: console }));
-}));
+});
+// GET on the old path changes the address bar. POST still saves, for a form already open there.
+app.all(EMAIL_SETTINGS_LEGACY, emailSettingsReady, (req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    sendResult(res, legacyEmailSettingsRedirect(req.query));
+}, emailSettingsParser, emailSettingsResponse);
+for (const emailSettingsPath of [EMAIL_SETTINGS_PAGE, EMAIL_SETTINGS_REWRITE]) {
+    app.all(emailSettingsPath, emailSettingsReady, emailSettingsParser, emailSettingsResponse);
+}
 app.use(express.json({ limit: '3mb' }));
 if (configuration.signupBootstrap) {
     if (typeof configuration.signupBootstrap !== 'function') throw new Error('signup_bootstrap_invalid');
