@@ -1388,6 +1388,31 @@ describe('configured NCSC host presentation remains authority-bound', () => {
         frozen(result); expectHostSettled(f, true);
         expect(f.options.resolveSubmissionQuota).not.toHaveBeenCalled();
     });
+    test('scoring v2 (#399): v2 display metadata is added only when NOFRIES_NCSC_PROFILE_V2 is exactly true', async () => {
+        const original = process.env.NOFRIES_NCSC_PROFILE_V2;
+        const read = async value => {
+            if (value === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2; else process.env.NOFRIES_NCSC_PROFILE_V2 = value;
+            const result = await hostRead(configured(), 'modules/cyber_security');
+            expect(result.status).toBe(200); return result.body;
+        };
+        try {
+            const off = await read(undefined);
+            expect(off).not.toHaveProperty('profileMetadata');
+            for (const value of ['', 'TRUE', '1', ' true', 'false']) {
+                const body = await read(value);
+                expect(body).not.toHaveProperty('profileMetadata');
+                expect(JSON.stringify({ ...body, generatedAt: null })).toBe(JSON.stringify({ ...off, generatedAt: null }));
+            }
+            const on = await read('true');
+            expect(on.profileMetadata).toEqual([require('../api/shared/ncscQuestionnaireMetadata').createNcscQuestionnaireMetadataV2()]);
+            const { profileMetadata, ...rest } = on;
+            expect(JSON.stringify({ ...rest, generatedAt: null })).toBe(JSON.stringify({ ...off, generatedAt: null }));
+            // The bootstrap read never carries module metadata of either profile.
+            expect(await hostRead(configured())).not.toHaveProperty('body.profileMetadata');
+        } finally {
+            if (original === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2; else process.env.NOFRIES_NCSC_PROFILE_V2 = original;
+        }
+    });
     test('bootstrap advertises ready only for configured accepted NCSC and does not expose module metadata', async () => {
         const f = configured(), result = await hostRead(f);
         expect(result.status).toBe(200);
