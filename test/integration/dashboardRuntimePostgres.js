@@ -8,7 +8,7 @@
 let mockResourceAfterWork = null;
 let mockRuntimeAfterReconcile = null;
 let mockAfterHostDecision = null;
-// Expire a synthetic membership when the HTTP host constructs the response,
+// Expire a synthetic session when the HTTP host constructs the response,
 // after the real operation (including COMMIT) has returned its data.
 let mockPaidJsonReady = null;
 jest.mock('../../api/shared/securityHeaders', () => {

@@ -7,12 +7,12 @@ const { customerProductionHarness } = require('../helpers/customerProductionHarn
 module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner, atJsonResponse }) => {
     const nist = { id: 'nf-nist-csf-2-0-core', version: '2026-09-08.1', answer: 'yes', count: 106 };
     const iso = { id: 'nf-iso-27001-2022-readiness', version: '2026-11-19.1', answer: 'in_place', count: 116 };
-    async function setup({ id, version }, exampleOptions = {}) {
+    async function setup({ id, version }) {
         const ref = { profileId: id, profileVersion: version };
         const base = '/api/dashboard/frameworks/' + id + '/' + version + '/assessments';
         const tenant = NCSC_SUBJECT.split(':')[0], principal = { ...identity(), identityTenantId: tenant,
             oid: NCSC_SUBJECT.split(':')[1], issuer: `https://login.microsoftonline.com/${tenant}/v2.0`, audience: nextId() };
-        const f = await resourceSetup({ productionIdentity: principal, exampleOptions: { ...exampleOptions, profileRefs: [ref] }, initialTime: '2026-11-19T00:01:00.000Z' });
+        const f = await resourceSetup({ productionIdentity: principal, exampleOptions: { profileRefs: [ref] }, initialTime: '2026-11-19T00:01:00.000Z' });
         const h = customerProductionHarness({ pool: f.restrictedPool, identity: principal, instanceId: f.instanceId,
             restoreEpoch: f.state.restoreEpoch, now: Date.parse(f.state.now),
             applicationFactory: (env, deps) => createProductionApplication({ ...env, NOFRIES_PAID_FRAMEWORKS_ENABLED: 'true' }, deps) });
@@ -25,7 +25,7 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner, atJson
         const header = 'X-NoFries-Dashboard-Generation', gen = session.body.generation;
         const get = path => request(h.app).get(path).set('Cookie', login.cookie).set(header, gen);
         const post = (path, body) => h.sameOrigin(request(h.app).post(path)).set('Cookie', login.cookie).set(header, gen).send(body);
-        return { f, h, login, base, header, get, post };
+        return { f, h, login, base, header, get, post, expiresAt: Date.parse(session.body.expiresAt) };
     }
     test.each([nist, iso])('paid assessment HTTP lifecycle and isolation for $id', async profile => {
         const { id, version, answer, count } = profile;
@@ -83,9 +83,8 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner, atJson
         const next = await f.bindResource({ generation: switched.record.generationToken, overrides: { paidFrameworksEnabled: true } });
         await expect(next.facade.paid({ ...route, assessmentId: 'example' }, undefined, null)).rejects.toMatchObject({ code: 'framework_not_found' });
     });
-    test.each(['collection', 'detail', 'save', 'save replay'])('paid %s withholds the JSON body at membership expiry', async mode => {
-        const cutoff = '2026-11-19T00:01:00.100Z';
-        const { f, h, base, get, post } = await setup(nist, { membershipEndsAt: cutoff });
+    test.each(['collection', 'detail', 'save', 'save replay'])('paid %s withholds the JSON body at session expiry', async mode => {
+        const { f, h, base, get, post, expiresAt } = await setup(nist);
         const publication = (await get(base).expect(200)).body.publication;
         const detail = base + '/private-example';
         const start = { assessmentId: 'private-example', expectedRevision: null, idempotencyKey: 'start',
@@ -94,8 +93,10 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner, atJson
         const save = { expectedRevision: 0, idempotencyKey: 'save', payload: {
             responses: [{ itemId: publication.questions[0].id, optionId: 'yes', rationale: null }] } };
         if (mode === 'save replay') await post(detail + '/save', save).expect(200);
+        // Begin inside the actual selected session, then expire it within the request budget.
+        h.state.now = expiresAt - 100;
         let sampled = false;
-        atJsonResponse(() => { sampled = true; h.state.now = Date.parse(cutoff); });
+        atJsonResponse(() => { sampled = true; h.state.now = expiresAt; });
         try {
             const response = await (mode === 'collection' ? get(base) : mode === 'detail' ? get(detail) : post(detail + '/save', save));
             expect(sampled).toBe(true);
