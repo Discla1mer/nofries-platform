@@ -1031,10 +1031,10 @@ describe('questionnaire draft progress and unanswered navigation', () => {
                 expect(ui.root.querySelector('legend').textContent).toBe(question.smallBusiness.question);
             });
             const help = byId(ui, picker.getAttribute('aria-describedby'));
-            expect(help.textContent).toBe('The full question is below. * marks unsaved changes. Answers save automatically a moment after each change.');
+            expect(help.textContent).toBe('The full question is below. Answers save automatically a moment after each change.');
             choose(ui, 0, 'unknown'); choose(ui, 1, 'not_applicable', 'Synthetic pending claim');
-            expect(picker.children[0].textContent).toBe('1 of ' + questions.length + ' · Unknown *');
-            expect(picker.children[1].textContent).toBe('2 of ' + questions.length + ' · Not applicable, to confirm *');
+            expect(picker.children[0].textContent).toBe('1 of ' + questions.length + ' · Unknown · Not saved yet');
+            expect(picker.children[1].textContent).toBe('2 of ' + questions.length + ' · Not applicable, to confirm · Not saved yet');
             control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
             const saved = byId(ui, 'ncsc-question-index');
             expect(saved.children[0].textContent).toBe('1 of ' + questions.length + ' · Unknown');
@@ -1055,22 +1055,24 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(byId(ui, rationale.id)).toBe(rationale); expect(ui.document.activeElement).toBe(rationale);
         expect(rationale.selectionStart).toBe(3); expect(rationale.selectionEnd).toBe(7);
         expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('2 of 14 answered · 12 to go · 2 to check later (unknown, or marked not applicable, to confirm) · 2 not saved yet');
-        expect(byId(ui, 'ncsc-question-index').children[1].textContent).toContain('Not applicable, to confirm *');
+        expect(byId(ui, 'ncsc-question-index').children[1].textContent).toContain('Not applicable, to confirm · Not saved yet');
         control(ui, 'Clear answer').click();
         expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('1 of 14 answered · 13 to go · 1 to check later (unknown, or marked not applicable, to confirm) · 1 not saved yet');
         expect(ui.root.querySelector('.ncsc-status').textContent).toContain('Newer changes are not saved yet.');
-        expect(byId(ui, 'ncsc-question-index').children[1].textContent).not.toContain('*');
+        expect(byId(ui, 'ncsc-question-index').children[1].textContent).not.toContain('Not saved yet');
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
         expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · 1 to check later (unknown, or marked not applicable, to confirm) · all saved.');
         const picker = byId(ui, 'ncsc-question-index'); picker.value = '0'; event(picker, 'change');
         control(ui, 'Clear answer').click();
         expect(byId(ui, 'ncsc-draft-progress').textContent).toContain('0 of 14 answered · 14 to go · 1 not saved yet');
-        expect(picker.children[0].textContent).toContain('Unanswered *');
+        expect(picker.children[0].textContent).toContain('Unanswered · Not saved yet');
         ui.controller.destroy();
     });
 
     test('next unanswered wraps, skips local explicit responses and focuses the destination question', async () => {
         const h = await backend(), ui = await createInUi(h), picker = byId(ui, 'ncsc-question-index');
+        expect(control(ui, 'Previous question').className).toContain('dashboard-button-secondary');
+        expect(control(ui, 'Next question').className).toBe('dashboard-button');
         picker.value = '13'; event(picker, 'change'); control(ui, 'Next unanswered question').click();
         expect(picker.value).toBe('0'); expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
         choose(ui, 1, 'unknown'); choose(ui, 0, 'not_applicable', 'Synthetic pending claim');
@@ -2972,7 +2974,7 @@ describe('batched automatic save', () => {
         expect(h.records).toHaveLength(before);
         const off = await resumeUi(h, { autosaveIdleMs: 0 });
         try {
-            expect(byId(off, 'ncsc-question-index-help').textContent).toBe('The full question is below. * marks unsaved changes.');
+            expect(byId(off, 'ncsc-question-index-help').textContent).toBe('The full question is below.');
             expect(byId(off, 'ncsc-save').className).toBe('dashboard-button');
             choose(off, 0, 'yes'); await settle();
             expect(h.records).toHaveLength(before);
@@ -2990,8 +2992,11 @@ describe('batched automatic save', () => {
             choose(ui, 0, 'yes');
             // During the autosave pause the status reads as saving (#328).
             expect(status()).toBe('Saving…');
+            expect(byId(ui, 'ncsc-saved-summary').textContent).toBe('0 of 14 saved');
+            expect(byId(ui, 'ncsc-draft-progress').parentElement.tagName).toBe('DETAILS');
             expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · saving….');
             await until(() => status().startsWith('Your progress is saved. Last saved '));
+            expect(byId(ui, 'ncsc-saved-summary').textContent).toBe('1 of 14 saved');
             expect(status()).toMatch(/^Your progress is saved\. Last saved .+ NZ time\.$/);
             expect(ui.root.textContent).not.toMatch(/revision \d/i);
             expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · 13 to go · all saved.');
@@ -3332,7 +3337,7 @@ describe('final submission review step', () => {
             control(ui, 'Review and submit').click();
             const range = byId(ui, 'ncsc-review-range');
             expect(range.textContent).toContain('1 answer marked not applicable, to confirm.');
-            expect(range.textContent).toContain('The projected range appears when every question has an answer.');
+            expect(range.textContent).not.toContain('%');
             expect(range.textContent).toContain('Answer ' + (metadata().questions.length - 3) + ' more questions to see your projected range.');
             expect(byId(ui, 'ncsc-review-range-value')).toBeUndefined();
             expect(range.querySelectorAll('button').map(item => item.textContent)).toEqual(['Change question 3']);
