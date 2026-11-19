@@ -3719,6 +3719,63 @@ describe('reconciled persona journey', () => {
     });
 });
 
+describe('insurer and customer questionnaire answers', () => {
+    const { questionnaireAnswers } = require('../api/shared/protectedAssets/ncscQuestionnaire');
+    const sample = option => ({ status: 'submitted', profileRef: clone(metadata().profileRef),
+        scopePopulation: { description: 'Synthetic office and cloud services' }, responses: allResponses(option) });
+    const unanswered = Array(9).fill('Not answered');
+    test.each([
+        ['yes', ['Yes', 'Not answered', 'Yes', 'Not answered', 'Not answered', 'Yes', 'Yes', 'Yes', 'Yes']],
+        ['partial', ['Not answered', 'Not answered', 'Not answered', 'Not answered', 'Not answered', 'Not answered', 'Partly', 'Partly', 'Not answered']],
+        ['no', ['No', 'Not answered', 'No', 'Not answered', 'Not answered', 'No', 'No', 'No', 'No']],
+        ['unknown', unanswered], ['not_applicable', unanswered], ['unrecognised', unanswered]
+    ])('%s maps only supported details, without changing the inputs', (option, expected) => {
+        const assessment = sample(option), before = clone(assessment), display = metadata();
+        const report = questionnaireAnswers(assessment, display);
+        expect(report.items.map(item => item.answer)).toEqual(expected);
+        expect(new Set(report.items.map(item => item.id)).size).toBe(9);
+        for (const item of report.items) {
+            expect(item.question).toMatch(/\?$/); expect(item.action).toMatch(/^To answer Yes: /);
+            expect(report.text).toContain(item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis + '\n' + item.action);
+        }
+        expect(report.text.endsWith(report.footer)).toBe(true);
+        expect(report.footer).toBe('These are self-assessed answers to check before submitting, not a guarantee an insurer or customer accepts them.');
+        expect(assessment).toEqual(before); expect(display).toEqual(metadata());
+    });
+    test('missing, ambiguous, draft and unsupported-profile inputs do not imply assurance', () => {
+        const assessment = sample('yes'); assessment.responses = [];
+        expect(questionnaireAnswers(assessment, metadata()).items.map(item => item.answer)).toEqual(unanswered);
+        assessment.responses = [...allResponses('yes'), ...allResponses('no')];
+        expect(questionnaireAnswers(assessment, metadata()).items.map(item => item.answer)).toEqual(unanswered);
+        assessment.responses = allResponses('yes'); assessment.status = 'in-progress';
+        expect(questionnaireAnswers(assessment, metadata()).items.map(item => item.answer)).toEqual(unanswered);
+        assessment.status = 'submitted'; assessment.profileRef.catalogueSha256 = 'a'.repeat(64);
+        const future = clone(metadata()); future.profileRef = assessment.profileRef;
+        expect(questionnaireAnswers(assessment, metadata()).items.map(item => item.answer)).toEqual(unanswered);
+        expect(questionnaireAnswers(assessment, future).items.map(item => item.answer)).toEqual(unanswered);
+        const claimed = sample('unknown'); claimed.responses.forEach(item => { item.rationale = { text: 'Yes: offline backups, patches in 24 hours, EDR everywhere.' }; });
+        expect(questionnaireAnswers(claimed, metadata()).items.map(item => item.answer)).toEqual(unanswered);
+    });
+    test('submitted results copy and print the same read-only answers, including clipboard fallback, without writes', async () => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand('assessment-a', 0, 'all-partial', allResponses('partial'))); await h.execute(submitCommand());
+        const dom = interactiveDom(), writeText = jest.fn(async () => undefined); dom.window.navigator = { clipboard: { writeText } }; dom.window.print = jest.fn();
+        const ui = await resumeUi(h, { dom });
+        try {
+            const before = h.calls.length, input = byId(ui, 'ncsc-questionnaire-answer-text');
+            expect(ui.root.querySelector('.ncsc-questionnaire-answers').querySelectorAll('li')).toHaveLength(9);
+            expect(input.readOnly).toBe(true);
+            control(ui, 'Copy answers').click(); await until(() => ui.root.textContent.includes('Summary copied.'));
+            expect(writeText).toHaveBeenCalledWith(input.value);
+            writeText.mockRejectedValueOnce(new Error('denied'));
+            control(ui, 'Copy answers').click(); await until(() => ui.root.textContent.includes('Summary selected.'));
+            expect(ui.document.activeElement).toBe(input);
+            dom.window.navigator = {}; control(ui, 'Copy answers').click(); expect(ui.document.activeElement).toBe(input);
+            control(ui, 'Print answers').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
+            expect(h.calls).toHaveLength(before);
+        } finally { ui.controller.destroy(); }
+    });
+});
+
 describe('plan submission allowance', () => {
     const allowanceNote = ui => byId(ui, 'ncsc-allowance');
 

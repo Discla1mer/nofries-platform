@@ -181,6 +181,50 @@
         lines.push('', 'Next steps agreed (owner and date): ');
         return { text: lines.join('\n') };
     }
+    // Read-only suggestions for the current catalogue, never evidence or scores.
+    // Narrower questions cannot inherit a broader Partial answer. Storage type,
+    // patch deadlines and EDR are not collected by this catalogue at all.
+    function questionnaireAnswers(assessment, metadata) {
+        const title = 'Answers for your insurer or customer questionnaire';
+        const footer = 'These are self-assessed answers to check before submitting, not a guarantee an insurer or customer accepts them.';
+        const supported = assessment.status === 'submitted' && profileMatches(assessment.profileRef, metadata.profileRef) &&
+            metadata.profileRef.catalogueSha256 === '32c3f8d154ffe2be9b1270f8fa1234427a05cdea96b231588cce0b147e7d5375';
+        const definitions = [
+            ['mfa', 'Is multi-factor authentication (MFA) required for business email and remote access?', 'NF-NCSC-MCSS-MF-01-Q1', false,
+                'Require MFA for business email and every remote-access route, and check for exceptions.'],
+            ['backup-storage', 'Do you keep an offline or immutable backup copy (one that cannot be changed or deleted)?', null, false,
+                'Keep a backup copy offline or locked against changes and deletion, and confirm how it is protected.'],
+            ['restore-tests', 'Have you tested restoring important systems and files from backup?', 'NF-NCSC-MCSS-DR-01-Q1', false,
+                'Restore samples of important systems and files, and record the results and recovery time.'],
+            ['patch-speed', 'Are urgent security updates installed within the deadline your insurer or customer asks for?', null, false,
+                'Confirm the required deadline, install urgent fixes within it, and keep dated installation records.'],
+            ['endpoint', 'Are work devices covered by endpoint protection and endpoint detection and response (EDR)?', null, false,
+                'Confirm protection and EDR coverage for work devices, with someone responsible for responding to alerts.'],
+            ['training', 'Do staff receive ongoing guidance on spotting and reporting phishing and scams?', 'NF-NCSC-MCSS-SA-01-Q1', false,
+                'Give staff practical phishing guidance when they start and refresh it, keeping completion records.'],
+            ['incident-plan', 'Do you have an incident response plan with named roles, contacts, management support and lessons from practice or incidents?', 'NF-NCSC-MCSS-RP-01-Q1', true,
+                'Write down the response plan, agree roles and contacts, practise it and record improvements.'],
+            ['admin-rights', 'Is access limited to job needs, with separate admin accounts and checks when people join, change roles or leave?', 'NF-NCSC-MCSS-LP-01-Q1', true,
+                'Limit access to job needs, separate admin accounts, and regularly review access and staff changes.'],
+            ['payment-checks', 'Are payment and bank-detail changes checked through a trusted route separate from the original request?', 'NF-NCSC-CC-SV-01-Q1', false,
+                'Check payment and bank-detail changes using a known phone number or another trusted, separate route.']
+        ];
+        const items = definitions.map(function ([id, question, source, allowPartial, action]) {
+            const responses = supported && source && metadata.questions.some(item => item.id === source)
+                ? assessment.responses.filter(item => item.itemId === source) : [];
+            const option = responses.length === 1 ? responses[0].optionId : null;
+            const answer = option === 'yes' ? 'Yes' : option === 'no' ? 'No' : option === 'partial' && allowPartial ? 'Partly' : 'Not answered';
+            const basis = !source ? 'This assessment does not ask for this detail.'
+                : option === 'partial' && !allowPartial ? 'The broader answer is Partial; it does not confirm this specific detail.'
+                : option === 'not_applicable' ? 'Marked Not applicable in the assessment; this is not confirmation of the control.'
+                : answer === 'Not answered' ? 'The saved answers do not confirm this detail.'
+                : 'Based on your saved ' + (option === 'partial' ? 'Partial' : answer) + ' answer; check the exact coverage before using it.';
+            return { id: id, question: question, answer: answer, basis: basis, action: 'To answer Yes: ' + action };
+        });
+        const scope = 'Scope: ' + assessment.scopePopulation.description;
+        const lines = [title, scope, ...items.map(item => item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis + '\n' + item.action), footer];
+        return { title: title, scope: scope, items: items, footer: footer, text: lines.join('\n\n') };
+    }
     // Copies with the clipboard when the browser allows it; otherwise selects
     // the read-only text so the person can copy it themselves.
     function copySummary(win, input, status) {
@@ -1379,6 +1423,7 @@
             panel.append(node('h2', '', 'Assessment results'));
             content.append(panel);
             renderNextSteps(panel);
+            renderQuestionnaireAnswers(panel);
             if (!results) {
                 panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'),
                     button('Retry loading results', async function () {
@@ -1488,6 +1533,26 @@
             handoff.append(copy);
             if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
             handoff.append(copied); section.append(handoff); panel.append(section);
+        }
+        function renderQuestionnaireAnswers(panel) {
+            const report = questionnaireAnswers(acknowledged, metadata);
+            const section = node('section', 'ncsc-questionnaire-answers'); section.setAttribute('aria-labelledby', 'ncsc-questionnaire-answers-title');
+            const title = node('h3', '', report.title); title.id = 'ncsc-questionnaire-answers-title';
+            section.append(title, node('p', '', 'Suggested answers from this saved assessment. Not answered means the detail is missing or cannot be confirmed from your answers.'), node('p', '', report.scope));
+            const list = node('ol');
+            report.items.forEach(function (item) {
+                const row = node('li'); row.setAttribute('data-answer-id', item.id);
+                row.append(node('h4', '', item.question), node('strong', '', 'Suggested answer: ' + item.answer),
+                    node('p', 'dashboard-muted', item.basis), node('p', '', item.action)); list.append(row);
+            });
+            section.append(list);
+            const controls = node('div', 'ncsc-questionnaire-answer-controls');
+            const label = node('label', '', 'Answers to copy'); label.htmlFor = 'ncsc-questionnaire-answer-text';
+            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 5; input.value = report.text;
+            const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
+            controls.append(label, input, button('Copy answers', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary'));
+            if (win && typeof win.print === 'function') controls.append(button('Print answers', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
+            controls.append(copied); section.append(controls, node('footer', '', report.footer)); panel.append(section);
         }
         function renderQuestion() {
             if (!live() || !questionRegion || !acknowledged) return;
@@ -2151,5 +2216,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));
