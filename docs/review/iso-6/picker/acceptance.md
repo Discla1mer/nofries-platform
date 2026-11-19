@@ -41,3 +41,9 @@ git -C "$assembly" restore --source=5822b5e925e10758d1d71b7e6ea6f29e4630b13c -- 
 git diff 42121c1da1bfa12cdec7a4e94162b6a6fc29de3e 5822b5e925e10758d1d71b7e6ea6f29e4630b13c -- app/dashboard.css | git -C "$assembly" apply
 node scripts/tests/paid-picker-personas.cjs "$assembly" "$AXE_PATH" "$EVIDENCE_DIR"
 ```
+
+## Revised publication fixture
+
+The earlier screenshots and PostgreSQL runs identify the previous publication. A fresh in-memory browser run checked the revised #506 publication at `9222a86377d4195b3befaa0246e40036ac3c4c97` against the complete [reviewed profile reference](../../../../test/fixtures/paidIsoSuggestionPublication.json) on both paid creation and sealed readback. The IT manager and owner each completed 116 ISO answers. The consultant completed 106 NIST answers and switched clients. The flag-off and free-only controls passed. All 15 views measured 375 CSS pixels with zero axe violations. No assessment started with a suggestion or an answer.
+
+This run used #509 `7d758650dab417f15f7c9d041c11d92931d5b199`, #507 `de4cf51e2b98d82c38dae41c5cd2f678536a1167`, #504 `7a08cd3a0ec55da706f1f1cb22877f72c8d10647` and #503 `2bbf5457f8b2dd3150dbbe0e19ce343f9c6a5370`. #509’s original results integrity pin refused the new script with 404. In a detached checkout, the verified #503 results pin `sha256-igK5Woag5xT1+bhWTLZXiOr9zklWBEsjnnVTR9Ran/Q=` admitted it. The three #507 runtime files used here are unchanged at its revised registration-test head `534b6a73f7ffdfede3b65c78bf03de564131c0cd`. Sessions and storage used the same in-memory ports described above. Fresh signed-in PostgreSQL evidence belongs to the separate assembled-head run in #500.

@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 const { startFixture } = require('./paid-picker-fixture.cjs');
+const reviewedIso = require('../../test/fixtures/paidIsoSuggestionPublication.json');
 
 async function main() {
     const [root, axePath, directory] = process.argv.slice(2);
@@ -98,7 +99,9 @@ async function main() {
                     await first.waitFor();
                     await noSuggestions();
                     assert.equal(await page.locator('input[type=radio]:checked').count(), 0);
-                    assert.deepEqual(fixture.accounts[0].revisions[0].record.state.responses, []);
+                    const initial = fixture.accounts[0].revisions[0].record.state;
+                    assert.deepEqual(initial.responses, []);
+                    if (ref.profileId === reviewedIso.profileId) assert.deepEqual(initial.profileRef, reviewedIso);
                     await observe('form');
                     await first.check();
                     await button('Save progress').click();
@@ -149,6 +152,7 @@ async function main() {
                     assert.equal(await page.getByRole('button', { name: /^(Copy|Print) / }).count(), 0);
                     const final = fixture.accounts[0].revisions.at(-1).record.state;
                     assert.equal(final.responses.length, count);
+                    if (ref.profileId === reviewedIso.profileId) assert.deepEqual(final.profileRef, reviewedIso);
                     if (persona === 'it-manager')
                         assert.equal(final.responses.find((r) => r.itemId === 'A.8.13-Q1').optionId, 'in_place_with_evidence');
                     if (persona === 'owner') {
