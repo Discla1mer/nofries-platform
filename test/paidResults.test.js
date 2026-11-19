@@ -1,4 +1,7 @@
 'use strict';
+const vm = require('node:vm');
+const { createDashboardService } = require('../api/shared/dashboardService');
+const { admissionFixture } = require('./fixtures/dashboardAdmissionFixture');
 const { mount } = require('../api/shared/protectedAssets/paidResults');
 const { fixture, reason } = require('./fixtures/paidResults');
 const { createDom } = require('./fixtures/dashboardDom');
@@ -57,8 +60,28 @@ test.each([
     expect(view.root.textContent).toBe('These saved results are unavailable.');
     expect(view.buttons()).toHaveLength(0);
 });
-test('read alone exposes no export or plan write, and revoked export is refused', async () => {
-    expect(render(fixture(true)).buttons()).toHaveLength(0);
+test('the shared authenticated application serves the free questionnaire without the paid renderer', async () => {
+    const service = createDashboardService(admissionFixture().adapters);
+    const app = await service.handleRequest({ method: 'GET' }, 'app.js');
+    expect(app.status).toBe(200);
+    const browser = {};
+    vm.runInNewContext(app.body, browser);
+    expect(typeof browser.NoFriesNcscQuestionnaire.mount).toBe('function');
+    expect(browser.NoFriesPaidResults).toBeUndefined();
+    expect(app.body).not.toContain('Unknown answers and claims of non-applicability stay in the range');
+    expect(app.body).not.toContain('No applicable controls');
+});
+test.each([true, false])('read-only results show the selected submission without a report export or plan write, ISO=%s', iso => {
+    const view = render(fixture(iso));
+    expect(view.buttons()).toHaveLength(0);
+    expect(view.root.textContent).toContain('Board summary');
+    expect(view.root.querySelector('ul').children).toHaveLength(iso ? 11 : 6);
+    if (iso) expect(view.root.textContent).toContain(reason);
+    expect(view.root.querySelectorAll('input')).toHaveLength(0);
+    expect(view.copied).not.toHaveBeenCalled();
+    expect(view.printed).not.toHaveBeenCalled();
+});
+test('revoked export is refused', async () => {
     const view = render(fixture(true), { authoriseExport: async () => false });
     for (const button of view.buttons()) { button.click(); await flush(); }
     expect(view.copied).not.toHaveBeenCalled();
