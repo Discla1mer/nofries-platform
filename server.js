@@ -218,7 +218,7 @@ function createNoFriesApp(configuration = {}) {
         if (keys.includes('dashboardAdminAccountLookup') && configuration.dashboardAdminAccountLookup !== null) {
             // Email lookup needs the same staff administration service that
             // validates the native operator session; a reader alone is inert.
-            const lookupKeys = ['read', 'list', 'wipe', 'audit', 'targetDigest'].filter(key => !['list', 'wipe'].includes(key) || Object.hasOwn(configuration.dashboardAdminAccountLookup, key));
+            const lookupKeys = ['read', 'list', 'wipe', 'contactRequests', 'audit', 'targetDigest'].filter(key => !['list', 'wipe', 'contactRequests'].includes(key) || Object.hasOwn(configuration.dashboardAdminAccountLookup, key));
             const port = fields(configuration.dashboardAdminAccountLookup, lookupKeys);
             if (!dashboardAdminService || Object.values(port).some(value => typeof value !== 'function' || isProxy(value))) throw new Error();
             dashboardAdminAccountLookup = Object.freeze({ ...port });
