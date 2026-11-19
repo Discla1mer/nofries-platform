@@ -988,7 +988,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         try {
             const glossary = byId(ui, 'ncsc-glossary');
             if (submitted) { expect(glossary).toBeFalsy(); return; }
-            const progress = byId(ui, 'ncsc-draft-progress'), parent = progress.parentElement;
+            const progress = byId(ui, 'ncsc-saved-summary').parentElement, parent = progress.parentElement;
             expect(parent.children.indexOf(glossary)).toBe(parent.children.indexOf(progress) + 1);
             expect(glossary.tagName).toBe('DETAILS'); expect(Boolean(glossary.open)).toBe(false);
             expect(glossary.querySelector('summary').textContent).toBe('What these words mean');
@@ -1792,7 +1792,7 @@ describe('questionnaire form accessibility', () => {
             expect(guidance.querySelector('.ncsc-input-example').textContent).toContain('Example:');
             control(ui, 'Next question').click(); control(ui, 'Previous question').click();
             expect(byId(ui, 'ncsc-answer-' + metadata().questions[0].id + '-partial').checked).toBe(true);
-            expect(ui.root.textContent).toContain('unsaved changes');
+            expect(byId(ui, 'ncsc-question-index').children[0].textContent).toContain('Partial · Not saved yet');
             expect(h.records).toEqual(retainedRecords); expect(h.calls).toHaveLength(retainedCalls);
         } finally { ui.controller.destroy(); }
     });
