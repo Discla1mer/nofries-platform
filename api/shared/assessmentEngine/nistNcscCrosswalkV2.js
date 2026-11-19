@@ -13,7 +13,7 @@ const { createNcscFrameworkProfileV2 } = require('./ncscFrameworkProfileV2');
 const { createNistFrameworkProfile } = require('./nistFrameworkProfile');
 const { createNistNcscCrosswalk, NistNcscCrosswalkError } = require('./nistNcscCrosswalk');
 
-const EXPECTED_CROSSWALK_V2_SHA256 = 'abf04ee3e9d6ebc8e4a3b71f4e1135abd9b33bb7360cc40298989e6fed0038b3';
+const EXPECTED_CROSSWALK_V2_SHA256 = '0c609059e63a1235af2796cc23dd1b5d9fcd2cb3e575c97cdb17281047fcc5d8';
 const HASH_PREFIX = 'no-fries-nist-ncsc-crosswalk-v2\n';
 const NIST_SOURCE_ID = 'nist-cswp-29-final-2024-02-26';
 const SOURCE_COUNT = 16;
@@ -55,8 +55,8 @@ const POSITIVE = [
         'The source asks for the main cyber risks to be written down and reviewed with whoever runs the business, bringing them into business-level risk discussion.',
         'Integration of all cybersecurity risk activities and outcomes into an enterprise risk management process is broader than a reviewed list of main risks.'],
     [`${RM}-Q1`, 'GV.RR-01', 'new',
-        'The source asks for the main cyber risks to be reviewed with whoever runs the business.',
-        'Leadership accountability beyond that review, and fostering a risk-aware, ethical and continually improving culture, are not asked for.'],
+        'The source asks for the main cyber risks to be reviewed with whoever runs the business. That review is a weak tie: it only partly shows leadership taking accountability for cybersecurity risk.',
+        'Leadership responsibility and accountability for cybersecurity risk beyond that review, and fostering a risk-aware, ethical and continually improving culture, are not asked for.'],
     [`${RM}-Q1`, 'GV.RR-02', 'restated',
         'The source asks for a named owner for each main cyber risk.',
         'All cybersecurity roles, responsibilities and authorities, their communication, understanding and enforcement are not covered.'],
@@ -90,7 +90,9 @@ const POSITIVE = [
     [`${LP}-Q1`, 'PR.AA-01', 'restated',
         'The source asks for people\'s access to be removed or reviewed when they join, change role or leave.',
         'Identity and credential management for services and hardware and the full credential lifecycle are not covered.'],
-    [`${LP}-Q1`, 'PR.AA-05', 'reused'],
+    [`${LP}-Q1`, 'PR.AA-05', 'restated',
+        'The source asks for people to get only the access they need for their job, with a separate admin login from everyday email, and for access to be removed or reviewed when someone joins, changes role or leaves.',
+        'An explicit authorization policy, all entitlements, separation of duties and review of access on a periodic cycle rather than only at joiner, mover and leaver events are not required.'],
     [`${DR}-Q1`, 'PR.DS-11', 'restated',
         'The source asks for automatic backups with three copies on two kinds of storage, one offsite and one offline or out of reach of ransomware.',
         'Testing (asked separately in DR-01-Q2), the wider data population and full maintenance of backups are not covered by this question.'],
@@ -128,8 +130,8 @@ const POSITIVE = [
         'The source asks for business email to be set up so others cannot easily send messages that look like they came from you.',
         'Configuration management practices for all other hardware and software are not assessed.'],
     [`${EM}-Q1`, 'DE.CM-09', 'new',
-        'The source asks for junk and phishing mail to be filtered before it reaches inboxes.',
-        'Monitoring the complete hardware, software, runtime-environment and data population through all relevant signals is broader than inbound mail filtering.']
+        'The source asks for junk and phishing mail to be filtered before it reaches inboxes. Inbound filtering inspects incoming email for malicious content, which partly covers the monitoring of data in this outcome.',
+        'Monitoring of hardware, software, runtime environments and data other than incoming email is not asked for, and inbound filtering is not monitoring to find potentially adverse events in general.']
 ];
 
 // Source questions with no positive record. Each is reviewed against all 106 outcomes.
@@ -158,7 +160,7 @@ const TARGET_NO_MATCH = [
     ['GV.OV-02', 'new',
         'The v2 risk question asks for the main risks to be reviewed, not for the cyber risk management strategy to be reviewed and adjusted for coverage of organizational requirements and risks.'],
     ['GV.SC-01 GV.SC-02 GV.SC-03 GV.SC-04 GV.SC-06 GV.SC-07 GV.SC-09 GV.SC-10', 'restated',
-        'The supplier question asks for limited access, an extra login step and a breach-notice agreement, and the incident plan names the IT provider, but no prompt directly assesses a supply chain risk programme, supplier roles, integration, prioritization, due diligence, ongoing supplier risk monitoring or end-of-relationship provisions.'],
+        'The supplier question asks for limited access, an extra login step and a breach-notice agreement, and the incident plan names the IT provider. The patching question asks whether a website host or developer has confirmed that its software is patched and checked for signs of compromise; that is a one-off confirmation about one provider, not supplier risk monitored over the course of the relationship. No prompt directly assesses a supply chain risk programme, supplier roles, integration, prioritization, due diligence, ongoing supplier risk monitoring or end-of-relationship provisions.'],
     ['ID.AM-03 ID.AM-04 ID.AM-05', 'restated',
         'The inventory question does not explicitly require documented authorized data-flow representations, a supplier-service inventory or the stated multi-criterion asset prioritization; cloud apps are not necessarily supplier-provided, and the supplier question does not ask for an inventory of supplier services.'],
     ['ID.AM-08', 'new',
@@ -180,7 +182,7 @@ const TARGET_NO_MATCH = [
         'The v2 profile retires the application-control question; its idea survives only in patching guidance, which is not the compared prompt, and no prompt asks for unauthorized software installation and execution to be prevented.'],
     ['PR.IR-02 PR.IR-04', 'reused'],
     ['DE.CM-01 DE.CM-02 DE.CM-06', 'restated',
-        'The activity-records question selects login, email and device activity on important systems; no prompt expressly selects network-service, physical-environment or external-provider monitoring populations and signals.'],
+        'The activity-records question selects login, email and device activity on important systems. The patching question asks whether a website host or developer has confirmed that its software is patched and checked for signs of compromise; that is a one-off confirmation about one provider, not ongoing monitoring of external service provider activities and services. No prompt expressly selects network-service, physical-environment or ongoing external-provider monitoring populations and signals.'],
     ['DE.AE-02', 'new',
         'The v2 activity-records question asks for a person to be alerted, but no longer asks for collected records to be reviewed, and no prompt asks for potentially adverse events to be analyzed to understand associated activities.'],
     ['DE.AE-03 DE.AE-04 DE.AE-07 DE.AE-08', 'restated',
@@ -208,7 +210,7 @@ const CONTROL_NOTES = [
     [MF, 'restated', 'v1 asked for MFA on critical, internet-accessible, privileged and third-party access with failures reviewed; v2 splits coverage (Q1, third-party access moves to SU-01) from method strength (Q2).', []],
     [DU, 'restated', 'v1 asked for logs to be gathered, reviewed and turned into alerts; v2 names login, email and device activity and asks for a person to be alerted, without review.',
         [['DE.AE-02', 'Review and analysis of gathered logs is no longer asked for.']]],
-    [LP, 'restated', 'v1 asked for least access, separate privileged accounts and repeatable joiner, mover, leaver and review processes; v2 asks the same in plain words but as event-driven removal or review, so the identity-lifecycle record is restated and the least-privilege record is reused.', []],
+    [LP, 'restated', 'v1 asked for least access, separate privileged accounts and repeatable joiner, mover, leaver and review processes; v2 asks the same in plain words but as removal or review when someone joins, changes role or leaves, not on a periodic cycle, so both the identity-lifecycle and least-privilege records are restated.', []],
     [DR, 'restated', 'v1 asked for backups to defined recovery requirements with protected copies and sampled restore tests; v2 splits protected copies (Q1) from dated restore tests (Q2) and drops defined recovery requirements.', []],
     [RP, 'restated', 'v1 asked for a risk-based plan with named responsibilities, management support, contacts and lessons from exercises or incidents; v2 asks for a first-hours plan with who to call, practised in 12 months.',
         [['GV.RR-02', 'Named incident responsibilities are no longer asked for; who to call is a contact path, not a role.'],
@@ -352,7 +354,7 @@ function assemble(sourceProfile, targetProfile, v1) {
     return {
         schemaVersion: 2,
         id: 'nf-ncsc-to-nist-csf-2-0',
-        version: '2026-11-20.1',
+        version: '2026-11-20.2',
         publishedAt: '2026-11-20',
         direction: 'ncsc-question-to-nist-outcome',
         comparisonBasis: 'no-fries-ncsc-v2-question-prompt-to-official-nist-subcategory-outcome',
