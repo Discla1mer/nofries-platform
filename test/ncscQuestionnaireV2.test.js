@@ -192,6 +192,26 @@ describe('v2 results in the questionnaire', () => {
         expect(without).toContain('No Fries weights every question equally');
     });
 
+    test('a supplied profile that is not exactly the pinned v2 profile is refused (fail closed)', async () => {
+        const h = await backend(ACCEPTED_NCSC_CONTEXT, { profileMetadata: null });
+        const mount = profileMetadata => () => {
+            const dom = createDom(); dom.root = dom.document.createElement('div');
+            questionnaire.mount(dom.root, { metadata: V1(), ...(profileMetadata === undefined ? {} : { profileMetadata }), client: h.client,
+                organisationId: h.organisationId, presentationMode: 'editable', window: dom.window, autosaveIdleMs: 0 }).destroy();
+        };
+        const ref = V2().profileRef;
+        const near = Object.keys(ref).map(key => ({ ...V2(), profileRef: { ...ref, [key]: key.endsWith('Sha256') ? 'e'.repeat(64) : ref[key] + 'x' } }));
+        near.push({ ...V2(), profileRef: { ...ref, extra: 'x' } });
+        near.push({ ...V2(), profileRef: Object.fromEntries(Object.entries(ref).slice(1)) });
+        for (const profile of near) {
+            expect(mount([profile])).toThrow('ncsc_composition_required');
+            expect(mount([V2(), profile])).toThrow('ncsc_composition_required');
+        }
+        expect(mount([V1()])).toThrow('ncsc_composition_required');
+        expect(mount(undefined)).not.toThrow();
+        expect(mount([V2()])).not.toThrow();
+    });
+
     test('without v2 metadata (flag off) the client refuses a v2 assessment exactly as before', async () => {
         const { h } = await submittedV2();
         const client = clientModule.createClient({ metadata: V1(), fetch: h.fetch });

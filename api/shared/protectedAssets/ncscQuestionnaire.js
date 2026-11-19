@@ -488,10 +488,12 @@
         // Opened from the first-use action: go straight to the new-assessment step if nothing is saved yet.
         let startNewWhenEmpty = options.startNew === true && initialAssessmentId === undefined && options.presentationMode === 'editable';
         // Scoring v2 (#399): further readable profiles, sent only while their flag is on.
+        // Each must be exactly the pinned v2 profile (all six fields); a near
+        // match would otherwise be read and scored with the accepted profile's scale.
         const profileMetadata = options.profileMetadata === undefined ? [] : copy(options.profileMetadata);
         const usable = function (value) { return !!value && value.schemaVersion === 1 && Array.isArray(value.questions) && value.questions.length > 0; };
         if (!usable(metadata) || !Array.isArray(profileMetadata) || profileMetadata.length > 4 ||
-            !profileMetadata.every(function (value) { return usable(value) && value.moduleId === metadata.moduleId && !profileMatches(value.profileRef, metadata.profileRef); }) ||
+            !profileMetadata.every(function (value) { return usable(value) && value.moduleId === metadata.moduleId && !profileMatches(value.profileRef, metadata.profileRef) && isV2(value); }) ||
             initialAssessmentId !== undefined && (typeof initialAssessmentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(initialAssessmentId)) ||
             !client || !['list', 'read', 'create', 'save', 'submit', 'normaliseCommand', 'commandByteLength'].every(function (key) { return typeof client[key] === 'function'; })) {
             throw new Error('ncsc_composition_required');

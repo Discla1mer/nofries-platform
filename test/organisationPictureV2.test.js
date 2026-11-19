@@ -209,6 +209,34 @@ describe('Overview with v1 and v2 results in one organisation', () => {
         }
     });
 
+    test('a supplied profile that is not exactly the pinned v2 profile is refused (fail closed)', async () => {
+        const h = await backend();
+        await h.submitted('assessment-a', ACCEPTED_NCSC_CONTEXT, v1Answers('partial'));
+        const client = clientModule.createClient({ metadata: V1(), fetch: h.fetch });
+        const mount = profileMetadata => () => picture.mount(createDom().root, { metadata: V1(),
+            ...(profileMetadata === undefined ? {} : { profileMetadata }), client, organisationId: h.organisationId }).destroy();
+        const ref = V2().profileRef;
+        const near = Object.keys(ref).map(key => ({ ...V2(), profileRef: { ...ref, [key]: key.endsWith('Sha256') ? 'e'.repeat(64) : ref[key] + 'x' } }));
+        // A re-hashed catalogue, any other single field, an extra field or a missing field.
+        near.push({ ...V2(), profileRef: { ...ref, extra: 'x' } });
+        near.push({ ...V2(), profileRef: Object.fromEntries(Object.entries(ref).slice(1)) });
+        near.push({ ...V2(), profileRef: [] });
+        for (const profile of near) {
+            expect(mount([profile])).toThrow('picture_composition_required');
+            expect(mount([V2(), profile])).toThrow('picture_composition_required');
+        }
+        // A supplied copy of the accepted (v1) profile is still refused as a duplicate.
+        expect(mount([V1()])).toThrow('picture_composition_required');
+        // The accepted profile alone, and with the exact pinned v2 profile, still mount and render.
+        expect(mount(undefined)).not.toThrow();
+        expect(mount([V2()])).not.toThrow();
+        for (const settings of [{ profileMetadata: null }, {}]) {
+            const dom = mountPicture(h, settings); await until(() => loaded(dom));
+            expect(dom.root.querySelector('.picture-top-gaps').querySelector('h3').textContent).toBe('Your top three gaps');
+            dom.controller.destroy();
+        }
+    });
+
     test('the pinned v2 reference matches the served v2 profile on every field', () => {
         const result = { domains: [{ controls: [{ questions: NCSC_V2_CONTEXT.profile.questions.map((question, index) =>
             ({ itemId: question.id, responseOptionId: EXAMPLE[index], weight: question.weight, answer: EXAMPLE[index] })) }] }] };

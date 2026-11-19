@@ -56,6 +56,14 @@
     const V2_CRITICAL_CONTROL = /^NF-NCSC-CC-(?:PM|SV|NS)-01-Q\d+$/;
     const v2Profile = metadata => !!metadata && !!metadata.profileRef && typeof metadata.profileRef === 'object' &&
         PROFILE_FIELDS.every(key => metadata.profileRef[key] === V2_PROFILE_REF[key]);
+    // A supplied extra profile must be exactly the pinned v2 profile: six own
+    // fields, each equal. A near match (for example a re-hashed catalogue) would
+    // otherwise be readable while v2Profile() is false, giving v2 results the
+    // accepted profile's Overview logic. The accepted profile itself is the base
+    // metadata and a duplicate of it is already refused.
+    const exactV2Profile = ref => !!ref && typeof ref === 'object' && !Array.isArray(ref) &&
+        Reflect.ownKeys(ref).length === PROFILE_FIELDS.length &&
+        PROFILE_FIELDS.every(key => Object.hasOwn(ref, key) && ref[key] === V2_PROFILE_REF[key]);
     // A v2 answer that falls short of full credit, other than "I don't know".
     const v2Shortfall = optionId => Object.hasOwn(V2_GAP_FACTOR, optionId) && optionId !== 'unknown';
     const attention = row => (row.weight || 0) * V2_GAP_FACTOR[row.responseOptionId];
@@ -216,10 +224,11 @@
         // Scoring v2 (#399): further readable profiles, sent by the server only
         // while their flag is on. Each assessment is shown with the profile its
         // stored reference names, matched on all six fields. Without them this
-        // is exactly the single accepted profile.
+        // is exactly the single accepted profile. Each one supplied must be
+        // exactly the pinned v2 profile; anything else fails closed.
         const profileMetadata = options.profileMetadata === undefined ? [] : copy(options.profileMetadata);
         if (!Array.isArray(profileMetadata) || profileMetadata.length > 4 ||
-            profileMetadata.some(value => !value || !value.profileRef || value.moduleId !== metadata.moduleId ||
+            profileMetadata.some(value => !value || !exactV2Profile(value.profileRef) || value.moduleId !== metadata.moduleId ||
                 !Array.isArray(value.questions) || !Array.isArray(value.controls) || !Array.isArray(value.domains)) ||
             [metadata].concat(profileMetadata).some((value, index, all) => all.some((other, earlier) =>
                 earlier < index && sameProfile(value.profileRef, other.profileRef)))) throw new Error('picture_composition_required');
