@@ -3350,7 +3350,7 @@ describe('final submission review step', () => {
         } finally { clean.controller.destroy(); }
     });
 
-    test('D-044 submitted results show suggested plan steps and link to the matching submission', async () => {
+    test('D-044 submitted results distinguish assessment follow-ups from plan actions and link to the matching submission', async () => {
         const h = await backend();
         await h.execute(createCommand());
         await h.execute(saveCommand());
@@ -3359,7 +3359,8 @@ describe('final submission review step', () => {
         const opened = [];
         const ui = await resumeUi(h, { openImprovement(source) { opened.push(source); return Promise.resolve(true); } });
         try {
-            expect(ui.root.textContent).toContain("We've built your improvement plan from this result");
+            expect(ui.root.textContent).toContain('Assessment follow-ups (');
+            expect(ui.root.textContent).toContain('Open Improvement Plan to review proposed actions, including evidence to update for Yes answers.');
             expect(ui.root.textContent).toContain('You can give each item an owner and a due date.');
             expect(ui.root.textContent).not.toContain('with an owner and a due date for each item');
             expect(ui.root.textContent).not.toContain('improvement plan was built');

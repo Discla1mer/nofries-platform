@@ -1398,22 +1398,22 @@
             const planSource = displayedPlanSource();
             if (typeof options.openImprovement === 'function' && planSource) {
                 const follow = node('section', 'ncsc-plan-followup');
-                follow.append(node('h3', '', "We've built your improvement plan from this result"));
+                follow.append(node('h3', '', 'Follow up on this assessment'));
                 const preview = node('details'), steps = providerSummary(acknowledged, metadata).items;
-                preview.append(node('summary', '', 'Review suggested steps (' + steps.length + ')'));
+                preview.append(node('summary', '', 'Assessment follow-ups (' + steps.length + ')'));
                 const list = node('ol');
                 steps.forEach(step => {
                     const item = node('li');
                     item.append(node('strong', '', step.title), node('p', '', step.action));
                     list.append(item);
                 });
-                preview.append(steps.length ? list : node('p', '', 'No gaps or unknown answers were reported.'));
+                preview.append(steps.length ? list : node('p', '', 'No answers were marked No, Partial, Unknown or Not applicable.'));
                 const link = node('a', '', 'Open improvement plan'); link.href = '#improvement-plan';
                 link.addEventListener('click', function (event) {
                     event.preventDefault();
                     if (live()) options.openImprovement(planSource);
                 });
-                follow.append(preview, node('p', '', 'Open Improvement Plan to save and track these steps. You can give each item an owner and a due date.'), link);
+                follow.append(preview, node('p', '', 'Open Improvement Plan to review proposed actions, including evidence to update for Yes answers. You can give each item an owner and a due date.'), link);
                 panel.append(follow);
             }
             // results.unknown already includes answers marked not applicable, so state one total.
