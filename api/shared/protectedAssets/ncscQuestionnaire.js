@@ -29,7 +29,7 @@
         partial: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
         no: 'None of this is in place yet, including when work is only planned.',
         unknown: 'You do not have enough information to confirm what is in place.',
-        not_applicable: 'You believe this does not apply to your scope. Explain why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.',
+        not_applicable: 'You believe this does not apply to your scope. Explain why. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.',
         // Scoring v2 (#399): answers used only by profile 2026-11-18.1.
         partly: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
         ad_hoc: 'It happens sometimes, but it is not written down, owned or checked.',
@@ -708,8 +708,8 @@
             section.addEventListener('toggle', function () { glossaryOpen = section.open; });
             section.append(node('summary', '', 'What these words mean'));
             const list = node('dl');
-            [['To check later', 'Answers marked Unknown, or marked not applicable, to confirm. They are still to confirm and do not count as in place. You can still submit with them.'],
-                ['Marked not applicable, to confirm', 'You answered Not applicable and explained why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'],
+            [['To check later', 'Answers marked Unknown, or Not applicable. They do not count as in place. You can still submit with Unknown and Not applicable answers.'],
+                ['Marked not applicable, to confirm', 'You answered Not applicable and explained why. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.'],
                 ['Saved and not saved yet', 'Saved answers are kept with this draft, so you can come back to them before you submit. Not saved yet means a change is only on this page so far.'],
                 ['Reported implementation range', 'After you submit, your result is shown as a range. It leads with the lower figure. The lower figure is what you reported as in place. The higher figure adds answers still to confirm. It is not a performance score.']
             ].forEach(function (entry) { list.append(node('dt', '', entry[0]), node('dd', '', entry[1])); });
@@ -1376,7 +1376,7 @@
             [
                 ['Reported gaps', ['no', 'partial'], 'Check what is missing and agree a next step with your team or IT provider.'],
                 ['Information to confirm', ['unknown'], 'Ask whoever looks after these systems what is in place.'],
-                ['Applicability to confirm', ['not_applicable'], 'These exclusions are not approved. Confirm whether each question applies to this scope.'],
+                ['Applicability to confirm', ['not_applicable'], 'These answers say the question does not apply. Check whether it really is outside this scope. They still count as not yet met.'],
                 ['Not answered in this save', [null], 'Answer these questions, or choose Unknown when you cannot confirm what is in place.']
             ].forEach(function (group) {
                 const matches = rows.filter(function (row) { return group[1].includes(answerGroup(row.value.optionId)); });
@@ -1526,7 +1526,7 @@
                 }
             }
             if (count) {
-                section.append(node('p', '', 'Answers marked not applicable still count towards your result until they are approved. Approval is not available yet. If you can confirm what is in place for one of these questions, change its answer to Yes, Partial or No.'));
+                section.append(node('p', '', 'Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that. If you can say what is in place, change the answer to Yes, Partial or No.'));
                 const list = node('ul', 'ncsc-review-pending-list');
                 pendingRows.forEach(function (row) {
                     const change = button('Change question ' + (row.index + 1), function () { editFromReview(row.index); }, 'dashboard-text-button');
@@ -1628,11 +1628,11 @@
             // Describe only what is shown: a range has a lower and higher figure, a single figure does not.
             const rangeHelp = results.lowerCreditUnits === results.upperCreditUnits
                 ? 'This is what you reported as in place. Every answer is Yes, Partial or No, so there is one figure.'
-                : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.';
+                : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable. Those do not count as in place.';
             if (enoughAnswersToEstimate(results)) metric('Reported implementation', results.attainment, rangeHelp);
             // Results exist only for a submitted, read-only assessment, so do not ask the customer to confirm answers here.
             else metric('Reported implementation', 'Not enough answers to estimate yet, confirm your Unknowns first', results.unknown + ' answers still to confirm. Only ' + results.completed + ' of ' + results.total +
-                ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + results.attainment + '. ' +
+                ' answers are Yes, Partial or No. Most answers are Unknown or Not applicable, so the range is too wide to be useful. Range so far: ' + results.attainment + '. ' +
                 (editable && !allowanceExhausted() ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp);
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             leadWithLowerBound(metrics.querySelector('.ncsc-result-metric'), '.ncsc-result-value', results);
@@ -1664,8 +1664,8 @@
             panel.append(node('p', '', results.unknown ? 'Answers still to confirm: ' + results.unknown + ' (' + confirmBreakdown(results.unknown - results.pending, results.pending) + ').'
                 : 'Every answer is confirmed as Yes, Partial or No.'));
             panel.append(node('p', 'dashboard-muted', isV2(metadata)
-                ? 'Each question has a weight from 1 to 3, shown below. Yes, in place and checked earns its full weight, Partly in place half, Sometimes a quarter and No nothing. Extra login methods earn from 30% for text or email codes to full weight for a passkey or security key. The lower end gives I don\'t know nothing; the upper end gives it full weight. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries planning score from your answers, not an official NCSC or CS-CMM rating.'
-                : 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives answers still to confirm 0; the upper end gives them 1. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries calculation, not an NCSC score.'));
+                ? 'Each question has a weight from 1 to 3, shown below. Yes, in place and checked earns its full weight, Partly in place half, Sometimes a quarter and No nothing. Extra login methods earn from 30% for text or email codes to full weight for a passkey or security key. The lower end gives I don\'t know nothing; the upper end gives it full weight. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that. This is a No Fries planning score from your answers, not an official NCSC or CS-CMM rating.'
+                : 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives answers still to confirm 0; the upper end gives them 1. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that. This is a No Fries calculation, not an NCSC score.'));
             panel.append(node('h3', '', 'Explore NCSC functions and assessment topics'));
             results.domains.forEach(function (domain) {
                 const detail = node('details', 'ncsc-result-domain'); detail.append(node('summary', '', domain.title + ' — ' + domain.attainment));
@@ -1839,7 +1839,7 @@
                 };
                 showNeeded();
                 const scopeHelp = writable && inputGuidance && inputGuidance.notApplicable ? inputGuidance.notApplicable + ' ' : '';
-                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'); help.id = 'ncsc-rationale-help-' + question.id;
+                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.'); help.id = 'ncsc-rationale-help-' + question.id;
                 rationale.addEventListener('input', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit()) return;
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });
@@ -1935,7 +1935,7 @@
                 if (watcher) watcher.disconnect();
                 if (win && typeof win.removeEventListener === 'function') win.removeEventListener('resize', fitNavigation);
             };
-            questionRegion.append(node('p', 'dashboard-muted', 'Still to confirm means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
+            questionRegion.append(node('p', 'dashboard-muted', 'Still to confirm means a question has no answer yet, is answered Unknown, or is answered Not applicable. You can still submit with Unknown and Not applicable answers.'));
             applyInlineErrors();
             restoreFocus(questionRegion, focused, fieldset.querySelector('legend'));
         }
