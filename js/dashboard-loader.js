@@ -593,6 +593,10 @@
                 return fetch(path, options);
             }).then(async function (response) {
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
+                if (body === undefined && path === '/api/dashboard/session' && response?.status === 401 &&
+                    !response.redirected && !['opaque', 'opaqueredirect'].includes(response.type)) {
+                    finish(resolve, { status: 401 }); return;
+                }
                 const json = !!response && !!response.headers && /^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') || '');
                 if (response && !response.redirected && !['opaque', 'opaqueredirect'].includes(response.type) && !json &&
                     [403, 502, 503].includes(response.status)) { const error = invalid(); error.platform = true; throw error; }
