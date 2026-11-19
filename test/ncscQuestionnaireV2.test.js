@@ -214,9 +214,35 @@ describe('v2 results in the questionnaire', () => {
         ui.controller.destroy();
         const saved = await h.client.save(saveCommand('assessment-a', 0, 'save-new', [{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }]));
         expect(saved.assessment.responses).toEqual([{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }]);
-        // A v1 assessment in the same client is still held to v1 questions.
-        await h.execute(createCommand('assessment-b', 'create-b'));
-        expect(() => h.client.normaliseCommand(saveCommand('assessment-z', 0, 'save-z', [{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }])))
+        // An assessment this client has not seen has no known profile: the
+        // synchronous check is shape only, never another profile's questions.
+        expect(h.client.normaliseCommand(saveCommand('assessment-z', 0, 'save-z', [{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }]))
+            .payload.responses).toHaveLength(1);
+        expect(() => h.client.normaliseCommand(saveCommand('assessment-z', 0, 'save-z', [{ itemId: 'not an id', optionId: 'ad_hoc', rationale: null }])))
             .toThrow(expect.objectContaining({ code: 'ncsc_input_invalid' }));
+    });
+
+    test('scoring v2 (#399): a save to an assessment the client has not seen reads its profile first', async () => {
+        const h = await backend();
+        await h.execute(createCommand());
+        const calls = [];
+        const fetch = (path, options) => { calls.push((options && options.method) + ' ' + path); return h.fetch(path, options); };
+        // A fresh client: the v2 assessment is checked against v2, so a v1-only question is refused before any write.
+        const fresh = clientModule.createClient({ metadata: V1(), profileMetadata: [V2()], fetch });
+        await expect(fresh.save(saveCommand('assessment-a', 0, 'save-v1', [{ itemId: 'NF-NCSC-CC-AC-01-Q1', optionId: 'partial', rationale: null }])))
+            .rejects.toMatchObject({ code: 'ncsc_input_invalid' });
+        expect(calls).toEqual(['GET ' + PREFIX + '/assessment-a']);
+        const other = clientModule.createClient({ metadata: V1(), profileMetadata: [V2()], fetch });
+        const saved = await other.save(saveCommand('assessment-a', 0, 'save-v2', [{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }]));
+        expect(saved.assessment.responses).toEqual([{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }]);
+        expect(calls.slice(1)).toEqual(['GET ' + PREFIX + '/assessment-a', 'POST ' + PREFIX + '/assessment-a/save']);
+        // A second save needs no read: the profile is now known.
+        await other.save(saveCommand('assessment-a', 1, 'save-v2b', [{ itemId: 'NF-NCSC-CC-EM-01-Q1', optionId: 'partly', rationale: null }]));
+        expect(calls.slice(3)).toEqual(['POST ' + PREFIX + '/assessment-a/save']);
+        // With one profile (flag off) nothing is read first.
+        const single = clientModule.createClient({ metadata: V1(), fetch });
+        await expect(single.save(saveCommand('assessment-a', 2, 'save-x', [{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }])))
+            .rejects.toMatchObject({ code: 'ncsc_input_invalid' });
+        expect(calls).toHaveLength(4);
     });
 });
