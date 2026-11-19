@@ -401,8 +401,16 @@ async function businessContext(inv, tx, routing) {
 }
 async function loadAuthority(inv, operation, context, shared = false) {
     try {
-        return await (!shared && ['ncsc.execute', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ? dataStorage.loadSnapshotForUpdate : dataStorage.loadSnapshotForShare)(
+        const snapshot = await (!shared && ['ncsc.execute', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ? dataStorage.loadSnapshotForUpdate : dataStorage.loadSnapshotForShare)(
             Object.freeze({ query: (sql, params) => inv.query(context.tx, sql, params) }), context.scope);
+        const paidRead = operation.name === 'framework.read' || operation.name === 'framework.write';
+        const paidPicker = operation.name === 'host.resource' && operation.resource.moduleKey === 'cyber_security' &&
+            operation.resource.requiresGeneration;
+        if (inv.options.paidFrameworksEnabled === true && (paidRead || paidPicker)) {
+            const tx = { query: (sql, params) => inv.query(context.tx, sql, params) };
+            return await require('../appLifecycle/paidFrameworkDecisions').paidSnapshot(tx, context.scope, snapshot, inv.now());
+        }
+        return snapshot;
     } catch (error) {
         if (error instanceof DashboardPersistenceError && error.statusCode === 404) inv.deny();
         throw error;
