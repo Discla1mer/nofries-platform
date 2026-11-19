@@ -66,13 +66,21 @@ test('it ends with the sign-up and contact paths and claims only live capabiliti
     const next = html.match(/<section class="sample-result-next"[\s\S]*?<\/section>/)[0];
     expect([...next.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map(match => [match[1], match[2]]))
         .toEqual([['/login?intent=create', 'Start your free assessment'], ['/contact.html', 'Talk to us']]);
-    expect(html).not.toMatch(/<script\b|\sstyle=|fonts\.googleapis|https?:\/\/(?!nofries\.nz\/)/);
+    expect(html).not.toMatch(/\sstyle=|fonts\.googleapis|https?:\/\/(?!nofries\.nz\/)/);
     const visible = text(html.replace(/<(script|style)\b[\s\S]*?<\/\1>/g, ' '));
     for (const item of registry.capabilities.filter(entry => entry.status !== 'live')) {
         for (const claim of item.availabilityClaims) {
             expect([item.id, visible.match(new RegExp(claim, 'i'))?.[0] || null]).toEqual([item.id, null]);
         }
     }
+});
+
+test('the sample captures the first campaign before its links become interactive', () => {
+    const campaignScript = '<script src="/js/enquiry-availability.js"></script>';
+    const head = html.slice(0, html.indexOf('</head>'));
+    expect(head).toContain(campaignScript);
+    expect(head).toContain('<meta name="referrer" content="no-referrer">');
+    expect(html.replace(campaignScript, '')).not.toMatch(/<script\b|\son\w+=/i);
 });
 
 test('NCSC is spelled out at first use and the example figure is explained from the answers', () => {
