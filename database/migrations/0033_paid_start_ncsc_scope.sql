@@ -22,6 +22,13 @@ ALTER TABLE nofries.dashboard_framework_revisions
 CREATE FUNCTION nofries.check_paid_start_ncsc_scope() RETURNS trigger
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog AS $$
 BEGIN
+    IF TG_OP = 'UPDATE' AND
+        ROW(OLD.ncsc_assessment_id, OLD.ncsc_revision, OLD.ncsc_revision_sha256, OLD.ncsc_scope_sha256)
+        IS DISTINCT FROM ROW(NEW.ncsc_assessment_id, NEW.ncsc_revision, NEW.ncsc_revision_sha256, NEW.ncsc_scope_sha256)
+    THEN
+        RAISE EXCEPTION 'paid start source is immutable' USING ERRCODE = '23514';
+    END IF;
+    IF NEW.ncsc_assessment_id IS NULL THEN RETURN NEW; END IF;
     IF NOT EXISTS (
         SELECT 1 FROM nofries.dashboard_ncsc_assessment_revisions AS source
         WHERE NEW.tenant_id = nullif(current_setting('nofries.tenant_id', true), '')
@@ -47,5 +54,5 @@ $$;
 REVOKE ALL ON FUNCTION nofries.check_paid_start_ncsc_scope() FROM PUBLIC;
 CREATE TRIGGER paid_start_ncsc_scope
     BEFORE INSERT OR UPDATE ON nofries.dashboard_framework_revisions
-    FOR EACH ROW WHEN (NEW.ncsc_assessment_id IS NOT NULL)
+    FOR EACH ROW
     EXECUTE FUNCTION nofries.check_paid_start_ncsc_scope();

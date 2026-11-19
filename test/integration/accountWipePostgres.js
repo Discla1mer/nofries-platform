@@ -240,6 +240,14 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
             .rejects.toMatchObject({ code: '23514' });
         await expect(inAccount(a, () => db.query('UPDATE nofries.dashboard_framework_revisions SET ncsc_scope_sha256 = NULL')))
             .rejects.toMatchObject({ code: '42501' });
+        // Even a maintenance writer with UPDATE cannot retrofit a source or remove one.
+        const update = (id, pin) => db.query(`UPDATE nofries.dashboard_framework_revisions
+            SET ncsc_assessment_id=$4, ncsc_revision=$5, ncsc_revision_sha256=$6, ncsc_scope_sha256=$7
+            WHERE tenant_id=$1 AND organisation_id=$2 AND assessment_id=$3`,
+        [a.scope.tenantId, a.scope.organisationId, id, ...pin]);
+        for (const [id, pin] of [['text-only', selected], ['source-bound-start', [null, null, null, null]]]) {
+            await expect(update(id, pin)).rejects.toMatchObject({ code: '23514', message: 'paid start source is immutable' });
+        }
         expect((await records()).rows).toHaveLength(3);
         expect((await records()).rows).toContainEqual(bound);
     });
