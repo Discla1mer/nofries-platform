@@ -1582,20 +1582,76 @@
             };
         };
         // Plain topic titles let the Improvement Plan name actions in words.
-        mountCyber.controlTitles = Object.assign(Object.create(null), Object.fromEntries(value.metadata.controls.map(function (control) {
-            return [control.id, control.title];
-        })));
+        const planTitles = function (metadata) {
+            return Object.assign(Object.create(null), Object.fromEntries(metadata.controls.map(function (control) {
+                return [control.id, control.title];
+            })));
+        };
         // Each question's concrete follow-up, worded as on the results page, so a
         // plan gap names the actual work (F1-R10). Plan actions are per question,
         // so this is keyed by question id, not control. Display only.
-        mountCyber.itemFollowUps = Object.create(null);
-        value.metadata.questions.forEach(function (question) {
-            const followUp = question.smallBusiness && question.smallBusiness.checks.join(' ') ||
-                question.guidance && question.guidance.startingActions && question.guidance.startingActions[0];
-            if (typeof followUp === 'string' && followUp.trim() && followUp.length <= 1000) {
-                mountCyber.itemFollowUps[question.id] = followUp;
-            }
-        });
+        const planFollowUps = function (metadata) {
+            const followUps = Object.create(null);
+            metadata.questions.forEach(function (question) {
+                const followUp = question.smallBusiness && question.smallBusiness.checks.join(' ') ||
+                    question.guidance && question.guidance.startingActions && question.guidance.startingActions[0];
+                if (typeof followUp === 'string' && followUp.trim() && followUp.length <= 1000) {
+                    followUps[question.id] = followUp;
+                }
+            });
+            return followUps;
+        };
+        if (!Array.isArray(value.profileMetadata)) {
+            mountCyber.controlTitles = planTitles(value.metadata);
+            mountCyber.itemFollowUps = planFollowUps(value.metadata);
+        } else {
+            // Scoring v2 (#399), only while the server sends further profiles: a
+            // plan does not name its profile, so each plan's wording comes from
+            // the profile its source assessment stores, matched on all six fields.
+            // Until that is known, or if it cannot be, only wording that every
+            // profile having the id agrees on is used, so a plan never shows
+            // another profile's titles or follow-ups.
+            const planProfiles = [value.metadata].concat(value.profileMetadata);
+            const agreed = function (maps) {
+                const result = Object.create(null);
+                maps.forEach(function (map) {
+                    Object.keys(map).forEach(function (key) {
+                        if (Object.prototype.hasOwnProperty.call(result, key)) return;
+                        const found = maps.filter(function (other) { return Object.prototype.hasOwnProperty.call(other, key); });
+                        if (found.every(function (other) { return other[key] === map[key]; })) result[key] = map[key];
+                    });
+                });
+                return result;
+            };
+            mountCyber.controlTitles = agreed(planProfiles.map(planTitles));
+            mountCyber.itemFollowUps = agreed(planProfiles.map(planFollowUps));
+            const profileKeys = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+            // One read per source assessment: its stored profile never changes.
+            const wordingByAssessment = new Map();
+            const readWording = async function (assessmentId) {
+                // The bounded client validates the read against the profile it names.
+                const read = await client.read(assessmentId);
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                const stored = read && read.assessment && read.assessment.profileRef;
+                const metadata = stored && planProfiles.find(function (candidate) {
+                    return Object.keys(stored).length === profileKeys.length && profileKeys.every(function (key) {
+                        return stored[key] === candidate.profileRef[key];
+                    });
+                });
+                return metadata ? { controlTitles: planTitles(metadata), itemFollowUps: planFollowUps(metadata) } : null;
+            };
+            mountCyber.planWording = function (assessmentId) {
+                if (!current(cycle) || cycle.authorityPending) return Promise.reject(invalid());
+                if (!wordingByAssessment.has(assessmentId)) {
+                    if (wordingByAssessment.size >= 100) wordingByAssessment.clear();
+                    const pending = readWording(assessmentId);
+                    wordingByAssessment.set(assessmentId, pending);
+                    // A failed read is not remembered, so a later plan view tries again.
+                    pending.catch(function () { if (wordingByAssessment.get(assessmentId) === pending) wordingByAssessment.delete(assessmentId); });
+                }
+                return wordingByAssessment.get(assessmentId);
+            };
+        }
         // The Improvement Plan's empty state offers the latest submitted
         // assessment. This reads the same validated, bounded list as Overview.
         mountCyber.latestSubmitted = async function () {
@@ -1628,7 +1684,7 @@
         if (picture && typeof picture.mount === 'function') {
             mountCyber.mountPicture = function (root, presentation) {
                 if (!current(cycle)) throw invalid();
-                return picture.mount(root, { metadata: value.metadata, client: client, organisationId: organisationId,
+                return picture.mount(root, { metadata: value.metadata, ...profileMetadata, client: client, organisationId: organisationId,
                     displayName: presentation.displayName,
                     ...(typeof presentation.contactControl === 'function' ? { contactControl: presentation.contactControl } : {}),
                     ...(!pictureSelection ? { readFirstPaint: async function () {
@@ -1774,6 +1830,7 @@
                 sourceAssessment: presentation && presentation.sourceAssessment,
                 ...(cyber && cyber.controlTitles ? { controlTitles: cyber.controlTitles } : {}),
                 ...(cyber && cyber.itemFollowUps ? { itemFollowUps: cyber.itemFollowUps } : {}),
+                ...(cyber && typeof cyber.planWording === 'function' ? { planWording: cyber.planWording } : {}),
                 ...(cyber && typeof cyber.latestSubmitted === 'function' ? { latestSource: cyber.latestSubmitted } : {}),
                 newId: secureId,
                 isCurrent: function () { return current(cycle) && !cycle.authorityPending; },

@@ -1289,3 +1289,35 @@ test('an editor answer is discarded when the plan view in the same round trip fa
     expect(h.root.querySelectorAll('form').filter(visible)).toHaveLength(0);
     expect(h.root.textContent).not.toContain('Saved plan and current action options loaded.');
 });
+
+describe('scoring v2 (#399): plan wording from the plan\'s own profile', () => {
+    test('the host\'s per-plan titles and follow-ups replace its general wording for that plan', async () => {
+        const actions = presentation(seed()).actions, source = presentation(seed()).source.assessmentId;
+        const general = Object.fromEntries(actions.map(action => [action.controlId, 'General ' + action.controlId.slice(-5)]));
+        const own = Object.fromEntries(actions.map(action => [action.controlId, 'Own ' + action.controlId.slice(-5)]));
+        const followUps = Object.fromEntries(actions.map(action => [action.itemId, 'Own follow-up for ' + action.itemId]));
+        const planWording = jest.fn(async () => ({ controlTitles: own, itemFollowUps: followUps }));
+        const h = harness({ options: { controlTitles: general, planWording } }); expect(await h.controller.ready).toBe(true);
+        expect(planWording.mock.calls).toEqual([[source]]);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toBe(view.actionTitle(actions[0], own));
+        expect(h.root.textContent).not.toContain('General ');
+        const gap = actions.findIndex(action => action.rationale.kind === 'implementation');
+        expect(h.root.querySelectorAll('article')[gap].querySelector('.improvement-action-work').textContent).toBe(followUps[actions[gap].itemId]);
+    });
+
+    test.each([['rejects', () => Promise.reject(new Error('synthetic'))], ['gives none', async () => null], ['throws', () => { throw new Error('synthetic'); }]])
+    ('when the host %s, the general wording stands and the plan still shows', async (_, planWording) => {
+        const actions = presentation(seed()).actions;
+        const general = Object.fromEntries(actions.map(action => [action.controlId, 'General ' + action.controlId.slice(-5)]));
+        const h = harness({ options: { controlTitles: general, planWording } }); expect(await h.controller.ready).toBe(true);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toBe(view.actionTitle(actions[0], general));
+    });
+
+    test('malformed per-plan wording falls back to plain names, never the general titles', async () => {
+        const actions = presentation(seed()).actions;
+        const general = Object.fromEntries(actions.map(action => [action.controlId, 'General ' + action.controlId.slice(-5)]));
+        const h = harness({ options: { controlTitles: general, planWording: async () => ({ controlTitles: { 'bad key': 'x' }, itemFollowUps: {} }) } });
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toContain('Control to review');
+    });
+});

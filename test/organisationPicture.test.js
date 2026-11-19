@@ -1467,7 +1467,11 @@ test('scoring v2 (#399): top gaps rank by weight × gap factor, count "I don\'t 
     const result = rowsFor(EXAMPLE);
     assert.deepEqual(picture.topGaps(result, metadata, 5).map(gap => gap.itemId), ['NF-NCSC-MCSS-DR-01-Q2', 'NF-NCSC-CC-SV-01-Q1',
         'NF-NCSC-CC-PM-01-Q1', 'NF-NCSC-CC-SU-01-Q1', 'NF-NCSC-CC-EM-01-Q1']);
-    assert.deepEqual(picture.topGaps(result, metadata).map(gap => gap.itemId), ['NF-NCSC-MCSS-DR-01-Q2', 'NF-NCSC-CC-SV-01-Q1', 'NF-NCSC-CC-PM-01-Q1']);
+    // v2 shows up to five by default (#399, 18 Nov); the accepted profile keeps three.
+    assert.deepEqual(picture.topGaps(result, metadata).map(gap => gap.itemId), ['NF-NCSC-MCSS-DR-01-Q2', 'NF-NCSC-CC-SV-01-Q1',
+        'NF-NCSC-CC-PM-01-Q1', 'NF-NCSC-CC-SU-01-Q1', 'NF-NCSC-CC-EM-01-Q1']);
+    // Logging (I don't know, 1 × 0.85) misses the top five, so it is confirmed next.
+    assert.deepEqual(picture.confirmNext(result, metadata).map(gap => gap.itemId), ['NF-NCSC-MCSS-DU-01-Q1']);
     const supplier = picture.topGaps(result, metadata, 4)[3];
     assert.deepEqual([supplier.title, supplier.next], ['Limit supplier access',
         'List who has access, turn on the extra login step, and add a breach-notice clause.']);
@@ -1486,6 +1490,13 @@ test('scoring v2 (#399): top gaps rank by weight × gap factor, count "I don\'t 
     assert.deepEqual(picture.topGaps(rowsFor(EXAMPLE), accepted, 16).map(gap => gap.itemId),
         picture.topGaps(rowsFor(EXAMPLE), { ...metadata, profileRef: undefined }, 16).map(gap => gap.itemId));
     assert.equal(picture.topGaps(rowsFor(EXAMPLE), accepted, 16).some(gap => gap.responseOptionId === 'unknown'), false);
+    assert.deepEqual(picture.confirmNext(rowsFor(EXAMPLE), accepted), []);
+    // A reference that differs from v2 in any field other than the version is not v2.
+    for (const key of ['frameworkId', 'frameworkVersion', 'profileId', 'catalogueSha256', 'sourceCatalogueSha256']) {
+        const other = { ...metadata, profileRef: { ...metadata.profileRef, [key]: key.endsWith('Sha256') ? 'f'.repeat(64) : 'other' } };
+        assert.equal(picture.topGaps(rowsFor(EXAMPLE), other).length, 3, key);
+        assert.deepEqual(picture.confirmNext(rowsFor(EXAMPLE), other), [], key);
+    }
 });
 
 function summarySource() {
