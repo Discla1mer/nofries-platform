@@ -86,7 +86,8 @@ test('connected view preserves golden server range, uncertainty and completion w
     assert.match(dom.root.textContent, /All 14 responses are saved/);
     assert.match(dom.root.textContent, /6.5–8.5 reported or possible credits ÷ 14/);
     assert.match(dom.root.textContent, /overall result weights questions, not the five function percentages/);
-    assert.match(dom.root.textContent, /Reviews are coming soon/);
+    assert.match(dom.root.textContent, /Not applicable answers count as not yet met, and they stay in your result\. There is no review that changes that\./);
+    assert.doesNotMatch(dom.root.textContent, /Reviews are coming soon|until a reviewer confirms|Approval is not available/i);
     assert.equal(dom.root.querySelectorAll('.picture-domain-detail').length, 5);
 });
 
@@ -233,7 +234,8 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     const ids = category => category.querySelectorAll('article').map(node => node.getAttribute('data-question-id'));
     assert.deepEqual(ids(categories[0]), expected(['unknown', 'not_applicable']));
     assert.deepEqual(ids(categories[1]), expected(['partial', 'no']));
-    assert.match(categories[0].textContent, /Not applicable answers count as not yet met until a reviewer confirms them/);
+    assert.match(categories[0].textContent, /Not applicable answers count as not yet met, and they stay in your result/);
+    assert.doesNotMatch(categories[0].textContent, /reviewer|Reviews are coming soon/);
     assert.doesNotMatch(follow.textContent, /Supporting-evidence gaps|Supporting evidence:|upload/);
     assert.match(follow.textContent, /not a combined total or a risk ranking/);
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
@@ -251,7 +253,7 @@ test.each([[false], [true]])('Overview leads with not enough answers when fewer 
     assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
     assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet, confirm your Unknowns first');
     assert.equal(primary.querySelector('.picture-metric-upper'), null);
-    assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or waiting for review, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
+    assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or Not applicable, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
     // A submitted result is read-only: do not ask the customer to confirm answers.
     assert.doesNotMatch(primary.textContent, /Confirm the Unknown answers|resolved/i);
     if (canStart) assert.match(primary.textContent, /Range so far: 7\.1%–100\.0%\. Start a new assessment once more answers are known\./);
@@ -1776,7 +1778,8 @@ describe('honest saved-assessment comparisons', () => {
         const section = trendSection(dom);
         assert.ok(section.querySelector('.picture-trend-coverage').textContent.includes(coverage));
         assert.ok(section.textContent.includes(shared + ' questions have one of these answers in both.'));
-        assert.match(section.textContent, /Unknown and unapproved N\/A answers remain unresolved/);
+        assert.match(section.textContent, /Unknown and Not applicable answers stay unresolved/);
+        assert.doesNotMatch(section.textContent, /unapproved N\/A|approval workflow/);
         assert.match(section.textContent, /Not comparable as improvement or decline/);
         assert.equal(section.textContent.includes('The set of questions answered Yes, Partial or No also differs.'), differs);
         assert.doesNotMatch(section.textContent, /Up \d|Down \d|No change|Lower-bound change/);
