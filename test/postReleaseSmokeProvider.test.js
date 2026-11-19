@@ -68,6 +68,8 @@ test.each(['current public', 'earlier counterpart', 'simplified'])('full read-on
     }
 });
 const login = read('../login.html'), externalLogin = login.replace('<body ', '<body data-customer-provider="external" ');
+const dedicatedLogin = externalLogin.replace('<body ', '<body data-customer-entry="signin" ')
+    .replace('id="organisation-continue" href="/api/customer-auth/login"', 'id="organisation-continue" href="/api/external-customer-auth/login"');
 const setup = READ_ONLY_CHECKS.find(c => c.name === 'organisation setup is available');
 test.each([
     ['automatic legacy', login, 200, 'legacy', 503, 200, 503, true],
@@ -76,6 +78,9 @@ test.each([
     ['automatic external handoff', login, 200, 'external', 503, 503, 200, true],
     ['broken external handoff', login, 200, 'external', 200, 200, 503, false],
     ['explicit external', externalLogin, 503, '', 200, 503, 200, true],
+    ['dedicated external sign-in without organisation setup', dedicatedLogin, 503, '', 503, 503, 200, true],
+    ['dedicated external sign-in with broken signup', dedicatedLogin, 200, 'legacy', 200, 200, 503, false],
+    ['dedicated external sign-in with wrong login link', dedicatedLogin.replace('/api/external-customer-auth/login', '/api/customer-auth/login'), 200, 'legacy', 200, 200, 200, false],
     ['broken selected external', externalLogin, 200, 'legacy', 503, 200, 200, false],
     ['legacy signup fallback', legacy, 503, '', 503, 200, 503, true],
     ['external signup fallback', external, 503, '', 503, 503, 200, true],

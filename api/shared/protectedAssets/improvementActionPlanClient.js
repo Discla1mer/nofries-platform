@@ -363,7 +363,7 @@
                 catch (_) {
                     const evidenceBlank = key === 'evidenceReference' && input.value.trim() === '';
                     fieldError(key, key === 'ownerLabel' ? OWNER_LABEL_HELP : key === 'nextReviewDate' ? 'Choose today or a later review date, or leave it empty.' : key === 'dueDate' ? 'Enter a valid due date, then save again.' :
-                        evidenceBlank ? 'Enter where the proof is kept, such as a screenshot, invoice or ticket. This is required.' :
+                        evidenceBlank ? 'Enter where the proof is kept, for example ticket IT-204. This is required.' :
                         key === 'evidenceReference' ? 'Use a short reference of up to 180 characters, with no spaces at the start or end. Web addresses and file paths cannot be used.' :
                             'Enter a ' + (key === 'note' ? 'completion note' : draft.type === 'block' ? 'block reason' : 'reopen reason') +
                             ' of up to 1000 characters using plain text, then save again.'); return Promise.resolve(false);

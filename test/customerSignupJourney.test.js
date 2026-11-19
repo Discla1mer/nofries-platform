@@ -39,6 +39,31 @@ test.each([
     } finally { f.view.dispose(); }
 });
 
+test('A-001 D-001 returning sign-in replaces an unconfirmed opening with an actionable retry', async () => {
+    const f = setup({ status: 'unavailable' }, { customerTransport: 'external', entryIntent: 'login' });
+    try {
+        expect(f.root.textContent).toContain('Checking your sign-in and organisation access');
+        await f.view.ready;
+        expect(f.root.textContent).toContain('NF-SIGNIN-UNCONFIRMED');
+        expect(f.root.textContent).not.toContain('NF-SIGNUP-UNCONFIRMED');
+        expect(f.root.getAttribute('aria-busy')).toBe('false');
+        expect(f.root.querySelector('button').textContent).toBe('Try again');
+        f.root.querySelector('button').click(); await flush();
+        expect(f.client.load).toHaveBeenCalledTimes(2);
+    } finally { f.view.dispose(); }
+});
+
+test('P-008 interrupted sign-in offers password reset and human help without identifying the account', async () => {
+    const f = setup({ status: 'create_account' }, { customerTransport: 'external', signInRecovery: 'retry' });
+    try {
+        await f.view.ready;
+        expect(f.root.querySelectorAll('a').map(link => link.href)).toEqual(expect.arrayContaining([
+            '/account-help.html#password-reset', 'mailto:hello@nofries.nz'
+        ]));
+        expect(f.root.textContent).toContain('Sign-in did not finish.');
+    } finally { f.view.dispose(); }
+});
+
 test('renders create-account, unchecked terms and pending-admission in sequence', async () => {
     const f = setup(); await f.view.ready;
     expect(f.root.textContent).toContain('Sign up / Sign in');

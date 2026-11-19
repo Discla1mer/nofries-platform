@@ -72,7 +72,11 @@ this is an application export gate, not a secrecy boundary.
 
 Question order, answer controls, scoring, revisions, submission, sign-in and
 agreement acceptance stay unchanged. A persisted submitted assessment in the
-selected organisation is a first result; drafts do not qualify. Existing E
-board-summary and service gates continue to follow the retained agreement
-policy. The authenticated contact-request API enforces its gate independently.
+selected organisation is a first result; drafts do not qualify. While the flag
+is exactly true, board-summary and service gates follow the retained agreement
+policy and the authenticated contact-request API enforces its gate
+independently. With the flag unset or not exactly true, the dashboard matches
+main: no details route, session capability, gate or migration 0028 read. Keep
+the flag true once any account has enrolled; turning it off would also remove
+that cohort's gates.
 Public contact pages and the existing general results summary stay available.

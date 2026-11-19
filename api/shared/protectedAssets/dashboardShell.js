@@ -445,7 +445,8 @@
             const footer = element('footer', 'dashboard-provenance');
             const stamp = element('time');
             informationStamp = stamp; showInformationTime();
-            footer.append(element('span', '', 'Information as at '), stamp,
+            stamp.hidden = true;
+            footer.append(stamp,
                 element('p', '', 'Assessment indicators are not audit, assurance or certification.'));
             main.append(footer);
         }

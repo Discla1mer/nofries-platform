@@ -37,7 +37,7 @@
 
     function resolveRoute(route, permitted) {
         const key = typeof route === 'string' ? route.replace(/^#/, '') : '';
-        const matched = modules.find(function (item) { return item.route === key; });
+        const matched = modules.find(function (item) { return item.route === (key === 'plan' ? 'improvement-plan' : key); });
         return matched && Array.isArray(permitted) && permitted.includes(matched.key) ? matched : null;
     }
     return Object.freeze({ schemaVersion: 1, modules: modules, services: services,
