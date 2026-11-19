@@ -31,6 +31,9 @@ test.each([true, false])('sealed grouped results and explicit exports, ISO=%s', 
     expect(view.document.body.children).toHaveLength(1);
     expect(view.copied.mock.calls[0][0]).toContain('Top gaps');
     if (iso) {
+        const claim = 'This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.';
+        expect(view.root.textContent).toContain(claim);
+        expect(view.copied.mock.calls[0][0]).toContain(claim);
         expect(view.root.querySelectorAll('article')).toHaveLength(93);
         expect(view.copied.mock.calls[0][0]).toContain('No applicable controls (0 applicable · 8 marked not applicable)');
         expect(view.copied.mock.calls[0][0]).toContain('50% (3 applicable');

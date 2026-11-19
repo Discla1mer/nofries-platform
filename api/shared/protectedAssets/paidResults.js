@@ -137,7 +137,7 @@
         const gapNote = gapLines.length ? 'Lower reported readiness comes first. Ties follow publication order.' :
             'No gaps were identified in the applicable answers.';
         board.append(node('p', gapNote), gapList);
-        const limit = model.iso ? 'This summary reflects your own answers. Certification comes only from an accredited certification body.' :
+        const limit = model.iso ? 'This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.' :
             'This summary reflects your own answers about the functions in scope. ' + publication.statements.attribution;
         board.append(node('p', limit));
         panel.append(board);
