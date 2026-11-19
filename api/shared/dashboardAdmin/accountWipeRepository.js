@@ -17,8 +17,8 @@ const RESET_TABLES = Object.freeze([
     // A contact request is the organisation's own working data (0026); nothing references it.
     'dashboard_contact_requests',
     'dashboard_improvement_heads', 'dashboard_improvement_revisions',
-    'dashboard_framework_revisions',
     'dashboard_evidence_heads', 'dashboard_evidence_receipts', 'dashboard_evidence_revisions',
+    'dashboard_framework_revisions',
     'dashboard_ncsc_assessments', 'dashboard_ncsc_assessment_receipts', 'dashboard_ncsc_assessment_revisions'
 ]);
 // Delete also removes everything that records the organisation itself.
