@@ -780,6 +780,22 @@ describe('fixed evidence metadata HTTP request boundary', () => {
     });
 });
 
+describe('paid framework routes', () => {
+    const url = '/api/dashboard/frameworks/nf-nist-csf-2-0-core/2026-09-08.1/assessments';
+    test('off returns 404 without reading authority', async () => {
+        const h = harness();
+        expectError(await h.build().handleRequest(request({ url })), 404, 'dashboard_not_found');
+        expectNoAuthorityIo(h);
+    });
+    test('collection requires the existing session', async () => withExpectedWarning({
+        route: 'frameworks', status: 401, code: 'dashboard_authentication_required'
+    }, async () => {
+        const h = harness(); h.options.paidFrameworksEnabled = true;
+        expectError(await h.build().handleRequest(request({ url })), 401, 'dashboard_authentication_required');
+        expectNoAuthorityIo(h);
+    }));
+});
+
 describe('opt-in NCSC HTTP request boundary', () => {
     function configured() {
         const h = harness(); h.options.ncsc = { resolveSubmissionQuota: jest.fn(() => null) };

@@ -18,6 +18,7 @@ const { ImprovementActionListError } = require('./improvementPlan/improvementAct
 const { ConsultantWorkQueueError, normaliseConsultantWorkQueuePage,
     createConsultantWorkQueueService } = require('./improvementPlan/consultantWorkQueueService');
 const { apiSecurityHeaders } = require('./securityHeaders');
+const { prepareRequest, paidRequest } = require('./assessmentLifecycle/paidAssessments');
 const { ContactRequestError, normaliseContactRequest, writeContactRequest } = require('./contactRequests');
 
 const denied = () => new DashboardPersistenceError('access_denied', 403);
@@ -30,6 +31,7 @@ function createDashboardResourceRuntime(options) {
     // production host forwards its explicit Improvement setting; each release
     // must qualify schema/audit readiness before enabling that setting.
     const improvementEnabled = options.improvementEnabled === true;
+    const paidFrameworksEnabled = options.paidFrameworksEnabled === true;
     const contactRequestsEnabled = options.contactRequestsEnabled === true;
     const queueClock = options.clock;
     const requests = new WeakMap();
@@ -166,6 +168,15 @@ function createDashboardResourceRuntime(options) {
             }
             return Object.freeze({
                 requestContext,
+                ...(paidFrameworksEnabled ? { async paid(route, body, cursor) {
+                    const request = prepareRequest(route, body, cursor);
+                    const pair = binding.createOperation(body === undefined ? 'framework.read' : 'framework.write', context, request.profileRef);
+                    try {
+                        const result = await paidRequest(pair, context, request);
+                        pair.clock();
+                        return result;
+                    } finally { pair.finish(); }
+                } } : {}),
                 ...(contactRequestsEnabled ? { contact: Object.freeze({ request: (input, onStored) => contactRequest(input, onStored) }) } : {}),
                 ...(improvementEnabled ? { improvement: Object.freeze({
                     plans: input => improvement('plans', input),

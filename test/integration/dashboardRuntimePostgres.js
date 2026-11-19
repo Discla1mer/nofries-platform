@@ -1741,6 +1741,7 @@ function registerRealPostgresTests() {
             const bound = await bindResource();
             return { ...f, ...target, ...bound, seed, selected, quota, resourceOptions, bindResource, addResource };
         }
+        require('./paidAssessmentLifecycle')({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner: () => ownerPool });
         require('./improvementPlanRecovery')({ resourceSetup,
             getPools: () => ({ ownerPool, controlPool, runtimePool, maintenancePool }), testUrl, maintenanceRole });
         async function newCustomerActivationSetup({ shortWindow = false, memberLimit = null, memberRole = 'admin' } = {}) {

@@ -1,0 +1,75 @@
+'use strict';
+
+const request = require('supertest');
+const { createProductionApplication } = require('../../lib/productionApplication');
+const { customerProductionHarness } = require('../helpers/customerProductionHarness');
+
+module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner }) => {
+    const id = 'nf-nist-csf-2-0-core', version = '2026-09-08.1';
+    const base = '/api/dashboard/frameworks/' + id + '/' + version + '/assessments';
+    const ref = { profileId: id, profileVersion: version };
+    test('paid assessment HTTP start, save, replay, submit and scoped resume use the registered publication', async () => {
+        const tenant = NCSC_SUBJECT.split(':')[0], principal = { ...identity(), identityTenantId: tenant,
+            oid: NCSC_SUBJECT.split(':')[1], issuer: `https://login.microsoftonline.com/${tenant}/v2.0`, audience: nextId() };
+        const f = await resourceSetup({ productionIdentity: principal, exampleOptions: { profileRefs: [ref] } });
+        f.state.now = '2026-09-08T00:01:00.000Z'; // Publication is effective; fixture membership lasts until 01:00.
+        const h = customerProductionHarness({ pool: f.restrictedPool, identity: principal, instanceId: f.instanceId,
+            restoreEpoch: f.state.restoreEpoch, now: Date.parse(f.state.now),
+            applicationFactory: (env, deps) => createProductionApplication({ ...env, NOFRIES_PAID_FRAMEWORKS_ENABLED: 'true' }, deps) });
+        const user = h.addUser({ ...f.scope, bindingId: f.publication.binding.bindingId });
+        const login = await h.login(user);
+        expect((await h.consent(login.cookie)).response.status).toBe(200);
+        const startSession = await h.sameOrigin(request(h.app).post('/api/dashboard/session')).set('Cookie', login.cookie).send({ operationId: nextId() });
+        expect(startSession.status).toBe(200);
+        const session = await request(h.app).get('/api/dashboard/session').set('Cookie', login.cookie);
+        const header = 'X-NoFries-Dashboard-Generation', gen = session.body.generation;
+        const get = path => request(h.app).get(path).set('Cookie', login.cookie).set(header, gen);
+        const post = (path, body) => h.sameOrigin(request(h.app).post(path)).set('Cookie', login.cookie).set(header, gen).send(body);
+        const collection = await get(base).expect(200);
+        expect(collection.body.assessments).toEqual([]);
+        const publication = collection.body.publication;
+        expect(publication.profile.id).toBe(id);
+        const start = { assessmentId: 'example', expectedRevision: null, idempotencyKey: 'start', payload: { scopePopulation: { description: 'Synthetic office' } } };
+        expect((await post(base, start).expect(200)).body.assessment).toMatchObject({ status: 'created', revision: 0 });
+        await post(base + '/example/submit', { expectedRevision: 0, idempotencyKey: 'early', payload: {} }).expect(409);
+        const responses = publication.questions.map(({ id: itemId }, i) => ({ itemId, optionId: i ? 'yes' : 'not_applicable',
+            rationale: i ? null : { text: 'Outside this synthetic scope' } }));
+        const save = { expectedRevision: 0, idempotencyKey: 'save', payload: { responses } };
+        const saved = (await post(base + '/example/save', save).expect(200)).body;
+        expect(saved.assessment.responses).toEqual(expect.arrayContaining([responses[0]]));
+        expect((await post(base + '/example/save', save).expect(200)).body).toEqual(saved);
+        await post(base + '/example/save', { ...save, payload: { responses: responses.slice(1) } }).expect(409);
+        await f.mutateFlags({ cyber_security: false });
+        await get(base + '/example').expect(403);
+        await post(base + '/example/save', save).expect(403);
+        await f.mutateFlags({ cyber_security: true });
+        expect((await get(base + '/example').expect(200)).body).toEqual(saved);
+        const submit = { expectedRevision: 1, idempotencyKey: 'submit', payload: {} };
+        const sealed = (await post(base + '/example/submit', submit).expect(200)).body;
+        expect(sealed.assessment.submission).toEqual({ revision: 2, submittedAt: expect.any(String), responseSetSha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+        expect((await get(base + '/example').expect(200)).body).toEqual(sealed);
+        expect((await post(base + '/example/submit', submit).expect(200)).body).toEqual(sealed);
+        await post(base + '/example/save', { ...save, expectedRevision: 2, idempotencyKey: 'sealed' }).expect(409);
+        const listed = (await get(base).expect(200)).body;
+        expect(listed.assessments).toEqual([{ assessmentId: 'example', status: 'submitted', revision: 2, updatedAt: f.state.now }]);
+        await get(base.replace(version, 'unknown')).expect(404);
+        await request(h.app).get(base).set('Cookie', login.cookie).set(header, 'a'.repeat(64)).expect(403);
+        const usage = await owner().query("SELECT payload#>>'{counters,assessment_runs}' AS count FROM nofries.dashboard_usage WHERE tenant_id=$1", [f.scope.tenantId]);
+        expect(usage.rows).toEqual([{ count: '1' }]);
+        const operations = await owner().query("SELECT payload->>'action' AS action FROM nofries.dashboard_runtime_audit WHERE tenant_id=$1 AND event_type='dashboard.operation'", [f.scope.tenantId]);
+        expect(operations.rows.filter(e => e.action === 'assessment.write')).toHaveLength(3);
+        const other = await f.addResource({ tenantId: f.scope.tenantId + '-other', organisationId: f.scope.organisationId });
+        const switched = await f.repository.selectBinding(f.request(f.seed), { operationId: nextId(),
+            bindingId: other.publication.binding.bindingId, expectedGeneration: f.selected.record.generationToken });
+        const { facade } = await f.bindResource({ generation: switched.record.generationToken, overrides: { paidFrameworksEnabled: true } });
+        const route = { profileId: id, version, assessmentId: null };
+        expect((await facade.paid(route, undefined, null)).assessments).toEqual([]);
+        const next = await f.bindResource({ generation: switched.record.generationToken, overrides: { paidFrameworksEnabled: true } });
+        await expect(next.facade.paid({ ...route, assessmentId: 'example' }, undefined, null)).rejects.toMatchObject({ code: 'framework_not_found' });
+    });
+    test.each([{ grants: undefined }, { grants: [{ profileId: id, profileVersion: 'other' }] }])('paid assessment refuses an absent exact active grant (%j)', async ({ grants }) => {
+        const f = await resourceSetup({ exampleOptions: { profileRefs: grants } });
+        const { facade } = await f.bindResource({ overrides: { paidFrameworksEnabled: true } });
+        await expect(facade.paid({ profileId: id, version, assessmentId: null }, undefined, null)).rejects.toMatchObject({ code: 'framework_access_denied' });
+    });
+};
