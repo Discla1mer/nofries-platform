@@ -1193,9 +1193,9 @@ async function hostOperation(inv, routing, resource) {
                             !resource.requiresGeneration) return facts;
                         const product = currentProductGrant(facts.grants, inv.now());
                         if (!product) return facts;
-                        const rows = await require('../appLifecycle/paidFrameworkDecisions').latestDecisions(
+                        const decisions = await require('../appLifecycle/paidFrameworkDecisions').latestDecisions(
                             { query: (sql, params) => inv.query(tx, sql, params) }, active.context.scope, product.grantId);
-                        return rows.length ? freeze({ ...facts, frameworkDecisions: { productGrantId: product.grantId, rows } }) : facts;
+                        return decisions.length ? freeze({ ...facts, frameworkDecisions: { productGrantId: product.grantId, rows: decisions } }) : facts;
                     }
                     if (!recovery) {
                         const initial = await presentationFacts();

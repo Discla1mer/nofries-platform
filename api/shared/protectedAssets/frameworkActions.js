@@ -45,7 +45,8 @@
                 if (!result.operationId || result.action !== input.action || result.tuple?.profileId !== profileId ||
                     result.tuple?.version !== version || !(Date.parse(result.approvalExpiresAt) > Date.now())) throw new Error();
                 approval = result; expiry = setTimeout(clear, Date.parse(result.approvalExpiresAt) - Date.now());
-                status.textContent = 'Approval recorded. Choose Apply approved change within 15 minutes.';
+                status.textContent = 'Approval recorded. ' + (input.action === 'grant' ? 'Grant ' : 'Revoke ') +
+                    profileId + ' ' + version + ' for ' + selection.selector.organisationId + '. Apply within 15 minutes.';
             }
         } catch (error) {
             if (generation === cycle) status.textContent = error.message === 'refused' ? 'Request refused. Check the organisation, email and current access.'
