@@ -681,7 +681,7 @@ function createDashboardRuntimeHandlers(configuration) {
             fields(value, ['bindingId', 'scope', ...(own(value, 'accountLabel') ? ['accountLabel'] : []), ...(own(value, 'accountName') ? ['accountName'] : []), ...(own(value, 'accountType') ? ['accountType'] : []),
                 ...(own(value, 'ownDeferredAgreement') ? ['ownDeferredAgreement'] : []), ...(own(value, 'clientSetupAvailable') ? ['clientSetupAvailable'] : [])]);
             if (own(value, 'accountLabel') && (typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel))) throw new Error();
-            if (own(value, 'accountName') && (typeof value.accountName !== 'string' || value.accountName !== value.accountName.trim() || !value.accountName || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountName))) throw new Error();
+            if (own(value, 'accountName') && (typeof value.accountName !== 'string' || value.accountName !== value.accountName.trim() || !value.accountName || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f\p{Cf}]/u.test(value.accountName))) throw new Error();
             uuid(value.bindingId); fields(value.scope, ['tenantId', 'organisationId']);
             if (own(value, 'accountType') && !['company', 'consultant'].includes(value.accountType)) throw new Error();
             if (own(value, 'ownDeferredAgreement') && (value.ownDeferredAgreement !== true || value.accountType !== 'company')) throw new Error();

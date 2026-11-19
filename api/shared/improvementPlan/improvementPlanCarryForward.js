@@ -24,11 +24,19 @@ function planCarryForward(previousPlan, nextPlan) {
 }
 
 // Only carry from an earlier assessment of the same module, so a plan made
-// later for an older assessment never inherits from a newer one.
+// later for an older assessment never inherits from a newer one. Scoring v2
+// (#399): only between plans scored on the same question profile. Carrying v1
+// actions into a v2 plan (including retired questions) is a separate step.
 function canCarryFrom(previousPlan, nextPlan) {
     const before = previousPlan?.source?.provenance, after = nextPlan?.source?.provenance;
     return !!before && !!after && before.moduleId === after.moduleId &&
-        before.assessmentId !== after.assessmentId && before.scoreAsOf <= after.scoreAsOf;
+        before.assessmentId !== after.assessmentId && before.scoreAsOf <= after.scoreAsOf &&
+        sameProfile(before.profileRef, after.profileRef);
+}
+const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+function sameProfile(before, after) {
+    return !!before && !!after && typeof before === 'object' && typeof after === 'object' &&
+        PROFILE_FIELDS.every(field => typeof before[field] === 'string' && before[field] === after[field]);
 }
 
 // Readable, deterministic provenance: the previous plan's head row digest

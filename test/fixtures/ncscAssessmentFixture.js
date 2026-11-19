@@ -20,8 +20,8 @@ function ncscFixture(options = {}) {
         organisationId: options.organisationId || 'shared-organisation',
         modules: ['overview', 'cyber_security', 'services'] });
     const initial = replaceTenant(source, options.tenantId || 'synthetic-ncsc-tenant');
-    const frameworks = [{ moduleId: 'cyber_security', profileId: ACCEPTED_PROFILE_REF.profileId,
-        version: ACCEPTED_PROFILE_REF.profileVersion }];
+    const frameworks = (options.profileRefs || [ACCEPTED_PROFILE_REF]).map(ref => ({ moduleId: 'cyber_security',
+        profileId: ref.profileId, version: ref.profileVersion }));
     const product = initial.entitlementState.grants.find(grant => grant.grantId === 'synthetic-product');
     product.frameworks = clone(frameworks);
     product.limits.assessment_runs = options.capacity ?? 2;
