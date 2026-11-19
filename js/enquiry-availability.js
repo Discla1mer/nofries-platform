@@ -1,23 +1,4 @@
 (function () {
-    function captureEnquiryCampaign(window) {
-        try {
-            const params = new URLSearchParams(window.location.search);
-            const label = function (value) {
-                const text = String(value || '').trim().toLowerCase();
-                return /^[a-z0-9._-]{1,40}$/.test(text) ? text : '';
-            };
-            let source = label(params.get('utm_source'));
-            if (!source && params.has('fbclid')) source = 'meta';
-            if (source && !window.sessionStorage.getItem('nofries-enquiry-campaign')) {
-                const tag = [source, label(params.get('utm_medium')), label(params.get('utm_campaign'))].join('/');
-                window.sessionStorage.setItem('nofries-enquiry-campaign', tag);
-            }
-        } catch (_) { /* storage blocked: no tag */ }
-    }
-    if (typeof module === 'object' && module.exports) {
-        module.exports = captureEnquiryCampaign;
-        return;
-    }
     // Campaign tag for enquiries. On landing from an ad link, keep only the
     // utm_source, utm_medium and utm_campaign labels (or "meta" when Meta adds
     // fbclid without UTM tags) in this tab's sessionStorage. No cookie, no
@@ -29,7 +10,19 @@
     window.clearEnquiryCampaign = function () {
         try { window.sessionStorage.removeItem('nofries-enquiry-campaign'); } catch (_) { /* nothing stored */ }
     };
-    captureEnquiryCampaign(window);
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const label = function (value) {
+            const text = String(value || '').trim().toLowerCase();
+            return /^[a-z0-9._-]{1,40}$/.test(text) ? text : '';
+        };
+        let source = label(params.get('utm_source'));
+        if (!source && params.has('fbclid')) source = 'meta';
+        if (source && !window.enquiryCampaign()) {
+            const tag = [source, label(params.get('utm_medium')), label(params.get('utm_campaign'))].join('/');
+            window.sessionStorage.setItem('nofries-enquiry-campaign', tag);
+        }
+    } catch (_) { /* storage blocked: no tag */ }
 
     // Service named by a dashboard "Ask No Fries about this service" link.
     // Only a known key is accepted and only its fixed label is returned, so
