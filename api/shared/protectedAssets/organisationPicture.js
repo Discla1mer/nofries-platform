@@ -621,7 +621,7 @@
                 const sameCoverage = previous.total === current.total && shared === previous.answered.size && shared === current.answered.size;
                 section.append(node('p', 'picture-trend-coverage', 'Question coverage: ' + earlier + ' ' +
                     previous.answered.size + ' of ' + previous.total + '; selected ' + current.answered.size + ' of ' + current.total +
-                    ' answered Yes, Partial or No. ' + shared + ' questions have one of these answers in both. Unknown and unapproved N/A answers remain unresolved.'));
+                    ' answered Yes, Partial or No. ' + shared + ' questions have one of these answers in both. Unknown and Not applicable answers stay unresolved.'));
                 section.append(node('p', 'ncsc-warning', 'Not comparable as improvement or decline: ' +
                     (previous.scope !== current.scope ? 'the saved scope declarations differ.'
                         : 'matching saved scope descriptions do not establish the same real-world population.') +
@@ -641,7 +641,7 @@
                 line('Overall', previous, current);
                 current.domains.forEach((domain, position) => line(domain.title, previous.domains[position], domain));
                 table.append(head, body); section.append(table,
-                    node('p', 'dashboard-muted', 'Both saved results use the accepted profile and included question weights. Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown answers and unapproved N/A still contribute to the upper bound; no subset is re-scored.'));
+                    node('p', 'dashboard-muted', 'Both saved results use the accepted profile and included question weights. Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown and Not applicable answers still add to the higher figure; no subset is re-scored.'));
             }
             section.append(node('h4', '', 'Submitted assessments'));
             const list = node('ol', 'picture-trend-history');
@@ -848,7 +848,7 @@
             value.textContent = model.lowerDisplay + ' in place';
             card.replaceChildren(card.querySelector('h3'), value,
                 node('p', 'picture-metric-upper', 'Up to ' + model.upperDisplay + ' if every answer still to confirm turns out to be in place.'),
-                node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. It is not a performance score.'));
+                node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable. It is not a performance score.'));
         }
         function renderResult(result) {
             root.append(gapSection(result));
@@ -863,7 +863,7 @@
             const implementationMetric = questionnaire.enoughAnswersToEstimate(result)
                 ? metric('Reported implementation', result.attainment, rangeHelp, true)
                 : metric('Reported implementation', 'Not enough answers to estimate yet', 'Only ' + result.completed + ' of ' + result.total +
-                    ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
+                    ' answers are Yes, Partial or No. Most answers are Unknown or Not applicable, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
                     (typeof options.openCyber === 'function' ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp, true);
             const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             root.append(metrics, informationSection(result));
@@ -913,7 +913,7 @@
             const ordered = metadata.questions.map(question => indexed.get(question.id));
             const categories = [
                 ['Unresolved answers', ordered.filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId)),
-                    result.unknown ? result.unknown + ' answers still to confirm: check the position. Not applicable answers count as not yet met until a reviewer confirms them. Reviews are coming soon.'
+                    result.unknown ? result.unknown + ' answers still to confirm: check the position. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.'
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
                 ['Reported implementation gaps', ordered.filter(question => ['partial', 'no'].includes(question.responseOptionId)),
                     result.partial || result.no ? result.partial + ' partial and ' + result.no + ' absent implementations: review the relevant questions before agreeing improvements.'
@@ -995,7 +995,7 @@
             root.append(limits);
             const calculation = node('details', 'picture-calculation');
             calculation.append(node('summary', '', 'How the implementation range is calculated'),
-                node('p', '', 'No Fries gives each question equal weight: Yes = 1, Partial = 0.5 and No = 0. Unknown, missing and unapproved N/A contribute 0 to the lower bound and 1 to the upper bound. Only a trusted approved exclusion can leave the denominator; that approval workflow is not available here.'),
+                node('p', '', 'No Fries gives each question equal weight: Yes = 1, Partial = 0.5 and No = 0. Unknown, missing and Not applicable answers contribute 0 to the lower figure and 1 to the higher figure. A Not applicable answer stays in the count. There is no review that takes it out.'),
                 node('p', '', 'This saved result: ' + result.lowerCreditUnits / 2 + '–' + result.upperCreditUnits / 2 + ' reported or possible credits ÷ ' + result.denominatorWeight + ' included question weights × 100 = ' + result.attainment + '. Percentages are rounded to one decimal place.'),
                 node('p', '', 'The overall result weights questions, not the five function percentages. Functions contain different numbers of questions. This is a No Fries implementation measure based on selected NCSC guidance, not an NCSC score or certification. Evidence and confidence do not increase this implementation measure.'));
             root.append(calculation);

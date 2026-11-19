@@ -994,7 +994,8 @@ describe('questionnaire draft progress and unanswered navigation', () => {
             expect(glossary.querySelector('summary').textContent).toBe('What these words mean');
             expect(glossary.querySelectorAll('dt').map(term => term.textContent))
                 .toEqual(['To check later', 'Marked not applicable, to confirm', 'Saved and not saved yet', 'Reported implementation range']);
-            expect(glossary.textContent).toContain('count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.');
+            expect(glossary.textContent).toContain('Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.');
+            expect(glossary.textContent).not.toMatch(/reviewer|Reviews are coming soon|Approval is not available/i);
             expect(glossary.textContent).toContain('The lower figure is what you reported as in place.');
             expect(glossary.textContent).not.toMatch(/unresolved|denominator/i);
             glossary.open = true; event(glossary, 'toggle');
@@ -1268,7 +1269,8 @@ describe('saved-only draft observations', () => {
         control(ui, 'Save progress').click(); await until(() => panel(ui).textContent.includes('5 of 14 responses saved'));
         expect(groups(ui)).toEqual(['Reported gaps · 2', 'Information to confirm · 1', 'Applicability to confirm · 1', 'Not answered in this save · 9']);
         expect(panel(ui).textContent).toContain('1 answered Yes (self-reported, not verified)');
-        expect(panel(ui).textContent).toContain('These exclusions are not approved');
+        expect(panel(ui).textContent).toContain('These answers say the question does not apply');
+        expect(panel(ui).textContent).toContain('They still count as not yet met.');
         expect(panel(ui).textContent).toContain('not a score, risk ranking or verified evidence');
         expect(panel(ui).textContent).toContain('do not change any submitted baseline');
         expect(panel(ui).textContent).toContain('Last saved ');
@@ -1552,7 +1554,7 @@ describe('submitted assessment results', () => {
             } else {
                 expect(shown).toBe('Not enough answers to estimate yet');
                 expect(card.querySelector('.ncsc-result-upper')).toBeNull();
-                expect(card.textContent).toContain('Only 6 of 14 answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + model.attainment + '. Start a new assessment once more answers are known.');
+                expect(card.textContent).toContain('Only 6 of 14 answers are Yes, Partial or No. Most answers are Unknown or Not applicable, so the range is too wide to be useful. Range so far: ' + model.attainment + '. Start a new assessment once more answers are known.');
                 // Submitted answers cannot be changed, so the customer is not asked to confirm them.
                 expect(card.textContent).not.toContain('Confirm the Unknown answers');
                 expect(card.textContent).not.toMatch(/resolved/i);
@@ -1568,7 +1570,7 @@ describe('submitted assessment results', () => {
             const card = ui.root.querySelector('.ncsc-results').querySelectorAll('.ncsc-result-metric')
                 .find(item => item.querySelector('h3').textContent === 'Reported implementation');
             expect(card.querySelector('.ncsc-result-value').textContent).toBe('Not enough answers to estimate yet');
-            expect(card.textContent).toContain('Only 1 of 14 answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ');
+            expect(card.textContent).toContain('Only 1 of 14 answers are Yes, Partial or No. Most answers are Unknown or Not applicable, so the range is too wide to be useful. Range so far: ');
             expect(card.textContent).not.toContain('Start a new assessment');
         } finally { ui.controller.destroy(); }
     });
@@ -1836,7 +1838,7 @@ describe('questionnaire form accessibility', () => {
         const explanations = {
             yes: 'All parts of this statement are in place across your declared scope.',
             partial: 'Plans alone do not count.', no: 'including when work is only planned.',
-            unknown: 'not have enough information', not_applicable: 'count as not yet met in your result until a reviewer confirms them'
+            unknown: 'not have enough information', not_applicable: 'count as not yet met, and they stay in your result. There is no review that changes that.'
         };
         for (const [id, explanation] of Object.entries(explanations)) {
             const input = byId(ui, `ncsc-answer-${question.id}-${id}`), label = input.parentElement;
@@ -1847,8 +1849,8 @@ describe('questionnaire form accessibility', () => {
         choose(ui, 0, 'not_applicable', 'Synthetic pending exclusion.');
         const help = byId(ui, `ncsc-rationale-help-${question.id}`);
         expect(byId(ui, `ncsc-rationale-${question.id}`).getAttribute('aria-describedby')).toBe(help.id);
-        expect(help.textContent).toContain('count as not yet met in your result until a reviewer confirms them');
-        expect(help.textContent).toContain('Reviews are coming soon.');
+        expect(help.textContent).toContain('count as not yet met, and they stay in your result. There is no review that changes that.');
+        expect(help.textContent).not.toMatch(/reviewer confirms|Reviews are coming soon|Approval is not available/i);
         expect(help.textContent).not.toContain('until reviewed');
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
@@ -1868,7 +1870,8 @@ describe('questionnaire form accessibility', () => {
             }
             expect(help.textContent).toContain('all outside your declared scope');
             expect(help.textContent).toContain('If you are unsure, choose Unknown.');
-            expect(help.textContent).toContain('Reviews are coming soon.');
+            expect(help.textContent).toContain('There is no review that changes that.');
+            expect(help.textContent).not.toContain('Reviews are coming soon.');
             expect(h.records).toHaveLength(1);
             control(ui, 'Save progress').click();
             await until(() => ui.root.textContent.includes('Your progress is saved.'));
@@ -1890,7 +1893,8 @@ describe('questionnaire form accessibility', () => {
             expect(ui.root.textContent).toContain('Not handling payments is not enough');
             choose(ui, 0, 'not_applicable', 'Synthetic unrelated exclusion.');
             expect(ui.root.textContent).not.toContain('Not handling payments is not enough');
-            expect(byId(ui, `ncsc-rationale-help-${questions[0].id}`).textContent).toContain('Reviews are coming soon.');
+            expect(byId(ui, `ncsc-rationale-help-${questions[0].id}`).textContent).toContain('There is no review that changes that.');
+            expect(byId(ui, `ncsc-rationale-help-${questions[0].id}`).textContent).not.toContain('Reviews are coming soon.');
             expect(h.records).toHaveLength(2);
         } finally { ui.controller.destroy(); }
     });
@@ -3306,7 +3310,8 @@ describe('final submission review step', () => {
             // Yes 8, Partial 2, No 1, Unknown 1, pending N/A 2: lower 18/28, upper 24/28, 20/28 without the N/A widening.
             expect(byId(ui, 'ncsc-review-range-value').textContent).toBe('With your current answers, reported implementation would be 64.3%–85.7%.');
             expect(range.textContent).toContain('they add nothing to the lower figure and full credit to the upper figure. Yours widen the range by 14.3 percentage points.');
-            expect(range.textContent).toContain('Approval is not available yet.');
+            expect(range.textContent).toContain('There is no review that changes that.');
+            expect(range.textContent).not.toMatch(/Approval is not available|Reviews are coming soon|reviewer confirms/i);
             expect(range.querySelectorAll('button').map(item => item.textContent)).toEqual(['Change question 11', 'Change question 12']);
             expect(h.calls.length).toBe(before);
             control(ui, 'Change question 12').click();
