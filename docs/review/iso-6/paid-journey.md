@@ -39,3 +39,15 @@ Run `checkPaidBrowser({ browser, call, publication, assetRoot, axePath, outputDi
 **Access and separation.** Ten focused native cases passed across the two profiles, including the six ISO-6 browser/access cases. Signed-in accounts received 404 on all five operations with the flag off and 403 with the flag on and only free access. Neither refusal wrote a paid revision. Two additional consultant cases passed. For each framework, the same consultant created records with identical IDs and scope text under two clients. After switching, the stale generation returned 403 and the other client's record initially returned 404. Different answers remained intact after switching back.
 
 **Open integration checks.** #505 at `667ed52aafff238a324eceff3dec2c0e6eeb49f4` still lacks the admitted asset host. The browser tests above start at the authorised collection and use test asset delivery. Repeat through the real picker and export decision when available. The source-scope binding for suggestions also remains unimplemented in #500. Independent security review is required for those session, entitlement and data paths.
+
+## Review of the revised ISO publication
+
+The native measurements and screenshots above belong to #506 `dd1086a6990c54d390d42eef6f38d9594277a2a1`. The replacement publication, `9222a86377d4195b3befaa0246e40036ac3c4c97`, changed questions C4.2, A.5.21, A.7.1 and A.7.11, and clarified the limits of the assessment and certification wording. Comparing the published objects found the prompts, evidence, starting actions, control records and response options for the three mapped questions unchanged. The source-side NCSC v1 questions were checked against each target again.
+
+| Reviewed target | What the positive NCSC answer supports | Still needs confirmation |
+| --- | --- | --- |
+| A.5.9 | An inventory records important assets and owners. | Confirm the links between important information, supporting assets and owners. |
+| A.8.8 | A repeatable patch process prioritises and verifies fixes. | Check who owns weaknesses outside patch management. |
+| A.8.13 | Protected backups and sampled restore tests cover critical systems and data. | Check what the recovery test established for this assessment’s scope. |
+
+Only the new pair of catalogue digests can return these partial hints. A retired or mixed digest pair returns none. The acceptance fixture checks both digests on the served and sealed ISO publication. This review adds no live suggestions.
