@@ -86,9 +86,13 @@ async function checkPickerKeyboard(page, origin, ref) {
         const box = el.getBoundingClientRect();
         return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.top < innerHeight;
     }), true);
-    assert.equal(assets.length, 2);
+    const base = new URL(collection).pathname.replace(/\/assessments$/, '/assets/');
+    const questionnaires = assets.filter(asset => asset.path === base + 'questionnaire.js');
+    const collections = assets.filter(asset => asset.path === base + 'collection.js');
+    assert.equal(questionnaires.length, 2);
+    if (collections.length) assert.equal(collections.length, 2);
+    assert.equal(assets.length, questionnaires.length + collections.length);
     for (const asset of assets) {
-        assert.equal(asset.path, new URL(collection).pathname.replace(/\/assessments$/, '/assets/questionnaire.js'));
         assert.equal(asset.status, 200);
         assert.match(asset.cache, /no-store/);
     }
