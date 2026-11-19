@@ -52,9 +52,10 @@ test('0027 grants the retention role read of the key and date, delete, and nothi
     const run = crypto.randomBytes(8).toString('hex');
     const databaseName = `contact_retention_${run}`;
     const runtimeLogin = `retention_runtime_${run}`, purgeLogin = `retention_purge_${run}`, password = `synthetic-local-retention-${run}`;
+    const productionLogin = `retention_production_${run}`, inheritLogin = `retention_inherit_${run}`;
     const tenantA = crypto.randomUUID(), tenantB = crypto.randomUUID(), orgA = crypto.randomUUID(), orgB = crypto.randomUUID();
     const created = { database: false, logins: [] };
-    let controlPool, ownerPool, runtimePool, purgePool;
+    let controlPool, ownerPool, runtimePool, purgePool, productionPool, inheritPool;
     const capture = promise => promise.then(value => ({ value }), error => ({ error }));
     // Ages relative to now: two past 24 months (one in each tenant), one a day past, one a day short, and two recent.
     const AGES = [[tenantA, orgA, '30 months'], [tenantB, orgB, '25 months'], [tenantA, orgA, '24 months 1 day'],
@@ -80,12 +81,12 @@ test('0027 grants the retention role read of the key and date, delete, and nothi
             return result;
         } finally { client.release(); }
     }
-    async function login(name, grant) {
+    async function login(name, grants, max = 2) {
         await controlPool.query(`CREATE ROLE ${quoteIdentifier(name)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD ${quoteLiteral(password)}`);
         created.logins.push(name);
-        await controlPool.query(grant(quoteIdentifier(name)));
+        for (const grant of [].concat(grants)) await controlPool.query(grant(quoteIdentifier(name)));
         return new (require('pg').Pool)({ connectionString: urlFor(testUrl, { database: databaseName, username: name, password }),
-            max: 2, statement_timeout: 15000 });
+            max, statement_timeout: 15000 });
     }
 
     beforeAll(async () => {
@@ -97,6 +98,13 @@ test('0027 grants the retention role read of the key and date, delete, and nothi
         runtimePool = await login(runtimeLogin, name => `GRANT nofries_runtime TO ${name}`);
         // The production grant this change needs: SET only, no INHERIT.
         purgePool = await login(purgeLogin, name => `GRANT ${ROLE} TO ${name} WITH SET TRUE, INHERIT FALSE`);
+        // The production shape: the App Service runtime login, which holds nofries_runtime, plus the
+        // retention role WITH SET TRUE, INHERIT FALSE. One connection, so a later query reuses it.
+        productionPool = await login(productionLogin, [name => `GRANT nofries_runtime TO ${name}`,
+            name => `GRANT ${ROLE} TO ${name} WITH SET TRUE, INHERIT FALSE`], 1);
+        // The wrong grant: inherited, so the role's policies would apply without SET ROLE.
+        inheritPool = await login(inheritLogin, [name => `GRANT nofries_runtime TO ${name}`,
+            name => `GRANT ${ROLE} TO ${name} WITH SET TRUE, INHERIT TRUE`], 1);
         for (const [tenantId, organisationId] of [[tenantA, orgA], [tenantB, orgB]]) {
             await ownerPool.query('INSERT INTO nofries.dashboard_tenants (tenant_id,schema_version,revision,payload) VALUES ($1,1,0,$2::jsonb)',
                 [tenantId, JSON.stringify({ schemaVersion: 1, tenantId, displayName: 'Synthetic tenant', recordStatus: 'active', revision: 0 })]);
@@ -107,7 +115,7 @@ test('0027 grants the retention role read of the key and date, delete, and nothi
     }, 30000);
     beforeEach(seed);
     afterAll(async () => {
-        for (const pool of [purgePool, runtimePool, ownerPool]) if (pool) await pool.end();
+        for (const pool of [inheritPool, productionPool, purgePool, runtimePool, ownerPool]) if (pool) await pool.end();
         if (controlPool) {
             try {
                 if (created.database) await controlPool.query(`DROP DATABASE ${quoteIdentifier(databaseName)}`);
@@ -184,5 +192,66 @@ test('0027 grants the retention role read of the key and date, delete, and nothi
         } finally { client.release(); }
         expect(await remaining()).toEqual(TOPICS);
     });
+
+    test('production shape: runtime reads stay in their tenant, the job purges, and the session returns to the login', async () => {
+        const client = await productionPool.connect();
+        let seen, unbound;
+        try {
+            await client.query('BEGIN');
+            unbound = (await client.query(`SELECT tenant_id FROM ${TABLE}`)).rowCount;
+            await client.query("SELECT set_config('nofries.tenant_id', $1, true)", [tenantA]);
+            seen = (await client.query(`SELECT tenant_id, requested_at < now() - interval '24 months' AS old FROM ${TABLE}`)).rows;
+            await client.query('ROLLBACK');
+        } finally { client.release(); }
+        // No tenant bound: nothing, so the retention policy does not reach ordinary queries.
+        expect(unbound).toBe(0);
+        // Tenant A bound: tenant A's rows, old and new, and none of tenant B's old rows.
+        expect(seen.map(row => row.tenant_id)).toEqual(AGES.filter(([tenantId]) => tenantId === tenantA).map(() => tenantA));
+        expect(seen.filter(row => row.old)).toHaveLength(2);
+        expect((await productionPool.query(`SELECT pg_has_role(current_user, '${ROLE}', 'SET') AS can_set,
+            pg_has_role(current_user, '${ROLE}', 'USAGE') AS inherited`)).rows[0]).toEqual({ can_set: true, inherited: false });
+        const log = jest.fn();
+        expect(await createContactRequestRetention({ pool: productionPool, log }).runOnce()).toEqual({ code: 'retention_completed', deleted: OLD });
+        expect(await remaining()).toEqual(TOPICS.slice(OLD));
+        expect((await productionPool.query("SELECT current_user AS who, current_setting('role') AS role")).rows[0])
+            .toEqual({ who: productionLogin, role: 'none' });
+    });
+
+    test('an inherited grant (WITH INHERIT TRUE) is refused: the job logs retention_role_inherited and deletes nothing', async () => {
+        const log = jest.fn();
+        expect(await createContactRequestRetention({ pool: inheritPool, log }).runOnce()).toEqual({ code: 'retention_role_inherited', deleted: 0 });
+        expect(log.mock.calls).toEqual([[{ code: 'retention_role_inherited', deleted: 0 }]]);
+        expect(await remaining()).toEqual(TOPICS);
+    });
+
+    test('applying migrations again skips 0027', async () => {
+        const result = await applyMigrations({ pool: ownerPool });
+        expect(result.applied).toEqual([]);
+        expect(result.skipped).toContain('0027_contact_request_retention.sql');
+    });
+
+    test('a pre-existing over-privileged role is refused with contact_request_retention_role_baseline_invalid', async () => {
+        const { Pool } = require('pg');
+        const scratch = `contact_retention_baseline_${run}`, dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'nofries-0027-'));
+        let pool, scratchCreated = false;
+        try {
+            const source = path.join(__dirname, '../../database/migrations');
+            for (const name of fs.readdirSync(source).filter(file => /^\d{4}_.*\.sql$/.test(file) && file < '0027')) {
+                fs.copyFileSync(path.join(source, name), path.join(dir, name));
+            }
+            await controlPool.query(`CREATE DATABASE ${quoteIdentifier(scratch)}`); scratchCreated = true;
+            pool = new Pool({ connectionString: urlFor(testUrl, { database: scratch }), max: 1 });
+            await applyMigrations({ pool, migrationsDir: dir });
+            // The role already exists in the cluster, with this suite's logins as members, and here it
+            // also holds a privilege a new one would not. Either is enough for the baseline to refuse.
+            await pool.query(`GRANT INSERT ON ${TABLE} TO ${ROLE}`);
+            await expect(pool.query(sql)).rejects.toMatchObject({ message: 'contact_request_retention_role_baseline_invalid' });
+            expect((await pool.query("SELECT count(*)::int AS n FROM pg_policies WHERE policyname LIKE 'dashboard_contact_requests_retention_%'")).rows[0].n).toBe(0);
+        } finally {
+            if (pool) await pool.end();
+            if (scratchCreated) await controlPool.query(`DROP DATABASE ${quoteIdentifier(scratch)}`);
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    }, 60000);
 });
 };

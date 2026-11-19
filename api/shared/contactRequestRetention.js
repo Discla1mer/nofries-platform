@@ -5,8 +5,8 @@
 // NOFRIES_CONTACT_REQUEST_RETENTION_ENABLED is exactly 'true'.
 //
 // Once a day the job checks that the database login may SET ROLE
-// nofries_contact_request_retention (migration 0027). If not, it logs one code
-// and does nothing. If so, it deletes in bounded batches, each in its own
+// nofries_contact_request_retention (migration 0027) and does not inherit it.
+// If not, it logs one code and does nothing. If so, it deletes in bounded batches, each in its own
 // transaction under SET LOCAL ROLE and a statement timeout. The role sees only
 // rows older than 24 months (row security), so a bug here cannot reach a
 // newer row. Logs carry a fixed code and a count, never row contents or ids.
@@ -14,7 +14,10 @@
 const { createPostgresPool } = require('./database/postgres');
 
 const ROLE = 'nofries_contact_request_retention';
-const ROLE_PROBE = `SELECT pg_has_role(current_user, '${ROLE}', 'SET') AS ok`;
+// SET must be held and USAGE must not: a grant WITH INHERIT TRUE would let the
+// login's ordinary queries use the role's policies without SET ROLE.
+const ROLE_PROBE = `SELECT pg_has_role(current_user, '${ROLE}', 'SET') AS can_set,
+    pg_has_role(current_user, '${ROLE}', 'USAGE') AS inherited`;
 const BATCH = 500;
 const MAX_BATCHES = 20;
 const STATEMENT_TIMEOUT_MS = 15000;
@@ -46,10 +49,11 @@ function createContactRequestRetention({ pool, log = defaultLog, batchSize = BAT
         } finally { client.release(discard); }
     }
     async function runOnce() {
-        let allowed = false;
-        try { allowed = (await pool.query(ROLE_PROBE)).rows?.[0]?.ok === true; }
+        let probe;
+        try { probe = (await pool.query(ROLE_PROBE)).rows?.[0]; }
         catch (_) { return report('retention_probe_failed', 0); }
-        if (!allowed) return report('retention_role_unavailable', 0);
+        if (probe?.can_set !== true) return report('retention_role_unavailable', 0);
+        if (probe.inherited !== false) return report('retention_role_inherited', 0);
         let deleted = 0;
         try {
             for (let batch = 0; batch < maxBatches; batch += 1) {
@@ -105,5 +109,5 @@ function defaultLog({ code, deleted }) {
     console.info(JSON.stringify({ event: 'contact_request_retention', code, deleted }));
 }
 
-module.exports = { createContactRequestRetention, startContactRequestRetention, retentionEnabled, PURGE_SQL, ROLE,
+module.exports = { createContactRequestRetention, startContactRequestRetention, retentionEnabled, PURGE_SQL, ROLE, ROLE_PROBE,
     BATCH, MAX_BATCHES, STATEMENT_TIMEOUT_MS, FIRST_RUN_DELAY_MS, INTERVAL_MS };

@@ -2,11 +2,11 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { createContactRequestRetention, startContactRequestRetention, PURGE_SQL, FIRST_RUN_DELAY_MS, INTERVAL_MS }
+const { createContactRequestRetention, startContactRequestRetention, PURGE_SQL, ROLE_PROBE, FIRST_RUN_DELAY_MS, INTERVAL_MS }
     = require('../api/shared/contactRequestRetention');
 
 // A fake pool: the probe answers `allowed`; each purge DELETE answers the next count.
-function fakePool({ allowed = true, probeError = null, counts = [], failAt = null, rollbackError = false } = {}) {
+function fakePool({ allowed = true, inherited = false, probeError = null, counts = [], failAt = null, rollbackError = false } = {}) {
     const statements = [], released = [];
     let deletes = 0;
     const pool = {
@@ -14,7 +14,7 @@ function fakePool({ allowed = true, probeError = null, counts = [], failAt = nul
         async query(sql) {
             statements.push(sql);
             if (probeError) throw probeError;
-            return { rows: [{ ok: allowed }] };
+            return { rows: [{ can_set: allowed, inherited }] };
         },
         async connect() {
             return {
@@ -39,8 +39,27 @@ describe('contact request retention job', () => {
     test('skips with a code and touches nothing when the login cannot SET the role', async () => {
         const log = jest.fn(), pool = fakePool({ allowed: false });
         await expect(createContactRequestRetention({ pool, log }).runOnce()).resolves.toEqual({ code: 'retention_role_unavailable', deleted: 0 });
-        expect(pool.statements).toEqual(["SELECT pg_has_role(current_user, 'nofries_contact_request_retention', 'SET') AS ok"]);
+        expect(pool.statements).toEqual([ROLE_PROBE]);
         expect(log).toHaveBeenCalledWith({ code: 'retention_role_unavailable', deleted: 0 });
+    });
+
+    test('the probe asks for SET and for USAGE (inheritance) of the retention role', () => {
+        expect(ROLE_PROBE).toMatch(/pg_has_role\(current_user, 'nofries_contact_request_retention', 'SET'\) AS can_set/);
+        expect(ROLE_PROBE).toMatch(/pg_has_role\(current_user, 'nofries_contact_request_retention', 'USAGE'\) AS inherited/);
+    });
+
+    test.each([[true, 'retention_role_inherited'], [null, 'retention_role_inherited']])(
+        'refuses an inherited (or unknown) grant with its own code and deletes nothing (inherited=%p)', async (inherited, code) => {
+            const log = jest.fn(), pool = fakePool({ inherited, counts: [5] });
+            await expect(createContactRequestRetention({ pool, log }).runOnce()).resolves.toEqual({ code, deleted: 0 });
+            expect(pool.statements).toEqual([ROLE_PROBE]);
+            expect(log).toHaveBeenCalledWith({ code, deleted: 0 });
+        });
+
+    test('without SET the code is retention_role_unavailable even if USAGE is reported', async () => {
+        const log = jest.fn(), pool = fakePool({ allowed: false, inherited: true });
+        await expect(createContactRequestRetention({ pool, log }).runOnce()).resolves.toEqual({ code: 'retention_role_unavailable', deleted: 0 });
+        expect(pool.statements).toEqual([ROLE_PROBE]);
     });
 
     test('a failing probe is logged as a code and swallowed', async () => {
@@ -102,15 +121,16 @@ describe('contact request retention job', () => {
 
 describe('starting the retention job', () => {
     const timers = () => {
-        const calls = { timeout: [], interval: [] };
-        return { calls, setTimeoutImpl: (fn, ms) => { calls.timeout.push(ms); return { unref() {} }; },
-            setIntervalImpl: (fn, ms) => { calls.interval.push(ms); return { unref() {} }; } };
+        const calls = { timeout: [], interval: [] }, unref = { timeout: jest.fn(), interval: jest.fn() };
+        return { calls, unref, setTimeoutImpl: (fn, ms) => { calls.timeout.push(ms); return { unref: unref.timeout }; },
+            setIntervalImpl: (fn, ms) => { calls.interval.push(ms); return { unref: unref.interval }; } };
     };
 
     test.each([undefined, '', 'TRUE', '1', 'yes', ' true'])('is off unless the flag is exactly "true" (%p)', value => {
         const t = timers(), createPostgresPool = jest.fn();
         const env = value === undefined ? {} : { NOFRIES_CONTACT_REQUEST_RETENTION_ENABLED: value };
-        expect(startContactRequestRetention({ env, dependencies: { createPostgresPool }, ...t })).toBeNull();
+        const { unref, ...options } = t;
+        expect(startContactRequestRetention({ env, dependencies: { createPostgresPool }, ...options })).toBeNull();
         expect(createPostgresPool).not.toHaveBeenCalled();
         expect(t.calls).toEqual({ timeout: [], interval: [] });
     });
@@ -130,6 +150,9 @@ describe('starting the retention job', () => {
             expect(options.credential.options).toEqual({ clientId: 'client' });
             expect(options.user).toBeUndefined();
             expect(t.calls).toEqual({ timeout: [FIRST_RUN_DELAY_MS], interval: [INTERVAL_MS] });
+            // Neither timer keeps the process alive.
+            expect(t.unref.timeout).toHaveBeenCalledTimes(1);
+            expect(t.unref.interval).toHaveBeenCalledTimes(1);
             const [first, second] = [handle.tick(), handle.tick()];
             await expect(second).resolves.toBeNull();
             await expect(first).resolves.toEqual({ code: 'retention_role_unavailable', deleted: 0 });

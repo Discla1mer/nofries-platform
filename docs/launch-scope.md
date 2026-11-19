@@ -77,7 +77,8 @@ comments are post-launch (issue #11).
    rows older than 24 months (row security) and read only their key and date;
    it cannot insert or update. A daily in-process job
    (`api/shared/contactRequestRetention.js`) checks that the database login may
-   `SET ROLE` to it, then deletes in batches of 500 (at most 20 a run), each
+   `SET ROLE` to it and does not inherit it (an inherited grant logs
+   `retention_role_inherited` and deletes nothing), then deletes in batches of 500 (at most 20 a run), each
    transaction under `SET LOCAL ROLE` with a 15-second statement timeout, and
    logs only a code and a count. Off unless
    `NOFRIES_CONTACT_REQUEST_RETENTION_ENABLED` is exactly `true`. It also needs
