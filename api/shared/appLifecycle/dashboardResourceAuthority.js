@@ -4,7 +4,8 @@
 const { resolveActiveMembership } = require('./membershipDomain');
 const { resolveEntitlements } = require('./entitlementDomain');
 const { resolvePortalPermission, ROLE_PERMISSIONS } = require('./portalPermissions');
-const { MODULE_ID: NCSC_MODULE, ACCEPTED_PROFILE_REF } = require('../assessmentEngine/ncscAssessmentEvaluator');
+const { MODULE_ID: NCSC_MODULE } = require('../assessmentEngine/ncscAssessmentEvaluator');
+const { listsEnabledNcscProfile } = require('../assessmentEngine/ncscProfileSet');
 const { NcscAssessmentError } = require('../ncscAssessmentService');
 const { EvidenceMetadataError } = require('../evidenceMetadataService');
 const { dataCodec } = require('./postgresDashboardBootstrap');
@@ -21,8 +22,9 @@ function resolveNcscAccess(snapshot, context, permission, at) {
             { ...scope, subjectKey, permission, module: NCSC_MODULE }, assignment, at);
         const decision = resolveEntitlements(snapshot.entitlementState, snapshot.tenantAggregate, scope, at, snapshot.flags);
         if (!decision.product || decision.modules[NCSC_MODULE].eligible !== true ||
-            !decision.frameworks.some(row => row.moduleId === NCSC_MODULE && row.profileId === ACCEPTED_PROFILE_REF.profileId &&
-                row.version === ACCEPTED_PROFILE_REF.profileVersion) ||
+            // Module gate: the product lists a switched-on profile. Each write is
+            // then checked against its own assessment's stored profile.
+            !listsEnabledNcscProfile(decision.frameworks) ||
             (permissionDecision.role === 'fractional_advisor' && decision.services.fractional_advisory.enabled !== true)) ncscFail('ncsc_access_denied', 403);
         return decision;
     } catch { ncscFail('ncsc_access_denied', 403); }

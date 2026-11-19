@@ -248,3 +248,61 @@ test('reader predecessor withholds a detached result if its exact alias disappea
     await assert.rejects(createRetainedTrialAssessmentReader(f.options).read({},f.input),{code:'retained_read_denied'});
     assert.equal(f.clientReads.length,2);
 });
+
+// Scoring v2 (#399): the retained grant and flags must list the saved assessment's own profile.
+describe('retained read by stored profile', () => {
+    const { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT } = require('../api/shared/assessmentEngine/ncscProfileSet');
+    const EXAMPLE = ['no', 'ad_hoc', 'partly', 'partly', 'partly', 'mfa_text_code', 'unknown', 'partly', 'partly', 'no', 'no',
+        'no', 'ad_hoc', 'partly', 'no', 'unknown'];
+    const v2Responses = NCSC_V2_CONTEXT.questionIds.map((itemId, index) => ({ itemId, optionId: EXAMPLE[index], rationale: null }));
+    const row = ref => ({ moduleId: 'cyber_security', profileId: ref.profileId, version: ref.profileVersion });
+    const original = process.env.NOFRIES_NCSC_PROFILE_V2;
+    afterEach(() => {
+        if (original === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2;
+        else process.env.NOFRIES_NCSC_PROFILE_V2 = original;
+    });
+    function listProfiles(f, refs) {
+        for (const fact of f.scopes.values()) {
+            fact.snapshot.entitlementState.grants.find(grant => grant.code === 'dashboard_score').frameworks = refs.map(row);
+            fact.snapshot.flags.frameworks = refs.map(row);
+        }
+    }
+    async function v2Fixture(client) {
+        process.env.NOFRIES_NCSC_PROFILE_V2 = 'true';
+        return retainedTrialFixture({ client, profileContext: NCSC_V2_CONTEXT, responses: v2Responses });
+    }
+
+    for (const client of [false, true]) test(`flag on: a v2 result is read only where its own profile is listed (client=${client})`, async () => {
+        const both = await v2Fixture(client);
+        listProfiles(both, [ACCEPTED_NCSC_CONTEXT.profileRef, NCSC_V2_CONTEXT.profileRef]);
+        const result = await createRetainedTrialAssessmentReader(both.options).read({}, both.input);
+        assert.deepEqual(result.assessment.profileRef, NCSC_V2_CONTEXT.profileRef);
+        assert.equal(result.assessment.submission.evaluation.attainment.lowerDisplay, '25.3%');
+
+        const v2Only = await v2Fixture(client); listProfiles(v2Only, [NCSC_V2_CONTEXT.profileRef]);
+        assert.equal((await createRetainedTrialAssessmentReader(v2Only.options).read({}, v2Only.input)).readOnly, true);
+
+        const acceptedOnly = await v2Fixture(client); // The fixture grant lists the accepted profile only.
+        await assert.rejects(createRetainedTrialAssessmentReader(acceptedOnly.options).read({}, acceptedOnly.input),
+            { code: 'retained_read_denied' });
+    });
+
+    test('flag on: an accepted result still needs the accepted profile listed', async () => {
+        process.env.NOFRIES_NCSC_PROFILE_V2 = 'true';
+        const f = await retainedTrialFixture();
+        assert.deepEqual((await createRetainedTrialAssessmentReader(f.options).read({}, f.input)).assessment, ncsc.projectNcscDetail(f.versions[2]));
+        const g = await retainedTrialFixture(); listProfiles(g, [NCSC_V2_CONTEXT.profileRef]);
+        await assert.rejects(createRetainedTrialAssessmentReader(g.options).read({}, g.input), { code: 'retained_read_denied' });
+    });
+
+    test('flag off: only the accepted profile opens this lane, exactly as before', async () => {
+        delete process.env.NOFRIES_NCSC_PROFILE_V2;
+        const f = await retainedTrialFixture(); listProfiles(f, [NCSC_V2_CONTEXT.profileRef]);
+        await assert.rejects(createRetainedTrialAssessmentReader(f.options).read({}, f.input), { code: 'retained_read_denied' });
+        assert.ok(!f.queries.some(({ sql }) => sql.includes('dashboard_ncsc_assessment_revisions')));
+        // A stored v2 result is not shown once the flag is off again.
+        const v2 = await v2Fixture(false); listProfiles(v2, [ACCEPTED_NCSC_CONTEXT.profileRef, NCSC_V2_CONTEXT.profileRef]);
+        delete process.env.NOFRIES_NCSC_PROFILE_V2;
+        await assert.rejects(createRetainedTrialAssessmentReader(v2.options).read({}, v2.input), { code: 'retained_read_unavailable' });
+    });
+});

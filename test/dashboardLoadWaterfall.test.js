@@ -26,7 +26,7 @@ const ids = ['dashboardEntry', 'dashboardStatusPanel', 'dashboardHeading', 'dash
     'dashboardSignIn', 'dashboardSignOut', 'dashboardChooser', 'dashboardChoices', 'dashboardMore', 'dashboardApp',
     'dashboardApplicationIntegrity', 'dashboardStyleIntegrity'];
 
-function harness(route, failure, warm = false, store = null, cyberState = 'ready', saved = null, plans = null, combined = false) {
+function harness(route, failure, warm = false, store = null, cyberState = 'ready', saved = null, plans = null, combined = false, binding = BINDING) {
     const { document, window } = createDom(), started = Date.now(), trace = [], mounts = [];
     const elements = Object.fromEntries(ids.map(id => [id, document.createElement('div')]));
     document.body = document.createElement('body'); document.head = document.createElement('head');
@@ -45,8 +45,8 @@ function harness(route, failure, warm = false, store = null, cyberState = 'ready
     model.modules.find(item => item.key === 'cyber_security').state = cyberState;
     if (plans) model.modules.find(item => item.key === 'improvement_plan').state = 'ready';
     const session = { schemaVersion: 1, authenticated: true, purpose: 'operator_dashboard', generation: GENERATION,
-        selectedBindingId: BINDING, expiresAt: '2026-11-11T01:00:00.000Z' };
-    const payloads = { [SESSION]: session, [DIRECTORY]: { schemaVersion: 1, bindings: [{ bindingId: BINDING, organisationLabel: 'Synthetic organisation' }], nextAfterBindingId: null },
+        selectedBindingId: binding, expiresAt: '2026-11-11T01:00:00.000Z' };
+    const payloads = { [SESSION]: session, [DIRECTORY]: { schemaVersion: 1, bindings: [{ bindingId: binding, organisationLabel: 'Synthetic organisation' }], nextAfterBindingId: null },
         [BOOTSTRAP]: model, [MODULE]: { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt,
             module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] },
             services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' },
@@ -160,6 +160,21 @@ test.each(['overview', 'cyber-security'])('%s warm assets preserve the closing w
 // projection, one round trip earlier. With cached assets the shell mounts at 321 ms (was 410 ms). The witness is unchanged.
 describe('remembered Cyber Security hint', () => {
     const HINT = 'nofries-dashboard-cyber-ready';
+    test.each(['overview', 'cyber-security'])('D-013/D-028 repeat %s after visiting another binding', async route => {
+        const store = new Map();
+        const visits = [BINDING, '00000000-0000-4000-8000-000000000009', BINDING];
+        for (const [index, binding] of visits.entries()) {
+            const h = harness(route, null, true, store, 'ready', null, null, true, binding);
+            await jest.advanceTimersByTimeAsync(1000);
+            expect(h.document.body.dataset.dashboardState).toBe('ready');
+            expect(h.trace).toHaveLength(8);
+            if (index === 2) {
+                expect(h.mounts).toEqual([321]);
+                expect(h.trace.at(-1).end).toBe(route === 'overview' ? 421 : 431);
+            }
+            h.window.dispatch('pagehide');
+        }
+    });
     test('a first visit keeps the original waves and records the hint after mounting', async () => {
         const store = new Map(), h = harness('overview', null, true, store);
         await jest.advanceTimersByTimeAsync(600);
