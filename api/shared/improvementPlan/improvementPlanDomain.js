@@ -1,7 +1,10 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { evaluateAssessment, serialiseAssessmentEvaluation, EVIDENCE_STATES } = require('../assessmentEngine/assessmentEvaluator');
+const v1Engine = require('../assessmentEngine/assessmentEvaluator');
+const v2Engine = require('../assessmentEngine/assessmentEvaluatorV2');
+const { NCSC_V2_CONTEXT, ncscProfileContext } = require('../assessmentEngine/ncscProfileSet');
+const { serialiseAssessmentEvaluation, EVIDENCE_STATES } = v1Engine;
 const { normaliseEvidenceSelector } = require('../evidenceLifecycle/evidenceDomain');
 
 const SCOPE = ['tenantId', 'organisationId', 'planId'];
@@ -13,6 +16,24 @@ const SUGGESTIONS = Object.freeze({
     applicability: 'Review the not-applicable claim and record an authorised applicability decision.',
     evidence: 'Obtain current supporting evidence for the stated implementation.'
 });
+// Scoring v2 (#399): plain wording for plans made from a 2026-11-18.1 result.
+// An implementation gap uses the question's own first step from the profile;
+// the login-method question words its step by the method recorded.
+const V2_SUGGESTIONS = Object.freeze({
+    assessment: 'Find out whether this is in place, for example by asking your IT provider, then update your answer.',
+    applicability: 'Check that this really does not apply to your business and record why, or change your answer.',
+    evidence: 'Keep a current record that shows this is in place, such as a screenshot of the setting or a note from your IT provider.'
+});
+const MFA_METHOD_ITEM_ID = 'NF-NCSC-MCSS-MF-01-Q2';
+const V2_MFA_METHOD_STEPS = Object.freeze({
+    none: 'Turn on an extra login step for those accounts, using an app, passkey or security key rather than text or email codes.',
+    app: 'Where the service allows it, move those accounts to a passkey or security key, starting with email and admin logins.'
+});
+const V2_MFA_APP_OPTIONS = Object.freeze(['mfa_number_matching', 'mfa_push', 'mfa_authenticator']);
+const V2_NEXT_STEPS = new Map(NCSC_V2_CONTEXT.profile.questions.map(question => [question.id, question.guidance.startingActions[0]]));
+// Each engine is chosen by the score contract its stored assessment names. The
+// accepted (v1) contract keeps the original evaluator, registry use and wording.
+const ENGINES = new Map([[v1Engine.SCORE_CONTRACT_VERSION, v1Engine], [v2Engine.SCORE_CONTRACT_VERSION, v2Engine]]);
 
 class ImprovementPlanError extends Error {
     constructor(code, statusCode = 400) {
@@ -25,11 +46,15 @@ function fail(code, status) { throw new ImprovementPlanError(code, status); }
 // Dormant trusted-service domain. Selectors, actor IDs and eligible-owner lists
 // are consistency inputs, never credentials or grants. Future adapters must
 // authenticate, authorise and load tenant-bound state before invoking it.
-function createImprovementPlan(scopeInput, evaluatorInput, evaluatorOptions) {
+function createImprovementPlan(scopeInput, evaluatorInput, evaluatorOptions, scoreContractVersion = v1Engine.SCORE_CONTRACT_VERSION) {
     const scope = fields(copy(scopeInput), [...SCOPE, 'createdAt', 'actorSubjectKey']);
     SCOPE.forEach(key => id(scope[key])); instant(scope.createdAt); subject(scope.actorSubjectKey);
+    const engine = ENGINES.get(scoreContractVersion);
+    if (!engine) fail('source_invalid');
     // Recalculate with ENG-003; never accept caller-supplied score output.
-    const evaluation = evaluateAssessment(evaluatorInput, evaluatorOptions);
+    const evaluation = engine.evaluateAssessment(evaluatorInput, evaluatorOptions);
+    if (evaluation.provenance.scoreContractVersion !== scoreContractVersion) fail('source_invalid');
+    const wording = suggestionsFor(evaluation.provenance);
     if (scope.organisationId !== evaluation.provenance.organisationId) fail('scope_mismatch', 404);
     if (scope.createdAt < evaluation.provenance.scoreAsOf) fail('time_invalid');
     const state = { schemaVersion: 1, ...select(scope), createdAt: scope.createdAt,
@@ -41,9 +66,33 @@ function createImprovementPlan(scopeInput, evaluatorInput, evaluatorOptions) {
         return [{ actionId: actionId(state, atom.itemId, kind), itemId: atom.itemId,
             controlId: atom.controlId, domainId: atom.domainId, kind,
             response: atom.response, responseOrigin: atom.responseOrigin,
-            evidenceState: atom.evidenceState, suggestedAction: SUGGESTIONS[kind] }];
+            evidenceState: atom.evidenceState, suggestedAction: wording.pick(atom.itemId, kind, atom.response, atom.responseOptionId) }];
     });
     return freeze(copy(state));
+}
+
+// The accepted (v1) wording is one fixed sentence per kind. A plan made from a
+// v2 result must name the exact v2 profile; anything else under the v2 contract
+// fails closed. `pick(itemId, kind, response, optionId)` gives the wording.
+const V1_WORDING = Object.freeze({ v2: false, pick: (itemId, kind) => SUGGESTIONS[kind] });
+const V2_WORDING = Object.freeze({ v2: true, pick(itemId, kind, response, optionId) {
+    if (kind !== 'implementation') return V2_SUGGESTIONS[kind];
+    if (!V2_NEXT_STEPS.has(itemId)) fail('proposal_invalid');
+    if (itemId === MFA_METHOD_ITEM_ID && response === 'no') return V2_MFA_METHOD_STEPS.none;
+    if (itemId === MFA_METHOD_ITEM_ID && V2_MFA_APP_OPTIONS.includes(optionId)) return V2_MFA_METHOD_STEPS.app;
+    return V2_NEXT_STEPS.get(itemId);
+} });
+function suggestionsFor(provenance) {
+    if (provenance.scoreContractVersion !== v2Engine.SCORE_CONTRACT_VERSION) return V1_WORDING;
+    if (ncscProfileContext(provenance.profileRef) !== NCSC_V2_CONTEXT) fail('source_invalid');
+    return V2_WORDING;
+}
+// Replay sees the recorded answer's credit band, not its rung, so a part-credit
+// login-method gap may carry either of that question's part-credit wordings.
+function acceptsSuggestion(wording, proposal) {
+    return proposal.suggestedAction === wording.pick(proposal.itemId, proposal.kind, proposal.response, null) || (wording.v2 &&
+        proposal.itemId === MFA_METHOD_ITEM_ID && proposal.kind === 'implementation' && proposal.response === 'partial' &&
+        proposal.suggestedAction === V2_MFA_METHOD_STEPS.app);
 }
 
 function gapKind(atom) {
@@ -106,7 +155,7 @@ function replay(input) {
     id(provenance.assessmentId); version(provenance.assessmentRevision); id(provenance.moduleId);
     instant(provenance.scoreAsOf);
     if (provenance.scoreAsOf > state.createdAt) fail('time_invalid');
-    const actions = new Map(), items = new Set();
+    const actions = new Map(), items = new Set(), wording = suggestionsFor(provenance);
     for (const proposal of array(state.proposals, 4096)) {
         fields(proposal, ['actionId', 'itemId', 'controlId', 'domainId', 'kind',
             'response', 'responseOrigin', 'evidenceState', 'suggestedAction']);
@@ -114,7 +163,7 @@ function replay(input) {
         if (!['yes', 'no', 'partial', 'unknown'].includes(proposal.response) ||
             !['direct', 'direct_unknown', 'missing', 'claimed_not_applicable'].includes(proposal.responseOrigin) ||
             !EVIDENCE_STATES.includes(proposal.evidenceState) || gapKind(proposal) !== proposal.kind ||
-            !Object.hasOwn(SUGGESTIONS, proposal.kind) || proposal.suggestedAction !== SUGGESTIONS[proposal.kind] ||
+            !Object.hasOwn(SUGGESTIONS, proposal.kind) || !acceptsSuggestion(wording, proposal) ||
             proposal.actionId !== actionId(state, proposal.itemId, proposal.kind) || items.has(proposal.itemId)) fail('proposal_invalid');
         items.add(proposal.itemId);
         actions.set(proposal.actionId, { ...proposal, status: 'open', ownerSubjectKey: null,

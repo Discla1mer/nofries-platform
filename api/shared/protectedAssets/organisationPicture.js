@@ -36,6 +36,18 @@
     };
     const ENQUIRY_TIMEOUT_MS = 5000;
     const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
+    // Scoring v2 (#399), for results whose metadata names profile 2026-11-18.1:
+    // "fix this first" ranks by attention = question weight × gap factor (in
+    // hundredths). "I don't know" counts as a gap; Yes, passkey or security key,
+    // and Not applicable do not. Ties: higher weight, then the NCSC Critical
+    // Controls carried into v2 (password manager, request checks, network),
+    // then profile order. A planning order from the answers, not a risk score.
+    const V2_PROFILE_VERSION = '2026-11-18.1';
+    const V2_GAP_FACTOR = Object.freeze({ no: 100, unknown: 85, ad_hoc: 75, partly: 50, mfa_none: 100,
+        mfa_text_code: 70, mfa_mixed: 70, mfa_authenticator: 45, mfa_push: 30, mfa_number_matching: 15 });
+    const V2_CRITICAL_CONTROL = /^NF-NCSC-CC-(?:PM|SV|NS)-01-Q\d+$/;
+    const v2Profile = metadata => !!metadata && !!metadata.profileRef && metadata.profileRef.profileVersion === V2_PROFILE_VERSION;
+    const attention = row => (row.weight || 0) * V2_GAP_FACTOR[row.responseOptionId];
     const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
     const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
     const firstText = (...values) => values.find(value => typeof value === 'string' && value.trim()) || null;
@@ -45,11 +57,17 @@
         result.domains.forEach(domain => (domain.controls || []).forEach(control =>
             (control.questions || []).forEach(row => rows.set(row.itemId, row))));
         const controls = new Map((metadata.controls || []).map(control => [control.id, control]));
-        return metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }))
-            .filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
-            .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
-                gapTier(a.question.id) - gapTier(b.question.id) ||
-                GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position)
+        const entries = metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }));
+        const ranked = v2Profile(metadata)
+            ? entries.filter(entry => entry.row && Object.hasOwn(V2_GAP_FACTOR, entry.row.responseOptionId))
+                .sort((a, b) => attention(b.row) - attention(a.row) || (b.row.weight || 0) - (a.row.weight || 0) ||
+                    Number(V2_CRITICAL_CONTROL.test(b.question.id)) - Number(V2_CRITICAL_CONTROL.test(a.question.id)) ||
+                    a.position - b.position)
+            : entries.filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
+                .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
+                    gapTier(a.question.id) - gapTier(b.question.id) ||
+                    GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position);
+        return ranked
             .slice(0, limit)
             .map(({ question, row }) => {
                 const control = controls.get(question.controlId), guidance = question.guidance || {};
