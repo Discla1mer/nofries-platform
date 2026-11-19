@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '../..');
 async function run() {
     let state, requests, browser;
     const base = { requestId: '10000000-0000-4000-8000-000000000001', accountType: null };
-    const assets = new Set(['login.html', 'style.css', 'home.css', 'js/organisation-setup.js', 'images/nofrieslogo.png']);
+    const assets = new Set(['login.html', 'style.css', 'home.css', 'js/organisation-setup.js', 'js/enquiry-availability.js', 'images/nofrieslogo.png']);
     const unexpected = [], measurements = [];
     const server = http.createServer(async (request, response) => {
         try {
