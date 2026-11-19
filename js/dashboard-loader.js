@@ -92,6 +92,8 @@
         const nodes = [label];
         if (name) {
             const strong = document.createElement('strong');
+            // Isolate the name so right-to-left text cannot reorder the email beside it.
+            strong.setAttribute('dir', 'auto');
             strong.textContent = name;
             nodes.push(strong);
         }
@@ -219,6 +221,8 @@
             } else store.removeItem(ACTION_PLANS_KEY);
         } catch (_) { /* optional */ }
     }
+    // The last organisation was once kept browser-wide; that copy is no longer read.
+    try { const legacy = hintStore(); if (legacy) legacy.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
     function forgetLastOrganisation() {
         const store = hintStore();
         try { lastOrganisationStore()?.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
@@ -453,7 +457,7 @@
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsAvailable') ? ['contactRequestsAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
             Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
-            Object.prototype.hasOwnProperty.call(value, 'accountName') && (value.purpose !== 'customer' || typeof value.accountName !== 'string' || !value.accountName.trim() || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountName)) ||
+            Object.prototype.hasOwnProperty.call(value, 'accountName') && (value.purpose !== 'customer' || typeof value.accountName !== 'string' || value.accountName !== value.accountName.trim() || !value.accountName || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f\p{Cf}]/u.test(value.accountName)) ||
             value.schemaVersion !== 1 || value.authenticated !== true || !['operator_dashboard', 'customer'].includes(value.purpose) ||
             Object.prototype.hasOwnProperty.call(value, 'activationAvailable') && (value.activationAvailable !== true || value.purpose !== 'operator_dashboard') ||
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
