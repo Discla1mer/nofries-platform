@@ -54,6 +54,9 @@ function seedFor(version, planId = 'plan-a', at = V2_AT[3]) {
 const v1Values = () => acceptedProfile.questions.map((question, index) => V1_OPTIONS[index % 5]);
 const byItem = state => new Map((state.proposals || state.actions).map(proposal => [proposal.itemId, proposal]));
 const failure = (fn, code) => expect(fn).toThrow(expect.objectContaining({ code }));
+// Pinned from main (442202d) before #491, for the same synthetic accepted-profile result.
+const GOLDEN_STATE = '15845fd665a815e6a54de10ce71ef3c617d611b00c0d9dfdb4f5629981b7a158';
+const GOLDEN_RESULT = 'be7573fc64de79e72f5963164091a44b0ecadfc5836b95b21be75144be4ed24a';
 
 describe('Improvement Plans by stored profile', () => {
     const original = process.env.NOFRIES_NCSC_PROFILE_V2;
@@ -61,9 +64,6 @@ describe('Improvement Plans by stored profile', () => {
     afterEach(() => setFlag(original));
 
     test('a plan from an accepted-profile result is byte-identical with the flag off, mistyped or on', () => {
-        // Pinned from main (442202d) before this change, for the same synthetic result.
-        const GOLDEN_STATE = '15845fd665a815e6a54de10ce71ef3c617d611b00c0d9dfdb4f5629981b7a158';
-        const GOLDEN_RESULT = 'be7573fc64de79e72f5963164091a44b0ecadfc5836b95b21be75144be4ed24a';
         for (const value of [undefined, '', 'TRUE', '1', ' true', 'true']) {
             setFlag(value);
             const version = submitted(ACCEPTED_NCSC_CONTEXT, v1Values(), 'synthetic-assessment', V1_AT);
@@ -261,20 +261,49 @@ describe('Improvement Plans by stored profile', () => {
         expect(planCarryForward(v1Previous, v1Later)).toHaveLength(1);
     });
 
-    test('previous-plan lookup adds the same-profile condition only while the flag is on', async () => {
+    // Replaces #491's check that this SQL was byte-identical to main with the flag
+    // off. The lookup is now profile-scoped whatever the flag (a v1 plan never
+    // carries from a v2 plan after a rollback). Equivalence on v1-only data is
+    // proven by behaviour: every v1 assessment stores the full accepted
+    // profileRef, so the extra condition holds for every v1 pair; v1 plans keep
+    // their GOLDEN digests; and improvementPlanPostgres.test.js runs this lookup
+    // beside main's flag-off SQL on real v1 data and gets the same plan each time.
+    test('previous-plan lookup is profile-scoped whatever the flag, and v1 plans are unchanged', async () => {
+        const source = { assessmentId: 'assessment-b', revision: '2', revisionSha256: 'a'.repeat(64) };
         const run = async value => {
             setFlag(value);
             const queries = [];
             const tx = { query: async (sql, params) => { queries.push({ sql, params }); return { rows: [] }; } };
-            expect(await store.previousPlanId(tx, { ...SCOPE, planId: 'plan-b' },
-                { assessmentId: 'assessment-b', revision: '2', revisionSha256: 'a'.repeat(64) })).toBeNull();
+            expect(await store.previousPlanId(tx, { ...SCOPE, planId: 'plan-b' }, source)).toBeNull();
+            expect(queries).toHaveLength(1);
             return queries[0];
         };
         const off = await run(undefined);
-        for (const value of ['', 'TRUE', 'yes']) expect(await run(value)).toEqual(off);
-        expect(off.sql).not.toContain('profileRef');
-        const on = await run('true');
-        expect(on.params).toEqual(off.params);
-        expect(on.sql.replace("\n        AND a.payload#>'{submission,input,profileRef}' = n.payload#>'{submission,input,profileRef}'", '')).toBe(off.sql);
+        for (const value of ['', 'TRUE', 'yes', 'true']) expect(await run(value)).toEqual(off);
+        expect(off.sql).toContain("AND a.payload#>'{submission,input,profileRef}' = n.payload#>'{submission,input,profileRef}'");
+        // Fixed, parameterised SQL: only the request's scope and source are bound.
+        expect(off.params).toEqual([SCOPE.tenantId, SCOPE.organisationId, 'plan-b', 'assessment-b', '2', 'a'.repeat(64)]);
+        for (const value of [undefined, 'true']) {
+            setFlag(value);
+            const version = submitted(ACCEPTED_NCSC_CONTEXT, v1Values(), 'synthetic-assessment', V1_AT);
+            // The full accepted reference, with all six fields, is stored on every v1 submission.
+            expect(version.envelope.submission.input.profileRef).toEqual({ ...ACCEPTED_NCSC_CONTEXT.profileRef });
+            expect(Object.keys(version.envelope.submission.input.profileRef).sort()).toEqual(['catalogueSha256', 'frameworkId',
+                'frameworkVersion', 'profileId', 'profileVersion', 'sourceCatalogueSha256']);
+            const state = seedFor(version, 'plan-a', V1_AT[3]);
+            expect(sha(state)).toBe(GOLDEN_STATE);
+            expect(sha(store.result(state))).toBe(GOLDEN_RESULT);
+        }
+    });
+
+    test('the stored source profile of a plan is read with fixed SQL and only returned as an object', async () => {
+        const ref = clone(NCSC_V2_CONTEXT.profileRef);
+        for (const [rows, expected] of [[[{ profile_ref: ref }], ref], [[], null], [[{ profile_ref: null }], null],
+            [[{ profile_ref: 'x' }], null], [[{ profile_ref: [ref] }], null], [[{ profile_ref: ref }, { profile_ref: ref }], null]]) {
+            const queries = [];
+            const tx = { query: async (sql, params) => { queries.push({ sql, params }); return { rows }; } };
+            expect(await store.sourceProfileRef(tx, { ...SCOPE, planId: 'plan-a' })).toEqual(expected);
+            expect(queries[0].params).toEqual([SCOPE.tenantId, SCOPE.organisationId, 'plan-a']);
+        }
     });
 });
