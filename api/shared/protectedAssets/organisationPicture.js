@@ -15,52 +15,7 @@
     const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
     }).format(new Date(value)) + ' NZ time';
-    // "Your top three gaps": display-only over a result the validator already
-    // accepted. No re-scoring and no model call. Fixed rule:
-    //   1. A gap is a question saved as "no" (not in place) or "partial".
-    //      Unknown and not-applicable answers are unresolved, not gaps.
-    //   2. Higher existing profile weight first (the accepted profile weights
-    //      every question 1, so this does not reorder today).
-    //   3. Fixed priority tier (GAP_TIER): the controls that stop the most
-    //      common attacks on small businesses (account takeover, ransomware,
-    //      invoice fraud) first. Display order only; scores are unchanged.
-    //   4. "no" before "partial", matching the saved credit (0 before 1).
-    //   5. Then accepted profile question order.
-    const GAP_LIMIT = 3;
-    // Tier 1: MFA, patching, data recovery, sensitive-request (payment change) checks.
-    // Tier 2: least privilege, password manager, awareness, secure configuration.
-    // Anything else, including future questions, is tier 3.
-    const GAP_TIER = Object.freeze({ MF: 1, PA: 1, DR: 1, SV: 1, LP: 2, PM: 2, SA: 2, SC: 2 });
-    const gapTier = itemId => {
-        const code = /^NF-NCSC-(?:MCSS|CC)-([A-Z]{2})-\d\d-Q\d+$/.exec(itemId);
-        return code && Object.hasOwn(GAP_TIER, code[1]) ? GAP_TIER[code[1]] : 3;
-    };
-    const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
-    const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
-    const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
-    const firstText = (...values) => values.find(value => typeof value === 'string' && value.trim()) || null;
-    function topGaps(result, metadata, limit = GAP_LIMIT) {
-        if (!result || !Array.isArray(result.domains) || !metadata || !Array.isArray(metadata.questions)) return [];
-        const rows = new Map();
-        result.domains.forEach(domain => (domain.controls || []).forEach(control =>
-            (control.questions || []).forEach(row => rows.set(row.itemId, row))));
-        const controls = new Map((metadata.controls || []).map(control => [control.id, control]));
-        return metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }))
-            .filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
-            .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
-                gapTier(a.question.id) - gapTier(b.question.id) ||
-                GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position)
-            .slice(0, limit)
-            .map(({ question, row }) => {
-                const control = controls.get(question.controlId), guidance = question.guidance || {};
-                const plain = question.smallBusiness || {};
-                const title = firstText(control && control.title, question.prompt);
-                return { itemId: question.id, title: title.split(' — ').pop(), answer: row.answer,
-                    responseOptionId: row.responseOptionId,
-                    why: firstText(guidance.summary) || GAP_WHY,
-                    next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
-            });
-    }
+    const { topGaps } = questionnaire;
     // "Actions" card: display-only over improvement/list responses the host
     // already read. Overdue uses the server's isOverdue. Due-soon and review
     // windows use the Pacific/Auckland calendar day of each list's asOf, matching
@@ -658,29 +613,10 @@
             return heading;
         }
         function gapSection(result) {
-            const gaps = topGaps(result, metadata), section = node('section', 'picture-top-gaps');
-            const heading = node('h3', '', gaps.length === GAP_LIMIT ? 'Your top three gaps' : 'Your top gaps');
-            heading.id = id + '-top-gaps'; heading.tabIndex = -1; section.setAttribute('aria-labelledby', heading.id); section.append(heading);
-            if (!gaps.length) {
-                section.append(node('p', '', 'You did not report any controls as not in place or partly in place.'));
-                if (result.unknown > 0) section.append(node('p', 'dashboard-muted', result.unknown + (result.unknown === 1 ? ' answer is' : ' answers are') +
-                    ' still unknown or to confirm. Confirm ' + (result.unknown === 1 ? 'it' : 'them') + ' to check for gaps.'));
-                return section;
-            }
-            section.append(node('p', 'dashboard-muted', 'Ranked from your saved answers. Multi-factor authentication, patching, backups and checking payment changes come first, because they help protect against common attacks on small businesses, such as stolen accounts, ransomware and invoice fraud. Then controls not in place before partly in place. This is a fixed order, not a risk assessment of your business.'));
-            const list = node('ol', 'picture-top-gaps-list');
-            gaps.forEach(gap => {
-                const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
-                const why = node('p'), next = node('p');
-                why.append(node('strong', '', 'Why it matters: '), node('span', '', gap.why));
-                next.append(node('strong', '', 'What to do next: '), node('span', '', gap.next));
-                const ownerStart = /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(gap.itemId);
-                item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer),
-                    node('p', 'picture-gap-owner', ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.'), why, next);
-                if (planGap && improvementSelection()) item.append(...gapPlanControls(gap));
-                list.append(item);
-            });
-            section.append(list, helpPanel()); return section;
+            const section = questionnaire.rankedGapSection(node, result, metadata, id + '-top-gaps',
+                gap => planGap && improvementSelection() ? gapPlanControls(gap) : []);
+            if (section.querySelector('ol')) section.append(helpPanel());
+            return section;
         }
         // Information needs are saved answers, not unanswered questions or a
         // risk ranking. Reuse the existing plan handoff without creating a plan.

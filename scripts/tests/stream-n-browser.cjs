@@ -10,10 +10,10 @@ const root = path.resolve(__dirname, '../..'), fixtures = buildFixtures(), seed 
 const files = ['style.css', 'home.css', 'app/dashboard.css', 'api/shared/protectedAssets/dashboardShell.js', 'api/shared/protectedAssets/ncscAssessmentClient.js', 'api/shared/protectedAssets/ncscQuestionnaire.js'];
 const assets = ['assets/fonts/fraunces-latin-opsz-normal.woff2', 'assets/fonts/fraunces-latin-opsz-italic.woff2', 'images/paper-texture.webp'];
 const artifacts = process.env.NOFRIES_STREAM_N_ARTIFACTS || '/tmp/nofries-stream-n';
-function assessment(option) {
+function assessment(option, submitted) {
     const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: seed.model.context.organisationId });
     let version = null;
-    for (const command of [createCommand('assessment-n'), saveCommand('assessment-n', 0, 'save-n', allResponses(option)), submitCommand('assessment-n', 1, 'submit-n')]) {
+    for (const command of [createCommand('assessment-n'), saveCommand('assessment-n', 0, 'save-n', allResponses(option)), submitCommand('assessment-n', 1, 'submit-n')].slice(0, submitted ? 3 : 2)) {
         version = makeVersion({ ...tenant.scope, actorSubjectKey: SUBJECT, assessmentId: command.assessmentId, action: command.action,
             expectedRevision: command.expectedRevision, payload: command.payload }, command.idempotencyKey, version, tenant.state.tenantAggregate, NOW);
     }
@@ -39,7 +39,7 @@ async function main() {
         if (files.includes(pathname.slice(1))) { res.setHeader('Content-Type', pathname.endsWith('.css') ? 'text/css' : 'text/javascript'); return res.end(fs.readFileSync(path.join(root, pathname))); }
         if (pathname !== '/') { res.statusCode = 404; return res.end(); }
         const option = new URL(req.url, 'http://fixture.invalid').searchParams.get('answer') || 'no';
-        const data = { ...seed, assessments: [assessment(option)] };
+        const data = { ...seed, assessments: [assessment(option, false)], submittedFixture: assessment(option, true) };
         res.setHeader('Content-Type', 'text/html');
         res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synthetic Results review</title>' +
             files.filter(f => f.endsWith('.css')).map(f => '<link rel="stylesheet" href="/' + f + '">').join('') + '<body><p>Synthetic Stream N review · no customer data</p><div class="nofries-dashboard"><div class="dashboard-workspace"><main class="dashboard-main"><div id="results"></div></main></div></div>' +
@@ -68,10 +68,18 @@ async function main() {
                 for (const method of ['setItem', 'removeItem', 'clear']) Storage.prototype[method] = function () { window.storageWrites.push(method); throw new Error('Unexpected storage mutation'); };
             }, { campaign, gate });
             await page.goto(origin + '/?answer=' + answer + '&utm_campaign=board');
+            await page.getByRole('button', { name: 'Review and submit', exact: true }).click();
+            await page.getByRole('button', { name: 'Save and submit assessment' }).click();
+            await page.getByRole('dialog').getByRole('button', { name: 'Submit', exact: true }).click();
             const panel = page.locator('.ncsc-results'); await panel.waitFor();
             const headings = await panel.locator(':scope > section > h3').allTextContents();
-            const first = campaign === 'insurance' || campaign === 'supplier' ? 'Answers for your insurer or customer questionnaire' : campaign === 'board' ? 'Summary for your board or insurer' : campaign === 'scam' ? (answer === 'no' ? 'Payment-check gap and next step' : 'Check payment changes safely') : 'Suggested follow-ups';
+            const first = campaign === 'insurance' || campaign === 'supplier' ? 'Answers for your insurer or customer questionnaire' : campaign === 'board' ? 'Summary for your board or insurer' : campaign === 'scam' ? (answer === 'no' ? 'Payment-check gap and next step' : 'Check payment changes safely') : 'Your top three gaps';
             assert.equal(headings[0], first);
+            await panel.locator('.picture-next-steps-help').waitFor();
+            assert.equal(await panel.locator('.picture-next-steps-help').count(), 1);
+            assert.equal(await panel.locator('.picture-top-gaps').count(), 1);
+            assert.equal(await panel.locator('.picture-top-gap').count(), answer === 'no' ? 3 : 0);
+            assert.equal(await panel.locator('.ncsc-questionnaire-answers').count(), 1);
             if (campaign === 'scam') {
                 await panel.locator('.picture-next-steps-help').waitFor();
                 assert.equal(await panel.locator('.ncsc-payment-next-step + .picture-next-steps-help').count(), 1);
@@ -107,12 +115,14 @@ async function main() {
                 }
             }
             assert.deepEqual(await page.evaluate(() => window.storageWrites), []);
-            assert.ok((await page.evaluate(() => window.transportCalls)).every(call => call.method === 'GET' && !call.body && !call.url.includes('utm_')));
+            const writes = (await page.evaluate(() => window.transportCalls)).filter(call => call.method !== 'GET');
+            assert.equal(writes.length, 1);
+            assert.ok(writes[0].url.endsWith('/submit'));
             results.push({ campaign: campaign || 'none', answer, gate, first, screenshot: name + '-375.png' }); await context.close();
         }
         assert.deepEqual(errors, []);
         const sources = files.map(file => ({ path: file, sha256: require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex') }));
-        fs.writeFileSync(path.join(artifacts, 'receipt.json'), JSON.stringify({ passed: true, syntheticOnly: true, viewport: { width: 375, height: 844 }, browser: browser.version(), results, errors, storageWrites: 0, transportWrites: 0,
+        fs.writeFileSync(path.join(artifacts, 'receipt.json'), JSON.stringify({ passed: true, syntheticOnly: true, viewport: { width: 375, height: 844 }, browser: browser.version(), results, errors, storageWrites: 0, confirmedSubmissions: results.length, otherTransportWrites: 0,
             requests: requests.reduce((counts, request) => { const key = request.method + ' ' + request.path; counts[key] = (counts[key] || 0) + 1; return counts; }, {}), sources }, null, 2));
         console.log(JSON.stringify({ passed: true, cases: results.length, artifacts }));
     } finally { if (browser) await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

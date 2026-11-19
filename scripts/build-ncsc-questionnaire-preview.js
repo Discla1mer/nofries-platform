@@ -115,6 +115,9 @@ function createSyntheticTransport(seed, metadata, settings) {
                             profileRef: clone(metadata.profileRef), assessmentRevision: 'rev-' + next.revision, scoreAsOf: at } } };
             }
         }
+        if (command.action === 'submit' && seed.submittedFixture?.assessmentId === next.assessmentId) {
+            next = clone(seed.submittedFixture);
+        }
         records.set(next.assessmentId, next);
         const response = { status: command.action === 'create' ? 201 : 200,
             body: { schemaVersion: 1, action: command.action, assessment: clone(next) } };
