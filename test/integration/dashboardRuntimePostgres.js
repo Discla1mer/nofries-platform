@@ -8,6 +8,21 @@
 let mockResourceAfterWork = null;
 let mockRuntimeAfterReconcile = null;
 let mockAfterHostDecision = null;
+// Expire a synthetic membership when the HTTP host constructs the response,
+// after the real operation (including COMMIT) has returned its data.
+let mockPaidJsonReady = null;
+jest.mock('../../api/shared/securityHeaders', () => {
+    const actual = jest.requireActual('../../api/shared/securityHeaders');
+    return { ...actual, apiSecurityHeaders(extra) {
+        const headers = actual.apiSecurityHeaders(extra);
+        if (mockPaidJsonReady && extra?.['Content-Type'] === 'application/json; charset=utf-8') {
+            const ready = mockPaidJsonReady;
+            mockPaidJsonReady = null;
+            ready();
+        }
+        return headers;
+    } };
+});
 jest.mock('../../api/shared/dashboardAdmission', () => {
     const actual = jest.requireActual('../../api/shared/dashboardAdmission');
     return { ...actual, createDashboardAdmissionDecision(adapters) {
@@ -1742,7 +1757,8 @@ function registerRealPostgresTests() {
             const bound = await bindResource();
             return { ...f, ...target, ...bound, seed, selected, quota, resourceOptions, bindResource, addResource };
         }
-        require('./paidAssessmentLifecycle')({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner: () => ownerPool });
+        require('./paidAssessmentLifecycle')({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner: () => ownerPool,
+            atJsonResponse: action => { mockPaidJsonReady = action; } });
         require('./improvementPlanRecovery')({ resourceSetup,
             getPools: () => ({ ownerPool, controlPool, runtimePool, maintenancePool }), testUrl, maintenanceRole });
         async function newCustomerActivationSetup({ shortWindow = false, memberLimit = null, memberRole = 'admin' } = {}) {

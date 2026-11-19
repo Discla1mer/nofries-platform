@@ -811,7 +811,9 @@ function createDashboardRuntimeHandlers(configuration) {
                     const denied = error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403;
                     throw new PaidAssessmentError(denied ? 'access_denied' : 'unavailable');
                 }
-                return bound.paid(selected.paid, command, selected.paidCursor);
+                const value = await bound.paid(selected.paid, command, selected.paidCursor, check => { entry.disclosureCheck = check; });
+                if (typeof entry.disclosureCheck !== 'function') throw new PaidAssessmentError();
+                return value;
             }));
         }
         if (selected.contact) {
@@ -971,7 +973,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 return value;
             }
             catch (error) { return failure(error, entry.category); }
-            finally { settle(entry, original); }
+            finally { entry.disclosureCheck = null; settle(entry, original); }
         }));
         entry.initialising = false;
         return entry.promise;

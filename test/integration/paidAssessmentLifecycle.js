@@ -4,15 +4,15 @@ const request = require('supertest');
 const { createProductionApplication } = require('../../lib/productionApplication');
 const { customerProductionHarness } = require('../helpers/customerProductionHarness');
 
-module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner }) => {
+module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner, atJsonResponse }) => {
     const nist = { id: 'nf-nist-csf-2-0-core', version: '2026-09-08.1', answer: 'yes', count: 106 };
     const iso = { id: 'nf-iso-27001-2022-readiness', version: '2026-11-19.1', answer: 'in_place', count: 116 };
-    test.each([nist, iso])('paid assessment HTTP lifecycle and isolation for $id', async ({ id, version, answer, count }) => {
+    async function setup({ id, version }, exampleOptions = {}) {
         const ref = { profileId: id, profileVersion: version };
         const base = '/api/dashboard/frameworks/' + id + '/' + version + '/assessments';
         const tenant = NCSC_SUBJECT.split(':')[0], principal = { ...identity(), identityTenantId: tenant,
             oid: NCSC_SUBJECT.split(':')[1], issuer: `https://login.microsoftonline.com/${tenant}/v2.0`, audience: nextId() };
-        const f = await resourceSetup({ productionIdentity: principal, exampleOptions: { profileRefs: [ref] }, initialTime: '2026-11-19T00:01:00.000Z' });
+        const f = await resourceSetup({ productionIdentity: principal, exampleOptions: { ...exampleOptions, profileRefs: [ref] }, initialTime: '2026-11-19T00:01:00.000Z' });
         const h = customerProductionHarness({ pool: f.restrictedPool, identity: principal, instanceId: f.instanceId,
             restoreEpoch: f.state.restoreEpoch, now: Date.parse(f.state.now),
             applicationFactory: (env, deps) => createProductionApplication({ ...env, NOFRIES_PAID_FRAMEWORKS_ENABLED: 'true' }, deps) });
@@ -25,6 +25,11 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner }) => {
         const header = 'X-NoFries-Dashboard-Generation', gen = session.body.generation;
         const get = path => request(h.app).get(path).set('Cookie', login.cookie).set(header, gen);
         const post = (path, body) => h.sameOrigin(request(h.app).post(path)).set('Cookie', login.cookie).set(header, gen).send(body);
+        return { f, h, login, base, header, get, post };
+    }
+    test.each([nist, iso])('paid assessment HTTP lifecycle and isolation for $id', async profile => {
+        const { id, version, answer, count } = profile;
+        const { f, h, login, base, header, get, post } = await setup(profile);
         // The source-only ISO-2 PR is independently deployable in either order.
         if (id === iso.id && !require('node:fs').existsSync(require('node:path').join(__dirname,
             '../../api/shared/assessmentEngine/iso27001FrameworkProfile.js'))) {
@@ -77,6 +82,29 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner }) => {
         expect((await facade.paid(route, undefined, null)).assessments).toEqual([]);
         const next = await f.bindResource({ generation: switched.record.generationToken, overrides: { paidFrameworksEnabled: true } });
         await expect(next.facade.paid({ ...route, assessmentId: 'example' }, undefined, null)).rejects.toMatchObject({ code: 'framework_not_found' });
+    });
+    test.each(['collection', 'detail', 'save', 'save replay'])('paid %s withholds the JSON body at membership expiry', async mode => {
+        const cutoff = '2026-11-19T00:01:00.100Z';
+        const { f, h, base, get, post } = await setup(nist, { membershipEndsAt: cutoff });
+        const publication = (await get(base).expect(200)).body.publication;
+        const detail = base + '/private-example';
+        const start = { assessmentId: 'private-example', expectedRevision: null, idempotencyKey: 'start',
+            payload: { scopePopulation: { description: 'Synthetic private scope' } } };
+        await post(base, start).expect(200);
+        const save = { expectedRevision: 0, idempotencyKey: 'save', payload: {
+            responses: [{ itemId: publication.questions[0].id, optionId: 'yes', rationale: null }] } };
+        if (mode === 'save replay') await post(detail + '/save', save).expect(200);
+        let sampled = false;
+        atJsonResponse(() => { sampled = true; h.state.now = Date.parse(cutoff); });
+        try {
+            const response = await (mode === 'collection' ? get(base) : mode === 'detail' ? get(detail) : post(detail + '/save', save));
+            expect(sampled).toBe(true);
+            expect(response.status).toBe(403);
+            expect(response.body).toEqual({ code: 'framework_access_denied' });
+        } finally { atJsonResponse(null); }
+        const revisions = await owner().query('SELECT revision FROM nofries.dashboard_framework_revisions WHERE tenant_id=$1 AND organisation_id=$2 ORDER BY revision',
+            [f.scope.tenantId, f.scope.organisationId]);
+        expect(revisions.rows.map(row => row.revision)).toEqual(mode.startsWith('save') ? [0, 1] : [0]);
     });
     test.each([{ grants: undefined }, { grants: [{ profileId: nist.id, profileVersion: 'other' }] }])('paid assessment refuses an absent exact active grant (%j)', async ({ grants }) => {
         const f = await resourceSetup({ exampleOptions: { profileRefs: grants } });

@@ -621,6 +621,7 @@ async function writeAudit(inv, operation, event) {
 
 function operationPair(inv, database, routing, resolvedAt, name, context, profileRef) {
     const paid = PAID_OPERATIONS.includes(name);
+    let paidDisclosureEvidence = null;
     const contact = name === CONTACT_OPERATION;
     const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name) || contact || paid;
     if (!known || paid && inv.options.paidFrameworksEnabled !== true || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true ||
@@ -738,6 +739,7 @@ function operationPair(inv, database, routing, resolvedAt, name, context, profil
                     inv.now(); return value;
                 });
                 inv.now();
+                if (paid) paidDisclosureEvidence = active.finalAuthority;
                 if (routing.portfolio) routing.readContext = context;
                 return result;
             } catch (error) {
@@ -813,7 +815,14 @@ function operationPair(inv, database, routing, resolvedAt, name, context, profil
         if (inv.owner !== operation || operation.finished || operation.active) throw mapped(privateError(false), name);
         operation.finished = true; operation.quota = null; inv.owner = null;
     }
-    return Object.freeze({ database: guardedDatabase, audit, clock, resolveSubmissionQuota, finish });
+    function assertPaidDisclosure() {
+        try {
+            if (!paidDisclosureEvidence) throw privateError(false);
+            currentAuthorityAt(inv, operation, paidDisclosureEvidence, inv.now());
+        } catch (error) { throw mapped(error, name, operation.denial); }
+    }
+    return Object.freeze({ database: guardedDatabase, audit, clock, resolveSubmissionQuota, finish,
+        ...(paid ? { assertPaidDisclosure } : {}) });
 }
 
 function hostBaseFacts(inv, context, input) {

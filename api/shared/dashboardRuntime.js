@@ -168,12 +168,13 @@ function createDashboardResourceRuntime(options) {
             }
             return Object.freeze({
                 requestContext,
-                ...(paidFrameworksEnabled ? { async paid(route, body, cursor) {
+                ...(paidFrameworksEnabled ? { async paid(route, body, cursor, onDisclosure) {
                     const request = prepareRequest(route, body, cursor);
                     const pair = binding.createOperation(body === undefined ? 'framework.read' : 'framework.write', context, request.profileRef);
                     try {
                         const result = await paidRequest(pair, context, request);
-                        pair.clock();
+                        pair.assertPaidDisclosure();
+                        if (onDisclosure) onDisclosure(pair.assertPaidDisclosure);
                         return result;
                     } finally { pair.finish(); }
                 } } : {}),
