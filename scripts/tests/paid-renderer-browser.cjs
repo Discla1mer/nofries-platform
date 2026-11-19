@@ -4,13 +4,14 @@
 const assert = require('node:assert/strict');
 const request = require('supertest');
 
-const { createHash } = require('node:crypto');
+const { createHash, randomBytes } = require('node:crypto');
 const { paidFrameworks, rendererIntegrity, rendererSelection } = require('../../api/shared/protectedAssets/dashboardRegistry');
 
 function assetPath(ref, name, generation) {
     const version = Buffer.from(rendererIntegrity[name].slice(7), 'base64').toString('base64url');
-    const selection = createHash('sha256').update(rendererSelection(generation, ref, name)).digest('hex');
-    return '/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assets/' + name + '.js?v=' + version + '&s=' + selection;
+    const nonce = randomBytes(16).toString('hex');
+    const selection = createHash('sha256').update(rendererSelection(generation, ref, name, nonce)).digest('hex');
+    return '/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assets/' + name + '.js?v=' + version + '&s=' + nonce + '.' + selection;
 }
 
 async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, switchOrganisation, returnToOrganisation, directory }) {
@@ -43,7 +44,19 @@ async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, swi
             await button('Open ' + ref.label).click();
             await page.getByRole('textbox', { name: 'What part of your organisation will you assess?' }).waitFor();
         };
+        const collection = '/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assessments';
+        const sharedScript = page.waitForResponse(r => new URL(r.url()).pathname === '/api/dashboard/app.js');
+        const firstPage = page.waitForResponse(r => new URL(r.url()).pathname === collection);
         await open();
+        const bundle = await (await sharedScript).text();
+        const { publication } = await (await firstPage).json();
+        assert.ok(publication.questions.length > 0);
+        for (const question of publication.questions) {
+            assert.ok(!bundle.includes(question.prompt));
+            for (const example of question.guidance.evidenceExamples) assert.ok(!bundle.includes(example));
+        }
+        assert.ok(await page.evaluate(() => !window.NoFriesPaidQuestionnaire && !window.NoFriesPaidResults &&
+            typeof window.NoFriesNcscQuestionnaire.mount === 'function'));
         await page.getByRole('textbox', { name: 'What part of your organisation will you assess?' }).fill('Synthetic workshop');
         await button('Start assessment').click();
         await page.getByRole('radio').first().check(); await button('Save progress').click();
@@ -53,14 +66,19 @@ async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, swi
         await page.getByRole('radio').first().scrollIntoViewIfNeeded();
         if (directory) await page.screenshot({ path: directory + '/' + ref.profileId + '-resume.png' });
         assert.equal(assets.length, 2); assert.ok(assets.every(row => row.status === 200 && /no-store/.test(row.cache)));
-        for (const row of assets) assert.match(row.path, /\/questionnaire\.js\?v=[\w-]{43}&s=[a-f0-9]{64}$/);
+        assert.notEqual(assets[0].path, assets[1].path);
+        for (const row of assets) assert.match(row.path, /\/questionnaire\.js\?v=[\w-]{43}&s=[a-f0-9]{32}\.[a-f0-9]{64}$/);
         const admitted = assets[0].path;
         const session = await request(app).get('/api/dashboard/session').set('Cookie', cookie);
         assert.ok(!admitted.includes(session.body.generation));
         const bad = admitted.slice(0, -1) + (admitted.endsWith('0') ? '1' : '0');
         await request(app).get(bad).set('Cookie', cookie).expect(403);
         await request(app).get(admitted).expect(401);
-        await request(app).get(assetPath(other, 'questionnaire', session.body.generation)).set('Cookie', cookie).expect(403);
+        for (const name of ['questionnaire', 'results']) {
+            await request(app).get(assetPath(other, name, session.body.generation)).set('Cookie', cookie).expect(403);
+        }
+        await request(app).get('/api/dashboard/frameworks/' + other.profileId + '/' + other.version + '/assessments')
+            .set('Cookie', cookie).set('X-NoFries-Dashboard-Generation', session.body.generation).expect(403);
         const verified = await request(app).get(admitted).set('Cookie', cookie).expect(200);
         assert.equal('sha256-' + createHash('sha256').update(verified.text).digest('base64'), rendererIntegrity.questionnaire);
 

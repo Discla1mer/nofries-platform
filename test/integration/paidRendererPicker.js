@@ -72,7 +72,11 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
     }
     test.each(paidFrameworks)('paid renderer flag off denies a signed-in $label asset', async ref => {
         const { h, cookie, generation } = await fixture(ref, 'https://nofries.example.test', 'TRUE');
-        await request(h.app).get(assetPath(ref, 'questionnaire', generation)).set('Cookie', cookie).expect(404);
+        for (const name of ['questionnaire', 'results']) {
+            await request(h.app).get(assetPath(ref, name, generation)).set('Cookie', cookie).expect(404);
+        }
+        await request(h.app).get('/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assessments')
+            .set('Cookie', cookie).set('X-NoFries-Dashboard-Generation', generation).expect(404);
     });
     // Explicit because the standalone picker base does not package the renderer/publication/runtime stack.
     if (process.env.NOFRIES_TEST_RENDERER_BROWSER === 'true') {

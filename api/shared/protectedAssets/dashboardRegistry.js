@@ -46,8 +46,8 @@
         questionnaire: 'sha256-8QfOBBBl9FdFuTmqVEvMmhYHPR5Zx7QbsQuA+umd+wg=',
         results: 'sha256-ND6K2BYrIb2BoGu9l0omvezKzmRpZJ/T/rP6CsdyCgY='
     });
-    function rendererSelection(generation, ref, name) {
-        return JSON.stringify(['paid-renderer-v1', generation, ref.moduleId, ref.profileId, ref.version, name, rendererIntegrity[name]]);
+    function rendererSelection(generation, ref, name, nonce) {
+        return JSON.stringify(['paid-renderer-v2', nonce, generation, ref.moduleId, ref.profileId, ref.version, name, rendererIntegrity[name]]);
     }
     function sameFramework(left, right) {
         return left.moduleId === right.moduleId && left.profileId === right.profileId && left.version === right.version;

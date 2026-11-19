@@ -1583,7 +1583,9 @@
                 const cleanups = new Set();
                 async function renderer(name) {
                     if (!live() || !['questionnaire', 'results'].includes(name)) throw invalid();
-                    const sri = registry.rendererIntegrity[name], message = registry.rendererSelection(snapshot.generation, ref, name);
+                    // A fresh salt keeps separate loads from sharing a selection identifier in access logs.
+                    const nonce = secureId().replace(/-/g, '');
+                    const sri = registry.rendererIntegrity[name], message = registry.rendererSelection(snapshot.generation, ref, name, nonce);
                     const hash = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
                     const fingerprint = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
                     if (!live()) throw invalid();
@@ -1603,7 +1605,7 @@
                         };
                         node.onerror = cancel; cleanups.add(cancel);
                         node.integrity = sri; node.crossOrigin = 'anonymous'; node.referrerPolicy = 'no-referrer';
-                        node.src = prefix + '/assets/' + name + '.js?v=' + sri.slice(7, -1).replace(/\+/g, '-').replace(/\//g, '_') + '&s=' + fingerprint;
+                        node.src = prefix + '/assets/' + name + '.js?v=' + sri.slice(7, -1).replace(/\+/g, '-').replace(/\//g, '_') + '&s=' + nonce + '.' + fingerprint;
                         document.head.append(node);
                     });
                 }

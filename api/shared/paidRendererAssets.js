@@ -14,14 +14,14 @@ function parseAsset(route, query) {
     if (!match) return null;
     const [, profileId, version, name] = match;
     const ref = registry.paidFrameworks.find(row => row.profileId === profileId && row.version === version);
-    const params = /^v=([A-Za-z0-9_-]{43})&s=([a-f0-9]{64})$/.exec(query || '');
+    const params = /^v=([A-Za-z0-9_-]{43})&s=([a-f0-9]{32})\.([a-f0-9]{64})$/.exec(query || '');
     const integrity = registry.rendererIntegrity[name];
     if (!ref || !params || params[1] !== Buffer.from(integrity.slice(7), 'base64').toString('base64url')) return null;
-    return { ref, name, integrity, fingerprint: params[2] };
+    return { ref, name, integrity, nonce: params[2], fingerprint: params[3] };
 }
 
 function matchesSelection(asset, generation) {
-    const message = registry.rendererSelection(generation, asset.ref, asset.name);
+    const message = registry.rendererSelection(generation, asset.ref, asset.name, asset.nonce);
     return createHash('sha256').update(message).digest('hex') === asset.fingerprint;
 }
 

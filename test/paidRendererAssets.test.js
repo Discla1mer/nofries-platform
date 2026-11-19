@@ -14,6 +14,12 @@ function parse(url) {
 test.each(paidFrameworks)('fixed renderer URLs bind $label, its generation and its bytes', ref => {
     const url = assetPath(ref, 'questionnaire', generation);
     const asset = parse(url);
+    const next = parse(assetPath(ref, 'questionnaire', generation));
+    expect(next.nonce).not.toBe(asset.nonce);
+    expect(next.fingerprint).not.toBe(asset.fingerprint);
+    expect(matchesSelection(next, generation)).toBe(true);
+    expect(matchesSelection({ ...asset, nonce: next.nonce }, generation)).toBe(false);
+    expect(parse(url.replace(asset.nonce + '.', ''))).toBeNull();
     expect(matchesSelection(asset, generation)).toBe(true);
     expect(matchesSelection(asset, 'b'.repeat(64))).toBe(false);
     expect(matchesSelection({ ...asset, ref: paidFrameworks.find(row => row !== ref) }, generation)).toBe(false);
