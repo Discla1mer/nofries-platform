@@ -237,7 +237,7 @@ for (const route of ['#ai-governance', '#cyber-security/foreign-record', '#evide
     test(`unpermitted or object route ${route} returns safely without echoing details`, () => {
         const dom = mount(view({ role: 'viewer' }), { initialRoute: route });
         assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
-        assert.match(dom.root.textContent, /We could not find that view/);
+        assert.match(dom.root.textContent, /We couldn't find that page/);
         assert.ok(!dom.root.textContent.includes('foreign-record'));
     });
 }
@@ -798,12 +798,12 @@ test('selecting the current fallback module still replaces an invalid fragment w
     const dom = historyDom();
     dom.window.location.hash = '#unknown'; await tick();
     const controller = shell.mount(dom.root, view());
-    assert.match(dom.root.textContent, /We could not find that view/);
+    assert.match(dom.root.textContent, /We couldn't find that page/);
     await controller.navigate('overview');
     assert.equal(dom.window.location.hash, '#overview');
     assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
     assert.equal(dom.document.activeElement, dom.root.querySelector('h1'));
-    assert.doesNotMatch(dom.root.textContent, /We could not find that view/);
+    assert.doesNotMatch(dom.root.textContent, /We couldn't find that page/);
 });
 
 test('the current Overview link returns from attention detail without adding a history entry', async () => {

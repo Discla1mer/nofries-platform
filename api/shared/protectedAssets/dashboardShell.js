@@ -20,7 +20,7 @@
     // shows the consent wording and asks for confirmation before sending.
     const CONTACT_CONSENT = 'No Fries staff will see your organisation name, your sign-in email and a summary of your results, and will contact you by email.';
     const CONTACT_OUTCOMES = { requested: 'Request sent. We’ll be in touch by email.',
-        already_requested: 'You’ve already asked about this today. We’ll be in touch.' };
+        already_requested: 'Someone in your organisation has already asked about this today. We’ll be in touch.' };
     let contactSequence = 0;
     function contactControl(doc, topic, send, subject) {
         const make = function (tag, className, text) {
@@ -308,7 +308,7 @@
             current = target;
             if (doc && current && current.label) doc.title = current.label + ' · No Fries Dashboard';
             status.hidden = !!requested || !route;
-            status.textContent = requested || !route ? '' : 'We could not find that view, so we have taken you to ' + target.label + '.';
+            status.textContent = requested || !route ? '' : 'We couldn\'t find that page, so we\'ve taken you to ' + target.label + '.';
             if (changeLocation && !repeatedRoute) pushEntry(current.route);
             if (historyTarget) cyberLocation = historyTarget.location || null;
             else if (committedEntry || current.key !== 'cyber_security') cyberLocation = null;

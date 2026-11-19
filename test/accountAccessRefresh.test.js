@@ -83,7 +83,7 @@ function harness(options = {}) {
         const actions = document.createElement('div'); actions.id = 'dashboardAccountActions'; actions.hidden = true;
         if (options.emailSettings) {
             const email = document.createElement('a'); email.id = 'dashboardEmailSettings'; email.hidden = true;
-            email.setAttribute('href', '/api/account/email'); actions.append(email);
+            email.setAttribute('href', '/account/email'); actions.append(email);
         }
         actions.append(elements.dashboardSignOut); menu.append(toggle, actions); elements.dashboardStatusPanel.append(menu);
     }
@@ -280,15 +280,35 @@ test('ready workspace exposes refresh failure without replacing content, then cl
     expect(h.mounts[0].destroy).not.toHaveBeenCalled();
 });
 
-test('Account shows only the authenticated session label and clears it when access expires', async () => {
+test('Account shows the signed-in name and email and clears them when access expires', async () => {
     const h = harness({ hash: '#overview', accountMenu: true }); await flush();
-    await h.open(state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test' }));
+    await h.open(state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test', accountName: 'Synthetic Customer' }));
     const toggle = h.document.getElementById('dashboardAccountToggle');
-    expect(toggle.textContent).toBe('Account: synthetic@example.test');
+    const identity = h.document.getElementById('dashboardAccountIdentity');
+    expect(toggle.textContent).toBe('Account');
+    expect(identity.textContent).toContain('Signed in as');
+    expect(identity.textContent).toContain('Synthetic Customer');
+    expect(identity.textContent).toContain('synthetic@example.test');
     h.window.dispatch('focus'); await flush();
     await h.reply(4, 401, { code: 'dashboard_authentication_required' });
     expect(toggle.textContent).toBe('Account');
+    expect(h.document.getElementById('dashboardAccountIdentity')).toBeNull();
     expect(h.document.getElementById('dashboardAccountMenu').hidden).toBe(true);
+});
+
+test('Account shows the email once when the signed-in name is the same address', async () => {
+    const h = harness({ hash: '#overview', accountMenu: true }); await flush();
+    await h.open(state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test', accountName: 'Synthetic@Example.Test' }));
+    const identity = h.document.getElementById('dashboardAccountIdentity');
+    expect(identity.textContent).toContain('synthetic@example.test');
+    expect(identity.querySelector('strong')).toBeNull();
+});
+
+test('a control character in the signed-in name fails closed', async () => {
+    const h = harness({ hash: '#overview', accountMenu: true }); await flush();
+    await h.reply(0, 200, state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test', accountName: 'Synthetic\nCustomer' }));
+    expect(h.status).toBe('unavailable');
+    expect(h.document.getElementById('dashboardAccountIdentity')).toBeNull();
 });
 
 test('Account offers Email settings to signed-in customers only and hides it when access expires', async () => {
@@ -296,7 +316,7 @@ test('Account offers Email settings to signed-in customers only and hides it whe
     await h.open(state(A, GA, { purpose: 'customer', accountType: 'company' }));
     const email = h.document.getElementById('dashboardEmailSettings');
     expect(email.hidden).toBe(false);
-    expect(email.getAttribute('href')).toBe('/api/account/email');
+    expect(email.getAttribute('href')).toBe('/account/email');
     h.window.dispatch('focus'); await flush();
     await h.reply(4, 401, { code: 'dashboard_authentication_required' });
     expect(email.hidden).toBe(true);
@@ -349,7 +369,8 @@ test.each(['index.html', 'app/dashboard.html'])('%s keeps one sign-out inside th
     expect(html.match(/id="dashboardSignOut"/g)).toHaveLength(1);
     expect(menu).not.toMatch(/id="dashboard(?:Retry|SignIn)"/);
     expect(menu).not.toMatch(/role="menu(?:item)?"/);
-    expect(menu).toContain('<a class="button" id="dashboardEmailSettings" data-dashboard-leave href="/api/account/email" hidden>Email settings</a>');
+    expect(menu).toContain('<a class="button" id="dashboardSwitchAccount" data-dashboard-leave href="/login?account=choose" hidden>Switch account</a>');
+    expect(menu).toContain('<a class="button" id="dashboardEmailSettings" data-dashboard-leave href="/account/email" hidden>Email settings</a>');
 });
 test('malformed account session fails closed instead of treating bad authority as an outage', async () => {
     const h = await portfolio(); h.event('focus'); await flush();

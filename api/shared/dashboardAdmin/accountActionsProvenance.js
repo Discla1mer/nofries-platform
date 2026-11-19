@@ -2,6 +2,7 @@
 const { fields, copy, equal, hash, uuid, instant, digest } = require('../appLifecycle/dashboardRuntimeRecords');
 const { dataStorage, dataCodec } = require('../appLifecycle/postgresDashboardBootstrap');
 const { normaliseSelector, DashboardAdminError } = require('./service');
+const { authorityKeys, APPROVAL_AUTHORITY } = require('./accountActionsMembershipApproval');
 const fail = () => { throw new DashboardAdminError(409, 'dashboard_admin_conflict'); };
 
 // Every intervening membership revision must have both a successful staff
@@ -14,9 +15,12 @@ async function verifyRestore(tx, selector, snapshot, context, readTerminal, now)
         ORDER BY (payload#>>'{resultRevisions,membership}')::bigint DESC LIMIT 101`, [selector.tenantId, selector.organisationId, expected]);
     for (const row of rows.rows) {
         uuid(row.operation_id);
-        const audit = fields(copy(await readTerminal(row.operation_id), 32768), ['schemaVersion', 'operationId', 'actorSubjectKey',
+        const raw = await readTerminal(row.operation_id);
+        // approvalAuthority is absent on records written before it was added.
+        const audit = fields(copy(raw, 32768), [...authorityKeys(raw), 'schemaVersion', 'operationId', 'actorSubjectKey',
             'action', 'selector', 'targetSha256', 'before', 'proposedAfter', 'approvalSha256', 'commandSha256',
             'context', 'nativeCommand', 'resultSha256', 'phase', 'outcome', 'after', 'occurredAt']);
+        if (Object.hasOwn(audit, 'approvalAuthority') && audit.approvalAuthority !== APPROVAL_AUTHORITY) fail();
         const target = normaliseSelector(audit.selector), command = dataCodec.normaliseCommand(audit.nativeCommand);
         const from = audit.action === 'suspend' ? 'active' : 'suspended', to = audit.action === 'suspend' ? 'suspended' : 'active';
         digest(audit.approvalSha256); digest(audit.commandSha256); digest(audit.resultSha256); instant(audit.occurredAt);
