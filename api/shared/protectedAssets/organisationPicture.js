@@ -10,7 +10,6 @@
     // Bounded number of submitted results shown in the history. Each one is a
     // separate authorised read; nothing is cached across selections.
     const TREND_LIMIT = 5;
-    const SCOPE_OPTION_CHARS = 60;
     const copy = value => JSON.parse(JSON.stringify(value));
     const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
@@ -37,30 +36,76 @@
     };
     const ENQUIRY_TIMEOUT_MS = 5000;
     const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
+    // Scoring v2 (#399), for results whose metadata names profile 2026-11-18.1:
+    // "fix this first" ranks by attention = question weight × gap factor (in
+    // hundredths). "I don't know" counts as a gap; Yes, passkey or security key,
+    // and Not applicable do not. Ties: higher weight, then the NCSC Critical
+    // Controls carried into v2 (password manager, request checks, network),
+    // then profile order. A planning order from the answers, not a risk score.
+    // Matched on all six fields of the stored reference, never by version alone.
+    // Pinned here as in the questionnaire; a test compares it with the server profile.
+    const V2_PROFILE_REF = Object.freeze({ frameworkId: 'nz-ncsc-cyber-security-framework', frameworkVersion: 'beta-verified-2026-09-02',
+        profileId: 'nz-ncsc-mcss-2025-v3-sme', profileVersion: '2026-11-18.1',
+        catalogueSha256: 'c90e999f627308f326a403b1d779e68087e3eaadab5149070f1df5e350daa537',
+        sourceCatalogueSha256: 'c6120192675c9d12cdab296d6f5a84f014d613b300001394790f3ccf79692b71' });
+    // v2 shows up to five gaps to fix first; "I don't know" answers ranked
+    // below those are listed under "Confirm these next" (#399, 18 Nov).
+    const V2_GAP_LIMIT = 5;
+    const V2_GAP_FACTOR = Object.freeze({ no: 100, unknown: 85, ad_hoc: 75, partly: 50, mfa_none: 100,
+        mfa_text_code: 70, mfa_mixed: 70, mfa_authenticator: 45, mfa_push: 30, mfa_number_matching: 15 });
+    const V2_CRITICAL_CONTROL = /^NF-NCSC-CC-(?:PM|SV|NS)-01-Q\d+$/;
+    const v2Profile = metadata => !!metadata && !!metadata.profileRef && typeof metadata.profileRef === 'object' &&
+        PROFILE_FIELDS.every(key => metadata.profileRef[key] === V2_PROFILE_REF[key]);
+    // A supplied extra profile must be exactly the pinned v2 profile: six own
+    // fields, each equal. A near match (for example a re-hashed catalogue) would
+    // otherwise be readable while v2Profile() is false, giving v2 results the
+    // accepted profile's Overview logic. The accepted profile itself is the base
+    // metadata and a duplicate of it is already refused.
+    const exactV2Profile = ref => !!ref && typeof ref === 'object' && !Array.isArray(ref) &&
+        Reflect.ownKeys(ref).length === PROFILE_FIELDS.length &&
+        PROFILE_FIELDS.every(key => Object.hasOwn(ref, key) && ref[key] === V2_PROFILE_REF[key]);
+    // A v2 answer that falls short of full credit, other than "I don't know".
+    const v2Shortfall = optionId => Object.hasOwn(V2_GAP_FACTOR, optionId) && optionId !== 'unknown';
+    const attention = row => (row.weight || 0) * V2_GAP_FACTOR[row.responseOptionId];
     const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
     const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
     const firstText = (...values) => values.find(value => typeof value === 'string' && value.trim()) || null;
-    function topGaps(result, metadata, limit = GAP_LIMIT) {
+    function rankedGaps(result, metadata) {
         if (!result || !Array.isArray(result.domains) || !metadata || !Array.isArray(metadata.questions)) return [];
         const rows = new Map();
         result.domains.forEach(domain => (domain.controls || []).forEach(control =>
             (control.questions || []).forEach(row => rows.set(row.itemId, row))));
         const controls = new Map((metadata.controls || []).map(control => [control.id, control]));
-        return metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }))
-            .filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
-            .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
-                gapTier(a.question.id) - gapTier(b.question.id) ||
-                GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position)
-            .slice(0, limit)
-            .map(({ question, row }) => {
-                const control = controls.get(question.controlId), guidance = question.guidance || {};
-                const plain = question.smallBusiness || {};
-                const title = firstText(control && control.title, question.prompt);
-                return { itemId: question.id, title: title.split(' — ').pop(), answer: row.answer,
-                    responseOptionId: row.responseOptionId,
-                    why: firstText(guidance.summary) || GAP_WHY,
-                    next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
-            });
+        const entries = metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }));
+        const ranked = v2Profile(metadata)
+            ? entries.filter(entry => entry.row && Object.hasOwn(V2_GAP_FACTOR, entry.row.responseOptionId))
+                .sort((a, b) => attention(b.row) - attention(a.row) || (b.row.weight || 0) - (a.row.weight || 0) ||
+                    Number(V2_CRITICAL_CONTROL.test(b.question.id)) - Number(V2_CRITICAL_CONTROL.test(a.question.id)) ||
+                    a.position - b.position)
+            : entries.filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
+                .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
+                    gapTier(a.question.id) - gapTier(b.question.id) ||
+                    GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position);
+        return ranked.map(({ question, row }) => {
+            const control = controls.get(question.controlId), guidance = question.guidance || {};
+            const plain = question.smallBusiness || {};
+            const title = firstText(control && control.title, question.prompt);
+            return { itemId: question.id, title: title.split(' — ').pop(), answer: row.answer,
+                responseOptionId: row.responseOptionId,
+                firstCheck: firstText((plain.checks || [])[0], (guidance.startingActions || [])[0]) || GAP_NEXT,
+                why: firstText(guidance.summary) || GAP_WHY,
+                next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
+        });
+    }
+    // The accepted profile shows three gaps; v2 shows up to five.
+    function topGaps(result, metadata, limit) {
+        return rankedGaps(result, metadata).slice(0, limit === undefined ? v2Profile(metadata) ? V2_GAP_LIMIT : GAP_LIMIT : limit);
+    }
+    // Scoring v2 only: "I don't know" answers that miss the top five. Empty for
+    // the accepted profile, where unknown answers are not gaps.
+    function confirmNext(result, metadata) {
+        if (!v2Profile(metadata)) return [];
+        return rankedGaps(result, metadata).slice(V2_GAP_LIMIT).filter(gap => gap.responseOptionId === 'unknown');
     }
     // "Actions" card: display-only over improvement/list responses the host
     // already read. Overdue uses the server's isOverdue. Due-soon and review
@@ -82,7 +127,17 @@
         const title = control && typeof control.title === 'string' ? control.title.split(' — ').pop().trim() : '';
         return title || null;
     }
-    function actionSummary(input, metadata) {
+    // With several readable profiles an action's question can exist in more than
+    // one. A plan action does not say which profile it came from, so its control
+    // is named only when every profile that has the question gives it the same
+    // name; otherwise the suggested action stands alone. One profile: unchanged.
+    function sharedControlName(profiles, itemId) {
+        const names = profiles.filter(metadata => metadata && Array.isArray(metadata.questions) &&
+            metadata.questions.some(entry => entry && entry.id === itemId)).map(metadata => controlName(metadata, itemId));
+        return names.length && names.every(name => name !== null && name === names[0]) ? names[0] : null;
+    }
+    function actionSummary(input, metadata, profileMetadata) {
+        const profiles = [metadata].concat(Array.isArray(profileMetadata) ? profileMetadata : []);
         if (!input || !Array.isArray(input.lists) || typeof input.more !== 'boolean') return null;
         let today = null; const rows = [];
         for (const list of input.lists) {
@@ -104,7 +159,8 @@
         const horizon = today && new Date(Date.parse(today + 'T00:00:00.000Z') + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
         const byDue = (a, b) => a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.actionId < b.actionId ? -1 : a.actionId > b.actionId ? 1 : 0;
         const item = action => ({ title: (name => name ? name + ': ' + action.rationale.suggestedAction.charAt(0).toLowerCase() +
-                action.rationale.suggestedAction.slice(1) : action.rationale.suggestedAction)(controlName(metadata, action.itemId)),
+                action.rationale.suggestedAction.slice(1) : action.rationale.suggestedAction)(profiles.length === 1
+                ? controlName(metadata, action.itemId) : sharedControlName(profiles, action.itemId)),
             dueDate: action.dueDate, status: action.status,
             actionId: action.actionId, planId: action.planId, planRevision: action.planRevision,
             owner: Object.hasOwn(action, 'ownerLabel') && action.ownerLabel.trim() ? action.ownerLabel : null });
@@ -165,12 +221,28 @@
             !questionnaire || typeof questionnaire.resultModel !== 'function' || typeof questionnaire.enoughAnswersToEstimate !== 'function') throw new Error('picture_composition_required');
         if (mounted.has(root)) mounted.get(root).destroy();
         const doc = root.ownerDocument, client = options.client, metadata = copy(options.metadata);
+        // Scoring v2 (#399): further readable profiles, sent by the server only
+        // while their flag is on. Each assessment is shown with the profile its
+        // stored reference names, matched on all six fields. Without them this
+        // is exactly the single accepted profile. Each one supplied must be
+        // exactly the pinned v2 profile; anything else fails closed.
+        const profileMetadata = options.profileMetadata === undefined ? [] : copy(options.profileMetadata);
+        if (!Array.isArray(profileMetadata) || profileMetadata.length > 4 ||
+            profileMetadata.some(value => !value || !exactV2Profile(value.profileRef) || value.moduleId !== metadata.moduleId ||
+                !Array.isArray(value.questions) || !Array.isArray(value.controls) || !Array.isArray(value.domains)) ||
+            [metadata].concat(profileMetadata).some((value, index, all) => all.some((other, earlier) =>
+                earlier < index && sameProfile(value.profileRef, other.profileRef)))) throw new Error('picture_composition_required');
+        const profiles = [metadata].concat(profileMetadata);
+        // The metadata for a stored profile reference, or null when no supplied profile matches.
+        const metadataFor = profileRef => profiles.find(value => sameProfile(profileRef, value.profileRef)) || null;
+        // The profile of the selected assessment. Reads accept only known profiles.
+        const selectedMetadata = () => detail && metadataFor(detail.profileRef) || metadata;
         const organisationId = options.organisationId, organisationName = options.displayName || organisationId;
         const openImprovement = typeof options.openImprovement === 'function' ? options.openImprovement : null;
         const planGap = typeof options.planGap === 'function' ? options.planGap : null;
         const contactControl = typeof options.contactControl === 'function' ? options.contactControl : null;
         const readActions = openImprovement && typeof options.readActions === 'function' ? options.readActions : null;
-        let actions = null;
+        let actions = null, displayedGaps = [];
         const id = 'picture-assessment-' + (++sequence);
         const initialAssessmentId = typeof options.initialAssessmentId === 'string' ? options.initialAssessmentId : null;
         let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null, allowance = null;
@@ -219,11 +291,11 @@
             while (ancestor && ancestor !== root) ancestor = ancestor.parentElement;
             return live(token) && !loading && !denied && ancestor === root && detail && detail.status === 'submitted'
                 && detail.assessmentId === selected && sourceBinding() === binding
-                && questionnaire.resultModel(detail, metadata, organisationId) !== null;
+                && questionnaire.resultModel(detail, selectedMetadata(), organisationId) !== null;
         }
         function improvementSelection() {
             if (!detail || detail.status !== 'submitted' || detail.assessmentId !== selected ||
-                !questionnaire.resultModel(detail, metadata, organisationId) ||
+                !questionnaire.resultModel(detail, selectedMetadata(), organisationId) ||
                 !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(detail.assessmentId) ||
                 !Number.isSafeInteger(detail.revision) || detail.revision < 0 || detail.revision > 128 ||
                 typeof detail.revisionSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(detail.revisionSha256) ||
@@ -276,7 +348,7 @@
             const dl = node('dl');
             const facts = [['Organisation name', organisationName], ['Saved at', detail.updatedAt],
                 ['Saved status', detail.status], ['Saved revision', String(detail.revision)],
-                ['Framework', metadata.title], ['Profile version', metadata.profileRef.profileVersion],
+                ['Framework', selectedMetadata().title], ['Profile version', selectedMetadata().profileRef.profileVersion],
                 ['Organisation', organisationId], ['Assessment', detail.assessmentId]];
             facts.forEach(pair => dl.append(node('dt', '', pair[0]), node('dd', '', pair[1])));
             provenance.append(dl,
@@ -311,10 +383,21 @@
             const card = node('section', 'picture-actions'), heading = node('h3', '', 'Actions');
             heading.id = id + '-actions'; card.setAttribute('aria-labelledby', heading.id); card.append(heading);
             const gaps = root.querySelector('.picture-top-gaps');
+            if (gaps && detail) {
+                const ranked = displayedGaps;
+                if (ranked.length) {
+                    card.append(node('h4', '', 'Start with these gaps'));
+                    const list = node('ol');
+                    ranked.forEach(gap => list.append(node('li', '', gap.title + ' — ' + gap.firstCheck)));
+                    card.append(list, node('p', '', 'Why the first gap matters: ' + ranked[0].why),
+                        node('p', '', 'First safe step: Ask the person responsible to check what is already in place before changing settings.'));
+                } else card.append(node('p', '', gaps.querySelector('p').textContent));
+            } else card.append(node('p', '', 'A first gap is only available for a submitted assessment with results.'));
             if (!actions.total) {
                 const empty = node('p', 'picture-actions-empty', 'No actions yet. ');
+                const start = detail && v2Profile(selectedMetadata()) ? 'Start with your top gaps.' : 'Start with your top three gaps.';
                 if (gaps) {
-                    const link = node('a', '', 'Start with your top three gaps.'); link.href = '#' + id + '-top-gaps';
+                    const link = node('a', '', start); link.href = '#' + id + '-top-gaps';
                     link.addEventListener('click', event => {
                         event.preventDefault();
                         const target = root.querySelector('.picture-top-gaps'), title = target && target.querySelector('h3');
@@ -323,7 +406,7 @@
                         title.focus();
                     });
                     empty.append(link);
-                } else empty.append(node('span', '', 'Start with your top three gaps.'));
+                } else empty.append(node('span', '', start));
                 card.append(empty); root.prepend(card); return;
             }
             if (actions.next && actions.next.length) {
@@ -374,7 +457,7 @@
         }
         function paint() {
             if (!live()) return;
-            clearExplanation();
+            clearExplanation(); displayedGaps = [];
             Array.from(root.children).forEach(child => { if (child !== liveStatus) child.remove(); });
             root.classList.add('organisation-picture');
             if (liveStatus.parentElement !== root) root.append(liveStatus);
@@ -414,16 +497,12 @@
                     if (answered === null) return row.status === 'created' ? 'Not started' : 'In progress';
                     return answered > 0 ? 'In progress' : 'Not started';
                 };
-                // Long scopes hid the status and date. Shorten the scope in the
-                // option; the full text is its tooltip and is shown under Scope.
-                const shortScope = text => {
-                    const flat = text.replace(/\s+/g, ' ').trim();
-                    return flat.length > SCOPE_OPTION_CHARS ? flat.slice(0, SCOPE_OPTION_CHARS - 1).trimEnd() + '…' : flat;
+                const labelFor = row => {
+                    const selectedDetail = detail && row.assessmentId === detail.assessmentId ? detail : row;
+                    const scope = selectedDetail.scopePopulation || row.scopePopulation;
+                    return (scope ? scope.description.replace(/\s+/g, ' ').trim() + ' · ' : '') +
+                        pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
                 };
-                const labelFor = row => (row.scopePopulation ? shortScope(row.scopePopulation.description) + ' · ' : '') +
-                    pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
-                const fullLabelFor = row => (row.scopePopulation ? row.scopePopulation.description.replace(/\s+/g, ' ').trim() + ' · ' : '') +
-                    pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
                 const labelCounts = new Map(), referenceCounts = new Map();
                 rows.forEach(row => {
                     const label = labelFor(row), key = JSON.stringify([label, row.assessmentId.slice(0, 8)]);
@@ -437,7 +516,7 @@
                     const suffix = duplicate ? ' · ' + (ambiguous ? row.assessmentId
                         : reference + (row.assessmentId.length > 8 ? '…' : '')) : '';
                     const item = node('option', '', label + suffix);
-                    item.title = fullLabelFor(row) + suffix;
+                    item.title = label + suffix;
                     item.value = row.assessmentId; picker.append(item);
                 });
                 picker.value = selected;
@@ -447,6 +526,7 @@
                 const refresh = button('Refresh', () => load(false)); refresh.disabled = loading;
                 refresh.classList.add('dashboard-button-secondary');
                 toolbar.append(label, picker, refresh);
+                if (chosen) toolbar.append(node('p', 'picture-selected-title', chosen.title));
                 if (after !== null) { const more = button('Load more', () => load(true)); more.disabled = loading; more.classList.add('dashboard-button-secondary'); toolbar.append(more); }
                 root.append(toolbar);
                 if (after !== null) root.append(node('p', 'dashboard-muted', 'More saved assessments are available. Load more to see them.'));
@@ -493,7 +573,7 @@
             }
             const scope = node('section', 'picture-scope');
             scope.append(node('h3', '', 'Scope'), scopeText(detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.')); root.append(scope);
-            const result = questionnaire.resultModel(detail, metadata, organisationId);
+            const result = questionnaire.resultModel(detail, selectedMetadata(), organisationId);
             if (!result) { root.append(node('p', 'ncsc-warning', 'Results are unavailable for this saved submission. No score has been inferred.'), sourceDetails()); return; }
             if (typeof options.openCyber === 'function') root.append(openSavedAssessment('View saved assessment'));
             if (openImprovement && improvementSelection()) {
@@ -510,7 +590,7 @@
                 const child = node('section', 'picture-explanation ncsc-results'); root.append(child);
                 // The explanation is optional. If it cannot start, keep the
                 // results above it and say so plainly instead of blanking the page.
-                try { explanationController = explanation.mount(child, { client, metadata, organisationId,
+                try { explanationController = explanation.mount(child, { client, metadata: selectedMetadata(), organisationId,
                     resultModel: questionnaire.resultModel, assessment: {
                         assessmentId: detail.assessmentId, revision: detail.revision, revisionSha256: detail.revisionSha256,
                         status: detail.status, profileRef: detail.profileRef, updatedAt: detail.updatedAt
@@ -532,10 +612,13 @@
         // evidence that two declarations cover the same real-world population.
         // Neither equal descriptions nor record-bound scope hashes establish it.
         function trendPoint(value, result) {
+            // v2 (#399): any answer other than "I don't know" or Not applicable counts as answered.
+            const answered = v2Profile(metadataFor(value.profileRef)) ? row => !['unknown', 'not_applicable'].includes(row.responseOptionId)
+                : row => ['yes', 'partial', 'no'].includes(row.responseOptionId);
             return { assessmentId: value.assessmentId, submittedAt: value.updatedAt, scope: value.scopePopulation.description,
                 attainment: result.attainment, total: result.total,
                 answered: new Set(result.domains.flatMap(domain => domain.controls.flatMap(control => control.questions))
-                    .filter(question => ['yes', 'partial', 'no'].includes(question.responseOptionId)).map(question => question.itemId)),
+                    .filter(answered).map(question => question.itemId)),
                 domains: result.domains.map(domain => ({ title: domain.title, attainment: domain.attainment })) };
         }
         function trendSection(result) {
@@ -543,11 +626,15 @@
             if (trend && trend.key === key) { trend.section = section; paintTrend(); return section; }
             // Order the loaded submitted results by saved time, never by list position:
             // the list pages by assessment ID, so an unloaded page can hold any date.
-            const ordered = rows.filter(row => row.status === 'submitted' && row.assessmentId !== detail.assessmentId)
+            // Scoring v2 (#399): only results on the selected assessment's own profile
+            // are compared. Scores from different question sets are never set side by side.
+            const others = rows.filter(row => row.status === 'submitted' && row.assessmentId !== detail.assessmentId);
+            const otherProfiles = others.filter(row => !sameProfile(row.profileRef, detail.profileRef)).length;
+            const ordered = others.filter(row => sameProfile(row.profileRef, detail.profileRef))
                 .concat([{ assessmentId: detail.assessmentId, updatedAt: detail.updatedAt }]).sort(newestFirst);
             const index = ordered.findIndex(row => row.assessmentId === detail.assessmentId);
             const start = Math.max(0, index + 2 - TREND_LIMIT), shown = ordered.slice(start, start + TREND_LIMIT);
-            const state = trend = { key, section, status: 'ready', total: ordered.length, order: shown.map(row => row.assessmentId),
+            const state = trend = { key, section, status: 'ready', total: ordered.length, otherProfiles, v2: v2Profile(selectedMetadata()), profileRef: copy(detail.profileRef), order: shown.map(row => row.assessmentId),
                 previousId: ordered[index + 1] ? ordered[index + 1].assessmentId : null,
                 points: new Map([[detail.assessmentId, trendPoint(detail, result)]]) };
             state.reads = shown.filter(row => row.assessmentId !== detail.assessmentId);
@@ -564,9 +651,10 @@
             Promise.allSettled(state.reads.map(async row => {
                 const response = await call('read', row.assessmentId, token);
                 const value = response && response.assessment;
+                // Only an earlier result on the same profile as the one shown is compared.
                 if (!value || value.assessmentId !== row.assessmentId || value.moduleId !== metadata.moduleId ||
-                    !sameProfile(value.profileRef, metadata.profileRef)) return;
-                const earlier = questionnaire.resultModel(value, metadata, organisationId);
+                    !sameProfile(value.profileRef, state.profileRef) || !metadataFor(value.profileRef)) return;
+                const earlier = questionnaire.resultModel(value, metadataFor(value.profileRef), organisationId);
                 if (earlier) state.points.set(value.assessmentId, trendPoint(value, earlier));
             })).then(results => {
                 if (!live(token) || trend !== state) return;
@@ -585,6 +673,10 @@
             const section = trend.section, current = trend.points.get(detail.assessmentId);
             const heading = node('h3', '', 'Change over time'); heading.tabIndex = -1;
             section.replaceChildren(heading);
+            if (trend.otherProfiles) section.append(node('p', 'dashboard-muted picture-trend-break', (trend.otherProfiles === 1
+                ? '1 other submitted assessment used a different set of questions, so it is'
+                : trend.otherProfiles + ' other submitted assessments used a different set of questions, so they are') +
+                ' not compared with this one or listed here. Results from different sets of questions are not comparable.'));
             if (trend.status === 'idle') {
                 const others = trend.reads.length, state = trend, token = epoch;
                 section.append(node('p', '', (others === 1 ? 'There is 1 other submitted assessment.'
@@ -602,7 +694,8 @@
                 section.append(node('p', 'dashboard-muted', 'Earlier results could not be loaded, so no change is shown. Refresh to try again.')); return heading;
             }
             if (trend.total === 1) {
-                section.append(node('p', '', 'This is the only submitted assessment so far. Another submitted assessment is needed to compare saved results and answer coverage.'));
+                section.append(node('p', '', trend.otherProfiles ? 'This is the only submitted assessment with this set of questions so far. Another submitted assessment with the same questions is needed to compare saved results and answer coverage.'
+                    : 'This is the only submitted assessment so far. Another submitted assessment is needed to compare saved results and answer coverage.'));
                 if (after !== null) section.append(node('p', 'dashboard-muted', 'Other saved assessments may not be loaded yet. Load more to include them.'));
                 return heading;
             }
@@ -641,7 +734,8 @@
                 line('Overall', previous, current);
                 current.domains.forEach((domain, position) => line(domain.title, previous.domains[position], domain));
                 table.append(head, body); section.append(table,
-                    node('p', 'dashboard-muted', 'Both saved results use the accepted profile and included question weights. Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown answers and unapproved N/A still contribute to the upper bound; no subset is re-scored.'));
+                    node('p', 'dashboard-muted', (trend.v2 ? 'Both saved results use the same set of questions and question weights.'
+                        : 'Both saved results use the accepted profile and included question weights.') + ' Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown answers and unapproved N/A still contribute to the upper bound; no subset is re-scored.'));
             }
             section.append(node('h4', '', 'Submitted assessments'));
             const list = node('ol', 'picture-trend-history');
@@ -657,17 +751,27 @@
                 'Showing ' + trend.order.length + ' of ' + trend.total + ' loaded submitted assessments, newest first.' + (after !== null ? ' Other saved assessments are not loaded yet and may be from any date. Load more to include them.' : '')));
             return heading;
         }
-        function gapSection(result) {
-            const gaps = topGaps(result, metadata), section = node('section', 'picture-top-gaps');
-            const heading = node('h3', '', gaps.length === GAP_LIMIT ? 'Your top three gaps' : 'Your top gaps');
+        // `unconfirmed` is null for the accepted profile; for v2 (#399) it lists
+        // the "I don't know" answers that miss the top five.
+        function gapSection(result, gaps, unconfirmed) {
+            const v2 = unconfirmed !== null && unconfirmed !== undefined;
+            const section = node('section', 'picture-top-gaps');
+            const heading = node('h3', '', v2 ? gaps.length === V2_GAP_LIMIT ? 'Your top five gaps' : 'Your top gaps'
+                : gaps.length === GAP_LIMIT ? 'Your top three gaps' : 'Your top gaps');
             heading.id = id + '-top-gaps'; heading.tabIndex = -1; section.setAttribute('aria-labelledby', heading.id); section.append(heading);
+            if (!gaps.length && v2) {
+                section.append(node('p', '', 'None of your answers show a gap to fix first.'));
+                return section;
+            }
             if (!gaps.length) {
                 section.append(node('p', '', 'You did not report any controls as not in place or partly in place.'));
                 if (result.unknown > 0) section.append(node('p', 'dashboard-muted', result.unknown + (result.unknown === 1 ? ' answer is' : ' answers are') +
                     ' still unknown or to confirm. Confirm ' + (result.unknown === 1 ? 'it' : 'them') + ' to check for gaps.'));
                 return section;
             }
-            section.append(node('p', 'dashboard-muted', 'Ranked from your saved answers. Multi-factor authentication, patching, backups and checking payment changes come first, because they help protect against common attacks on small businesses, such as stolen accounts, ransomware and invoice fraud. Then controls not in place before partly in place. This is a fixed order, not a risk assessment of your business.'));
+            section.append(node('p', 'dashboard-muted', v2
+                ? 'Start with the first gap below. Gaps are ordered by how much each question counts and how far your answer is from fully in place. "I don\'t know" counts as a gap. This is a No Fries planning list from your answers, not an official NCSC priority.'
+                : 'Start with the first gap below. Account sign-in checks, updates, backups and payment checks come first. The order is a guide based on your answers.'));
             const list = node('ol', 'picture-top-gaps-list');
             gaps.forEach(gap => {
                 const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
@@ -680,7 +784,21 @@
                 if (planGap && improvementSelection()) item.append(...gapPlanControls(gap));
                 list.append(item);
             });
-            section.append(list, helpPanel()); return section;
+            section.append(list);
+            if (v2 && unconfirmed.length) {
+                const confirm = node('section', 'picture-confirm-next');
+                const confirmHeading = node('h4', '', 'Confirm these next');
+                confirmHeading.id = id + '-confirm-next'; confirm.setAttribute('aria-labelledby', confirmHeading.id);
+                const confirmList = node('ul', 'picture-confirm-next-list');
+                unconfirmed.forEach(gap => {
+                    const item = node('li', '', gap.title); item.dataset.gapItem = gap.itemId; confirmList.append(item);
+                });
+                confirm.append(confirmHeading, node('p', 'dashboard-muted', 'You answered "I don\'t know" to ' +
+                    (unconfirmed.length === 1 ? 'this question' : 'these questions') + '. Find out what is in place, because ' +
+                    (unconfirmed.length === 1 ? 'it' : 'each one') + ' counts as a gap until you do.'), confirmList);
+                section.append(confirm);
+            }
+            section.append(helpPanel()); return section;
         }
         // Information needs are saved answers, not unanswered questions or a
         // risk ranking. Reuse the existing plan handoff without creating a plan.
@@ -691,7 +809,7 @@
             section.append(heading);
             const indexed = new Map(result.domains.flatMap(domain => domain.controls.flatMap(control =>
                 control.questions.map(question => [question.itemId, question]))));
-            const questions = metadata.questions.map(question => indexed.get(question.id))
+            const questions = selectedMetadata().questions.map(question => indexed.get(question.id))
                 .filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId));
             const unknown = questions.filter(question => question.responseOptionId === 'unknown').length;
             const pending = questions.length - unknown;
@@ -775,7 +893,7 @@
             handoff.append(node('summary', '', 'Copy or print a summary'));
             const label = node('label', '', 'Copy this summary into an email or document');
             const input = node('textarea', 'ncsc-textarea'); input.id = id + '-summary'; label.htmlFor = input.id;
-            input.readOnly = true; input.rows = 8; input.value = questionnaire.providerSummary(detail, metadata).text;
+            input.readOnly = true; input.rows = 8; input.value = questionnaire.providerSummary(detail, selectedMetadata()).text;
             // The field scrolls on screen, so paper gets the full text instead.
             const printed = node('pre', 'picture-summary-print', input.value); printed.setAttribute('aria-hidden', 'true');
             const status = node('p', 'dashboard-muted'); status.setAttribute('role', 'status');
@@ -785,7 +903,7 @@
             if (typeof questionnaire.boardSummary === 'function') {
                 const boardLabel = node('label', '', 'Summary for your board or insurer');
                 const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
-                board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, metadata).text;
+                board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, selectedMetadata()).text;
                 const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
                 const boardCopy = button('Copy board summary', () => questionnaire.copySummary(win, board, status));
                 boardCopy.classList.add('dashboard-button-secondary'); handoff.append(boardLabel, board, boardPrinted, boardCopy);
@@ -851,7 +969,9 @@
                 node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. It is not a performance score.'));
         }
         function renderResult(result) {
-            root.append(gapSection(result));
+            const profile = selectedMetadata(), v2 = v2Profile(profile);
+            displayedGaps = topGaps(result, profile);
+            root.append(gapSection(result, displayedGaps, v2 ? confirmNext(result, profile) : null));
             const metrics = node('div', 'picture-metrics');
             function metric(label, value, copyText, primary) {
                 const card = node('section', primary ? 'picture-metric picture-primary' : 'picture-metric');
@@ -862,7 +982,7 @@
             // A submitted result is read-only, so do not ask the customer to confirm answers here.
             const implementationMetric = questionnaire.enoughAnswersToEstimate(result)
                 ? metric('Reported implementation', result.attainment, rangeHelp, true)
-                : metric('Reported implementation', 'Not enough answers to estimate yet', 'Only ' + result.completed + ' of ' + result.total +
+                : metric('Reported implementation', 'Not enough answers to estimate yet, confirm your Unknowns first', result.unknown + ' answers still to confirm. Only ' + result.completed + ' of ' + result.total +
                     ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
                     (typeof options.openCyber === 'function' ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp, true);
             const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
@@ -895,7 +1015,7 @@
             const filterLabel = node('label', '', 'Filter follow-up by NCSC function');
             const filter = node('select'); filter.id = id + '-follow-up-domain'; filterLabel.htmlFor = filter.id;
             const allDomains = node('option', '', 'All functions'); allDomains.value = ''; filter.append(allDomains);
-            metadata.domains.forEach(domain => {
+            profile.domains.forEach(domain => {
                 const option = node('option', '', domain.title); option.value = domain.id; filter.append(option);
             });
             filter.value = '';
@@ -904,18 +1024,20 @@
             const filterStatus = node('p', 'picture-follow-up-status dashboard-muted', 'Showing all functions.');
             filterStatus.setAttribute('role', 'status'); filterStatus.setAttribute('aria-live', 'polite');
             filterToolbar.append(filterLabel, filter); follow.append(filterToolbar, filterHelp, filterStatus);
-            const domainByControl = new Map(metadata.controls.map(control => [control.id, control.domainId]));
-            const domainByQuestion = new Map(metadata.questions.map(question => [question.id, domainByControl.get(question.controlId)]));
+            const domainByControl = new Map(profile.controls.map(control => [control.id, control.domainId]));
+            const domainByQuestion = new Map(profile.questions.map(question => [question.id, domainByControl.get(question.controlId)]));
             const indexed = new Map(result.domains.flatMap(domain => domain.controls.flatMap(control =>
                 control.questions.map(question => [question.itemId, question]))));
             // These are display categories over the validated saved result,
             // in accepted profile order. They create no actions or new scores.
-            const ordered = metadata.questions.map(question => indexed.get(question.id));
+            const ordered = profile.questions.map(question => indexed.get(question.id));
             const categories = [
                 ['Unresolved answers', ordered.filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId)),
                     result.unknown ? result.unknown + ' answers still to confirm: check the position. Not applicable answers count as not yet met until a reviewer confirms them. Reviews are coming soon.'
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
-                ['Reported implementation gaps', ordered.filter(question => ['partial', 'no'].includes(question.responseOptionId)),
+                // v2 (#399): every answer short of full credit except "I don't know", which is unresolved above.
+                ['Reported implementation gaps', ordered.filter(question => v2 ? v2Shortfall(question.responseOptionId)
+                    : ['partial', 'no'].includes(question.responseOptionId)),
                     result.partial || result.no ? result.partial + ' partial and ' + result.no + ' absent implementations: review the relevant questions before agreeing improvements.'
                         : 'No saved answers report partial or absent implementation. This does not establish control effectiveness.']
             ];
@@ -982,7 +1104,7 @@
                 ? 'Unresolved answers not assessed.' : 'No unresolved answers in this saved assessment.'));
             filter.addEventListener('change', () => {
                 if (!currentFilter()) return;
-                const domain = metadata.domains.find(value => value.id === filter.value);
+                const domain = profile.domains.find(value => value.id === filter.value);
                 if (filter.value && !domain) return;
                 renderFilter(domain);
             });
@@ -994,13 +1116,16 @@
                 node('p', '', 'This is a self-reported gap assessment, not an audit, assurance opinion or certification. Reports and findings must be reviewed and linked before they can support evidence confidence.'));
             root.append(limits);
             const calculation = node('details', 'picture-calculation');
-            calculation.append(node('summary', '', 'How the implementation range is calculated'),
-                node('p', '', 'No Fries gives each question equal weight: Yes = 1, Partial = 0.5 and No = 0. Unknown, missing and unapproved N/A contribute 0 to the lower bound and 1 to the upper bound. Only a trusted approved exclusion can leave the denominator; that approval workflow is not available here.'),
-                node('p', '', 'This saved result: ' + result.lowerCreditUnits / 2 + '–' + result.upperCreditUnits / 2 + ' reported or possible credits ÷ ' + result.denominatorWeight + ' included question weights × 100 = ' + result.attainment + '. Percentages are rounded to one decimal place.'),
-                node('p', '', 'The overall result weights questions, not the five function percentages. Functions contain different numbers of questions. This is a No Fries implementation measure based on selected NCSC guidance, not an NCSC score or certification. Evidence and confidence do not increase this implementation measure.'));
+            calculation.append(node('summary', '', 'How the implementation range is calculated'), v2
+                // v2 (#399): weighted questions and graded credit, held in hundredths.
+                ? node('p', '', 'Each question has a weight of 1, 2 or 3. Your answer earns all, part or none of that weight: Yes, in place and checked earns all of it, Partly in place half, Sometimes but not written down or checked a quarter, and No nothing. The extra login method question earns part of its weight by method. I don\'t know, missing and unapproved Not applicable answers earn nothing in the lower figure and all of the weight in the upper figure.')
+                : node('p', '', 'No Fries gives each question equal weight: Yes = 1, Partial = 0.5 and No = 0. Unknown, missing and unapproved N/A contribute 0 to the lower bound and 1 to the upper bound. Only a trusted approved exclusion can leave the denominator; that approval workflow is not available here.'),
+                node('p', '', 'This saved result: ' + (v2 ? result.lowerCreditUnits / 100 : result.lowerCreditUnits / 2) + '–' + (v2 ? result.upperCreditUnits / 100 : result.upperCreditUnits / 2) + ' reported or possible credits ÷ ' + result.denominatorWeight + ' included question weights × 100 = ' + result.attainment + '. Percentages are rounded to one decimal place.'),
+                node('p', '', 'The overall result weights questions, not the five function percentages. Functions contain different numbers of questions. This is a No Fries implementation measure based on selected NCSC guidance, not an NCSC score or certification. Evidence and confidence do not increase this implementation measure.'),
+                ...(v2 ? [node('p', '', 'This is a No Fries planning score from your answers, not an official NCSC or CS-CMM rating.')] : []));
             root.append(calculation);
             root.append(sourceDetails());
-            const attribution = node('p', 'dashboard-muted', metadata.attribution);
+            const attribution = node('p', 'dashboard-muted', profile.attribution);
             const licence = node('a', '', 'CC BY 4.0'); licence.href = 'https://creativecommons.org/licenses/by/4.0/';
             attribution.append(licence); root.append(attribution);
         }
@@ -1020,7 +1145,7 @@
                 const response = firstPaint ? firstPaint.page : await call('list', { limit: 50, afterAssessmentId: append ? after : null }, token);
                 if (!response) return;
                 if (!Array.isArray(response.assessments) || response.assessments.some(row =>
-                    row.moduleId !== metadata.moduleId || !sameProfile(row.profileRef, metadata.profileRef))) throw new Error('picture_response_invalid');
+                    row.moduleId !== metadata.moduleId || !metadataFor(row.profileRef))) throw new Error('picture_response_invalid');
                 const combined = new Map((append ? rows : []).map(row => [row.assessmentId, row]));
                 response.assessments.forEach(row => combined.set(row.assessmentId, copy(row)));
                 rows = Array.from(combined.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId));
@@ -1055,7 +1180,7 @@
                 const response = same ? started : await call('read', assessmentId, token); if (!response) return;
                 const value = response.assessment;
                 if (!value || value.assessmentId !== assessmentId || value.moduleId !== metadata.moduleId ||
-                    !sameProfile(value.profileRef, metadata.profileRef)) throw new Error('picture_response_invalid');
+                    !metadataFor(value.profileRef)) throw new Error('picture_response_invalid');
                 detail = copy(value);
                 // A selection carried across authorised views may be outside the
                 // first page. Fetch it again, never reuse cached scores or assume
@@ -1081,7 +1206,7 @@
             if (readActions) {
                 const result = firstPaint && firstPaint.actions ? Promise.resolve(firstPaint.actions) : Promise.resolve().then(readActions);
                 result.then(value => {
-                    if (!live()) return; actions = actionSummary(value, metadata); placeActions();
+                    if (!live()) return; actions = actionSummary(value, metadata, profileMetadata); placeActions();
                 }, () => {});
             }
         }
@@ -1095,5 +1220,5 @@
         } else start(null);
         return controller;
     }
-    return Object.freeze({ mount, topGaps, actionSummary, preferredAssessmentId });
+    return Object.freeze({ mount, topGaps, confirmNext, actionSummary, preferredAssessmentId });
 }));

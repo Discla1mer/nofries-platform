@@ -97,11 +97,26 @@ function enabledContexts(env) {
     return ncscProfileV2Enabled(env) ? CONTEXTS : [ACCEPTED_NCSC_CONTEXT];
 }
 
+/** True when `frameworks` (entitlement or flag rows of `{ moduleId, profileId, version }`)
+ * name `profileRef`'s profile for this module.
+ */
+function listsNcscProfile(frameworks, profileRef) {
+    return frameworks.some(row => row.moduleId === MODULE_ID && row.profileId === profileRef.profileId &&
+        row.version === profileRef.profileVersion);
+}
+
+/** True when `frameworks` name a profile that is switched on. While the v2 flag is
+ * off this is exactly the accepted-profile check used before scoring v2.
+ */
+function listsEnabledNcscProfile(frameworks, env = process.env) {
+    return enabledContexts(env).some(candidate => listsNcscProfile(frameworks, candidate.profileRef));
+}
+
 // An answer id shared by two profiles must mean the same thing for applicability in both.
 ACCEPTED_NCSC_CONTEXT.profile.responseOptions.forEach(option => {
     const other = NCSC_V2_CONTEXT.profile.responseOptions.find(candidate => candidate.id === option.id);
     if (other && other.applicable !== option.applicable) throw new Error('NCSC profiles disagree on a shared answer');
 });
 
-module.exports = { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, knownNcscQuestionOptions, maximumNcscResponses, ncscProfileContext,
-    ncscProfileV2Enabled, readableNcscProfileContext };
+module.exports = { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, knownNcscQuestionOptions, listsEnabledNcscProfile, listsNcscProfile,
+    maximumNcscResponses, ncscProfileContext, ncscProfileV2Enabled, readableNcscProfileContext };
