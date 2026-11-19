@@ -1,0 +1,20 @@
+[
+{"route":"/","width":375,"title":"No Fries | Dashboard. Managed IT.","version":"4.14.0","violations":[],"incomplete":[{"id":"aria-prohibited-attr","nodes":2},{"id":"color-contrast","nodes":31}]},
+{"route":"/pricing.html","width":375,"title":"No Fries | Dashboard pricing","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":50}]},
+{"route":"/managed-it.html","width":375,"title":"No Fries Managed IT","version":"4.14.0","violations":[],"incomplete":[{"id":"aria-prohibited-attr","nodes":1},{"id":"color-contrast","nodes":10}]},
+{"route":"/contact.html","width":375,"title":"No Fries | Contact","version":"4.14.0","violations":[],"incomplete":[]},
+{"route":"/privacy.html","width":375,"title":"No Fries | Privacy notice","version":"4.14.0","violations":[],"incomplete":[]},
+{"route":"/sample-result.html","width":375,"title":"No Fries | Example result (fictional business)","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":39}]},
+{"route":"/try","width":375,"title":"Overview \u00b7 No Fries Dashboard","version":"4.14.0","violations":[],"incomplete":[]},
+{"route":"/roadmap.html","width":375,"title":"No Fries | Product roadmap","version":"4.14.0","violations":[],"incomplete":[]},
+{"route":"/","width":1280,"title":"No Fries | Dashboard. Managed IT.","version":"4.14.0","violations":[],"incomplete":[{"id":"aria-prohibited-attr","nodes":2},{"id":"color-contrast","nodes":32}]},
+{"route":"/pricing.html","width":1280,"title":"No Fries | Dashboard pricing","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":55}]},
+{"route":"/managed-it.html","width":1280,"title":"No Fries Managed IT","version":"4.14.0","violations":[],"incomplete":[{"id":"aria-prohibited-attr","nodes":1},{"id":"color-contrast","nodes":10}]},
+{"route":"/contact.html","width":1280,"title":"No Fries | Contact","version":"4.14.0","violations":[],"incomplete":[]},
+{"route":"/privacy.html","width":1280,"title":"No Fries | Privacy notice","version":"4.14.0","violations":[],"incomplete":[]},
+{"route":"/sample-result.html","width":1280,"title":"No Fries | Example result (fictional business)","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":47}]},
+{"route":"/try","width":1280,"title":"Overview \u00b7 No Fries Dashboard","version":"4.14.0","violations":[],"incomplete":[]},
+{"route":"/roadmap.html","width":1280,"title":"No Fries | Product roadmap","version":"4.14.0","violations":[],"incomplete":[]},
+{"route":"/try#results","width":375,"title":"Cyber Security \u00b7 No Fries Dashboard","version":"4.14.0","violations":[],"incomplete":[]},
+{"route":"/try#results","width":1280,"title":"Cyber Security \u00b7 No Fries Dashboard","version":"4.14.0","violations":[],"incomplete":[]}
+]

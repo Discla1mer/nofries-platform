@@ -1,0 +1,10 @@
+[
+{"route":"/board.html","width":375,"title":"No Fries | Board questions","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":25}]},
+{"route":"/insurance.html","width":375,"title":"No Fries | Insurance renewal","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":25}]},
+{"route":"/invoice-scams.html","width":375,"title":"No Fries | Invoice and bank-detail scams","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":25}]},
+{"route":"/supplier-questionnaire.html","width":375,"title":"No Fries | Customer questionnaires","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":25}]},
+{"route":"/board.html","width":1280,"title":"No Fries | Board questions","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":30}]},
+{"route":"/insurance.html","width":1280,"title":"No Fries | Insurance renewal","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":30}]},
+{"route":"/invoice-scams.html","width":1280,"title":"No Fries | Invoice and bank-detail scams","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":30}]},
+{"route":"/supplier-questionnaire.html","width":1280,"title":"No Fries | Customer questionnaires","version":"4.14.0","violations":[],"incomplete":[{"id":"color-contrast","nodes":30}]}
+]
