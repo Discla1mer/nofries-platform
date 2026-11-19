@@ -32,9 +32,12 @@ function command(expectedRevision, payload) {
 
 async function checkDenied(call, profile, id, expectedStatuses) {
     const p = paths(profile, id);
+    const response = profile.profileId === profiles[0].profileId
+        ? { itemId: 'PR.DS-11-Q1', optionId: 'partial', rationale: null }
+        : { itemId: 'A.8.13-Q1', optionId: 'partly_in_place', rationale: null };
     const requests = [
         ['get', p.collection], ['post', p.collection, { assessmentId: id, ...command(null, { scopePopulation: { description: 'Synthetic office' } }) }],
-        ['get', p.detail], ['post', p.save, command(0, { responses: [] })], ['post', p.submit, command(0, {})]
+        ['get', p.detail], ['post', p.save, command(0, { responses: [response] })], ['post', p.submit, command(0, {})]
     ];
     for (const [method, path, body] of requests) {
         const result = await call(method, path, body);

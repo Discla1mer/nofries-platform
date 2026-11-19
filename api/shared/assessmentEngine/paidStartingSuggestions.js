@@ -2,7 +2,7 @@
 
 const { isDeepStrictEqual } = require('node:util');
 const { MODULE_ID } = require('./ncscAssessmentEvaluator');
-const { ACCEPTED_NCSC_CONTEXT, listsNcscProfile } = require('./ncscProfileSet');
+const { listsNcscProfile } = require('./ncscProfileSet');
 const { createNistNcscCrosswalk } = require('./nistNcscCrosswalk');
 const { validateNcscSupportingRecords, hashNcscRecord } = require('../assessmentLifecycle/ncscAssessmentSubmission');
 
@@ -30,13 +30,12 @@ const ISO_LINKS = [
         furtherCheck: 'Check when you last recovered the information this assessment covers and what the test showed.' }
 ];
 let nistCrosswalk;
-function startingLinks(profileRef) {
+function startingLinks(profileRef, crosswalk) {
     if (isDeepStrictEqual(profileRef, ISO_PROFILE_REF)) {
         return ISO_LINKS.map(link => ({ ...link, suggestedOptionId: 'partly_in_place' }));
     }
-    nistCrosswalk ??= createNistNcscCrosswalk();
-    if (!isDeepStrictEqual(profileRef, nistCrosswalk.toProfileRef)) return [];
-    return nistCrosswalk.records.filter(row => NIST_LINKS.has(row.id) && row.relationship === 'partial')
+    if (!isDeepStrictEqual(profileRef, crosswalk.toProfileRef)) return [];
+    return crosswalk.records.filter(row => NIST_LINKS.has(row.id) && row.relationship === 'partial')
         .map(row => ({ sourceQuestionId: row.source.questionId, targetQuestionId: row.target.questionId,
             suggestedOptionId: 'partial', furtherCheck: row.omittedTargetScope.join(' ') }));
 }
@@ -52,7 +51,9 @@ function paidStartingSuggestions({ access, target, selectedSource, retained }, e
         !listsNcscProfile(access.frameworkFlags, target.profileRef)) return [];
     if (!selectedSource || !retained || !target.sourceScopePopulationSha256 ||
         target.sourceScopePopulationSha256 !== selectedSource.scopePopulationSha256) return [];
-    const links = startingLinks(target.profileRef);
+    // Both sets of links were reviewed against this crosswalk’s pinned NCSC publication.
+    nistCrosswalk ??= createNistNcscCrosswalk();
+    const links = startingLinks(target.profileRef, nistCrosswalk);
     if (!links.length) return [];
     const envelope = validateNcscSupportingRecords(retained.envelope);
     if (envelope.tenantId !== access.tenantId || envelope.organisationId !== access.organisationId ||
@@ -60,7 +61,7 @@ function paidStartingSuggestions({ access, target, selectedSource, retained }, e
         envelope.assessmentId !== selectedSource.assessmentId || envelope.revision !== selectedSource.revision ||
         envelope.scopePopulation.sha256 !== selectedSource.scopePopulationSha256 ||
         envelope.state.status !== 'submitted' || !envelope.submission ||
-        !isDeepStrictEqual(envelope.state.profileRef, ACCEPTED_NCSC_CONTEXT.profileRef) ||
+        !isDeepStrictEqual(envelope.state.profileRef, nistCrosswalk.fromProfileRef) ||
         retained.revisionSha256 !== selectedSource.revisionSha256 ||
         hashNcscRecord('version', envelope) !== selectedSource.revisionSha256) return [];
 

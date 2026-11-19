@@ -1,28 +1,24 @@
 {
-  "label": "iso",
-  "questionCount": 116,
-  "profile": "nf-iso-27001-2022-readiness",
-  "digest": "1971ad65405f1c20d8e13a65a26a7b40e9ff48b63505db4f0336d32d64fae73d",
-  "log": [
+  "requests": [
     {
-      "path": "save",
+      "action": "save",
       "revision": 1,
       "answers": 1
     },
     {
-      "path": "save",
+      "action": "save",
       "revision": 2,
       "answers": 116
     },
     {
-      "path": "submit",
+      "action": "submit",
       "revision": 3,
       "answers": 116
     }
   ],
-  "axe": [
+  "observations": [
     {
-      "stage": "questionnaire",
+      "stage": "form",
       "width": 375,
       "contentWidth": 375,
       "violations": []
