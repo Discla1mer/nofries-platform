@@ -12,6 +12,19 @@ A request is accepted only when all of these hold:
 
 There is no per-customer approval record, locator or publication step.
 
+### Accepted risk: the admin can act on any customer
+
+By design, the sole allowlisted staff admin can look up, suspend, restore, reset and delete any customer account. No second person approves, and there is no per-customer grant. This is an owner decision (19 Nov 2026; security PR #474 was closed as by design). Every approval is self-issued by the acting admin, and its records say so: `approvalAuthority: "self_issued_sole_admin"` (suspend/restore approval and action records; the reset/delete `approval.json`). The field is a label only and grants nothing. Records written before it was added do not have it.
+
+The protections that remain:
+
+- Only the workforce staff sign-in with the subject in both `NOFRIES_ALLOWED_SUBJECTS` and `NOFRIES_ADMIN_SUBJECTS`, a current native operator session, same-origin requests and the request budget.
+- Each action needs its own approval: the admin types the exact customer email (and `RESET` or `DELETE` for those actions).
+- An approval lasts 15 minutes, is bound to the admin, their browser session, the exact customer and the one action, and is used once.
+- Suspend/restore approvals are also bound to the membership revision that was read. Reset/delete approvals are bound to the account id, store and sign-in subject seen at approval.
+- Every approval, attempt, outcome and refusal is written create-only to the audit container. If the approval or attempt record cannot be written, nothing runs.
+- A staff admin cannot suspend their own membership. Restore needs a matching recorded staff suspension.
+
 ## Turn it on
 
 Set these App Service settings (exact values):
