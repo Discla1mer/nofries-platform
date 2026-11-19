@@ -331,13 +331,17 @@ async function resumeUi(h, options = {}) {
 }
 
 describe('saved assessment list pagination and resume', () => {
-    test('an older assessment saved again leads the loaded list without changing server pagination', async () => {
+    test.each(['saved', 'submitted'])('D-037 an older assessment %s again leads the loaded list', async action => {
         const h = await backend();
         await h.execute(createCommand('assessment-z', 'create-a'));
         h.clock.advance(1000);
         await h.execute(createCommand('assessment-b', 'create-b'));
         h.clock.advance(1000);
-        await h.execute(saveCommand('assessment-z', 0, 'save-a', allResponses().slice(0, 1)));
+        await h.execute(saveCommand('assessment-z', 0, 'save-a', allResponses()));
+        if (action === 'submitted') {
+            h.clock.advance(1000);
+            await h.execute(submitCommand('assessment-z', 1, 'submit-a'));
+        }
         const ui = mountUi(h);
         try {
             await until(() => savedActions(ui).length === 2);
