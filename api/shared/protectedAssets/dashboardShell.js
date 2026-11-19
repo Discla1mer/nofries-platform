@@ -385,7 +385,9 @@
             informationStamp = stamp; showInformationTime();
             stamp.hidden = true;
             footer.append(stamp,
-                element('p', '', 'Assessment indicators are not audit, assurance or certification.'));
+                element('p', '', current.key === 'cyber_security' && options.paidFrameworks
+                    ? 'Only an accredited certification body can provide certification.'
+                    : 'Assessment indicators are not audit, assurance or certification.'));
             main.append(footer);
         }
         // People read local time; keep the exact instant in the datetime attribute.
@@ -508,6 +510,87 @@
         }
         function renderCyber(initialAssessmentId) {
             const childRoot = element('div', 'dashboard-cyber-workspace'); main.append(childRoot);
+            if (options.paidFrameworks && initialAssessmentId === undefined && !validCyberLocation(cyberLocation)) {
+                renderFrameworkPicker(childRoot);
+            } else mountFreeCyber(childRoot, initialAssessmentId);
+        }
+        function backToFrameworkPicker() {
+            function showPicker() {
+                if (child) { child.destroy(); child = null; }
+                cyberLocation = null;
+                if (managedHistory && committedEntry) {
+                    committedEntry.location = null;
+                    win.history.replaceState(stateWith(committedEntry), '', committedEntry.hash);
+                }
+                navigate('cyber-security', true);
+            }
+            if (child) child.requestLeave(showPicker);
+            else showPicker();
+        }
+        function renderFrameworkPicker(root) {
+            const heading = element('h2', '', 'Choose an assessment');
+            const cards = element('div', 'dashboard-service-cards');
+            const free = panel('NCSC cyber security check', 'Check the basics and see what your organisation can improve first.');
+            free.append(badge('Free'), button('Open NCSC check', function () {
+                root.replaceChildren();
+                const back = button('Back to assessment choices', backToFrameworkPicker, 'dashboard-text-button');
+                const workspace = element('div');
+                root.append(back, workspace);
+                mountFreeCyber(workspace);
+                back.focus();
+            }));
+            cards.append(free);
+            let hasLocked = false;
+            for (const ref of registry.paidFrameworks) {
+                const included = options.paidFrameworks.some(row => registry.sameFramework(row, ref));
+                const card = panel(ref.label, ref.description);
+                card.append(badge(included ? 'Included' : 'Locked'));
+                if (included) {
+                    card.append(button('Open ' + ref.label, function () { renderPaidCollection(root, ref); }));
+                } else hasLocked = true;
+                cards.append(card);
+            }
+            root.replaceChildren(heading, cards);
+            if (hasLocked) {
+                const contact = element('a', 'dashboard-button dashboard-button-secondary dashboard-framework-contact', 'Ask No Fries about the paid dashboard');
+                contact.href = '/contact.html';
+                root.append(contact);
+            }
+        }
+        function renderPaidCollection(root, ref) {
+            const back = button('Back to assessment choices', backToFrameworkPicker, 'dashboard-text-button');
+            const heading = element('h2', '', ref.label); heading.tabIndex = -1;
+            const list = element('ul', 'ncsc-assessment-list'), status = element('p');
+            status.setAttribute('role', 'status');
+            const more = button('Load more assessments', function () { load(cursor); }, 'dashboard-button dashboard-button-secondary');
+            more.hidden = true;
+            root.replaceChildren(back, heading, status, list, more); heading.focus();
+            const states = { created: 'Started', 'in-progress': 'In progress', submitted: 'Submitted', reviewed: 'Reviewed', archived: 'Archived' };
+            let disposed = false, cursor = null;
+            child = { destroy: function () { disposed = true; }, requestLeave: function (commit) { commit(); return Promise.resolve(true); } };
+            async function load(after) {
+                more.disabled = true; status.textContent = 'Loading assessments…';
+                try {
+                    const page = await options.readPaidFramework(ref, after);
+                    if (disposed) return;
+                    for (const row of page.assessments) {
+                        const item = element('li', 'ncsc-assessment-card');
+                        item.append(element('strong', '', states[row.status]), element('p', '', 'Last saved ' + row.updatedAt.slice(0, 10) + ' UTC'),
+                            element('p', 'ncsc-preserve-text', 'Assessment reference: ' + row.assessmentId));
+                        list.append(item);
+                    }
+                    cursor = page.nextAfterAssessmentId;
+                    more.hidden = cursor === null; more.disabled = false;
+                    status.textContent = (list.children.length ? '' : 'No saved assessments yet. ') + 'The questionnaire is currently unavailable.';
+                } catch (_) {
+                    if (disposed) return;
+                    list.replaceChildren(); more.hidden = true;
+                    status.textContent = 'This assessment is unavailable. Return to the assessment choices to try again.';
+                }
+            }
+            load(null);
+        }
+        function mountFreeCyber(childRoot, initialAssessmentId) {
             try {
                 const presentation = { generation: generation };
                 if (initialAssessmentId === undefined && validCyberLocation(cyberLocation)) {

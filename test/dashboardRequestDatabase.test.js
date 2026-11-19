@@ -1388,6 +1388,49 @@ describe('configured NCSC host presentation remains authority-bound', () => {
         frozen(result); expectHostSettled(f, true);
         expect(f.options.resolveSubmissionQuota).not.toHaveBeenCalled();
     });
+    describe('paid assessment choices', () => {
+        const original = process.env.NOFRIES_PAID_FRAMEWORKS_ENABLED;
+        const [nist, iso] = require('../api/shared/protectedAssets/dashboardRegistry').paidFrameworks
+            .map(({ moduleId, profileId, version }) => ({ moduleId, profileId, version }));
+        afterEach(() => {
+            if (original === undefined) delete process.env.NOFRIES_PAID_FRAMEWORKS_ENABLED;
+            else process.env.NOFRIES_PAID_FRAMEWORKS_ENABLED = original;
+        });
+        function account(grants, flags) {
+            const f = configured(), product = f.snapshot.entitlementState.grants.find(g => g.grantId === 'synthetic-product');
+            product.frameworks.push(...grants); f.snapshot.flags.frameworks.push(...flags);
+            return f;
+        }
+        test.each([undefined, 'TRUE', '1', ' true', 'false'])('off (%s) omits discovery even with both grants', async value => {
+            if (value === undefined) delete process.env.NOFRIES_PAID_FRAMEWORKS_ENABLED;
+            else process.env.NOFRIES_PAID_FRAMEWORKS_ENABLED = value;
+            const result = await hostRead(account([nist, iso], [nist, iso]), 'modules/cyber_security');
+            expect(result.status).toBe(200);
+            expect(result.body).not.toHaveProperty('paidFrameworks');
+        });
+        test.each([[[], [], []], [[nist], [nist, iso], [nist]], [[nist, iso], [iso], [iso]],
+            [[nist, iso], [nist, iso], [nist, iso]], [[nist], [{ ...nist, version: 'other-version' }], []],
+            [[nist], [{ ...nist, moduleId: 'ai_governance' }], []]])('only the exact purchased and activated tuples appear', async (grants, flags, expected) => {
+            process.env.NOFRIES_PAID_FRAMEWORKS_ENABLED = 'true';
+            const f = account(grants, flags), result = await hostRead(f, 'modules/cyber_security');
+            expect(result.status).toBe(200); expect(result.body.paidFrameworks).toEqual(expected);
+            expect(result.body.admissionGranted).toBe(false);
+            expect((await hostRead(f)).body).not.toHaveProperty('paidFrameworks');
+        });
+        test('revalidates a change of purchased version at the closing witness', async () => {
+            process.env.NOFRIES_PAID_FRAMEWORKS_ENABLED = 'true';
+            const f = account([nist], [nist, iso]);
+            const product = f.snapshot.entitlementState.grants.find(g => g.grantId === 'synthetic-product');
+            product.validUntil = HOST_END;
+            const next = { ...clone(product), grantId: 'successor', validFrom: HOST_END, validUntil: END };
+            next.frameworks = next.frameworks.filter(row => row.profileId !== nist.profileId).concat([iso]);
+            f.snapshot.entitlementState.grants.push(next);
+            let decisions = 0;
+            mockAfterHostDecision = () => { if (++decisions === 2) f.state.at = HOST_END; };
+            await expectFailure(() => hostRead(f, 'modules/cyber_security'), DashboardPersistenceError, 'unavailable', 503);
+            expect(decisions).toBe(2);
+        });
+    });
     test('scoring v2 (#399): v2 display metadata is added only when NOFRIES_NCSC_PROFILE_V2 is exactly true', async () => {
         const original = process.env.NOFRIES_NCSC_PROFILE_V2;
         const read = async value => {

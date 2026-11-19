@@ -937,13 +937,22 @@ function hostProjectionAt(frame, at, configured = true) {
         const entitled = service(item.key), enabled = entitled && frame.flags.enabled['service:' + item.key] === true;
         return { key: item.key, state: !entitled ? 'not_included' : !enabled ? 'disabled' : 'setup_required', operational: false };
     }) : [];
+    // Display only. Re-evaluate the exact current grant and activation at each
+    // authority witness, including when the product changes during the read.
+    const paidFrameworks = presentationMode !== null && process.env.NOFRIES_PAID_FRAMEWORKS_ENABLED === 'true'
+        ? registry.paidFrameworks.filter(ref => product.frameworks.some(row => registry.sameFramework(ref, row)) &&
+            frame.flags.frameworks.some(row => registry.sameFramework(ref, row)))
+            .map(({ moduleId, profileId, version }) => ({ moduleId, profileId, version })) : null;
     return { outcome: 'succeeded', vector: { subscription: !assets && selected === null
         ? product.code === 'dashboard_govern' ? 'Govern' : 'Score' : null,
-        jobTitle: !assets && selected === null ? frame.jobTitle : null, modules: included, services, presentationMode } };
+        jobTitle: !assets && selected === null ? frame.jobTitle : null, modules: included, services, presentationMode, paidFrameworks } };
 }
 function sameHostVector(left, right) {
     if (left === null || right === null) return left === right;
     return left.subscription === right.subscription && left.jobTitle === right.jobTitle &&
+        (left.paidFrameworks === right.paidFrameworks || left.paidFrameworks !== null && right.paidFrameworks !== null &&
+            left.paidFrameworks.length === right.paidFrameworks.length &&
+            left.paidFrameworks.every((ref, i) => registry.sameFramework(ref, right.paidFrameworks[i]))) &&
         left.presentationMode === right.presentationMode && left.modules.length === right.modules.length &&
         left.modules.every((item, i) => item.key === right.modules[i].key && item.state === right.modules[i].state) &&
         left.services.length === right.services.length && left.services.every((item, i) =>
@@ -951,9 +960,9 @@ function sameHostVector(left, right) {
 }
 function bufferedHostVector(resource, buffered) {
     if (buffered.outcome === 'denied') return null;
-    if (!resource.requiresGeneration) return { subscription: null, jobTitle: null, modules: [], services: [], presentationMode: null };
+    if (!resource.requiresGeneration) return { subscription: null, jobTitle: null, modules: [], services: [], presentationMode: null, paidFrameworks: null };
     const body = buffered.response.body;
-    return { subscription: resource.moduleKey === null ? body.subscription : null,
+    return { paidFrameworks: body.paidFrameworks ?? null, subscription: resource.moduleKey === null ? body.subscription : null,
         jobTitle: resource.moduleKey === null ? body.currentUser?.jobTitle ?? null : null, presentationMode: body.presentationMode ?? null,
         modules: (resource.moduleKey === null ? body.modules : [body.module]).map(item => ({ key: item.key, state: item.state })),
         services: body.services.map(item => ({ key: item.key, state: item.state, operational: item.operational })) };
@@ -1079,6 +1088,7 @@ async function bufferedHost(inv, operation, facts) {
             if (['cyber_security', 'improvement_plan'].includes(item.key) && expected.state === 'ready') item.state = 'ready';
         }
         if (projected.vector.presentationMode !== null) {
+            if (projected.vector.paidFrameworks !== null) body.paidFrameworks = projected.vector.paidFrameworks;
             body.metadata = createNcscQuestionnaireMetadata();
             body.presentationMode = projected.vector.presentationMode;
             // Scoring v2 (#399): display metadata for retained 2026-11-18.1
