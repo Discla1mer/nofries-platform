@@ -791,7 +791,8 @@
             copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
             // #441: the same answers, written for a board or insurer.
             if (typeof questionnaire.boardSummary === 'function') {
-                handoff.append(gated(() => {
+                const boardExportGate = options.boardExportGate || (content => content());
+                handoff.append(boardExportGate(() => {
                     const boardBlock = node('div', 'picture-board-summary');
                     const boardLabel = node('label', '', 'Summary for your board or insurer');
                     const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
