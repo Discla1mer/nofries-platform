@@ -104,6 +104,7 @@ const queueCapabilityHeader = 'X-NoFries-Dashboard-Capabilities';
 const queueCapabilityRequests = [
     { name: 'old client without header', raw: [], advertised: false },
     { name: 'account label capability', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1'], advertised: true, label: true },
+    { name: 'account identity capability', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1 contact-request-v1 account-identity-v1'], advertised: true, label: true, identity: true },
     { name: 'exact capability', raw: [queueCapabilityHeader, 'work-queue-v1'], advertised: true }
 ];
 const otherQueueCapabilityRequests = [
@@ -115,6 +116,8 @@ const otherQueueCapabilityRequests = [
     { name: 'comma-combined values', raw: [queueCapabilityHeader, 'work-queue-v1, work-queue-v1'], advertised: false },
     { name: 'combined with unknown capability', raw: [queueCapabilityHeader, 'work-queue-v1, unknown'], advertised: false },
     { name: 'unknown version', raw: [queueCapabilityHeader, 'work-queue-v2'], advertised: false },
+    { name: 'identity without contact token', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1 account-identity-v1'], advertised: false },
+    { name: 'identity token reordered', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1 account-identity-v1 contact-request-v1'], advertised: false },
     { name: 'value case changed', raw: [queueCapabilityHeader, 'WORK-QUEUE-V1'], advertised: false },
     { name: 'leading whitespace', raw: [queueCapabilityHeader, ' work-queue-v1'], advertised: false },
     { name: 'trailing whitespace', raw: [queueCapabilityHeader, 'work-queue-v1 '], advertised: false },
@@ -133,7 +136,7 @@ test.each(queueCapabilityCases)
 ('session capability preserves old wire shape unless negotiated ($enabled, $provider, $accountType, $header)', async ({ enabled, provider, accountType, request: capability }) => {
     const h = fixture();
     if (enabled) h.options.improvementEnabled = true;
-    const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', bindingId: id(90), scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
+    const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', accountName: 'Synthetic Customer', bindingId: id(90), scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
         ...(accountType ? { accountType } : {}) }));
     h.options.customer.resolveActivationBinding = binding;
     h.options.externalCustomer.resolveActivationBinding = binding;
@@ -169,13 +172,14 @@ test.each(queueCapabilityCases)
     expect(response.body).toEqual({ schemaVersion: 1, authenticated: true,
         purpose: provider === 'staff' ? 'operator_dashboard' : 'customer',
         expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90),
-        ...(accountType ? { accountType } : {}), ...(capability.label && provider !== 'staff' ? { accountLabel: 'synthetic@example.test' } : {}), ...(advertised ? { workQueueAvailable: true } : {}) });
+        ...(accountType ? { accountType } : {}), ...(capability.label && provider !== 'staff' ? { accountLabel: 'synthetic@example.test' } : {}),
+        ...(capability.identity && provider !== 'staff' ? { accountName: 'Synthetic Customer' } : {}), ...(advertised ? { workQueueAvailable: true } : {}) });
     expect(binding).toHaveBeenCalledTimes(provider === 'staff' ? 0 : 1);
     expect(readSession).toHaveBeenCalledTimes(1);
     // A previously advertised capability does not survive lost authentication.
     h.store.sessions.clear();
     const denied = await host.handleRequest(request());
-    expect(denied.status).toBe(401); expect(denied.body).not.toHaveProperty('workQueueAvailable'); expect(denied.body).not.toHaveProperty('accountLabel');
+    expect(denied.status).toBe(401); expect(denied.body).not.toHaveProperty('workQueueAvailable'); expect(denied.body).not.toHaveProperty('accountLabel'); expect(denied.body).not.toHaveProperty('accountName');
     expect(readSession).toHaveBeenCalledTimes(1);
     expect(binding).toHaveBeenCalledTimes(provider === 'staff' ? 0 : 1);
 });
@@ -187,7 +191,8 @@ const contactCapabilityRequests = [
     { name: 'old client without header', raw: [], queue: false, label: false, contact: false },
     { name: 'queue only', raw: [queueCapabilityHeader, 'work-queue-v1'], queue: true, label: false, contact: false },
     { name: 'queue and label', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1'], queue: true, label: true, contact: false },
-    { name: 'current client', raw: [queueCapabilityHeader, contactCapability], queue: true, label: true, contact: true },
+    { name: 'contact client', raw: [queueCapabilityHeader, contactCapability], queue: true, label: true, contact: true },
+    { name: 'current client', raw: [queueCapabilityHeader, contactCapability + ' account-identity-v1'], queue: true, label: true, contact: true, identity: true },
     { name: 'contact token alone', raw: [queueCapabilityHeader, 'contact-request-v1'], queue: false, label: false, contact: false },
     { name: 'reordered tokens', raw: [queueCapabilityHeader, 'contact-request-v1 work-queue-v1 account-label-v1'], queue: false, label: false, contact: false },
     { name: 'duplicate current value', raw: [queueCapabilityHeader, contactCapability, queueCapabilityHeader, contactCapability], queue: false, label: false, contact: false },
@@ -202,7 +207,7 @@ test.each(contactCapabilityCases)
     const h = fixture();
     h.options.improvementEnabled = true;
     if (enabled) h.options.contactRequestsEnabled = true;
-    const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', bindingId: id(90), scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
+    const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', accountName: 'Synthetic Customer', bindingId: id(90), scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
         ...(accountType ? { accountType } : {}) }));
     h.options.customer.resolveActivationBinding = binding;
     h.options.externalCustomer.resolveActivationBinding = binding;
@@ -234,11 +239,12 @@ test.each(contactCapabilityCases)
         purpose: customer ? 'customer' : 'operator_dashboard',
         expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90),
         ...(accountType ? { accountType } : {}), ...(capability.label && customer ? { accountLabel: 'synthetic@example.test' } : {}),
+        ...(capability.identity && customer ? { accountName: 'Synthetic Customer' } : {}),
         ...(capability.queue && accountType === 'consultant' ? { workQueueAvailable: true } : {}),
         ...(enabled && capability.contact && customer ? { contactRequestsAvailable: true } : {}) });
     h.store.sessions.clear();
     const denied = await host.handleRequest(request());
-    expect(denied.status).toBe(401); expect(denied.body).not.toHaveProperty('contactRequestsAvailable');
+    expect(denied.status).toBe(401); expect(denied.body).not.toHaveProperty('contactRequestsAvailable'); expect(denied.body).not.toHaveProperty('accountName');
 });
 
 test('direct dashboard composer rejects an environment secret accessor without invoking it', () => {

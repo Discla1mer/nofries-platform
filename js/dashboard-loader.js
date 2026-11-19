@@ -69,6 +69,40 @@
         setAccountMenuOpen(false);
         accountToggle.focus();
     });
+    // Name and email stay visible beside Account. The menu holds Switch account.
+    function renderAccountIdentity(cycle) {
+        if (!accountMenu) return;
+        const email = cycle.session && typeof cycle.session.accountLabel === 'string' ? cycle.session.accountLabel : '';
+        const rawName = cycle.session && typeof cycle.session.accountName === 'string' ? cycle.session.accountName : '';
+        const name = rawName && (!email || rawName.toLocaleLowerCase() !== email.toLocaleLowerCase()) ? rawName : '';
+        let identity = document.getElementById('dashboardAccountIdentity');
+        if (!email && !name) {
+            if (identity) identity.remove();
+            return;
+        }
+        if (!identity) {
+            identity = document.createElement('p');
+            identity.id = 'dashboardAccountIdentity';
+            identity.className = 'dashboard-account-identity';
+            accountMenu.prepend(identity);
+        }
+        const label = document.createElement('span');
+        label.className = 'dashboard-account-identity-label';
+        label.textContent = 'Signed in as';
+        const nodes = [label];
+        if (name) {
+            const strong = document.createElement('strong');
+            strong.textContent = name;
+            nodes.push(strong);
+        }
+        if (email) {
+            const address = document.createElement('span');
+            address.className = 'dashboard-account-identity-email';
+            address.textContent = email;
+            nodes.push(address);
+        }
+        identity.replaceChildren.apply(identity, nodes);
+    }
     const directorySearch = document.getElementById('dashboardOrganisationSearch');
     const directoryStatus = document.getElementById('dashboardOrganisationStatus');
     const directorySearchControls = document.getElementById('dashboardOrganisationSearchControls');
@@ -367,7 +401,7 @@
         elements.signOut.disabled = state === 'loading';
         if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
         if (emailSettings) emailSettings.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
-        if (accountToggle) accountToggle.textContent = cycle.session?.accountLabel ? 'Account: ' + cycle.session.accountLabel : 'Account';
+        if (cycle.session || state === 'unauthenticated' || state === 'expired') renderAccountIdentity(cycle);
         if (accountMenu) {
             accountMenu.hidden = elements.signOut.hidden;
             if (accountMenu.hidden) setAccountMenuOpen(false);
@@ -400,12 +434,14 @@
     function session(value) {
         if (!fields(value, ['schemaVersion', 'authenticated', 'purpose', 'expiresAt', 'generation', 'selectedBindingId',
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountLabel') ? ['accountLabel'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountName') ? ['accountName'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsAvailable') ? ['contactRequestsAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
             Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
+            Object.prototype.hasOwnProperty.call(value, 'accountName') && (value.purpose !== 'customer' || typeof value.accountName !== 'string' || !value.accountName.trim() || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountName)) ||
             value.schemaVersion !== 1 || value.authenticated !== true || !['operator_dashboard', 'customer'].includes(value.purpose) ||
             Object.prototype.hasOwnProperty.call(value, 'activationAvailable') && (value.activationAvailable !== true || value.purpose !== 'operator_dashboard') ||
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
@@ -421,10 +457,11 @@
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
             ...(value.contactRequestsAvailable === true ? { contactRequestsAvailable: true } : {}),
             ...(value.accountType ? { accountType: value.accountType } : {}),
-            ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}) });
+            ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}),
+            ...(value.accountName ? { accountName: value.accountName } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsAvailable', 'accountType', 'accountLabel']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsAvailable', 'accountType', 'accountLabel', 'accountName']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -530,7 +567,7 @@
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 account-identity-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;

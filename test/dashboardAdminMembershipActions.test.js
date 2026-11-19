@@ -91,6 +91,23 @@ test.each(['suspend', 'restore', 'approve-suspend', 'approve-restore'])('%s HTTP
         expect(execute).toHaveBeenCalledTimes(mode === 'allowed' ? 1 : 0);
     } } finally { warning.mockRestore(); }
 });
+test('every approval and action record states the approval is self-issued by the acting staff admin', async () => {
+    const h = fixture(); delete h.config.readApprovedAction;
+    const input = h.input(); delete input.operationId;
+    const approved = await h.run('approve-suspend', input);
+    await h.run('suspend', { ...input, operationId: approved.operationId });
+    const prefix = `dashboard-admin-account-actions/${approved.operationId}/`;
+    for (const name of ['approval-attempt', 'approval', 'approval-terminal', 'attempt', 'terminal'])
+        expect(h.state.rows.get(prefix + name + '.json').approvalAuthority).toBe('self_issued_sole_admin');
+    // The record stays bound to the acting admin: the field adds no authority.
+    expect(h.state.rows.get(prefix + 'approval.json').grant.operatorSubjectKey).toBe(h.state.rows.get(prefix + 'terminal.json').actorSubjectKey);
+});
+test('records written before approvalAuthority existed are still accepted for restore', async () => {
+    const h = fixture();
+    await h.run('suspend');
+    for (const row of h.state.rows.values()) delete row.approvalAuthority;
+    await h.run('restore'); expect(h.state.committed).toBe(2);
+});
 test('built-in approvals are audited, session-bound, single-operation and last fifteen minutes', async () => {
     const h = fixture(); delete h.config.readApprovedAction;
     const input = h.input(); delete input.operationId;
@@ -119,7 +136,7 @@ test.each(['operation', 'session', 'duration', 'action', 'authority'])('executio
     });
     await expect(h.run('suspend')).rejects.toMatchObject({ statusCode: 403 }); expect(h.state.committed).toBe(0);
 });
-test.each(['no staff suspension', 'unknown later change', 'malformed audit', 'wrong native receipt'])('restore refuses %s', async mode => {
+test.each(['no staff suspension', 'unknown later change', 'malformed audit', 'wrong native receipt', 'other approval authority'])('restore refuses %s', async mode => {
     const h = fixture();
     if (mode === 'no staff suspension') h.state.snapshot.membershipState.memberships[0].status = 'suspended';
     else {
@@ -127,6 +144,7 @@ test.each(['no staff suspension', 'unknown later change', 'malformed audit', 'wr
         if (mode === 'unknown later change') { h.state.snapshot = clone(h.state.snapshot); h.state.snapshot.membershipState.revision++; }
         if (mode === 'malformed audit') [...h.state.rows.values()].find(row => row.phase === 'terminal' && row.action === 'suspend').extra = true;
         if (mode === 'wrong native receipt') [...h.state.receipts.values()][0].intent_sha256 = '0'.repeat(64);
+        if (mode === 'other approval authority') [...h.state.rows.values()].find(row => row.phase === 'terminal' && row.action === 'suspend').approvalAuthority = 'delegated';
     }
     const before = clone(h.state.snapshot); await expect(h.run('restore')).rejects.toBeDefined(); expect(h.state.snapshot).toEqual(before);
 });
@@ -167,13 +185,14 @@ test('identical concurrent requests commit exactly one membership change', async
     expect(results.find(row => row.status === 'rejected').reason.statusCode).toBe(409);
     expect(h.state.committed).toBe(1); expect(h.state.receipts.size).toBe(1);
 });
-test.each(['extra field', 'wrong target', 'failed issuance'])('execution refuses %s in the retained approval audit', async mode => {
+test.each(['extra field', 'wrong target', 'failed issuance', 'other approval authority'])('execution refuses %s in the retained approval audit', async mode => {
     const h = fixture(); delete h.config.readApprovedAction;
     const input = h.input(); delete input.operationId; const approved = await h.run('approve-suspend', input);
     const audit = h.state.rows.get(`dashboard-admin-account-actions/${approved.operationId}/approval-terminal.json`);
     if (mode === 'extra field') audit.unexpected = true;
     if (mode === 'wrong target') audit.targetSha256 = 'f'.repeat(64);
     if (mode === 'failed issuance') audit.outcome = 'refused';
+    if (mode === 'other approval authority') audit.approvalAuthority = 'delegated';
     await expect(h.run('suspend', { ...input, operationId: approved.operationId })).rejects.toBeDefined();
     expect(h.state.committed).toBe(0);
 });
