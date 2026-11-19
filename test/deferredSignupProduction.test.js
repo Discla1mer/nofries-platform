@@ -14,6 +14,8 @@ test.each([undefined, 'false', 'TRUE', 'true'])('production enrollment is defaul
     const { createProductionDashboardConfiguration } = require('../lib/dashboardProduction');
     const dashboard = createProductionDashboardConfiguration(h.env, h.dependencies);
     expect(dashboard.questionnaireExportGateEnabled).toBe(flag === 'true' ? true : undefined);
+    // Flag off: the dashboard stays identical to main (no details route, gate or 0028 read).
+    expect(dashboard.representativeDetailsEnabled).toBe(flag === 'true' ? true : undefined);
     const state = await request(h.app).get(ROUTE + '/state').set('Cookie', login.cookie);
     expect(state.status).toBe(200);
     expect(state.body.state).toEqual({ status: 'setup_details', email: h.state.externalEmail,
