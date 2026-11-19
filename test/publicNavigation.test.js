@@ -12,7 +12,7 @@ const MAIN = ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/conta
 const MAIN_LABELS = ['Home', 'Pricing', 'Managed IT', 'Roadmap', 'Contact', 'Log in'];
 const FOOTER = ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html'];
 const FOOTER_LABELS = ['Home', 'Pricing', 'Managed IT', 'Roadmap', 'Contact', 'Privacy', 'Terms'];
-const PAGES = ['index.html', 'roadmap.html', 'pricing.html', 'sample-result.html', 'managed-it.html', 'contact.html', 'privacy.html', 'terms.html', 'pilot-terms.html', '404.html', 'error.html', 'account-help.html'];
+const PAGES = ['index.html', 'roadmap.html', 'pricing.html', 'sample-result.html', 'managed-it.html', 'contact.html', 'privacy.html', 'terms.html', 'pilot-terms.html', '404.html', 'error.html', 'account-help.html', 'insurance.html', 'supplier-questionnaire.html', 'board.html', 'invoice-scams.html'];
 
 test.each(PAGES)('%s uses the shared main and footer links', name => {
     const html = read(name);

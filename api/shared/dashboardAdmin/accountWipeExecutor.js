@@ -16,6 +16,7 @@
 // Audit records hold digests, stage names and counts only: never the email,
 // the subject key or any record content.
 const { randomUUID, createHash } = require('node:crypto');
+const { APPROVAL_AUTHORITY } = require('./accountActionsMembershipApproval');
 
 const APPROVAL_MS = 15 * 60 * 1000;
 const MAX_APPROVALS = 32;
@@ -221,7 +222,7 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         const approvalId = newId(), expiresAt = now() + APPROVAL_MS;
         // Self-issued by the acting staff admin, as for suspend and restore (see docs/staff-admin.md, Accepted risk).
         if (!await record(approvalId, 'approval', { action, actorSha256, targetSha256, outcome: 'approved', expiresAt: new Date(expiresAt).toISOString(),
-            approvalAuthority: 'self_issued_sole_admin' }))
+            approvalAuthority: APPROVAL_AUTHORITY }))
             fail('account_wipe_audit_unavailable');
         // Bound to the account seen now, not just the email: an account deleted and
         // signed up again with the same email is a different target.

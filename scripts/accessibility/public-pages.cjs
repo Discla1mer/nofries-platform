@@ -13,6 +13,7 @@ const config = JSON.parse(fs.readFileSync(path.join(dist, 'staticwebapp.config.j
 const tags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 const results = [], unexpected = [], failures = [];
 const evidence = path.resolve(process.env.NOFRIES_A11Y_RESULTS || '/tmp/nofries-public-accessibility.json');
+const adPages = ['/insurance.html', '/supplier-questionnaire.html', '/board.html', '/invoice-scams.html'];
 const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
     res.setHeader('Cache-Control', 'no-store');
@@ -156,6 +157,36 @@ async function publicHeader(page, route, width) {
     await page.evaluate(() => window.scrollTo(0, 0));
     return { hiddenBrand, loginVisible: true };
 }
+async function adLinks(page, base, route) {
+    const query = '?utm_source=meta&utm_medium=paid_social&utm_campaign=review&utm_content=phone%20preview&utm_term=NZ%26SMB&fbclid=ignored';
+    await page.goto(base + route + query);
+    await page.evaluate(() => document.fonts.ready);
+    const links = await page.locator('a[href]').evaluateAll(nodes => nodes.map(node => node.getAttribute('href')));
+    let checked = 0;
+    for (const href of links) {
+        if (href.startsWith('#')) { assert.equal(await page.locator(href).count(), 1); continue; }
+        const url = new URL(href, base);
+        for (const [key, value] of new URLSearchParams(query)) if (key.startsWith('utm_')) assert.equal(url.searchParams.get(key), value);
+        assert.equal(url.origin, base);
+        assert.equal(url.searchParams.has('fbclid'), false);
+        if (url.pathname === '/login') assert.ok(['create', 'login'].includes(url.searchParams.get('intent')));
+        assert.equal((await page.request.get(url.href)).status(), 200, href);
+        checked++;
+    }
+    const offer = new URL(await page.locator('.ad-contact').getAttribute('href'), base);
+    assert.equal(offer.searchParams.get('service'), 'managed_security_90');
+    const primary = new URL(await page.locator('.ad-landing .button').getAttribute('href'), base);
+    assert.equal(primary.pathname, '/login');
+    assert.equal(primary.searchParams.get('intent'), 'create');
+    await page.locator('.ad-landing .button').click({ trial: true });
+    assert.deepEqual(await page.context().cookies(), []);
+    assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
+    if (process.env.NOFRIES_AD_SCREENSHOTS) {
+        fs.mkdirSync(process.env.NOFRIES_AD_SCREENSHOTS, { recursive: true });
+        await page.screenshot({ path: path.join(process.env.NOFRIES_AD_SCREENSHOTS, route.slice(1, -5) + '-375.png'), fullPage: true });
+    }
+    return { checked, utms: true, storageEmpty: true };
+}
 (async () => {
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const base = 'http://127.0.0.1:' + server.address().port;
@@ -163,10 +194,10 @@ async function publicHeader(page, route, width) {
     try {
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined, args: ['--no-sandbox'] });
         console.log('Chromium ' + browser.version());
-        const routes = ['/', '/login', '/managed-it.html', '/privacy.html', '/terms.html', '/roadmap.html', '/pricing.html', '/sample-result.html', '/report.html', '/try'];
+        const routes = ['/', '/login', '/managed-it.html', '/privacy.html', '/terms.html', '/roadmap.html', '/pricing.html', '/sample-result.html', '/report.html', '/try', ...adPages];
         if (fs.existsSync(path.join(dist, 'contact.html'))) routes.push('/contact.html');
         else console.log('Contact form absent: deferred to #42/#43, not a passing contact-form check.');
-        for (const route of routes) for (const width of route === '/' ? [1280, 701, 700, 390, 320] : [1280, 320]) for (const scale of [1, 2]) {
+        for (const route of routes) for (const width of route === '/' ? [1280, 701, 700, 390, 320] : adPages.includes(route) ? [1280, 375, 320] : [1280, 320]) for (const scale of [1, 2]) {
             const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
             try {
                 const page = await context.newPage(); page.setDefaultTimeout(5000);
@@ -179,11 +210,12 @@ async function publicHeader(page, route, width) {
                 await page.locator('h1').first().waitFor();
                 if (route === '/login') await page.locator('#organisation-email').waitFor();
                 const header = await publicHeader(page, route, width);
+                const links = adPages.includes(route) && width === 375 && scale === 1 ? await adLinks(page, base, route) : null;
                 const doubled = scale === 2 ? await doubleText(page) : 0;
                 const pageState = { axe: await scan(page), layout: await layout(page) };
                 const probe = route === '/login' ? await signupContrast(page) : null;
                 const hint = route === '/report.html' ? await reportHint(page) : null;
-                const entry = { route, width, scale, doubled, page: pageState, header, probe, hint };
+                const entry = { route, width, scale, doubled, page: pageState, header, probe, hint, links };
                 if (probe && (probe.candidate.ratio < 4.5 || probe.candidateScan.violations.length)) failures.push({ route, width, scale, state: 'signup-error-contrast' });
                 if (hint && !hint.pass) failures.push({ route, width, scale, state: 'persistent-report-hint' });
                 results.push(entry);

@@ -10,7 +10,8 @@ const { resolveEntitlements, TIERS } = require('../appLifecycle/entitlementDomai
 const { resolveOrganisation } = require('../appLifecycle/tenantDomain');
 const { normalRole } = require('../appLifecycle/dashboardResourceAuthority');
 const { normaliseNcscSelector, projectNcscDetail } = require('../ncscAssessmentService');
-const { MODULE_ID, ACCEPTED_PROFILE_REF } = require('../assessmentEngine/ncscAssessmentEvaluator');
+const { MODULE_ID } = require('../assessmentEngine/ncscAssessmentEvaluator');
+const { listsEnabledNcscProfile, listsNcscProfile, readableNcscProfileContext } = require('../assessmentEngine/ncscProfileSet');
 const { workEmail } = require('../organisationSetup');
 const { starterAccountKey, starterAccountRecord, starterClientRecord } = require('./starterAccountAllocation');
 const { THREE_MONTH_PLAN_ID, approvedStarterPlan } = require('./customerStarterPlan');
@@ -69,7 +70,15 @@ async function readRetainedTrialOwner({ subjectKey, readSubject, accountStore })
     return freeze({ account, index });
 }
 
-function assertFacts(facts, account, index, slot, capture, at) {
+// Before the assessment is read the grant and flags must list a switched-on
+// profile; once it is read they must list that assessment's own stored profile.
+function profileListed(frameworks, version) {
+    if (version === null) return listsEnabledNcscProfile(frameworks);
+    const profile = readableNcscProfileContext(version.envelope.state.profileRef);
+    return Boolean(profile) && listsNcscProfile(frameworks, profile.profileRef);
+}
+
+function assertFacts(facts, account, index, slot, capture, at, version = null) {
     const actor = `${capture.identityPayload.identityTenantId}:${capture.identityPayload.oid}`;
     const { instance, gate, accountRow } = facts;
     if (instance.instanceId !== capture.instanceId || instance.restoreEpoch !== capture.restoreEpoch ||
@@ -110,8 +119,7 @@ function assertFacts(facts, account, index, slot, capture, at) {
         const grant = snapshot.entitlementState.grants.find(item => item.grantId === selected.grantId);
         if (!grant || grant.status !== 'active' || grant.code !== 'dashboard_score' || grant.agreementRef !== p.schedule.scheduleId ||
             grant.validFrom !== a.validFrom || grant.validUntil !== a.validUntil ||
-            !grant.modules.includes(MODULE_ID) || !grant.frameworks.some(f => f.moduleId === MODULE_ID &&
-                f.profileId === ACCEPTED_PROFILE_REF.profileId && f.version === ACCEPTED_PROFILE_REF.profileVersion) ||
+            !grant.modules.includes(MODULE_ID) || !profileListed(grant.frameworks, version) ||
             // This read-only lane stays defined by the recorded dates: it opens
             // once the retained grant's window has passed and no dashboard
             // product is inside its own window. (Ordinary access no longer
@@ -119,8 +127,7 @@ function assertFacts(facts, account, index, slot, capture, at) {
             snapshot.entitlementState.grants.some(item => item.status === 'active' && Object.hasOwn(TIERS, item.code) &&
                 item.validFrom <= at && at < item.validUntil) ||
             snapshot.flags.enabled.dashboard !== true || snapshot.flags.enabled.cyber_security !== true ||
-            !snapshot.flags.frameworks.some(f => f.moduleId === MODULE_ID && f.profileId === ACCEPTED_PROFILE_REF.profileId &&
-                f.version === ACCEPTED_PROFILE_REF.profileVersion)) deny();
+            !profileListed(snapshot.flags.frameworks, version)) deny();
         return { p, a };
     }
     const own = scope(facts.original, account.organisations[0]), selected = scope(facts.selected, slot);
@@ -183,11 +190,11 @@ function createRetainedTrialAssessmentReader({ captureRequest, readSubject, acco
             audit = attempt.audit;
         }
         const result = await store.read({ capture, ...initial, assessmentId: selection.assessmentId }, async (facts, version, complete) => {
-            const selected = assertFacts(facts, initial.account, initial.index, initial.slot, capture, time());
+            const selected = assertFacts(facts, initial.account, initial.index, initial.slot, capture, time(), version);
             if (!complete) return;
             const latest = await external();
             if (!equal(latest, initial)) deny();
-            assertFacts(facts, initial.account, initial.index, initial.slot, capture, time());
+            assertFacts(facts, initial.account, initial.index, initial.slot, capture, time(), version);
             if (version === null) throw new RetainedTrialReadError('retained_read_not_found', 404);
             if (version.envelope.state.status !== 'submitted' || version.envelope.submission === null ||
                 version.envelope.state.createdAt < selected.a.occurredAt || version.envelope.state.updatedAt >= selected.a.validUntil) deny();
