@@ -34,6 +34,13 @@ test.each([undefined, 'false', 'TRUE', 'true'])('production enrollment is defaul
     expect(declaration.offerInput.detailsPolicy).toBe('after-first-result-v1');
     expect(declaration.assertion.proof.subjectKey).toBeTruthy();
     expect([...store.records.keys()].filter(key => key.startsWith('customer-schedules/'))).toHaveLength(1);
+    const { AzureStarterSetupStore } = require('../api/shared/customerSignup/azureStarterSetupStore');
+    const memberLookup = new AzureStarterSetupStore(store);
+    const { tenantId, organisationId } = declaration.offerInput;
+    expect(await memberLookup.ownDeferredCompany({ tenantId, organisationId })).toBe(true);
+    expect(await memberLookup.ownDeferredCompany({ tenantId: uid(707), organisationId })).toBe(false);
+    expect(await memberLookup.ownDeferredCompany({ tenantId, organisationId: uid(708) })).toBe(false);
+    expect(await memberLookup.ownDeferredCompany({ tenantId, organisationId: 'historical-org' })).toBe(false);
     const before = Buffer.from(saved[0][1]);
     // An already-completed claim cannot be edited, and its immutable bytes remain.
     await send({ resume: true }); expect(store.records.get(saved[0][0])).toEqual(before);

@@ -26,8 +26,8 @@ const { ImprovementPlanServiceError } = require('../improvementPlan/improvementP
 const { ImprovementActionListError } = require('../improvementPlan/improvementActionListProjection');
 const { resolveImprovementAccess } = require('../improvementPlan/improvementPlanAccess');
 const { ContactRequestError, CONTACT_AUDIT, resolveContactAccess } = require('../contactRequests');
-const { createNcscQuestionnaireMetadata } = require('../ncscQuestionnaireMetadata');
-const { ACCEPTED_PROFILE_REF } = require('../assessmentEngine/ncscAssessmentEvaluator');
+const { createNcscQuestionnaireMetadata, createNcscQuestionnaireMetadataV2 } = require('../ncscQuestionnaireMetadata');
+const { listsEnabledNcscProfile, ncscProfileV2Enabled } = require('../assessmentEngine/ncscProfileSet');
 const records = require('../appLifecycle/dashboardRuntimeRecords');
 const { copy, fields, freeze, canonical, hash, equal, uuid, digest, revision, instant, scope,
     CURRENT_COLUMNS, prepareCurrentRow, normaliseSessionRow, normaliseInstanceRow,
@@ -907,10 +907,8 @@ function hostProjectionAt(frame, at, configured = true) {
     const product = currentProductGrant(frame.grants, at);
     const service = code => code !== 'managed_it_core' && frame.grants.some(grant => grant.code === code && live(grant));
     const fractional = service('fractional_advisory') && frame.flags.enabled['service:fractional_advisory'] === true;
-    const ncscReady = configured && frame.ncscEnabled && Boolean(product && product.frameworks.some(ref =>
-        ref.moduleId === 'cyber_security' && ref.profileId === ACCEPTED_PROFILE_REF.profileId &&
-        ref.version === ACCEPTED_PROFILE_REF.profileVersion && frame.flags.frameworks.some(flag =>
-            flag.moduleId === ref.moduleId && flag.profileId === ref.profileId && flag.version === ref.version)));
+    const ncscReady = configured && frame.ncscEnabled && Boolean(product && listsEnabledNcscProfile(product.frameworks.filter(ref =>
+        frame.flags.frameworks.some(flag => flag.moduleId === ref.moduleId && flag.profileId === ref.profileId && flag.version === ref.version))));
     const improvementReady = configured && frame.improvementEnabled;
     let presentationMode = null;
     const modules = registry.modules.map(item => {
@@ -1094,6 +1092,9 @@ async function bufferedHost(inv, operation, facts) {
         if (projected.vector.presentationMode !== null) {
             body.metadata = createNcscQuestionnaireMetadata();
             body.presentationMode = projected.vector.presentationMode;
+            // Scoring v2 (#399): display metadata for retained 2026-11-18.1
+            // assessments, only while the flag is on. Flag off, the body is unchanged.
+            if (ncscProfileV2Enabled()) body.profileMetadata = [createNcscQuestionnaireMetadataV2()];
         }
         buffered = freeze({ ...buffered, response: { ...buffered.response, body } });
     }

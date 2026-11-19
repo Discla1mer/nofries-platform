@@ -29,7 +29,17 @@
         partial: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
         no: 'None of this is in place yet, including when work is only planned.',
         unknown: 'You do not have enough information to confirm what is in place.',
-        not_applicable: 'You believe this does not apply to your scope. Explain why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'
+        not_applicable: 'You believe this does not apply to your scope. Explain why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.',
+        // Scoring v2 (#399): answers used only by profile 2026-11-18.1.
+        partly: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
+        ad_hoc: 'It happens sometimes, but it is not written down, owned or checked.',
+        mfa_key: 'Important accounts sign in with a passkey or a physical security key.',
+        mfa_number_matching: 'You approve each sign-in in an app by typing the number shown on screen.',
+        mfa_push: 'You approve each sign-in by tapping a notification in an app.',
+        mfa_authenticator: 'You type a code from an authenticator app.',
+        mfa_text_code: 'You get a code by text message or email.',
+        mfa_mixed: 'At least one important account still uses a text or email code, even if others use something stronger.',
+        mfa_none: 'Important accounts do not ask for an extra login step yet.'
     };
     // Display aids only. The accepted catalogue still owns each question and
     // answer meaning; these examples neither choose an answer nor prove it.
@@ -97,6 +107,40 @@
         'Places and online services: the café, email and the online booking system.', 'Not included: staff personal phones.'];
     const SCOPE_DESCRIBED_BY = 'ncsc-scope-note ncsc-scope-help';
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+    // Scoring v2 (#399): the 16-question profile 2026-11-18.1 and the graded
+    // evaluator 2026-11-17.1 that scores it. A result is checked against these
+    // only when its stored profile reference equals V2_PROFILE_REF on every
+    // field. Weights and credits are pinned here, as the accepted profile's are
+    // below, so a payload cannot authorise different ones. Tests compare them
+    // with the server profile and evaluator.
+    const V2_PROFILE_REF = Object.freeze({ frameworkId: 'nz-ncsc-cyber-security-framework', frameworkVersion: 'beta-verified-2026-09-02',
+        profileId: 'nz-ncsc-mcss-2025-v3-sme', profileVersion: '2026-11-18.1',
+        catalogueSha256: 'c90e999f627308f326a403b1d779e68087e3eaadab5149070f1df5e350daa537',
+        sourceCatalogueSha256: 'c6120192675c9d12cdab296d6f5a84f014d613b300001394790f3ccf79692b71' });
+    const V2_PROVENANCE = Object.freeze({ scoreContractVersion: 'PROD-003-R2', evaluatorVersion: '2026-11-17.1',
+        evaluatorSourceSha256: '96a19bc4059932c8c34fae576db2efbfad445831aeba74d8a5c9f53042def885',
+        weightSetVersion: 'prod-003-r2-profile-integer-weights-graded-credit-v1',
+        mappingSha256: '9877a0686a213b7777f1f135214a759505646d414d0bdd5f30a39ac8970e4663',
+        weightSetSha256: 'b07f5c271f7fdd0eeca60a9841a8d6380a739464e064da83fe7c2134f326b80d',
+        scoredAtomSetSha256: '00e7045f784b3be45523e5341c16016d196e94fda14f377e5e0e48e60da74f6f',
+        applicabilityBasisSha256: '88793977aebd91833cd806f85505cd53b0568a6bb5e4b45e08c4d56bd906f1eb',
+        evidenceSnapshotSha256: '44c075f260001b52983f4bc93ec3d2f6082b00153032826706ddcefc209d8742',
+        riskContextSnapshotSha256: '1c7078ff4cf2961c9dae0c9368db7e7b06f46e7896bdd98215aa36add9ba9e30' });
+    const V2_WEIGHT = Object.freeze({ 'NF-NCSC-MCSS-RM-01-Q1': 1, 'NF-NCSC-MCSS-SA-01-Q1': 2, 'NF-NCSC-MCSS-AI-01-Q1': 1,
+        'NF-NCSC-MCSS-PA-01-Q1': 2, 'NF-NCSC-MCSS-MF-01-Q1': 3, 'NF-NCSC-MCSS-MF-01-Q2': 2, 'NF-NCSC-MCSS-DU-01-Q1': 1,
+        'NF-NCSC-MCSS-LP-01-Q1': 2, 'NF-NCSC-MCSS-DR-01-Q1': 3, 'NF-NCSC-MCSS-DR-01-Q2': 3, 'NF-NCSC-MCSS-RP-01-Q1': 1,
+        'NF-NCSC-CC-PM-01-Q1': 2, 'NF-NCSC-CC-SV-01-Q1': 3, 'NF-NCSC-CC-NS-01-Q1': 1, 'NF-NCSC-CC-SU-01-Q1': 2, 'NF-NCSC-CC-EM-01-Q1': 2 });
+    // Credit in hundredths for each answer that earns a fixed credit. "I don't
+    // know" and Not applicable earn none at the lower end and full at the upper.
+    const V2_CREDIT = Object.freeze({ yes: 100, partly: 50, ad_hoc: 25, no: 0, mfa_key: 100, mfa_number_matching: 85,
+        mfa_push: 70, mfa_authenticator: 55, mfa_text_code: 30, mfa_mixed: 30, mfa_none: 0 });
+    // How each v2 answer is grouped in summaries: full credit with Yes, none with No, the rest with Partial.
+    // The accepted profile's answers map to themselves.
+    function answerGroup(optionId) {
+        if (!Object.hasOwn(V2_CREDIT, optionId)) return optionId;
+        return V2_CREDIT[optionId] === 100 ? 'yes' : V2_CREDIT[optionId] === 0 ? 'no' : 'partial';
+    }
+    function isV2(metadata) { return !!metadata && profileMatches(metadata.profileRef, V2_PROFILE_REF); }
     // UX log A-019: when fewer than about half the questions are answered Yes,
     // Partial or No, the range is too wide to tell anyone anything, so it is
     // not used as the headline. Display only; scoring is unchanged.
@@ -147,11 +191,11 @@
         const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
         const items = [];
         ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
-            metadata.questions.filter(function (question) { return optionOf(question.id) === optionId; }).forEach(function (question) {
+            metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === optionId; }).forEach(function (question) {
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
                 const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
                 const ownerStart = ['no', 'partial'].includes(optionId) && /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(question.id);
-                items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionId), action: action,
+                items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionOf(question.id)), action: action,
                     owner: ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.' });
             });
         });
@@ -170,7 +214,7 @@
             'Basis: self-assessment using the No Fries questionnaire adapted from New Zealand NCSC guidance. Not certification or independent assurance.'];
         groups.forEach(function (group) {
             const titles = [];
-            metadata.questions.filter(function (question) { return optionOf(question.id) === group[0]; }).forEach(function (question) {
+            metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === group[0]; }).forEach(function (question) {
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
                 // Plain titles for a board: drop the internal extension prefix.
                 const title = (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, '');
@@ -279,43 +323,73 @@
         return code && Object.hasOwn(GAP_TIER, code[1]) ? GAP_TIER[code[1]] : 3;
     };
     const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
+    const V2_GAP_LIMIT = 5;
+    const V2_GAP_FACTOR = Object.freeze({ no: 100, unknown: 85, ad_hoc: 75, partly: 50, mfa_none: 100,
+        mfa_text_code: 70, mfa_mixed: 70, mfa_authenticator: 45, mfa_push: 30, mfa_number_matching: 15 });
+    const V2_CRITICAL_CONTROL = /^NF-NCSC-CC-(?:PM|SV|NS)-01-Q\d+$/;
+    // A v2 answer that falls short of full credit, other than "I don't know".
+    const v2Shortfall = optionId => Object.hasOwn(V2_GAP_FACTOR, optionId) && optionId !== 'unknown';
+    const attention = row => (row.weight || 0) * V2_GAP_FACTOR[row.responseOptionId];
     const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
     const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
     const firstText = (...values) => values.find(value => typeof value === 'string' && value.trim()) || null;
-    function topGaps(result, metadata, limit = GAP_LIMIT) {
+    function rankedGaps(result, metadata) {
         if (!result || !Array.isArray(result.domains) || !metadata || !Array.isArray(metadata.questions)) return [];
         const rows = new Map();
         result.domains.forEach(domain => (domain.controls || []).forEach(control =>
             (control.questions || []).forEach(row => rows.set(row.itemId, row))));
         const controls = new Map((metadata.controls || []).map(control => [control.id, control]));
-        return metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }))
-            .filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
-            .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
-                gapTier(a.question.id) - gapTier(b.question.id) ||
-                GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position)
-            .slice(0, limit)
-            .map(({ question, row }) => {
-                const control = controls.get(question.controlId), guidance = question.guidance || {};
-                const plain = question.smallBusiness || {};
-                const title = firstText(control && control.title, question.prompt);
-                return { itemId: question.id, title: title.split(' — ').pop(), answer: row.answer,
-                    responseOptionId: row.responseOptionId,
-                    firstCheck: firstText((plain.checks || [])[0], (guidance.startingActions || [])[0]) || GAP_NEXT,
-                    why: firstText(guidance.summary) || GAP_WHY,
-                    next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
-            });
+        const entries = metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }));
+        const ranked = isV2(metadata)
+            ? entries.filter(entry => entry.row && Object.hasOwn(V2_GAP_FACTOR, entry.row.responseOptionId))
+                .sort((a, b) => attention(b.row) - attention(a.row) || (b.row.weight || 0) - (a.row.weight || 0) ||
+                    Number(V2_CRITICAL_CONTROL.test(b.question.id)) - Number(V2_CRITICAL_CONTROL.test(a.question.id)) ||
+                    a.position - b.position)
+            : entries.filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
+                .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
+                    gapTier(a.question.id) - gapTier(b.question.id) ||
+                    GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position);
+        return ranked.map(({ question, row }) => {
+            const control = controls.get(question.controlId), guidance = question.guidance || {};
+            const plain = question.smallBusiness || {};
+            const title = firstText(control && control.title, question.prompt);
+            return { itemId: question.id, title: title.split(' — ').pop(), answer: row.answer,
+                responseOptionId: row.responseOptionId,
+                firstCheck: firstText((plain.checks || [])[0], (guidance.startingActions || [])[0]) || GAP_NEXT,
+                why: firstText(guidance.summary) || GAP_WHY,
+                next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
+        });
+    }
+    // The accepted profile shows three gaps; v2 shows up to five.
+    function topGaps(result, metadata, limit) {
+        return rankedGaps(result, metadata).slice(0, limit === undefined ? isV2(metadata) ? V2_GAP_LIMIT : GAP_LIMIT : limit);
+    }
+    // Scoring v2 only: "I don't know" answers that miss the top five. Empty for
+    // the accepted profile, where unknown answers are not gaps.
+    function confirmNext(result, metadata) {
+        if (!isV2(metadata)) return [];
+        return rankedGaps(result, metadata).slice(V2_GAP_LIMIT).filter(gap => gap.responseOptionId === 'unknown');
     }
     function rankedGapSection(node, result, metadata, headingId, controls, gaps = topGaps(result, metadata)) {
+        const v2 = isV2(metadata);
+        const unconfirmed = v2 ? confirmNext(result, metadata) : [];
         const section = node('section', 'picture-top-gaps');
-        const heading = node('h3', '', gaps.length === GAP_LIMIT ? 'Your top three gaps' : 'Your top gaps');
+        const heading = node('h3', '', v2 ? gaps.length === V2_GAP_LIMIT ? 'Your top five gaps' : 'Your top gaps'
+            : gaps.length === GAP_LIMIT ? 'Your top three gaps' : 'Your top gaps');
         heading.id = headingId; heading.tabIndex = -1; section.setAttribute('aria-labelledby', heading.id); section.append(heading);
+        if (!gaps.length && v2) {
+            section.append(node('p', '', 'None of your answers show a gap to fix first.'));
+            return section;
+        }
         if (!gaps.length) {
             section.append(node('p', '', 'You did not report any controls as not in place or partly in place.'));
             if (result.unknown > 0) section.append(node('p', 'dashboard-muted', result.unknown + (result.unknown === 1 ? ' answer is' : ' answers are') +
                 ' still unknown or to confirm. Confirm ' + (result.unknown === 1 ? 'it' : 'them') + ' to check for gaps.'));
             return section;
         }
-        section.append(node('p', 'dashboard-muted', 'Ranked from your saved answers. Multi-factor authentication, patching, backups and checking payment changes come first, because they help protect against common attacks on small businesses, such as stolen accounts, ransomware and invoice fraud. Then controls not in place before partly in place. This is a fixed order, not a risk assessment of your business.'));
+        section.append(node('p', 'dashboard-muted', v2
+            ? 'Start with the first gap below. Gaps are ordered by how much each question counts and how far your answer is from fully in place. "I don\'t know" counts as a gap. This is a No Fries planning list from your answers, not an official NCSC priority.'
+            : 'Start with the first gap below. Account sign-in checks, updates, backups and payment checks come first. The order is a guide based on your answers.'));
         const list = node('ol', 'picture-top-gaps-list');
         gaps.forEach(gap => {
             const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
@@ -328,7 +402,21 @@
             if (controls) item.append(...controls(gap));
             list.append(item);
         });
-        section.append(list); return section;
+        section.append(list);
+        if (v2 && unconfirmed.length) {
+            const confirm = node('section', 'picture-confirm-next');
+            const confirmHeading = node('h4', '', 'Confirm these next');
+            confirmHeading.id = headingId + '-confirm-next'; confirm.setAttribute('aria-labelledby', confirmHeading.id);
+            const confirmList = node('ul', 'picture-confirm-next-list');
+            unconfirmed.forEach(gap => {
+                const item = node('li', '', gap.title); item.dataset.gapItem = gap.itemId; confirmList.append(item);
+            });
+            confirm.append(confirmHeading, node('p', 'dashboard-muted', 'You answered "I don\'t know" to ' +
+                (unconfirmed.length === 1 ? 'this question' : 'these questions') + '. Find out what is in place, because ' +
+                (unconfirmed.length === 1 ? 'it' : 'each one') + ' counts as a gap until you do.'), confirmList);
+            section.append(confirm);
+        }
+        return section;
     }
     function managedSecurityOffer(node, gated, win, stillCurrent) {
         const help = node('div', 'picture-next-steps-help'); help.hidden = true;
@@ -434,7 +522,18 @@
                 typeof organisationId === 'string' && organisationId.trim().length > 0 && provenance.organisationId === organisationId &&
                 provenance.assessmentRevision === 'rev-' + assessment.revision && provenance.scoreAsOf === submission.submittedAt &&
                 profileMatches(assessment.profileRef, metadata.profileRef) && profileMatches(provenance.profileRef, metadata.profileRef));
-            requireValue(provenance.scoreContractVersion === 'PROD-003-R1' &&
+            // Scoring v2 (#399): chosen by the stored profile reference, never by its version alone.
+            const v2 = profileMatches(assessment.profileRef, V2_PROFILE_REF), scale = v2 ? 100 : 2;
+            if (v2) requireValue(['scoreContractVersion', 'evaluatorVersion', 'evaluatorSourceSha256', 'weightSetVersion',
+                'mappingSha256', 'weightSetSha256', 'scoredAtomSetSha256', 'applicabilityBasisSha256'].every(key => provenance[key] === V2_PROVENANCE[key]) &&
+                provenance.roundingRule === 'decimal-half-up-one-place-v1' &&
+                provenance.evaluatorId === 'no-fries-deterministic-assessment-evaluator' &&
+                provenance.mappingVersion === 'framework-profile-question-mapping-v1' &&
+                provenance.evidenceSnapshot.sha256 === V2_PROVENANCE.evidenceSnapshotSha256 &&
+                provenance.riskContextSnapshot.sha256 === V2_PROVENANCE.riskContextSnapshotSha256 &&
+                value.remediationPriority.status === 'not_calculated' && value.remediationPriority.reason === 'priority_adapter_required' &&
+                value.trend.status === 'not_requested');
+            else requireValue(provenance.scoreContractVersion === 'PROD-003-R1' &&
                 provenance.roundingRule === 'decimal-half-up-one-place-v1' &&
                 provenance.evaluatorId === 'no-fries-deterministic-assessment-evaluator' &&
                 provenance.evaluatorVersion === '2026-09-02.1' &&
@@ -476,8 +575,15 @@
                 const response = responses.get(atom.itemId);
                 const semantic = response.optionId === 'not_applicable' ? 'unknown' : response.optionId;
                 const origin = response.optionId === 'not_applicable' ? 'claimed_not_applicable' : response.optionId === 'unknown' ? 'direct_unknown' : 'direct';
-                requireValue(atom.applicable === true && atom.response === semantic && atom.responseOrigin === origin &&
+                requireValue(atom.applicable === true && atom.response === (v2 ? answerGroup(semantic) : semantic) && atom.responseOrigin === origin &&
                     atom.evidenceState === 'not_provided' && atom.applicabilityDecisionId === null && atom.applicabilityDecisionSha256 === null);
+                if (v2) {
+                    const hundredths = Object.hasOwn(V2_CREDIT, response.optionId) ? V2_CREDIT[response.optionId] : null;
+                    const lower = atom.weight * (hundredths || 0);
+                    requireValue(atom.weight === V2_WEIGHT[atom.itemId] && atom.responseCreditHundredths === hundredths &&
+                        atom.lowerCreditUnits === lower && atom.upperCreditUnits === (hundredths === null ? atom.weight * 100 : lower));
+                    return;
+                }
                 // The pinned accepted NCSC profile assigns weight 1 to every question.
                 // Payload totals cannot authorise a different weight set.
                 requireValue(atom.weight === 1);
@@ -497,12 +603,12 @@
                     counts.completionStatus === (rows.length === 0 ? 'not_scored' : unknown ? 'provisional' : 'complete'));
                 percentageMatches(counts.completionNumerator, counts.completionDenominator, counts.completionPercentTenths);
                 percent(counts.completionPercentTenths, counts.completionDisplay);
-                requireValue(attainment.creditUnitScale === 2 && attainment.denominatorWeight === sum(rows, 'weight') &&
+                requireValue(attainment.creditUnitScale === scale && attainment.denominatorWeight === sum(rows, 'weight') &&
                     attainment.lowerCreditUnits === sum(rows, 'lowerCreditUnits') && attainment.upperCreditUnits === sum(rows, 'upperCreditUnits') &&
                     attainment.status === (rows.length ? 'scored' : 'not_scored'));
-                count(attainment.denominatorWeight * 2);
-                percentageMatches(attainment.lowerCreditUnits, attainment.denominatorWeight * 2, attainment.lowerPercentTenths);
-                percentageMatches(attainment.upperCreditUnits, attainment.denominatorWeight * 2, attainment.upperPercentTenths);
+                count(attainment.denominatorWeight * scale);
+                percentageMatches(attainment.lowerCreditUnits, attainment.denominatorWeight * scale, attainment.lowerPercentTenths);
+                percentageMatches(attainment.upperCreditUnits, attainment.denominatorWeight * scale, attainment.upperPercentTenths);
                 range(attainment);
                 requireValue(evidence.denominator === rows.length && Object.keys(evidence.distribution).length === Object.keys(evidenceLabels).length &&
                     Object.keys(evidenceLabels).every(key => evidence.distribution[key] === rows.filter(atom => atom.evidenceState === key).length));
@@ -564,13 +670,20 @@
         const doc = root.ownerDocument;
         const win = options.window || doc.defaultView;
         let stopNavigation = null;
-        const metadata = copy(options.metadata);
+        const baseMetadata = copy(options.metadata);
+        let metadata = baseMetadata;
         const client = options.client;
         const organisationId = options.organisationId;
         const initialAssessmentId = options.initialAssessmentId;
         // Opened from the first-use action: go straight to the new-assessment step if nothing is saved yet.
         let startNewWhenEmpty = options.startNew === true && initialAssessmentId === undefined && options.presentationMode === 'editable';
-        if (!metadata || metadata.schemaVersion !== 1 || !Array.isArray(metadata.questions) || !metadata.questions.length ||
+        // Scoring v2 (#399): further readable profiles, sent only while their flag is on.
+        // Each must be exactly the pinned v2 profile (all six fields); a near
+        // match would otherwise be read and scored with the accepted profile's scale.
+        const profileMetadata = options.profileMetadata === undefined ? [] : copy(options.profileMetadata);
+        const usable = function (value) { return !!value && value.schemaVersion === 1 && Array.isArray(value.questions) && value.questions.length > 0; };
+        if (!usable(metadata) || !Array.isArray(profileMetadata) || profileMetadata.length > 4 ||
+            !profileMetadata.every(function (value) { return usable(value) && value.moduleId === metadata.moduleId && !profileMatches(value.profileRef, metadata.profileRef) && isV2(value); }) ||
             initialAssessmentId !== undefined && (typeof initialAssessmentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(initialAssessmentId)) ||
             !client || !['list', 'read', 'create', 'save', 'submit', 'normaliseCommand', 'commandByteLength'].every(function (key) { return typeof client[key] === 'function'; })) {
             throw new Error('ncsc_composition_required');
@@ -582,9 +695,18 @@
             if (typeof options.onFunnelStep !== 'function') return;
             try { options.onFunnelStep(step); } catch (_) { /* counts are best-effort */ }
         };
-        const questions = metadata.questions;
-        const optionById = new Map(metadata.responseOptions.map(function (item) { return [item.id, item]; }));
-        const questionById = new Map(questions.map(function (item) { return [item.id, item]; }));
+        let questions, optionById, questionById;
+        // The metadata of the profile an assessment's stored reference names,
+        // matched on every field, or null. The accepted profile comes first.
+        function profileFor(profileRef) {
+            return [baseMetadata].concat(profileMetadata).find(function (value) { return profileMatches(profileRef, value.profileRef); }) || null;
+        }
+        function useProfile(value) {
+            metadata = value; questions = value.questions;
+            optionById = new Map(value.responseOptions.map(function (item) { return [item.id, item]; }));
+            questionById = new Map(questions.map(function (item) { return [item.id, item]; }));
+        }
+        useProfile(baseMetadata);
         const requests = new Set();
         let disposed = false;
         let epoch = 0;
@@ -736,8 +858,10 @@
             } finally { requests.delete(request); }
         }
         function cleanDetail(value, id) {
-            if (!value || value.assessmentId !== id || value.moduleId !== metadata.moduleId || !profileMatches(value.profileRef, metadata.profileRef) ||
-                !Array.isArray(value.responses) || value.responses.some(function (item) { return !questionById.has(item.itemId); })) throw new Error('ncsc_invalid_response');
+            const profile = value && profileFor(value.profileRef);
+            if (!value || !profile || value.assessmentId !== id || value.moduleId !== profile.moduleId ||
+                !Array.isArray(value.responses) || value.responses.some(function (item) { return !profile.questions.some(function (question) { return question.id === item.itemId; }); })) throw new Error('ncsc_invalid_response');
+            useProfile(profile);
             const result = copy(value);
             if (result.submission) {
                 const outputSha256 = value.submission && value.submission.evaluation && value.submission.evaluation.outputSha256;
@@ -930,6 +1054,8 @@
         }
         function render() {
             if (!live()) return;
+            // The open assessment's own profile; the accepted one everywhere else.
+            useProfile(acknowledged && !['create', 'denied'].includes(view) && profileFor(acknowledged.profileRef) || baseMetadata);
             const focused = captureFocus(root);
             const observations = root.querySelector('.ncsc-draft-observations');
             const progressOpen = !!(savedSummary && savedSummary.parentElement.open && acknowledged &&
@@ -1164,7 +1290,7 @@
             try {
                 const result = await call('list', { limit: 50, afterAssessmentId: append ? nextAfter : null }, expected);
                 if (!result) return;
-                if (result.assessments.some(function (item) { return item.moduleId !== metadata.moduleId || !profileMatches(item.profileRef, metadata.profileRef); })) throw new Error('ncsc_invalid_response');
+                if (result.assessments.some(function (item) { return item.moduleId !== metadata.moduleId || !profileFor(item.profileRef); })) throw new Error('ncsc_invalid_response');
                 const map = new Map((append ? summaries : []).map(function (item) { return [item.assessmentId, item]; }));
                 result.assessments.forEach(function (item) { map.set(item.assessmentId, copy(item)); });
                 summaries = Array.from(map.values()); nextAfter = result.nextAfterAssessmentId; listLoaded = true;
@@ -1370,7 +1496,7 @@
                 ['Applicability to confirm', ['not_applicable'], 'These exclusions are not approved. Confirm whether each question applies to this scope.'],
                 ['Not answered in this save', [null], 'Answer these questions, or choose Unknown when you cannot confirm what is in place.']
             ].forEach(function (group) {
-                const matches = rows.filter(function (row) { return group[1].includes(row.value.optionId); });
+                const matches = rows.filter(function (row) { return group[1].includes(answerGroup(row.value.optionId)); });
                 const section = node('section', 'ncsc-draft-observation-group');
                 section.append(node('h3', '', group[0] + ' · ' + matches.length));
                 if (matches.length) {
@@ -1476,6 +1602,15 @@
         // Preview of the draft only. The accepted profile weights every
         // question 1; the submitted score always comes from the server.
         function projectRange(rows) {
+            if (isV2(metadata)) {
+                // Scoring v2 (#399): the pinned weights and credits, in hundredths.
+                let low = 0, high = 0, total = 0;
+                rows.forEach(function (row) {
+                    const weight = V2_WEIGHT[row.question.id], credit = Object.hasOwn(V2_CREDIT, row.value.optionId) ? V2_CREDIT[row.value.optionId] : null;
+                    total += weight * 100; low += weight * (credit || 0); high += credit === null ? weight * 100 : weight * credit;
+                });
+                return { lower: percentTenths(low, total), upper: percentTenths(high, total) };
+            }
             let lower = 0, upper = 0;
             rows.forEach(function (row) {
                 const credit = creditUnits(row.value.optionId === 'not_applicable' ? 'unknown' : row.value.optionId, 1);
@@ -1500,7 +1635,9 @@
                 const value = node('p', '', 'With your current answers, reported implementation would be ' + shown + '.'); value.id = 'ncsc-review-range-value';
                 section.append(value);
                 if (count) {
-                    const widened = percentTenths(count * creditUnits('unknown', 1).upper, rows.length * 2);
+                    const weightOf = function (list) { return list.reduce(function (total, row) { return total + V2_WEIGHT[row.question.id]; }, 0); };
+                    const widened = isV2(metadata) ? percentTenths(weightOf(pendingRows), weightOf(rows))
+                        : percentTenths(count * creditUnits('unknown', 1).upper, rows.length * 2);
                     section.append(node('p', '', 'Answers marked not applicable, to confirm, are not counted as in place: they add nothing to the lower figure and full credit to the upper figure. Yours widen the range by ' +
                         (widened / 10).toFixed(1) + ' percentage points.'));
                 }
@@ -1587,14 +1724,14 @@
                     node('p', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route.'));
                 panel.append(section, managedSecurityOffer(node, gated, win, () => live()));
             }
-            const questionnaireFirst = campaign === 'insurance' || campaign === 'supplier';
+            const questionnaireFirst = !isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier');
             if (questionnaireFirst) renderQuestionnaireAnswers(panel);
             if (results) {
                 panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps'));
                 if (campaign !== 'scam') panel.append(managedSecurityOffer(node, gated, win, () => live()));
             }
             renderNextSteps(panel);
-            if (!questionnaireFirst) renderQuestionnaireAnswers(panel);
+            if (!questionnaireFirst && !isV2(metadata)) renderQuestionnaireAnswers(panel);
             if (!results) {
                 panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'),
                     button('Retry loading results', async function () {
@@ -1645,7 +1782,9 @@
             // results.unknown already includes answers marked not applicable, so state one total.
             panel.append(node('p', '', results.unknown ? 'Answers still to confirm: ' + results.unknown + ' (' + confirmBreakdown(results.unknown - results.pending, results.pending) + ').'
                 : 'Every answer is confirmed as Yes, Partial or No.'));
-            panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives answers still to confirm 0; the upper end gives them 1. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries calculation, not an NCSC score.'));
+            panel.append(node('p', 'dashboard-muted', isV2(metadata)
+                ? 'Each question has a weight from 1 to 3, shown below. Yes, in place and checked earns its full weight, Partly in place half, Sometimes a quarter and No nothing. Extra login methods earn from 30% for text or email codes to full weight for a passkey or security key. The lower end gives I don\'t know nothing; the upper end gives it full weight. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries planning score from your answers, not an official NCSC or CS-CMM rating.'
+                : 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives answers still to confirm 0; the upper end gives them 1. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries calculation, not an NCSC score.'));
             panel.append(node('h3', '', 'Explore NCSC functions and assessment topics'));
             results.domains.forEach(function (domain) {
                 const detail = node('details', 'ncsc-result-domain'); detail.append(node('summary', '', domain.title + ' — ' + domain.attainment));
@@ -1671,7 +1810,7 @@
         }
         function renderNextSteps(panel) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Suggested follow-ups'));
-            const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(savedAnswer(question.id).optionId); }).length; };
+            const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(answerGroup(savedAnswer(question.id).optionId)); }).length; };
             const toFix = countOf(['no', 'partial']), toCheck = countOf(['unknown', 'not_applicable']);
             const plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
             // One plain verdict before any percentages. The list follows answer groups, not risk.
@@ -1749,7 +1888,8 @@
             const legend = node('legend', '', plainQuestion(question));
             legend.id = 'ncsc-question-text'; legend.tabIndex = -1;
             const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(legend);
-            const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
+            // The worked examples describe the accepted profile's questions and answers only.
+            const inputGuidance = isV2(metadata) ? undefined : QUESTION_INPUT_GUIDANCE[question.id];
             const sealed = acknowledged.status === 'submitted';
             const hint = node('p', 'ncsc-input-guidance', sealed ? 'This is the answer you submitted. Submitted answers cannot be changed.'
                 : question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
@@ -1780,7 +1920,8 @@
             help.open = questionHelpOpen.has(question.id) ? questionHelpOpen.get(question.id) : !sealed && !narrow;
             help.addEventListener('toggle', function () { if (live(renderedEpoch)) questionHelpOpen.set(question.id, help.open); });
             if (acknowledged.status === 'submitted') fieldset.append(node('p', 'dashboard-badge', 'Your answer: ' + (optionById.get(entry.value.optionId)?.label || 'Not answered')));
-            if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
+            if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', isV2(metadata)
+                ? 'Not sure? Choose I don\'t know. You can ask your IT provider later.' : 'Not sure? Unknown is fine. You can ask your IT provider later.'));
             const writable = canEdit();
             question.responseOptionIds.forEach(function (id) {
                 const option = optionById.get(id); const label = node('label', 'ncsc-option');
@@ -2394,5 +2535,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, topGaps, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));

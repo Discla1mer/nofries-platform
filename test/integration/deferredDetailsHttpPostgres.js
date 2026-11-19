@@ -4,20 +4,20 @@ const { createPostgresSignupAcceptanceJournal } = require('../../api/shared/cust
 module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, subject, nextId, generationHeader, createCommand, saveCommand, submitCommand }) {
     const read = h => h.get('representative-details', h.generation);
     const save = (h, data = DATA, generation = h.generation) => h.post('representative-details', data).set(generationHeader, generation);
-    async function enrolled(customerAccountType = 'consultant') {
-        const h = await ncscHttpSetup({ customerProvider: true, customerAccountType, ownDeferredAgreement: customerAccountType === 'company', representativeDetailsEnabled: true,
+    async function enrolled(customerAccountType = 'consultant', differentSigner = false) {
+        const h = await ncscHttpSetup({ customerProvider: true, role: differentSigner ? 'editor' : 'admin', customerAccountType, ownDeferredAgreement: customerAccountType === 'company', representativeDetailsEnabled: true,
             questionnaireExportGateEnabled: true,
             contactRequestsEnabled: true, scope: { tenantId: nextId(), organisationId: nextId() } });
         h.state.now = AT; await h.login(); await h.initialize();
         h.generation = (await h.get('session')).body.generation;
-        const f = await deferredFixture({ identity: h.principal, scope: h.binding.scope }), pool = getOwnerPool();
+        const f = await deferredFixture({ identity: differentSigner ? undefined : h.principal, scope: h.binding.scope }), pool = getOwnerPool();
         await createPostgresSignupAcceptanceJournal({ database: { withTenantTransaction: (_, work) => work(pool) } }).persist(f.receipt);
         await pool.query(`INSERT INTO nofries.dashboard_starter_accounts (account_id,email_sha256,subject_key,account_type)
-            VALUES ($1,$2,$3,'company')`, [f.account.accountId, require('node:crypto').createHash('sha256').update(f.account.accountId).digest('hex'), subject(h.principal)]);
+            VALUES ($1,$2,$3,'company')`, [f.account.accountId, require('node:crypto').createHash('sha256').update(f.account.accountId).digest('hex'), f.preparation.subjectKey]);
         await pool.query(`INSERT INTO nofries.dashboard_starter_scopes
             (tenant_id,organisation_id,account_id,account_type,subject_key,ordinal,authority_id,binding_id,preparation,activation)
             VALUES ($1,$2,$3,'company',$4,0,$5,$6,$7::jsonb,$8::jsonb)`, [h.binding.scope.tenantId, h.binding.scope.organisationId,
-            f.account.accountId, subject(h.principal), f.preparation.slot.authorityId, f.preparation.slot.bindingId,
+            f.account.accountId, f.preparation.subjectKey, f.preparation.slot.authorityId, f.preparation.slot.bindingId,
             JSON.stringify(f.preparation), JSON.stringify(f.activation)]);
         return { h, f, pool };
     }
@@ -26,6 +26,23 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
             const { h } = await enrolled('company');
             const session = await h.get('session').set('X-NoFries-Dashboard-Capabilities', 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1');
             expect(session.body.questionnaireExportGateAvailable).toBe(true);
+            await loginClean();
+        });
+        test('an enrolled company member with a hidden starter scope cannot export a new result after marker removal', async () => {
+            const { h, f, pool } = await enrolled('company', true);
+            expect(f.preparation.subjectKey).not.toBe(subject(h.principal));
+            const tenant = [h.binding.scope.tenantId];
+            // Standalone #465 has no staff wipe grant yet. Model the post-reset
+            // rows here; the stacked wipe PR exercises the real repository.
+            expect((await pool.query('DELETE FROM nofries.dashboard_deferred_agreements WHERE tenant_id=$1', tenant)).rowCount).toBe(1);
+            httpJson(await h.ncscPost(createCommand()), 201);
+            httpJson(await h.ncscPost(saveCommand()), 200);
+            httpJson(await h.ncscPost(submitCommand()), 200);
+            const session = await h.get('session').set('X-NoFries-Dashboard-Capabilities', 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1');
+            expect(session.body.questionnaireExportGateAvailable).toBe(true);
+            httpJson(await read(h), 403, 'representative_details_access_denied');
+            httpJson(await save(h), 403, 'representative_details_access_denied');
+            expect((await pool.query('SELECT 1 FROM nofries.dashboard_representative_details WHERE tenant_id=$1', tenant)).rowCount).toBe(0);
             await loginClean();
         });
         test('historical account is ready without creating any supplemental evidence', async () => {
