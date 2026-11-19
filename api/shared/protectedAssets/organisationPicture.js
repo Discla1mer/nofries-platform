@@ -10,7 +10,6 @@
     // Bounded number of submitted results shown in the history. Each one is a
     // separate authorised read; nothing is cached across selections.
     const TREND_LIMIT = 5;
-    const SCOPE_OPTION_CHARS = 60;
     const copy = value => JSON.parse(JSON.stringify(value));
     const displayDate = value => new Intl.DateTimeFormat('en-NZ', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland'
@@ -125,7 +124,7 @@
         const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
         const contactControl = typeof options.contactControl === 'function' ? options.contactControl : null;
         const readActions = openImprovement && typeof options.readActions === 'function' ? options.readActions : null;
-        let actions = null;
+        let actions = null, displayedGaps = [];
         const id = 'picture-assessment-' + (++sequence);
         const initialAssessmentId = typeof options.initialAssessmentId === 'string' ? options.initialAssessmentId : null;
         let disposed = false, epoch = 0, requests = new Set(), rows = [], after = null, allowance = null;
@@ -266,6 +265,16 @@
             const card = node('section', 'picture-actions'), heading = node('h3', '', 'Actions');
             heading.id = id + '-actions'; card.setAttribute('aria-labelledby', heading.id); card.append(heading);
             const gaps = root.querySelector('.picture-top-gaps');
+            if (gaps && detail) {
+                const ranked = displayedGaps;
+                if (ranked.length) {
+                    card.append(node('h4', '', 'Start with these gaps'));
+                    const list = node('ol');
+                    ranked.forEach(gap => list.append(node('li', '', gap.title + ' — ' + gap.firstCheck)));
+                    card.append(list, node('p', '', 'Why the first gap matters: ' + ranked[0].why),
+                        node('p', '', 'First safe step: Ask the person responsible to check what is already in place before changing settings.'));
+                } else card.append(node('p', '', gaps.querySelector('p').textContent));
+            } else card.append(node('p', '', 'A first gap is only available for a submitted assessment with results.'));
             if (!actions.total) {
                 const empty = node('p', 'picture-actions-empty', 'No actions yet. ');
                 if (gaps) {
@@ -329,7 +338,7 @@
         }
         function paint() {
             if (!live()) return;
-            clearExplanation();
+            clearExplanation(); displayedGaps = [];
             Array.from(root.children).forEach(child => { if (child !== liveStatus) child.remove(); });
             root.classList.add('organisation-picture');
             if (liveStatus.parentElement !== root) root.append(liveStatus);
@@ -369,16 +378,12 @@
                     if (answered === null) return row.status === 'created' ? 'Not started' : 'In progress';
                     return answered > 0 ? 'In progress' : 'Not started';
                 };
-                // Long scopes hid the status and date. Shorten the scope in the
-                // option; the full text is its tooltip and is shown under Scope.
-                const shortScope = text => {
-                    const flat = text.replace(/\s+/g, ' ').trim();
-                    return flat.length > SCOPE_OPTION_CHARS ? flat.slice(0, SCOPE_OPTION_CHARS - 1).trimEnd() + '…' : flat;
+                const labelFor = row => {
+                    const selectedDetail = detail && row.assessmentId === detail.assessmentId ? detail : row;
+                    const scope = selectedDetail.scopePopulation || row.scopePopulation;
+                    return (scope ? scope.description.replace(/\s+/g, ' ').trim() + ' · ' : '') +
+                        pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
                 };
-                const labelFor = row => (row.scopePopulation ? shortScope(row.scopePopulation.description) + ' · ' : '') +
-                    pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
-                const fullLabelFor = row => (row.scopePopulation ? row.scopePopulation.description.replace(/\s+/g, ' ').trim() + ' · ' : '') +
-                    pictureStatus(row) + ' · ' + displayDate(row.updatedAt);
                 const labelCounts = new Map(), referenceCounts = new Map();
                 rows.forEach(row => {
                     const label = labelFor(row), key = JSON.stringify([label, row.assessmentId.slice(0, 8)]);
@@ -392,7 +397,7 @@
                     const suffix = duplicate ? ' · ' + (ambiguous ? row.assessmentId
                         : reference + (row.assessmentId.length > 8 ? '…' : '')) : '';
                     const item = node('option', '', label + suffix);
-                    item.title = fullLabelFor(row) + suffix;
+                    item.title = label + suffix;
                     item.value = row.assessmentId; picker.append(item);
                 });
                 picker.value = selected;
@@ -402,6 +407,7 @@
                 const refresh = button('Refresh', () => load(false)); refresh.disabled = loading;
                 refresh.classList.add('dashboard-button-secondary');
                 toolbar.append(label, picker, refresh);
+                if (chosen) toolbar.append(node('p', 'picture-selected-title', chosen.title));
                 if (after !== null) { const more = button('Load more', () => load(true)); more.disabled = loading; more.classList.add('dashboard-button-secondary'); toolbar.append(more); }
                 root.append(toolbar);
                 if (after !== null) root.append(node('p', 'dashboard-muted', 'More saved assessments are available. Load more to see them.'));
@@ -614,7 +620,7 @@
         }
         function gapSection(result) {
             const section = questionnaire.rankedGapSection(node, result, metadata, id + '-top-gaps',
-                gap => planGap && improvementSelection() ? gapPlanControls(gap) : []);
+                gap => planGap && improvementSelection() ? gapPlanControls(gap) : [], displayedGaps);
             if (section.querySelector('ol')) section.append(helpPanel());
             return section;
         }
@@ -714,7 +720,8 @@
             copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
             // #441: the same answers, written for a board or insurer.
             if (typeof questionnaire.boardSummary === 'function') {
-                handoff.append(gated(() => questionnaire.boardSummaryBlock(node, button, win, detail, metadata, id + '-board-summary', status)));
+                const boardExportGate = options.boardExportGate || (content => content());
+                handoff.append(boardExportGate(() => questionnaire.boardSummaryBlock(node, button, win, detail, metadata, id + '-board-summary', status)));
             }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());
@@ -732,6 +739,7 @@
                 node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. It is not a performance score.'));
         }
         function renderResult(result) {
+            displayedGaps = topGaps(result, metadata);
             root.append(gapSection(result));
             const metrics = node('div', 'picture-metrics');
             function metric(label, value, copyText, primary) {
@@ -743,7 +751,7 @@
             // A submitted result is read-only, so do not ask the customer to confirm answers here.
             const implementationMetric = questionnaire.enoughAnswersToEstimate(result)
                 ? metric('Reported implementation', result.attainment, rangeHelp, true)
-                : metric('Reported implementation', 'Not enough answers to estimate yet', 'Only ' + result.completed + ' of ' + result.total +
+                : metric('Reported implementation', 'Not enough answers to estimate yet, confirm your Unknowns first', result.unknown + ' answers still to confirm. Only ' + result.completed + ' of ' + result.total +
                     ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
                     (typeof options.openCyber === 'function' ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp, true);
             const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');

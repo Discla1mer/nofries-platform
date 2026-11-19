@@ -1335,7 +1335,7 @@ describe('internal dashboard loader protocol', () => {
     test.each([
         ['the app\'s own JSON 403', 403, { code: 'dashboard_access_denied' }, undefined, 'denied'],
         ['an HTML page with status 200', 200, null, platformPage, 'unavailable'],
-        ['an HTML 401', 401, null, platformPage, 'unavailable'],
+        ['D-046 an HTML session 401', 401, null, platformPage, 'unauthenticated'],
         ['a redirected HTML 403', 403, null, { ...platformPage, redirected: true }, 'unavailable']
     ])('%s is not treated as an update in progress', async (_name, status, body, extra, expected) => {
         const h = harness(); await flush();
@@ -2329,7 +2329,7 @@ describe('ready Cyber composition', () => {
         // Automatic saving is on here, so the short wait before it sends reads as saving.
         expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toBe('Saving…');
         expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('· saving…');
-        expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/\*$/);
+        expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/Not saved yet$/);
         h.homeClick(); control(h, 'Discard unsent changes').click(); await flush();
         expect(h.requests.filter(request => request.init.method === 'POST')).toHaveLength(0);
         expect(stored.read('assessment-home')).toEqual(saved); expect(h.window.location.assign.mock.calls).toEqual([['/']]);
@@ -2338,8 +2338,8 @@ describe('ready Cyber composition', () => {
         expect(reopened.elements.dashboardApp.textContent).toMatch(/Last saved .+ NZ time\./);
         expect(reopened.elements.dashboardApp.querySelector('.ncsc-status').textContent).not.toContain('not saved yet');
         expect(reopened.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).not.toContain('unsaved changes');
-        expect(reopened.document.getElementById('ncsc-question-index').children.every(option => !/\*$/.test(option.textContent))).toBe(true);
-        expect(reopened.document.getElementById('ncsc-question-index-help').textContent).toContain('* marks unsaved changes');
+        expect(reopened.document.getElementById('ncsc-question-index').children.every(option => !/Not saved yet$/.test(option.textContent))).toBe(true);
+        expect(reopened.document.getElementById('ncsc-question-index-help').textContent).not.toContain('*');
         reopened.homeClick(); await flush();
         expect(reopened.elements.dashboardApp.querySelector('dialog')).toBeNull();
         expect(reopened.window.location.assign.mock.calls).toEqual([['/']]);

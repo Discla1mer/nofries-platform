@@ -35,6 +35,7 @@ for (const command of [createCommand('assessment-submitted', 'fixture-create', '
 seed.assessments[2] = projectNcscDetail(version);
 const transport = createSyntheticTransport({ ...seed, assessments: [] }, fixtures.metadata, fixtures);
 let enabled = true, phase = 'setup_details', showResult = false, loseSave = false, denyRead = false, audits = 0, writes = 0, detailReads = 0;
+let accountType = 'company', audience = model.audience, ownEnrollment = true;
 const blocked = [], errors = [], captures = [], requests = [], prints = [];
 (async () => {
     const evidenceFile = path.join(artifacts, 'synthetic-details-store.json');
@@ -76,12 +77,12 @@ const blocked = [], errors = [], captures = [], requests = [], prints = [];
             body = { state, ...(['setup_details', 'terms'].includes(phase) ? { csrfToken: 's'.repeat(43) } : {}) };
         } else if (pathname === '/api/dashboard/app.js') { body = app; type = 'text/javascript'; }
         else if (pathname === '/api/dashboard/dashboard.css') { body = read('app/dashboard.css'); type = 'text/css'; }
-        else if (pathname === '/api/dashboard/session') body = { schemaVersion: 1, authenticated: true, purpose: 'customer', accountType: 'company',
-            representativeDetailsAvailable: true, ...(enabled ? { questionnaireExportGateAvailable: true } : {}),
+        else if (pathname === '/api/dashboard/session') body = { schemaVersion: 1, authenticated: true, purpose: 'customer', accountType,
+            representativeDetailsAvailable: true, ...(enabled && ownEnrollment ? { questionnaireExportGateAvailable: true } : {}),
             generation: 'a'.repeat(64), selectedBindingId: f.preparation.slot.bindingId, expiresAt: new Date(Date.now() + 3600000).toISOString() };
         else if (pathname === '/api/dashboard/organisations') body = { schemaVersion: 1, bindings: [{ bindingId: f.preparation.slot.bindingId,
             organisationLabel: model.context.displayName }], nextAfterBindingId: null };
-        else if (pathname === '/api/dashboard/bootstrap') body = model;
+        else if (pathname === '/api/dashboard/bootstrap') body = { ...model, audience };
         else if (['/api/dashboard/modules/cyber_security', '/api/dashboard/modules/overview'].includes(pathname)) body = { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt,
             module: model.modules.find(item => item.key === pathname.split('/').pop()), summary: model.summary, services: model.services,
             admissionGranted: false, providerAccessGranted: false, metadata: fixtures.metadata, presentationMode: 'editable' };
@@ -184,6 +185,23 @@ const blocked = [], errors = [], captures = [], requests = [], prints = [];
         assert.ok(await page.evaluate(() => window.syntheticBeforePrint > 0));
         await printEvidence('questionnaire-flag-off', section, true);
         assert.equal(writes, 0);
+        enabled = true; denyRead = true;
+        for (const scenario of [
+            { type: 'company', audience: model.audience, enrolled: false },
+            { type: 'company', audience: 'Scoped advisor', enrolled: true },
+            { type: 'consultant', audience: model.audience, enrolled: false }
+        ]) {
+            accountType = scenario.type; audience = scenario.audience; ownEnrollment = scenario.enrolled;
+            section = await openResult();
+            await copyAnswers(section);
+            await section.getByRole('button', { name: 'Print answers', exact: true }).click();
+            await page.goto(origin + '/dashboard#overview');
+            await page.locator('.picture-summary > summary').click();
+            await page.getByRole('button', { name: 'Copy board summary' }).click();
+            await page.getByRole('button', { name: 'Print board summary' }).click();
+            assert.equal(await page.locator('.picture-summary .dashboard-details-gate').count(), 0);
+        }
+        accountType = 'company'; audience = model.audience; ownEnrollment = true;
         // With E on, a failed server read cannot expose export controls or print output.
         enabled = true; denyRead = true; section = await openResult();
         if (campaign) {

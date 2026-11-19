@@ -168,7 +168,7 @@ test('same-day choices remain unambiguous without changing exact selected IDs or
     dom.controller.destroy();
 });
 
-test('a long scope is shortened in the selector so status and date stay visible, with the full label as a tooltip', async () => {
+test('D-017 shows the full scope, status and date in the selector and wrapping caption', async () => {
     const record = clone(buildFixtures().tenants[0].assessments[0]);
     const long = 'Synthetic head office, two retail sites,\n  the warehouse laptops and every cloud service we pay for each month';
     record.scopePopulation.description = long;
@@ -176,10 +176,11 @@ test('a long scope is shortened in the selector so status and date stay visible,
     const picker = dom.root.querySelector('.picture-toolbar').querySelector('select');
     const option = picker.querySelector('option');
     const flat = long.replace(/\s+/g, ' ');
-    assert.ok(option.textContent.startsWith(flat.slice(0, 59).trimEnd() + '… · In progress · '));
+    assert.ok(option.textContent.startsWith(flat + ' · In progress · '));
     assert.ok(option.textContent.endsWith(' NZ time'));
     assert.equal(option.title, flat + option.textContent.slice(option.textContent.indexOf(' · In progress · ')));
     assert.equal(picker.title, option.title);
+    assert.equal(dom.root.querySelector('.picture-selected-title').textContent, option.title);
     // The full scope is still shown on the page (one list item per line since #268).
     long.split('\n').map(line => line.trim()).forEach(line => assert.ok(dom.root.textContent.includes(line)));
     dom.controller.destroy();
@@ -248,7 +249,7 @@ test.each([[false], [true]])('Overview leads with not enough answers when fewer 
     const dom = setup({ records: [record], options: canStart ? { openCyber: () => {} } : {} }); await flush();
     const primary = dom.root.querySelector('.picture-primary');
     assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
-    assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet');
+    assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet, confirm your Unknowns first');
     assert.equal(primary.querySelector('.picture-metric-upper'), null);
     assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or waiting for review, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
     // A submitted result is read-only: do not ask the customer to confirm answers.
@@ -1550,7 +1551,7 @@ test('Actions card shows overdue and next-14-day counts with up to three titles 
     assert.ok(card); assert.equal(dom.root.children[0], card);
     assert.equal(card.getAttribute('aria-labelledby'), card.querySelector('h3').id);
     assert.equal(card.querySelector('h3').textContent, 'Actions');
-    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Next open actions', 'Overdue (4)', 'Due in the next 14 days (2)']);
+    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Start with these gaps', 'Next open actions', 'Overdue (4)', 'Due in the next 14 days (2)']);
     const next = card.querySelector('.picture-actions-next');
     assert.deepEqual([...next.querySelectorAll('a')].map(node => node.textContent),
         ['<img src=x onerror=alert(1)>', 'Synthetic action o1', 'Synthetic action o2']);
@@ -1592,7 +1593,7 @@ test('Actions card empty state links to the top three gaps panel', async () => {
     const card = dom.root.querySelector('.picture-actions');
     assert.equal(card.querySelector('.picture-actions-empty').textContent.replace(/\s+/g, ' ').trim(),
         'No actions yet. Start with your top three gaps.');
-    assert.equal(card.querySelector('h4'), null);
+    assert.equal(card.querySelector('h4').textContent, 'Start with these gaps');
     const link = card.querySelector('a'), heading = dom.root.querySelector('.picture-top-gaps').querySelector('h3');
     assert.equal(link.href, '#' + heading.id);
     link.click();

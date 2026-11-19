@@ -735,7 +735,7 @@ test.each(INVALID_ACTION_FIELDS)('$type form identifies $description in $field a
     for (const [name, value] of Object.entries(values)) fill(h, name, value);
     const control = field(h, invalid.field), feedback = control.parentElement.querySelector('span'), requestCount = h.request.mock.calls.length;
     const message = invalid.field === 'Where the proof is kept (required)' && String(invalid.value).trim() === ''
-        ? 'Enter where the proof is kept, such as a screenshot, invoice or ticket. This is required.'
+        ? 'Enter where the proof is kept, for example ticket IT-204. This is required.'
         : FORM_VALIDATION_MESSAGES[invalid.field];
     expect(retainedForm.noValidate).toBe(true);
     expect(control.getAttribute('aria-describedby')).toBeNull(); expect(feedback.hidden).toBe(true); expect(feedback.textContent).toBe('');

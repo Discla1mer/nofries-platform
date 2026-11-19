@@ -28,7 +28,7 @@ function app(fixtures, seed, transportFactory) {
     const gate = content => NoFriesDashboard.detailsGate(document, { isCurrent: () => true, read: async () => ({ status: window.fixtureGate }) }, content);
     NoFriesNcscQuestionnaire.mount(document.getElementById('results'), { metadata: fixtures.metadata, client, window,
         organisationId: seed.model.context.organisationId, initialAssessmentId: 'assessment-n', presentationMode: 'editable',
-        ...(window.fixtureGate ? { detailsGate: gate, questionnaireExportGate: gate } : {}) });
+        ...(window.fixtureGate ? { detailsGate: gate, boardExportGate: gate, questionnaireExportGate: gate } : {}) });
 }
 async function main() {
     fs.mkdirSync(artifacts, { recursive: true });

@@ -4,8 +4,8 @@ const { createPostgresSignupAcceptanceJournal } = require('../../api/shared/cust
 module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, subject, nextId, generationHeader, createCommand, saveCommand, submitCommand }) {
     const read = h => h.get('representative-details', h.generation);
     const save = (h, data = DATA, generation = h.generation) => h.post('representative-details', data).set(generationHeader, generation);
-    async function enrolled() {
-        const h = await ncscHttpSetup({ customerProvider: true, customerAccountType: 'consultant', representativeDetailsEnabled: true,
+    async function enrolled(customerAccountType = 'consultant') {
+        const h = await ncscHttpSetup({ customerProvider: true, customerAccountType, ownDeferredAgreement: customerAccountType === 'company', representativeDetailsEnabled: true,
             questionnaireExportGateEnabled: true,
             contactRequestsEnabled: true, scope: { tenantId: nextId(), organisationId: nextId() } });
         h.state.now = AT; await h.login(); await h.initialize();
@@ -22,8 +22,14 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
         return { h, f, pool };
     }
     describe('Stream E native selected-organisation gate', () => {
+        test('own enrolled company binding negotiates the export gate', async () => {
+            const { h } = await enrolled('company');
+            const session = await h.get('session').set('X-NoFries-Dashboard-Capabilities', 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1');
+            expect(session.body.questionnaireExportGateAvailable).toBe(true);
+            await loginClean();
+        });
         test('historical account is ready without creating any supplemental evidence', async () => {
-            const h = await ncscHttpSetup({ customerProvider: true, representativeDetailsEnabled: true });
+            const h = await ncscHttpSetup({ customerProvider: true, customerAccountType: 'company', representativeDetailsEnabled: true, questionnaireExportGateEnabled: true });
             const session = await h.get('session').set('X-NoFries-Dashboard-Capabilities', 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1');
             expect(session.body.questionnaireExportGateAvailable).toBeUndefined();
             const result = await read(h); httpJson(result, 200); expect(result.body.status).toBe('ready');
@@ -38,7 +44,7 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
             expect(oldSession.body.representativeDetailsAvailable).toBe(true);
             expect(oldSession.body.questionnaireExportGateAvailable).toBeUndefined();
             const newSession = await h.get('session').set('X-NoFries-Dashboard-Capabilities', capabilities + ' questionnaire-details-v1');
-            expect(newSession.body.questionnaireExportGateAvailable).toBe(true);
+            expect(newSession.body.questionnaireExportGateAvailable).toBeUndefined();
             const original = JSON.stringify((await pool.query('SELECT payload FROM nofries.signup_acceptance_receipts')).rows);
             httpJson(await read(h), 200); expect((await read(h)).body.status).toBe('result_required');
             httpJson(await save(h), 409, 'representative_details_result_required');
