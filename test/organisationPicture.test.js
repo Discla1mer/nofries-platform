@@ -1372,6 +1372,40 @@ test('top gap selection uses existing weights before answer and profile order, w
     assert.deepEqual(picture.topGaps(result, metadata, 1).map(gap => gap.itemId), ['q2']);
 });
 
+test('scoring v2 (#399): top gaps rank by weight × gap factor, count "I don\'t know" and leave v1 order alone', () => {
+    const { NCSC_V2_CONTEXT, ACCEPTED_NCSC_CONTEXT } = require('../api/shared/assessmentEngine/ncscProfileSet');
+    const profile = NCSC_V2_CONTEXT.profile;
+    const metadata = { profileRef: { ...NCSC_V2_CONTEXT.profileRef }, controls: profile.controls.map(control => ({ id: control.id, title: control.title })),
+        questions: profile.questions.map(question => ({ id: question.id, controlId: question.controlId, guidance: question.guidance })) };
+    // The #399 worked example: 7.85 / 31, fix-first scores 3.00, 2.25, 2.00, 2.00, 1.70.
+    const EXAMPLE = ['no', 'ad_hoc', 'partly', 'partly', 'partly', 'mfa_text_code', 'unknown', 'partly', 'partly', 'no', 'no',
+        'no', 'ad_hoc', 'partly', 'no', 'unknown'];
+    const rowsFor = values => ({ domains: [{ controls: [{ questions: profile.questions.map((question, index) =>
+        ({ itemId: question.id, responseOptionId: values[index], weight: question.weight, answer: values[index] })) }] }] });
+    const result = rowsFor(EXAMPLE);
+    assert.deepEqual(picture.topGaps(result, metadata, 5).map(gap => gap.itemId), ['NF-NCSC-MCSS-DR-01-Q2', 'NF-NCSC-CC-SV-01-Q1',
+        'NF-NCSC-CC-PM-01-Q1', 'NF-NCSC-CC-SU-01-Q1', 'NF-NCSC-CC-EM-01-Q1']);
+    assert.deepEqual(picture.topGaps(result, metadata).map(gap => gap.itemId), ['NF-NCSC-MCSS-DR-01-Q2', 'NF-NCSC-CC-SV-01-Q1', 'NF-NCSC-CC-PM-01-Q1']);
+    const supplier = picture.topGaps(result, metadata, 4)[3];
+    assert.deepEqual([supplier.title, supplier.next], ['Limit supplier access',
+        'List who has access, turn on the extra login step, and add a breach-notice clause.']);
+    // Every gap rung is included, ordered by its factor; Yes, passkey and Not applicable are not gaps.
+    const ladder = profile.questions.map(() => 'yes');
+    const at = id => profile.questions.findIndex(question => question.id === id);
+    ladder[at('NF-NCSC-MCSS-MF-01-Q2')] = 'mfa_number_matching'; ladder[at('NF-NCSC-CC-NS-01-Q1')] = 'not_applicable';
+    assert.deepEqual(picture.topGaps(rowsFor(ladder), metadata, 16).map(gap => gap.itemId), ['NF-NCSC-MCSS-MF-01-Q2']);
+    ladder[at('NF-NCSC-MCSS-MF-01-Q2')] = 'mfa_key'; ladder[at('NF-NCSC-CC-PM-01-Q1')] = 'ad_hoc';
+    ladder[at('NF-NCSC-CC-SU-01-Q1')] = 'partly'; ladder[at('NF-NCSC-CC-EM-01-Q1')] = 'unknown'; ladder[at('NF-NCSC-MCSS-RM-01-Q1')] = 'no';
+    // PM 2×0.75=1.50, EM 2×0.85=1.70, SU 2×0.50=1.00, RM 1×1.00=1.00 (lower weight after SU).
+    assert.deepEqual(picture.topGaps(rowsFor(ladder), metadata, 16).map(gap => gap.itemId),
+        ['NF-NCSC-CC-EM-01-Q1', 'NF-NCSC-CC-PM-01-Q1', 'NF-NCSC-CC-SU-01-Q1', 'NF-NCSC-MCSS-RM-01-Q1']);
+    // Metadata for the accepted profile keeps the original rule: unknown is not a gap there.
+    const accepted = { ...metadata, profileRef: { ...ACCEPTED_NCSC_CONTEXT.profileRef } };
+    assert.deepEqual(picture.topGaps(rowsFor(EXAMPLE), accepted, 16).map(gap => gap.itemId),
+        picture.topGaps(rowsFor(EXAMPLE), { ...metadata, profileRef: undefined }, 16).map(gap => gap.itemId));
+    assert.equal(picture.topGaps(rowsFor(EXAMPLE), accepted, 16).some(gap => gap.responseOptionId === 'unknown'), false);
+});
+
 function summarySource() {
     const fixtures = buildFixtures();
     return { questionnaire: require('../api/shared/protectedAssets/ncscQuestionnaire'), record: mixed(), metadata: fixtures.metadata };

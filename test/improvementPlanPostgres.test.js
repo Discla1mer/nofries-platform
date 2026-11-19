@@ -866,4 +866,127 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             expect(await lookup(other.scope, other.scope)).toBeNull();
         });
     });
+
+    // Scoring v2 (#399): plans for an assessment stored on profile 2026-11-18.1.
+    describe('plans for scoring v2 results', () => {
+        const ncscStore = require('../api/shared/assessmentLifecycle/postgresNcscAssessmentStore');
+        const { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT } = require('../api/shared/assessmentEngine/ncscProfileSet');
+        const LATER = '2026-11-19T09:00:00.000Z';
+        const EXAMPLE = ['no', 'ad_hoc', 'partly', 'partly', 'partly', 'mfa_text_code', 'unknown', 'partly', 'partly', 'no', 'no',
+            'no', 'ad_hoc', 'partly', 'no', 'unknown'];
+        const v2Responses = () => NCSC_V2_CONTEXT.questionIds.map((itemId, index) => ({ itemId, optionId: EXAMPLE[index], rationale: null }));
+        const original = process.env.NOFRIES_NCSC_PROFILE_V2;
+        const setFlag = value => { if (value === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2; else process.env.NOFRIES_NCSC_PROFILE_V2 = value; };
+        afterEach(() => setFlag(original));
+
+        // One organisation listing both profiles, with a policy that names the profile asked for.
+        async function organisation() {
+            setFlag('true'); clock.set(LATER);
+            const fixture = ncscFixture({ tenantId: `improvement-v2-${run}-${++sequence}`, now: clock.now(), capacity: 5,
+                profileRefs: [ACCEPTED_NCSC_CONTEXT.profileRef, NCSC_V2_CONTEXT.profileRef] });
+            const product = fixture.state.entitlementState.grants.find(row => row.grantId === 'synthetic-product');
+            product.modules.push('improvement_plan'); product.modules.sort();
+            product.code = 'dashboard_score';
+            fixture.state.flags.enabled.governance_workflow = false;
+            const adapters = createNcscAdapters(clock);
+            const assessments = createPostgresDashboardRepository({ database, clock: clock.now, authoriseAdministration: () => true,
+                ncsc: { audit: adapters.audit, resolveSubmissionQuota: selection => ({ ...adapters.resolveSubmissionQuota(selection),
+                    profileRef: clone(selection.profileRef) }) } });
+            await initialiseNcsc(assessments, fixture, `bootstrap-v2-${sequence}`);
+            const context = await createContext(fixture.scope, clock);
+            return { ...fixture, context, assessments };
+        }
+        async function planRows(example, planId) {
+            return (await ownerPool.query('SELECT * FROM nofries.dashboard_improvement_revisions WHERE tenant_id=$1 AND organisation_id=$2 AND plan_id=$3 ORDER BY revision',
+                [example.scope.tenantId, example.scope.organisationId, planId])).rows;
+        }
+        // Creation still uses the accepted profile, so the v2 first version is stored directly.
+        async function submitV2(example, assessmentId) {
+            const command = createCommand(assessmentId, 'create-' + assessmentId);
+            const created = ncscStore.makeVersion(ncscStore.stableIntent(example.context, command), command.idempotencyKey, null,
+                example.state.tenantAggregate, clock.now(), NCSC_V2_CONTEXT);
+            await database.withTenantTransaction(example.scope.tenantId, async tx => {
+                await ncscStore.appendVersion(tx, created); await ncscStore.moveHead(tx, created);
+            });
+            await example.assessments.executeNcscAssessment(example.context, saveCommand(assessmentId, 0, 'save-' + assessmentId, v2Responses()));
+            return example.assessments.executeNcscAssessment(example.context, submitCommand(assessmentId, 1, 'submit-' + assessmentId));
+        }
+        async function submitV1(example, assessmentId) {
+            await example.assessments.executeNcscAssessment(example.context, createCommand(assessmentId, 'create-' + assessmentId));
+            await example.assessments.executeNcscAssessment(example.context, saveCommand(assessmentId, 0, 'save-' + assessmentId, allResponses('no')));
+            return example.assessments.executeNcscAssessment(example.context, submitCommand(assessmentId, 1, 'submit-' + assessmentId));
+        }
+        const generateFor = (submitted, planId) => ({ planId, type: 'generate', operationId: 'generate-' + planId, expectedRevision: null,
+            actionId: null, payload: { assessmentId: submitted.assessment.assessmentId, assessmentRevision: submitted.assessment.revision,
+                assessmentRevisionSha256: submitted.assessment.revisionSha256 } });
+        const actionFor = (plan, itemId) => plan.actions.find(action => action.itemId === itemId);
+        function assignLabel(plan, itemId, operationId) {
+            return { planId: plan.planId, type: 'assign', operationId, expectedRevision: plan.revision,
+                actionId: actionFor(plan, itemId).actionId, payload: { ownerLabel: 'Office manager', dueDate: '2026-12-01' } };
+        }
+
+        test('flag on: a v2 result generates its plan from its own profile, and it survives restart and replay', async () => {
+            const example = await organisation();
+            const submitted = await submitV2(example, 'assessment-v2');
+            expect(submitted.assessment.profileRef).toEqual(NCSC_V2_CONTEXT.profileRef);
+            clock.advance(1000);
+            const created = await repository.executeImprovementPlan(example.context, generateFor(submitted, 'plan-v2'));
+            expect(created.plan.source.provenance).toMatchObject({ scoreContractVersion: 'PROD-003-R2',
+                profileRef: NCSC_V2_CONTEXT.profileRef, assessmentId: 'assessment-v2' });
+            expect(created.plan.actions.map(action => action.itemId).sort()).toEqual([...NCSC_V2_CONTEXT.questionIds].sort());
+            expect(actionFor(created.plan, 'NF-NCSC-CC-SU-01-Q1')).toMatchObject({ kind: 'implementation', response: 'no',
+                controlId: 'NF-NCSC-CC-SU-01', suggestedAction: 'List who has access, turn on the extra login step, and add a breach-notice clause.' });
+            expect(actionFor(created.plan, 'NF-NCSC-CC-EM-01-Q1')).toMatchObject({ kind: 'assessment', response: 'unknown' });
+            expect(actionFor(created.plan, 'NF-NCSC-MCSS-MF-01-Q2')).toMatchObject({ kind: 'implementation', response: 'partial',
+                suggestedAction: 'Move those accounts off text or email codes to an app, passkey or security key.' });
+            clock.advance(1000);
+            const assigned = await repository.executeImprovementPlan(example.context, assignLabel(created.plan, 'NF-NCSC-CC-SU-01-Q1', 'assign-v2'));
+            const restarted = makeRepository({ database, clock: clock.now });
+            const read = await restarted.readImprovementPlan(example.context, { planId: 'plan-v2' });
+            expect(read.plan).toEqual(assigned.plan);
+            expect(await restarted.executeImprovementPlan(example.context, generateFor(submitted, 'plan-v2'))).toEqual(created);
+        });
+
+        test('flag turned off again: a v2 plan is not read and no v2 plan is generated, and both work once it is back on', async () => {
+            const example = await organisation();
+            const first = await submitV2(example, 'assessment-v2');
+            const second = await submitV2(example, 'assessment-v3');
+            clock.advance(1000);
+            const created = await repository.executeImprovementPlan(example.context, generateFor(first, 'plan-v2'));
+            for (const value of [undefined, 'TRUE', '1']) {
+                setFlag(value);
+                await expect(repository.readImprovementPlan(example.context, { planId: 'plan-v2' })).rejects.toBeTruthy();
+                await expect(repository.executeImprovementPlan(example.context, generateFor(second, 'plan-v3'))).rejects.toBeTruthy();
+            }
+            expect(await planRows(example, 'plan-v3')).toEqual([]);
+            setFlag('true');
+            expect((await repository.readImprovementPlan(example.context, { planId: 'plan-v2' })).plan).toEqual(created.plan);
+        });
+
+        test('a v2 plan carries from an earlier v2 plan only, never from a v1 plan', async () => {
+            const example = await organisation();
+            const v1 = await submitV1(example, 'assessment-a');
+            clock.advance(1000);
+            const v1Plan = await repository.executeImprovementPlan(example.context, generateFor(v1, 'plan-a'));
+            // Work on a question id that v2 keeps.
+            clock.advance(1000);
+            await repository.executeImprovementPlan(example.context, assignLabel(v1Plan.plan, 'NF-NCSC-MCSS-MF-01-Q1', 'assign-a'));
+            clock.advance(1000);
+            const first = await submitV2(example, 'assessment-b');
+            clock.advance(1000);
+            const fresh = await repository.executeImprovementPlan(example.context, generateFor(first, 'plan-b'));
+            expect((await repository.readImprovementPlan(example.context, { planId: 'plan-b' })).history).toHaveLength(1);
+            expect(actionFor(fresh.plan, 'NF-NCSC-MCSS-MF-01-Q1')).toMatchObject({ status: 'open', ownerSubjectKey: null, dueDate: null });
+            clock.advance(1000);
+            await repository.executeImprovementPlan(example.context, assignLabel(fresh.plan, 'NF-NCSC-CC-SU-01-Q1', 'assign-b'));
+            clock.advance(1000);
+            const later = await submitV2(example, 'assessment-c');
+            clock.advance(1000);
+            await repository.executeImprovementPlan(example.context, generateFor(later, 'plan-c'));
+            const read = await repository.readImprovementPlan(example.context, { planId: 'plan-c' });
+            expect(read.history).toHaveLength(2);
+            expect(actionFor(read.plan, 'NF-NCSC-CC-SU-01-Q1')).toMatchObject({ ownerLabel: 'Office manager', dueDate: '2026-12-01', status: 'open' });
+            expect(actionFor(read.plan, 'NF-NCSC-MCSS-MF-01-Q1')).toMatchObject({ ownerSubjectKey: null, dueDate: null });
+        });
+    });
 });
