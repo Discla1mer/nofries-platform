@@ -96,7 +96,7 @@
                     'Unknown answers and claims of non-applicability stay in the range until confirmed.'),
             gapNote: model.gaps.length ? 'Lower reported readiness comes first. Ties follow publication order.' :
                 'No gaps were identified in the applicable answers.',
-            limit: model.iso ? 'This summary reflects your own answers. Certification comes only from an accredited certification body.' :
+            limit: model.iso ? 'This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.' :
                 'This summary reflects your own answers about the functions in scope. ' + publication.statements.attribution
         };
     }

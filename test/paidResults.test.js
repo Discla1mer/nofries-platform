@@ -34,7 +34,7 @@ function issuedFixture(data, change = value => value) {
 test('server projection fixes document bytes independently of saved response order', () => {
     const { record, publication } = fixture(true);
     const board = projectIsoOutput(record, publication, boardKind), statement = projectIsoOutput(record, publication, statementKind);
-    expect(digest(board)).toBe('4ed4237e205745b13e7ca6bf1f2193e8b19e9328d636417ed8d8d5bad1ec997d');
+    expect(digest(board)).toBe('3ca42ae2601d8630e4e69c01ca20d96f3302c15e391cb4e7d1ea9a651a8d8f6f');
     expect(digest(statement)).toBe('1948b6ad07f634b278625ba0f579196bdf1f97d75c69a4d5367eb6c4038ae6b5');
     expect(JSON.parse(board)).toMatchObject({ formatVersion: 1, outputKind: boardKind });
     expect(board).toContain('50% (3 applicable');
@@ -66,6 +66,9 @@ test('clicks carry the independently issued report ID and the sealed intent', as
         keys.add(intent.idempotencyKey);
     }
     expect(keys.size).toBe(4);
+    const claim = 'This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.';
+    expect(view.root.textContent).toContain(claim);
+    expect(view.copied.mock.calls[0][0]).toContain(claim);
     expect(view.copied.mock.calls[0][0]).toContain('Top gaps');
     expect(view.copied.mock.calls[1][0]).toContain(reason);
     expect(view.printed).toHaveBeenCalledTimes(2);
