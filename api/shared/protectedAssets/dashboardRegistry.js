@@ -45,7 +45,7 @@
     const rendererIntegrity = Object.freeze({
         collection: 'sha256-kxaNJOPXpMSfz6hGnpC1BYG5Awh/CZGOcximDl9Ac7g=',
         questionnaire: 'sha256-8QfOBBBl9FdFuTmqVEvMmhYHPR5Zx7QbsQuA+umd+wg=',
-        results: 'sha256-ND6K2BYrIb2BoGu9l0omvezKzmRpZJ/T/rP6CsdyCgY='
+        results: 'sha256-igK5Woag5xT1+bhWTLZXiOr9zklWBEsjnnVTR9Ran/Q='
     });
     function rendererSelection(generation, ref, name, nonce) {
         return JSON.stringify(['paid-renderer-v2', nonce, generation, ref.moduleId, ref.profileId, ref.version, name, rendererIntegrity[name]]);

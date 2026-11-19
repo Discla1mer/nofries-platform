@@ -101,7 +101,25 @@ async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, swi
         await button('Submit assessment').click();
         const board = page.getByRole('heading', { name: 'Board summary', exact: true });
         await board.waitFor();
-        await open(); await button('View results').click(); await board.waitFor();
+        await open();
+        const readback = page.waitForResponse(response => response.request().method() === 'GET' &&
+            new URL(response.url()).pathname.startsWith(collection + '/'));
+        const reader = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/assets/results.js'));
+        await button('View results').click(); await board.waitFor();
+        const detail = await readback;
+        assert.equal(detail.status(), 200);
+        const { assessment } = await detail.json();
+        assert.equal(assessment.status, 'submitted');
+        assert.equal(assessment.responses.length, publication.questions.length);
+        for (const key of ['catalogueSha256', 'sourceCatalogueSha256']) {
+            assert.match(publication[key], /^[0-9a-f]{64}$/);
+            assert.equal(assessment.profileRef[key], publication[key]);
+        }
+        const script = await reader;
+        assert.equal(script.status(), 200);
+        assert.match(script.headers()['cache-control'], /private/);
+        assert.match(script.headers()['cache-control'], /no-store/);
+        assert.equal('sha256-' + createHash('sha256').update(await script.body()).digest('base64'), rendererIntegrity.results);
         await board.scrollIntoViewIfNeeded();
         if (directory) await page.screenshot({ path: directory + '/' + ref.profileId + '-results.png' });
         assert.equal(assets.filter(row => row.path.includes('/results.js?') && row.status === 200 && /no-store/.test(row.cache)).length, 2);
