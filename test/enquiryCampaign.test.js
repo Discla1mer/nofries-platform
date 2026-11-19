@@ -92,3 +92,20 @@ test('the contact form only prefills an empty message with the fixed service lab
     expect(contact).toContain('!messageField.value');
     expect(contact).not.toMatch(/location\.search|URLSearchParams/);
 });
+
+test.each([
+    ['', null, false], ['?utm_campaign=alone', null, false], ['?utm_source=meta', null, true],
+    ['?service=managed_security_90', 'meta/paid/launch', true]
+])('contact intro follows the accepted campaign tag (%s, %s)', async (search, stored, campaign) => {
+    const { window } = land(search, stored);
+    window.enquiryAvailability = async () => ({ available: true });
+    const elements = new Map();
+    const document = { body: { dataset: { page: 'contact' } }, getElementById(id) {
+        if (!elements.has(id)) elements.set(id, { textContent: '', addEventListener() {} });
+        return elements.get(id);
+    } };
+    const contact = fs.readFileSync(path.join(__dirname, '../js/contact.js'), 'utf8');
+    await vm.runInNewContext(contact, { window, document });
+    expect(document.getElementById('contact-heading').textContent).toBe(campaign ? '90-day managed security' : '');
+    expect(document.getElementById('contact-intro').textContent.includes('NZ$1,250 + GST')).toBe(campaign);
+});
