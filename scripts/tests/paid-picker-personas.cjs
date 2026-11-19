@@ -146,7 +146,15 @@ async function main() {
                     const board = page.getByRole('heading', { name: 'Board summary', exact: true });
                     await board.waitFor();
                     await open();
-                    await button('View results').click();
+                    const detailPath = pathname + '/' + initial.assessmentId;
+                    const [readback] = await Promise.all([
+                        page.waitForResponse((response) => new URL(response.url()).pathname === detailPath && response.request().method() === 'GET'),
+                        button('View results').click()
+                    ]);
+                    assert.equal(readback.status(), 200);
+                    const reopened = (await readback.json()).assessment;
+                    assert.equal(reopened.status, 'submitted');
+                    if (ref.profileId === reviewedIso.profileId) assert.deepEqual(reopened.profileRef, reviewedIso);
                     await board.waitFor();
                     await observe('results');
                     assert.equal(await page.getByRole('button', { name: /^(Copy|Print) / }).count(), 0);
