@@ -82,7 +82,49 @@
                 domain.rows.length + ' outcomes · ' + excluded + ' marked not applicable, to confirm' };
     }
 
-    function mount(container, { record, publication, isCurrent, authoriseExport }) {
+    const boardKind = 'iso_board_summary', statementKind = 'iso_statement_of_applicability';
+    const reportIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
+    const gapLabel = gap => gap.id + ' · ' + gap.title + ' — ' + gap.status;
+    const rowDetail = row => 'Applicability: ' + (row.applies ? 'Applicable' : 'Marked not applicable') +
+        '\nReason: ' + (row.reason || 'No reason recorded') + '\nStatus: ' + row.status;
+
+    function boardCopy(model, publication) {
+        return {
+            groupHeading: 'Readiness by ' + (model.iso ? 'clause group and theme' : 'function'),
+            explanation: 'Figures use the answers in this submission. Partly in place counts as half. ' +
+                (model.iso ? 'Items marked not applicable are excluded.' :
+                    'Unknown answers and claims of non-applicability stay in the range until confirmed.'),
+            gapNote: model.gaps.length ? 'Lower reported readiness comes first. Ties follow publication order.' :
+                'No gaps were identified in the applicable answers.',
+            limit: model.iso ? 'This summary reflects your own answers. Certification comes only from an accredited certification body.' :
+                'This summary reflects your own answers about the functions in scope. ' + publication.statements.attribution
+        };
+    }
+
+    // The issuer freezes and hashes the UTF-8 bytes of this string. Format 1 uses
+    // ordered JSON fields and an ordered list of [element, plain text] blocks.
+    function isoContent(model, publication, outputKind) {
+        requireValue(model.iso && (outputKind === boardKind || outputKind === statementKind));
+        const blocks = [['h1', outputKind === boardKind ? 'Board summary' : 'Statement of Applicability'],
+            ['p', model.title], ['p', model.identity]];
+        if (outputKind === boardKind) {
+            const copy = boardCopy(model, publication);
+            blocks.push(['h2', copy.groupHeading]);
+            for (const group of model.groups) blocks.push(['p', group.title + ' — ' + group.readiness + ' (' + group.detail + ')']);
+            blocks.push(['p', copy.explanation], ['h2', 'Top gaps'], ['p', copy.gapNote]);
+            for (const gap of model.gaps) blocks.push(['p', gap.action ? gapLabel(gap) + '\n' + gap.action : gapLabel(gap)]);
+            blocks.push(['p', copy.limit]);
+        } else {
+            for (const row of model.statement) blocks.push(['p', row.id + ' · ' + row.title + '\n' + rowDetail(row)]);
+        }
+        return JSON.stringify({ formatVersion: 1, outputKind, blocks });
+    }
+
+    function projectIsoOutput(record, publication, outputKind) {
+        return isoContent(project(record, publication), publication, outputKind);
+    }
+
+    function mount(container, { record, publication, isCurrent, issuedExports }) {
         mounts.get(container)?.destroy();
         const doc = container.ownerDocument, win = doc.defaultView;
         function node(tag, text, className) {
@@ -113,58 +155,63 @@
         const heading = node('h2', model.title);
         panel.append(heading, node('p', model.identity));
         const board = node('section');
-        const groupHeading = 'Readiness by ' + (model.iso ? 'clause group and theme' : 'function');
+        const { groupHeading, explanation, gapNote, limit } = boardCopy(model, publication);
         board.append(node('h3', 'Board summary'), node('h4', groupHeading));
         const list = node('ul', undefined, 'paid-readiness-groups');
-        const groupLines = model.groups.map(group => group.title + ' — ' + group.readiness + ' (' + group.detail + ')');
         for (const group of model.groups) {
             const item = node('li');
             item.append(node('strong', group.title), node('span', group.readiness), node('small', group.detail));
             list.append(item);
         }
-        const explanation = 'Figures use the answers in this submission. Partly in place counts as half. ' +
-            (model.iso ? 'Items marked not applicable are excluded.' :
-                'Unknown answers and claims of non-applicability stay in the range until confirmed.');
         board.append(list, node('p', explanation), node('h4', 'Top gaps'));
-        const gapList = node('ol'), gapLines = [];
+        const gapList = node('ol');
         for (const gap of model.gaps) {
-            const label = gap.id + ' · ' + gap.title + ' — ' + gap.status;
+            const label = gapLabel(gap);
             const item = node('li'); item.append(node('strong', label));
             if (gap.action) item.append(node('p', gap.action));
             gapList.append(item);
-            gapLines.push(label);
         }
-        const gapNote = gapLines.length ? 'Lower reported readiness comes first. Ties follow publication order.' :
-            'No gaps were identified in the applicable answers.';
         board.append(node('p', gapNote), gapList);
-        const limit = model.iso ? 'This summary reflects your own answers. Certification comes only from an accredited certification body.' :
-            'This summary reflects your own answers about the functions in scope. ' + publication.statements.attribution;
         board.append(node('p', limit));
         panel.append(board);
 
-        function exportControls(section, name, blocks, headings = []) {
-            if (typeof authoriseExport !== 'function') return;
+        function exportControls(section, name, outputKind) {
+            const issuedReportId = issuedExports?.reportIds?.[outputKind];
+            if (!model.iso || typeof issuedExports?.read !== 'function' ||
+                typeof issuedReportId !== 'string' || !reportIdPattern.test(issuedReportId)) return;
+            const content = isoContent(model, publication, outputKind);
+            const { assessmentId, revision: expectedRevision, submission: { responseSetSha256 } } = record.assessment;
             const notice = node('p'); notice.setAttribute('role', 'status');
             const controls = node('div', undefined, 'paid-results-controls');
             let pending = false;
             for (const verb of ['Copy', 'Print']) {
                 const button = node('button', verb + ' ' + name.toLowerCase(), 'dashboard-button dashboard-button-secondary');
                 button.type = 'button';
+                // Retain the intent after a lost acknowledgement or local delivery failure.
+                let intent;
                 button.addEventListener('click', async function () {
                     if (pending || !live()) return;
                     pending = true;
                     try {
-                        if (await authoriseExport() !== true || !live()) throw new Error();
+                        intent ??= Object.freeze({ outputKind, action: verb.toLowerCase(), issuedReportId, assessmentId,
+                            expectedRevision, responseSetSha256, idempotencyKey: win.crypto.randomUUID() });
+                        const { content: issuedContent, outputSha256, intent: receipt } = await issuedExports.read(intent);
+                        requireValue(live() && issuedContent === content && typeof outputSha256 === 'string' && sha256.test(outputSha256) &&
+                            Object.keys(intent).every(key => receipt?.[key] === intent[key]));
+                        const hash = await win.crypto.subtle.digest('SHA-256', new TextEncoder().encode(issuedContent));
+                        const hex = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+                        requireValue(hex === outputSha256 && live());
+                        const { blocks } = JSON.parse(issuedContent);
                         if (verb === 'Copy') {
-                            await win.navigator.clipboard.writeText(blocks.join('\n\n'));
+                            await win.navigator.clipboard.writeText(blocks.map(block => block[1]).join('\n\n'));
                             if (live()) notice.textContent = name + ' copied.';
                         } else {
                             paper = node('article', undefined, 'paid-results-paper');
-                            paper.append(node('h1', blocks[0]));
-                            for (const block of blocks.slice(1)) paper.append(node(headings.includes(block) ? 'h2' : 'p', block));
+                            for (const [tag, text] of blocks) paper.append(node(tag, text));
                             doc.body.append(paper);
                             try { win.print(); } finally { paper.remove(); }
                         }
+                        intent = undefined;
                     } catch {
                         if (live()) notice.textContent = verb + ' is unavailable for this assessment.';
                     } finally { pending = false; }
@@ -173,25 +220,20 @@
             }
             section.append(controls, notice);
         }
-        exportControls(board, 'Board summary', ['Board summary', model.title, model.identity, groupHeading,
-            ...groupLines, explanation, 'Top gaps', gapNote, ...gapLines, limit], [groupHeading, 'Top gaps']);
+        exportControls(board, 'Board summary', boardKind);
         if (model.iso) {
             const section = node('section'), title = 'Statement of Applicability';
             section.append(node('h3', title));
-            const blocks = [title, model.title, model.identity];
-            exportControls(section, title, blocks);
+            exportControls(section, title, statementKind);
             for (const row of model.statement) {
                 const label = row.id + ' · ' + row.title;
-                const detail = 'Applicability: ' + (row.applies ? 'Applicable' : 'Marked not applicable') +
-                    '\nReason: ' + (row.reason || 'No reason recorded') + '\nStatus: ' + row.status;
                 const item = node('article');
-                item.append(node('h4', label), node('p', detail));
+                item.append(node('h4', label), node('p', rowDetail(row)));
                 section.append(item);
-                blocks.push(label + '\n' + detail);
             }
             panel.append(section);
         }
         return handle;
     }
-    return Object.freeze({ mount });
+    return Object.freeze({ mount, projectIsoOutput });
 }));
