@@ -851,7 +851,7 @@
             ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
-            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, readPaidFramework: cyber.readPaidFramework, paidHost: cyber.paidHost } : {}),
+            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, paidHost: cyber.paidHost } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}),
@@ -1551,38 +1551,14 @@
         };
         if (value.paidFrameworks) {
             mountCyber.paidFrameworks = value.paidFrameworks;
-            mountCyber.readPaidFramework = async function (ref, after) {
-                const id = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
-                if (!current(cycle) || cycle.authorityPending || !value.paidFrameworks.some(row =>
-                    window.NoFriesDashboardRegistry.sameFramework(row, ref)) || after !== null && !id.test(after)) throw invalid();
-                const path = '/api/dashboard/frameworks/' + encodeURIComponent(ref.profileId) + '/' + encodeURIComponent(ref.version) +
-                    '/assessments' + (after === null ? '' : '?afterAssessmentId=' + encodeURIComponent(after));
-                const result = await request(cycle, path, undefined, snapshot.generation);
-                if (!current(cycle) || cycle.authorityPending) throw invalid();
-                const page = requireSuccess(result);
-                if (!fields(page, ['schemaVersion', 'publication', 'assessments', 'nextAfterAssessmentId']) || page.schemaVersion !== 1 ||
-                    page.publication?.status !== 'published' || page.publication.profile?.id !== ref.profileId ||
-                    page.publication.profile.version !== ref.version || !Array.isArray(page.assessments) || page.assessments.length > 25) throw invalid();
-                let previous = after;
-                for (const row of page.assessments) {
-                    if (!fields(row, ['assessmentId', 'status', 'revision', 'updatedAt']) || typeof row.assessmentId !== 'string' ||
-                        !id.test(row.assessmentId) || previous !== null && row.assessmentId <= previous ||
-                        !['created', 'in-progress', 'submitted', 'reviewed', 'archived'].includes(row.status) ||
-                        !Number.isSafeInteger(row.revision) || row.revision < 0 || !canonicalDate(row.updatedAt)) throw invalid();
-                    previous = row.assessmentId;
-                }
-                if (page.nextAfterAssessmentId !== null && (!page.assessments.length || page.nextAfterAssessmentId !== previous)) throw invalid();
-                return page;
-            };
             mountCyber.paidHost = function (ref, selected) {
                 const registry = window.NoFriesDashboardRegistry;
                 const live = () => current(cycle) && !cycle.authorityPending && selected() &&
                     value.paidFrameworks.some(row => registry.sameFramework(row, ref));
                 const prefix = '/api/dashboard/frameworks/' + encodeURIComponent(ref.profileId) + '/' + encodeURIComponent(ref.version);
-                const collection = prefix + '/assessments';
                 const cleanups = new Set();
                 async function renderer(name) {
-                    if (!live() || !['questionnaire', 'results'].includes(name)) throw invalid();
+                    if (!live() || !Object.hasOwn(registry.rendererIntegrity, name)) throw invalid();
                     // A fresh salt keeps separate loads from sharing a selection identifier in access logs.
                     const nonce = secureId().replace(/-/g, '');
                     const sri = registry.rendererIntegrity[name], message = registry.rendererSelection(snapshot.generation, ref, name, nonce);
@@ -1591,7 +1567,7 @@
                     if (!live()) throw invalid();
                     return new Promise((resolve, reject) => {
                         const node = document.createElement('script');
-                        const key = name === 'results' ? 'NoFriesPaidResults' : 'NoFriesPaidQuestionnaire';
+                        const key = { collection: 'NoFriesPaidCollection', questionnaire: 'NoFriesPaidQuestionnaire', results: 'NoFriesPaidResults' }[name];
                         const cancel = () => finish(null);
                         const timer = window.setTimeout(cancel, REQUEST_MS);
                         function finish(factory) {
@@ -1609,19 +1585,15 @@
                         document.head.append(node);
                     });
                 }
-                async function record(id, action, body) {
-                    if (!live() || typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(id)) throw invalid();
-                    const detail = collection + '/' + encodeURIComponent(id);
-                    const path = action === 'start' ? collection : action === 'read' ? detail : action;
-                    if (action !== 'start' && action !== 'read' && path !== detail + '/save' && path !== detail + '/submit') throw invalid();
-                    const result = await request(cycle, path, body, snapshot.generation);
+                const encodedId = '[A-Za-z0-9](?:[A-Za-z0-9._-]|%3A){0,119}';
+                const allowedPath = new RegExp('^/assessments(?:\\?afterAssessmentId=' + encodedId + '|/' + encodedId + '(?:/(?:save|submit))?)?$');
+                async function requestSelected(path, body) {
+                    if (!live() || !allowedPath.test(path)) throw invalid();
+                    const result = await request(cycle, prefix + path, body, snapshot.generation);
                     if (!live()) throw invalid();
-                    const envelope = requireSuccess(result), item = envelope?.assessment;
-                    if (envelope.schemaVersion !== 1 || item?.assessmentId !== id || item.moduleId !== ref.moduleId ||
-                        item.profileRef?.profileId !== ref.profileId || item.profileRef.profileVersion !== ref.version) throw invalid();
-                    return envelope;
+                    return requireSuccess(result);
                 }
-                return { live, renderer, record, newId: secureId, editable: value.presentationMode === 'editable',
+                return { live, renderer, request: requestSelected, prefix, invalid, fields, canonicalDate, newId: secureId, editable: value.presentationMode === 'editable',
                     destroy() { for (const cancel of cleanups) cancel(); } };
             };
         }

@@ -148,7 +148,7 @@ function harness(options = {}) {
         mounts.push({ root, model, config, controller, destroy });
         return controller;
     }) };
-    const context = vm.createContext({ document, window, fetch, AbortController, Date, console: { log: jest.fn(), error: jest.fn() } });
+    const context = vm.createContext({ document, window, fetch, TextEncoder, AbortController, Date, console: { log: jest.fn(), error: jest.fn() } });
     const source = options.documentHtml ? options.documentHtml.match(/<script id="dashboardRuntime">([\s\S]*?)<\/script>/)[1] : options.source || SOURCE;
     vm.runInContext(source, context, { filename: 'dashboard-loader.js' });
     async function reply(index, status, value, extra) {
@@ -1694,9 +1694,19 @@ describe('ready Cyber composition', () => {
     }
     const registry = require('../api/shared/protectedAssets/dashboardRegistry');
     const tuple = ({ moduleId, profileId, version }) => ({ moduleId, profileId, version });
-    async function pick(grants) {
+    async function pick(grants, allowCollection = true) {
         const h = harness({ cyber: true, hash: '#cyber-security' });
         h.window.NoFriesDashboardRegistry = registry;
+        h.window.crypto.subtle = { digest: async (_algorithm, bytes) => crypto.createHash('sha256').update(bytes).digest() };
+        const append = h.document.head.append;
+        h.document.head.append = node => {
+            append(node);
+            if (!node.src?.includes('/assets/collection.js?')) return;
+            expect(node.integrity).toBe(registry.rendererIntegrity.collection);
+            if (!allowCollection) { node.onerror(); return; }
+            h.window.NoFriesPaidCollection = require('../api/shared/protectedAssets/paidCollection');
+            node.onload();
+        };
         await ready(h, 'editable', { paidFrameworks: grants });
         return h;
     }
@@ -1729,6 +1739,12 @@ describe('ready Cyber composition', () => {
         pickButton(h, 'Back to assessment choices').click(); await flush();
         expect(root.textContent).toContain('Choose an assessment');
         expect(h.requests.every(row => row.init.method === 'GET')).toBe(true);
+    });
+    test('refused collection script cannot read or mount a paid screen', async () => {
+        const ref = registry.paidFrameworks[0], h = await pick([tuple(ref)], false);
+        pickButton(h, 'Open ' + ref.label).click(); await flush();
+        expect(h.requests).toHaveLength(5);
+        expect(h.elements.dashboardApp.textContent).toContain('This assessment is unavailable.');
     });
     test('a different publication cannot disclose saved assessment headers', async () => {
         const [nist, iso] = registry.paidFrameworks, h = await pick([tuple(nist)]);

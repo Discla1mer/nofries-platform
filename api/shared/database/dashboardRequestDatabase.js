@@ -1,7 +1,5 @@
 'use strict';
 
-const { rendererDisclosure } = require('../paidRendererAssets');
-
 const serverTiming = require('../serverTiming');
 const TIMING_STAGES = Object.freeze({ captureRequest: 'session', readExternalRuntimeEpoch: 'epoch' });
 
@@ -723,15 +721,6 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
                     inv.now(); return value;
                 });
                 inv.now();
-                const witness = name === 'framework.read' && rendererDisclosure.get(inv.request);
-                if (witness && operation.profileRef.profileId === witness.ref.profileId &&
-                    operation.profileRef.profileVersion === witness.ref.version) {
-                    const evidence = active.finalAuthority;
-                    witness.check = () => {
-                        try { currentAuthorityAt(inv, operation, evidence, inv.now()); }
-                        catch (error) { throw mapped(error, name, operation.denial); }
-                    };
-                }
                 if (routing.portfolio) routing.readContext = context;
                 return result;
             } catch (error) {

@@ -55,7 +55,8 @@ async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, swi
             assert.ok(!bundle.includes(question.prompt));
             for (const example of question.guidance.evidenceExamples) assert.ok(!bundle.includes(example));
         }
-        assert.ok(await page.evaluate(() => !window.NoFriesPaidQuestionnaire && !window.NoFriesPaidResults &&
+        assert.ok(!bundle.includes('The start could not be confirmed.'));
+        assert.ok(await page.evaluate(() => !window.NoFriesPaidCollection && !window.NoFriesPaidQuestionnaire && !window.NoFriesPaidResults &&
             typeof window.NoFriesNcscQuestionnaire.mount === 'function'));
         await page.getByRole('textbox', { name: 'What part of your organisation will you assess?' }).fill('Synthetic workshop');
         await button('Start assessment').click();
@@ -65,16 +66,17 @@ async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, swi
         await button('Save progress').waitFor();
         await page.getByRole('radio').first().scrollIntoViewIfNeeded();
         if (directory) await page.screenshot({ path: directory + '/' + ref.profileId + '-resume.png' });
-        assert.equal(assets.length, 2); assert.ok(assets.every(row => row.status === 200 && /no-store/.test(row.cache)));
-        assert.notEqual(assets[0].path, assets[1].path);
-        for (const row of assets) assert.match(row.path, /\/questionnaire\.js\?v=[\w-]{43}&s=[a-f0-9]{32}\.[a-f0-9]{64}$/);
-        const admitted = assets[0].path;
+        assert.equal(assets.length, 4);
+        assert.ok(assets.every(row => row.status === 200 && /no-store/.test(row.cache)));
+        assert.equal(new Set(assets.map(row => row.path)).size, 4);
+        for (const row of assets) assert.match(row.path, /\/(?:collection|questionnaire)\.js\?v=[\w-]{43}&s=[a-f0-9]{32}\.[a-f0-9]{64}$/);
+        const admitted = assets.find(row => row.path.includes('/questionnaire.js?')).path;
         const session = await request(app).get('/api/dashboard/session').set('Cookie', cookie);
         assert.ok(!admitted.includes(session.body.generation));
         const bad = admitted.slice(0, -1) + (admitted.endsWith('0') ? '1' : '0');
         await request(app).get(bad).set('Cookie', cookie).expect(403);
         await request(app).get(admitted).expect(401);
-        for (const name of ['questionnaire', 'results']) {
+        for (const name of ['collection', 'questionnaire', 'results']) {
             await request(app).get(assetPath(other, name, session.body.generation)).set('Cookie', cookie).expect(403);
         }
         await request(app).get('/api/dashboard/frameworks/' + other.profileId + '/' + other.version + '/assessments')

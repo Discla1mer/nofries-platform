@@ -33,3 +33,15 @@ test.each(paidFrameworks)('fixed renderer URLs bind $label, its generation and i
     try { expect(packagedAsset(asset)).toBeNull(); }
     finally { read.mockRestore(); }
 });
+
+test('the collection screen is a separate pinned script, absent from the free bundle', async () => {
+    const { createDashboardService } = require('../api/shared/dashboardService');
+    const { admissionFixture } = require('./fixtures/dashboardAdmissionFixture');
+    const app = await createDashboardService(admissionFixture().adapters).handleRequest({ method: 'GET' }, 'app.js');
+    const collection = packagedAsset(parse(assetPath(paidFrameworks[0], 'collection', generation)));
+    expect(app.status).toBe(200); expect(collection.status).toBe(200);
+    expect(collection.headers['Cache-Control']).toMatch(/no-store/);
+    expect(collection.body).toContain('The start could not be confirmed.');
+    expect(app.body).not.toContain('The start could not be confirmed.');
+    expect(app.body).not.toContain(collection.body);
+});

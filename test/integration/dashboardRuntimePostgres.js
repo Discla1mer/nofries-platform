@@ -1741,9 +1741,9 @@ function registerRealPostgresTests() {
             const bound = await bindResource();
             return { ...f, ...target, ...bound, seed, selected, quota, resourceOptions, bindResource, addResource };
         }
-        require('./paidRendererPicker')({ resourceSetup, NCSC_SUBJECT, nextId, identity });
         require('./improvementPlanRecovery')({ resourceSetup,
             getPools: () => ({ ownerPool, controlPool, runtimePool, maintenancePool }), testUrl, maintenanceRole });
+        require('./paidRendererPicker')({ resourceSetup, NCSC_SUBJECT, nextId, identity });
         async function newCustomerActivationSetup({ shortWindow = false, memberLimit = null, memberRole = 'admin' } = {}) {
             const request = require('supertest');
             const { customerProductionHarness, uid: customerId } = require('../helpers/customerProductionHarness');

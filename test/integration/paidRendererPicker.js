@@ -46,13 +46,15 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
         user.authority.accountType = 'consultant'; user.save();
         const { cookie } = await h.login(user);
         await h.consent(cookie);
-        const session = await h.sameOrigin(request(h.app).post('/api/dashboard/session')).set('Cookie', cookie)
+        await h.sameOrigin(request(h.app).post('/api/dashboard/session')).set('Cookie', cookie)
             .send({ operationId: nextId() }).expect(200);
         async function select(bindingId) {
             const current = await request(h.app).get('/api/dashboard/session').set('Cookie', cookie).expect(200);
             await h.sameOrigin(request(h.app).post('/api/dashboard/selection')).set('Cookie', cookie)
                 .send({ operationId: nextId(), bindingId, expectedGeneration: current.body.generation }).expect(200);
         }
+        const session = await request(h.app).get('/api/dashboard/session').set('Cookie', cookie).expect(200);
+        expect(session.body.generation).toMatch(/^[a-f0-9]{64}$/);
         return { f, h, cookie, select, generation: session.body.generation };
     }
     async function revokeFixtureProduct(f, ref) {
@@ -72,7 +74,7 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
     }
     test.each(paidFrameworks)('paid renderer flag off denies a signed-in $label asset', async ref => {
         const { h, cookie, generation } = await fixture(ref, 'https://nofries.example.test', 'TRUE');
-        for (const name of ['questionnaire', 'results']) {
+        for (const name of ['collection', 'questionnaire', 'results']) {
             await request(h.app).get(assetPath(ref, name, generation)).set('Cookie', cookie).expect(404);
         }
         await request(h.app).get('/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assessments')

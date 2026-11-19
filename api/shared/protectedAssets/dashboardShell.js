@@ -546,7 +546,7 @@
                 const card = panel(ref.label, ref.description);
                 card.append(badge(included ? 'Included' : 'Locked'));
                 if (included) {
-                    card.append(button('Open ' + ref.label, function () { renderPaidCollection(root, ref); }));
+                    card.append(button('Open ' + ref.label, function () { openFramework(root, ref); }));
                 } else hasLocked = true;
                 cards.append(card);
             }
@@ -557,111 +557,25 @@
                 root.append(contact);
             }
         }
-        function renderPaidCollection(root, ref) {
+        function openFramework(root, ref) {
             const back = button('Back to assessment choices', backToFrameworkPicker, 'dashboard-text-button');
-            const heading = element('h2', '', ref.label); heading.tabIndex = -1;
-            const list = element('ul', 'ncsc-assessment-list'), status = element('p');
-            status.setAttribute('role', 'status');
-            const more = button('Load more assessments', function () { load(cursor); }, 'dashboard-button dashboard-button-secondary');
-            more.hidden = true;
-            root.replaceChildren(back, heading, status, list, more); heading.focus();
-            const states = { created: 'Started', 'in-progress': 'In progress', submitted: 'Submitted', reviewed: 'Reviewed', archived: 'Archived' };
-            let disposed = false, cursor = null;
-            let publication = null, mounted = null, busy = false, listing = false, pending = null, startDispatched = false;
+            const status = element('p', '', 'Opening assessment…'); status.setAttribute('role', 'status');
+            root.replaceChildren(back, status); back.focus();
+            let disposed = false, mounted = null;
             const host = options.paidHost(ref, () => !disposed);
-            const controls = element('div', 'ncsc-questionnaire'), display = element('div');
-            root.append(controls, display);
             child = { destroy() {
-                disposed = true; host.destroy(); if (mounted) mounted.destroy();
-                publication = null; pending = null; root.replaceChildren();
+                disposed = true; host.destroy();
+                if (mounted) mounted.destroy();
+                root.replaceChildren();
             }, requestLeave(commit) {
-                if (busy) return Promise.resolve(false);
-                if (mounted && mounted.requestLeave) return mounted.requestLeave(commit);
-                if (pending && !win.confirm('Leave and check the saved assessment later?')) return Promise.resolve(false);
+                if (mounted) return mounted.requestLeave(commit);
                 commit(); return Promise.resolve(true);
             } };
-            function unavailable() {
-                if (disposed) return;
-                if (mounted) { mounted.destroy(); mounted = null; }
-                heading.hidden = false;
-                list.replaceChildren(); controls.replaceChildren(); display.replaceChildren(); more.hidden = true; pending = null;
-                status.textContent = 'This assessment is unavailable. Return to the assessment choices to try again.';
-            }
-            function focusRecord() {
-                const title = display.querySelector('h1, h2');
-                if (title) { heading.hidden = true; title.tabIndex = -1; title.focus(); }
-            }
-            async function showRecord(id, start) {
-                if (busy || listing || !host.live() || (pending && start !== pending)) return;
-                busy = true;
-                try {
-                    // For a new run prove the renderer is available before creating a record.
-                    const form = start ? await host.renderer('questionnaire') : null;
-                    if (start) startDispatched = true;
-                    const record = await host.record(id, start ? 'start' : 'read', start || undefined);
-                    pending = null;
-                    const results = async sealed => {
-                        const factory = await host.renderer('results');
-                        if (!host.live()) return;
-                        mounted = factory.mount(display, { record: sealed, publication, isCurrent: host.live });
-                        focusRecord();
-                    };
-                    if (!host.editable && !record.assessment.submission) { unavailable(); return; }
-                    list.replaceChildren(); controls.replaceChildren(); more.hidden = true; status.textContent = '';
-                    if (record.assessment.submission) await results(record);
-                    else {
-                        const factory = form || await host.renderer('questionnaire');
-                        if (!host.live()) return;
-                        mounted = factory.mount(display, { record, publication, isCurrent: host.live,
-                            mutate: (path, body) => host.record(id, path, body),
-                            showResults: sealed => { results(sealed).catch(unavailable); } });
-                        focusRecord();
-                    }
-                } catch (error) {
-                    if (disposed) return;
-                    if (pending && startDispatched && (error.status === undefined || error.status >= 500)) {
-                        status.textContent = 'The start could not be confirmed. Try again to check the same request.';
-                    } else unavailable();
-                } finally { busy = false; }
-            }
-            function startControls() {
-                const label = element('label', '', 'What part of your organisation will you assess?');
-                const scope = element('textarea'); scope.maxLength = 4000; label.append(scope);
-                const start = button('Start assessment', () => {
-                    if (busy || listing || !host.live()) return;
-                    if (!scope.value.trim()) { status.textContent = 'Describe the scope before you start.'; scope.focus(); return; }
-                    if (!pending) pending = { assessmentId: host.newId(), idempotencyKey: host.newId(), expectedRevision: null,
-                        payload: { scopePopulation: { description: scope.value.trim() } } };
-                    scope.disabled = true; showRecord(pending.assessmentId, pending);
-                });
-                controls.replaceChildren(label, start);
-            }
-            async function load(after) {
-                if (listing || busy || pending) return;
-                listing = true; more.disabled = true; status.textContent = 'Loading assessments…';
-                try {
-                    const page = await options.readPaidFramework(ref, after);
-                    if (disposed) return;
-                    publication ||= page.publication;
-                    for (const row of page.assessments) {
-                        const item = element('li', 'ncsc-assessment-card');
-                        item.append(element('strong', '', states[row.status]), element('p', '', 'Last saved ' + row.updatedAt.slice(0, 10) + ' UTC'),
-                            element('p', 'ncsc-preserve-text', 'Assessment reference: ' + row.assessmentId));
-                        if (row.status === 'submitted' || host.editable && ['created', 'in-progress'].includes(row.status)) {
-                            item.append(button(row.status === 'submitted' ? 'View results' : 'Resume assessment', () => showRecord(row.assessmentId)));
-                        }
-                        list.append(item);
-                    }
-                    cursor = page.nextAfterAssessmentId;
-                    more.hidden = cursor === null; more.disabled = false;
-                    if (after === null && host.editable) startControls();
-                    status.textContent = list.children.length ? '' : 'No saved assessments yet.';
-                } catch (_) {
-                    if (disposed) return;
-                    unavailable();
-                } finally { listing = false; }
-            }
-            load(null);
+            host.renderer('collection').then(factory => {
+                if (host.live()) mounted = factory.mount(root, { ref, element, button, back, host, win });
+            }).catch(() => {
+                if (!disposed) status.textContent = 'This assessment is unavailable. Return to the assessment choices to try again.';
+            });
         }
         function mountFreeCyber(childRoot, initialAssessmentId) {
             try {

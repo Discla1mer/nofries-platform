@@ -724,14 +724,9 @@ function createDashboardRuntimeHandlers(configuration) {
             if (typeof bound.paid !== 'function') fail(404, 'dashboard_not_found');
             const file = rendererAssets.packagedAsset(asset);
             if (!file) fail(404, 'dashboard_not_found');
-            const witness = { ref: asset.ref, check: null };
-            rendererAssets.rendererDisclosure.set(privateRequest, witness);
-            try {
-                await bounded(() => bound.paid({ profileId: asset.ref.profileId, version: asset.ref.version,
-                    assessmentId: null, mutation: null }, undefined, null));
-            } finally { rendererAssets.rendererDisclosure.delete(privateRequest); }
-            if (!witness.check) fail(403, 'dashboard_access_denied');
-            entry.disclosureCheck = () => { entry.disclosureCheck = null; witness.check(); };
+            await bounded(() => bound.paid({ profileId: asset.ref.profileId, version: asset.ref.version,
+                assessmentId: null, mutation: null }, undefined, null, check => { entry.disclosureCheck = check; }));
+            if (typeof entry.disclosureCheck !== 'function') fail(403, 'dashboard_access_denied');
             return file;
         }
         if (selected.route === 'session' && command?.action === 'customer_activation') {

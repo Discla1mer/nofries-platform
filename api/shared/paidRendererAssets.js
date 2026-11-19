@@ -6,11 +6,9 @@ const { createHash } = require('node:crypto');
 const registry = require('./protectedAssets/dashboardRegistry');
 const { apiSecurityHeaders } = require('./securityHeaders');
 
-// Private request identity joins the host disclosure callback to the settled framework.read.
-const rendererDisclosure = new WeakMap();
-const files = { questionnaire: 'paidQuestionnaire.js', results: 'paidResults.js' };
+const files = { collection: 'paidCollection.js', questionnaire: 'paidQuestionnaire.js', results: 'paidResults.js' };
 function parseAsset(route, query) {
-    const match = /^frameworks\/([\w.-]+)\/([\w.-]+)\/assets\/(questionnaire|results)\.js$/.exec(route);
+    const match = /^frameworks\/([\w.-]+)\/([\w.-]+)\/assets\/(collection|questionnaire|results)\.js$/.exec(route);
     if (!match) return null;
     const [, profileId, version, name] = match;
     const ref = registry.paidFrameworks.find(row => row.profileId === profileId && row.version === version);
@@ -38,4 +36,4 @@ function packagedAsset(asset) {
             'Cross-Origin-Resource-Policy': 'same-origin' }) };
 }
 
-module.exports = { parseAsset, matchesSelection, packagedAsset, rendererDisclosure };
+module.exports = { parseAsset, matchesSelection, packagedAsset };
