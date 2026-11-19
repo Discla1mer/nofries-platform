@@ -1335,7 +1335,7 @@ describe('internal dashboard loader protocol', () => {
     test.each([
         ['the app\'s own JSON 403', 403, { code: 'dashboard_access_denied' }, undefined, 'denied'],
         ['an HTML page with status 200', 200, null, platformPage, 'unavailable'],
-        ['an HTML 401', 401, null, platformPage, 'unavailable'],
+        ['D-046 an HTML session 401', 401, null, platformPage, 'unauthenticated'],
         ['a redirected HTML 403', 403, null, { ...platformPage, redirected: true }, 'unavailable']
     ])('%s is not treated as an update in progress', async (_name, status, body, extra, expected) => {
         const h = harness(); await flush();

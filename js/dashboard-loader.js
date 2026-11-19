@@ -130,38 +130,49 @@
     // Retain one immutable command until an acknowledgement or definite denial.
     let unresolved = null;
     const commandContinuations = new WeakMap();
-    // Only the last opened organisation's binding ID is kept on this browser.
+    // Only the last opened organisation's binding ID is kept in this tab session.
     // It is a hint: a fresh directory read and the server selection check
     // decide whether it can be reopened.
     const LAST_ORGANISATION_KEY = 'nofries-dashboard-last-organisation';
     let resumeOffered = false;
-    function lastOrganisationStore() {
+    function hintStore() {
         try { return window.localStorage || null; } catch (_) { return null; }
+    }
+    function lastOrganisationStore() {
+        try { return window.sessionStorage || null; } catch (_) { return null; }
     }
     function lastOrganisation() {
         const store = lastOrganisationStore();
         let value = null;
         try { value = store ? store.getItem(LAST_ORGANISATION_KEY) : null; } catch (_) { return null; }
-        return typeof value === 'string' && UUID.test(value) ? value : null;
+        const [bindingId, expiresAt] = (value || '').split(' ');
+        if (UUID.test(bindingId) && Date.parse(expiresAt) > Date.now()) return bindingId;
+        return null;
     }
-    function saveLastOrganisation(bindingId) {
+    function saveLastOrganisation(bindingId, expiresAt) {
         const store = lastOrganisationStore();
-        try { if (store && UUID.test(bindingId)) store.setItem(LAST_ORGANISATION_KEY, bindingId); } catch (_) { /* optional */ }
+        try { if (store && UUID.test(bindingId)) store.setItem(LAST_ORGANISATION_KEY, bindingId + ' ' + expiresAt); } catch (_) { /* optional */ }
     }
-    // D-013: remembers only which organisation last opened with Cyber Security
-    // ready, so the next visit can start that module read one round trip
-    // earlier. A hint: the fresh projection still decides whether it is used.
+    // The last two ready bindings cover a consultant switching back to a client.
+    // Each visit still checks the fresh projection and reads the module.
     const CYBER_READY_KEY = 'nofries-dashboard-cyber-ready';
+    function readyBindings(store) {
+        const stored = store.getItem(CYBER_READY_KEY) || '';
+        if (stored.length > 73) return [];
+        return stored.split(' ').filter(function (id) { return UUID.test(id); });
+    }
     function cyberReadyHint(bindingId) {
-        const store = lastOrganisationStore();
-        try { return !!store && UUID.test(bindingId || '') && store.getItem(CYBER_READY_KEY) === bindingId; } catch (_) { return false; }
+        const store = hintStore();
+        try { return !!store && readyBindings(store).includes(bindingId); } catch (_) { return false; }
     }
     function saveCyberReadyHint(bindingId, ready) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (!store || !UUID.test(bindingId || '')) return;
-            if (ready) store.setItem(CYBER_READY_KEY, bindingId);
-            else if (store.getItem(CYBER_READY_KEY) === bindingId) store.removeItem(CYBER_READY_KEY);
+            const recent = readyBindings(store).filter(function (id) { return id !== bindingId; });
+            if (ready) recent.unshift(bindingId);
+            if (recent.length) store.setItem(CYBER_READY_KEY, recent.slice(0, 2).join(' '));
+            else store.removeItem(CYBER_READY_KEY);
         } catch (_) { /* optional */ }
     }
     // D-013: remembers which assessment Overview showed by default for one
@@ -170,7 +181,7 @@
     const PICTURE_LATEST_KEY = 'nofries-dashboard-picture-latest';
     const PICTURE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
     function pictureLatestHint(bindingId) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (!store || !UUID.test(bindingId || '')) return null;
             const saved = String(store.getItem(PICTURE_LATEST_KEY) || '');
@@ -180,7 +191,7 @@
         } catch (_) { return null; }
     }
     function savePictureLatestHint(bindingId, assessmentId) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (store && UUID.test(bindingId || '') && PICTURE_ID.test(assessmentId || '')) store.setItem(PICTURE_LATEST_KEY, bindingId + ' ' + assessmentId);
         } catch (_) { /* optional */ }
@@ -190,7 +201,7 @@
     // an early list is used only if the fresh index names the same plan at the same revision.
     const ACTION_PLANS_KEY = 'nofries-dashboard-action-plans';
     function actionPlansHint(bindingId) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (!store || !UUID.test(bindingId || '')) return [];
             const saved = String(store.getItem(ACTION_PLANS_KEY) || '');
@@ -200,7 +211,7 @@
         } catch (_) { return []; }
     }
     function saveActionPlansHint(bindingId, planIds) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (!store || !UUID.test(bindingId || '')) return;
             if (planIds.length && planIds.length <= ACTION_PLAN_LIMIT && planIds.every(function (id) { return PICTURE_ID.test(id); })) {
@@ -209,7 +220,8 @@
         } catch (_) { /* optional */ }
     }
     function forgetLastOrganisation() {
-        const store = lastOrganisationStore();
+        const store = hintStore();
+        try { lastOrganisationStore()?.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
         try { if (store) store.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
         // A later sign-in may be a different person: drop the Cyber Security hint too.
         try { if (store) store.removeItem(CYBER_READY_KEY); } catch (_) { /* optional */ }
@@ -587,6 +599,10 @@
                 return fetch(path, options);
             }).then(async function (response) {
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
+                if (body === undefined && path === '/api/dashboard/session' && response?.status === 401 &&
+                    !response.redirected && !['opaque', 'opaqueredirect'].includes(response.type)) {
+                    finish(resolve, { status: 401 }); return;
+                }
                 const json = !!response && !!response.headers && /^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') || '');
                 if (response && !response.redirected && !['opaque', 'opaqueredirect'].includes(response.type) && !json &&
                     [403, 502, 503].includes(response.status)) { const error = invalid(); error.platform = true; throw error; }
@@ -616,7 +632,7 @@
         if (!current(cycle) || document.body.dataset.dashboardState !== 'loading') return;
         elements.heading.textContent = 'Opening your dashboard';
         elements.message.textContent = message;
-        elements.status.textContent = detail;
+        elements.status.textContent = cycle.openingOrganisation || detail;
     }
     function waitForRetry(cycle, ms, updating) {
         if (current(cycle) && document.body.dataset.dashboardState === 'loading') {
@@ -743,7 +759,6 @@
         const value = session(requireSuccess(result));
         if (cycle.workQueueTarget && value.selectedBindingId !== cycle.workQueueTarget.bindingId) throw invalid();
         remember(cycle, value);
-        if (cycle.openSelection && value.purpose === 'customer' && value.selectedBindingId) saveLastOrganisation(value.selectedBindingId);
         // Navigation records the chosen view, never authority. Keep it across
         // focus/pageshow rechecks after a consultant selects a client.
         if (cycle.openSelection && value.accountType === 'consultant' && !currentRoute()) {
@@ -844,6 +859,7 @@
             ...(fresh.representativeDetailsAvailable === true ? { representativeDetails: detailsPort(cycle, snapshot) } : {}),
             ...(fresh.contactRequestsAvailable === true ? { contactRequest: contactSender(cycle, snapshot) } : {}) });
         if (!controller || typeof controller.destroy !== 'function') throw invalid();
+        if (cycle.openSelection && fresh.purpose === 'customer') saveLastOrganisation(fresh.selectedBindingId, fresh.expiresAt);
         elements.app.hidden = false;
         cycle.busy = false;
         show(cycle, 'ready');
@@ -1938,7 +1954,8 @@
                     leave(cycle, function () {
                         lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
                         const next = begin();
-                        elements.status.textContent = 'Opening ' + binding.organisationLabel + '…';
+                        next.openingOrganisation = 'Opening ' + binding.organisationLabel + '…';
+                        elements.status.textContent = next.openingOrganisation;
                         try {
                             const pending = command('selection', { bindingId: binding.bindingId, expectedGeneration: value.generation, operationId: secureId() });
                             execute(next, pending).catch(function (error) { failure(next, error); });
