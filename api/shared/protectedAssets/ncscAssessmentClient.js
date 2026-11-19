@@ -219,9 +219,22 @@
         // The profile of each assessment this client has validated, so a later
         // save is checked against that assessment's own questions.
         const profileByAssessment = new Map();
-        const assessmentProfile = id => profileByAssessment.get(id) || profiles[0];
+        // With one profile every assessment uses it. With several, an assessment
+        // this client has not yet validated has no known profile: a save then
+        // reads it first (see mutate), and a check before that is structural
+        // only, leaving the answers to the server. Never the wrong profile.
+        const assessmentProfile = id => profileByAssessment.get(id) || (profiles.length === 1 ? profiles[0] : null);
+        const mostQuestions = Math.max(...profiles.map(entry => entry.questions.size));
 
         function answer(input, allowClear, profileEntry) {
+            if (profileEntry === null) {
+                // Profile not yet known: shape only. The server checks the answers.
+                const row = record(input, ['itemId', 'optionId', 'rationale']); identifier(row.itemId);
+                if (row.optionId === null) { if (!allowClear || row.rationale !== null) invalid(); }
+                else { identifier(row.optionId); if (row.rationale !== null) text(record(row.rationale, ['text']).text); }
+                return { itemId: row.itemId, optionId: row.optionId,
+                    rationale: row.rationale === null ? null : { text: row.rationale.text } };
+            }
             const { questions, options } = profileEntry;
             const row = record(input, ['itemId', 'optionId', 'rationale']), question = questions.get(identifier(row.itemId));
             if (!question) invalid();
@@ -248,7 +261,8 @@
             } else if (row.action === 'save') {
                 integer(row.expectedRevision, Number.MAX_SAFE_INTEGER);
                 const source = record(row.payload, ['responses']), profileEntry = assessmentProfile(assessmentId);
-                if (!Array.isArray(source.responses) || !source.responses.length || source.responses.length > profileEntry.questions.size) invalid();
+                if (!Array.isArray(source.responses) || !source.responses.length ||
+                    source.responses.length > (profileEntry === null ? mostQuestions : profileEntry.questions.size)) invalid();
                 const responses = source.responses.map(value => answer(value, true, profileEntry));
                 if (new Set(responses.map(value => value.itemId)).size !== responses.length) invalid();
                 responses.sort((left, right) => left.itemId < right.itemId ? -1 : left.itemId > right.itemId ? 1 : 0);
@@ -400,6 +414,19 @@
         async function mutate(kind, input, settings) {
             // Only a save may outlive the page: the browser then still sends it
             // with the same cookies, headers and body as any other save.
+            // Several profiles and an assessment not yet seen: learn its profile
+            // first, so the save is checked against that assessment's own questions.
+            // If the read fails, the shape-only check stands and the server decides.
+            // A keepalive save may outlive the page, so it is sent at once.
+            if (kind === 'save' && profiles.length > 1 && input && typeof input === 'object' &&
+                !(settings && typeof settings === 'object' && settings.keepalive === true) &&
+                typeof input.assessmentId === 'string' && !profileByAssessment.has(input.assessmentId)) {
+                try {
+                    const signal = settings && typeof settings === 'object' ? settings.signal : undefined;
+                    await request(PREFIX + '/' + encodeURIComponent(identifier(input.assessmentId)), 'read',
+                        { assessmentId: input.assessmentId }, signal);
+                } catch { /* The server stays authoritative. */ }
+            }
             const command = normaliseCommand(input), config = record(settings === undefined ? {} : settings, [], kind === 'save' ? ['signal', 'keepalive'] : ['signal']);
             if (command.action !== kind || config.keepalive !== undefined && typeof config.keepalive !== 'boolean') invalid();
             const create = kind === 'create', url = create ? PREFIX : PREFIX + '/' + encodeURIComponent(command.assessmentId) + '/' + kind;

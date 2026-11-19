@@ -192,6 +192,26 @@ describe('v2 results in the questionnaire', () => {
         expect(without).toContain('No Fries weights every question equally');
     });
 
+    test('a supplied profile that is not exactly the pinned v2 profile is refused (fail closed)', async () => {
+        const h = await backend(ACCEPTED_NCSC_CONTEXT, { profileMetadata: null });
+        const mount = profileMetadata => () => {
+            const dom = createDom(); dom.root = dom.document.createElement('div');
+            questionnaire.mount(dom.root, { metadata: V1(), ...(profileMetadata === undefined ? {} : { profileMetadata }), client: h.client,
+                organisationId: h.organisationId, presentationMode: 'editable', window: dom.window, autosaveIdleMs: 0 }).destroy();
+        };
+        const ref = V2().profileRef;
+        const near = Object.keys(ref).map(key => ({ ...V2(), profileRef: { ...ref, [key]: key.endsWith('Sha256') ? 'e'.repeat(64) : ref[key] + 'x' } }));
+        near.push({ ...V2(), profileRef: { ...ref, extra: 'x' } });
+        near.push({ ...V2(), profileRef: Object.fromEntries(Object.entries(ref).slice(1)) });
+        for (const profile of near) {
+            expect(mount([profile])).toThrow('ncsc_composition_required');
+            expect(mount([V2(), profile])).toThrow('ncsc_composition_required');
+        }
+        expect(mount([V1()])).toThrow('ncsc_composition_required');
+        expect(mount(undefined)).not.toThrow();
+        expect(mount([V2()])).not.toThrow();
+    });
+
     test('without v2 metadata (flag off) the client refuses a v2 assessment exactly as before', async () => {
         const { h } = await submittedV2();
         const client = clientModule.createClient({ metadata: V1(), fetch: h.fetch });
@@ -214,9 +234,35 @@ describe('v2 results in the questionnaire', () => {
         ui.controller.destroy();
         const saved = await h.client.save(saveCommand('assessment-a', 0, 'save-new', [{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }]));
         expect(saved.assessment.responses).toEqual([{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }]);
-        // A v1 assessment in the same client is still held to v1 questions.
-        await h.execute(createCommand('assessment-b', 'create-b'));
-        expect(() => h.client.normaliseCommand(saveCommand('assessment-z', 0, 'save-z', [{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }])))
+        // An assessment this client has not seen has no known profile: the
+        // synchronous check is shape only, never another profile's questions.
+        expect(h.client.normaliseCommand(saveCommand('assessment-z', 0, 'save-z', [{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }]))
+            .payload.responses).toHaveLength(1);
+        expect(() => h.client.normaliseCommand(saveCommand('assessment-z', 0, 'save-z', [{ itemId: 'not an id', optionId: 'ad_hoc', rationale: null }])))
             .toThrow(expect.objectContaining({ code: 'ncsc_input_invalid' }));
+    });
+
+    test('scoring v2 (#399): a save to an assessment the client has not seen reads its profile first', async () => {
+        const h = await backend();
+        await h.execute(createCommand());
+        const calls = [];
+        const fetch = (path, options) => { calls.push((options && options.method) + ' ' + path); return h.fetch(path, options); };
+        // A fresh client: the v2 assessment is checked against v2, so a v1-only question is refused before any write.
+        const fresh = clientModule.createClient({ metadata: V1(), profileMetadata: [V2()], fetch });
+        await expect(fresh.save(saveCommand('assessment-a', 0, 'save-v1', [{ itemId: 'NF-NCSC-CC-AC-01-Q1', optionId: 'partial', rationale: null }])))
+            .rejects.toMatchObject({ code: 'ncsc_input_invalid' });
+        expect(calls).toEqual(['GET ' + PREFIX + '/assessment-a']);
+        const other = clientModule.createClient({ metadata: V1(), profileMetadata: [V2()], fetch });
+        const saved = await other.save(saveCommand('assessment-a', 0, 'save-v2', [{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }]));
+        expect(saved.assessment.responses).toEqual([{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }]);
+        expect(calls.slice(1)).toEqual(['GET ' + PREFIX + '/assessment-a', 'POST ' + PREFIX + '/assessment-a/save']);
+        // A second save needs no read: the profile is now known.
+        await other.save(saveCommand('assessment-a', 1, 'save-v2b', [{ itemId: 'NF-NCSC-CC-EM-01-Q1', optionId: 'partly', rationale: null }]));
+        expect(calls.slice(3)).toEqual(['POST ' + PREFIX + '/assessment-a/save']);
+        // With one profile (flag off) nothing is read first.
+        const single = clientModule.createClient({ metadata: V1(), fetch });
+        await expect(single.save(saveCommand('assessment-a', 2, 'save-x', [{ itemId: 'NF-NCSC-CC-SU-01-Q1', optionId: 'ad_hoc', rationale: null }])))
+            .rejects.toMatchObject({ code: 'ncsc_input_invalid' });
+        expect(calls).toHaveLength(4);
     });
 });
