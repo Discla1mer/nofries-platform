@@ -184,6 +184,8 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         await runtime(async () => {
             expect(await planRows(db, a)).toEqual([]);
             expect((await db.query('SELECT plan_id FROM nofries.dashboard_improvement_heads WHERE tenant_id=$1', [scope.tenantId])).rows).toEqual([]);
+            expect((await db.query('UPDATE nofries.dashboard_improvement_heads SET revision=revision WHERE tenant_id=$1',
+                [scope.tenantId])).rowCount).toBe(0);
         });
         await expect(runtime(() => insertPlan(db, scope, 'held'))).rejects.toMatchObject({ code: '42501' });
         const root = await insertPlan(db, scope, 'held-head');

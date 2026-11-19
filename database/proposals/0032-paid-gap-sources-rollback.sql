@@ -1,5 +1,7 @@
 -- Held inverse for a separately approved transaction; outside the migration catalogue.
 -- Lock before the emptiness check, including the parent tables that the FKs reference.
+-- Abort if forced row security would hide even one retained link from this owner.
+SET LOCAL row_security = off;
 LOCK TABLE nofries.dashboard_improvement_heads, nofries.dashboard_improvement_revisions,
            nofries.dashboard_framework_revisions IN ACCESS EXCLUSIVE MODE;
 DO $rollback$
