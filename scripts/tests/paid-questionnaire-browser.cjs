@@ -29,7 +29,8 @@ function isoFixture() {
 }
 
 async function exercise(browser, iso, output) {
-    const p = iso ? isoFixture() : createNistFrameworkProfile();
+    const isoPath = process.env.NOFRIES_TEST_ISO_PUBLICATION;
+    const p = !iso ? createNistFrameworkProfile() : isoPath ? JSON.parse(fs.readFileSync(isoPath, 'utf8')) : isoFixture();
     const id = 'synthetic-assessment', base = '/api/dashboard/frameworks/' + p.profile.id + '/' + p.profile.version + '/assessments/' + id;
     const ref = {frameworkId: p.framework.id, frameworkVersion: p.framework.version, profileId: p.profile.id,
         profileVersion: p.profile.version, catalogueSha256: p.catalogueSha256, sourceCatalogueSha256: p.sourceCatalogueSha256};
@@ -96,7 +97,7 @@ async function exercise(browser, iso, output) {
     const role = (name, label) => page.getByRole(name, {name: label, exact: true});
     const next = role('button', 'Next'), save = role('button', 'Save progress'), submit = role('button', 'Submit assessment');
     const section = page.getByRole('combobox', {name: 'Section'});
-    const na = role('radio', 'Not applicable'), reason = page.getByRole('textbox');
+    const na = role('radio', p.responseOptions.find(o => !o.applicable).label), reason = page.getByRole('textbox');
     const filter = role('checkbox', 'Show unanswered questions only');
     await open();
     assert.equal(await section.locator('option').count(), iso ? 11 : 6);

@@ -104,7 +104,7 @@
                 sections.forEach((s, i) => {
                     const count = s.questions.filter(complete).length;
                     const option = select.options[i] || select.appendChild(node('option'));
-                    const text = s.title + ' (' + count + ' of ' + s.questions.length + ' answered)';
+                    const text = count + ' of ' + s.questions.length + ' answered · ' + s.title;
                     if (option.textContent !== text) option.textContent = text;
                 });
                 select.selectedIndex = sections.indexOf(section);
@@ -192,7 +192,10 @@
                     const details = node('details', undefined, 'ncsc-question-help');
                     const list = node('ul');
                     examples.forEach(example => list.append(node('li', example)));
-                    details.append(node('summary', 'Evidence to consider'), list);
+                    details.append(node('summary', 'Help with this question'));
+                    if (current.guidance.summary) details.append(node('p', current.guidance.summary));
+                    details.append(node('h3', 'Evidence to consider'), list);
+                    for (const action of current.guidance.startingActions || []) details.append(node('p', action));
                     question.append(details);
                 }
             }
