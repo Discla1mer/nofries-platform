@@ -5,7 +5,7 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
     const read = h => h.get('representative-details', h.generation);
     const save = (h, data = DATA, generation = h.generation) => h.post('representative-details', data).set(generationHeader, generation);
     async function enrolled(customerAccountType = 'consultant', differentSigner = false) {
-        const h = await ncscHttpSetup({ customerProvider: true, customerAccountType, ownDeferredAgreement: customerAccountType === 'company', representativeDetailsEnabled: true,
+        const h = await ncscHttpSetup({ customerProvider: true, role: differentSigner ? 'editor' : 'admin', customerAccountType, ownDeferredAgreement: customerAccountType === 'company', representativeDetailsEnabled: true,
             questionnaireExportGateEnabled: true,
             contactRequestsEnabled: true, scope: { tenantId: nextId(), organisationId: nextId() } });
         h.state.now = AT; await h.login(); await h.initialize();
@@ -56,7 +56,7 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
             const session = await h.get('session').set('X-NoFries-Dashboard-Capabilities', 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1');
             expect(session.body.questionnaireExportGateAvailable).toBe(true);
             httpJson(await read(h), 403, 'representative_details_access_denied');
-            httpJson(await save(h), 409, 'representative_details_not_required');
+            httpJson(await save(h), 403, 'representative_details_access_denied');
             expect((await pool.query('SELECT 1 FROM nofries.dashboard_representative_details WHERE tenant_id=$1', tenant)).rowCount).toBe(0);
             await loginClean();
         });
