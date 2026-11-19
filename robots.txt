@@ -3,3 +3,4 @@ Allow: /
 Disallow: /scope.html
 Disallow: /scoping
 Disallow: /api/
+Sitemap: https://nofries.nz/sitemap.xml
