@@ -200,15 +200,29 @@
      * operation IDs, retries, storage, current tenant selection or UI readiness.
      */
     function createClient(adapters) {
-        const supplied = record(adapters, ['metadata', 'fetch'], ['onAccepted']);
+        const supplied = record(adapters, ['metadata', 'fetch'], ['onAccepted', 'profileMetadata']);
         if (typeof supplied.fetch !== 'function') invalid();
         if (supplied.onAccepted !== undefined && typeof supplied.onAccepted !== 'function') invalid();
         const onAccepted = supplied.onAccepted;
         const metadata = validateMetadata(supplied.metadata), fetch = supplied.fetch;
-        const questions = new Map(metadata.questions.map(question => [question.id, question]));
-        const options = new Map(metadata.responseOptions.map(option => [option.id, option]));
+        // Scoring v2 (#399): further readable profiles, sent by the server only
+        // while their flag is on. Each response is checked against the profile its
+        // own stored reference names, matched on every field. Without them this is
+        // exactly the single accepted profile.
+        const extra = supplied.profileMetadata === undefined ? [] : supplied.profileMetadata;
+        if (!Array.isArray(extra) || extra.length > 4) invalid();
+        const profiles = [metadata, ...extra.map(value => validateMetadata(value))].map(value => Object.freeze({ metadata: value,
+            questions: new Map(value.questions.map(question => [question.id, question])),
+            options: new Map(value.responseOptions.map(option => [option.id, option])) }));
+        if (profiles.some((entry, index) => entry.metadata.moduleId !== metadata.moduleId ||
+            profiles.some((other, earlier) => earlier < index && PROFILE_FIELDS.every(key => other.metadata.profileRef[key] === entry.metadata.profileRef[key])))) invalid();
+        // The profile of each assessment this client has validated, so a later
+        // save is checked against that assessment's own questions.
+        const profileByAssessment = new Map();
+        const assessmentProfile = id => profileByAssessment.get(id) || profiles[0];
 
-        function answer(input, allowClear) {
+        function answer(input, allowClear, profileEntry) {
+            const { questions, options } = profileEntry;
             const row = record(input, ['itemId', 'optionId', 'rationale']), question = questions.get(identifier(row.itemId));
             if (!question) invalid();
             if (row.optionId === null) {
@@ -233,9 +247,9 @@
                 payload = { scopePopulation: { description: text(record(source.scopePopulation, ['description']).description) } };
             } else if (row.action === 'save') {
                 integer(row.expectedRevision, Number.MAX_SAFE_INTEGER);
-                const source = record(row.payload, ['responses']);
-                if (!Array.isArray(source.responses) || !source.responses.length || source.responses.length > questions.size) invalid();
-                const responses = source.responses.map(value => answer(value, true));
+                const source = record(row.payload, ['responses']), profileEntry = assessmentProfile(assessmentId);
+                if (!Array.isArray(source.responses) || !source.responses.length || source.responses.length > profileEntry.questions.size) invalid();
+                const responses = source.responses.map(value => answer(value, true, profileEntry));
                 if (new Set(responses.map(value => value.itemId)).size !== responses.length) invalid();
                 responses.sort((left, right) => left.itemId < right.itemId ? -1 : left.itemId > right.itemId ? 1 : 0);
                 payload = { responses };
@@ -248,7 +262,9 @@
         function commandByteLength(input) { return utf8Length(JSON.stringify(normalise(input, PLANNING_BYTES))); }
         function profile(value) {
             record(value, PROFILE_FIELDS);
-            if (PROFILE_FIELDS.some(key => value[key] !== metadata.profileRef[key])) invalid();
+            const found = profiles.find(entry => PROFILE_FIELDS.every(key => value[key] === entry.metadata.profileRef[key]));
+            if (!found) invalid();
+            return found;
         }
         function summary(value, detail) {
             // Older list responses omit the scope. Accept that rollout shape,
@@ -256,7 +272,8 @@
             record(value, detail ? SUMMARY_FIELDS.concat(['scopePopulation', 'responses', 'submission']) : SUMMARY_FIELDS,
                 detail ? [] : ['scopePopulation']);
             if (Object.hasOwn(value, 'scopePopulation')) text(record(value.scopePopulation, ['description']).description);
-            identifier(value.assessmentId); profile(value.profileRef); digest(value.revisionSha256);
+            identifier(value.assessmentId); const profileEntry = profile(value.profileRef), questions = profileEntry.questions;
+            digest(value.revisionSha256);
             if (value.moduleId !== metadata.moduleId || !['created', 'in-progress', 'submitted'].includes(value.status)) invalid();
             integer(value.revision, 128); timestamp(value.createdAt); timestamp(value.updatedAt);
             if (value.createdAt > value.updatedAt ||
@@ -269,13 +286,14 @@
                 progress.unknown + progress.notApplicableClaims > progress.answered ||
                 (value.status === 'created' && progress.answered !== 0) ||
                 (value.status === 'submitted' && progress.missing !== 0)) invalid();
+            return profileEntry;
         }
         function detail(value, assessmentId) {
-            summary(value, true);
+            const profileEntry = summary(value, true), { questions, options } = profileEntry;
             if (value.assessmentId !== assessmentId) invalid();
             text(record(value.scopePopulation, ['description']).description);
             if (!Array.isArray(value.responses) || value.responses.length > questions.size) invalid();
-            const answers = value.responses.map(row => answer(row, false));
+            const answers = value.responses.map(row => answer(row, false, profileEntry));
             if (new Set(answers.map(row => row.itemId)).size !== answers.length ||
                 value.progress.answered !== answers.length ||
                 value.progress.unknown !== answers.filter(row => row.optionId === 'unknown').length ||
@@ -292,7 +310,7 @@
             digest(evaluation.outputSha256);
             const provenance = evaluation.provenance;
             if (!provenance || typeof provenance !== 'object' || Array.isArray(provenance)) invalid();
-            profile(provenance.profileRef);
+            if (profile(provenance.profileRef) !== profileEntry) invalid();
             if (provenance.moduleId !== metadata.moduleId || provenance.assessmentId !== assessmentId ||
                 provenance.assessmentRevision !== 'rev-' + value.revision || provenance.scoreAsOf !== submission.submittedAt) invalid();
         }
@@ -329,6 +347,8 @@
                 }
             }
             if (value.schemaVersion !== 1) invalid();
+            if (profiles.length > 1) (kind === 'list' ? value.assessments : [value.assessment])
+                .forEach(item => profileByAssessment.set(item.assessmentId, profile(item.profileRef)));
             return freeze(value);
         }
         async function request(url, kind, selected, signal, body, keepalive) {
