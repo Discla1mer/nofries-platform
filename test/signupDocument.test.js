@@ -27,10 +27,13 @@ test('external signup document executes only fixed external state/terms routes a
         state: options.method === 'POST' ? { status: 'create_account' } : terms, csrfToken: token
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const assign = jest.fn(), listeners = {};
-    vm.runInNewContext(runtime, { document: dom.document, window: { fetch, location: { assign },
+    const sessionStorage = { getItem: () => null, setItem: jest.fn() };
+    vm.runInNewContext(runtime, { document: dom.document, window: { fetch, sessionStorage, location: { assign, search: '?utm_source=Meta&utm_medium=paid&utm_campaign=board' },
         addEventListener(name, fn) { listeners[name] = fn; } }, AbortController, URLSearchParams, TextDecoder, setTimeout, clearTimeout });
     const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(setImmediate); };
     await settle();
+    expect(sessionStorage.setItem).toHaveBeenCalledWith('nofries-enquiry-campaign', 'meta/paid/board');
+    expect(JSON.stringify(fetch.mock.calls)).not.toMatch(/utm_|meta\/paid/);
     const checkbox = dom.root.querySelector('input'); checkbox.checked = true;
     for (const fn of checkbox.events.change) fn();
     dom.root.querySelector('button').click(); await settle();
