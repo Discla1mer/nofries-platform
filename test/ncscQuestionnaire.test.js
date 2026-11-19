@@ -331,13 +331,17 @@ async function resumeUi(h, options = {}) {
 }
 
 describe('saved assessment list pagination and resume', () => {
-    test('an older assessment saved again leads the loaded list without changing server pagination', async () => {
+    test.each(['saved', 'submitted'])('D-037 an older assessment %s again leads the loaded list', async action => {
         const h = await backend();
         await h.execute(createCommand('assessment-z', 'create-a'));
         h.clock.advance(1000);
         await h.execute(createCommand('assessment-b', 'create-b'));
         h.clock.advance(1000);
-        await h.execute(saveCommand('assessment-z', 0, 'save-a', allResponses().slice(0, 1)));
+        await h.execute(saveCommand('assessment-z', 0, 'save-a', allResponses()));
+        if (action === 'submitted') {
+            h.clock.advance(1000);
+            await h.execute(submitCommand('assessment-z', 1, 'submit-a'));
+        }
         const ui = mountUi(h);
         try {
             await until(() => savedActions(ui).length === 2);
@@ -1552,7 +1556,7 @@ describe('submitted assessment results', () => {
                 if (upTo) expect(card.querySelector('.ncsc-result-upper').textContent).toContain(upTo);
                 else expect(card.querySelector('.ncsc-result-upper')).toBeNull();
             } else {
-                expect(shown).toBe('Not enough answers to estimate yet');
+                expect(shown).toBe('Not enough answers to estimate yet, confirm your Unknowns first');
                 expect(card.querySelector('.ncsc-result-upper')).toBeNull();
                 expect(card.textContent).toContain('Only 6 of 14 answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + model.attainment + '. Start a new assessment once more answers are known.');
                 // Submitted answers cannot be changed, so the customer is not asked to confirm them.
@@ -1569,7 +1573,7 @@ describe('submitted assessment results', () => {
         try {
             const card = ui.root.querySelector('.ncsc-results').querySelectorAll('.ncsc-result-metric')
                 .find(item => item.querySelector('h3').textContent === 'Reported implementation');
-            expect(card.querySelector('.ncsc-result-value').textContent).toBe('Not enough answers to estimate yet');
+            expect(card.querySelector('.ncsc-result-value').textContent).toBe('Not enough answers to estimate yet, confirm your Unknowns first');
             expect(card.textContent).toContain('Only 1 of 14 answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ');
             expect(card.textContent).not.toContain('Start a new assessment');
         } finally { ui.controller.destroy(); }
@@ -3355,7 +3359,7 @@ describe('final submission review step', () => {
         } finally { clean.controller.destroy(); }
     });
 
-    test('submitted results link to creating an improvement plan without claiming one was built', async () => {
+    test('D-044 submitted results distinguish assessment follow-ups from plan actions and link to the matching submission', async () => {
         const h = await backend();
         await h.execute(createCommand());
         await h.execute(saveCommand());
@@ -3364,13 +3368,16 @@ describe('final submission review step', () => {
         const opened = [];
         const ui = await resumeUi(h, { openImprovement(source) { opened.push(source); return Promise.resolve(true); } });
         try {
-            expect(ui.root.textContent).toContain('Submitting does not create the plan by itself.');
+            expect(ui.root.textContent).toContain('Assessment follow-ups (');
+            expect(ui.root.textContent).toContain('Open Improvement Plan to review proposed actions, including evidence to update for Yes answers.');
             expect(ui.root.textContent).toContain('You can give each item an owner and a due date.');
             expect(ui.root.textContent).not.toContain('with an owner and a due date for each item');
             expect(ui.root.textContent).not.toContain('improvement plan was built');
             const panel = ui.root.querySelector('.ncsc-results');
             expect(panel.children.indexOf(panel.querySelector('.ncsc-plan-followup'))).toBeGreaterThan(panel.children.indexOf(panel.querySelector('.ncsc-result-metrics')));
-            control(ui, 'Open improvement plan').click();
+            const link = panel.querySelector('.ncsc-plan-followup').querySelector('a');
+            expect(link.href).toBe('#improvement-plan');
+            link.click();
             const keys = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
             expect(opened).toEqual([{ assessmentId: assessment.assessmentId, revision: assessment.revision,
                 revisionSha256: assessment.revisionSha256,
@@ -3712,6 +3719,63 @@ describe('reconciled persona journey', () => {
             writeText.mockRejectedValueOnce(new Error('denied'));
             control(ui, 'Copy summary').click(); await until(() => ui.root.textContent.includes('Summary selected.'));
             expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-provider-summary'));
+        } finally { ui.controller.destroy(); }
+    });
+});
+
+describe('insurer and customer questionnaire answers', () => {
+    const { questionnaireAnswers } = require('../api/shared/protectedAssets/ncscQuestionnaire');
+    const sample = option => ({ status: 'submitted', profileRef: clone(metadata().profileRef),
+        scopePopulation: { description: 'Synthetic office and cloud services' }, responses: allResponses(option) });
+    const unanswered = Array(9).fill('Not answered');
+    test.each([
+        ['yes', ['Yes', 'Not answered', 'Yes', 'Not answered', 'Not answered', 'Yes', 'Yes', 'Yes', 'Yes']],
+        ['partial', ['Not answered', 'Not answered', 'Not answered', 'Not answered', 'Not answered', 'Not answered', 'Partly', 'Partly', 'Not answered']],
+        ['no', ['No', 'Not answered', 'No', 'Not answered', 'Not answered', 'No', 'No', 'No', 'No']],
+        ['unknown', unanswered], ['not_applicable', unanswered], ['unrecognised', unanswered]
+    ])('%s maps only supported details, without changing the inputs', (option, expected) => {
+        const assessment = sample(option), before = clone(assessment), display = metadata();
+        const report = questionnaireAnswers(assessment, display);
+        expect(report.items.map(item => item.answer)).toEqual(expected);
+        expect(new Set(report.items.map(item => item.id)).size).toBe(9);
+        for (const item of report.items) {
+            expect(item.question).toMatch(/\?$/); expect(item.action).toMatch(/^To answer Yes: /);
+            expect(report.text).toContain(item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis + '\n' + item.action);
+        }
+        expect(report.text.endsWith(report.footer)).toBe(true);
+        expect(report.footer).toBe('These are self-assessed answers to check before submitting, not a guarantee an insurer or customer accepts them.');
+        expect(assessment).toEqual(before); expect(display).toEqual(metadata());
+    });
+    test('missing, ambiguous, draft and unsupported-profile inputs do not imply assurance', () => {
+        const assessment = sample('yes'); assessment.responses = [];
+        expect(questionnaireAnswers(assessment, metadata()).items.map(item => item.answer)).toEqual(unanswered);
+        assessment.responses = [...allResponses('yes'), ...allResponses('no')];
+        expect(questionnaireAnswers(assessment, metadata()).items.map(item => item.answer)).toEqual(unanswered);
+        assessment.responses = allResponses('yes'); assessment.status = 'in-progress';
+        expect(questionnaireAnswers(assessment, metadata()).items.map(item => item.answer)).toEqual(unanswered);
+        assessment.status = 'submitted'; assessment.profileRef.catalogueSha256 = 'a'.repeat(64);
+        const future = clone(metadata()); future.profileRef = assessment.profileRef;
+        expect(questionnaireAnswers(assessment, metadata()).items.map(item => item.answer)).toEqual(unanswered);
+        expect(questionnaireAnswers(assessment, future).items.map(item => item.answer)).toEqual(unanswered);
+        const claimed = sample('unknown'); claimed.responses.forEach(item => { item.rationale = { text: 'Yes: offline backups, patches in 24 hours, EDR everywhere.' }; });
+        expect(questionnaireAnswers(claimed, metadata()).items.map(item => item.answer)).toEqual(unanswered);
+    });
+    test('submitted results copy and print the same read-only answers, including clipboard fallback, without writes', async () => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand('assessment-a', 0, 'all-partial', allResponses('partial'))); await h.execute(submitCommand());
+        const dom = interactiveDom(), writeText = jest.fn(async () => undefined); dom.window.navigator = { clipboard: { writeText } }; dom.window.print = jest.fn();
+        const ui = await resumeUi(h, { dom });
+        try {
+            const before = h.calls.length, input = byId(ui, 'ncsc-questionnaire-answer-text');
+            expect(ui.root.querySelector('.ncsc-questionnaire-answers').querySelectorAll('li')).toHaveLength(9);
+            expect(input.readOnly).toBe(true);
+            control(ui, 'Copy answers').click(); await until(() => ui.root.textContent.includes('Summary copied.'));
+            expect(writeText).toHaveBeenCalledWith(input.value);
+            writeText.mockRejectedValueOnce(new Error('denied'));
+            control(ui, 'Copy answers').click(); await until(() => ui.root.textContent.includes('Summary selected.'));
+            expect(ui.document.activeElement).toBe(input);
+            dom.window.navigator = {}; control(ui, 'Copy answers').click(); expect(ui.document.activeElement).toBe(input);
+            control(ui, 'Print answers').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
+            expect(h.calls).toHaveLength(before);
         } finally { ui.controller.destroy(); }
     });
 });

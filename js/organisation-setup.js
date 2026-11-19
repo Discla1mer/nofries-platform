@@ -50,6 +50,18 @@
     const entryIntent = intents.length === 1 && ['login', 'create'].includes(intents[0]) &&
         !recoveries.length && !accounts.length && !reauthentications.length && !window.location.hash ? intents[0] : undefined;
     const intentSuffix = entryIntent ? '&intent=' + entryIntent : '';
+    const returningEntry = !window.location.hash && !recoveries.length && !accounts.length && !reauthentications.length &&
+        (!intents.length || entryIntent === 'login');
+    const externalCustomer = document.body?.dataset?.customerProvider === 'external';
+    if (returningEntry && (providers.length === 1 && providers[0] === 'external' || !providers.length && externalCustomer && (entryIntent === 'login' || document.body.dataset.customerEntry === 'signin'))) {
+        document.title = 'Customer sign in | No Fries';
+        byId('organisation-title').textContent = 'Customer sign in';
+        byId('organisation-intro').textContent = "You'll sign in securely with Microsoft and return to your saved work.";
+        byId('organisation-returning-sign-in').href = '/api/external-customer-auth/login';
+        byId('signup-code-notice').hidden = true;
+        byId('organisation-returning').hidden = false;
+        return;
+    }
     if (providers.length > 1 || providers.length === 1 && providers[0] !== 'legacy') {
         // A managed signup never starts the separate legacy email-code flow.
         // Only fixed local destinations are possible; fragments are not relayed.
@@ -58,7 +70,6 @@
             : '/signup?provider=invalid');
         return;
     }
-    const externalCustomer = document.body?.dataset?.customerProvider === 'external';
     if (reauthenticate && (providers.length === 1 || externalCustomer)) {
         window.location.replace(providers.length === 1 ? '/api/customer-auth/login' : '/api/external-customer-auth/login'); return;
     }
@@ -166,7 +177,7 @@
         // an explicit busy message instead of an unavailable recovery action.
         const opening = !rendered && !initialReadFailed;
         byId('organisation-refresh').hidden = opening;
-        if (opening && value && byId('organisation-intro').textContent !== 'Opening account setup…') status.textContent = 'Opening account setup…';
+        if (opening && value) status.textContent = entryIntent === 'create' ? 'Opening account setup…' : 'Checking account access…';
         for (const item of [form, codeForm, profileForm, detailsForm]) item.setAttribute('aria-busy', String(value));
         for (const control of document.querySelectorAll('#create-organisation input, #create-organisation button')) {
             control.disabled = value || navigating || !ready && control !== byId('organisation-refresh');
@@ -291,6 +302,10 @@
             if (!response.ok) throw new Error(Object.hasOwn(messages, value.code) ? value.code : 'setup_unavailable');
             if (body?.action === 'leave' && value.state !== 'start') throw new Error('setup_unavailable');
             validateState(value);
+            if (!providers.length && externalCustomer && returningEntry && ['start', 'sign_in'].includes(value.state)) {
+                navigating = true; hideLegacyEntry();
+                window.location.replace('/login?provider=external'); return;
+            }
             if (automaticEntry) {
                 const entry = response.headers.get('x-nofries-customer-entry');
                 if (!['legacy', 'external'].includes(entry)) throw new Error('setup_unavailable');
@@ -304,7 +319,7 @@
                     navigating = true;
                     hideLegacyEntry();
                     status.textContent = 'Opening secure sign-in…';
-                    window.location.replace(window.location.hash ? '/signup?provider=invalid' : '/signup?provider=external' + recoverySuffix + intentSuffix);
+                    window.location.replace(window.location.hash ? '/signup?provider=invalid' : returningEntry ? '/login?provider=external' : '/signup?provider=external' + recoverySuffix + intentSuffix);
                     return;
                 }
                 if (entryIntent === 'login' && signInAvailable) {

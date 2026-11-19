@@ -36,8 +36,9 @@ async function flush() { for (let i = 0; i < 35; i += 1) await Promise.resolve()
 
 // Actual loader and dashboard shell, with controlled DOM and transport. This
 // proves navigation and request identity, not browser layout or live access.
-function harness(hash = '#organisations') {
+function harness(hash = '#organisations', localStorage) {
     const { document, window } = createDom();
+    if (localStorage) window.localStorage = localStorage;
     const createElement = document.createElement;
     document.createElement = tag => {
         const node = createElement(tag);
@@ -375,6 +376,30 @@ test('selected consultant context has a visible return outside chooser and re-re
     expect(h.status).toBe('selection'); expect(h.back.hidden).toBe(true);
 });
 
+test('D-038/D-028 Retry returns to the list and the next organisation opens the original view', async () => {
+    const h = harness('#services'); await flush();
+    const first = state(A), next = state(B, GB), rows = listing([row(A, 'First'), row(B, 'Second')]);
+    await h.reply(0, 200, first); await h.reply(1, 200, rows); await h.mount(2, first, 'First');
+    h.back.onclick(); await flush();
+    await h.reply(4, 200, first); await h.reply(5, 503, { code: 'dashboard_unavailable' });
+    expect(h.status).toBe('unavailable');
+    h.elements.dashboardRetry.click(); await flush();
+    await h.reply(6, 200, first); await h.reply(7, 200, rows);
+    expect(h.status).toBe('selection');
+    h.elements.dashboardChoices.children[1].click(); await flush();
+    await h.reply(8, 200, { schemaVersion: 1, generation: GB, selectedBindingId: B });
+    await h.reply(9, 200, next); await h.reply(10, 200, rows); await h.mount(11, next, 'Second');
+    expect(h.window.location.hash).toBe('#services');
+    expect(h.elements.dashboardApp.querySelector('h1').textContent).toBe('Services');
+});
+
+test('D-045 an opening session 401 issues no background retries or protected reads', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 401, { code: 'dashboard_session_required' });
+    await jest.advanceTimersByTimeAsync(30000);
+    expect(h.requests.map(request => request.url)).toEqual(['/api/dashboard/session']);
+});
+
 test('directory keeps validated page cursor and foreign selection denial clears the chooser', async () => {
     const h = harness(); await flush();
     await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy')], A));
@@ -521,20 +546,24 @@ test('access revocation clears an unsent client draft without a discard prompt',
 });
 
 function memoryStorage(initial) {
-    const values = new Map(initial === undefined ? [] : [['nofries-dashboard-last-organisation', initial]]);
+    const values = new Map(initial === undefined ? [] : [['nofries-dashboard-last-organisation', initial + ' ' + state().expiresAt]]);
     return { values, getItem: key => values.has(key) ? values.get(key) : null,
         setItem: (key, value) => { values.set(key, String(value)); }, removeItem: key => { values.delete(key); } };
 }
-function lastOpened(h, store) { h.window.localStorage = store; return h; }
+function lastOpened(h, store) { h.window.sessionStorage = store; return h; }
 
 test('the last opened organisation ID is remembered and reopened on the next plain visit through a fresh selection check', async () => {
     const store = memoryStorage();
     const first = lastOpened(harness(), store); await flush();
     await first.reply(0, 200, state()); await first.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
     first.elements.dashboardChoices.children[1].click(); await flush();
+    expect(first.elements.dashboardStatus.textContent).toBe('Opening Client…');
     await first.reply(2, 200, { schemaVersion: 1, generation: GB, selectedBindingId: B });
+    expect(first.elements.dashboardStatus.textContent).toBe('Opening Client…');
     await first.reply(3, 200, state(B, GB));
-    expect([...store.values.entries()]).toEqual([['nofries-dashboard-last-organisation', B]]);
+    expect(store.values.size).toBe(0);
+    await first.reply(4, 200, listing([row(B, 'Client')])); await first.mount(5, state(B, GB), 'Client');
+    expect([...store.values.entries()]).toEqual([['nofries-dashboard-last-organisation', B + ' ' + state().expiresAt]]);
 
     const next = lastOpened(harness(''), store); await flush();
     await next.reply(0, 200, state()); await next.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
@@ -542,6 +571,23 @@ test('the last opened organisation ID is remembered and reopened on the next pla
     expect(JSON.parse(next.requests[2].init.body)).toEqual({ bindingId: B, expectedGeneration: GA, operationId: expect.stringMatching(/^[0-9a-f-]{36}$/) });
     await next.reply(2, 200, { schemaVersion: 1, generation: GB, selectedBindingId: B });
     expect(next.requests[3].url).toBe('/api/dashboard/session');
+});
+
+test('D-018 a fresh tab ignores a previous browser-wide selection', async () => {
+    const h = lastOpened(harness(''), memoryStorage());
+    h.window.localStorage = memoryStorage(B);
+    await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(B, 'Client')]));
+    expect(h.status).toBe('selection');
+    expect(h.requests).toHaveLength(2);
+});
+
+test('D-018 an expired tab hint stays in the chooser even when the binding is still listed', async () => {
+    const store = memoryStorage();
+    store.setItem('nofries-dashboard-last-organisation', B + ' 2026-09-08T23:29:59.000Z');
+    const h = lastOpened(harness(''), store); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(B, 'Client')]));
+    expect(h.status).toBe('selection'); expect(h.requests).toHaveLength(2);
 });
 
 test('a remembered organisation is not reopened when unlisted, malformed or Organisations was asked for', async () => {
@@ -611,4 +657,49 @@ test('Sign in with another account forgets the remembered organisation, but a ne
     click({ ctrlKey: true, preventDefault: jest.fn() }); expect(store.values.size).toBe(1);
     const event = { preventDefault: jest.fn() }; click(event);
     expect(event.preventDefault).not.toHaveBeenCalled(); expect(store.values.size).toBe(0);
+});
+
+// D-013 hints (#471) are kept browser-wide; a later sign-in may be a different
+// person, so signing out and Switch account clear all of them. The old
+// browser-wide last-organisation copy is no longer read and goes on load.
+function seededHints() {
+    const store = memoryStorage();
+    store.setItem('nofries-dashboard-cyber-ready', C + ' ' + D);
+    store.setItem('nofries-dashboard-picture-latest', C + ' assessment-1');
+    store.setItem('nofries-dashboard-action-plans', C + ' plan-1 plan-2');
+    store.setItem('nofries-dashboard-last-organisation', B + ' ' + state().expiresAt);
+    return store;
+}
+const HINT_KEYS = ['nofries-dashboard-cyber-ready', 'nofries-dashboard-picture-latest', 'nofries-dashboard-action-plans'];
+
+test('the unused browser-wide last-organisation key is removed on load and the other hints are kept', async () => {
+    const local = seededHints();
+    const h = lastOpened(harness('', local), memoryStorage()); await flush();
+    expect(local.values.has('nofries-dashboard-last-organisation')).toBe(false);
+    expect([...local.values.keys()].sort()).toEqual([...HINT_KEYS].sort());
+    expect(local.values.get('nofries-dashboard-cyber-ready')).toBe(C + ' ' + D);
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(B, 'Client')]));
+    expect(h.status).toBe('selection'); expect(h.requests).toHaveLength(2);
+});
+
+test('signing out clears the readiness, picture and action-plan hints', async () => {
+    const local = seededHints();
+    const h = lastOpened(harness('#organisations', local), memoryStorage(B)); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    expect([...local.values.keys()].sort()).toEqual([...HINT_KEYS].sort());
+    h.elements.dashboardSignOut.click(); await flush();
+    expect(h.requests[2].url).toBe('/api/dashboard/logout');
+    await h.reply(2, 200, { schemaVersion: 1, loggedOut: true });
+    expect(local.values.size).toBe(0);
+});
+
+test('Switch account clears the readiness, picture and action-plan hints, but a new-tab click keeps them', async () => {
+    const local = seededHints();
+    const h = lastOpened(harness('#organisations', local), memoryStorage(B)); await flush();
+    await h.reply(0, 200, state()); await h.reply(1, 200, listing([row(A, 'Own consultancy'), row(B, 'Client')]));
+    const click = event => { for (const fn of h.switchAccount.events.click) fn(event); };
+    click({ ctrlKey: true, preventDefault: jest.fn() });
+    expect([...local.values.keys()].sort()).toEqual([...HINT_KEYS].sort());
+    click({ preventDefault: jest.fn() });
+    expect(local.values.size).toBe(0);
 });
