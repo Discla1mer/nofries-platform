@@ -814,7 +814,7 @@
             const unknown = questions.filter(question => question.responseOptionId === 'unknown').length;
             const pending = questions.length - unknown;
             section.append(node('p', '', unknown + ' saved Unknown ' + (unknown === 1 ? 'answer' : 'answers') +
-                ' · ' + pending + ' saved Not applicable ' + (pending === 1 ? 'answer' : 'answers') + ' awaiting review.'),
+                ' · ' + pending + ' saved Not applicable ' + (pending === 1 ? 'answer' : 'answers') + '.'),
                 node('p', 'dashboard-muted', 'These are saved answers to confirm, not unanswered questions or a risk score.'));
             if (!questions.length) {
                 section.append(node('p', '', 'No information requests are suggested by these saved answers. This does not verify that controls are effective.'));
@@ -825,7 +825,7 @@
                 const item = node('li');
                 item.append(node('h4', '', question.prompt), node('p', '', question.responseOptionId === 'unknown'
                     ? 'Saved answer: Unknown. Find out what is in place.'
-                    : 'Saved answer: Not applicable, awaiting review. Confirm whether this applies to the assessment scope.'));
+                    : 'Saved answer: Not applicable. Confirm whether this applies to the assessment scope.'));
                 list.append(item);
             });
             section.append(list);
