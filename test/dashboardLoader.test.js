@@ -2329,7 +2329,7 @@ describe('ready Cyber composition', () => {
         // Automatic saving is on here, so the short wait before it sends reads as saving.
         expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toBe('Saving…');
         expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('· saving…');
-        expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/\*$/);
+        expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/Not saved yet$/);
         h.homeClick(); control(h, 'Discard unsent changes').click(); await flush();
         expect(h.requests.filter(request => request.init.method === 'POST')).toHaveLength(0);
         expect(stored.read('assessment-home')).toEqual(saved); expect(h.window.location.assign.mock.calls).toEqual([['/']]);
@@ -2338,8 +2338,8 @@ describe('ready Cyber composition', () => {
         expect(reopened.elements.dashboardApp.textContent).toMatch(/Last saved .+ NZ time\./);
         expect(reopened.elements.dashboardApp.querySelector('.ncsc-status').textContent).not.toContain('not saved yet');
         expect(reopened.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).not.toContain('unsaved changes');
-        expect(reopened.document.getElementById('ncsc-question-index').children.every(option => !/\*$/.test(option.textContent))).toBe(true);
-        expect(reopened.document.getElementById('ncsc-question-index-help').textContent).toContain('* marks unsaved changes');
+        expect(reopened.document.getElementById('ncsc-question-index').children.every(option => !/Not saved yet$/.test(option.textContent))).toBe(true);
+        expect(reopened.document.getElementById('ncsc-question-index-help').textContent).not.toContain('*');
         reopened.homeClick(); await flush();
         expect(reopened.elements.dashboardApp.querySelector('dialog')).toBeNull();
         expect(reopened.window.location.assign.mock.calls).toEqual([['/']]);
