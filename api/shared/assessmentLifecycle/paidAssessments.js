@@ -23,11 +23,24 @@ class PaidAssessmentError extends Error {
 }
 function fail(reason) { throw new PaidAssessmentError(reason); }
 
-let registry;
+const catalogues = new Map();
 function publication(id, version) {
-    registry ??= createFrameworkRegistry([createNistFrameworkProfile()]);
-    try { return registry.getProfile(id, version); }
-    catch { fail('not_found'); }
+    const key = id + '@' + version;
+    if (!catalogues.has(key)) {
+        let profile;
+        if (key === 'nf-nist-csf-2-0-core@2026-09-08.1') {
+            profile = createNistFrameworkProfile();
+        } else if (key === 'nf-iso-27001-2022-readiness@2026-11-19.1') {
+            // The separately reviewed ISO-2 publication may be absent during rollout.
+            // Only that absence is a 404. A broken publication must fail closed.
+            try { require.resolve('../assessmentEngine/iso27001FrameworkProfile'); }
+            catch (error) { if (error.code === 'MODULE_NOT_FOUND') fail('not_found'); throw error; }
+            profile = require('../assessmentEngine/iso27001FrameworkProfile').createIso27001FrameworkProfile();
+        } else fail('not_found');
+        const registry = createFrameworkRegistry([profile]);
+        catalogues.set(key, Object.freeze({ profile: registry.getProfile(id, version), registry }));
+    }
+    return catalogues.get(key);
 }
 function parsePaidRoute(path) {
     const match = /^frameworks\/([\w.-]+)\/([\w.-]+)\/assessments(?:\/([\w.:%-]+)(?:\/(save|submit))?)?$/.exec(path);
@@ -41,11 +54,11 @@ function parsePaidRoute(path) {
     return { profileId, version, assessmentId, mutation: mutation || null };
 }
 function prepareRequest(route, body, cursor) {
-    const profile = publication(route.profileId, route.version);
+    const { profile, registry } = publication(route.profileId, route.version);
     const profileRef = { frameworkId: profile.framework.id, frameworkVersion: profile.framework.version,
         profileId: profile.profile.id, profileVersion: profile.profile.version,
         catalogueSha256: profile.catalogueSha256, sourceCatalogueSha256: profile.sourceCatalogueSha256 };
-    if (body === undefined) return { profile, profileRef, assessmentId: route.assessmentId, cursor, command: null };
+    if (body === undefined) return { registry, profile, profileRef, assessmentId: route.assessmentId, cursor, command: null };
     try {
         const create = !route.assessmentId;
         fields(body, [...(create ? ['assessmentId'] : []), 'expectedRevision', 'idempotencyKey', 'payload']);
@@ -56,7 +69,7 @@ function prepareRequest(route, body, cursor) {
         };
         const command = normaliseAssessmentWrite({ ...body, assessmentId: create ? body.assessmentId : route.assessmentId,
             action: create ? 'create' : route.mutation }, () => profile.questions.length, questionOptions);
-        return { profile, profileRef, assessmentId: command.assessmentId, command };
+        return { registry, profile, profileRef, assessmentId: command.assessmentId, command };
     } catch (error) {
         if (error instanceof NcscAssessmentError && error.statusCode === 413) fail('too_large');
         fail('input_invalid');
@@ -69,7 +82,7 @@ function paidAccess(authority, context, write, ref, at) {
             rows => rows.some(row => row.moduleId === MODULE && row.profileId === ref.profileId && row.version === ref.profileVersion));
     } catch { fail('access_denied'); }
 }
-function checkRecord(row, scope, ref) {
+function checkRecord(row, scope, ref, registry) {
     if (hash(row.record) !== row.record_sha256) fail();
     fields(row.record, ['state', 'scopePopulation', 'rationales']);
     const { state, scopePopulation, rationales } = row.record;
@@ -102,7 +115,7 @@ function project({ state, rationales, scopePopulation }) {
         submission: submission && { revision: submission.revision, submittedAt: submission.submittedAt,
             responseSetSha256: submission.responseSetSha256 } } };
 }
-function advance(previous, scope, context, authority, ref, command, now) {
+function advance(previous, scope, context, authority, ref, command, now, registry) {
     const base = { ...scope, action: command.action, idempotencyKey: command.idempotencyKey,
         expectedRevision: command.expectedRevision, actorSubjectKey: context.identity.subjectKey, now };
     if (command.action === 'create') {
@@ -140,7 +153,7 @@ async function chargeSubmission(tx, context, authority, decision, ref, at) {
     } catch (error) { fail(error.code === 'entitlement_limit_exceeded' ? 'quota_exceeded' : 'access_denied'); }
     await dataStorage.updateUsage(tx, after);
 }
-async function paidRequest(pair, context, { profile, profileRef, assessmentId, cursor, command }) {
+async function paidRequest(pair, context, { registry, profile, profileRef, assessmentId, cursor, command }) {
     const scope = { ...context.scope, assessmentId };
     const keys = [scope.tenantId, scope.organisationId, profileRef.profileId, profileRef.profileVersion];
     return pair.database.withTenantTransaction(scope.tenantId, async (tx, authority) => {
@@ -162,9 +175,9 @@ async function paidRequest(pair, context, { profile, profileRef, assessmentId, c
             const replay = command && (await tx.query(select + ' AND idempotency_key=$6', [...keys, command.idempotencyKey])).rows[0];
             if (replay && replay.intent_sha256 !== intent) fail('conflict');
             const head = replay || (await tx.query(select + ' ORDER BY revision DESC LIMIT 1', keys)).rows[0];
-            let record = head && checkRecord(head, scope, profileRef);
+            let record = head && checkRecord(head, scope, profileRef, registry);
             if (command && !replay) {
-                record = advance(record, scope, context, authority, profileRef, command, now);
+                record = advance(record, scope, context, authority, profileRef, command, now, registry);
                 const encoded = JSON.stringify(record);
                 const measured = await tx.query('SELECT octet_length($1::jsonb::text) AS bytes', [encoded]);
                 if (measured.rows.length !== 1 || !Number.isSafeInteger(measured.rows[0].bytes) || measured.rows[0].bytes <= 0) fail();

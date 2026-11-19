@@ -1666,9 +1666,10 @@ function registerRealPostgresTests() {
         // synthetic trusted identity, quota and time; it never primes the role
         // for the resource runtime or substitutes its paired SQL audit.
         async function resourceSetup({ role = 'admin', service = false, rawRuntimePool = runtimePool,
-            purpose = 'customer', exampleOptions = {}, historyBudget = BUDGET, prepareExample = null, productionIdentity = null } = {}) {
+            purpose = 'customer', exampleOptions = {}, historyBudget = BUDGET, prepareExample = null, productionIdentity = null, initialTime = NOW } = {}) {
             const principal = productionIdentity || { ...identity(), identityTenantId: NCSC_SUBJECT.split(':')[0], oid: NCSC_SUBJECT.split(':')[1] };
             const f = harness({ rawRuntimePool, resourceIdentity: principal, historyBudget });
+            f.state.now = initialTime;
             await f.initialize();
             const quota = createNcscAdapters({ now: () => f.state.now });
             const resourceOptions = { pool: f.restrictedPool, clock: () => f.state.now, instanceId: f.instanceId,
