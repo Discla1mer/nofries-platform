@@ -902,8 +902,7 @@
             // #441: the same answers, written for a board or insurer.
             if (typeof questionnaire.boardSummary === 'function') {
                 const token = epoch;
-                const boardExport = () => {
-                    const boardBlock = node('div', 'picture-board-summary');
+                const boardExport = boardBlock => {
                     if (!live(token)) return boardBlock;
                     const boardLabel = node('label', '', 'Summary for your board or insurer');
                     const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
@@ -917,7 +916,10 @@
                     if (boardPrint) { boardPrint.classList.add('dashboard-button-secondary'); boardBlock.append(boardPrint); }
                     return boardBlock;
                 };
-                handoff.append(options.boardExportGate ? options.boardExportGate(boardExport) : boardExport());
+                if (options.boardExportGate) handoff.append(options.boardExportGate(() => boardExport(node('div', 'picture-board-summary'))));
+                else if (typeof options.readBoardPlan === 'function' && typeof options.openAction === 'function') {
+                    handoff.append(boardExport(node('div', 'picture-board-summary')));
+                } else boardExport(handoff);
             }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());
