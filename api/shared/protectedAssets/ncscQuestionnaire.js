@@ -1387,7 +1387,7 @@
                 : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.';
             if (enoughAnswersToEstimate(results)) metric('Reported implementation', results.attainment, rangeHelp);
             // Results exist only for a submitted, read-only assessment, so do not ask the customer to confirm answers here.
-            else metric('Reported implementation', 'Not enough answers to estimate yet', 'Only ' + results.completed + ' of ' + results.total +
+            else metric('Reported implementation', 'Not enough answers to estimate yet, confirm your Unknowns first', results.unknown + ' answers still to confirm. Only ' + results.completed + ' of ' + results.total +
                 ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + results.attainment + '. ' +
                 (editable && !allowanceExhausted() ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp);
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
@@ -1398,10 +1398,22 @@
             const planSource = displayedPlanSource();
             if (typeof options.openImprovement === 'function' && planSource) {
                 const follow = node('section', 'ncsc-plan-followup');
-                follow.append(node('p', '', 'These results can become your improvement plan. Open Improvement plan and create it from this result. It lists what to fix. You can give each item an owner and a due date. Submitting does not create the plan by itself.'));
-                follow.append(button('Open improvement plan', function () {
-                    if (live() && typeof options.openImprovement === 'function') options.openImprovement(planSource);
-                }, 'dashboard-button dashboard-button-secondary'));
+                follow.append(node('h3', '', "We've built your improvement plan from this result"));
+                const preview = node('details'), steps = providerSummary(acknowledged, metadata).items;
+                preview.append(node('summary', '', 'Review suggested steps (' + steps.length + ')'));
+                const list = node('ol');
+                steps.forEach(step => {
+                    const item = node('li');
+                    item.append(node('strong', '', step.title), node('p', '', step.action));
+                    list.append(item);
+                });
+                preview.append(steps.length ? list : node('p', '', 'No gaps or unknown answers were reported.'));
+                const link = node('a', '', 'Open improvement plan'); link.href = '#improvement-plan';
+                link.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    if (live()) options.openImprovement(planSource);
+                });
+                follow.append(preview, node('p', '', 'Open Improvement Plan to save and track these steps. You can give each item an owner and a due date.'), link);
                 panel.append(follow);
             }
             // results.unknown already includes answers marked not applicable, so state one total.

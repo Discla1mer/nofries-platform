@@ -127,6 +127,7 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .picture-heading h2 { font-size: var(--dashboard-font-section); }
 .picture-heading .dashboard-eyebrow { font-size: var(--dashboard-font-small); }
 .picture-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; margin-bottom: .7rem; }
+.picture-selected-title { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
 .picture-toolbar label { font-weight: var(--dashboard-weight-regular); font-size: var(--dashboard-font-body); }
 .picture-toolbar select { min-width: 0; max-width: 100%; flex: 1 1 18rem; min-height: 2.875rem; padding: .6rem; border: 1px solid var(--dashboard-line); border-radius: .5rem; color: var(--dashboard-ink); background: var(--dashboard-surface); font: inherit; }
 .picture-source { margin: 1.25rem 0 .6rem !important; font-size: var(--dashboard-font-small); color: var(--dashboard-muted); }
