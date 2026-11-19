@@ -479,7 +479,7 @@
         let questionRegion;
         let questionIndex;
         let pendingPickerChoice = null;
-        let questionProgress;
+        let questionProgress, savedSummary;
         let navigationSummary;
         let nextUnanswered;
         let nextUnresolved;
@@ -635,18 +635,19 @@
         function updateQuestionNavigation() {
             if (!live() || !acknowledged || !questionIndex || !questionProgress) return;
             const sealed = acknowledged.status === 'submitted';
-            let answered = 0, unresolved = 0;
+            let answered = 0, unresolved = 0, saved = 0;
             questions.forEach(function (question, index) {
                 const value = displayedAnswer(question), option = optionById.get(value.optionId);
                 if (value.optionId !== null) answered += 1;
                 if (['unknown', 'not_applicable'].includes(value.optionId)) unresolved += 1;
                 const label = value.optionId === 'not_applicable' ? 'Not applicable, to confirm' : option ? option.label : 'Unanswered';
-                const unsaved = !sealed && !equal(value, savedAnswer(question.id)) ? ' *' : '';
+                const changed = !sealed && !equal(value, savedAnswer(question.id));
+                if (value.optionId !== null && !changed) saved += 1;
+                const unsaved = changed ? ' · Not saved yet' : '';
                 questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
             });
             const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length, saving = savingNow();
-            // One progress line. What is saved and what is still only in this
-            // browser are stated together so the counts cannot disagree.
+            if (savedSummary) savedSummary.textContent = saved + ' of ' + questions.length + ' saved';
             questionProgress.textContent = answered + ' of ' + questions.length + ' answered' + (missing ? ' · ' + missing + ' to go' : '') +
                 (unresolved ? ' · ' + unresolved + ' to check later (unknown, or marked not applicable, to confirm)' : '') +
                 (sealed ? ' · submitted' : !editable ? ' · saved' : saving ? ' · saving…' : dirty ? ' · ' + dirty + ' not saved yet' +
@@ -785,6 +786,8 @@
             if (!live()) return;
             const focused = captureFocus(root);
             const observations = root.querySelector('.ncsc-draft-observations');
+            const progressOpen = !!(savedSummary && savedSummary.parentElement.open && acknowledged &&
+                savedSummary.dataset.assessmentId === acknowledged.assessmentId);
             const observationsOpen = !!(observations && observations.open && acknowledged &&
                 observations.dataset.assessmentId === acknowledged.assessmentId);
             const scrollX = win && win.scrollX, scrollY = win && win.scrollY;
@@ -798,7 +801,7 @@
             const pickerChoice = questionIndex && acknowledged && questionIndex.value !== String(activeQuestion)
                 ? { assessmentId: acknowledged.assessmentId, value: questionIndex.value } : null;
             pendingPickerChoice = pickerChoice;
-            questionIndex = null; questionProgress = null; navigationSummary = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
+            questionIndex = null; questionProgress = null; savedSummary = null; navigationSummary = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
             if (!acknowledged || acknowledged.status === 'submitted' || !editable) { reviewing = false; returnToReview = null; }
             // Keep the live region attached so asynchronous updates change an
             // existing accessible status rather than insert prefilled content.
@@ -808,7 +811,7 @@
             root.append(errorBox, content);
             if (view === 'denied') content.append(node('p', '', 'This assessment is not available. Reopen the dashboard through your authenticated organisation context.'));
             else if (view === 'create') renderCreate();
-            else if (acknowledged) renderAssessment(observationsOpen);
+            else if (acknowledged) renderAssessment(observationsOpen, progressOpen);
             else if (view === 'assessment' && selected) renderAssessmentRead();
             else renderList();
             // Reuse the optional disclosure so open state survives save/recovery
@@ -1103,7 +1106,7 @@
                 return await perform(command, []);
             } catch (error) { fixedFailure(error); return false; }
         }
-        function renderAssessment(observationsOpen) {
+        function renderAssessment(observationsOpen, progressOpen) {
             const renderedEpoch = epoch;
             const sealed = acknowledged.status === 'submitted';
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
@@ -1129,7 +1132,14 @@
             if (conflict) renderConflict();
             if (pending) renderPending();
             if (reviewing) { renderReview(); return; }
-            questionProgress = node('p', 'ncsc-draft-progress'); questionProgress.id = 'ncsc-draft-progress'; content.append(questionProgress);
+            questionProgress = node('p', 'ncsc-draft-progress'); questionProgress.id = 'ncsc-draft-progress';
+            if (sealed) content.append(questionProgress);
+            else {
+                const details = node('details', 'ncsc-guidance'); details.open = progressOpen;
+                savedSummary = node('summary', ''); savedSummary.id = 'ncsc-saved-summary';
+                savedSummary.dataset.assessmentId = acknowledged.assessmentId;
+                details.append(savedSummary, questionProgress); content.append(details);
+            }
             // The glossary explains the progress words, so it sits right after progress.
             if (!sealed) content.append(glossary());
             if (!sealed) renderDraftObservations(observationsOpen);
@@ -1164,7 +1174,7 @@
             go.id = 'ncsc-question-go'; go.setAttribute('aria-label', 'Go to the selected question');
             const picker = node('div', 'ncsc-question-picker'); picker.append(index, go);
             content.append(indexLabel, picker);
-            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable ? ' Answers save automatically a moment after each change.' : ''));
+            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below.' + (autosaveEnabled && editable ? ' Answers save automatically a moment after each change.' : ''));
             indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
@@ -1336,7 +1346,7 @@
             // Mention not applicable answers only when there are some (#297).
             if (count) section.append(node('p', '', count + (count === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm.'));
             if (unanswered) {
-                section.append(node('p', '', 'The projected range appears when every question has an answer. Answer ' + unanswered + ' more ' +
+                section.append(node('p', '', 'Answer ' + unanswered + ' more ' +
                     (unanswered === 1 ? 'question' : 'questions') + ' to see your projected range.'));
             } else {
                 const range = projectRange(rows);
@@ -1661,7 +1671,7 @@
             const nav = node('div', 'ncsc-question-navigation');
             const previous = button('Previous question', function () {
                 if (questionRegion.contains(previous) && activeQuestion > 0) { activeQuestion -= 1; renderAssessmentQuestion(); }
-            }); previous.disabled = activeQuestion === 0;
+            }, 'dashboard-button dashboard-button-secondary'); previous.disabled = activeQuestion === 0;
             const next = button('Next question', function () {
                 if (questionRegion.contains(next) && activeQuestion < questions.length - 1) { activeQuestion += 1; renderAssessmentQuestion(); }
             }); next.disabled = activeQuestion === questions.length - 1;

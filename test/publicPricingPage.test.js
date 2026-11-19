@@ -44,11 +44,15 @@ test('the page offers no self-serve plan and makes no round-the-clock or certifi
     expect(text).not.toContain('!');
 });
 
+test('direct pricing entries use the shared enquiry campaign handling', () => {
+    expect(html).toContain('<script src="/js/enquiry-availability.js" defer></script>');
+});
+
 test('the calls to action and Managed IT link go to existing pages', () => {
     const links = [...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/g)].map(match => [match[2].trim(), match[1]]);
     expect(links).toEqual(expect.arrayContaining([
         ['Create a free account', '/login?intent=create'],
-        ['Ask about 90-day managed security', '/contact.html'],
+        ['Ask about 90-day managed security', '/contact.html?service=managed_security_90'],
         ['Managed IT', '/managed-it.html']
     ]));
     expect(html).not.toMatch(/href="\/share|\/api\//);
