@@ -438,6 +438,20 @@ describe('approval', () => {
         expect(h.repository.reset).toHaveBeenCalledTimes(1);
     });
 
+    test('is bound to the action approved: a reset approval can only reset', async () => {
+        const h = harness();
+        const { approvalId } = await h.executor.approve(approval('reset'), signal());
+        expect(await h.executor.execute(apply(approvalId, { action: 'delete' }), signal())).toMatchObject({ action: 'reset', outcome: 'succeeded' });
+        expect(h.repository.reset).toHaveBeenCalledTimes(1);
+        expect(h.repository.delete).not.toHaveBeenCalled(); expect(h.storage.delete).not.toHaveBeenCalled(); expect(h.remover.remove).not.toHaveBeenCalled();
+    });
+
+    test('the approval record states it is self-issued by the acting staff admin', async () => {
+        const h = harness();
+        await h.executor.approve(approval('delete'), signal());
+        expect(h.records).toEqual([expect.objectContaining({ phase: 'approval', action: 'delete', approvalAuthority: 'self_issued_sole_admin' })]);
+    });
+
     test('expires after 15 minutes', async () => {
         const h = harness();
         const { approvalId } = await h.executor.approve(approval('reset'), signal());

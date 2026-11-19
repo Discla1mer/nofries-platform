@@ -370,7 +370,7 @@
             current = target;
             if (doc && current && current.label) doc.title = current.label + ' · No Fries Dashboard';
             status.hidden = !!requested || !route;
-            status.textContent = requested || !route ? '' : 'We could not find that view, so we have taken you to ' + target.label + '.';
+            status.textContent = requested || !route ? '' : 'We couldn\'t find that page, so we\'ve taken you to ' + target.label + '.';
             if (changeLocation && !repeatedRoute) pushEntry(current.route);
             if (historyTarget) cyberLocation = historyTarget.location || null;
             else if (committedEntry || current.key !== 'cyber_security') cyberLocation = null;
