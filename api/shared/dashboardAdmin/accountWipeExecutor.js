@@ -219,7 +219,9 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         }
         if (approvals.size >= MAX_APPROVALS) fail('account_wipe_busy');
         const approvalId = newId(), expiresAt = now() + APPROVAL_MS;
-        if (!await record(approvalId, 'approval', { action, actorSha256, targetSha256, outcome: 'approved', expiresAt: new Date(expiresAt).toISOString() }))
+        // Self-issued by the acting staff admin, as for suspend and restore (see docs/staff-admin.md, Accepted risk).
+        if (!await record(approvalId, 'approval', { action, actorSha256, targetSha256, outcome: 'approved', expiresAt: new Date(expiresAt).toISOString(),
+            approvalAuthority: 'self_issued_sole_admin' }))
             fail('account_wipe_audit_unavailable');
         // Bound to the account seen now, not just the email: an account deleted and
         // signed up again with the same email is a different target.
