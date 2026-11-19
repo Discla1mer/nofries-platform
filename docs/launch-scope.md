@@ -72,8 +72,19 @@ comments are post-launch (issue #11).
    is exactly `true` (and the route is on).
    **Retention.** Contact requests are kept for 24 months from `requested_at`,
    then deleted. Account reset and delete remove them sooner. The automatic
-   24-month purge is not built yet: no database role can delete by age today
-   (#455).
+   purge is built and off by default (#455): migration 0027 adds the NOLOGIN
+   role `nofries_contact_request_retention`, which can see and delete only
+   rows older than 24 months (row security) and read only their key and date;
+   it cannot insert or update. A daily in-process job
+   (`api/shared/contactRequestRetention.js`) checks that the database login may
+   `SET ROLE` to it and does not inherit it (an inherited grant logs
+   `retention_role_inherited` and deletes nothing), then deletes in batches of 500 (at most 20 a run), each
+   transaction under `SET LOCAL ROLE` with a 15-second statement timeout, and
+   logs only a code and a count. Off unless
+   `NOFRIES_CONTACT_REQUEST_RETENTION_ENABLED` is exactly `true`. It also needs
+   0027 applied and a separate production grant of the role to the App Service
+   login, `WITH SET TRUE, INHERIT FALSE`; without the grant each run logs
+   `retention_role_unavailable` and deletes nothing.
 5. **Payment.** `server.js` answers every `/api/billing/*` request with
    `billing_disabled`. A customer cannot pay inside the app. Until this is
    built, a paid plan has to be approved by an operator and invoiced outside
