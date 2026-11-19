@@ -14,7 +14,7 @@ const openSession = async (h, app, cookie) => expect((await h.send('post', '/api
     .set('Origin', h.env.NOFRIES_PUBLIC_URL).set('Sec-Fetch-Site', 'same-origin').send({ operationId: h.nextId() })).status).toBe(200);
 const membership = (h, selector = h.selector) => ({ selector, confirmationEmail: h.record.email, expectedMembershipRevision: 0 });
 
-test('settings alone compose one-attempt managed-identity action clients, the audit container and the built-in approval issuers', () => {
+test('settings plus a private approval reader compose action clients, audit storage and built-in operation approvals', () => {
     const h = fixture(); h.env.NOFRIES_MANAGED_IDENTITY_CLIENT_ID = '85000000-0000-4000-8000-000000000050';
     const ports = createStaffDashboardAdministration(h.env, h.dashboard, h.sdk), actions = ports.dashboardAdminAccountActions;
     expect(Object.keys(ports).sort()).toEqual(['dashboardAdmin', 'dashboardAdminAccountActions', 'dashboardAdminAccountLookup']);
@@ -23,10 +23,18 @@ test('settings alone compose one-attempt managed-identity action clients, the au
     expect(actions.auditContainer.pipeline.options.retryOptions.maxTries).toBe(1);
     expect(actions.auditContainer.url).toBe('https://syntheticdata.blob.core.windows.net/account-action-audit');
     expect(actions).not.toHaveProperty('readApprovedExtension'); expect(actions).not.toHaveProperty('readApprovedAction');
+    expect(actions.readApprovedBinding).toBe(h.sdk.dashboardAdminAccountActionApproval.readApprovedBinding);
     expect(actions.auditPolicy.retention).toEqual({ unit: 'calendar_months', count: 13 });
     expect(h.sdk.ManagedIdentityCredential).toHaveBeenCalledWith({ clientId: h.env.NOFRIES_MANAGED_IDENTITY_CLIENT_ID });
     expect(h.reads).toEqual([]); expect(h.writes).toEqual([]); expect(warning).not.toHaveBeenCalled();
     expect(Object.keys(createProductionDashboardAdministration(h.env, h.dashboard, h.sdk, null)).sort()).toEqual(Object.keys(ports).sort());
+});
+test('a missing private approval reader leaves lookup running and account actions unavailable', () => {
+    const h = fixture(); delete h.sdk.dashboardAdminAccountActionApproval;
+    const ports = createStaffDashboardAdministration(h.env, h.dashboard, h.sdk);
+    expect(Object.keys(ports).sort()).toEqual(['dashboardAdmin', 'dashboardAdminAccountLookup']);
+    expect(h.reads).toEqual([]); expect(h.writes).toEqual([]);
+    expect(warning).toHaveBeenCalledWith('[dashboard-admin-account-actions] dashboard_admin_unavailable');
 });
 test.each([undefined, '', 'false'])('actions flag %p remains default-off while lookup stays composed', value => {
     const h = fixture(); h.env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS = value;

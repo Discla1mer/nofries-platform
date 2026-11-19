@@ -21,7 +21,7 @@ Set these App Service settings (exact values):
 | `NOFRIES_STAFF_CONSOLE` | `true` |
 | `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP` | `true` |
 | `NOFRIES_DASHBOARD_ADMIN_AUDIT_CONTAINER` | The private audit container on `AZURE_STORAGE_ACCOUNT_NAME` |
-| `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS` | `true` to allow suspend and restore; leave unset for read-only |
+| `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS` | `true` to allow approved suspend and restore; leave unset for read-only |
 
 The console also uses settings that already exist: `AZURE_STORAGE_ACCOUNT_NAME`, `NOFRIES_CUSTOMER_AUTHORITY_CONTAINER`, `NOFRIES_STARTER_AUTHORITY_CONTAINER`, `NOFRIES_EXTERNAL_CUSTOMER_AUTHORITY_CONTAINER` (with `NOFRIES_EXTERNAL_CUSTOMER_TENANT_ID`), `NOFRIES_SCOPE_SIGNING_SECRET`, the native dashboard runtime settings and, when a user-assigned identity is used, `NOFRIES_MANAGED_IDENTITY_CLIENT_ID`. Lookup works with at least one customer container; suspend and restore need all three.
 
@@ -48,7 +48,7 @@ One exception is outside the console: if customer signup is enabled and `NOFRIES
 
 ## Turn it off
 
-Set `NOFRIES_STAFF_CONSOLE=false` to turn the whole console off. Set `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS=false` to keep lookup but remove suspend and restore. Setting `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP=false` also turns the whole console off. Audit records are kept.
+Set `NOFRIES_STAFF_CONSOLE=false` to turn the whole console off. Set `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS=false` to keep lookup but remove suspend and restore. Setting `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP=false` also turns the whole console off. Actions additionally require the host's private approval reader; a missing or invalid reader leaves lookup available and actions off. Audit records are kept.
 
 ## What it does
 
@@ -58,7 +58,7 @@ Set `NOFRIES_STAFF_CONSOLE=false` to turn the whole console off. Set `NOFRIES_DA
 
 **Show dashboard access.** Reads one customer's membership in one organisation from PostgreSQL, with an attempt and an outcome audit row in the database.
 
-**Suspend or restore.** Type the account email to approve, then apply within 15 minutes. The approval is bound to the staff session, the customer, the membership revision that was read and one operation. Suspension blocks only that organisation's dashboard membership; restore needs the matching staff suspension on record. Each approval and each action writes an attempt record and an outcome record under `dashboard-admin-account-actions/<operation>/`; success is reported only after the outcome record is stored. If the page says the outcome could not be confirmed, read dashboard access again before retrying.
+**Suspend or restore.** The host first requires a current private administration grant for that staff operator, customer and action. Type the account email to approve, then apply within 15 minutes. This second approval is bound to the staff session, the customer, the membership revision that was read and one operation. Suspension blocks only that organisation's dashboard membership; restore needs the matching staff suspension on record. Each approval and each action writes an attempt record and an outcome record under `dashboard-admin-account-actions/<operation>/`; success is reported only after the outcome record is stored. If the page says the outcome could not be confirmed, read dashboard access again before retrying.
 
 To stop a customer's access, suspend the membership. Accounts do not expire, and if two dashboard product grants already stored for an organisation share a start date, suspending one of them does not stop access.
 

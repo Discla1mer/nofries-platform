@@ -9,13 +9,14 @@ const denied = () => { throw new DashboardAdminError(403, 'dashboard_admin_acces
 // At most three exact subject reads, after the existing scoped native policy.
 // Never enumerate email records or guess between two matching authority stores.
 function createAccountActionsSources(configuration, dashboard, authorise, createRuntime) {
-    fields(configuration, ['sources', 'auditContainer', 'auditPolicy']);
+    fields(configuration, ['sources', 'auditContainer', 'auditPolicy', 'readApprovedBinding']);
+    if (typeof configuration.readApprovedBinding !== 'function') throw new Error('dashboard_admin_configuration_invalid');
     if (!Array.isArray(configuration.sources) || configuration.sources.length < 1 || configuration.sources.length > 3) throw new Error('dashboard_admin_configuration_invalid');
     const sources = configuration.sources.map(value => {
         fields(value, ['source', 'authorityContainer']);
         const source = normaliseCustomerAuthoritySource(value.source);
         return { ...value, source, runtime: createRuntime({ ...value, auditContainer: configuration.auditContainer,
-            auditPolicy: configuration.auditPolicy }, dashboard, authorise) };
+            auditPolicy: configuration.auditPolicy, readApprovedBinding: configuration.readApprovedBinding }, dashboard, authorise) };
     });
     if (new Set(sources.map(row => row.source.kind)).size !== sources.length ||
         new Set(sources.map(row => row.authorityContainer.url)).size !== sources.length) throw new Error('dashboard_admin_configuration_invalid');

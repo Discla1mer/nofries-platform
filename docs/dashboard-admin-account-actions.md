@@ -2,7 +2,7 @@
 
 Suspend and restore are the only account actions. Customer accounts do not expire, so there is no extension endpoint. Settings and roles are in [the staff admin guide](staff-admin.md).
 
-All four routes are `POST`, same-origin JSON, and return 404 unless `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS=true`. They require the staff admin session and native operator session described in the guide.
+All four routes are `POST`, same-origin JSON, and return 404 unless `NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS=true`. They require the staff admin session, native operator session and a current private administration grant bound to the exact operator, customer and action. If the host has no private approval reader, the action routes remain unavailable while lookup continues to work.
 
 `/api/dashboard-admin/approve-suspend` and `/approve-restore` accept `{ selector, confirmationEmail, expectedMembershipRevision }`. `selector` is `{ provider, subjectKey, tenantId, organisationId }` from the email lookup; `expectedMembershipRevision` comes from the dashboard access read, not the sign-in record's revision. They check the typed email against the customer's sign-in record and the current membership, then store a 15-minute approval bound to the staff session, target, revision and one server-issued operation ID, which they return.
 

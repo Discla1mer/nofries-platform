@@ -51,6 +51,15 @@ function fixture(kind = 'legacy_admin') {
         email: 'synthetic@example.invalid', revision: 0, status: 'active', invitationDigest: 'a'.repeat(64), invitationId: 'synthetic-invite',
         tenantId: 'synthetic-tenant', organisationId: 'synthetic-org', termsVersion: 'synthetic-terms', termsDigest: 'b'.repeat(64), bindingId: null, expiresAt: NOW - 1000 };
     const selector = { provider: kind === 'external_starter' ? 'external' : 'legacy', subjectKey: record.subjectKey, tenantId: record.tenantId, organisationId: record.organisationId };
+    sdk.dashboardAdminAccountActionApproval = Object.freeze({ readApprovedBinding: jest.fn(async ({ operatorSubjectKey, selector: selected, action }) => {
+        const at = iso(h.state.now);
+        return { schemaVersion: 1, bindingId: uid(50), revision: 0, status: 'active', purpose: 'account_support',
+            operatorSubjectKey, instanceId: h.dashboard.instanceId, restoreEpoch: h.state.epoch, selector: selected,
+            actions: [action], approvedAt: at, validFrom: at, validUntil: iso(h.state.now + 3600000),
+            approvalReference: 'synthetic-administration', identityPolicy: { policyId: h.dashboard.identityPolicy.policyId,
+                policyRevision: h.dashboard.identityPolicy.policyRevision }, auditPolicy: { reference: 'dashboard-admin-account-actions', revision: 1,
+                agreementVersion: 'nf-dashboard-2026-09-r2', retention: { unit: 'calendar_months', count: 13 } } };
+    }) });
     const put = (name, key, value) => bucket('syntheticdata', name).set(key, { bytes: Buffer.from(canonical(value)), etag: '"initial"' });
     const subjectPath = `customer-subjects/${subjectHash(record.subjectKey)}.json`; put(sourceName, subjectPath, record);
     const build = () => createProductionApplication(h.env, sdk);

@@ -1,7 +1,7 @@
 'use strict';
 
 // Staff suspend then restore through the actual production launcher: HTTP
-// handlers, staff capture, native operator gate, settings-only composition,
+// handlers, staff capture, native operator gate, private approval composition,
 // source selection, membership action, approvals and audit records are real.
 // Only SDK/SQL transports and the canonical membership repository (PostgreSQL
 // locks and RLS are covered by the native suites) are synthetic.
@@ -117,12 +117,13 @@ test.each(['true', 'false', null])('a malformed listing locator with the actions
     expect((await h.send('post', '/api/dashboard-admin/signups', app).set('Cookie', cookie).set('Origin', h.env.NOFRIES_PUBLIC_URL)
         .set('Sec-Fetch-Site', 'same-origin').send({ cursor: null })).status).toBe(404);
 });
-test('the composed action configuration is deeply frozen and carries only sources, audit container and audit policy', () => {
+test('the composed action configuration is deeply frozen and carries the private approval reader', () => {
     const h = host(), { createStaffDashboardAdministration } = require('../lib/dashboardAdminStaffProduction');
     const configuration = createStaffDashboardAdministration(h.env, h.dashboard, h.sdk).dashboardAdminAccountActions;
-    expect(Object.keys(configuration).sort()).toEqual(['auditContainer', 'auditPolicy', 'sources']);
+    expect(Object.keys(configuration).sort()).toEqual(['auditContainer', 'auditPolicy', 'readApprovedBinding', 'sources']);
     for (const value of [configuration, configuration.sources, ...configuration.sources, ...configuration.sources.map(row => row.source), configuration.auditPolicy, configuration.auditPolicy.retention])
         expect(Object.isFrozen(value)).toBe(true);
     expect(() => { 'use strict'; configuration.readApprovedAction = async () => ({}); }).toThrow(TypeError);
+    expect(configuration.readApprovedBinding).toBe(h.sdk.dashboardAdminAccountActionApproval.readApprovedBinding);
     expect(() => { 'use strict'; configuration.sources.push({}); }).toThrow(TypeError);
 });

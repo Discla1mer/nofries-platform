@@ -10,11 +10,13 @@ const { accountActionsPool } = require('./accountActionsPool');
 function createAccountActionsRuntime(configuration, dashboard, authorise) {
     if (Object.hasOwn(configuration, 'sources')) return require('./accountActionsSources')
         .createAccountActionsSources(configuration, dashboard, authorise, createAccountActionsRuntime);
-    // Suspend and restore are the only account actions. Approvals are issued
-    // and read by the built-in store unless a trusted reader is also supplied.
-    fields(configuration, ['source', 'authorityContainer', 'auditContainer', 'auditPolicy',
+    // Suspend and restore are the only account actions. A trusted reader must
+    // establish current customer-specific administration before the built-in
+    // per-operation approval can be issued or consumed.
+    fields(configuration, ['source', 'authorityContainer', 'auditContainer', 'auditPolicy', 'readApprovedBinding',
         ...(Object.hasOwn(configuration, 'readApprovedAction') ? ['readApprovedAction'] : [])]);
-    if (Object.hasOwn(configuration, 'readApprovedAction') && typeof configuration.readApprovedAction !== 'function') throw new Error('dashboard_admin_configuration_invalid');
+    if (typeof configuration.readApprovedBinding !== 'function' ||
+        Object.hasOwn(configuration, 'readApprovedAction') && typeof configuration.readApprovedAction !== 'function') throw new Error('dashboard_admin_configuration_invalid');
     const select = names => Object.fromEntries(names.map(key => [key, dashboard[key]]));
     const pool = accountActionsPool(dashboard.pool);
     const session = createDashboardOperatorSession(select(['browserAuthOptions', 'identityPolicy', 'proofStore',

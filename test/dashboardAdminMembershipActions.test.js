@@ -49,12 +49,13 @@ test('suspend blocks only scoped admission; restore preserves all data and retur
     expect([...h.state.rows.values()].filter(row => row.phase === 'terminal' && ['suspend', 'restore'].includes(row.action)).map(row => [row.before.status, row.after.status, row.outcome]))
         .toEqual([['active', 'suspended', 'succeeded'], ['suspended', 'active', 'succeeded']]);
 });
-test.each(['confirmation', 'revision', 'revoked', 'approval', 'epoch', 'scope', 'audit', 'delete', 'self', 'issuance'])('%s refusal cannot change customer data', async mode => {
+test.each(['confirmation', 'revision', 'revoked', 'approval', 'administration', 'epoch', 'scope', 'audit', 'delete', 'self', 'issuance'])('%s refusal cannot change customer data', async mode => {
     const h = fixture(), input = h.input();
     if (mode === 'confirmation') input.confirmationEmail = 'wrong@example.invalid';
     if (mode === 'revision') input.expectedMembershipRevision++;
     if (mode === 'revoked') h.record.status = 'revoked';
     if (mode === 'approval') h.approval.actions = ['restore'];
+    if (mode === 'administration') h.administration.status = 'revoked';
     if (mode === 'epoch') h.context.restoreEpoch = uid(99);
     if (mode === 'scope') input.selector = { ...input.selector, organisationId: 'another-organisation' };
     if (mode === 'audit') h.state.fail = 'attempt.json';
@@ -65,6 +66,23 @@ test.each(['confirmation', 'revision', 'revoked', 'approval', 'epoch', 'scope', 
     await expect(h.run(mode === 'delete' ? 'delete' : 'suspend', input)).rejects.toBeDefined();
     expect(h.state.snapshot).toEqual(h.snapshot); expect(h.state.committed).toBe(0);
 });
+test.each([
+    ['operator', grant => { grant.operatorSubjectKey = uid(98) + ':' + uid(99); }],
+    ['target', grant => { grant.selector.organisationId = 'another-organisation'; }],
+    ['action', grant => { grant.actions = ['restore']; }],
+    ['restore epoch', grant => { grant.restoreEpoch = uid(99); }],
+    ['identity policy', grant => { grant.identityPolicy.policyRevision++; }],
+    ['audit policy', grant => { grant.auditPolicy.revision++; }],
+    ['expiry', grant => {
+        grant.approvedAt = grant.validFrom = new Date(Date.parse(NOW) - 3600000).toISOString(); grant.validUntil = NOW;
+    }]
+])('independent administration grant refuses a mismatched %s before audit or mutation', async (_mode, change) => {
+    const h = fixture(), input = h.input(); delete input.operationId; change(h.administration);
+    await expect(h.run('approve-suspend', input)).rejects.toMatchObject({ statusCode: 403 });
+    expect(h.config.readApprovedBinding).toHaveBeenCalledWith({ operatorSubjectKey: actor.subjectKey,
+        selector: h.selector, action: 'suspend' }, { signal: expect.any(AbortSignal) });
+    expect(h.state.rows.size).toBe(0); expect(h.state.snapshot).toEqual(h.snapshot); expect(h.state.committed).toBe(0);
+});
 test('late approval revocation prevents the write and terminal audit failure withholds success', async () => {
     const h = fixture(); let calls = 0;
     h.config.readApprovedAction.mockImplementation(async ({ operationId }) => {
@@ -73,6 +91,14 @@ test('late approval revocation prevents the write and terminal audit failure wit
     await expect(h.run('suspend')).rejects.toMatchObject({ statusCode: 403 }); expect(h.state.committed).toBe(0);
     const next = fixture(); next.state.fail = 'terminal.json';
     await expect(next.run('suspend')).rejects.toMatchObject({ statusCode: 503 }); expect(next.state.committed).toBe(1);
+});
+test('late independent administration revocation prevents the membership write', async () => {
+    const h = fixture(), read = h.config.readApprovedBinding.getMockImplementation(); let calls = 0;
+    h.config.readApprovedBinding.mockImplementation(async args => {
+        const grant = await read(args); if (++calls > 2) grant.status = 'revoked'; return grant;
+    });
+    await expect(h.run('suspend')).rejects.toMatchObject({ statusCode: 403 });
+    expect(calls).toBeGreaterThan(2); expect(h.state.committed).toBe(0); expect(h.state.snapshot).toEqual(h.snapshot);
 });
 test.each(['suspend', 'restore', 'approve-suspend', 'approve-restore'])('%s HTTP route is default-off and uses staff auth and same origin', async action => {
     const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});

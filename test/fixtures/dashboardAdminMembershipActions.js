@@ -46,7 +46,10 @@ function fixture() {
         operatorSubjectKey: actor.subjectKey, instanceId: context.instanceId, restoreEpoch: context.restoreEpoch,
         selector, actions: ['restore', 'suspend'], approvedAt: NOW, validFrom: NOW,
         validUntil: new Date(Date.parse(NOW) + 3600000).toISOString(), approvalReference: 'synthetic-approval', identityPolicy, auditPolicy };
+    const administration = { ...clone(approval), bindingId: uid(6), actions: ['restore', 'suspend'],
+        approvalReference: 'synthetic-administration' };
     const config = { source, authorityContainer, auditContainer, identityPolicy, auditPolicy, clock: () => NOW,
+        readApprovedBinding: jest.fn(async () => clone(administration)),
         readContext: jest.fn(async () => clone(context)), readApprovedAction: jest.fn(async ({ operationId }) => clone(state.approvals.get(operationId))),
         createRepository: (guard, allowed) => ({ verifyRestore: (selector, snapshot, read) =>
             verifyRestore(tx, selector, snapshot, { instanceId: context.instanceId, restoreEpoch: context.restoreEpoch }, read, NOW), async readAuthoritySnapshot() {
@@ -82,6 +85,6 @@ function fixture() {
         }
         return createMembershipAction(config).execute(actor, value, { request: {}, signal: new AbortController().signal }, action);
     };
-    return { config, context, approval, record, state, snapshot, selector, input, run, f };
+    return { config, context, approval, administration, record, state, snapshot, selector, input, run, f };
 }
 module.exports = { fixture, actor, uid, clone, NOW, SUBJECT };

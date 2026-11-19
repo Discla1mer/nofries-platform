@@ -12,11 +12,12 @@ const { validateMembershipApproval, readMembershipApproval } = require('./accoun
 const fail = (status, suffix) => { throw new DashboardAdminError(status, 'dashboard_admin_' + suffix); };
 
 function createMembershipAction({ source: rawSource, authorityContainer, auditContainer, readContext,
-    readApprovedAction, auditPolicy, identityPolicy, createRepository, clock }) {
+    readApprovedBinding, readApprovedAction, auditPolicy, identityPolicy, createRepository, clock }) {
     const source = normaliseCustomerAuthoritySource(rawSource), policy = freeze(copy(auditPolicy, 2048));
     const auditConfigurationSha256 = hash({ purpose: 'dashboard_admin_account_actions', containerUrl: auditContainer.url });
     if (authorityContainer.url !== `https://${source.storageAccount}.blob.core.windows.net/${source.container}` ||
-        authorityContainer.url === auditContainer.url || readApprovedAction !== undefined && typeof readApprovedAction !== 'function') fail(503, 'unavailable');
+        authorityContainer.url === auditContainer.url || typeof readApprovedBinding !== 'function' ||
+        readApprovedAction !== undefined && typeof readApprovedAction !== 'function') fail(503, 'unavailable');
     return Object.freeze({ async execute(actor, raw, invocation, route) {
         const approving = ['approve-suspend', 'approve-restore'].includes(route), action = approving ? route.slice(8) : route;
         let input, selector;
@@ -28,7 +29,7 @@ function createMembershipAction({ source: rawSource, authorityContainer, auditCo
             if (typeof input.confirmationEmail !== 'string' || input.confirmationEmail.length > 254) throw new Error();
         } catch (_) { fail(400, 'input_invalid'); }
         const signal = AbortSignal.any([invocation.signal, AbortSignal.timeout(10000)]), start = Date.now();
-        let last = null, context, approval, observed, attempted = false, writing = false, permitted = null;
+        let last = null, context, administration, approval, observed, attempted = false, writing = false, permitted = null;
         const check = () => {
             const at = instant(clock());
             if (signal.aborted || Date.now() - start >= 10000 || last !== null && at < last) fail(503, 'unavailable');
@@ -45,10 +46,20 @@ function createMembershipAction({ source: rawSource, authorityContainer, auditCo
             check();
             const fresh = freeze(copy(await readContext(actor, selector, invocation), 4096));
             check();
-            const at = check();
             if (fresh.operatorSubjectKey !== actor.subjectKey || fresh.identityPolicySha256 !== hash(identityPolicy) ||
                 context && !equal(context, fresh)) fail(403, 'access_denied');
             context = fresh;
+            const at = check();
+            const currentAdministration = accountActionApproval(await readApprovedBinding(
+                { operatorSubjectKey: actor.subjectKey, selector, action }, { signal }));
+            check();
+            if (currentAdministration.operatorSubjectKey !== actor.subjectKey || currentAdministration.instanceId !== context.instanceId ||
+                currentAdministration.restoreEpoch !== context.restoreEpoch || !equal(currentAdministration.selector, selector) ||
+                !currentAdministration.actions.includes(action) || !equal(currentAdministration.identityPolicy,
+                    { policyId: identityPolicy.policyId, policyRevision: identityPolicy.policyRevision }) ||
+                !equal(currentAdministration.auditPolicy, policy) || at < currentAdministration.validFrom || at >= currentAdministration.validUntil ||
+                administration && !equal(administration, currentAdministration)) fail(403, 'access_denied');
+            if (!administration) administration = currentAdministration;
             const found = await readActionRecord(authorityContainer, blobName, signal);
             check();
             const status = inspectCustomerAuthority({ source, blobName, ...found, observedAt: check() },
