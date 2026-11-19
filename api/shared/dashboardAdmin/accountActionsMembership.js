@@ -8,7 +8,7 @@ const { accountActionApproval } = require('./accountActionApproval');
 const { normaliseCustomerAuthoritySource, inspectCustomerAuthority } = require('./customerAuthorityRecords');
 const { subjectHash } = require('../customerSignup/customerAuthority');
 const { readActionRecord, writeActionRecord } = require('./accountActionsStorage');
-const { validateMembershipApproval, readMembershipApproval } = require('./accountActionsMembershipApproval');
+const { validateMembershipApproval, readMembershipApproval, APPROVAL_AUTHORITY } = require('./accountActionsMembershipApproval');
 const fail = (status, suffix) => { throw new DashboardAdminError(status, 'dashboard_admin_' + suffix); };
 
 function createMembershipAction({ source: rawSource, authorityContainer, auditContainer, readContext,
@@ -35,7 +35,8 @@ function createMembershipAction({ source: rawSource, authorityContainer, auditCo
             last = at; return at;
         };
         const event = { schemaVersion: 1, operationId: input.operationId, actorSubjectKey: actor.subjectKey,
-            action: route, selector, targetSha256: hash(selector), before: null, proposedAfter: { status: action === 'suspend' ? 'suspended' : 'active' } };
+            action: route, selector, targetSha256: hash(selector), before: null, proposedAfter: { status: action === 'suspend' ? 'suspended' : 'active' },
+            approvalAuthority: APPROVAL_AUTHORITY };
         const envelope = (phase, outcome, after) => ({ ...event, phase, outcome, after, occurredAt: instant(clock()) });
         const audit = (phase, outcome, after) => writeActionRecord(auditContainer,
             `dashboard-admin-account-actions/${input.operationId}/${approving ? 'approval-' : ''}${phase}.json`,
@@ -96,7 +97,7 @@ function createMembershipAction({ source: rawSource, authorityContainer, auditCo
                     operatorSubjectKey: actor.subjectKey, instanceId: context.instanceId, restoreEpoch: context.restoreEpoch, selector, actions: [action],
                     approvedAt: at, validFrom: at, validUntil: expiresAt, approvalReference: input.operationId,
                     identityPolicy: { policyId: identityPolicy.policyId, policyRevision: identityPolicy.policyRevision }, auditPolicy: policy });
-                const record = { grant, ...binding() }; event.approvalSha256 = hash(record);
+                const record = { grant, ...binding(), approvalAuthority: APPROVAL_AUTHORITY }; event.approvalSha256 = hash(record);
                 await writeActionRecord(auditContainer, `dashboard-admin-account-actions/${input.operationId}/approval.json`, record, { ifNoneMatch: '*' }, signal);
                 await audit('terminal', 'succeeded', { status: 'approved', expiresAt }); attempted = false;
                 return { selector, operationId: input.operationId, action, expectedMembershipRevision: input.expectedMembershipRevision,
