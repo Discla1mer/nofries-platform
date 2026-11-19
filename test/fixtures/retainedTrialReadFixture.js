@@ -13,7 +13,10 @@ const { allResponses, createCommand, saveCommand, submitCommand } = require('./n
 const clone = value => JSON.parse(JSON.stringify(value));
 const START = '2026-11-01T12:00:00.000Z', NOW = '2027-02-02T12:00:00.000Z';
 
-async function retainedTrialFixture({ client = false, identity: suppliedIdentity, planId = THREE_MONTH_PLAN_ID, email = 'synthetic@example.test' } = {}) {
+// `profileContext` stores the saved assessment on another profile (scoring v2, #399),
+// 20 days after START so the v2 profile is in effect; the caller sets the flag.
+async function retainedTrialFixture({ client = false, identity: suppliedIdentity, planId = THREE_MONTH_PLAN_ID, email = 'synthetic@example.test',
+    profileContext = null, responses = allResponses() } = {}) {
     const identity = suppliedIdentity || { policyId: 'synthetic-retained-trial', policyRevision: 1, issuer: 'https://identity.example.test/v2.0',
         identityTenantId: crypto.randomUUID(), oid: crypto.randomUUID(), audience: 'synthetic-audience' };
     const actor = identity.identityTenantId + ':' + identity.oid;
@@ -61,10 +64,11 @@ async function retainedTrialFixture({ client = false, identity: suppliedIdentity
     const slot = account.organisations.at(-1), selected = scopes.get(slot.tenantId);
     const scope = { ...selected.retained.preparation.scope, assessmentId: 'saved-assessment' };
     let previous = null;
-    const versions = [createCommand(), saveCommand(), submitCommand()].map((raw, i) => {
+    const versions = [createCommand(), saveCommand(undefined, undefined, undefined, responses), submitCommand()].map((raw, i) => {
         const intent = { ...scope, actorSubjectKey: actor, action: raw.action, expectedRevision: raw.expectedRevision, payload: raw.payload };
         previous = ncsc.makeVersion(intent, raw.idempotencyKey, previous, selected.snapshot.tenantAggregate,
-            new Date(Date.parse(START) + 86400000 + i * 1000).toISOString());
+            new Date(Date.parse(START) + (profileContext ? 20 : 1) * 86400000 + i * 1000).toISOString(),
+            ...(profileContext ? [profileContext] : []));
         return previous;
     });
     const head = { tenant_id: slot.tenantId, organisation_id: slot.organisationId, assessment_id: scope.assessmentId,
