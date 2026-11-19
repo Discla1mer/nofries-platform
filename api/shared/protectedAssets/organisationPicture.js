@@ -35,7 +35,6 @@
         const code = /^NF-NCSC-(?:MCSS|CC)-([A-Z]{2})-\d\d-Q\d+$/.exec(itemId);
         return code && Object.hasOwn(GAP_TIER, code[1]) ? GAP_TIER[code[1]] : 3;
     };
-    const ENQUIRY_TIMEOUT_MS = 5000;
     const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
     const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
     const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
@@ -761,14 +760,9 @@
             const panel = node('div', 'picture-next-steps'), token = epoch;
             panel.append(node('h4', '', 'Next step'));
             if (typeof questionnaire.providerSummary === 'function' && typeof questionnaire.copySummary === 'function') panel.append(summaryHandoff());
-            const help = node('div', 'picture-next-steps-help'); help.hidden = true;
-            const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
-            help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
-                gated(() => link), node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
-            panel.append(help);
+            panel.append(questionnaire.managedSecurityOffer(node, gated, doc.defaultView, () => live(token)));
             // #409: present only when the host negotiated contact requests.
             if (contactControl) panel.append(contactControl());
-            enquiryAvailable().then(available => { if (available && live(token)) help.hidden = false; });
             return panel;
         }
         function summaryHandoff() {
@@ -784,67 +778,13 @@
             copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
             // #441: the same answers, written for a board or insurer.
             if (typeof questionnaire.boardSummary === 'function') {
-                handoff.append(gated(() => {
-                    const boardBlock = node('div', 'picture-board-summary');
-                    const boardLabel = node('label', '', 'Summary for your board or insurer');
-                    const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
-                    board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, metadata).text;
-                    const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
-                    const boardCopy = button('Copy board summary', () => questionnaire.copySummary(win, board, status));
-                    boardCopy.classList.add('dashboard-button-secondary'); boardBlock.append(boardLabel, board, boardPrinted, boardCopy);
-                    if (win && typeof win.print === 'function') {
-                        const boardPrint = button('Print board summary', () => printOnly(win, boardPrinted));
-                        boardPrint.classList.add('dashboard-button-secondary'); boardBlock.append(boardPrint);
-                    }
-                    return boardBlock;
-                }));
+                handoff.append(gated(() => questionnaire.boardSummaryBlock(node, button, win, detail, metadata, id + '-board-summary', status)));
             }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());
                 printButton.classList.add('dashboard-button-secondary'); handoff.append(printButton);
             }
             handoff.append(status); return handoff;
-        }
-        // Prints one block on its own (one A4 page for the board summary): every
-        // sibling along its path to <body> is hidden for print only, then
-        // restored. Nothing leaves the page.
-        function printOnly(win, target) {
-            const hidden = [];
-            for (let element = target; element && element.parentElement && element !== doc.body; element = element.parentElement) {
-                Array.from(element.parentElement.children || []).forEach(sibling => {
-                    if (sibling !== element && !sibling.classList.contains('picture-print-hide')) { sibling.classList.add('picture-print-hide'); hidden.push(sibling); }
-                });
-            }
-            target.classList.add('picture-print-only');
-            try { win.print(); } finally {
-                hidden.forEach(sibling => sibling.classList.remove('picture-print-hide'));
-                target.classList.remove('picture-print-only');
-            }
-        }
-        // Mirrors js/enquiry-availability.js: a bare read-only GET of the public
-        // enquiry status. Any error, non-OK reply or 5-second timeout is unavailable.
-        async function enquiryAvailable() {
-            const win = doc.defaultView;
-            if (!win || typeof win.fetch !== 'function' || typeof win.AbortController !== 'function') return false;
-            const controller = new win.AbortController();
-            let timer;
-            try {
-                const deadline = new Promise((_, reject) => {
-                    timer = setTimeout(() => { controller.abort(); reject(new Error('unavailable')); }, ENQUIRY_TIMEOUT_MS);
-                });
-                const read = (async () => {
-                    const response = await win.fetch('/api/enquiry', { method: 'GET', credentials: 'same-origin', cache: 'no-store',
-                        signal: controller.signal, headers: { Accept: 'application/json' } });
-                    if (!response || !response.ok) return false;
-                    const body = await response.json();
-                    return !!body && body.available === true;
-                })();
-                return await Promise.race([read, deadline]);
-            } catch (_) {
-                return false;
-            } finally {
-                clearTimeout(timer); controller.abort();
-            }
         }
         // Lead with the reported (lower) figure and explain both figures in plain words.
         function leadWithLowerBound(card, model) {

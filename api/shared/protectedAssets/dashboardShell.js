@@ -571,7 +571,7 @@
         function renderCyber(initialAssessmentId) {
             const childRoot = element('div', 'dashboard-cyber-workspace'); main.append(childRoot);
             try {
-                const presentation = { generation: generation };
+                const presentation = { generation: generation, detailsGate: options.representativeDetails ? gated : undefined };
                 if (initialAssessmentId === undefined && validCyberLocation(cyberLocation)) {
                     presentation.initialAssessmentId = cyberLocation.assessmentId;
                     presentation.initialQuestionIndex = cyberLocation.questionIndex;

@@ -1489,6 +1489,7 @@
                 ...(questionnaireExportGateAvailable ? { questionnaireExportGate: function (content) {
                     return window.NoFriesDashboard.detailsGate(document, detailsPort(cycle, snapshot), content, 'questionnaire');
                 } } : {}),
+                detailsGate: presentation && presentation.detailsGate,
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,

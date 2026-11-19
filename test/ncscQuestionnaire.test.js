@@ -3790,6 +3790,89 @@ describe('insurer and customer questionnaire answers', () => {
     });
 });
 
+describe('campaign Results next steps', () => {
+    const renderer = require('../api/shared/protectedAssets/ncscQuestionnaire');
+    const cases = [
+        ['insurance', ['ncsc-questionnaire-answers', 'ncsc-next-steps']],
+        ['supplier', ['ncsc-questionnaire-answers', 'ncsc-next-steps']],
+        ['board', ['ncsc-board-next-step picture-summary', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        ['', ['ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        ['unrecognised', ['ncsc-next-steps', 'ncsc-questionnaire-answers']]
+    ];
+    const campaignDom = campaign => {
+        const dom = interactiveDom();
+        dom.window.sessionStorage = { getItem: jest.fn(() => campaign ? 'meta/paid/' + campaign : null),
+            setItem: jest.fn(), removeItem: jest.fn() };
+        dom.window.navigator = { clipboard: { writeText: jest.fn(async () => {}) } };
+        dom.window.print = jest.fn(); dom.window.AbortController = AbortController;
+        dom.window.fetch = jest.fn(async () => reply({ available: true }));
+        return dom;
+    };
+    test.each(cases)('%s changes DOM order only and retains existing actions and scores', async (campaign, order) => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand()); await h.execute(submitCommand());
+        const before = clone([...h.versions.values()]), dom = campaignDom(campaign), ui = await resumeUi(h, { dom });
+        try {
+            const panel = ui.root.querySelector('.ncsc-results');
+            expect(panel.children.slice(1, 1 + order.length).map(node => node.className)).toEqual(order);
+            expect(control(ui, 'Copy summary')).toBeTruthy(); expect(control(ui, 'Print these results')).toBeTruthy();
+            expect(control(ui, 'Copy answers')).toBeTruthy(); expect(control(ui, 'Print answers')).toBeTruthy();
+            expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
+            expect([...h.versions.values()]).toEqual(before);
+            expect(dom.window.sessionStorage.getItem).toHaveBeenCalledWith('nofries-enquiry-campaign');
+            expect(dom.window.sessionStorage.setItem).not.toHaveBeenCalled(); expect(dom.window.sessionStorage.removeItem).not.toHaveBeenCalled();
+            if (campaign === 'board') {
+                control(ui, 'Copy board summary').click();
+                expect(dom.window.navigator.clipboard.writeText).toHaveBeenCalledWith(renderer.boardSummary(projectNcscDetail(before[0]), metadata()).text);
+                control(ui, 'Print board summary').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
+            }
+            if (campaign === 'scam') {
+                await until(() => !panel.querySelector('.picture-next-steps-help').hidden);
+                expect(panel.querySelector('.picture-next-steps-help').querySelector('a').href).toBe('/contact.html?service=managed_security_90');
+                expect(dom.window.fetch).toHaveBeenCalledWith('/api/enquiry', expect.objectContaining({ method: 'GET' }));
+                expect(dom.window.fetch).toHaveBeenCalledTimes(1);
+            } else expect(dom.window.fetch).not.toHaveBeenCalled();
+        } finally { ui.controller.destroy(); }
+    });
+    test.each(['yes', 'partial', 'unknown', 'not_applicable', 'no'])('scam guidance makes a gap claim only for a supported saved No (%s)', async option => {
+        const h = await backend(); await h.execute(createCommand());
+        await h.execute(saveCommand('assessment-a', 0, 'answers', allResponses(option))); await h.execute(submitCommand());
+        const ui = await resumeUi(h, { dom: campaignDom('scam') });
+        try {
+            const step = ui.root.querySelector('.ncsc-payment-next-step');
+            expect(step.textContent).toContain('known phone number or another trusted, separate route');
+            expect(step.querySelector('h3').textContent).toBe(option === 'no' ? 'Payment-check gap and next step' : 'Check payment changes safely');
+        } finally { ui.controller.destroy(); }
+    });
+    test('reads only canonical stored tags, never URL, helper, localStorage or blocked storage', () => {
+        for (const tag of [null, '', 'insurance', '/paid/board', 'meta/paid/BOARD', 'meta/paid/board/extra', 'meta/paid/scam\n', 'a'.repeat(41) + '//scam']) {
+            const win = { sessionStorage: { getItem: () => tag } };
+            for (const key of ['location', 'localStorage', 'enquiryCampaign']) Object.defineProperty(win, key, { get() { throw new Error('Must not read'); } });
+            expect(renderer.resultsCampaign(win)).toBe('');
+        }
+        expect(renderer.resultsCampaign({ sessionStorage: { getItem() { throw new Error('blocked'); } } })).toBe('');
+        expect(renderer.resultsCampaign({ sessionStorage: { getItem: () => 'meta//supplier' } })).toBe('supplier');
+    });
+    test.each(['insurance', 'supplier', 'board', 'scam'].flatMap(campaign => ['details_required', 'unavailable'].map(initial => [campaign, initial])))('%s retains deferred-details gates while %s', async (campaign, initial) => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand()); await h.execute(submitCommand());
+        const dom = campaignDom(campaign); let status = initial;
+        const port = { read: async () => { if (status === 'unavailable') throw new Error('Synthetic failure'); return { status }; }, isCurrent: () => true };
+        const gate = content => require('../api/shared/protectedAssets/dashboardShell').detailsGate(dom.document, port, content);
+        const ui = await resumeUi(h, { dom, detailsGate: gate, questionnaireExportGate: gate });
+        try {
+            const label = initial === 'unavailable' ? 'Retry' : 'Add your details';
+            await until(() => control(ui, label));
+            expect(control(ui, 'Copy answers')).toBeFalsy(); expect(control(ui, 'Print answers')).toBeFalsy();
+            expect(control(ui, 'Copy board summary')).toBeFalsy(); expect(control(ui, 'Print board summary')).toBeFalsy();
+            expect(ui.root.querySelector('.picture-next-steps-help')?.querySelector('a')).toBeFalsy();
+            status = 'ready'; ui.root.querySelectorAll('button').filter(b => b.textContent === label).forEach(b => b.click());
+            await until(() => control(ui, 'Copy answers'));
+            if (campaign === 'board') expect(control(ui, 'Copy board summary')).toBeTruthy();
+            if (campaign === 'scam') expect(ui.root.querySelector('.picture-next-steps-help').querySelector('a')).toBeTruthy();
+        } finally { ui.controller.destroy(); }
+    });
+});
+
 describe('plan submission allowance', () => {
     const allowanceNote = ui => byId(ui, 'ncsc-allowance');
 
