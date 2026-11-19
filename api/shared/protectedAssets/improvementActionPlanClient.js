@@ -176,6 +176,23 @@
         try { controlTitles = titlesOption(options.controlTitles); } catch (_) { controlTitles = null; /* Codes remain the fallback names. */ }
         let itemFollowUps = null;
         try { itemFollowUps = titlesOption(options.itemFollowUps, 1000); } catch (_) { itemFollowUps = null; /* The retained wording remains. */ }
+        // Scoring v2 (#399): when the host can tell each plan's profile, it
+        // supplies that plan's titles and follow-ups. Without it, or when it
+        // gives none, the host's general wording above is used.
+        const planWording = typeof options.planWording === 'function' ? options.planWording : null;
+        const baseTitles = controlTitles, baseFollowUps = itemFollowUps;
+        async function useWording(source) {
+            let wording = null;
+            try {
+                if (source && typeof source.assessmentId === 'string') wording = await planWording(source.assessmentId);
+            } catch (_) { wording = null; }
+            let titles = baseTitles, followUps = baseFollowUps;
+            if (wording) {
+                try { titles = titlesOption(wording.controlTitles); } catch (_) { titles = null; }
+                try { followUps = titlesOption(wording.itemFollowUps, 1000); } catch (_) { followUps = null; }
+            }
+            return { titles, followUps };
+        }
         const actionWork = action => typeof view.actionWork === 'function' ? view.actionWork(action, itemFollowUps) : action.rationale.suggestedAction;
         let currentOwner = null;
         const actionName = action => typeof view.actionTitle === 'function' ? view.actionTitle(action, controlTitles) : action.controlId + ' · ' + action.labels.kind;
@@ -363,7 +380,7 @@
                 catch (_) {
                     const evidenceBlank = key === 'evidenceReference' && input.value.trim() === '';
                     fieldError(key, key === 'ownerLabel' ? OWNER_LABEL_HELP : key === 'nextReviewDate' ? 'Choose today or a later review date, or leave it empty.' : key === 'dueDate' ? 'Enter a valid due date, then save again.' :
-                        evidenceBlank ? 'Enter where the proof is kept, such as a screenshot, invoice or ticket. This is required.' :
+                        evidenceBlank ? 'Enter where the proof is kept, for example ticket IT-204. This is required.' :
                         key === 'evidenceReference' ? 'Use a short reference of up to 180 characters, with no spaces at the start or end. Web addresses and file paths cannot be used.' :
                             'Enter a ' + (key === 'note' ? 'completion note' : draft.type === 'block' ? 'block reason' : 'reopen reason') +
                             ' of up to 1000 characters using plain text, then save again.'); return Promise.resolve(false);
@@ -568,6 +585,11 @@
                 if (exactTarget && !actionIds.has(exactTarget.actionId)) {
                     clearView(); selected = null; selectedRevision = null; selectedAction = null;
                     message = 'This action is no longer available in this plan. Return to the work queue or refresh to check again.'; render(); return false;
+                }
+                if (planWording) {
+                    const wording = await useWording(value.source);
+                    if (!active() || token !== serial) return false;
+                    controlTitles = wording.titles; itemFollowUps = wording.followUps;
                 }
                 selected = planId; selectedRevision = value.planRevision; clearView(); rendered = view.mount(content, value, viewOptions());
                 try { timestamp(value.source.scoreAsOf); planNames.set(planId, 'Plan: ' + when(value.source.scoreAsOf).split(',')[0]); }

@@ -10,7 +10,8 @@ const { modules } = require('../protectedAssets/dashboardRegistry');
 const { resolveNcscAccess: ncscAccess, normalRole, selectAdvisor } = require('./dashboardResourceAuthority');
 const ncscStore = require('../assessmentLifecycle/postgresNcscAssessmentStore');
 const outbox = require('../lifecycleEmail/outboxWriter');
-const { MODULE_ID: NCSC_MODULE, ACCEPTED_PROFILE_REF } = require('../assessmentEngine/ncscAssessmentEvaluator');
+const { MODULE_ID: NCSC_MODULE } = require('../assessmentEngine/ncscAssessmentEvaluator');
+const { listsNcscProfile, readableNcscProfileContext } = require('../assessmentEngine/ncscProfileSet');
 const { NcscAssessmentError, normaliseNcscCommand, normaliseNcscPage, normaliseNcscSelector,
     requireNcscContext } = require('../ncscAssessmentService');
 
@@ -219,7 +220,7 @@ function createPostgresDashboardRepository(options) {
         instant(policy.validFrom); instant(policy.validUntil);
         if (policy.schemaVersion !== 1 || policy.tenantId !== selection.tenantId || policy.organisationId !== selection.organisationId ||
             policy.productGrantId !== selection.productGrantId || policy.agreementRef !== selection.agreementRef ||
-            policy.moduleId !== NCSC_MODULE || !ncscStore.same(policy.profileRef, ACCEPTED_PROFILE_REF) ||
+            policy.moduleId !== NCSC_MODULE || !ncscStore.same(policy.profileRef, selection.profileRef) ||
             policy.limit !== 'assessment_runs' || policy.amount < 1 ||
             !(policy.validFrom <= selection.at && selection.at < policy.validUntil) ||
             product.grantId !== policy.productGrantId || product.agreementRef !== policy.agreementRef ||
@@ -227,9 +228,17 @@ function createPostgresDashboardRepository(options) {
             product.validFrom > selection.at) ncscFail();
         return freeze(policy);
     }
+    // Quota, policy and entitlement are all chosen by the profile the assessment
+    // itself stored; while the v2 flag is off that is always the accepted profile.
+    function storedProfileRef(profileRef) {
+        const profile = readableNcscProfileContext(profileRef);
+        if (!profile) ncscFail();
+        return profile.profileRef;
+    }
     async function selectQuota(snapshot, context, command, decision, version, at) {
+        const profileRef = storedProfileRef(version.envelope.state.profileRef);
         const selection = freeze({ ...context.scope, assessmentId: command.assessmentId,
-            actorSubjectKey: context.identity.subjectKey, moduleId: NCSC_MODULE, profileRef: ACCEPTED_PROFILE_REF,
+            actorSubjectKey: context.identity.subjectKey, moduleId: NCSC_MODULE, profileRef,
             productGrantId: decision.product.grantId, agreementRef: decision.product.agreementRef,
             expectedRevision: command.expectedRevision, submissionRevision: version.envelope.revision, at });
         let selected;
@@ -258,7 +267,7 @@ function createPostgresDashboardRepository(options) {
                 { ...context.scope, grantId: policy.productGrantId, expectedEntitlementRevision: snapshot.entitlementState.revision,
                     expectedFlagRevision: snapshot.flags.revision, expectedUsageRevision: before.revision,
                     moduleId: NCSC_MODULE, limit: 'assessment_runs', amount: policy.amount,
-                    framework: { profileId: ACCEPTED_PROFILE_REF.profileId, version: ACCEPTED_PROFILE_REF.profileVersion } }, at, snapshot.flags);
+                    framework: { profileId: profileRef.profileId, version: profileRef.profileVersion } }, at, snapshot.flags);
         } catch (error) {
             if (error.code === 'entitlement_limit_exceeded') ncscFail('ncsc_quota_exceeded', 409);
             ncscFail('ncsc_access_denied', 403);
@@ -272,7 +281,7 @@ function createPostgresDashboardRepository(options) {
             'moduleId', 'profileRef', 'productGrantId', 'agreementRef', 'expectedRevision', 'submissionRevision', 'at']);
         const expectedSelection = { tenantId: receiptValue.tenantId, organisationId: receiptValue.organisationId,
             assessmentId: receiptValue.assessmentId, actorSubjectKey: receiptValue.actorSubjectKey, moduleId: NCSC_MODULE,
-            profileRef: ACCEPTED_PROFILE_REF, productGrantId: quota.productGrant.grantId, agreementRef: quota.productGrant.agreementRef,
+            profileRef: storedProfileRef(receiptValue.result.assessment.profileRef), productGrantId: quota.productGrant.grantId, agreementRef: quota.productGrant.agreementRef,
             expectedRevision: receiptValue.intent.expectedRevision, submissionRevision: receiptValue.resultRevision, at: receiptValue.executionAt };
         if (!ncscStore.same(selection, expectedSelection)) ncscFail();
         const policy = quotaPolicy(quota.policy, selection, quota.productGrant);
@@ -384,6 +393,8 @@ function createPostgresDashboardRepository(options) {
             if (command.action !== 'create' && !head) ncscFail('ncsc_not_found', 404);
             const version = ncscStore.makeVersion(intent, command.idempotencyKey,
                 head ? history.get(head.revision) : null, snapshot.tenantAggregate, at);
+            // Every write needs the product to list the assessment's own profile.
+            if (!listsNcscProfile(decision.frameworks, storedProfileRef(version.envelope.state.profileRef))) ncscFail('ncsc_access_denied', 403);
             await ncscStore.assertPersistableCandidate(tx, version);
             const quota = command.action === 'submit' ? await selectQuota(snapshot, context, command, decision, version, at) : null;
             // Policy I/O must not let elapsed identity, membership or product

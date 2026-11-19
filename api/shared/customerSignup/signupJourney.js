@@ -110,6 +110,9 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 element('p', customerTransport
                     ? 'If you finished creating your account, sign in with the same email and password. You do not need to create another account.'
                     : 'Use the same email linked to your account or invitation. Your saved setup and work are kept.'));
+                const reset = element('a', 'Reset your password'); reset.href = '/account-help.html#password-reset';
+                const help = element('a', 'Get sign-in help'); help.href = 'mailto:hello@nofries.nz';
+                root.append(reset, element('span', ' · '), help);
                 if (supportReference) root.append(element('p', 'If this keeps happening, email hello@nofries.nz and quote reference ' + supportReference + '.'));
             } else {
                 root.append(element('p', customerTransport ? entryIntent === 'create' ? 'Create an account with your email and password.'
@@ -506,7 +509,14 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         }, { once: true });
         try {
             const state = await Promise.race([action(controller.signal), cancelled]);
-            if (!disposed && current === generation) { opening = false; show(state, state, restoreDraft); }
+            if (!disposed && current === generation) {
+                if (opening && customerTransport && entryIntent === 'login' && state.status === 'unavailable') {
+                    showAccessUnconfirmed(state);
+                } else {
+                    opening = false;
+                    show(state, state, restoreDraft);
+                }
+            }
         } catch (error) {
             // Failure or timeout always ends in a visible state with a way on.
             if (!disposed && current === generation) {
@@ -526,7 +536,8 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
     // Printing shows the full terms even when an expander is closed.
     const printView = doc.defaultView, openForPrint = () => { for (const details of root.querySelectorAll('details')) details.open = true; };
     if (printView && typeof printView.addEventListener === 'function') printView.addEventListener('beforeprint', openForPrint);
-    const ready = run(signal => client.load({ signal }));
+    const ready = run(signal => client.load({ signal }), 30000, false,
+        customerTransport ? 'Checking your sign-in and organisation access…' : WORKING);
     return Object.freeze({ ready, dispose() {
         disposed = true; generation++;
         setupDraft = null;

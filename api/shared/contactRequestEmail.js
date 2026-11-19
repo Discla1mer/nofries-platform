@@ -24,10 +24,12 @@ function isContactRequestEmailEnabled(env) {
 
 // Control characters (C0, DEL, C1 including NEL) and line/paragraph separators
 // become spaces; Unicode format characters (bidi overrides, zero-width) are
-// removed, so the customer-supplied name cannot reorder or hide text.
+// removed, so the customer-supplied name cannot reorder or hide text. The
+// limit counts code points, so a surrogate pair is never split.
 function singleLine(value, limit) {
-    return String(typeof value === 'string' ? value : '').replace(/\p{Cf}+/gu, '')
-        .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, limit);
+    const line = String(typeof value === 'string' ? value : '').replace(/\p{Cf}+/gu, '')
+        .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return Array.from(line).slice(0, limit).join('');
 }
 
 function nzDate(value) {

@@ -1,0 +1,56 @@
+{
+  "passed": true,
+  "syntheticOnly": true,
+  "viewport": {
+    "width": 375,
+    "height": 812
+  },
+  "browser": "154.0.8037.57",
+  "copy": "real clipboard and rejection fallback passed",
+  "print": "native beforeprint and A4 PDF passed",
+  "printPages": [
+    3,
+    4
+  ],
+  "transport": [
+    "GET",
+    "GET",
+    "GET",
+    "GET",
+    "GET"
+  ],
+  "requests": [
+    "GET"
+  ],
+  "errors": [],
+  "sources": [
+    {
+      "path": "api/shared/protectedAssets/dashboardRegistry.js",
+      "sha256": "de4539bc5d701480274246bc779fe63098f0638c093ecb3f0a1caaeedcaf230a"
+    },
+    {
+      "path": "api/shared/protectedAssets/dashboardShell.js",
+      "sha256": "a46a2ee1d8cc30ed1f429255b5e100741763b637bbcdd4b4e58825e730e79d58"
+    },
+    {
+      "path": "api/shared/protectedAssets/ncscAssessmentClient.js",
+      "sha256": "bde1e5918f587be543437d89fc443f4df83b4f6099154de0b8c4e7cc9cad242c"
+    },
+    {
+      "path": "api/shared/protectedAssets/ncscQuestionnaire.js",
+      "sha256": "bd5635602f915fb53928e26a6773a320f784beacbfb14f08d2c8c96a43456b98"
+    },
+    {
+      "path": "api/shared/protectedAssets/organisationPicture.js",
+      "sha256": "70ff4a571cf805d7ddff9141b058db26cf0bd709ca1b23f178ff71d57258c5a2"
+    },
+    {
+      "path": "app/dashboard.css",
+      "sha256": "8956674f196c47c7baf0caff7eb392e858e5b521341ecb334e7913dc2d748084"
+    },
+    {
+      "path": "api/shared/ncscQuestionnaireMetadata.js",
+      "sha256": "a3d3a40e6e0da4c63be5a2e3d2998bd3c29de1338a29402a31092ce8ed4062eb"
+    }
+  ]
+}

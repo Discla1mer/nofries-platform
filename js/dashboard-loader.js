@@ -92,6 +92,8 @@
         const nodes = [label];
         if (name) {
             const strong = document.createElement('strong');
+            // Isolate the name so right-to-left text cannot reorder the email beside it.
+            strong.setAttribute('dir', 'auto');
             strong.textContent = name;
             nodes.push(strong);
         }
@@ -130,38 +132,49 @@
     // Retain one immutable command until an acknowledgement or definite denial.
     let unresolved = null;
     const commandContinuations = new WeakMap();
-    // Only the last opened organisation's binding ID is kept on this browser.
+    // Only the last opened organisation's binding ID is kept in this tab session.
     // It is a hint: a fresh directory read and the server selection check
     // decide whether it can be reopened.
     const LAST_ORGANISATION_KEY = 'nofries-dashboard-last-organisation';
     let resumeOffered = false;
-    function lastOrganisationStore() {
+    function hintStore() {
         try { return window.localStorage || null; } catch (_) { return null; }
+    }
+    function lastOrganisationStore() {
+        try { return window.sessionStorage || null; } catch (_) { return null; }
     }
     function lastOrganisation() {
         const store = lastOrganisationStore();
         let value = null;
         try { value = store ? store.getItem(LAST_ORGANISATION_KEY) : null; } catch (_) { return null; }
-        return typeof value === 'string' && UUID.test(value) ? value : null;
+        const [bindingId, expiresAt] = (value || '').split(' ');
+        if (UUID.test(bindingId) && Date.parse(expiresAt) > Date.now()) return bindingId;
+        return null;
     }
-    function saveLastOrganisation(bindingId) {
+    function saveLastOrganisation(bindingId, expiresAt) {
         const store = lastOrganisationStore();
-        try { if (store && UUID.test(bindingId)) store.setItem(LAST_ORGANISATION_KEY, bindingId); } catch (_) { /* optional */ }
+        try { if (store && UUID.test(bindingId)) store.setItem(LAST_ORGANISATION_KEY, bindingId + ' ' + expiresAt); } catch (_) { /* optional */ }
     }
-    // D-013: remembers only which organisation last opened with Cyber Security
-    // ready, so the next visit can start that module read one round trip
-    // earlier. A hint: the fresh projection still decides whether it is used.
+    // The last two ready bindings cover a consultant switching back to a client.
+    // Each visit still checks the fresh projection and reads the module.
     const CYBER_READY_KEY = 'nofries-dashboard-cyber-ready';
+    function readyBindings(store) {
+        const stored = store.getItem(CYBER_READY_KEY) || '';
+        if (stored.length > 73) return [];
+        return stored.split(' ').filter(function (id) { return UUID.test(id); });
+    }
     function cyberReadyHint(bindingId) {
-        const store = lastOrganisationStore();
-        try { return !!store && UUID.test(bindingId || '') && store.getItem(CYBER_READY_KEY) === bindingId; } catch (_) { return false; }
+        const store = hintStore();
+        try { return !!store && readyBindings(store).includes(bindingId); } catch (_) { return false; }
     }
     function saveCyberReadyHint(bindingId, ready) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (!store || !UUID.test(bindingId || '')) return;
-            if (ready) store.setItem(CYBER_READY_KEY, bindingId);
-            else if (store.getItem(CYBER_READY_KEY) === bindingId) store.removeItem(CYBER_READY_KEY);
+            const recent = readyBindings(store).filter(function (id) { return id !== bindingId; });
+            if (ready) recent.unshift(bindingId);
+            if (recent.length) store.setItem(CYBER_READY_KEY, recent.slice(0, 2).join(' '));
+            else store.removeItem(CYBER_READY_KEY);
         } catch (_) { /* optional */ }
     }
     // D-013: remembers which assessment Overview showed by default for one
@@ -170,7 +183,7 @@
     const PICTURE_LATEST_KEY = 'nofries-dashboard-picture-latest';
     const PICTURE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
     function pictureLatestHint(bindingId) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (!store || !UUID.test(bindingId || '')) return null;
             const saved = String(store.getItem(PICTURE_LATEST_KEY) || '');
@@ -180,7 +193,7 @@
         } catch (_) { return null; }
     }
     function savePictureLatestHint(bindingId, assessmentId) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (store && UUID.test(bindingId || '') && PICTURE_ID.test(assessmentId || '')) store.setItem(PICTURE_LATEST_KEY, bindingId + ' ' + assessmentId);
         } catch (_) { /* optional */ }
@@ -190,7 +203,7 @@
     // an early list is used only if the fresh index names the same plan at the same revision.
     const ACTION_PLANS_KEY = 'nofries-dashboard-action-plans';
     function actionPlansHint(bindingId) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (!store || !UUID.test(bindingId || '')) return [];
             const saved = String(store.getItem(ACTION_PLANS_KEY) || '');
@@ -200,7 +213,7 @@
         } catch (_) { return []; }
     }
     function saveActionPlansHint(bindingId, planIds) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (!store || !UUID.test(bindingId || '')) return;
             if (planIds.length && planIds.length <= ACTION_PLAN_LIMIT && planIds.every(function (id) { return PICTURE_ID.test(id); })) {
@@ -208,8 +221,11 @@
             } else store.removeItem(ACTION_PLANS_KEY);
         } catch (_) { /* optional */ }
     }
+    // The last organisation was once kept browser-wide; that copy is no longer read.
+    try { const legacy = hintStore(); if (legacy) legacy.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
     function forgetLastOrganisation() {
-        const store = lastOrganisationStore();
+        const store = hintStore();
+        try { lastOrganisationStore()?.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
         try { if (store) store.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
         // A later sign-in may be a different person: drop the Cyber Security hint too.
         try { if (store) store.removeItem(CYBER_READY_KEY); } catch (_) { /* optional */ }
@@ -441,7 +457,7 @@
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsAvailable') ? ['contactRequestsAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
             Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
-            Object.prototype.hasOwnProperty.call(value, 'accountName') && (value.purpose !== 'customer' || typeof value.accountName !== 'string' || !value.accountName.trim() || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountName)) ||
+            Object.prototype.hasOwnProperty.call(value, 'accountName') && (value.purpose !== 'customer' || typeof value.accountName !== 'string' || value.accountName !== value.accountName.trim() || !value.accountName || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f\p{Cf}]/u.test(value.accountName)) ||
             value.schemaVersion !== 1 || value.authenticated !== true || !['operator_dashboard', 'customer'].includes(value.purpose) ||
             Object.prototype.hasOwnProperty.call(value, 'activationAvailable') && (value.activationAvailable !== true || value.purpose !== 'operator_dashboard') ||
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
@@ -581,6 +597,10 @@
                 return fetch(path, options);
             }).then(async function (response) {
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
+                if (body === undefined && path === '/api/dashboard/session' && response?.status === 401 &&
+                    !response.redirected && !['opaque', 'opaqueredirect'].includes(response.type)) {
+                    finish(resolve, { status: 401 }); return;
+                }
                 const json = !!response && !!response.headers && /^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') || '');
                 if (response && !response.redirected && !['opaque', 'opaqueredirect'].includes(response.type) && !json &&
                     [403, 502, 503].includes(response.status)) { const error = invalid(); error.platform = true; throw error; }
@@ -610,7 +630,7 @@
         if (!current(cycle) || document.body.dataset.dashboardState !== 'loading') return;
         elements.heading.textContent = 'Opening your dashboard';
         elements.message.textContent = message;
-        elements.status.textContent = detail;
+        elements.status.textContent = cycle.openingOrganisation || detail;
     }
     function waitForRetry(cycle, ms, updating) {
         if (current(cycle) && document.body.dataset.dashboardState === 'loading') {
@@ -737,7 +757,6 @@
         const value = session(requireSuccess(result));
         if (cycle.workQueueTarget && value.selectedBindingId !== cycle.workQueueTarget.bindingId) throw invalid();
         remember(cycle, value);
-        if (cycle.openSelection && value.purpose === 'customer' && value.selectedBindingId) saveLastOrganisation(value.selectedBindingId);
         // Navigation records the chosen view, never authority. Keep it across
         // focus/pageshow rechecks after a consultant selects a client.
         if (cycle.openSelection && value.accountType === 'consultant' && !currentRoute()) {
@@ -837,6 +856,7 @@
             ...(improvement ? { mountImprovement: improvement } : {}),
             ...(fresh.contactRequestsAvailable === true ? { contactRequest: contactSender(cycle, snapshot) } : {}) });
         if (!controller || typeof controller.destroy !== 'function') throw invalid();
+        if (cycle.openSelection && fresh.purpose === 'customer') saveLastOrganisation(fresh.selectedBindingId, fresh.expiresAt);
         elements.app.hidden = false;
         cycle.busy = false;
         show(cycle, 'ready');
@@ -1495,7 +1515,8 @@
         const questionnaire = window.NoFriesNcscQuestionnaire;
         if (!clientFactory || typeof clientFactory.createClient !== 'function' ||
             !questionnaire || typeof questionnaire.mount !== 'function') throw invalid();
-        const client = clientFactory.createClient({ metadata: value.metadata, fetch: async function (path, options) {
+        const profileMetadata = Array.isArray(value.profileMetadata) ? { profileMetadata: value.profileMetadata } : {};
+        const client = clientFactory.createClient({ metadata: value.metadata, ...profileMetadata, fetch: async function (path, options) {
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             // The existing client owns the bounded endpoint and command schema.
             // Bind transport to this exact selection; caller-supplied generations
@@ -1515,7 +1536,7 @@
         } });
         const mountCyber = function (root, presentation) {
             if (!current(cycle)) throw invalid();
-            return questionnaire.mount(root, { window: window, metadata: value.metadata, client: client,
+            return questionnaire.mount(root, { window: window, metadata: value.metadata, ...profileMetadata, client: client,
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
@@ -1561,20 +1582,76 @@
             };
         };
         // Plain topic titles let the Improvement Plan name actions in words.
-        mountCyber.controlTitles = Object.assign(Object.create(null), Object.fromEntries(value.metadata.controls.map(function (control) {
-            return [control.id, control.title];
-        })));
+        const planTitles = function (metadata) {
+            return Object.assign(Object.create(null), Object.fromEntries(metadata.controls.map(function (control) {
+                return [control.id, control.title];
+            })));
+        };
         // Each question's concrete follow-up, worded as on the results page, so a
         // plan gap names the actual work (F1-R10). Plan actions are per question,
         // so this is keyed by question id, not control. Display only.
-        mountCyber.itemFollowUps = Object.create(null);
-        value.metadata.questions.forEach(function (question) {
-            const followUp = question.smallBusiness && question.smallBusiness.checks.join(' ') ||
-                question.guidance && question.guidance.startingActions && question.guidance.startingActions[0];
-            if (typeof followUp === 'string' && followUp.trim() && followUp.length <= 1000) {
-                mountCyber.itemFollowUps[question.id] = followUp;
-            }
-        });
+        const planFollowUps = function (metadata) {
+            const followUps = Object.create(null);
+            metadata.questions.forEach(function (question) {
+                const followUp = question.smallBusiness && question.smallBusiness.checks.join(' ') ||
+                    question.guidance && question.guidance.startingActions && question.guidance.startingActions[0];
+                if (typeof followUp === 'string' && followUp.trim() && followUp.length <= 1000) {
+                    followUps[question.id] = followUp;
+                }
+            });
+            return followUps;
+        };
+        if (!Array.isArray(value.profileMetadata)) {
+            mountCyber.controlTitles = planTitles(value.metadata);
+            mountCyber.itemFollowUps = planFollowUps(value.metadata);
+        } else {
+            // Scoring v2 (#399), only while the server sends further profiles: a
+            // plan does not name its profile, so each plan's wording comes from
+            // the profile its source assessment stores, matched on all six fields.
+            // Until that is known, or if it cannot be, only wording that every
+            // profile having the id agrees on is used, so a plan never shows
+            // another profile's titles or follow-ups.
+            const planProfiles = [value.metadata].concat(value.profileMetadata);
+            const agreed = function (maps) {
+                const result = Object.create(null);
+                maps.forEach(function (map) {
+                    Object.keys(map).forEach(function (key) {
+                        if (Object.prototype.hasOwnProperty.call(result, key)) return;
+                        const found = maps.filter(function (other) { return Object.prototype.hasOwnProperty.call(other, key); });
+                        if (found.every(function (other) { return other[key] === map[key]; })) result[key] = map[key];
+                    });
+                });
+                return result;
+            };
+            mountCyber.controlTitles = agreed(planProfiles.map(planTitles));
+            mountCyber.itemFollowUps = agreed(planProfiles.map(planFollowUps));
+            const profileKeys = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+            // One read per source assessment: its stored profile never changes.
+            const wordingByAssessment = new Map();
+            const readWording = async function (assessmentId) {
+                // The bounded client validates the read against the profile it names.
+                const read = await client.read(assessmentId);
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                const stored = read && read.assessment && read.assessment.profileRef;
+                const metadata = stored && planProfiles.find(function (candidate) {
+                    return Object.keys(stored).length === profileKeys.length && profileKeys.every(function (key) {
+                        return stored[key] === candidate.profileRef[key];
+                    });
+                });
+                return metadata ? { controlTitles: planTitles(metadata), itemFollowUps: planFollowUps(metadata) } : null;
+            };
+            mountCyber.planWording = function (assessmentId) {
+                if (!current(cycle) || cycle.authorityPending) return Promise.reject(invalid());
+                if (!wordingByAssessment.has(assessmentId)) {
+                    if (wordingByAssessment.size >= 100) wordingByAssessment.clear();
+                    const pending = readWording(assessmentId);
+                    wordingByAssessment.set(assessmentId, pending);
+                    // A failed read is not remembered, so a later plan view tries again.
+                    pending.catch(function () { if (wordingByAssessment.get(assessmentId) === pending) wordingByAssessment.delete(assessmentId); });
+                }
+                return wordingByAssessment.get(assessmentId);
+            };
+        }
         // The Improvement Plan's empty state offers the latest submitted
         // assessment. This reads the same validated, bounded list as Overview.
         mountCyber.latestSubmitted = async function () {
@@ -1607,7 +1684,7 @@
         if (picture && typeof picture.mount === 'function') {
             mountCyber.mountPicture = function (root, presentation) {
                 if (!current(cycle)) throw invalid();
-                return picture.mount(root, { metadata: value.metadata, client: client, organisationId: organisationId,
+                return picture.mount(root, { metadata: value.metadata, ...profileMetadata, client: client, organisationId: organisationId,
                     displayName: presentation.displayName,
                     ...(typeof presentation.contactControl === 'function' ? { contactControl: presentation.contactControl } : {}),
                     ...(!pictureSelection ? { readFirstPaint: async function () {
@@ -1741,6 +1818,7 @@
                 sourceAssessment: presentation && presentation.sourceAssessment,
                 ...(cyber && cyber.controlTitles ? { controlTitles: cyber.controlTitles } : {}),
                 ...(cyber && cyber.itemFollowUps ? { itemFollowUps: cyber.itemFollowUps } : {}),
+                ...(cyber && typeof cyber.planWording === 'function' ? { planWording: cyber.planWording } : {}),
                 ...(cyber && typeof cyber.latestSubmitted === 'function' ? { latestSource: cyber.latestSubmitted } : {}),
                 newId: secureId,
                 isCurrent: function () { return current(cycle) && !cycle.authorityPending; },
@@ -1809,12 +1887,18 @@
         return opened;
     }
     function cyberContract(value) {
-        if (!fields(value, ['schemaVersion', 'context', 'generatedAt', 'module', 'summary', 'services',
-            'admissionGranted', 'providerAccessGranted', 'metadata', 'presentationMode']) ||
+        // Scoring v2 (#399): the server adds profileMetadata (one entry per extra
+        // readable profile) only while NOFRIES_NCSC_PROFILE_V2 is on.
+        const keys = ['schemaVersion', 'context', 'generatedAt', 'module', 'summary', 'services',
+            'admissionGranted', 'providerAccessGranted', 'metadata', 'presentationMode'];
+        const extra = value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'profileMetadata');
+        if (extra && (!Array.isArray(value.profileMetadata) || !value.profileMetadata.length || value.profileMetadata.length > 4)) throw invalid();
+        if (!fields(value, extra ? keys.concat(['profileMetadata']) : keys) ||
             value.schemaVersion !== 1 || value.module?.key !== 'cyber_security' || value.module?.state !== 'ready' ||
             value.admissionGranted !== false || value.providerAccessGranted !== false ||
             !['editable', 'read-only'].includes(value.presentationMode)) throw invalid();
-        return JSON.stringify([value.metadata, value.presentationMode, value.context, value.module]);
+        return JSON.stringify(extra ? [value.metadata, value.presentationMode, value.context, value.module, value.profileMetadata]
+            : [value.metadata, value.presentationMode, value.context, value.module]);
     }
     function leave(cycle, commit) {
         if (!current(cycle) || !confirmClientDiscard(cycle)) return Promise.resolve(false);
@@ -1916,7 +2000,8 @@
                     leave(cycle, function () {
                         lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
                         const next = begin();
-                        elements.status.textContent = 'Opening ' + binding.organisationLabel + '…';
+                        next.openingOrganisation = 'Opening ' + binding.organisationLabel + '…';
+                        elements.status.textContent = next.openingOrganisation;
                         try {
                             const pending = command('selection', { bindingId: binding.bindingId, expectedGeneration: value.generation, operationId: secureId() });
                             execute(next, pending).catch(function (error) { failure(next, error); });
