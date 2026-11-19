@@ -167,6 +167,9 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
     }
     const wipeTarget = a => ({ accountId: a.c.account.accountId, subjectKey: a.c.actor, tenantIds: a.tenants });
 
+    require('./isoReportArtifactsPostgres')({ connect, account, wipeTarget, footprint, tx, asRuntime,
+        repository: () => createAccountWipeRepository(pool) });
+
     test('delete removes every row of the account and leaves another account untouched', async () => {
         const db = await connect(), doomed = await account(db), sentinel = await account(db);
         const before = await footprint(db, doomed), sentinelBefore = await footprint(db, sentinel);
