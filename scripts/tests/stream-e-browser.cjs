@@ -33,7 +33,7 @@ for (const command of [createCommand('assessment-submitted', 'fixture-create', '
 seed.assessments[2] = projectNcscDetail(version);
 const transport = createSyntheticTransport({ ...seed, assessments: [] }, fixtures.metadata, fixtures);
 let enabled = true, phase = 'setup_details', showResult = false, loseSave = false, denyRead = false, audits = 0, writes = 0, detailReads = 0;
-let accountType = 'company', audience = model.audience, ownEnrollment = true;
+let accountType = 'company', audience = model.audience, ownEnrollment = true, hiddenAfterReset = false;
 const blocked = [], errors = [], captures = [], requests = [], prints = [];
 (async () => {
     const evidenceFile = path.join(artifacts, 'synthetic-details-store.json');
@@ -42,6 +42,7 @@ const blocked = [], errors = [], captures = [], requests = [], prints = [];
     const f = await deferredFixture(), before = JSON.stringify([f.saved, f.receipt, f.activation]);
     const deps = { context: f.context, clock: () => AT, audit: { createEvent: (_, x) => x, writeEvent: async () => { audits++; } },
         database: { async withTenantTransaction(_, work) { return work({ async query(sql, args) {
+            if (hiddenAfterReset && (sql.includes('dashboard_starter_scopes') || sql.includes('dashboard_deferred_agreements'))) return { rows: [] };
             if (sql.includes('FROM nofries.dashboard_starter_scopes')) return { rows: [{ preparation: f.preparation, activation: f.activation }] };
             if (sql.includes('FROM nofries.signup_acceptance_receipts')) return { rows: [{ payload: { receipt: f.receipt } }] };
             if (sql.includes('SELECT payload, payload_sha256')) { const row = evidence(); return { rows: row ? [row] : [] }; }
@@ -87,7 +88,12 @@ const blocked = [], errors = [], captures = [], requests = [], prints = [];
         else if (pathname === '/api/dashboard/representative-details') {
             if (!input) detailReads++;
             if (!input && denyRead) { status = 503; body = { code: 'synthetic_read_unavailable' }; }
-            else body = await representativeDetails(deps, input);
+            else try {
+                body = await representativeDetails({ ...deps, enrolledScope: enabled && ownEnrollment ? f.context.scope : null }, input);
+            } catch (error) {
+                if (!error.statusCode) throw error;
+                status = error.statusCode; body = { code: error.code };
+            }
             if (input && loseSave) { loseSave = false; status = 503; body = { code: 'synthetic_response_unconfirmed' }; }
         } else if (pathname.startsWith('/api/dashboard/ncsc/assessments')) {
             if (showResult) {
@@ -244,6 +250,11 @@ const blocked = [], errors = [], captures = [], requests = [], prints = [];
         await page.locator('.picture-board-summary').evaluate(node => node.scrollIntoView({ block: 'start' }));
         await capture('08-summary-ready');
         assert.equal(writes, 1); assert.equal(audits, 1); assert.equal(JSON.stringify([f.saved, f.receipt, f.activation]), before);
+        hiddenAfterReset = true;
+        section = await openResult();
+        await section.getByText('Your details could not be checked.').waitFor();
+        assert.equal(await section.getByRole('button', { name: /^(Copy|Print) answers$/ }).count(), 0);
+        await printEvidence('questionnaire-hidden-scope-after-reset', section, false);
         assert.deepEqual(errors, []); assert.deepEqual(blocked, []);
         fs.writeFileSync(path.join(artifacts, 'receipt.json'), JSON.stringify({ viewport: { width: 375, height: 844 }, captures, prints, writes, audits, detailReads,
             persistence: 'Synthetic supplemental row written to disk and validated on each service read, including after reload',

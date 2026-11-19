@@ -57,13 +57,17 @@ async function readEvidence(tx, link) {
         !equal(value.details, normaliseRepresentativeDetails(value.details))) fail();
     return value;
 }
-async function representativeDetails({ database, context: input, clock, audit }, detailsInput) {
+async function representativeDetails({ database, context: input, clock, audit, enrolledScope }, detailsInput) {
     const context = requireTenantRequestContext(input);
     const details = detailsInput === undefined ? null : normaliseRepresentativeDetails(detailsInput);
     return database.withTenantTransaction(context.scope.tenantId, async tx => {
         const link = await agreement(tx, context);
         if (!link) {
             if (details) fail('representative_details_not_required', 409);
+            // Reset removes the lookup marker. A subject-private scope can also
+            // be invisible here. Neither overrides the retained enrollment.
+            if (enrolledScope?.tenantId === context.scope.tenantId &&
+                enrolledScope.organisationId === context.scope.organisationId) fail('representative_details_access_denied', 403);
             return { schemaVersion: 1, status: 'ready' };
         }
         const before = await readEvidence(tx, link);
