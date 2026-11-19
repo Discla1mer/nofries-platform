@@ -19,11 +19,16 @@ const fail = statusCode => { throw Object.assign(new Error(), { statusCode }); }
 // body whose only key is "wipe"; it writes its own approval, attempt and
 // outcome records, so no lookup record is written for it. Without it composed
 // (flag off) such a body is answered 404.
-function createAccountLookup({ read, list = null, wipe = null, audit, targetDigest, readJson, env, now = Date.now }) {
-    if ([read, audit, targetDigest].some(value => typeof value !== 'function') || [list, wipe].some(value => value !== null && typeof value !== 'function')) throw new Error('dashboard_admin_configuration_invalid');
+// The optional staff contact request list (contactRequestList, behind
+// NOFRIES_OPERATOR_CONTACT_REQUESTS_ENABLED) is the exact body
+// {"contactRequests":true}: read only, same checks, one durable record with
+// category dashboard_admin_contact_request_list. Off: 404, and its client
+// script is not served.
+function createAccountLookup({ read, list = null, wipe = null, contactRequests = null, audit, targetDigest, readJson, env, now = Date.now }) {
+    if ([read, audit, targetDigest].some(value => typeof value !== 'function') || [list, wipe, contactRequests].some(value => value !== null && typeof value !== 'function')) throw new Error('dashboard_admin_configuration_invalid');
     let windowStart = 0, requests = 0;
     return async (request, route, authorise, signal) => {
-        let status = 503, body, actor = null, actorHash = null, targetSha256 = null, listing = false;
+        let status = 503, body, actor = null, actorHash = null, targetSha256 = null, category = 'dashboard_admin_account_lookup';
         const headers = apiSecurityHeaders({ 'Content-Type': 'application/json; charset=utf-8' });
         try {
             const method = route === 'accounts/app.js' ? 'GET' : 'POST';
@@ -34,6 +39,7 @@ function createAccountLookup({ read, list = null, wipe = null, audit, targetDige
             if (route === 'accounts/app.js') {
                 headers['Content-Type'] = 'application/javascript; charset=utf-8';
                 body = fs.readFileSync(path.join(__dirname, 'accountLookupClient.js'), 'utf8');
+                if (contactRequests) body += '\n' + fs.readFileSync(path.join(__dirname, 'contactRequestsClient.js'), 'utf8');
             } else {
                 try { assertExactSameOriginRequest(request, env); } catch (_) { fail(403); }
                 // Process-wide budget, so changing email or staff identity cannot
@@ -49,9 +55,16 @@ function createAccountLookup({ read, list = null, wipe = null, audit, targetDige
                     const result = await wipe(input.wipe, actor, request, signal);
                     return { status: result.status, body: result.body, headers, isRaw: false };
                 }
-                if (input && typeof input === 'object' && !Array.isArray(input) && Object.keys(input).length === 0) {
+                if (input && typeof input === 'object' && !Array.isArray(input) && Object.keys(input).length === 1 && Object.hasOwn(input, 'contactRequests')) {
+                    if (!contactRequests) fail(404);
+                    if (input.contactRequests !== true) fail(400);
+                    category = 'dashboard_admin_contact_request_list';
+                    if ((await authorise()).subjectKey !== actor.subjectKey) fail(403);
+                    body = await contactRequests(signal);
+                    if (!body || !Array.isArray(body.rows) || typeof body.truncated !== 'boolean') fail(503);
+                } else if (input && typeof input === 'object' && !Array.isArray(input) && Object.keys(input).length === 0) {
                     if (!list) fail(400);
-                    listing = true;
+                    category = 'dashboard_admin_account_list';
                     if ((await authorise()).subjectKey !== actor.subjectKey) fail(403);
                     body = await list(signal, env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true');
                     if (!body || !Array.isArray(body.rows) || typeof body.truncated !== 'boolean') fail(503);
@@ -77,7 +90,7 @@ function createAccountLookup({ read, list = null, wipe = null, audit, targetDige
             body = { code: `dashboard_admin_account_lookup_${status}` };
         }
         if (route === 'accounts/lookup' && actor !== null) {
-            try { await audit(Object.freeze({ category: listing ? 'dashboard_admin_account_list' : 'dashboard_admin_account_lookup', requestId: randomUUID(), actorSha256: actorHash, targetSha256,
+            try { await audit(Object.freeze({ category, requestId: randomUUID(), actorSha256: actorHash, targetSha256,
                 status, count: status === 200 ? body.rows.length : 0, truncated: status === 200 && body.truncated, occurredAt: new Date(now()).toISOString() })); }
             catch (_) { status = 503; body = { code: 'dashboard_admin_account_lookup_503' }; }
             // The durable write takes time. A session or role revoked meanwhile

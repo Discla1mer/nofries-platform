@@ -947,6 +947,9 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 /* Account actions stay compact; the guarded portfolio action replaces the
    duplicate consultant chooser while an organisation is open. */
 .dashboard-account-menu { position: relative; align-self: start; justify-self: end; min-width: 0; max-width: 100%; }
+.dashboard-account-identity { margin: 0 0 .4rem; max-width: min(18rem, 100%); min-width: 0; color: var(--ink); font-size: .875rem; line-height: 1.45; overflow-wrap: anywhere; }
+.dashboard-account-identity-label { display: block; color: var(--ink-soft); }
+.dashboard-account-identity :is(strong, .dashboard-account-identity-email) { display: block; }
 .dashboard-account-menu[hidden], .dashboard-account-menu [hidden] { display: none !important; }
 .dashboard-account-menu > #dashboardAccountToggle { max-width: 100%; overflow-wrap: anywhere; min-height: 44px; box-sizing: border-box; padding: .65rem .9rem; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--paper); font: inherit; font-size: .875rem; font-weight: 650; text-align: left; cursor: pointer; }
 .dashboard-account-menu > #dashboardAccountToggle:focus-visible, .dashboard-account-actions > .button:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
@@ -1057,7 +1060,8 @@ body[data-dashboard-gateway="true"]:has(#dashboardStatusPanel:not([hidden]) #das
 .frontend-release-info > span { display: inline-block; }
 .dashboard-release-footer:has(> div:empty) { padding-top: 16px; }
 /* The dashboard's "About this site" disclosure follows the footer's page grid and is easy to tap. */
-body[data-page="operator-dashboard"] .site-details { width: min(1180px, calc(100% - 40px)); margin-inline: auto; padding-bottom: 16px; color: var(--muted); font-size: .78rem; }
+body[data-page="operator-dashboard"] .site-details { width: min(1180px, calc(100% - 40px)); margin-inline: auto; padding-bottom: 16px; color: var(--ink-soft); font-size: .875rem; }
+body[data-page="operator-dashboard"] .frontend-release-info { color: var(--ink-soft); font-size: .875rem; }
 body[data-page="operator-dashboard"] .site-details > summary { display: flex; align-items: center; width: fit-content; min-height: 44px; cursor: pointer; }
 @media (max-width: 620px) { body[data-page="operator-dashboard"] .site-details { width: min(100% - 24px, 1180px); } }
 /* Ad pages reuse the public palette, type and navigation, with a shorter reading column. */

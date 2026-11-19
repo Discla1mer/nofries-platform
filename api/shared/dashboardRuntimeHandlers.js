@@ -28,6 +28,8 @@ const { hostResourceForRoute } = require('./appLifecycle/dashboardRuntimeEvents'
 const { apiSecurityHeaders } = require('./securityHeaders');
 const { OVERVIEW_PLAN_LIMIT } = require('./dashboardReadCost');
 const { ContactRequestError, normaliseContactRequest } = require('./contactRequests');
+// Dashboards before the signed-in name advertise all three; they keep their exact session shape.
+const CONTACT_CAPABILITIES = 'work-queue-v1 account-label-v1 contact-request-v1';
 
 const CONFIG = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
     'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
@@ -35,6 +37,12 @@ const AUTH = ['env', 'store', 'clientApplication', 'cryptoProvider', 'randomByte
 const STORE = ['createTransaction', 'consumeTransaction', 'deleteTransaction', 'createSession', 'loadSession', 'deleteSession'];
 const HEADER_NAMES = ['cookie', 'origin', 'sec-fetch-site', 'x-nofries-dashboard-generation', 'x-nofries-dashboard-purpose',
     'x-nofries-dashboard-capabilities', 'content-type', 'content-encoding'];
+// Older dashboards send the shorter values and keep their exact session shape.
+// The current dashboard adds account-identity-v1, which returns the signed-in name
+// beside the email; it does not grant access.
+const QUEUE_CAPABILITY = 'work-queue-v1';
+const LABEL_CAPABILITY = 'work-queue-v1 account-label-v1';
+const IDENTITY_CAPABILITY = CONTACT_CAPABILITIES + ' account-identity-v1';
 const MAX_WIRE = 524288;
 const unavailable = () => new BrowserAuthError(503, 'browser_auth_dashboard_unavailable');
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -136,7 +144,7 @@ function createDashboardRuntimeHandlers(configuration) {
     const ledger = new AsyncLocalStorage(), requests = new WeakMap();
     const ambiguousErrors = new WeakSet(), ambiguousResponses = new WeakSet();
     let supplied, authOptions, options, clock, budget, browser, operator, runtime, logout, resources, ncscQuota = null, customerBrowser = null, customerSession = null, customerLogout = null, activationBinding = null;
-    let activationPort = null, adminSubjects = new Set(), customerIdentityProvider, improvementEnabled = false, contactRequestsEnabled = false;
+    let activationPort = null, adminSubjects = new Set(), customerIdentityProvider, improvementEnabled = false, contactRequestsEnabled = false, contactRequestEmail = null;
     let externalBrowser = null, externalSession = null, externalLogout = null, externalBinding = null, externalAuth = null;
 
     function hostClock() {
@@ -211,7 +219,7 @@ function createDashboardRuntimeHandlers(configuration) {
     }
     try {
         const configurationKeys = dataKeys(configuration);
-        fields(configuration, [...CONFIG, ...['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
+        fields(configuration, [...CONFIG, ...['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
         if (configurationKeys.includes('improvementEnabled')) {
             if (configuration.improvementEnabled !== true) throw unavailable();
             improvementEnabled = true;
@@ -219,6 +227,12 @@ function createDashboardRuntimeHandlers(configuration) {
         if (configurationKeys.includes('contactRequestsEnabled')) {
             if (configuration.contactRequestsEnabled !== true) throw unavailable();
             contactRequestsEnabled = true;
+        }
+        if (configurationKeys.includes('contactRequestEmail')) {
+            // Staff notification for a newly stored request; only with the route on.
+            if (!contactRequestsEnabled || typeof configuration.contactRequestEmail !== 'function' ||
+                isProxy(configuration.contactRequestEmail)) throw unavailable();
+            contactRequestEmail = configuration.contactRequestEmail;
         }
         if (configurationKeys.includes('ncsc')) {
             fields(configuration.ncsc, ['resolveSubmissionQuota']);
@@ -643,9 +657,10 @@ function createDashboardRuntimeHandlers(configuration) {
         const binding = await bounded(() => selected.binding(req));
         try {
             const value = copy(binding, 8192);
-            fields(value, ['bindingId', 'scope', ...(own(value, 'accountLabel') ? ['accountLabel'] : []), ...(own(value, 'accountType') ? ['accountType'] : []),
+            fields(value, ['bindingId', 'scope', ...(own(value, 'accountLabel') ? ['accountLabel'] : []), ...(own(value, 'accountName') ? ['accountName'] : []), ...(own(value, 'accountType') ? ['accountType'] : []),
                 ...(own(value, 'clientSetupAvailable') ? ['clientSetupAvailable'] : [])]);
             if (own(value, 'accountLabel') && (typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel))) throw new Error();
+            if (own(value, 'accountName') && (typeof value.accountName !== 'string' || value.accountName !== value.accountName.trim() || !value.accountName || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountName))) throw new Error();
             uuid(value.bindingId); fields(value.scope, ['tenantId', 'organisationId']);
             if (own(value, 'accountType') && !['company', 'consultant'].includes(value.accountType)) throw new Error();
             if (own(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant')) throw new Error();
@@ -782,7 +797,7 @@ function createDashboardRuntimeHandlers(configuration) {
                     const denied = error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403;
                     throw new ContactRequestError(denied ? 'contact_request_access_denied' : 'contact_request_unavailable', denied ? 403 : 503);
                 }
-                return bound.contact.request(command);
+                return bound.contact.request(command, contactRequestEmail);
             }));
         }
         if (selected.improvementRoute !== null) {
@@ -855,17 +870,22 @@ function createDashboardRuntimeHandlers(configuration) {
             const customerAccount = value.purpose === 'customer' ? await approvedCustomerBinding(privateRequest) : null;
             const admin = activationPort && value.purpose === 'operator_dashboard' ? await bounded(() => captureRequest(privateRequest)) : null;
             const activationAvailable = admin && adminSubjects.has(admin.identityPayload.identityTenantId + ':' + admin.identityPayload.oid);
+            const capabilities = snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 ? snapshot.headers['x-nofries-dashboard-capabilities'][0] : null;
             return response(200, { schemaVersion: 1, authenticated: true, purpose: value.purpose, expiresAt: value.expiresAt,
                 generation: value.generation, selectedBindingId: value.selectedBindingId,
                 ...(customerAccount?.accountType ? { accountType: customerAccount.accountType } : {}),
-                ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
-                    snapshot.headers['x-nofries-dashboard-capabilities'][0] === 'work-queue-v1 account-label-v1' &&
+                ...([LABEL_CAPABILITY, CONTACT_CAPABILITIES, IDENTITY_CAPABILITY].includes(capabilities) &&
                     customerAccount?.accountLabel ? { accountLabel: customerAccount.accountLabel } : {}),
+                // The signed-in name is display only, for the current dashboard's exact value.
+                ...(capabilities === IDENTITY_CAPABILITY && customerAccount?.accountName ? { accountName: customerAccount.accountName } : {}),
                 // Existing open dashboards validate an exact session shape.
                 // Negotiate display metadata; this does not grant queue access.
-                ...(snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 &&
-                    ['work-queue-v1', 'work-queue-v1 account-label-v1'].includes(snapshot.headers['x-nofries-dashboard-capabilities'][0]) &&
+                ...([QUEUE_CAPABILITY, LABEL_CAPABILITY, CONTACT_CAPABILITIES, IDENTITY_CAPABILITY].includes(capabilities) &&
                     improvementEnabled && customerAccount?.accountType === 'consultant' ? { workQueueAvailable: true } : {}),
+                // Display only (#409): every customer member role holds
+                // contact.request; the browser hides it for an advisor-only
+                // projection and the POST route re-checks the locked membership.
+                ...([CONTACT_CAPABILITIES, IDENTITY_CAPABILITY].includes(capabilities) && contactRequestsEnabled && customerAccount ? { contactRequestsAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }
         if (selected.route === 'session') {
