@@ -902,9 +902,7 @@
             copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
             // #441: the same answers, written for a board or insurer.
             if (typeof questionnaire.boardSummary === 'function') {
-                const boardExportGate = options.boardExportGate || (content => content());
-                handoff.append(boardExportGate(() => {
-                    const boardBlock = node('div', 'picture-board-summary');
+                const renderBoard = boardBlock => {
                     const boardLabel = node('label', '', 'Summary for your board or insurer');
                     const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
                     board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, selectedMetadata()).text;
@@ -916,7 +914,9 @@
                         boardPrint.classList.add('dashboard-button-secondary'); boardBlock.append(boardPrint);
                     }
                     return boardBlock;
-                }));
+                };
+                if (options.boardExportGate) handoff.append(options.boardExportGate(() => renderBoard(node('div', 'picture-board-summary'))));
+                else renderBoard(handoff);
             }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());
