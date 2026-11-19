@@ -20,7 +20,7 @@
     // shows the consent wording and asks for confirmation before sending.
     const CONTACT_CONSENT = 'No Fries staff will see your organisation name, your sign-in email and a summary of your results, and will contact you by email.';
     const CONTACT_OUTCOMES = { requested: 'Request sent. We’ll be in touch by email.',
-        already_requested: 'You’ve already asked about this today. We’ll be in touch.' };
+        already_requested: 'Someone in your organisation has already asked about this today. We’ll be in touch.' };
     let contactSequence = 0;
     function contactControl(doc, topic, send, subject) {
         const make = function (tag, className, text) {
