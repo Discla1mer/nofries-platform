@@ -304,6 +304,23 @@ test('Account shows the email once when the signed-in name is the same address',
     expect(identity.querySelector('strong')).toBeNull();
 });
 
+test('the signed-in name is isolated from the email beside it', async () => {
+    const h = harness({ hash: '#overview', accountMenu: true }); await flush();
+    await h.open(state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test', accountName: 'Synthetic Customer' }));
+    const strong = h.document.getElementById('dashboardAccountIdentity').querySelector('strong');
+    expect(strong.textContent).toBe('Synthetic Customer');
+    expect(strong.getAttribute('dir')).toBe('auto');
+});
+
+test.each([['right-to-left override', 'Synthetic \u202eremotsuC'], ['isolate', '\u2066Synthetic\u2069'],
+    ['zero-width space', 'Synthetic\u200bCustomer'], ['leading space', ' Synthetic Customer'], ['trailing space', 'Synthetic Customer ']])
+('a signed-in name with a %s fails closed, as the handler does', async (_, accountName) => {
+    const h = harness({ hash: '#overview', accountMenu: true }); await flush();
+    await h.reply(0, 200, state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test', accountName }));
+    expect(h.status).toBe('unavailable');
+    expect(h.document.getElementById('dashboardAccountIdentity')).toBeNull();
+});
+
 test('a control character in the signed-in name fails closed', async () => {
     const h = harness({ hash: '#overview', accountMenu: true }); await flush();
     await h.reply(0, 200, state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test', accountName: 'Synthetic\nCustomer' }));

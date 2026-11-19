@@ -169,7 +169,7 @@ test('same-day choices remain unambiguous without changing exact selected IDs or
     dom.controller.destroy();
 });
 
-test('a long scope is shortened in the selector so status and date stay visible, with the full label as a tooltip', async () => {
+test('D-017 shows the full scope, status and date in the selector and wrapping caption', async () => {
     const record = clone(buildFixtures().tenants[0].assessments[0]);
     const long = 'Synthetic head office, two retail sites,\n  the warehouse laptops and every cloud service we pay for each month';
     record.scopePopulation.description = long;
@@ -177,10 +177,11 @@ test('a long scope is shortened in the selector so status and date stay visible,
     const picker = dom.root.querySelector('.picture-toolbar').querySelector('select');
     const option = picker.querySelector('option');
     const flat = long.replace(/\s+/g, ' ');
-    assert.ok(option.textContent.startsWith(flat.slice(0, 59).trimEnd() + '… · In progress · '));
+    assert.ok(option.textContent.startsWith(flat + ' · In progress · '));
     assert.ok(option.textContent.endsWith(' NZ time'));
     assert.equal(option.title, flat + option.textContent.slice(option.textContent.indexOf(' · In progress · ')));
     assert.equal(picker.title, option.title);
+    assert.equal(dom.root.querySelector('.picture-selected-title').textContent, option.title);
     // The full scope is still shown on the page (one list item per line since #268).
     long.split('\n').map(line => line.trim()).forEach(line => assert.ok(dom.root.textContent.includes(line)));
     dom.controller.destroy();
@@ -250,7 +251,7 @@ test.each([[false], [true]])('Overview leads with not enough answers when fewer 
     const dom = setup({ records: [record], options: canStart ? { openCyber: () => {} } : {} }); await flush();
     const primary = dom.root.querySelector('.picture-primary');
     assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
-    assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet');
+    assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet, confirm your Unknowns first');
     assert.equal(primary.querySelector('.picture-metric-upper'), null);
     assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or Not applicable, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
     // A submitted result is read-only: do not ask the customer to confirm answers.
@@ -1373,6 +1374,51 @@ test('top gap selection uses existing weights before answer and profile order, w
     assert.deepEqual(picture.topGaps(result, metadata, 1).map(gap => gap.itemId), ['q2']);
 });
 
+test('scoring v2 (#399): top gaps rank by weight × gap factor, count "I don\'t know" and leave v1 order alone', () => {
+    const { NCSC_V2_CONTEXT, ACCEPTED_NCSC_CONTEXT } = require('../api/shared/assessmentEngine/ncscProfileSet');
+    const profile = NCSC_V2_CONTEXT.profile;
+    const metadata = { profileRef: { ...NCSC_V2_CONTEXT.profileRef }, controls: profile.controls.map(control => ({ id: control.id, title: control.title })),
+        questions: profile.questions.map(question => ({ id: question.id, controlId: question.controlId, guidance: question.guidance })) };
+    // The #399 worked example: 7.85 / 31, fix-first scores 3.00, 2.25, 2.00, 2.00, 1.70.
+    const EXAMPLE = ['no', 'ad_hoc', 'partly', 'partly', 'partly', 'mfa_text_code', 'unknown', 'partly', 'partly', 'no', 'no',
+        'no', 'ad_hoc', 'partly', 'no', 'unknown'];
+    const rowsFor = values => ({ domains: [{ controls: [{ questions: profile.questions.map((question, index) =>
+        ({ itemId: question.id, responseOptionId: values[index], weight: question.weight, answer: values[index] })) }] }] });
+    const result = rowsFor(EXAMPLE);
+    assert.deepEqual(picture.topGaps(result, metadata, 5).map(gap => gap.itemId), ['NF-NCSC-MCSS-DR-01-Q2', 'NF-NCSC-CC-SV-01-Q1',
+        'NF-NCSC-CC-PM-01-Q1', 'NF-NCSC-CC-SU-01-Q1', 'NF-NCSC-CC-EM-01-Q1']);
+    // v2 shows up to five by default (#399, 18 Nov); the accepted profile keeps three.
+    assert.deepEqual(picture.topGaps(result, metadata).map(gap => gap.itemId), ['NF-NCSC-MCSS-DR-01-Q2', 'NF-NCSC-CC-SV-01-Q1',
+        'NF-NCSC-CC-PM-01-Q1', 'NF-NCSC-CC-SU-01-Q1', 'NF-NCSC-CC-EM-01-Q1']);
+    // Logging (I don't know, 1 × 0.85) misses the top five, so it is confirmed next.
+    assert.deepEqual(picture.confirmNext(result, metadata).map(gap => gap.itemId), ['NF-NCSC-MCSS-DU-01-Q1']);
+    const supplier = picture.topGaps(result, metadata, 4)[3];
+    assert.deepEqual([supplier.title, supplier.next], ['Limit supplier access',
+        'List who has access, turn on the extra login step, and add a breach-notice clause.']);
+    // Every gap rung is included, ordered by its factor; Yes, passkey and Not applicable are not gaps.
+    const ladder = profile.questions.map(() => 'yes');
+    const at = id => profile.questions.findIndex(question => question.id === id);
+    ladder[at('NF-NCSC-MCSS-MF-01-Q2')] = 'mfa_number_matching'; ladder[at('NF-NCSC-CC-NS-01-Q1')] = 'not_applicable';
+    assert.deepEqual(picture.topGaps(rowsFor(ladder), metadata, 16).map(gap => gap.itemId), ['NF-NCSC-MCSS-MF-01-Q2']);
+    ladder[at('NF-NCSC-MCSS-MF-01-Q2')] = 'mfa_key'; ladder[at('NF-NCSC-CC-PM-01-Q1')] = 'ad_hoc';
+    ladder[at('NF-NCSC-CC-SU-01-Q1')] = 'partly'; ladder[at('NF-NCSC-CC-EM-01-Q1')] = 'unknown'; ladder[at('NF-NCSC-MCSS-RM-01-Q1')] = 'no';
+    // PM 2×0.75=1.50, EM 2×0.85=1.70, SU 2×0.50=1.00, RM 1×1.00=1.00 (lower weight after SU).
+    assert.deepEqual(picture.topGaps(rowsFor(ladder), metadata, 16).map(gap => gap.itemId),
+        ['NF-NCSC-CC-EM-01-Q1', 'NF-NCSC-CC-PM-01-Q1', 'NF-NCSC-CC-SU-01-Q1', 'NF-NCSC-MCSS-RM-01-Q1']);
+    // Metadata for the accepted profile keeps the original rule: unknown is not a gap there.
+    const accepted = { ...metadata, profileRef: { ...ACCEPTED_NCSC_CONTEXT.profileRef } };
+    assert.deepEqual(picture.topGaps(rowsFor(EXAMPLE), accepted, 16).map(gap => gap.itemId),
+        picture.topGaps(rowsFor(EXAMPLE), { ...metadata, profileRef: undefined }, 16).map(gap => gap.itemId));
+    assert.equal(picture.topGaps(rowsFor(EXAMPLE), accepted, 16).some(gap => gap.responseOptionId === 'unknown'), false);
+    assert.deepEqual(picture.confirmNext(rowsFor(EXAMPLE), accepted), []);
+    // A reference that differs from v2 in any field other than the version is not v2.
+    for (const key of ['frameworkId', 'frameworkVersion', 'profileId', 'catalogueSha256', 'sourceCatalogueSha256']) {
+        const other = { ...metadata, profileRef: { ...metadata.profileRef, [key]: key.endsWith('Sha256') ? 'f'.repeat(64) : 'other' } };
+        assert.equal(picture.topGaps(rowsFor(EXAMPLE), other).length, 3, key);
+        assert.deepEqual(picture.confirmNext(rowsFor(EXAMPLE), other), [], key);
+    }
+});
+
 function summarySource() {
     const fixtures = buildFixtures();
     return { questionnaire: require('../api/shared/protectedAssets/ncscQuestionnaire'), record: mixed(), metadata: fixtures.metadata };
@@ -1552,7 +1598,7 @@ test('Actions card shows overdue and next-14-day counts with up to three titles 
     assert.ok(card); assert.equal(dom.root.children[0], card);
     assert.equal(card.getAttribute('aria-labelledby'), card.querySelector('h3').id);
     assert.equal(card.querySelector('h3').textContent, 'Actions');
-    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Next open actions', 'Overdue (4)', 'Due in the next 14 days (2)']);
+    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Start with these gaps', 'Next open actions', 'Overdue (4)', 'Due in the next 14 days (2)']);
     const next = card.querySelector('.picture-actions-next');
     assert.deepEqual([...next.querySelectorAll('a')].map(node => node.textContent),
         ['<img src=x onerror=alert(1)>', 'Synthetic action o1', 'Synthetic action o2']);
@@ -1594,7 +1640,7 @@ test('Actions card empty state links to the top three gaps panel', async () => {
     const card = dom.root.querySelector('.picture-actions');
     assert.equal(card.querySelector('.picture-actions-empty').textContent.replace(/\s+/g, ' ').trim(),
         'No actions yet. Start with your top three gaps.');
-    assert.equal(card.querySelector('h4'), null);
+    assert.equal(card.querySelector('h4').textContent, 'Start with these gaps');
     const link = card.querySelector('a'), heading = dom.root.querySelector('.picture-top-gaps').querySelector('h3');
     assert.equal(link.href, '#' + heading.id);
     link.click();

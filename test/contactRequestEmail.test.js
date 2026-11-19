@@ -157,6 +157,15 @@ describe('notifier', () => {
         expect(text.split('\n')[3]).toBe(NAME_NOTE);
         expect(contactRequestEmailText({ ...NOTICE, organisationName: '\u200b\u202e\u0085' })).toContain('Organisation: (no display name)');
     });
+    test('the 180-character name limit counts code points and never splits a surrogate pair', () => {
+        const line = name => contactRequestEmailText({ ...NOTICE, organisationName: name }).split('\n')[2];
+        // 179 ASCII then an astral character: a UTF-16 slice would keep a lone high surrogate.
+        expect(line('a'.repeat(179) + '\u{1F600}tail')).toBe('Organisation: ' + 'a'.repeat(179) + '\u{1F600}');
+        const kept = line('\u{1F600}'.repeat(200)).slice('Organisation: '.length);
+        expect(kept).toBe('\u{1F600}'.repeat(180));
+        expect(kept).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+        expect(line('b'.repeat(181))).toBe('Organisation: ' + 'b'.repeat(180));
+    });
     test('every topic has a human label: "Results" or the service display name', () => {
         expect(TOPIC_LABELS).toEqual(Object.fromEntries([['results', 'Results'], ...registry.services.map(s => [s.key, s.label])]));
         expect(contactRequestEmailText({ ...NOTICE, topic: 'tier1_support' })).toContain('Topic: Tier 1 support');
