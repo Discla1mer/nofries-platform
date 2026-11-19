@@ -250,12 +250,12 @@
     },
     {
       "path": "api/shared/protectedAssets/ncscQuestionnaire.js",
-      "sha256": "a1b6cd17b9a01fc34495ef801711857b6b853914637e0ae625a39cd1fef4dc53"
+      "sha256": "7c1dd83bb28427c7e97473490da3e0ccfe666d68fdb6e453765eb2598d4d8634"
     }
   ],
   "snapshots": {
-    "main": "b383ff09b5b82e62bf38d10f29417a75f150d5a3",
+    "main": "7412c9e6b380bc8ca5dc19caa435ebab2137c8d8",
     "459": "d91c1cd50137ebb8826ac6b6382cd3803080c39a",
-    "477": "12c41125c7d261b05c8b1de3cbc6d323b2a92831"
+    "477": "af2baa3b2b97bda070c890902e0b91bf1f08ad16"
   }
 }
