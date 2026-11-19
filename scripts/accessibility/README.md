@@ -14,6 +14,10 @@ no dispatch trigger and no production network access from the browser. Installat
 uses the package/browser registries; the test itself permits only loopback GETs.
 Account/session responses are synthetic. No forms or chat messages are submitted.
 
+The four ad landing pages also run at 375px, including link checks, UTM forwarding
+and empty browser storage. Set `NOFRIES_AD_SCREENSHOTS` to an output directory to
+retain a full-page 375px PNG of each landing. Only loopback GETs are made.
+
 Eight built public pages are checked at 1280 and 320 CSS pixels, at 100% and 200%
 text, with help open and closed: home, login, Managed IT, privacy, terms, roadmap,
 report and the example result. The contact form joins automatically when #42 supplies it; its absence
