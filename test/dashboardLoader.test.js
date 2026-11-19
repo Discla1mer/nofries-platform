@@ -172,6 +172,7 @@ function harness(options = {}) {
             if (options.cyber) {
                 window.NoFriesNcscAssessmentClient = { createClient: input => ncscClient.createClient({
                     metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch,
+                    ...(input.profileMetadata ? { profileMetadata: JSON.parse(JSON.stringify(input.profileMetadata)) } : {}),
                     ...(input.onAccepted ? { onAccepted: input.onAccepted } : {}) }) };
                 window.NoFriesNcscQuestionnaire = { mount: (...args) => { ncscMounts.push(args); return questionnaire.mount(...args); } };
                 if (options.picture) window.NoFriesOrganisationPicture = require('../api/shared/protectedAssets/organisationPicture');
@@ -2687,6 +2688,23 @@ describe('unmounted authority refresh coalescing', () => {
         await h.reply(4, 200, state());
         expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
         expect(h.requests.filter(item => item.url === '/api/dashboard/modules/cyber_security')).toHaveLength(1);
+    });
+
+    test.each([['absent', undefined, true], ['one v2 profile', 'v2', true], ['empty', [], false], ['not a list', {}, false]])
+    ('scoring v2 (#399): optional profileMetadata %s', async (_, extra, accepted) => {
+        const v2 = require('../api/shared/ncscQuestionnaireMetadata').createNcscQuestionnaireMetadataV2();
+        const h = harness({ hash: '#cyber-security', cyber: true }); await flush();
+        const model = cyberProjection();
+        await h.reply(0, 200, state()); await h.reply(1, 200, listing()); await h.reply(2, 200, model);
+        h.load(0); h.load(1); await flush();
+        await h.reply(3, 200, { ...moduleProjection(model), ...(extra === undefined ? {} : { profileMetadata: extra === 'v2' ? [v2] : extra }) });
+        if (!accepted) { expect(h.status).not.toBe('ready'); expect(h.ncscMounts).toHaveLength(0); return; }
+        await h.reply(4, 200, state());
+        expect(h.status).toBe('ready'); await flush();
+        expect(h.ncscMounts).toHaveLength(1);
+        if (extra === undefined) expect(h.ncscMounts[0][1]).not.toHaveProperty('profileMetadata');
+        else expect(h.ncscMounts[0][1].profileMetadata).toEqual([v2]);
+        h.window.dispatch('pagehide');
     });
 
     test('the Cyber Security read starts once the projection lists it ready, before the directory answers', async () => {

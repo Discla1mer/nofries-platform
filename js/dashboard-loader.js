@@ -1515,7 +1515,8 @@
         const questionnaire = window.NoFriesNcscQuestionnaire;
         if (!clientFactory || typeof clientFactory.createClient !== 'function' ||
             !questionnaire || typeof questionnaire.mount !== 'function') throw invalid();
-        const client = clientFactory.createClient({ metadata: value.metadata, fetch: async function (path, options) {
+        const profileMetadata = Array.isArray(value.profileMetadata) ? { profileMetadata: value.profileMetadata } : {};
+        const client = clientFactory.createClient({ metadata: value.metadata, ...profileMetadata, fetch: async function (path, options) {
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             // The existing client owns the bounded endpoint and command schema.
             // Bind transport to this exact selection; caller-supplied generations
@@ -1535,7 +1536,7 @@
         } });
         const mountCyber = function (root, presentation) {
             if (!current(cycle)) throw invalid();
-            return questionnaire.mount(root, { window: window, metadata: value.metadata, client: client,
+            return questionnaire.mount(root, { window: window, metadata: value.metadata, ...profileMetadata, client: client,
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
@@ -1829,12 +1830,18 @@
         return opened;
     }
     function cyberContract(value) {
-        if (!fields(value, ['schemaVersion', 'context', 'generatedAt', 'module', 'summary', 'services',
-            'admissionGranted', 'providerAccessGranted', 'metadata', 'presentationMode']) ||
+        // Scoring v2 (#399): the server adds profileMetadata (one entry per extra
+        // readable profile) only while NOFRIES_NCSC_PROFILE_V2 is on.
+        const keys = ['schemaVersion', 'context', 'generatedAt', 'module', 'summary', 'services',
+            'admissionGranted', 'providerAccessGranted', 'metadata', 'presentationMode'];
+        const extra = value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'profileMetadata');
+        if (extra && (!Array.isArray(value.profileMetadata) || !value.profileMetadata.length || value.profileMetadata.length > 4)) throw invalid();
+        if (!fields(value, extra ? keys.concat(['profileMetadata']) : keys) ||
             value.schemaVersion !== 1 || value.module?.key !== 'cyber_security' || value.module?.state !== 'ready' ||
             value.admissionGranted !== false || value.providerAccessGranted !== false ||
             !['editable', 'read-only'].includes(value.presentationMode)) throw invalid();
-        return JSON.stringify([value.metadata, value.presentationMode, value.context, value.module]);
+        return JSON.stringify(extra ? [value.metadata, value.presentationMode, value.context, value.module, value.profileMetadata]
+            : [value.metadata, value.presentationMode, value.context, value.module]);
     }
     function leave(cycle, commit) {
         if (!current(cycle) || !confirmClientDiscard(cycle)) return Promise.resolve(false);
