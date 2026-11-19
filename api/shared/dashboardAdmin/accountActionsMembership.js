@@ -79,6 +79,10 @@ function createMembershipAction({ source: rawSource, authorityContainer, auditCo
                     approval && !equal(approval, record)) fail(403, 'access_denied');
                 approval = freeze(copy(record));
             }
+            // Re-judge the administration window after every awaited read above,
+            // so the pre-COMMIT guard cannot pass on a grant that has expired.
+            const end = check();
+            if (end < administration.validFrom || end >= administration.validUntil) fail(403, 'access_denied');
         }
         const binding = () => ({ operationId: input.operationId, sessionSha256: context.sessionSha256,
             expectedMembershipRevision: input.expectedMembershipRevision, authoritySha256: hash(observed.record), sourceSha256: hash(source), auditConfigurationSha256 });

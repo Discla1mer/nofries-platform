@@ -110,6 +110,16 @@ test('an administration grant that expires while its final read is pending canno
     await expect(h.run('suspend')).rejects.toMatchObject({ statusCode: 403 });
     expect(calls).toBe(reads); expect(h.state.committed).toBe(0); expect(h.state.snapshot).toEqual(h.snapshot);
 });
+test('an administration grant that expires during the later guard reads cannot authorise the write', async () => {
+    const probe = fixture(); await probe.run('suspend'); const reads = probe.config.readApprovedAction.mock.calls.length;
+    const h = fixture(), read = h.config.readApprovedAction.getMockImplementation(); let now = NOW, calls = 0;
+    h.administration.validUntil = new Date(Date.parse(NOW) + 300000).toISOString(); h.config.clock = () => now;
+    h.config.readApprovedAction.mockImplementation(async args => {
+        const record = await read(args); if (++calls === reads) now = h.administration.validUntil; return record;
+    });
+    await expect(h.run('suspend')).rejects.toMatchObject({ statusCode: 403 });
+    expect(calls).toBe(reads); expect(h.state.committed).toBe(0); expect(h.state.snapshot).toEqual(h.snapshot);
+});
 test.each(['suspend', 'restore', 'approve-suspend', 'approve-restore'])('%s HTTP route is default-off and uses staff auth and same origin', async action => {
     const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try { for (const mode of ['off', 'anonymous', 'nonstaff', 'origin', 'allowed']) {
