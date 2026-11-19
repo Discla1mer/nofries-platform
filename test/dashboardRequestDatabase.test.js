@@ -1443,6 +1443,23 @@ describe('configured NCSC host presentation remains authority-bound', () => {
         expect(result.status).toBe(200); expect(result.body.module.state).toBe('planned');
         expect(result.body.metadata).toBeUndefined(); expect(result.body.presentationMode).toBeUndefined();
     });
+    test('a v2-only product and flag are planned while NOFRIES_NCSC_PROFILE_V2 is off and ready only when it is on', async () => {
+        const { NCSC_V2_CONTEXT } = require('../api/shared/assessmentEngine/ncscProfileSet');
+        const original = process.env.NOFRIES_NCSC_PROFILE_V2;
+        try {
+            for (const [value, state] of [[undefined, 'planned'], ['TRUE', 'planned'], ['true', 'ready']]) {
+                if (value === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2; else process.env.NOFRIES_NCSC_PROFILE_V2 = value;
+                const f = configured();
+                const product = f.snapshot.entitlementState.grants.find(row => row.grantId === 'synthetic-product');
+                product.frameworks[0].version = NCSC_V2_CONTEXT.profileRef.profileVersion;
+                f.snapshot.flags.frameworks[0].version = NCSC_V2_CONTEXT.profileRef.profileVersion;
+                const result = await hostRead(f, 'modules/cyber_security');
+                expect(result.status).toBe(200); expect(result.body.module.state).toBe(state);
+            }
+        } finally {
+            if (original === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2; else process.env.NOFRIES_NCSC_PROFILE_V2 = original;
+        }
+    });
     test('accepted product with mismatched feature profile cannot expose ready questionnaire', async () => {
         const f = configured(); f.snapshot.flags.frameworks[0].version = 'unaccepted-version';
         const result = await hostRead(f, 'modules/cyber_security');
