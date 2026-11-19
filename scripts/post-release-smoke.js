@@ -52,8 +52,9 @@ const READ_ONLY_CHECKS = [
             markers.length && !['external', 'legacy', 'auto'].includes(markers[0][1])) return 'login provider selection unavailable';
         const explicitExternal = markers[0]?.[1] === 'external', r = explicitExternal ? external : legacy;
         // The dedicated sign-in page returns through external signup state after authentication.
-        if (explicitExternal && bodies[0][0].includes('data-customer-entry="signin"') && !ready(externalSignup)) {
-            return 'selected login signup unavailable';
+        if (explicitExternal && bodies[0][0].includes('data-customer-entry="signin"')) {
+            if (!page.text.includes('id="organisation-continue" href="/api/external-customer-auth/login"')) return 'selected login entry unavailable';
+            return ready(externalSignup) ? null : 'selected login signup unavailable';
         }
         const ok = r.status === 200 && /^application\/json\b/i.test(r.type) && ['start', 'sign_in'].includes(json(r)?.state) &&
             (explicitExternal || r.entry === 'legacy' || r.entry === 'external' && ready(externalSignup));
