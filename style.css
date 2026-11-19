@@ -576,3 +576,10 @@ body.legal-page .legal-staff > :not(summary) { margin-block: 10px 0; }
 body.legal-page .legal-staff > summary { min-height: 44px; padding-block: 8px; cursor: pointer; }
 body.legal-page .legal-staff > summary h2 { display: inline; margin: 0; font-size: 1.15rem; }
 body.legal-page .legal-staff > h3 { margin-top: 16px; font-size: 1rem; }
+
+/* Keep small labels and links readable across the full paper grain. */
+body:is([data-page="dashboard-pricing"], [data-page="sample-result"], [data-page="ad-landing"]) {
+    --muted: #3a342b;
+    --green: #4d350a;
+    --green-dark: #443009;
+}
