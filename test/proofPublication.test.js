@@ -445,6 +445,35 @@ describe('Proof Every Month publication', () => {
         expect(publishedProofForPeriod(otherOrganisation, '2026-08')).toBeNull();
     });
 
+    test.each(['iso_board_summary', 'iso_statement_of_applicability'])(
+        'a valid monthly issue cannot bind a separate %s document', outputKind => {
+            const organisation = organisationFixture(), period = '2026-08';
+            const original = issuedProof(organisation, period, '2026-09-01T00:00:00.000Z');
+            organisation.proofPeriods = [original];
+            expect(publishedProofForPeriod(organisation, period)).toMatchObject({ publicationSha256: original.publicationSha256 });
+
+            const assessmentOutput = { outputKind, assessmentId: 'example-assessment', revision: 2,
+                responseSetSha256: canonicalHash(['synthetic response']), outputSha256: canonicalHash(['synthetic output']) };
+            // Matching hashes cannot add content to either of the issuer's closed preimages.
+            const customerSnapshot = { ...original.customerSnapshot, assessmentOutput };
+            const snapshotSha256 = canonicalHash(customerSnapshot);
+            const publicationEnvelope = { ...original.publicationEnvelope, approvedSnapshotSha256: snapshotSha256 };
+            const extended = { ...original, customerSnapshot, snapshotSha256, publicationEnvelope,
+                publicationSha256: canonicalHash(publicationEnvelope) };
+            expect(proofSnapshotValid(extended, organisation)).toBe(false);
+            expect(() => buildProofPublicationEnvelope(extended, original.issuedBy, original.issuedAt, organisation))
+                .toThrow(expect.objectContaining({ code: 'proof_snapshot_integrity_failed' }));
+
+            const relabelled = { ...original.publicationEnvelope, assessmentOutput };
+            const unrelated = { ...original, publicationEnvelope: relabelled, publicationSha256: canonicalHash(relabelled) };
+            expect(proofSnapshotValid(unrelated, organisation)).toBe(true);
+            expect(publicationEnvelopeValid(unrelated, organisation)).toBe(false);
+            for (const candidate of [extended, unrelated]) {
+                organisation.proofPeriods = [candidate];
+                expect(publishedProofForPeriod(organisation, period)).toBeNull();
+            }
+        });
+
     test('retains both immutable hash preimages through lifecycle normalisation', () => {
         const organisation = organisationFixture();
         const original = issuedProof(organisation, '2026-08', '2026-09-01T00:00:00.000Z');
