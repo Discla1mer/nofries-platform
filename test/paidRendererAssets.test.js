@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const { createHash } = require('node:crypto');
 const { paidFrameworks } = require('../api/shared/protectedAssets/dashboardRegistry');
 const { parseAsset, matchesSelection, packagedAsset } = require('../api/shared/paidRendererAssets');
 const { assetPath } = require('../scripts/tests/paid-renderer-browser.cjs');
@@ -32,6 +33,17 @@ test.each(paidFrameworks)('fixed renderer URLs bind $label, its generation and i
     const read = jest.spyOn(fs, 'readFileSync').mockReturnValueOnce(Buffer.from('different file'));
     try { expect(packagedAsset(asset)).toBeNull(); }
     finally { read.mockRestore(); }
+});
+
+test('the host serves the exact reviewed NIST board reader', () => {
+    const nist = paidFrameworks.find(ref => ref.profileId === 'nf-nist-csf-2-0-core');
+    const asset = parse(assetPath(nist, 'results', generation));
+    const response = packagedAsset(asset);
+    expect(response?.status).toBe(200);
+    expect(response.headers['Cache-Control']).toMatch(/no-store/);
+    // SHA-256 of the reviewed reader at #521, independent of the host registry.
+    expect(createHash('sha256').update(response.body).digest('hex'))
+        .toBe('3e5611cb3f4a23494713b3f118cedc95f951912f4b879cdb072156325b379967');
 });
 
 test('the collection screen is a separate pinned script, absent from the free bundle', async () => {
