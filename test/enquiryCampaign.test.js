@@ -43,6 +43,14 @@ test('keeps the first campaign in the tab instead of overwriting it', () => {
     expect(land('?utm_source=linkedin', 'meta/paid/nov-launch').tag).toBe('meta/paid/nov-launch');
 });
 
+test('login captures before the deferred setup script can navigate to signup', () => {
+    const login = fs.readFileSync(path.join(__dirname, '../login.html'), 'utf8');
+    expect(login.match(/<script src="[^"]+" defer><\/script>/g)).toEqual([
+        '<script src="/js/enquiry-availability.js" defer></script>',
+        '<script src="/js/organisation-setup.js" defer></script>'
+    ]);
+});
+
 test('blocked storage gives no tag and does not throw', () => {
     expect(land('?utm_source=meta', null, { blocked: true }).tag).toBe('');
 });
