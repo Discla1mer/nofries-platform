@@ -59,6 +59,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         for (const line of [
             'Microsoft runs the sign-up page for No Fries. Its address starts with nofriescustomers.ciamlogin.com.',
             'Your code comes from “No Fries Customers (via Microsoft)”. It can take a few minutes. Check your junk or spam folder.',
+            'If Microsoft rejects the code and returns to email entry, use the same email. If you already finished creating your account, choose Sign in. If you did not finish and cannot get back to the code box, choose Create one with that same email.',
             'No code after 5 minutes? Use the resend option on the Microsoft page. Still nothing? Email hello@nofries.nz.',
             'Microsoft then asks to share your name and email with No Fries. It says the app is “not published by Microsoft”. That is expected: No Fries made the app, and Microsoft runs the sign-in. Accept to continue.'
         ]) list.append(element('li', line));
@@ -370,7 +371,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         }
         heading.focus();
     }
-    function showAccessUnconfirmed(diagnosticSource) {
+    function showAccessUnconfirmed(diagnosticSource, retried) {
         if (disposed) return;
         viewRevision++;
         setupDraft = null;
@@ -379,12 +380,14 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         heading.tabIndex = -1;
         root.append(heading,
             element('p', 'Your sign-in may have worked, but No Fries could not check your account and organisation access just now. If you already have an account, it and your saved work are kept. You do not need to sign up again.'),
-            element('p', 'Try again now. If your account still does not open, sign in again with the same email and password.'),
+            element('p', retried ? 'We still could not check your access. Choose Sign in again and use the same email and password to reopen your existing setup.' : 'Try again now. If your account still does not open, sign in again with the same email and password.'),
             element('p', 'Error code: NF-SIGNIN-UNCONFIRMED'));
         showDiagnostic(diagnosticSource);
         const retry = button('Try again', signal => client.load({ signal }));
-        retry.classList.add('signup-entry-action'); root.append(retry);
-        signInLinks();
+        retry.classList.add('signup-entry-action');
+        if (retried) signInLinks();
+        root.append(retry);
+        if (!retried) signInLinks();
         const help = element('p', 'If this keeps happening, contact No Fries for help and include this error code.');
         const report = element('a', 'Report this problem');
         report.href = reportLink(diagnosticSource);
@@ -520,7 +523,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         } catch (error) {
             // Failure or timeout always ends in a visible state with a way on.
             if (!disposed && current === generation) {
-                if (customerTransport && opening) showAccessUnconfirmed(error);
+                if (customerTransport && opening) showAccessUnconfirmed(error, current > 1);
                 else show({ status: 'unavailable' }, error);
             }
         } finally {
