@@ -266,3 +266,26 @@ describe('v2 results in the questionnaire', () => {
         expect(calls).toHaveLength(4);
     });
 });
+
+test('board commitments distinguish two questions on one control and a ranked unknown', async () => {
+    const metadata = V2();
+    const backup = metadata.questions.filter(question => question.id.includes('-DR-'));
+    const unknown = metadata.questions.find(question => question.id.endsWith('MF-01-Q1'));
+    const expected = [unknown, ...backup];
+    const answers = metadata.questions.map(question => question === unknown ? 'unknown' : backup.includes(question) ? 'no' : question.responseOptionIds[0]);
+    const { h, assessment } = await submittedV2(answers);
+    const dom = createDom();
+    const readBoardPlan = jest.fn(async () => expected.map((q, i) => ({ itemId: q.id, controlId: q.controlId,
+        kind: q === unknown ? 'assessment' : 'implementation', owner: 'Synthetic owner ' + i, dueDate: '2026-11-24', editTarget: null })));
+    const picture = require('../api/shared/protectedAssets/organisationPicture');
+    const controller = picture.mount(dom.root, { client: h.client, metadata, organisationId: h.organisationId, readBoardPlan, openAction: jest.fn() });
+    await until(() => dom.root.querySelector('.picture-summary'));
+    const board = dom.root.querySelector('.picture-summary'); board.open = true;
+    for (const callback of board.events.toggle) callback();
+    await until(() => board.querySelector('.picture-board-actions').querySelectorAll('li').length === 3);
+    const paper = board.querySelector('.picture-board-print').textContent;
+    backup.forEach((q, i) => expect(paper).toContain(q.prompt + ' — Synthetic owner ' + (i + 1)));
+    expect(paper).toContain('Synthetic owner 0');
+    expect(readBoardPlan.mock.calls[0][0].outputSha256).toBe(assessment.submission.evaluation.outputSha256);
+    controller.destroy();
+});

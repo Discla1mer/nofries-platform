@@ -714,7 +714,7 @@
                 const sameCoverage = previous.total === current.total && shared === previous.answered.size && shared === current.answered.size;
                 section.append(node('p', 'picture-trend-coverage', 'Question coverage: ' + earlier + ' ' +
                     previous.answered.size + ' of ' + previous.total + '; selected ' + current.answered.size + ' of ' + current.total +
-                    ' answered Yes, Partial or No. ' + shared + ' questions have one of these answers in both. Unknown and unapproved N/A answers remain unresolved.'));
+                    ' answered Yes, Partial or No. ' + shared + ' questions have one of these answers in both. Unknown and Not applicable answers stay unresolved.'));
                 section.append(node('p', 'ncsc-warning', 'Not comparable as improvement or decline: ' +
                     (previous.scope !== current.scope ? 'the saved scope declarations differ.'
                         : 'matching saved scope descriptions do not establish the same real-world population.') +
@@ -735,7 +735,7 @@
                 current.domains.forEach((domain, position) => line(domain.title, previous.domains[position], domain));
                 table.append(head, body); section.append(table,
                     node('p', 'dashboard-muted', (trend.v2 ? 'Both saved results use the same set of questions and question weights.'
-                        : 'Both saved results use the accepted profile and included question weights.') + ' Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown answers and unapproved N/A still contribute to the upper bound; no subset is re-scored.'));
+                        : 'Both saved results use the accepted profile and included question weights.') + ' Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown and Not applicable answers still add to the higher figure; no subset is re-scored.'));
             }
             section.append(node('h4', '', 'Submitted assessments'));
             const list = node('ol', 'picture-trend-history');
@@ -814,7 +814,7 @@
             const unknown = questions.filter(question => question.responseOptionId === 'unknown').length;
             const pending = questions.length - unknown;
             section.append(node('p', '', unknown + ' saved Unknown ' + (unknown === 1 ? 'answer' : 'answers') +
-                ' · ' + pending + ' saved Not applicable ' + (pending === 1 ? 'answer' : 'answers') + ' awaiting review.'),
+                ' · ' + pending + ' saved Not applicable ' + (pending === 1 ? 'answer' : 'answers') + '.'),
                 node('p', 'dashboard-muted', 'These are saved answers to confirm, not unanswered questions or a risk score.'));
             if (!questions.length) {
                 section.append(node('p', '', 'No information requests are suggested by these saved answers. This does not verify that controls are effective.'));
@@ -825,7 +825,7 @@
                 const item = node('li');
                 item.append(node('h4', '', question.prompt), node('p', '', question.responseOptionId === 'unknown'
                     ? 'Saved answer: Unknown. Find out what is in place.'
-                    : 'Saved answer: Not applicable, awaiting review. Confirm whether this applies to the assessment scope.'));
+                    : 'Saved answer: Not applicable. Confirm whether this applies to the assessment scope.'));
                 list.append(item);
             });
             section.append(list);
@@ -901,22 +901,104 @@
             copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
             // #441: the same answers, written for a board or insurer.
             if (typeof questionnaire.boardSummary === 'function') {
-                const boardLabel = node('label', '', 'Summary for your board or insurer');
-                const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
-                board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, selectedMetadata()).text;
-                const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
-                const boardCopy = button('Copy board summary', () => questionnaire.copySummary(win, board, status));
-                boardCopy.classList.add('dashboard-button-secondary'); handoff.append(boardLabel, board, boardPrinted, boardCopy);
-                if (win && typeof win.print === 'function') {
-                    const boardPrint = button('Print board summary', () => printOnly(win, boardPrinted));
-                    boardPrint.classList.add('dashboard-button-secondary'); handoff.append(boardPrint);
-                }
+                const token = epoch;
+                const boardExport = boardBlock => {
+                    if (!live(token)) return boardBlock;
+                    const boardLabel = node('label', '', 'Summary for your board or insurer');
+                    const board = node('textarea', 'ncsc-textarea'); board.id = id + '-board-summary'; boardLabel.htmlFor = board.id;
+                    board.readOnly = true; board.rows = 8; board.value = questionnaire.boardSummary(detail, selectedMetadata()).text;
+                    const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
+                    const boardCopy = button('Copy board summary', () => questionnaire.copySummary(win, board, status));
+                    boardCopy.classList.add('dashboard-button-secondary'); boardBlock.append(boardLabel, board, boardPrinted);
+                    const boardPrint = win && typeof win.print === 'function' ? button('Print board summary', () => printOnly(win, boardPrinted)) : null;
+                    boardPlanControls(handoff, boardBlock, board, boardPrinted, boardCopy, boardPrint);
+                    boardBlock.append(boardCopy);
+                    if (boardPrint) { boardPrint.classList.add('dashboard-button-secondary'); boardBlock.append(boardPrint); }
+                    return boardBlock;
+                };
+                if (options.boardExportGate) handoff.append(options.boardExportGate(() => boardExport(node('div', 'picture-board-summary'))));
+                else if (typeof options.readBoardPlan === 'function' && typeof options.openAction === 'function') {
+                    handoff.append(boardExport(node('div', 'picture-board-summary')));
+                } else boardExport(handoff);
             }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());
                 printButton.classList.add('dashboard-button-secondary'); handoff.append(printButton);
             }
             handoff.append(status); return handoff;
+        }
+        function boardPlanControls(handoff, boardBlock, board, boardPrinted, boardCopy, boardPrint) {
+            if (typeof options.readBoardPlan !== 'function' || typeof options.openAction !== 'function') return;
+            const source = improvementSelection(), token = epoch, binding = sourceBinding();
+            if (!source) return;
+            const baseText = board.value, assignments = node('section', 'picture-board-actions');
+            const note = node('p', 'dashboard-muted'); note.setAttribute('role', 'status');
+            boardBlock.append(assignments, note);
+            let attempt = 0;
+            const current = () => currentSubmitted(token, binding, board);
+            const setText = extra => { board.value = baseText + extra; boardPrinted.textContent = board.value; };
+            const lock = busy => { boardCopy.disabled = busy; if (boardPrint) boardPrint.disabled = busy; };
+            lock(true);
+            async function checkAssignments() {
+                if (!current()) return;
+                const read = ++attempt;
+                assignments.replaceChildren(); lock(true);
+                if (!handoff.open) return;
+                setText('');
+                note.textContent = 'Checking saved owners and due dates…';
+                try {
+                    const actions = await options.readBoardPlan(source);
+                    if (read !== attempt || !current()) return;
+                    const list = node('ol'), lines = [];
+                    displayedGaps.forEach((gap, index) => {
+                        const question = selectedMetadata().questions.find(row => row.id === gap.itemId);
+                        const matches = (actions || []).filter(row => row.itemId === gap.itemId);
+                        if (matches.length !== 1) return;
+                        const action = matches[0], kind = gap.responseOptionId === 'unknown' ? 'assessment' : 'implementation';
+                        if (action.controlId !== question.controlId || action.kind !== kind) return;
+                        const title = displayedGaps.some(other => other !== gap && other.title === gap.title) ? question.prompt : gap.title;
+                        const item = node('li'); item.value = index + 1;
+                        item.append(node('strong', '', title));
+                        const saved = (action.owner || 'Unassigned') + ' · ' + (action.dueDate ? 'Due ' + displayDay(action.dueDate) : 'No due date');
+                        item.append(node('p', '', saved));
+                        if (action.owner && action.dueDate) lines.push((index + 1) + '. ' + title + ' — ' + saved);
+                        if (action.editTarget) {
+                            const edit = button('Set owner and due date', async () => {
+                                if (!currentSubmitted(token, binding, edit) || read !== attempt || edit.disabled) return;
+                                edit.disabled = true;
+                                try { if (await options.openAction(action.editTarget, true)) return; }
+                                catch (_) { /* Keep the saved values visible. */ }
+                                if (currentSubmitted(token, binding, edit)) {
+                                    edit.disabled = false; note.textContent = 'Couldn’t open this action. Try again.';
+                                }
+                            });
+                            edit.setAttribute('aria-label', 'Set owner and due date for ' + title);
+                            item.append(edit);
+                        }
+                        list.append(item);
+                    });
+                    if (list.children.length) {
+                        assignments.append(node('h4', '', 'Owners and due dates for your top gaps'), list);
+                        note.textContent = list.querySelector('button') ? 'Save changes in Improvement Plan, then return to Overview to print.' : '';
+                    } else {
+                        note.textContent = 'There are no matching saved actions for these gaps.';
+                        if (!actions && openImprovement) {
+                            const open = button('Open Improvement Plan for this assessment', () => {
+                                if (currentSubmitted(token, binding, open)) openImprovement(source);
+                            });
+                            assignments.append(open);
+                        }
+                    }
+                    setText(lines.length ? '\n' + lines.join('\n') : '');
+                } catch (_) {
+                    if (read !== attempt || !current()) return;
+                    note.textContent = 'Couldn’t check saved owners and due dates. Close and reopen this summary to try again.';
+                    setText('\nSaved owners and due dates could not be checked.');
+                } finally { if (read === attempt && current()) lock(false); }
+            }
+            handoff.addEventListener('toggle', checkAssignments);
+            // A gate may release its content after the disclosure is already open.
+            if (handoff.open) Promise.resolve().then(checkAssignments);
         }
         // Prints one block on its own (one A4 page for the board summary): every
         // sibling along its path to <body> is hidden for print only, then
@@ -966,7 +1048,7 @@
             value.textContent = model.lowerDisplay + ' in place';
             card.replaceChildren(card.querySelector('h3'), value,
                 node('p', 'picture-metric-upper', 'Up to ' + model.upperDisplay + ' if every answer still to confirm turns out to be in place.'),
-                node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. It is not a performance score.'));
+                node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable. It is not a performance score.'));
         }
         function renderResult(result) {
             const profile = selectedMetadata(), v2 = v2Profile(profile);
@@ -983,7 +1065,7 @@
             const implementationMetric = questionnaire.enoughAnswersToEstimate(result)
                 ? metric('Reported implementation', result.attainment, rangeHelp, true)
                 : metric('Reported implementation', 'Not enough answers to estimate yet, confirm your Unknowns first', result.unknown + ' answers still to confirm. Only ' + result.completed + ' of ' + result.total +
-                    ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
+                    ' answers are Yes, Partial or No. Most answers are Unknown or Not applicable, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
                     (typeof options.openCyber === 'function' ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp, true);
             const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             root.append(metrics, informationSection(result));
@@ -1033,7 +1115,7 @@
             const ordered = profile.questions.map(question => indexed.get(question.id));
             const categories = [
                 ['Unresolved answers', ordered.filter(question => ['unknown', 'not_applicable'].includes(question.responseOptionId)),
-                    result.unknown ? result.unknown + ' answers still to confirm: check the position. Not applicable answers count as not yet met until a reviewer confirms them. Reviews are coming soon.'
+                    result.unknown ? result.unknown + ' answers still to confirm: check the position. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.'
                         : 'No unresolved answers in this saved submission. Confirm the scope still matches the organisation.'],
                 // v2 (#399): every answer short of full credit except "I don't know", which is unresolved above.
                 ['Reported implementation gaps', ordered.filter(question => v2 ? v2Shortfall(question.responseOptionId)
@@ -1118,8 +1200,8 @@
             const calculation = node('details', 'picture-calculation');
             calculation.append(node('summary', '', 'How the implementation range is calculated'), v2
                 // v2 (#399): weighted questions and graded credit, held in hundredths.
-                ? node('p', '', 'Each question has a weight of 1, 2 or 3. Your answer earns all, part or none of that weight: Yes, in place and checked earns all of it, Partly in place half, Sometimes but not written down or checked a quarter, and No nothing. The extra login method question earns part of its weight by method. I don\'t know, missing and unapproved Not applicable answers earn nothing in the lower figure and all of the weight in the upper figure.')
-                : node('p', '', 'No Fries gives each question equal weight: Yes = 1, Partial = 0.5 and No = 0. Unknown, missing and unapproved N/A contribute 0 to the lower bound and 1 to the upper bound. Only a trusted approved exclusion can leave the denominator; that approval workflow is not available here.'),
+                ? node('p', '', 'Each question has a weight of 1, 2 or 3. Your answer earns all, part or none of that weight: Yes, in place and checked earns all of it, Partly in place half, Sometimes but not written down or checked a quarter, and No nothing. The extra login method question earns part of its weight by method. I don\'t know, missing and Not applicable answers earn nothing in the lower figure and all of the weight in the upper figure.')
+                : node('p', '', 'No Fries gives each question equal weight: Yes = 1, Partial = 0.5 and No = 0. Unknown, missing and Not applicable answers contribute 0 to the lower figure and 1 to the higher figure. A Not applicable answer stays in the count. There is no review that takes it out.'),
                 node('p', '', 'This saved result: ' + (v2 ? result.lowerCreditUnits / 100 : result.lowerCreditUnits / 2) + '–' + (v2 ? result.upperCreditUnits / 100 : result.upperCreditUnits / 2) + ' reported or possible credits ÷ ' + result.denominatorWeight + ' included question weights × 100 = ' + result.attainment + '. Percentages are rounded to one decimal place.'),
                 node('p', '', 'The overall result weights questions, not the five function percentages. Functions contain different numbers of questions. This is a No Fries implementation measure based on selected NCSC guidance, not an NCSC score or certification. Evidence and confidence do not increase this implementation measure.'),
                 ...(v2 ? [node('p', '', 'This is a No Fries planning score from your answers, not an official NCSC or CS-CMM rating.')] : []));

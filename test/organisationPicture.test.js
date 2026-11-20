@@ -86,7 +86,8 @@ test('connected view preserves golden server range, uncertainty and completion w
     assert.match(dom.root.textContent, /All 14 responses are saved/);
     assert.match(dom.root.textContent, /6.5–8.5 reported or possible credits ÷ 14/);
     assert.match(dom.root.textContent, /overall result weights questions, not the five function percentages/);
-    assert.match(dom.root.textContent, /Reviews are coming soon/);
+    assert.match(dom.root.textContent, /Not applicable answers count as not yet met, and they stay in your result\. There is no review that changes that\./);
+    assert.doesNotMatch(dom.root.textContent, /Reviews are coming soon|until a reviewer confirms|Approval is not available/i);
     assert.equal(dom.root.querySelectorAll('.picture-domain-detail').length, 5);
 });
 
@@ -233,7 +234,8 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     const ids = category => category.querySelectorAll('article').map(node => node.getAttribute('data-question-id'));
     assert.deepEqual(ids(categories[0]), expected(['unknown', 'not_applicable']));
     assert.deepEqual(ids(categories[1]), expected(['partial', 'no']));
-    assert.match(categories[0].textContent, /Not applicable answers count as not yet met until a reviewer confirms them/);
+    assert.match(categories[0].textContent, /Not applicable answers count as not yet met, and they stay in your result/);
+    assert.doesNotMatch(categories[0].textContent, /reviewer|Reviews are coming soon/);
     assert.doesNotMatch(follow.textContent, /Supporting-evidence gaps|Supporting evidence:|upload/);
     assert.match(follow.textContent, /not a combined total or a risk ranking/);
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
@@ -251,7 +253,7 @@ test.each([[false], [true]])('Overview leads with not enough answers when fewer 
     assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
     assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet, confirm your Unknowns first');
     assert.equal(primary.querySelector('.picture-metric-upper'), null);
-    assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or waiting for review, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
+    assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or Not applicable, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
     // A submitted result is read-only: do not ask the customer to confirm answers.
     assert.doesNotMatch(primary.textContent, /Confirm the Unknown answers|resolved/i);
     if (canStart) assert.match(primary.textContent, /Range so far: 7\.1%–100\.0%\. Start a new assessment once more answers are known\./);
@@ -1007,6 +1009,88 @@ test('a Plan this failure says so, keeps Overview working and can be retried', a
     }
 });
 
+function openBoard(dom) {
+    const handoff = dom.root.querySelector('.picture-summary');
+    handoff.open = true;
+    for (const toggle of handoff.events.toggle || []) toggle();
+    return handoff;
+}
+
+test('the board maps saved actions in ranked question order and opens only each matching target', async () => {
+    let actions;
+    const openAction = jest.fn(async () => true), readBoardPlan = jest.fn(async () => actions);
+    const dom = setup({ options: { openAction, readBoardPlan } }); await flush();
+    const rows = dom.root.querySelectorAll('.picture-top-gap'), metadata = dom.options.metadata;
+    actions = rows.map((gap, index) => {
+        const itemId = gap.dataset.gapItem;
+        return { itemId, controlId: metadata.questions.find(question => question.id === itemId).controlId, kind: 'implementation',
+            owner: 'Synthetic owner ' + (index + 1), dueDate: '2026-11-2' + (index + 1),
+            editTarget: index === 2 ? null : { planId: 'saved-plan', planRevision: 3, actionId: 'action-' + index } };
+    }).reverse();
+    expect(readBoardPlan).not.toHaveBeenCalled();
+    const handoff = openBoard(dom); await flush();
+    const board = handoff.querySelectorAll('textarea')[1], base = handoff.querySelector('textarea').value;
+    expect(readBoardPlan).toHaveBeenCalledWith(expectedImprovementSelection(dom.seed.assessments[0]));
+    const controls = handoff.querySelector('.picture-board-actions').querySelectorAll('li');
+    rows.forEach((gap, index) => {
+        expect(controls[index].textContent).toContain(gap.querySelector('h4').textContent);
+        expect(controls[index].textContent).toContain('Synthetic owner ' + (index + 1));
+        expect(board.value).toContain((index + 1) + '. ' + gap.querySelector('h4').textContent + ' — Synthetic owner ' +
+            (index + 1) + ' · Due 2' + (index + 1) + ' Nov 2026');
+        controls[index].querySelector('button')?.click();
+    });
+    expect(openAction.mock.calls).toEqual([[actions[2].editTarget, true], [actions[1].editTarget, true]]);
+    expect(handoff.querySelector('.picture-board-print').textContent).toBe(board.value);
+    expect(base).not.toContain('Synthetic owner');
+    // Duplicated question, wrong control and wrong kind cannot fill a different gap.
+    actions = [{ ...actions[0], kind: 'evidence' }, { ...actions[1], controlId: 'other' }, actions[2], actions[2]];
+    openBoard(dom); await flush();
+    expect(handoff.querySelector('.picture-board-actions').children).toHaveLength(0);
+    expect(board.value).toMatch(/Next steps agreed \(owner and date\): $/);
+    dom.controller.destroy();
+});
+
+test('a closed export gate withholds board text, plan reads and owner controls until it releases the board', async () => {
+    let release;
+    const readBoardPlan = jest.fn(async () => []), openAction = jest.fn();
+    const gate = createDom().document.createElement('div');
+    const dom = setup({ options: { readBoardPlan, openAction, boardExportGate(render) {
+        release = () => gate.replaceChildren(render());
+        return gate;
+    } } }); await flush();
+    const handoff = openBoard(dom); await flush();
+    expect(handoff.querySelector('.picture-board-print')).toBeNull();
+    expect(handoff.querySelector('.picture-board-actions')).toBeNull();
+    expect(readBoardPlan).not.toHaveBeenCalled();
+    release(); await flush();
+    expect(readBoardPlan).toHaveBeenCalledTimes(1);
+    expect(gate.querySelector('.picture-board-print')).not.toBeNull();
+    expect(gate.querySelector('.picture-board-actions')).not.toBeNull();
+    gate.replaceChildren();
+    expect(handoff.querySelector('.picture-board-print')).toBeNull();
+    openBoard(dom); await flush(); expect(readBoardPlan).toHaveBeenCalledTimes(1);
+    dom.controller.destroy();
+});
+
+test('a late plan response cannot add an owner after an assessment switch or a failed read', async () => {
+    const first = submittedAt('recent', '2026-10-11T00:00:00.000Z', mixedResponses()), second = mixed();
+    let finish;
+    const readBoardPlan = jest.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+        .mockRejectedValueOnce(new Error('unavailable'));
+    const dom = setup({ records: [first, second], options: { initialAssessmentId: first.assessmentId, openAction: jest.fn(), readBoardPlan } });
+    await flush(); openBoard(dom);
+    const oldGap = dom.root.querySelector('.picture-top-gap').dataset.gapItem;
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), second.assessmentId); await flush();
+    const handoff = openBoard(dom); await flush();
+    finish([{ itemId: oldGap, kind: 'implementation', owner: 'Previous owner', dueDate: '2026-11-25' }]);
+    await flush();
+    expect(readBoardPlan.mock.calls.map(([record]) => record.assessmentId)).toEqual([first.assessmentId, second.assessmentId]);
+    expect(handoff.querySelector('.picture-board-print').textContent).toContain('Saved owners and due dates could not be checked');
+    expect(handoff.querySelector('.picture-board-print').textContent).not.toContain('Previous owner');
+    expect(handoff.querySelector('.picture-board-actions').querySelector('button')).toBeNull();
+    dom.controller.destroy();
+});
+
 // Change over time: submitted results of the same profile, compared on request.
 function submittedAt(assessmentId, at, responses, scope = 'Synthetic office and cloud scope.') {
     const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
@@ -1694,7 +1778,8 @@ describe('honest saved-assessment comparisons', () => {
         const section = trendSection(dom);
         assert.ok(section.querySelector('.picture-trend-coverage').textContent.includes(coverage));
         assert.ok(section.textContent.includes(shared + ' questions have one of these answers in both.'));
-        assert.match(section.textContent, /Unknown and unapproved N\/A answers remain unresolved/);
+        assert.match(section.textContent, /Unknown and Not applicable answers stay unresolved/);
+        assert.doesNotMatch(section.textContent, /unapproved N\/A|approval workflow/);
         assert.match(section.textContent, /Not comparable as improvement or decline/);
         assert.equal(section.textContent.includes('The set of questions answered Yes, Partial or No also differs.'), differs);
         assert.doesNotMatch(section.textContent, /Up \d|Down \d|No change|Lower-bound change/);
