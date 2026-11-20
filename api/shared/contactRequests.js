@@ -5,6 +5,7 @@
 // customer saw, and the caller's operation id. No message text, no email
 // address and no assessment content is accepted or stored. Migration 0026
 // binds each row to the transaction's tenant, organisation and sign-in subject.
+const { requireRepresentativeDetails } = require('./customerSignup/deferredRepresentativeDetails');
 const registry = require('./protectedAssets/dashboardRegistry');
 const { fields, uuid } = require('./appLifecycle/dashboardRuntimeRecords');
 const { requireTenantRequestContext } = require('./appLifecycle/tenantRequestContext');
@@ -49,11 +50,12 @@ function resolveContactAccess(snapshot, contextInput, at) {
 // transaction has committed, and only for the organisation's first stored row
 // of that NZ day; a retry or repeat that stores nothing never calls it. It receives the organisation display name, topic and time only, and its
 // outcome never changes the customer's result.
-async function writeContactRequest({ database, clock, audit, context: contextInput, onStored }, commandInput) {
+async function writeContactRequest({ database, clock, audit, context: contextInput, onStored, representativeDetailsEnabled = false }, commandInput) {
     const context = requireTenantRequestContext(contextInput), command = normaliseContactRequest(commandInput);
     const { scope, identity } = context;
     let stored = null;
     const result = await database.withTenantTransaction(scope.tenantId, async client => {
+        if (representativeDetailsEnabled) await requireRepresentativeDetails(client, context);
         const existing = async () => (await client.query(`SELECT organisation_id, subject_key, topic, consent_version
             FROM nofries.dashboard_contact_requests WHERE tenant_id = $1 AND request_id = $2`, [scope.tenantId, command.operationId])).rows;
         let found = await existing(), status = null, inserted = false, at = null;
