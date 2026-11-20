@@ -424,5 +424,5 @@
     // The trusted host decides when a read is pending and when to replace this
     // status with mount(). This component starts no request or automatic retry.
     function mountLoading(root) { return mount(root, loadingState); }
-    return Object.freeze({ mount, mountLoading, normaliseOwnerLabel, actionTitle, actionWork, nzDateTime, calendarDay });
+    return Object.freeze({ mount, mountLoading, validate, normaliseOwnerLabel, actionTitle, actionWork, nzDateTime, calendarDay });
 }));
