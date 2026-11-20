@@ -200,8 +200,10 @@ function registerConsultantReaderCompatibility() {
             assert.equal(provenance.writerHead, WRITER_SHA); assert.equal(sha(bytes), provenance.fixtureSha256);
             assert.equal(sha(fs.readFileSync(path.join(fixtureRoot, 'prospective-organisation-count.sql'))),
                 provenance.sourceSha256['database/migrations/0012_consultant_organisations.sql']);
-            assert.equal(JSON.stringify(fs.readdirSync(path.resolve(__dirname, '../../database/migrations'))
-                .filter(name => /^\d+.*\.sql$/.test(name)).sort()), JSON.stringify([
+            assert.deepEqual(new Set(fs.readdirSync(path.resolve(__dirname, '../../database/migrations'))
+                .filter(name => /^\d+.*\.sql$/.test(name))), new Set([
+                // Independently held issued-report storage.
+                '0031_iso_report_artifacts.sql',
                 '0001_core_service_desk.sql', '0002_lifecycle.sql', '0003_dashboard.sql',
                 '0004_ncsc_assessments.sql', '0005_dashboard_runtime.sql', '0006_dashboard_host_events.sql',
                 '0007_evidence_metadata.sql', '0008_signup_acceptance_receipts.sql',
