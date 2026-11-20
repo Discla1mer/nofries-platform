@@ -851,6 +851,7 @@
             ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
+            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, readPaidFramework: cyber.readPaidFramework } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}),
@@ -1548,6 +1549,32 @@
                     return presentation.openImprovement(sourceAssessment);
                 } } : {}) });
         };
+        if (value.paidFrameworks) {
+            mountCyber.paidFrameworks = value.paidFrameworks;
+            mountCyber.readPaidFramework = async function (ref, after) {
+                const id = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
+                if (!current(cycle) || cycle.authorityPending || !value.paidFrameworks.some(row =>
+                    window.NoFriesDashboardRegistry.sameFramework(row, ref)) || after !== null && !id.test(after)) throw invalid();
+                const path = '/api/dashboard/frameworks/' + encodeURIComponent(ref.profileId) + '/' + encodeURIComponent(ref.version) +
+                    '/assessments' + (after === null ? '' : '?afterAssessmentId=' + encodeURIComponent(after));
+                const result = await request(cycle, path, undefined, snapshot.generation);
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                const page = requireSuccess(result);
+                if (!fields(page, ['schemaVersion', 'publication', 'assessments', 'nextAfterAssessmentId']) || page.schemaVersion !== 1 ||
+                    page.publication?.status !== 'published' || page.publication.profile?.id !== ref.profileId ||
+                    page.publication.profile.version !== ref.version || !Array.isArray(page.assessments) || page.assessments.length > 25) throw invalid();
+                let previous = after;
+                for (const row of page.assessments) {
+                    if (!fields(row, ['assessmentId', 'status', 'revision', 'updatedAt']) || typeof row.assessmentId !== 'string' ||
+                        !id.test(row.assessmentId) || previous !== null && row.assessmentId <= previous ||
+                        !['created', 'in-progress', 'submitted', 'reviewed', 'archived'].includes(row.status) ||
+                        !Number.isSafeInteger(row.revision) || row.revision < 0 || !canonicalDate(row.updatedAt)) throw invalid();
+                    previous = row.assessmentId;
+                }
+                if (page.nextAfterAssessmentId !== null && (!page.assessments.length || page.nextAfterAssessmentId !== previous)) throw invalid();
+                return { assessments: page.assessments, nextAfterAssessmentId: page.nextAfterAssessmentId };
+            };
+        }
         mountCyber.readBaseline = async function () {
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             // The list is ordered by assessment id and a page can be shorter than
@@ -1905,12 +1932,24 @@
             'admissionGranted', 'providerAccessGranted', 'metadata', 'presentationMode'];
         const extra = value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'profileMetadata');
         if (extra && (!Array.isArray(value.profileMetadata) || !value.profileMetadata.length || value.profileMetadata.length > 4)) throw invalid();
-        if (!fields(value, extra ? keys.concat(['profileMetadata']) : keys) ||
+        if (extra) keys.push('profileMetadata');
+        const paid = value && Object.prototype.hasOwnProperty.call(value, 'paidFrameworks');
+        if (paid) {
+            keys.push('paidFrameworks');
+            const registry = window.NoFriesDashboardRegistry, rows = value.paidFrameworks;
+            if (!Array.isArray(rows) || rows.length > registry.paidFrameworks.length ||
+                rows.some((row, i) => !fields(row, ['moduleId', 'profileId', 'version']) ||
+                    !registry.paidFrameworks.some(ref => registry.sameFramework(ref, row)) ||
+                    rows.slice(0, i).some(other => registry.sameFramework(other, row)))) throw invalid();
+        }
+        if (!fields(value, keys) ||
             value.schemaVersion !== 1 || value.module?.key !== 'cyber_security' || value.module?.state !== 'ready' ||
             value.admissionGranted !== false || value.providerAccessGranted !== false ||
             !['editable', 'read-only'].includes(value.presentationMode)) throw invalid();
-        return JSON.stringify(extra ? [value.metadata, value.presentationMode, value.context, value.module, value.profileMetadata]
-            : [value.metadata, value.presentationMode, value.context, value.module]);
+        const contract = [value.metadata, value.presentationMode, value.context, value.module];
+        if (extra) contract.push(value.profileMetadata);
+        if (paid) contract.push({ paidFrameworks: value.paidFrameworks });
+        return JSON.stringify(contract);
     }
     function leave(cycle, commit) {
         if (!current(cycle) || !confirmClientDiscard(cycle)) return Promise.resolve(false);
