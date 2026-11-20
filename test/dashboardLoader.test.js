@@ -1723,7 +1723,8 @@ describe('ready Cyber composition', () => {
             for (const [index, ref] of registry.paidFrameworks.entries()) {
                 const card = root.querySelectorAll('.dashboard-panel').find(panel => panel.querySelector('h2')?.textContent === ref.label);
                 const enquiries = card.querySelectorAll('a').filter(link => link.href === '/contact.html');
-                expect(enquiries.map(link => link.textContent)).toEqual(included.includes(index) ? [] : ['Ask No Fries about ' + ref.label]);
+                expect(enquiries.map(link => link.textContent)).toEqual(included.includes(index) ? [] : ['Ask No Fries to set this up']);
+                for (const price of ['NZ$99 + GST', 'NZ$990 + GST']) expect(card.textContent.includes(price)).toBe(!included.includes(index));
                 const links = card.querySelectorAll('a').filter(link => link.href.startsWith('/fictional-'));
                 expect(links).toHaveLength(included.includes(index) ? 0 : 1);
                 if (links.length) expect([links[0].href, links[0].textContent]).toEqual(previews[ref.profileId]);
@@ -1735,7 +1736,8 @@ describe('ready Cyber composition', () => {
         const h = harness({ cyber: true, hash: '#cyber-security' });
         await ready(h, 'editable', {});
         expect(h.elements.dashboardApp.textContent).not.toContain('Choose an assessment');
-        expect(h.elements.dashboardApp.textContent).not.toContain('Ask No Fries about NIST');
+        expect(h.elements.dashboardApp.textContent).not.toContain('Ask No Fries to set this up');
+        expect(h.elements.dashboardApp.textContent).not.toMatch(/NZ\$(?:99|990|1,250)/);
         expect(h.elements.dashboardApp.querySelectorAll('a').some(link => link.href?.startsWith('/fictional-'))).toBe(false);
     });
     test('a consultant without a selected organisation cannot open an enquiry with client context', async () => {
@@ -1750,7 +1752,7 @@ describe('ready Cyber composition', () => {
         const h = await pick([]), root = h.elements.dashboardApp;
         expect(root.textContent.match(/Locked/g)).toHaveLength(2);
         expect(root.textContent).toContain('This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.');
-        const link = root.querySelectorAll('a').find(a => a.textContent === 'Ask No Fries about NIST CSF 2.0');
+        const link = root.querySelectorAll('a').find(a => a.textContent === 'Ask No Fries to set this up');
         expect(link.href).toBe('/contact.html'); expect(h.requests).toHaveLength(5);
         pickButton(h, 'Open NCSC check').click(); await flush();
         expect(h.requests[5].url).toMatch(/^\/api\/dashboard\/ncsc\/assessments/);
