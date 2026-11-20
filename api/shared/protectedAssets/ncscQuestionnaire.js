@@ -312,6 +312,122 @@
         if (boardPrint) { boardPrint.classList.add('dashboard-button-secondary'); boardBlock.append(boardPrint); }
         return boardBlock;
     }
+    // "Your top three gaps": display-only over a result the validator already
+    // accepted. No re-scoring and no model call. Fixed rule:
+    //   1. A gap is a question saved as "no" (not in place) or "partial".
+    //      Unknown and not-applicable answers are unresolved, not gaps.
+    //   2. Higher existing profile weight first (the accepted profile weights
+    //      every question 1, so this does not reorder today).
+    //   3. Fixed priority tier (GAP_TIER): the controls that stop the most
+    //      common attacks on small businesses (account takeover, ransomware,
+    //      invoice fraud) first. Display order only; scores are unchanged.
+    //   4. "no" before "partial", matching the saved credit (0 before 1).
+    //   5. Then accepted profile question order.
+    const GAP_LIMIT = 3;
+    // Tier 1: MFA, patching, data recovery, sensitive-request (payment change) checks.
+    // Tier 2: least privilege, password manager, awareness, secure configuration.
+    // Anything else, including future questions, is tier 3.
+    const GAP_TIER = Object.freeze({ MF: 1, PA: 1, DR: 1, SV: 1, LP: 2, PM: 2, SA: 2, SC: 2 });
+    const gapTier = itemId => {
+        const code = /^NF-NCSC-(?:MCSS|CC)-([A-Z]{2})-\d\d-Q\d+$/.exec(itemId);
+        return code && Object.hasOwn(GAP_TIER, code[1]) ? GAP_TIER[code[1]] : 3;
+    };
+    const GAP_RANK = Object.freeze({ no: 0, partial: 1 });
+    const V2_GAP_LIMIT = 5;
+    const V2_GAP_FACTOR = Object.freeze({ no: 100, unknown: 85, ad_hoc: 75, partly: 50, mfa_none: 100,
+        mfa_text_code: 70, mfa_mixed: 70, mfa_authenticator: 45, mfa_push: 30, mfa_number_matching: 15 });
+    const V2_CRITICAL_CONTROL = /^NF-NCSC-CC-(?:PM|SV|NS)-01-Q\d+$/;
+    // A v2 answer that falls short of full credit, other than "I don't know".
+    const v2Shortfall = optionId => Object.hasOwn(V2_GAP_FACTOR, optionId) && optionId !== 'unknown';
+    const attention = row => (row.weight || 0) * V2_GAP_FACTOR[row.responseOptionId];
+    const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
+    const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
+    const firstText = (...values) => values.find(value => typeof value === 'string' && value.trim()) || null;
+    function rankedGaps(result, metadata) {
+        if (!result || !Array.isArray(result.domains) || !metadata || !Array.isArray(metadata.questions)) return [];
+        const rows = new Map();
+        result.domains.forEach(domain => (domain.controls || []).forEach(control =>
+            (control.questions || []).forEach(row => rows.set(row.itemId, row))));
+        const controls = new Map((metadata.controls || []).map(control => [control.id, control]));
+        const entries = metadata.questions.map((question, position) => ({ question, position, row: rows.get(question.id) }));
+        const ranked = isV2(metadata)
+            ? entries.filter(entry => entry.row && Object.hasOwn(V2_GAP_FACTOR, entry.row.responseOptionId))
+                .sort((a, b) => attention(b.row) - attention(a.row) || (b.row.weight || 0) - (a.row.weight || 0) ||
+                    Number(V2_CRITICAL_CONTROL.test(b.question.id)) - Number(V2_CRITICAL_CONTROL.test(a.question.id)) ||
+                    a.position - b.position)
+            : entries.filter(entry => entry.row && Object.hasOwn(GAP_RANK, entry.row.responseOptionId))
+                .sort((a, b) => (b.row.weight || 0) - (a.row.weight || 0) ||
+                    gapTier(a.question.id) - gapTier(b.question.id) ||
+                    GAP_RANK[a.row.responseOptionId] - GAP_RANK[b.row.responseOptionId] || a.position - b.position);
+        return ranked.map(({ question, row }) => {
+            const control = controls.get(question.controlId), guidance = question.guidance || {};
+            const plain = question.smallBusiness || {};
+            const title = firstText(control && control.title, question.prompt);
+            return { itemId: question.id, title: title.split(' — ').pop(), answer: row.answer,
+                responseOptionId: row.responseOptionId,
+                firstCheck: firstText((plain.checks || [])[0], (guidance.startingActions || [])[0]) || GAP_NEXT,
+                why: firstText(guidance.summary) || GAP_WHY,
+                next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
+        });
+    }
+    // The accepted profile shows three gaps; v2 shows up to five.
+    function topGaps(result, metadata, limit) {
+        return rankedGaps(result, metadata).slice(0, limit === undefined ? isV2(metadata) ? V2_GAP_LIMIT : GAP_LIMIT : limit);
+    }
+    // Scoring v2 only: "I don't know" answers that miss the top five. Empty for
+    // the accepted profile, where unknown answers are not gaps.
+    function confirmNext(result, metadata) {
+        if (!isV2(metadata)) return [];
+        return rankedGaps(result, metadata).slice(V2_GAP_LIMIT).filter(gap => gap.responseOptionId === 'unknown');
+    }
+    function rankedGapSection(node, result, metadata, headingId, controls, gaps = topGaps(result, metadata)) {
+        const v2 = isV2(metadata);
+        const unconfirmed = v2 ? confirmNext(result, metadata) : [];
+        const section = node('section', 'picture-top-gaps');
+        const heading = node('h3', '', v2 ? gaps.length === V2_GAP_LIMIT ? 'Your top five gaps' : 'Your top gaps'
+            : gaps.length === GAP_LIMIT ? 'Your top three gaps' : 'Your top gaps');
+        heading.id = headingId; heading.tabIndex = -1; section.setAttribute('aria-labelledby', heading.id); section.append(heading);
+        if (!gaps.length && v2) {
+            section.append(node('p', '', 'None of your answers show a gap to fix first.'));
+            return section;
+        }
+        if (!gaps.length) {
+            section.append(node('p', '', 'You did not report any controls as not in place or partly in place.'));
+            if (result.unknown > 0) section.append(node('p', 'dashboard-muted', result.unknown + (result.unknown === 1 ? ' answer is' : ' answers are') +
+                ' still unknown or to confirm. Confirm ' + (result.unknown === 1 ? 'it' : 'them') + ' to check for gaps.'));
+            return section;
+        }
+        section.append(node('p', 'dashboard-muted', v2
+            ? 'Start with the first gap below. Gaps are ordered by how much each question counts and how far your answer is from fully in place. "I don\'t know" counts as a gap. This is a No Fries planning list from your answers, not an official NCSC priority.'
+            : 'Start with the first gap below. Account sign-in checks, updates, backups and payment checks come first. The order is a guide based on your answers.'));
+        const list = node('ol', 'picture-top-gaps-list');
+        gaps.forEach(gap => {
+            const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
+            const why = node('p'), next = node('p');
+            why.append(node('strong', '', 'Why it matters: '), node('span', '', gap.why));
+            next.append(node('strong', '', 'What to do next: '), node('span', '', gap.next));
+            const ownerStart = /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(gap.itemId);
+            item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer),
+                node('p', 'picture-gap-owner', ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.'), why, next);
+            if (controls) item.append(...controls(gap));
+            list.append(item);
+        });
+        section.append(list);
+        if (v2 && unconfirmed.length) {
+            const confirm = node('section', 'picture-confirm-next');
+            const confirmHeading = node('h4', '', 'Confirm these next');
+            confirmHeading.id = headingId + '-confirm-next'; confirm.setAttribute('aria-labelledby', confirmHeading.id);
+            const confirmList = node('ul', 'picture-confirm-next-list');
+            unconfirmed.forEach(gap => {
+                const item = node('li', '', gap.title); item.dataset.gapItem = gap.itemId; confirmList.append(item);
+            });
+            confirm.append(confirmHeading, node('p', 'dashboard-muted', 'You answered "I don\'t know" to ' +
+                (unconfirmed.length === 1 ? 'this question' : 'these questions') + '. Find out what is in place, because ' +
+                (unconfirmed.length === 1 ? 'it' : 'each one') + ' counts as a gap until you do.'), confirmList);
+            section.append(confirm);
+        }
+        return section;
+    }
     function managedSecurityOffer(node, gated, win, stillCurrent) {
         const help = node('div', 'picture-next-steps-help'); help.hidden = true;
         const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
@@ -1618,12 +1734,14 @@
                     node('p', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route.'));
                 panel.append(section, managedSecurityOffer(node, gated, win, () => live()));
             }
-            if (!isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier')) {
-                renderQuestionnaireAnswers(panel); renderNextSteps(panel);
-            } else {
-                renderNextSteps(panel);
-                if (!isV2(metadata)) renderQuestionnaireAnswers(panel);
+            const questionnaireFirst = !isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier');
+            if (questionnaireFirst) renderQuestionnaireAnswers(panel);
+            if (results) {
+                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps'));
+                if (campaign !== 'scam') panel.append(managedSecurityOffer(node, gated, win, () => live()));
             }
+            renderNextSteps(panel);
+            if (!questionnaireFirst && !isV2(metadata)) renderQuestionnaireAnswers(panel);
             if (!results) {
                 panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'),
                     button('Retry loading results', async function () {
@@ -2431,5 +2549,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));

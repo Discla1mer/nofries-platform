@@ -3884,12 +3884,12 @@ describe('insurer and customer questionnaire answers', () => {
 describe('campaign Results next steps', () => {
     const renderer = require('../api/shared/protectedAssets/ncscQuestionnaire');
     const cases = [
-        ['insurance', ['ncsc-questionnaire-answers', 'ncsc-next-steps']],
-        ['supplier', ['ncsc-questionnaire-answers', 'ncsc-next-steps']],
-        ['board', ['ncsc-board-next-step picture-summary', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['', ['ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['unrecognised', ['ncsc-next-steps', 'ncsc-questionnaire-answers']]
+        ['insurance', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps']],
+        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps']],
+        ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        ['', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        ['unrecognised', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']]
     ];
     const campaignDom = campaign => {
         const dom = interactiveDom();
@@ -3917,12 +3917,10 @@ describe('campaign Results next steps', () => {
                 expect(dom.window.navigator.clipboard.writeText).toHaveBeenCalledWith(renderer.boardSummary(projectNcscDetail(before[0]), metadata()).text);
                 control(ui, 'Print board summary').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
             }
-            if (campaign === 'scam') {
-                await until(() => !panel.querySelector('.picture-next-steps-help').hidden);
-                expect(panel.querySelector('.picture-next-steps-help').querySelector('a').href).toBe('/contact.html?service=managed_security_90');
-                expect(dom.window.fetch).toHaveBeenCalledWith('/api/enquiry', expect.objectContaining({ method: 'GET' }));
-                expect(dom.window.fetch).toHaveBeenCalledTimes(1);
-            } else expect(dom.window.fetch).not.toHaveBeenCalled();
+            await until(() => !panel.querySelector('.picture-next-steps-help').hidden);
+            expect(panel.querySelector('.picture-next-steps-help').querySelector('a').href).toBe('/contact.html?service=managed_security_90');
+            expect(dom.window.fetch).toHaveBeenCalledWith('/api/enquiry', expect.objectContaining({ method: 'GET' }));
+            expect(dom.window.fetch).toHaveBeenCalledTimes(1);
         } finally { ui.controller.destroy(); }
     });
     test.each(['yes', 'partial', 'unknown', 'not_applicable', 'no'])('scam guidance makes a gap claim only for a supported saved No (%s)', async option => {
