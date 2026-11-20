@@ -1558,10 +1558,11 @@
                 const prefix = '/api/dashboard/frameworks/' + encodeURIComponent(ref.profileId) + '/' + encodeURIComponent(ref.version);
                 const cleanups = new Set();
                 async function renderer(name) {
-                    if (!live() || !Object.hasOwn(registry.rendererIntegrity, name)) throw invalid();
+                    const asset = registry.rendererAsset(ref, name);
+                    if (!live() || !asset) throw invalid();
                     // A fresh salt keeps separate loads from sharing a selection identifier in access logs.
                     const nonce = secureId().replace(/-/g, '');
-                    const sri = registry.rendererIntegrity[name], message = registry.rendererSelection(snapshot.generation, ref, name, nonce);
+                    const sri = asset.integrity, message = registry.rendererSelection(snapshot.generation, ref, name, nonce);
                     const hash = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
                     const fingerprint = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
                     if (!live()) throw invalid();
