@@ -106,6 +106,29 @@ async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, swi
         const verified = await request(app).get(admitted).set('Cookie', cookie).expect(200);
         assert.equal('sha256-' + createHash('sha256').update(verified.text).digest('base64'), rendererAsset(ref, 'questionnaire').integrity);
 
+        const overview = async () => {
+            const reads = [];
+            const observe = req => { if (new URL(req.url()).pathname.startsWith('/api/dashboard/frameworks/')) reads.push(req); };
+            page.on('request', observe);
+            await page.goto('about:blank');
+            await page.goto(origin + '/dashboard#overview');
+            await page.getByRole('heading', { name: ref.label + ' progress', exact: true }).waitFor();
+            page.off('request', observe);
+            assert.ok(reads.length >= 2 && reads.every(req => req.method() === 'GET' &&
+                new URL(req.url()).pathname.startsWith(collection.slice(0, -'assessments'.length))));
+        };
+        const card = page.locator('section.dashboard-panel').filter({ has: page.getByRole('heading', { name: ref.label + ' progress', exact: true }) });
+        await overview();
+        assert.match(await card.innerText(), new RegExp('1 of ' + publication.questions.length + ' answered'));
+        assert.equal(await card.getByRole('list').count(), 0);
+        assert.equal(await page.getByRole('heading', { name: other.label + ' progress', exact: true }).count(), 0);
+        if (directory) await card.screenshot({ path: directory + '/' + ref.profileId + '-overview-draft.png' });
+        const resume = card.getByRole('link', { name: 'Resume ' + ref.label, exact: true });
+        await resume.focus();
+        await page.keyboard.press('Enter');
+        await button('Save progress').waitFor();
+        assert.match(await page.locator('.ncsc-navigation-summary').innerText(), /1 of [0-9]+ answers saved/);
+
         // Answer every remaining question through the mounted controls, including the section transitions.
         await page.evaluate(() => {
             for (let count = 0; count < 200; count++) {
@@ -148,11 +171,25 @@ async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, swi
         assert.equal(await page.getByRole('button', { name: /^(Copy|Print) / }).count(), 0);
         assert.equal(await page.locator('script[src*="/frameworks/"]').count(), 0);
 
+        const expectedGroups = await page.locator('.paid-readiness-groups li').evaluateAll(items =>
+            items.map(item => item.querySelector('strong').textContent + ' — ' + item.querySelector('span').textContent));
+        await overview();
+        assert.match(await card.innerText(), new RegExp(publication.questions.length + ' of ' + publication.questions.length + ' answered'));
+        assert.deepEqual(await card.getByRole('listitem').allTextContents(), expectedGroups);
+        assert.equal(await card.getByRole('link', { name: 'Resume ' + ref.label }).count(), 0);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && innerWidth === 375), true);
+        if (directory) await card.screenshot({ path: directory + '/' + ref.profileId + '-overview.png' });
+        const resultLink = card.getByRole('link', { name: 'View results for ' + ref.label, exact: true });
+        await resultLink.focus(); await page.keyboard.press('Enter'); await board.waitFor();
+        await overview();
+
         // Change to a different tenant with the same organisation ID and the same profile grant.
         await switchOrganisation();
         await request(app).get(admitted).set('Cookie', cookie).expect(403);
         await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-        await board.waitFor({ state: 'detached' });
+        await card.getByRole('list').waitFor({ state: 'detached' });
+        await card.getByText('No saved assessments yet.', { exact: true }).waitFor();
+        assert.equal(await card.getByRole('link').count(), 0);
         await open();
         await page.getByText('No saved assessments yet.', { exact: true }).waitFor();
         await returnToOrganisation();

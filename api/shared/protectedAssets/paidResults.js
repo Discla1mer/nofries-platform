@@ -256,5 +256,5 @@
         }
         return handle;
     }
-    return Object.freeze({ mount });
+    return Object.freeze({ mount, groups: (record, publication) => project(record, publication).groups });
 }));
