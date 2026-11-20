@@ -3505,6 +3505,57 @@ describe('final submission review step', () => {
         } finally { ui.controller.destroy(); }
     });
 
+    test.each([11999, 12001])('a submit acknowledgement delayed %i ms confirms after one user action', async delay => {
+        const h = await backend({ allowance: { used: 0, limit: 1 } });
+        await h.execute(createCommand()); await h.execute(saveCommand());
+        let attempts = 0;
+        const fetch = async (url, init) => {
+            const response = await h.fetch(url, init);
+            if (url.endsWith('/submit') && ++attempts === 1) await new Promise(resolve => setTimeout(resolve, delay));
+            return response;
+        };
+        const ui = await resumeUi(h, { client: clientModule.createClient({ metadata: metadata(), fetch }) });
+        jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+        try {
+            submitUi(ui);
+            await jest.advanceTimersByTimeAsync(11998);
+            expect(h.records.filter(row => row.action === 'submit')).toHaveLength(1);
+            expect(ui.root.querySelector('.ncsc-sealed')).toBeFalsy();
+            expect(ui.root.textContent).not.toContain('This operation is unconfirmed');
+            await jest.advanceTimersByTimeAsync(2000);
+            expect(ui.root.querySelector('.ncsc-sealed')).toBeTruthy();
+            const requests = h.calls.filter(call => call.url.endsWith('/submit'));
+            expect(requests).toHaveLength(delay < 12000 ? 1 : 2);
+            expect(new Set(requests.map(call => call.init.body)).size).toBe(1);
+            expect(h.records.filter(row => row.action === 'submit')).toHaveLength(1);
+        } finally { ui.controller.destroy(); jest.useRealTimers(); }
+    });
+
+    test('unavailable submit receipts keep the exact operation available for manual retry', async () => {
+        const h = await backend();
+        await h.execute(createCommand()); await h.execute(saveCommand());
+        let drop = true;
+        const fetch = async (url, init) => {
+            const result = await h.fetch(url, init);
+            if (drop && url.endsWith('/submit')) throw new Error('synthetic response lost');
+            return result;
+        };
+        const ui = await resumeUi(h, { client: clientModule.createClient({ metadata: metadata(), fetch }) });
+        try {
+            submitUi(ui);
+            await until(() => control(ui, 'Try the save again'));
+            expect(ui.root.textContent).toContain('This operation is unconfirmed');
+            expect(ui.root.querySelector('.ncsc-sealed')).toBeFalsy();
+            drop = false;
+            control(ui, 'Try the save again').click();
+            await until(() => ui.root.querySelector('.ncsc-sealed'));
+            const requests = h.calls.filter(call => call.url.endsWith('/submit'));
+            expect(requests).toHaveLength(3);
+            expect(new Set(requests.map(call => call.init.body)).size).toBe(1);
+            expect(h.records.filter(row => row.action === 'submit')).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
     test('ready review names the explanation and answers still to confirm only when there are some', async () => {
         const h = await backend(); await h.execute(createCommand());
         const rows = allResponses('yes'); rows[0] = { itemId: rows[0].itemId, optionId: 'unknown', rationale: null };
@@ -3743,13 +3794,36 @@ describe('insurer and customer questionnaire answers', () => {
         const report = questionnaireAnswers(assessment, display);
         expect(report.items.map(item => item.answer)).toEqual(expected);
         expect(new Set(report.items.map(item => item.id)).size).toBe(9);
-        for (const item of report.items) {
+        const blocks = report.text.split('\n\n').slice(2, -1);
+        expect(blocks).toHaveLength(expected.length);
+        report.items.forEach((item, index) => {
             expect(item.question).toMatch(/\?$/); expect(item.action).toMatch(/^To answer Yes: /);
-            expect(report.text).toContain(item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis + '\n' + item.action);
-        }
+            const lines = [item.question, 'Suggested answer: ' + item.answer, item.basis, item.action];
+            if (item.answer === 'Yes') expect(item.evidence).toBe('');
+            else {
+                expect(item.evidence).toMatch(/^Evidence: [^\n]+\.$/);
+                lines.push(item.evidence);
+            }
+            expect(blocks[index]).toBe(lines.join('\n'));
+        });
         expect(report.text.endsWith(report.footer)).toBe(true);
         expect(report.footer).toBe('These are self-assessed answers to check before submitting, not a guarantee an insurer or customer accepts them.');
         expect(assessment).toEqual(before); expect(display).toEqual(metadata());
+    });
+    test('each unanswered item points to evidence for its own control', () => {
+        const { items } = questionnaireAnswers(sample('unknown'), metadata());
+        const byId = Object.fromEntries(items.map(item => [item.id, item.evidence]));
+        expect(byId).toEqual({
+            mfa: expect.stringContaining('MFA coverage report'),
+            'backup-storage': expect.stringContaining('offline or locked'),
+            'restore-tests': expect.stringContaining('restore test record'),
+            'patch-speed': expect.stringContaining('installation dates'),
+            endpoint: expect.stringContaining('device list'),
+            training: expect.stringContaining('completion records'),
+            'incident-plan': expect.stringContaining('current response plan'),
+            'admin-rights': expect.stringContaining('access review'),
+            'payment-checks': expect.stringContaining('payment-change record')
+        });
     });
     test('missing, ambiguous, draft and unsupported-profile inputs do not imply assurance', () => {
         const assessment = sample('yes'); assessment.responses = [];
