@@ -99,6 +99,7 @@
                 item.key === 'improvement_plan' && typeof options.mountImprovement === 'function';
             return implemented && stateFor(item.key) === 'ready';
         });
+        const showFrameworkComparison = Array.isArray(options.paidFrameworks) && options.paidFrameworks.length === 0;
         const secondary = available.filter(function (item) { return !primary.includes(item); });
         const pictureAvailable = typeof options.mountPicture === 'function' && model.modules.some(function (item) {
             return item.key === 'cyber_security' && item.state === 'ready';
@@ -375,8 +376,10 @@
             }
             if (stateFor(current.key) === 'disabled') {
                 main.append(panel('This module is temporarily unavailable', 'Your subscription includes this module, but it has not been enabled. Other included modules remain available.'));
-            } else if (current.key === 'overview') renderOverview();
-            else if (current.key === 'services') renderServices();
+            } else if (current.key === 'overview') {
+                renderOverview();
+                if (showFrameworkComparison) appendFrameworkComparison(main);
+            } else if (current.key === 'services') renderServices();
             else if (current.key === 'cyber_security' && stateFor(current.key) === 'ready' && typeof options.mountCyber === 'function') renderCyber(initialAssessmentId);
             else if (current.key === 'improvement_plan' && stateFor(current.key) === 'ready' && typeof options.mountImprovement === 'function') renderImprovement(sourceAssessment);
             else renderModule(planBaselineToken);
@@ -527,6 +530,19 @@
             if (child) child.requestLeave(showPicker);
             else showPicker();
         }
+        function appendFrameworkComparison(root) {
+            const line = element('p', '', 'NIST CSF 2.0 shows gaps across six functions, and the ISO 27001 readiness self-assessment shows which controls apply. ');
+            const link = element('a', '', 'Compare assessment options');
+            link.href = '/dashboard#cyber-security';
+            link.addEventListener('click', function (event) {
+                if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button > 0) return;
+                event.preventDefault();
+                if (current.key === 'cyber_security') backToFrameworkPicker();
+                else navigate('cyber-security', true);
+            });
+            line.append(link);
+            root.append(line);
+        }
         function renderFrameworkPicker(root) {
             const heading = element('h2', '', 'Choose an assessment');
             const cards = element('div', 'dashboard-service-cards');
@@ -585,6 +601,7 @@
         function mountFreeCyber(childRoot, initialAssessmentId) {
             try {
                 const presentation = { generation: generation };
+                if (showFrameworkComparison) presentation.appendFrameworkComparison = appendFrameworkComparison;
                 if (initialAssessmentId === undefined && validCyberLocation(cyberLocation)) {
                     presentation.initialAssessmentId = cyberLocation.assessmentId;
                     presentation.initialQuestionIndex = cyberLocation.questionIndex;

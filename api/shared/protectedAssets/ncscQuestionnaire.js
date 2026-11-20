@@ -1515,6 +1515,7 @@
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
             content.append(panel);
+            if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
             renderNextSteps(panel);
             // The insurer answers map the accepted profile's questions only.
             if (!isV2(metadata)) renderQuestionnaireAnswers(panel);
