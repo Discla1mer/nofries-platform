@@ -161,6 +161,51 @@
         Object.keys(value).forEach(key => { identifier(key); text(value[key], maximum || 200); });
         return value;
     }
+    function editorContext(input, displayed) {
+        const value = fields(copy(input, 1048576), ['schemaVersion', 'scope', 'planRevision', 'asOf', 'canWrite', 'ownerChoices', 'actions']);
+        if (value.schemaVersion !== 1 || typeof value.canWrite !== 'boolean' || !Array.isArray(value.ownerChoices) || value.ownerChoices.length > 1 ||
+            !Array.isArray(value.actions) || value.actions.length !== displayed.actions.length) invalid();
+        fields(value.scope, ['tenantId', 'organisationId', 'planId']);
+        if (value.scope.tenantId !== displayed.scope.tenantId || value.scope.organisationId !== displayed.scope.organisationId) invalid();
+        if (value.scope.planId !== displayed.scope.planId || value.planRevision !== displayed.planRevision) invalid();
+        number(value.planRevision, 1024); timestamp(value.asOf); if (value.asOf < displayed.asOf) invalid();
+        value.ownerChoices.forEach(choice => {
+            fields(choice, ['subjectKey', 'label']);
+            if (typeof choice.subjectKey !== 'string' || !SUBJECT.test(choice.subjectKey) || choice.label !== 'Assign to me') invalid();
+        });
+        if (!value.canWrite && value.ownerChoices.length) invalid();
+        const remaining = new Set(displayed.actions.map(action => action.actionId));
+        value.actions.forEach(action => {
+            fields(action, ['actionId', 'commands']); identifier(action.actionId);
+            if (!remaining.delete(action.actionId) || !Array.isArray(action.commands) || action.commands.length > ACTION_COMMANDS.length ||
+                new Set(action.commands).size !== action.commands.length || action.commands.some(type => !ACTION_COMMANDS.includes(type)) ||
+                (!value.canWrite || value.planRevision === 1024) && action.commands.length) invalid();
+        });
+        if (remaining.size) invalid(); return value;
+    }
+
+    // Only the saved plan created by the assessment handoff can supply board commitments.
+    // Re-read current editor options before offering a link to the named assignment form.
+    async function readBoardPlan(request, organisationId, selection) {
+        const selected = source(selection);
+        const planId = 'overview-plan-' + selected.revisionSha256;
+        const result = await request('/api/dashboard/improvement/view?planId=' + planId);
+        if (result.status === 404) return null;
+        if (result.status !== 200) invalid();
+        const plan = view.validate(result.value);
+        if (plan.scope.organisationId !== organisationId || plan.scope.planId !== planId ||
+            plan.source.assessmentId !== selected.assessmentId || plan.source.assessmentRevision !== 'rev-' + selected.revision ||
+            plan.source.evaluationOutputSha256 !== selected.outputSha256) invalid();
+        const options = await request('/api/dashboard/improvement/editor?planId=' + planId);
+        if (options.status !== 200) invalid();
+        const editor = editorContext(options.value, plan);
+        const assignable = new Set(editor.actions.filter(row => row.commands.includes('assign')).map(row => row.actionId));
+        return plan.actions.map(action => ({
+            itemId: action.itemId, controlId: action.controlId, kind: action.rationale.kind,
+            owner: action.ownerLabel || (action.ownerSubjectKey ? 'Assigned in Improvement Plan' : null), dueDate: action.dueDate,
+            editTarget: assignable.has(action.actionId) ? { planId, planRevision: plan.planRevision, actionId: action.actionId } : null
+        }));
+    }
     function mount(root, options) {
         if (!root || !root.ownerDocument || typeof root.replaceChildren !== 'function' || !options ||
             typeof options.request !== 'function' || typeof options.isCurrent !== 'function' || typeof options.newId !== 'function' ||
@@ -168,6 +213,7 @@
             options.onAccepted !== undefined && typeof options.onAccepted !== 'function') invalid();
         const organisationId = identifier(options.organisationId), initialSource = source(options.sourceAssessment);
         let target = actionTarget(options.initialTarget);
+        let ownerFormTarget = options.openOwnerForm === true ? target : null;
         const request = options.request, isCurrent = options.isCurrent, newId = options.newId, doc = root.ownerDocument;
         // Reported only after a response has passed this client's validation.
         // A display hint for the host ("Information as at"); it grants nothing.
@@ -475,27 +521,6 @@
         function response(result) {
             fields(result, ['status', 'value']); number(result.status, 599); if (result.status < 100) invalid(); return result;
         }
-        function editorContext(input, displayed) {
-            const value = fields(copy(input, 1048576), ['schemaVersion', 'scope', 'planRevision', 'asOf', 'canWrite', 'ownerChoices', 'actions']);
-            if (value.schemaVersion !== 1 || typeof value.canWrite !== 'boolean' || !Array.isArray(value.ownerChoices) || value.ownerChoices.length > 1 ||
-                !Array.isArray(value.actions) || value.actions.length !== displayed.actions.length) invalid();
-            fields(value.scope, ['tenantId', 'organisationId', 'planId']); checkedScope({ tenantId: value.scope.tenantId, organisationId: value.scope.organisationId });
-            if (value.scope.planId !== displayed.scope.planId || value.planRevision !== displayed.planRevision) invalid();
-            number(value.planRevision, 1024); timestamp(value.asOf); if (value.asOf < displayed.asOf) invalid();
-            value.ownerChoices.forEach(choice => {
-                fields(choice, ['subjectKey', 'label']);
-                if (typeof choice.subjectKey !== 'string' || !SUBJECT.test(choice.subjectKey) || choice.label !== 'Assign to me') invalid();
-            });
-            if (!value.canWrite && value.ownerChoices.length) invalid();
-            const remaining = new Set(displayed.actions.map(action => action.actionId));
-            value.actions.forEach(action => {
-                fields(action, ['actionId', 'commands']); identifier(action.actionId);
-                if (!remaining.delete(action.actionId) || !Array.isArray(action.commands) || action.commands.length > ACTION_COMMANDS.length ||
-                    new Set(action.commands).size !== action.commands.length || action.commands.some(type => !ACTION_COMMANDS.includes(type)) ||
-                    (!value.canWrite || value.planRevision === 1024) && action.commands.length) invalid();
-            });
-            if (remaining.size) invalid(); return value;
-        }
         async function readPage(after, more) {
             if (!active() || busy || pending || draft) return false;
             const token = ++serial; busy = true; message = 'Loading saved improvement plans…';
@@ -637,7 +662,10 @@
                     busy = false;
                     if (targetLoaded) focusAfterRead = null;
                     render();
-                    if (targetLoaded && active() && rendered) rendered.focusAction(exactTarget.actionId);
+                    if (targetLoaded && active() && rendered) {
+                        const openNamed = ownerFormTarget === exactTarget; ownerFormTarget = null;
+                        if (!openNamed || !openDraft('assignNamed')) rendered.focusAction(exactTarget.actionId);
+                    }
                 }
             }
         }
@@ -745,5 +773,5 @@
         readPage(null, false).then(resolveReady, function () { resolveReady(false); });
         return controller;
     }
-    return Object.freeze({ mount });
+    return Object.freeze({ mount, readBoardPlan });
 }));
