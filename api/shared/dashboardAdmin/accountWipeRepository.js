@@ -29,7 +29,7 @@ const RESET_TABLES = Object.freeze([
 // admission decisions, onboarding proofs before decisions and cases); the
 // deferrable cycles are complete by COMMIT.
 const DELETE_TENANT_TABLES = Object.freeze([...RESET_TABLES,
-    'email_outbox',
+    'dashboard_paid_framework_access', 'email_outbox',
     'dashboard_runtime_receipts', 'dashboard_runtime_audit', 'dashboard_identity_bindings',
     'dashboard_onboarding_proofs', 'dashboard_onboarding_decisions', 'dashboard_onboarding_cases',
     'dashboard_admission_decisions', 'dashboard_admission_authorities', 'dashboard_operation_receipts',

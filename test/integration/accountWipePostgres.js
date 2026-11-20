@@ -163,6 +163,16 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
             const submitted = ncsc.get(2);
             await insertStart(db, first.scope, c.actor, submitted.envelope.scopePopulation.body, selectedSource(submitted));
         });
+        // A staff revocation for one exact framework (0034), written by the operator capability.
+        await tx(db, async () => {
+            await db.query("SELECT set_config('nofries.tenant_id',$1,true),set_config('nofries.organisation_id',$2,true),set_config('nofries.subject_key',$3,true)",
+                [first.scope.tenantId, first.scope.organisationId, c.actor]);
+            await db.query('SET LOCAL ROLE nofries_framework_operator');
+            await db.query(`INSERT INTO nofries.dashboard_paid_framework_access
+                (tenant_id,organisation_id,product_grant_id,module_id,profile_id,version,revision,granted,operation_id,operator_subject,reason_sha256)
+                VALUES ($1,$2,'synthetic-product','cyber_security','nf-nist-csf-2-0-core','2026-09-08.1',1,false,$3,$4,$5)`,
+            [first.scope.tenantId, first.scope.organisationId, crypto.randomUUID(), c.actor, '0'.repeat(64)]);
+        });
         return { c, scope: first.scope, source, root, assigned, ncsc, tenants: [first.scope.tenantId, second.scope.tenantId] };
     }
     // Row counts per table for one account, read by the CI owner (superuser).
@@ -338,7 +348,7 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         expect(before.signup_acceptance_receipts).toBeGreaterThan(0); expect(before.dashboard_starter_accounts).toBe(1);
         expect(before.email_outbox).toBe(1); expect(before.dashboard_contact_requests).toBe(1); expect(before.dashboard_framework_revisions).toBe(2);
         expect(before.dashboard_improvement_revisions).toBe(2); expect(before.dashboard_improvement_heads).toBe(1);
-        expect(before.dashboard_ncsc_assessment_revisions).toBe(3);
+        expect(before.dashboard_ncsc_assessment_revisions).toBe(3); expect(before.dashboard_paid_framework_access).toBe(1);
         const controlBinding = await boundStart(db, sentinel);
         expect(controlBinding).toHaveLength(1);
         const result = await createAccountWipeRepository(pool).delete(wipeTarget(doomed));
@@ -354,7 +364,7 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         const sentinel = await account(db, profiles.nist, true), sentinelBefore = await footprint(db, sentinel), preserved = await planRows(db, sentinel);
         expect(before.dashboard_contact_requests).toBe(1); expect(before.dashboard_framework_revisions).toBe(2);
         expect(before.dashboard_improvement_revisions).toBe(2); expect(before.dashboard_improvement_heads).toBe(1);
-        expect(before.dashboard_ncsc_assessment_revisions).toBe(3);
+        expect(before.dashboard_ncsc_assessment_revisions).toBe(3); expect(before.dashboard_paid_framework_access).toBe(1);
         const controlBinding = await boundStart(db, sentinel);
         expect(controlBinding).toHaveLength(1);
         await createAccountWipeRepository(pool).reset(wipeTarget(a));
