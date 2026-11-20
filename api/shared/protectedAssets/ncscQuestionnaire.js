@@ -235,25 +235,34 @@
             metadata.profileRef.catalogueSha256 === '32c3f8d154ffe2be9b1270f8fa1234427a05cdea96b231588cce0b147e7d5375';
         const definitions = [
             ['mfa', 'Is multi-factor authentication (MFA) required for business email and remote access?', 'NF-NCSC-MCSS-MF-01-Q1', false,
-                'Require MFA for business email and every remote-access route, and check for exceptions.'],
+                'Require MFA for business email and every remote-access route, and check for exceptions.',
+                'Ask IT for an MFA coverage report that includes exceptions for email and remote access.'],
             ['backup-storage', 'Do you keep an offline or immutable backup copy (one that cannot be changed or deleted)?', null, false,
-                'Keep a backup copy offline or locked against changes and deletion, and confirm how it is protected.'],
+                'Keep a backup copy offline or locked against changes and deletion, and confirm how it is protected.',
+                'Ask the backup owner for the settings showing whether a copy is offline or locked against changes and deletion.'],
             ['restore-tests', 'Have you tested restoring important systems and files from backup?', 'NF-NCSC-MCSS-DR-01-Q1', false,
-                'Restore samples of important systems and files, and record the results and recovery time.'],
+                'Restore samples of important systems and files, and record the results and recovery time.',
+                'Check the last restore test record for what was recovered, the result and the time taken.'],
             ['patch-speed', 'Are urgent security updates installed within the deadline your insurer or customer asks for?', null, false,
-                'Confirm the required deadline, install urgent fixes within it, and keep dated installation records.'],
+                'Confirm the required deadline, install urgent fixes within it, and keep dated installation records.',
+                'Get the installation dates from your patch report and compare them with the requested deadline.'],
             ['endpoint', 'Are work devices covered by endpoint protection and endpoint detection and response (EDR)?', null, false,
-                'Confirm protection and EDR coverage for work devices, with someone responsible for responding to alerts.'],
+                'Confirm protection and EDR coverage for work devices, with someone responsible for responding to alerts.',
+                'Ask IT for the device list showing which work devices have endpoint protection and EDR.'],
             ['training', 'Do staff receive ongoing guidance on spotting and reporting phishing and scams?', 'NF-NCSC-MCSS-SA-01-Q1', false,
-                'Give staff practical phishing guidance when they start and refresh it, keeping completion records.'],
+                'Give staff practical phishing guidance when they start and refresh it, keeping completion records.',
+                'Ask the training organiser for completion records covering phishing induction and refreshers.'],
             ['incident-plan', 'Do you have an incident response plan with named roles, contacts, management support and lessons from practice or incidents?', 'NF-NCSC-MCSS-RP-01-Q1', true,
-                'Write down the response plan, agree roles and contacts, practise it and record improvements.'],
+                'Write down the response plan, agree roles and contacts, practise it and record improvements.',
+                'Ask the incident lead for the current response plan and notes from the last exercise or incident.'],
             ['admin-rights', 'Is access limited to job needs, with separate admin accounts and checks when people join, change roles or leave?', 'NF-NCSC-MCSS-LP-01-Q1', true,
-                'Limit access to job needs, separate admin accounts, and regularly review access and staff changes.'],
+                'Limit access to job needs, separate admin accounts, and regularly review access and staff changes.',
+                'Ask whoever manages accounts for the latest access review showing who has admin rights and why.'],
             ['payment-checks', 'Are payment and bank-detail changes checked through a trusted route separate from the original request?', 'NF-NCSC-CC-SV-01-Q1', false,
-                'Check payment and bank-detail changes using a known phone number or another trusted, separate route.']
+                'Check payment and bank-detail changes using a known phone number or another trusted, separate route.',
+                'Ask accounts for a payment-change record showing the call to a known number or another independent check.']
         ];
-        const items = definitions.map(function ([id, question, source, allowPartial, action]) {
+        const items = definitions.map(function ([id, question, source, allowPartial, action, evidence]) {
             const responses = supported && source && metadata.questions.some(item => item.id === source)
                 ? assessment.responses.filter(item => item.itemId === source) : [];
             const option = responses.length === 1 ? responses[0].optionId : null;
@@ -263,10 +272,12 @@
                 : option === 'not_applicable' ? 'Marked Not applicable in the assessment; this is not confirmation of the control.'
                 : answer === 'Not answered' ? 'The saved answers do not confirm this detail.'
                 : 'Based on your saved ' + (option === 'partial' ? 'Partial' : answer) + ' answer; check the exact coverage before using it.';
-            return { id: id, question: question, answer: answer, basis: basis, action: 'To answer Yes: ' + action };
+            return { id: id, question: question, answer: answer, basis: basis, action: 'To answer Yes: ' + action,
+                evidence: answer === 'Yes' ? '' : 'Evidence: ' + evidence };
         });
         const scope = 'Scope: ' + assessment.scopePopulation.description;
-        const lines = [title, scope, ...items.map(item => item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis + '\n' + item.action), footer];
+        const lines = [title, scope, ...items.map(item => item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis + '\n' + item.action +
+            (item.evidence ? '\n' + item.evidence : '')), footer];
         return { title: title, scope: scope, items: items, footer: footer, text: lines.join('\n\n') };
     }
     // Copies with the clipboard when the browser allows it; otherwise selects
@@ -1639,7 +1650,9 @@
             report.items.forEach(function (item) {
                 const row = node('li'); row.setAttribute('data-answer-id', item.id);
                 row.append(node('h4', '', item.question), node('strong', '', 'Suggested answer: ' + item.answer),
-                    node('p', 'dashboard-muted', item.basis), node('p', '', item.action)); list.append(row);
+                    node('p', 'dashboard-muted', item.basis), node('p', '', item.action));
+                if (item.evidence) row.append(node('p', '', item.evidence));
+                list.append(row);
             });
             section.append(list);
             const controls = node('div', 'ncsc-questionnaire-answer-controls');
