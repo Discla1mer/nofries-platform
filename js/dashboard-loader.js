@@ -1553,7 +1553,8 @@
             mountCyber.paidFrameworks = value.paidFrameworks;
             mountCyber.paidHost = function (ref, selected) {
                 const registry = window.NoFriesDashboardRegistry;
-                const live = () => current(cycle) && !cycle.authorityPending && selected() &&
+                const live = () => current(cycle) && !cycle.authorityPending &&
+                    Date.parse(cycle.session?.expiresAt) > Date.now() && selected() &&
                     value.paidFrameworks.some(row => registry.sameFramework(row, ref));
                 const prefix = '/api/dashboard/frameworks/' + encodeURIComponent(ref.profileId) + '/' + encodeURIComponent(ref.version);
                 const cleanups = new Set();
