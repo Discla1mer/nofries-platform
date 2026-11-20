@@ -59,12 +59,14 @@ module.exports = ({ withLoopbackBrowser, resourceSetup, NCSC_SUBJECT, nextId, id
                 await page.clock.setFixedTime(new Date(f.state.now));
                 await page.goto(origin + '/dashboard#cyber-security');
                 const dialog = page.getByRole('dialog', { name: 'Ask No Fries' });
-                const link = ref => page.getByRole('link', { name: 'Ask No Fries about ' + ref.label, exact: true });
+                const link = ref => page.locator('.dashboard-panel').filter({ has: page.getByRole('heading', { name: ref.label, exact: true }) }).getByRole('link', { name: 'Ask No Fries to set this up', exact: true });
                 const message = dialog.locator('[name=message]'), organisation = dialog.locator('[name=organisation]');
                 async function open(ref, name) {
+                    const plan = ref === iso ? 'annual' : 'monthly';
+                    await page.getByLabel('Invoice plan for ' + ref.label).selectOption(plan);
                     await link(ref).focus(); await page.keyboard.press('Enter');
                     await message.waitFor();
-                    expect(await message.inputValue()).toBe('I would like to ask about ' + ref.label + '.');
+                    expect(await message.inputValue()).toBe('I would like to ask about ' + ref.label + ' on the ' + plan + ' plan.');
                     expect(await organisation.inputValue()).toBe(accountType === 'consultant' ? name : '');
                     expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth && window.innerWidth === 375)).toBe(true);
                     const emailLink = dialog.locator('#contact-unavailable a');
