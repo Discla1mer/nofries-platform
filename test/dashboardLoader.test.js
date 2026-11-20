@@ -1712,6 +1712,44 @@ describe('ready Cyber composition', () => {
     }
     const pickButton = (h, text) => h.elements.dashboardApp.querySelectorAll('button').find(button => button.textContent === text);
     const previewHref = '/fictional-iso-example.html';
+    test.each([
+        ['flag off', undefined, 0], ['free only', [], 1], ['NIST', [0], 0], ['ISO', [1], 0], ['both', [0, 1], 0]
+    ])('free comparison on Overview and submitted NCSC results: %s', async (_, included, count) => {
+        const h = harness({ cyber: true, hash: '#overview' });
+        h.window.NoFriesDashboardRegistry = registry;
+        const projection = included ? { paidFrameworks: included.map(i => tuple(registry.paidFrameworks[i])) } : {};
+        await ready(h, 'editable', projection);
+        const root = h.elements.dashboardApp;
+        const comparison = () => root.querySelectorAll('a').filter(link => link.textContent === 'Compare assessment options');
+        expect(comparison()).toHaveLength(count);
+        if (count) {
+            expect(comparison()[0].href).toBe('/dashboard#cyber-security');
+            comparison()[0].click();
+        } else {
+            root.querySelectorAll('a').find(link => link.href === '#cyber-security').click();
+        }
+        await flush();
+        expect(comparison()).toHaveLength(0);
+        if (included) pickButton(h, 'Open NCSC check').click();
+        await flush();
+        const stored = await records();
+        stored.execute(createCommand('result', 'create-result', 'Fictional workshop'));
+        stored.execute(saveCommand('result', 0, 'save-result', allResponses('yes')));
+        stored.execute(submitCommand('result', 1, 'submit-result'));
+        await ncscReply(h, 5, 200, stored.list());
+        expect(comparison()).toHaveLength(0);
+        root.querySelector('.ncsc-assessment-list').querySelector('button').click();
+        await flush(); await ncscReply(h, 6, 200, stored.read('result'));
+        expect(root.querySelector('.ncsc-results')).toBeTruthy();
+        expect(comparison()).toHaveLength(count);
+        if (count) {
+            comparison()[0].click(); await flush();
+            expect(root.textContent).toContain('Choose an assessment');
+            expect(root.querySelectorAll('a').some(link => link.href === previewHref)).toBe(true);
+            expect(comparison()).toHaveLength(0);
+        }
+        expect(h.requests.every(row => row.init.method === 'GET' && !row.url.includes('/frameworks/'))).toBe(true);
+    });
     test.each([{ included: [] }, { included: [0] }, { included: [1] }, { included: [0, 1] }])(
         'fictional example links appear only on locked cards (included indices $included)', async ({ included }) => {
             const h = await pick(included.map(index => tuple(registry.paidFrameworks[index])));

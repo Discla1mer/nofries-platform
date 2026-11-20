@@ -1542,6 +1542,7 @@
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
                 onLocation: presentation && presentation.onLocation, onFunnelStep: funnelStep,
+                appendFrameworkComparison: presentation && presentation.appendFrameworkComparison,
                 // Overview's first-use action opens the new-assessment step directly.
                 startNew: !!(presentation && presentation.startNew === true),
                 ...(presentation && typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
