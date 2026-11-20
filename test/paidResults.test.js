@@ -40,7 +40,7 @@ test.each([true, false])('sealed grouped results and explicit exports, ISO=%s', 
         expect(view.copied.mock.calls[1][0]).toContain(reason);
         expect(view.root.querySelector('em')).toBeNull();
     } else {
-        expect(view.copied.mock.calls[0][0]).toContain('GV · Govern — 32.3%–71.0% (31 outcomes · 6 marked not applicable, to confirm)');
+        expect(view.copied.mock.calls[0][0]).toContain('GV · Govern — 32.3%–71.0% (Set direction and accountability · 31 outcomes · 6 unknown · 6 marked not applicable)');
         expect(view.copied.mock.calls[0][0]).toContain('Republished courtesy');
     }
 });
@@ -71,7 +71,8 @@ test('the shared authenticated application serves the free questionnaire without
     vm.runInNewContext(app.body, browser);
     expect(typeof browser.NoFriesNcscQuestionnaire.mount).toBe('function');
     expect(browser.NoFriesPaidResults).toBeUndefined();
-    expect(app.body).not.toContain('Unknown answers and claims of non-applicability stay in the range');
+    expect(app.body).not.toContain('A range starts at the reported readiness');
+    expect(app.body).not.toContain('what evidence the board will see');
     expect(app.body).not.toContain('No applicable controls');
 });
 test.each([true, false])('read-only results show the selected submission without a report export or plan write, ISO=%s', iso => {
@@ -102,4 +103,61 @@ test('a pending grant cannot export after a generation change or a replacement s
     expect(view.printed).not.toHaveBeenCalled();
     expect(view.root.textContent).toContain('NIST CSF 2.0');
     expect(view.root.textContent).not.toContain(reason);
+});
+
+function nistAnswers(overrides, defaultAnswer = 'yes') {
+    const data = fixture(false);
+    for (const answer of data.record.assessment.responses) {
+        answer.optionId = overrides[answer.itemId] || defaultAnswer;
+        answer.rationale = answer.optionId === 'not_applicable' ? { text: reason } : null;
+    }
+    return render(data);
+}
+
+test('the NIST board counts all reported gaps and uncertain answers before selecting the top three', () => {
+    const view = render(fixture(false));
+    expect(view.root.textContent).toContain('The team reported gaps in 42 of 106 outcomes. 42 answers need confirmation.');
+    expect(view.root.textContent).toContain('Start with business needs (Govern, GV.OC-04). Agree who owns the next step');
+    expect(view.root.querySelector('ul').children.map(row => row.children[0].textContent))
+        .toEqual(['GV · Govern', 'ID · Identify', 'PR · Protect', 'DE · Detect', 'RS · Respond', 'RC · Recover']);
+    expect(view.root.querySelector('ol').children).toHaveLength(3);
+});
+
+test('a known NIST gap leads the board decision before uncertain answers in earlier functions', () => {
+    const view = nistAnswers({ 'GV.OC-01-Q1': 'unknown', 'ID.AM-01-Q1': 'not_applicable', 'RC.RP-01-Q1': 'partial' });
+    expect(view.root.textContent).toContain('1 of 106 outcomes. 2 answers need confirmation.');
+    expect(view.root.textContent).toContain('Start with restoring services (Recover, RC.RP-01). Agree who owns the next step');
+    const gaps = view.root.querySelector('ol').children;
+    expect(gaps[0].textContent).toContain('Ask the recovery lead');
+    expect(gaps[1].textContent).toContain('Find the person who can answer');
+    expect(gaps[2].textContent).toContain('Check the recorded reason against the scope');
+    expect(view.buttons()).toHaveLength(0);
+});
+
+test('unconfirmed NIST outcomes prompt a check and all-Yes outcomes prompt an evidence review', () => {
+    const uncertain = nistAnswers({ 'PR.AA-01-Q1': 'not_applicable' });
+    expect(uncertain.root.textContent).toContain('0 of 106 outcomes. 1 answer needs confirmation.');
+    expect(uncertain.root.textContent).toContain('Ask management to check the answer about identity and access (Protect, PR.AA-01)');
+    const complete = nistAnswers({});
+    expect(complete.root.textContent).toContain('The team marked all 106 outcomes Yes.');
+    expect(complete.root.textContent).toContain('ask a service owner to show recent evidence');
+    expect(complete.root.querySelector('ol').children).toHaveLength(0);
+    expect(render(fixture(true)).root.textContent).not.toContain('of 106 outcomes');
+});
+
+test('each published NIST category has a board topic and a suggested next step for a reported gap', () => {
+    const { publication } = fixture(false);
+    const categories = new Set();
+    for (const question of publication.questions) {
+        const category = question.controlId.split('-')[0];
+        if (categories.has(category)) continue;
+        categories.add(category);
+        const view = nistAnswers({ [question.id]: 'no' });
+        const gap = view.root.querySelector('ol').children[0];
+        expect(view.root.textContent).toContain('Start with ');
+        expect(view.root.textContent).toContain(', ' + question.controlId + ').');
+        expect(gap.children[1].textContent).not.toBe(question.guidance.startingActions[0]);
+        expect(gap.children[1].textContent.length).toBeGreaterThan(0);
+    }
+    expect(categories.size).toBe(22);
 });
