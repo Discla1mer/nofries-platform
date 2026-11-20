@@ -12,6 +12,19 @@ A request is accepted only when all of these hold:
 
 There is no per-customer approval record, locator or publication step.
 
+### Accepted risk: the admin can act on any customer
+
+By design, the sole allowlisted staff admin can look up, suspend, restore, reset and delete any customer account. No second person approves, and there is no per-customer grant. This is an owner decision (19 Nov 2026; security PR #474 was closed as by design). Every approval is self-issued by the acting admin, and its records say so: `approvalAuthority: "self_issued_sole_admin"` (suspend/restore approval and action records; the reset/delete `approval.json`). The field is a label only and grants nothing. Records written before it was added do not have it.
+
+The protections that remain:
+
+- Only the workforce staff sign-in with the subject in both `NOFRIES_ALLOWED_SUBJECTS` and `NOFRIES_ADMIN_SUBJECTS`, a current native operator session, same-origin requests and the request budget.
+- Each action needs its own approval: the admin types the exact customer email (and `RESET` or `DELETE` for those actions).
+- An approval lasts 15 minutes, is bound to the admin, their browser session, the exact customer and the one action, and is used once.
+- Suspend/restore approvals are also bound to the membership revision that was read. Reset/delete approvals are bound to the account id, store and sign-in subject seen at approval.
+- Every approval, attempt, outcome and refusal is written create-only to the audit container. If the approval or attempt record cannot be written, nothing runs.
+- A staff admin cannot suspend their own membership. Restore needs a matching recorded staff suspension.
+
 ## Turn it on
 
 Set these App Service settings (exact values):
@@ -62,6 +75,8 @@ Set `NOFRIES_STAFF_CONSOLE=false` to turn the whole console off. Set `NOFRIES_DA
 
 To stop a customer's access, suspend the membership. Accounts do not expire, and if two dashboard product grants already stored for an organisation share a start date, suspending one of them does not stop access.
 
+**Contact requests.** With `NOFRIES_OPERATOR_CONTACT_REQUESTS_ENABLED=true` (exact value; anything else leaves it off), the console shows a read-only Contact requests panel: dashboard contact requests from the last 90 days, newest first, capped at 200, with the NZ date and time, organisation name, topic and a contact email. The email is the requesting customer's own account email when that sign-in belongs to a listed account; otherwise it is the email of the account that owns the organisation, and the page says so. "Load contact requests" sends the body `{"contactRequests":true}` to the same lookup route, with the same staff checks and budget, and writes one lookup record with category `dashboard_admin_contact_request_list` and no target. Organisations come from the signup list (newest 200 accounts), so requests in older accounts are not shown; when the cap is reached or an account or its client list could not be read in full, the page says the list may be incomplete. Rows are read with the existing runtime database role, one organisation's tenant setting at a time, in a read-only transaction: no migration, grant or new role. Nothing can be edited or deleted here. If the setting is on but unusable, the app logs `[dashboard-admin-contact-requests] dashboard_admin_unavailable` and only this panel stays off.
+
 ## If a restore is refused after a suspension that did happen
 
 A suspension is committed in the database before its outcome record is written. If that final audit write fails (storage outage at that moment), the page reports that the outcome could not be confirmed, the membership **is** suspended, and the operation's `terminal.json` says `"outcome": "uncertain"` instead of `succeeded`.
@@ -78,7 +93,7 @@ Signup listing (`NOFRIES_DASHBOARD_ADMIN_ENABLED`, `NOFRIES_DASHBOARD_ADMIN_BIND
 
 Next to suspend, the console offers two more account actions, one account at a time:
 
-- **Reset** clears the account's assessments, evidence and improvement plans in every organisation it owns (clients included). Sign-in, email and organisations are kept, so the customer can sign in and start again. Only the database changes: the Blob records hold no assessment, evidence or plan data.
+- **Reset** clears the account's assessments, evidence, improvement plans and contact requests in every organisation it owns (clients included). Sign-in, email and organisations are kept, so the customer can sign in and start again. Only the database changes: the Blob records hold no assessment, evidence or plan data.
 - **Delete** removes the account completely, in this order: the database rows, then the Blob records (account, organisation, client, sign-in authority and email-proof records, with their stored versions), then the customer's Microsoft Entra External ID user. That user is also permanently removed from deleted items, so it cannot be restored.
 
 ### How staff use it

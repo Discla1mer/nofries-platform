@@ -237,7 +237,7 @@ for (const route of ['#ai-governance', '#cyber-security/foreign-record', '#evide
     test(`unpermitted or object route ${route} returns safely without echoing details`, () => {
         const dom = mount(view({ role: 'viewer' }), { initialRoute: route });
         assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
-        assert.match(dom.root.textContent, /We could not find that view/);
+        assert.match(dom.root.textContent, /We couldn't find that page/);
         assert.ok(!dom.root.textContent.includes('foreign-record'));
     });
 }
@@ -289,6 +289,16 @@ test('each service card links to the contact form with only its own service key'
         assert.ok(match && keys.includes(match[1]));
     });
     assert.match(dom.root.textContent, /Nothing is sent until you send the form/);
+});
+
+test('the Services tab leads with the 90-day managed security offer as a plain contact link', () => {
+    const dom = mount(view(), { initialRoute: 'services' });
+    const offer = dom.root.querySelector('.dashboard-offer-panel');
+    assert.ok(offer);
+    assert.match(offer.textContent, /NZ\$1,250 \+ GST for 90 days/);
+    const link = Array.from(offer.querySelectorAll('a')).find(item => item.textContent === 'Ask about 90-day managed security');
+    assert.equal(link.href, '/contact.html?service=managed_security_90');
+    assert.equal(offer.querySelectorAll('form').length, 0);
 });
 
 test('disabled services explain policy availability rather than implying provider setup is sufficient', () => {
@@ -788,12 +798,12 @@ test('selecting the current fallback module still replaces an invalid fragment w
     const dom = historyDom();
     dom.window.location.hash = '#unknown'; await tick();
     const controller = shell.mount(dom.root, view());
-    assert.match(dom.root.textContent, /We could not find that view/);
+    assert.match(dom.root.textContent, /We couldn't find that page/);
     await controller.navigate('overview');
     assert.equal(dom.window.location.hash, '#overview');
     assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
     assert.equal(dom.document.activeElement, dom.root.querySelector('h1'));
-    assert.doesNotMatch(dom.root.textContent, /We could not find that view/);
+    assert.doesNotMatch(dom.root.textContent, /We couldn't find that page/);
 });
 
 test('the current Overview link returns from attention detail without adding a history entry', async () => {

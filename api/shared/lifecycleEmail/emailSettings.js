@@ -7,7 +7,12 @@
 const crypto = require('node:crypto');
 const { apiSecurityHeaders } = require('../securityHeaders');
 
-const PATH = '/api/account/email';
+// The page people open and bookmark. The old API path redirects here.
+// Static Web Apps rewrites this page to REWRITE_PATH; the handler does not branch on that.
+const PAGE_PATH = '/account/email';
+const LEGACY_PATH = '/api/account/email';
+const REWRITE_PATH = '/api/account/email-page';
+const PATH = PAGE_PATH;
 const MAX_BODY_BYTES = 256;
 const MAX_IN_FLIGHT = 4;
 // Each signed-in subject may make SUBJECT_WRITE_MAX changes per window, so one
@@ -48,6 +53,7 @@ ${body}
 `;
     return { status, isRaw: true, body: html, headers: apiSecurityHeaders({ 'Content-Type': 'text/html; charset=utf-8',
         // No script; styles are the site's own; the forms post back here only.
+        'Referrer-Policy': 'same-origin',
         'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; style-src 'self'; img-src 'self'" }) };
 }
 
@@ -85,14 +91,14 @@ ${items}
 </ul>`);
 }
 
-// Native forms send "Origin: null" under the site's no-referrer policy, so,
-// like the sign-out form, a POST must carry Sec-Fetch-Site: same-origin, and any
-// real Origin must be the configured public origin.
+// Browsers without Fetch Metadata must supply the configured public Origin.
+// The form page permits same-origin referrers so its native POST retains Origin.
 function sameOrigin(req, env) {
     const headers = (req && req.headers) || {};
     const origin = String(headers.origin || '').trim();
-    if (String(headers['sec-fetch-site'] || '').trim().toLowerCase() !== 'same-origin') return false;
-    if (!origin || origin === 'null') return true;
+    const site = headers['sec-fetch-site'];
+    if (site !== undefined && String(site).trim().toLowerCase() !== 'same-origin') return false;
+    if (!origin || origin === 'null') return site !== undefined;
     try {
         const expected = new URL(String(env.NOFRIES_PUBLIC_URL || '')).origin;
         return new URL(origin).origin === origin && origin === expected;
@@ -186,4 +192,15 @@ async function handleEmailSettingsRequest(req, { env = process.env, readSubject 
     }
 }
 
-module.exports = { PATH, MAX_BODY_BYTES, MAX_IN_FLIGHT, SUBJECT_WRITE_MAX, SUBJECT_WINDOW_MS, MAX_SUBJECT_BUCKETS, TYPES, handleEmailSettingsRequest, resetEmailSettingsForTests };
+// Only the saved confirmation is carried across. Nothing else in the query is reflected.
+function legacyEmailSettingsLocation(query) {
+    const keys = query && typeof query === 'object' && !Array.isArray(query) ? Object.keys(query) : [];
+    return PATH + (keys.length === 1 && keys[0] === 'saved' && query.saved === '1' ? '?saved=1' : '');
+}
+
+function legacyEmailSettingsRedirect(query) {
+    return { status: 302, isRaw: true, body: '', headers: apiSecurityHeaders({
+        Location: legacyEmailSettingsLocation(query), 'Cache-Control': 'private, no-store, max-age=0' }) };
+}
+
+module.exports = { PATH, PAGE_PATH, LEGACY_PATH, REWRITE_PATH, MAX_BODY_BYTES, MAX_IN_FLIGHT, SUBJECT_WRITE_MAX, SUBJECT_WINDOW_MS, MAX_SUBJECT_BUCKETS, TYPES, handleEmailSettingsRequest, legacyEmailSettingsLocation, legacyEmailSettingsRedirect, resetEmailSettingsForTests };

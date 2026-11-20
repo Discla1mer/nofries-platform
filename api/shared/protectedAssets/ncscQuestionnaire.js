@@ -29,7 +29,17 @@
         partial: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
         no: 'None of this is in place yet, including when work is only planned.',
         unknown: 'You do not have enough information to confirm what is in place.',
-        not_applicable: 'You believe this does not apply to your scope. Explain why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'
+        not_applicable: 'You believe this does not apply to your scope. Explain why. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.',
+        // Scoring v2 (#399): answers used only by profile 2026-11-18.1.
+        partly: 'Some parts are in place, or only part of your scope is covered. Plans alone do not count.',
+        ad_hoc: 'It happens sometimes, but it is not written down, owned or checked.',
+        mfa_key: 'Important accounts sign in with a passkey or a physical security key.',
+        mfa_number_matching: 'You approve each sign-in in an app by typing the number shown on screen.',
+        mfa_push: 'You approve each sign-in by tapping a notification in an app.',
+        mfa_authenticator: 'You type a code from an authenticator app.',
+        mfa_text_code: 'You get a code by text message or email.',
+        mfa_mixed: 'At least one important account still uses a text or email code, even if others use something stronger.',
+        mfa_none: 'Important accounts do not ask for an extra login step yet.'
     };
     // Display aids only. The accepted catalogue still owns each question and
     // answer meaning; these examples neither choose an answer nor prove it.
@@ -97,6 +107,40 @@
         'Places and online services: the café, email and the online booking system.', 'Not included: staff personal phones.'];
     const SCOPE_DESCRIBED_BY = 'ncsc-scope-note ncsc-scope-help';
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+    // Scoring v2 (#399): the 16-question profile 2026-11-18.1 and the graded
+    // evaluator 2026-11-17.1 that scores it. A result is checked against these
+    // only when its stored profile reference equals V2_PROFILE_REF on every
+    // field. Weights and credits are pinned here, as the accepted profile's are
+    // below, so a payload cannot authorise different ones. Tests compare them
+    // with the server profile and evaluator.
+    const V2_PROFILE_REF = Object.freeze({ frameworkId: 'nz-ncsc-cyber-security-framework', frameworkVersion: 'beta-verified-2026-09-02',
+        profileId: 'nz-ncsc-mcss-2025-v3-sme', profileVersion: '2026-11-18.1',
+        catalogueSha256: 'c90e999f627308f326a403b1d779e68087e3eaadab5149070f1df5e350daa537',
+        sourceCatalogueSha256: 'c6120192675c9d12cdab296d6f5a84f014d613b300001394790f3ccf79692b71' });
+    const V2_PROVENANCE = Object.freeze({ scoreContractVersion: 'PROD-003-R2', evaluatorVersion: '2026-11-17.1',
+        evaluatorSourceSha256: '96a19bc4059932c8c34fae576db2efbfad445831aeba74d8a5c9f53042def885',
+        weightSetVersion: 'prod-003-r2-profile-integer-weights-graded-credit-v1',
+        mappingSha256: '9877a0686a213b7777f1f135214a759505646d414d0bdd5f30a39ac8970e4663',
+        weightSetSha256: 'b07f5c271f7fdd0eeca60a9841a8d6380a739464e064da83fe7c2134f326b80d',
+        scoredAtomSetSha256: '00e7045f784b3be45523e5341c16016d196e94fda14f377e5e0e48e60da74f6f',
+        applicabilityBasisSha256: '88793977aebd91833cd806f85505cd53b0568a6bb5e4b45e08c4d56bd906f1eb',
+        evidenceSnapshotSha256: '44c075f260001b52983f4bc93ec3d2f6082b00153032826706ddcefc209d8742',
+        riskContextSnapshotSha256: '1c7078ff4cf2961c9dae0c9368db7e7b06f46e7896bdd98215aa36add9ba9e30' });
+    const V2_WEIGHT = Object.freeze({ 'NF-NCSC-MCSS-RM-01-Q1': 1, 'NF-NCSC-MCSS-SA-01-Q1': 2, 'NF-NCSC-MCSS-AI-01-Q1': 1,
+        'NF-NCSC-MCSS-PA-01-Q1': 2, 'NF-NCSC-MCSS-MF-01-Q1': 3, 'NF-NCSC-MCSS-MF-01-Q2': 2, 'NF-NCSC-MCSS-DU-01-Q1': 1,
+        'NF-NCSC-MCSS-LP-01-Q1': 2, 'NF-NCSC-MCSS-DR-01-Q1': 3, 'NF-NCSC-MCSS-DR-01-Q2': 3, 'NF-NCSC-MCSS-RP-01-Q1': 1,
+        'NF-NCSC-CC-PM-01-Q1': 2, 'NF-NCSC-CC-SV-01-Q1': 3, 'NF-NCSC-CC-NS-01-Q1': 1, 'NF-NCSC-CC-SU-01-Q1': 2, 'NF-NCSC-CC-EM-01-Q1': 2 });
+    // Credit in hundredths for each answer that earns a fixed credit. "I don't
+    // know" and Not applicable earn none at the lower end and full at the upper.
+    const V2_CREDIT = Object.freeze({ yes: 100, partly: 50, ad_hoc: 25, no: 0, mfa_key: 100, mfa_number_matching: 85,
+        mfa_push: 70, mfa_authenticator: 55, mfa_text_code: 30, mfa_mixed: 30, mfa_none: 0 });
+    // How each v2 answer is grouped in summaries: full credit with Yes, none with No, the rest with Partial.
+    // The accepted profile's answers map to themselves.
+    function answerGroup(optionId) {
+        if (!Object.hasOwn(V2_CREDIT, optionId)) return optionId;
+        return V2_CREDIT[optionId] === 100 ? 'yes' : V2_CREDIT[optionId] === 0 ? 'no' : 'partial';
+    }
+    function isV2(metadata) { return !!metadata && profileMatches(metadata.profileRef, V2_PROFILE_REF); }
     // UX log A-019: when fewer than about half the questions are answered Yes,
     // Partial or No, the range is too wide to tell anyone anything, so it is
     // not used as the headline. Display only; scoring is unchanged.
@@ -147,16 +191,94 @@
         const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
         const items = [];
         ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
-            metadata.questions.filter(function (question) { return optionOf(question.id) === optionId; }).forEach(function (question) {
+            metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === optionId; }).forEach(function (question) {
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
                 const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
                 const ownerStart = ['no', 'partial'].includes(optionId) && /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(question.id);
-                items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionId), action: action,
+                items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionOf(question.id)), action: action,
                     owner: ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.' });
             });
         });
         const lines = ['Cyber security assessment', 'Scope: ' + assessment.scopePopulation.description, 'Submitted: ' + localDate(assessment.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
         return { items: items, text: lines.concat(items.map(function (item) { return item.title + ': ' + item.owner + ' ' + item.action; })).join('\n') };
+    }
+    // Plain-text summary of a submitted assessment for a board or insurer
+    // (#441): what is in place, partly in place, not in place and not yet
+    // known, by control, in the customer's own words. Self-reported, so it
+    // says so, and the next-step line is left for the customer to fill in.
+    function boardSummary(assessment, metadata) {
+        const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
+        const groups = [['yes', 'In place'], ['partial', 'Partly in place'], ['no', 'Not in place yet'], ['unknown', 'Not yet confirmed'], ['not_applicable', 'Marked not applicable (to be confirmed)']];
+        const lines = ['Cyber security position: summary for the board or insurer', 'Scope: ' + assessment.scopePopulation.description,
+            'Assessed: ' + localDate(assessment.submission.submittedAt),
+            'Basis: self-assessment using the No Fries questionnaire adapted from New Zealand NCSC guidance. Not certification or independent assurance.'];
+        groups.forEach(function (group) {
+            const titles = [];
+            metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === group[0]; }).forEach(function (question) {
+                const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
+                // Plain titles for a board: drop the internal extension prefix.
+                const title = (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, '');
+                if (titles.indexOf(title) === -1) titles.push(title);
+            });
+            if (titles.length) lines.push('', group[1] + ':', ...titles.map(function (title) { return '- ' + title; }));
+        });
+        lines.push('', 'Next steps agreed (owner and date): ');
+        return { text: lines.join('\n') };
+    }
+    // Read-only suggestions for the current catalogue, never evidence or scores.
+    // Narrower questions cannot inherit a broader Partial answer. Storage type,
+    // patch deadlines and EDR are not collected by this catalogue at all.
+    function questionnaireAnswers(assessment, metadata) {
+        const title = 'Answers for your insurer or customer questionnaire';
+        const footer = 'These are self-assessed answers to check before submitting, not a guarantee an insurer or customer accepts them.';
+        const supported = assessment.status === 'submitted' && profileMatches(assessment.profileRef, metadata.profileRef) &&
+            metadata.profileRef.catalogueSha256 === '32c3f8d154ffe2be9b1270f8fa1234427a05cdea96b231588cce0b147e7d5375';
+        const definitions = [
+            ['mfa', 'Is multi-factor authentication (MFA) required for business email and remote access?', 'NF-NCSC-MCSS-MF-01-Q1', false,
+                'Require MFA for business email and every remote-access route, and check for exceptions.',
+                'Ask IT for an MFA coverage report that includes exceptions for email and remote access.'],
+            ['backup-storage', 'Do you keep an offline or immutable backup copy (one that cannot be changed or deleted)?', null, false,
+                'Keep a backup copy offline or locked against changes and deletion, and confirm how it is protected.',
+                'Ask the backup owner for the settings showing whether a copy is offline or locked against changes and deletion.'],
+            ['restore-tests', 'Have you tested restoring important systems and files from backup?', 'NF-NCSC-MCSS-DR-01-Q1', false,
+                'Restore samples of important systems and files, and record the results and recovery time.',
+                'Check the last restore test record for what was recovered, the result and the time taken.'],
+            ['patch-speed', 'Are urgent security updates installed within the deadline your insurer or customer asks for?', null, false,
+                'Confirm the required deadline, install urgent fixes within it, and keep dated installation records.',
+                'Get the installation dates from your patch report and compare them with the requested deadline.'],
+            ['endpoint', 'Are work devices covered by endpoint protection and endpoint detection and response (EDR)?', null, false,
+                'Confirm protection and EDR coverage for work devices, with someone responsible for responding to alerts.',
+                'Ask IT for the device list showing which work devices have endpoint protection and EDR.'],
+            ['training', 'Do staff receive ongoing guidance on spotting and reporting phishing and scams?', 'NF-NCSC-MCSS-SA-01-Q1', false,
+                'Give staff practical phishing guidance when they start and refresh it, keeping completion records.',
+                'Ask the training organiser for completion records covering phishing induction and refreshers.'],
+            ['incident-plan', 'Do you have an incident response plan with named roles, contacts, management support and lessons from practice or incidents?', 'NF-NCSC-MCSS-RP-01-Q1', true,
+                'Write down the response plan, agree roles and contacts, practise it and record improvements.',
+                'Ask the incident lead for the current response plan and notes from the last exercise or incident.'],
+            ['admin-rights', 'Is access limited to job needs, with separate admin accounts and checks when people join, change roles or leave?', 'NF-NCSC-MCSS-LP-01-Q1', true,
+                'Limit access to job needs, separate admin accounts, and regularly review access and staff changes.',
+                'Ask whoever manages accounts for the latest access review showing who has admin rights and why.'],
+            ['payment-checks', 'Are payment and bank-detail changes checked through a trusted route separate from the original request?', 'NF-NCSC-CC-SV-01-Q1', false,
+                'Check payment and bank-detail changes using a known phone number or another trusted, separate route.',
+                'Ask accounts for a payment-change record showing the call to a known number or another independent check.']
+        ];
+        const items = definitions.map(function ([id, question, source, allowPartial, action, evidence]) {
+            const responses = supported && source && metadata.questions.some(item => item.id === source)
+                ? assessment.responses.filter(item => item.itemId === source) : [];
+            const option = responses.length === 1 ? responses[0].optionId : null;
+            const answer = option === 'yes' ? 'Yes' : option === 'no' ? 'No' : option === 'partial' && allowPartial ? 'Partly' : 'Not answered';
+            const basis = !source ? 'This assessment does not ask for this detail.'
+                : option === 'partial' && !allowPartial ? 'The broader answer is Partial; it does not confirm this specific detail.'
+                : option === 'not_applicable' ? 'Marked Not applicable in the assessment; this is not confirmation of the control.'
+                : answer === 'Not answered' ? 'The saved answers do not confirm this detail.'
+                : 'Based on your saved ' + (option === 'partial' ? 'Partial' : answer) + ' answer; check the exact coverage before using it.';
+            return { id: id, question: question, answer: answer, basis: basis, action: 'To answer Yes: ' + action,
+                evidence: answer === 'Yes' ? '' : 'Evidence: ' + evidence };
+        });
+        const scope = 'Scope: ' + assessment.scopePopulation.description;
+        const lines = [title, scope, ...items.map(item => item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis + '\n' + item.action +
+            (item.evidence ? '\n' + item.evidence : '')), footer];
+        return { title: title, scope: scope, items: items, footer: footer, text: lines.join('\n\n') };
     }
     // Copies with the clipboard when the browser allows it; otherwise selects
     // the read-only text so the person can copy it themselves.
@@ -221,7 +343,18 @@
                 typeof organisationId === 'string' && organisationId.trim().length > 0 && provenance.organisationId === organisationId &&
                 provenance.assessmentRevision === 'rev-' + assessment.revision && provenance.scoreAsOf === submission.submittedAt &&
                 profileMatches(assessment.profileRef, metadata.profileRef) && profileMatches(provenance.profileRef, metadata.profileRef));
-            requireValue(provenance.scoreContractVersion === 'PROD-003-R1' &&
+            // Scoring v2 (#399): chosen by the stored profile reference, never by its version alone.
+            const v2 = profileMatches(assessment.profileRef, V2_PROFILE_REF), scale = v2 ? 100 : 2;
+            if (v2) requireValue(['scoreContractVersion', 'evaluatorVersion', 'evaluatorSourceSha256', 'weightSetVersion',
+                'mappingSha256', 'weightSetSha256', 'scoredAtomSetSha256', 'applicabilityBasisSha256'].every(key => provenance[key] === V2_PROVENANCE[key]) &&
+                provenance.roundingRule === 'decimal-half-up-one-place-v1' &&
+                provenance.evaluatorId === 'no-fries-deterministic-assessment-evaluator' &&
+                provenance.mappingVersion === 'framework-profile-question-mapping-v1' &&
+                provenance.evidenceSnapshot.sha256 === V2_PROVENANCE.evidenceSnapshotSha256 &&
+                provenance.riskContextSnapshot.sha256 === V2_PROVENANCE.riskContextSnapshotSha256 &&
+                value.remediationPriority.status === 'not_calculated' && value.remediationPriority.reason === 'priority_adapter_required' &&
+                value.trend.status === 'not_requested');
+            else requireValue(provenance.scoreContractVersion === 'PROD-003-R1' &&
                 provenance.roundingRule === 'decimal-half-up-one-place-v1' &&
                 provenance.evaluatorId === 'no-fries-deterministic-assessment-evaluator' &&
                 provenance.evaluatorVersion === '2026-09-02.1' &&
@@ -263,8 +396,15 @@
                 const response = responses.get(atom.itemId);
                 const semantic = response.optionId === 'not_applicable' ? 'unknown' : response.optionId;
                 const origin = response.optionId === 'not_applicable' ? 'claimed_not_applicable' : response.optionId === 'unknown' ? 'direct_unknown' : 'direct';
-                requireValue(atom.applicable === true && atom.response === semantic && atom.responseOrigin === origin &&
+                requireValue(atom.applicable === true && atom.response === (v2 ? answerGroup(semantic) : semantic) && atom.responseOrigin === origin &&
                     atom.evidenceState === 'not_provided' && atom.applicabilityDecisionId === null && atom.applicabilityDecisionSha256 === null);
+                if (v2) {
+                    const hundredths = Object.hasOwn(V2_CREDIT, response.optionId) ? V2_CREDIT[response.optionId] : null;
+                    const lower = atom.weight * (hundredths || 0);
+                    requireValue(atom.weight === V2_WEIGHT[atom.itemId] && atom.responseCreditHundredths === hundredths &&
+                        atom.lowerCreditUnits === lower && atom.upperCreditUnits === (hundredths === null ? atom.weight * 100 : lower));
+                    return;
+                }
                 // The pinned accepted NCSC profile assigns weight 1 to every question.
                 // Payload totals cannot authorise a different weight set.
                 requireValue(atom.weight === 1);
@@ -284,12 +424,12 @@
                     counts.completionStatus === (rows.length === 0 ? 'not_scored' : unknown ? 'provisional' : 'complete'));
                 percentageMatches(counts.completionNumerator, counts.completionDenominator, counts.completionPercentTenths);
                 percent(counts.completionPercentTenths, counts.completionDisplay);
-                requireValue(attainment.creditUnitScale === 2 && attainment.denominatorWeight === sum(rows, 'weight') &&
+                requireValue(attainment.creditUnitScale === scale && attainment.denominatorWeight === sum(rows, 'weight') &&
                     attainment.lowerCreditUnits === sum(rows, 'lowerCreditUnits') && attainment.upperCreditUnits === sum(rows, 'upperCreditUnits') &&
                     attainment.status === (rows.length ? 'scored' : 'not_scored'));
-                count(attainment.denominatorWeight * 2);
-                percentageMatches(attainment.lowerCreditUnits, attainment.denominatorWeight * 2, attainment.lowerPercentTenths);
-                percentageMatches(attainment.upperCreditUnits, attainment.denominatorWeight * 2, attainment.upperPercentTenths);
+                count(attainment.denominatorWeight * scale);
+                percentageMatches(attainment.lowerCreditUnits, attainment.denominatorWeight * scale, attainment.lowerPercentTenths);
+                percentageMatches(attainment.upperCreditUnits, attainment.denominatorWeight * scale, attainment.upperPercentTenths);
                 range(attainment);
                 requireValue(evidence.denominator === rows.length && Object.keys(evidence.distribution).length === Object.keys(evidenceLabels).length &&
                     Object.keys(evidenceLabels).every(key => evidence.distribution[key] === rows.filter(atom => atom.evidenceState === key).length));
@@ -351,13 +491,20 @@
         const doc = root.ownerDocument;
         const win = options.window || doc.defaultView;
         let stopNavigation = null;
-        const metadata = copy(options.metadata);
+        const baseMetadata = copy(options.metadata);
+        let metadata = baseMetadata;
         const client = options.client;
         const organisationId = options.organisationId;
         const initialAssessmentId = options.initialAssessmentId;
         // Opened from the first-use action: go straight to the new-assessment step if nothing is saved yet.
         let startNewWhenEmpty = options.startNew === true && initialAssessmentId === undefined && options.presentationMode === 'editable';
-        if (!metadata || metadata.schemaVersion !== 1 || !Array.isArray(metadata.questions) || !metadata.questions.length ||
+        // Scoring v2 (#399): further readable profiles, sent only while their flag is on.
+        // Each must be exactly the pinned v2 profile (all six fields); a near
+        // match would otherwise be read and scored with the accepted profile's scale.
+        const profileMetadata = options.profileMetadata === undefined ? [] : copy(options.profileMetadata);
+        const usable = function (value) { return !!value && value.schemaVersion === 1 && Array.isArray(value.questions) && value.questions.length > 0; };
+        if (!usable(metadata) || !Array.isArray(profileMetadata) || profileMetadata.length > 4 ||
+            !profileMetadata.every(function (value) { return usable(value) && value.moduleId === metadata.moduleId && !profileMatches(value.profileRef, metadata.profileRef) && isV2(value); }) ||
             initialAssessmentId !== undefined && (typeof initialAssessmentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(initialAssessmentId)) ||
             !client || !['list', 'read', 'create', 'save', 'submit', 'normaliseCommand', 'commandByteLength'].every(function (key) { return typeof client[key] === 'function'; })) {
             throw new Error('ncsc_composition_required');
@@ -369,9 +516,18 @@
             if (typeof options.onFunnelStep !== 'function') return;
             try { options.onFunnelStep(step); } catch (_) { /* counts are best-effort */ }
         };
-        const questions = metadata.questions;
-        const optionById = new Map(metadata.responseOptions.map(function (item) { return [item.id, item]; }));
-        const questionById = new Map(questions.map(function (item) { return [item.id, item]; }));
+        let questions, optionById, questionById;
+        // The metadata of the profile an assessment's stored reference names,
+        // matched on every field, or null. The accepted profile comes first.
+        function profileFor(profileRef) {
+            return [baseMetadata].concat(profileMetadata).find(function (value) { return profileMatches(profileRef, value.profileRef); }) || null;
+        }
+        function useProfile(value) {
+            metadata = value; questions = value.questions;
+            optionById = new Map(value.responseOptions.map(function (item) { return [item.id, item]; }));
+            questionById = new Map(questions.map(function (item) { return [item.id, item]; }));
+        }
+        useProfile(baseMetadata);
         const requests = new Set();
         let disposed = false;
         let epoch = 0;
@@ -412,7 +568,7 @@
         let questionRegion;
         let questionIndex;
         let pendingPickerChoice = null;
-        let questionProgress;
+        let questionProgress, savedSummary;
         let navigationSummary;
         let nextUnanswered;
         let nextUnresolved;
@@ -490,8 +646,8 @@
             section.addEventListener('toggle', function () { glossaryOpen = section.open; });
             section.append(node('summary', '', 'What these words mean'));
             const list = node('dl');
-            [['To check later', 'Answers marked Unknown, or marked not applicable, to confirm. They are still to confirm and do not count as in place. You can still submit with them.'],
-                ['Marked not applicable, to confirm', 'You answered Not applicable and explained why. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'],
+            [['To check later', 'Answers marked Unknown, or Not applicable. They do not count as in place. You can still submit with Unknown and Not applicable answers.'],
+                ['Marked not applicable, to confirm', 'You answered Not applicable and explained why. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.'],
                 ['Saved and not saved yet', 'Saved answers are kept with this draft, so you can come back to them before you submit. Not saved yet means a change is only on this page so far.'],
                 ['Reported implementation range', 'After you submit, your result is shown as a range. It leads with the lower figure. The lower figure is what you reported as in place. The higher figure adds answers still to confirm. It is not a performance score.']
             ].forEach(function (entry) { list.append(node('dt', '', entry[0]), node('dd', '', entry[1])); });
@@ -523,8 +679,10 @@
             } finally { requests.delete(request); }
         }
         function cleanDetail(value, id) {
-            if (!value || value.assessmentId !== id || value.moduleId !== metadata.moduleId || !profileMatches(value.profileRef, metadata.profileRef) ||
-                !Array.isArray(value.responses) || value.responses.some(function (item) { return !questionById.has(item.itemId); })) throw new Error('ncsc_invalid_response');
+            const profile = value && profileFor(value.profileRef);
+            if (!value || !profile || value.assessmentId !== id || value.moduleId !== profile.moduleId ||
+                !Array.isArray(value.responses) || value.responses.some(function (item) { return !profile.questions.some(function (question) { return question.id === item.itemId; }); })) throw new Error('ncsc_invalid_response');
+            useProfile(profile);
             const result = copy(value);
             if (result.submission) {
                 const outputSha256 = value.submission && value.submission.evaluation && value.submission.evaluation.outputSha256;
@@ -568,18 +726,19 @@
         function updateQuestionNavigation() {
             if (!live() || !acknowledged || !questionIndex || !questionProgress) return;
             const sealed = acknowledged.status === 'submitted';
-            let answered = 0, unresolved = 0;
+            let answered = 0, unresolved = 0, saved = 0;
             questions.forEach(function (question, index) {
                 const value = displayedAnswer(question), option = optionById.get(value.optionId);
                 if (value.optionId !== null) answered += 1;
                 if (['unknown', 'not_applicable'].includes(value.optionId)) unresolved += 1;
                 const label = value.optionId === 'not_applicable' ? 'Not applicable, to confirm' : option ? option.label : 'Unanswered';
-                const unsaved = !sealed && !equal(value, savedAnswer(question.id)) ? ' *' : '';
+                const changed = !sealed && !equal(value, savedAnswer(question.id));
+                if (value.optionId !== null && !changed) saved += 1;
+                const unsaved = changed ? ' · Not saved yet' : '';
                 questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
             });
             const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length, saving = savingNow();
-            // One progress line. What is saved and what is still only in this
-            // browser are stated together so the counts cannot disagree.
+            if (savedSummary) savedSummary.textContent = saved + ' of ' + questions.length + ' saved';
             questionProgress.textContent = answered + ' of ' + questions.length + ' answered' + (missing ? ' · ' + missing + ' to go' : '') +
                 (unresolved ? ' · ' + unresolved + ' to check later (unknown, or marked not applicable, to confirm)' : '') +
                 (sealed ? ' · submitted' : !editable ? ' · saved' : saving ? ' · saving…' : dirty ? ' · ' + dirty + ' not saved yet' +
@@ -716,8 +875,12 @@
         }
         function render() {
             if (!live()) return;
+            // The open assessment's own profile; the accepted one everywhere else.
+            useProfile(acknowledged && !['create', 'denied'].includes(view) && profileFor(acknowledged.profileRef) || baseMetadata);
             const focused = captureFocus(root);
             const observations = root.querySelector('.ncsc-draft-observations');
+            const progressOpen = !!(savedSummary && savedSummary.parentElement.open && acknowledged &&
+                savedSummary.dataset.assessmentId === acknowledged.assessmentId);
             const observationsOpen = !!(observations && observations.open && acknowledged &&
                 observations.dataset.assessmentId === acknowledged.assessmentId);
             const scrollX = win && win.scrollX, scrollY = win && win.scrollY;
@@ -731,7 +894,7 @@
             const pickerChoice = questionIndex && acknowledged && questionIndex.value !== String(activeQuestion)
                 ? { assessmentId: acknowledged.assessmentId, value: questionIndex.value } : null;
             pendingPickerChoice = pickerChoice;
-            questionIndex = null; questionProgress = null; navigationSummary = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
+            questionIndex = null; questionProgress = null; savedSummary = null; navigationSummary = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
             if (!acknowledged || acknowledged.status === 'submitted' || !editable) { reviewing = false; returnToReview = null; }
             // Keep the live region attached so asynchronous updates change an
             // existing accessible status rather than insert prefilled content.
@@ -741,7 +904,7 @@
             root.append(errorBox, content);
             if (view === 'denied') content.append(node('p', '', 'This assessment is not available. Reopen the dashboard through your authenticated organisation context.'));
             else if (view === 'create') renderCreate();
-            else if (acknowledged) renderAssessment(observationsOpen);
+            else if (acknowledged) renderAssessment(observationsOpen, progressOpen);
             else if (view === 'assessment' && selected) renderAssessmentRead();
             else renderList();
             // Reuse the optional disclosure so open state survives save/recovery
@@ -948,7 +1111,7 @@
             try {
                 const result = await call('list', { limit: 50, afterAssessmentId: append ? nextAfter : null }, expected);
                 if (!result) return;
-                if (result.assessments.some(function (item) { return item.moduleId !== metadata.moduleId || !profileMatches(item.profileRef, metadata.profileRef); })) throw new Error('ncsc_invalid_response');
+                if (result.assessments.some(function (item) { return item.moduleId !== metadata.moduleId || !profileFor(item.profileRef); })) throw new Error('ncsc_invalid_response');
                 const map = new Map((append ? summaries : []).map(function (item) { return [item.assessmentId, item]; }));
                 result.assessments.forEach(function (item) { map.set(item.assessmentId, copy(item)); });
                 summaries = Array.from(map.values()); nextAfter = result.nextAfterAssessmentId; listLoaded = true;
@@ -1036,7 +1199,7 @@
                 return await perform(command, []);
             } catch (error) { fixedFailure(error); return false; }
         }
-        function renderAssessment(observationsOpen) {
+        function renderAssessment(observationsOpen, progressOpen) {
             const renderedEpoch = epoch;
             const sealed = acknowledged.status === 'submitted';
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
@@ -1062,7 +1225,14 @@
             if (conflict) renderConflict();
             if (pending) renderPending();
             if (reviewing) { renderReview(); return; }
-            questionProgress = node('p', 'ncsc-draft-progress'); questionProgress.id = 'ncsc-draft-progress'; content.append(questionProgress);
+            questionProgress = node('p', 'ncsc-draft-progress'); questionProgress.id = 'ncsc-draft-progress';
+            if (sealed) content.append(questionProgress);
+            else {
+                const details = node('details', 'ncsc-guidance'); details.open = progressOpen;
+                savedSummary = node('summary', ''); savedSummary.id = 'ncsc-saved-summary';
+                savedSummary.dataset.assessmentId = acknowledged.assessmentId;
+                details.append(savedSummary, questionProgress); content.append(details);
+            }
             // The glossary explains the progress words, so it sits right after progress.
             if (!sealed) content.append(glossary());
             if (!sealed) renderDraftObservations(observationsOpen);
@@ -1097,7 +1267,7 @@
             go.id = 'ncsc-question-go'; go.setAttribute('aria-label', 'Go to the selected question');
             const picker = node('div', 'ncsc-question-picker'); picker.append(index, go);
             content.append(indexLabel, picker);
-            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below. * marks unsaved changes.' + (autosaveEnabled && editable ? ' Answers save automatically a moment after each change.' : ''));
+            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below.' + (autosaveEnabled && editable ? ' Answers save automatically a moment after each change.' : ''));
             indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
@@ -1144,10 +1314,10 @@
             [
                 ['Reported gaps', ['no', 'partial'], 'Check what is missing and agree a next step with your team or IT provider.'],
                 ['Information to confirm', ['unknown'], 'Ask whoever looks after these systems what is in place.'],
-                ['Applicability to confirm', ['not_applicable'], 'These exclusions are not approved. Confirm whether each question applies to this scope.'],
+                ['Applicability to confirm', ['not_applicable'], 'These answers say the question does not apply. Check whether it really is outside this scope. They still count as not yet met.'],
                 ['Not answered in this save', [null], 'Answer these questions, or choose Unknown when you cannot confirm what is in place.']
             ].forEach(function (group) {
-                const matches = rows.filter(function (row) { return group[1].includes(row.value.optionId); });
+                const matches = rows.filter(function (row) { return group[1].includes(answerGroup(row.value.optionId)); });
                 const section = node('section', 'ncsc-draft-observation-group');
                 section.append(node('h3', '', group[0] + ' · ' + matches.length));
                 if (matches.length) {
@@ -1157,7 +1327,7 @@
                         const control = metadata.controls.find(function (entry) { return entry.id === row.question.controlId; });
                         const label = row.value.optionId === 'not_applicable' ? 'Not applicable, to confirm' :
                             row.value.optionId === null ? 'Unanswered' : optionById.get(row.value.optionId).label;
-                        const jump = button('Question ' + (row.index + 1) + ': ' + (control ? control.title : row.question.prompt) + ' · ' + label,
+                        const jump = button('Question ' + (row.index + 1) + ': ' + (control ? plainControlTitle(control.title) : row.question.prompt) + ' · ' + label,
                             function () { if (questionRegion) { activeQuestion = row.index; renderAssessmentQuestion(); } }, 'dashboard-text-button');
                         jump.id = 'ncsc-draft-observation-' + row.question.id;
                         const item = node('li'); item.append(jump); list.append(item);
@@ -1176,6 +1346,11 @@
         // The plain-language question people answer. The framework prompt is
         // kept for reference but never replaces it where answers are shown.
         function plainQuestion(question) { return question.smallBusiness ? question.smallBusiness.question : question.prompt; }
+        // The four controls No Fries adds carry a framework label in the pinned profile. On screen the
+        // control is named the same way as in the Improvement Plan; the label stays in the source details.
+        function plainControlTitle(title) {
+            return String(title || '').replace(/^No Fries Critical Control extension\s*[—–·:-]\s*/i, '').trim() || String(title || '');
+        }
         function reviewState() {
             return questions.map(function (question, index) {
                 const value = drafts.get(question.id).value, saved = savedAnswer(question.id), option = optionById.get(value.optionId);
@@ -1217,7 +1392,7 @@
                 const item = node('li', 'ncsc-review-item' + (row.unsaved ? ' ncsc-review-unsaved' : '') + (!row.option || row.missingRationale ? ' ncsc-review-incomplete' : ''));
                 item.id = 'ncsc-review-item-' + row.question.id;
                 const control = metadata.controls.find(function (entry) { return entry.id === row.question.controlId; });
-                item.append(node('p', 'dashboard-eyebrow', 'Question ' + (row.index + 1) + (control ? ' · ' + control.title : '')), node('h4', '', plainQuestion(row.question)));
+                item.append(node('p', 'dashboard-eyebrow', 'Question ' + (row.index + 1) + (control ? ' · ' + plainControlTitle(control.title) : '')), node('h4', '', plainQuestion(row.question)));
                 // The same plain question that was answered; the framework wording stays one click away.
                 if (row.question.smallBusiness) {
                     const wording = node('details', 'ncsc-review-framework'); wording.append(node('summary', '', 'Full framework question'), node('p', '', row.question.prompt));
@@ -1248,6 +1423,15 @@
         // Preview of the draft only. The accepted profile weights every
         // question 1; the submitted score always comes from the server.
         function projectRange(rows) {
+            if (isV2(metadata)) {
+                // Scoring v2 (#399): the pinned weights and credits, in hundredths.
+                let low = 0, high = 0, total = 0;
+                rows.forEach(function (row) {
+                    const weight = V2_WEIGHT[row.question.id], credit = Object.hasOwn(V2_CREDIT, row.value.optionId) ? V2_CREDIT[row.value.optionId] : null;
+                    total += weight * 100; low += weight * (credit || 0); high += credit === null ? weight * 100 : weight * credit;
+                });
+                return { lower: percentTenths(low, total), upper: percentTenths(high, total) };
+            }
             let lower = 0, upper = 0;
             rows.forEach(function (row) {
                 const credit = creditUnits(row.value.optionId === 'not_applicable' ? 'unknown' : row.value.optionId, 1);
@@ -1264,7 +1448,7 @@
             // Mention not applicable answers only when there are some (#297).
             if (count) section.append(node('p', '', count + (count === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm.'));
             if (unanswered) {
-                section.append(node('p', '', 'The projected range appears when every question has an answer. Answer ' + unanswered + ' more ' +
+                section.append(node('p', '', 'Answer ' + unanswered + ' more ' +
                     (unanswered === 1 ? 'question' : 'questions') + ' to see your projected range.'));
             } else {
                 const range = projectRange(rows);
@@ -1272,13 +1456,15 @@
                 const value = node('p', '', 'With your current answers, reported implementation would be ' + shown + '.'); value.id = 'ncsc-review-range-value';
                 section.append(value);
                 if (count) {
-                    const widened = percentTenths(count * creditUnits('unknown', 1).upper, rows.length * 2);
+                    const weightOf = function (list) { return list.reduce(function (total, row) { return total + V2_WEIGHT[row.question.id]; }, 0); };
+                    const widened = isV2(metadata) ? percentTenths(weightOf(pendingRows), weightOf(rows))
+                        : percentTenths(count * creditUnits('unknown', 1).upper, rows.length * 2);
                     section.append(node('p', '', 'Answers marked not applicable, to confirm, are not counted as in place: they add nothing to the lower figure and full credit to the upper figure. Yours widen the range by ' +
                         (widened / 10).toFixed(1) + ' percentage points.'));
                 }
             }
             if (count) {
-                section.append(node('p', '', 'Answers marked not applicable still count towards your result until they are approved. Approval is not available yet. If you can confirm what is in place for one of these questions, change its answer to Yes, Partial or No.'));
+                section.append(node('p', '', 'Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that. If you can say what is in place, change the answer to Yes, Partial or No.'));
                 const list = node('ul', 'ncsc-review-pending-list');
                 pendingRows.forEach(function (row) {
                     const change = button('Change question ' + (row.index + 1), function () { editFromReview(row.index); }, 'dashboard-text-button');
@@ -1341,6 +1527,8 @@
             panel.append(node('h2', '', 'Assessment results'));
             content.append(panel);
             renderNextSteps(panel);
+            // The insurer answers map the accepted profile's questions only.
+            if (!isV2(metadata)) renderQuestionnaireAnswers(panel);
             if (!results) {
                 panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'),
                     button('Retry loading results', async function () {
@@ -1356,11 +1544,11 @@
             // Describe only what is shown: a range has a lower and higher figure, a single figure does not.
             const rangeHelp = results.lowerCreditUnits === results.upperCreditUnits
                 ? 'This is what you reported as in place. Every answer is Yes, Partial or No, so there is one figure.'
-                : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable waiting for review. Those do not count as in place.';
+                : 'The lower figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable. Those do not count as in place.';
             if (enoughAnswersToEstimate(results)) metric('Reported implementation', results.attainment, rangeHelp);
             // Results exist only for a submitted, read-only assessment, so do not ask the customer to confirm answers here.
-            else metric('Reported implementation', 'Not enough answers to estimate yet', 'Only ' + results.completed + ' of ' + results.total +
-                ' answers are Yes, Partial or No. Most answers are Unknown or waiting for review, so the range is too wide to be useful. Range so far: ' + results.attainment + '. ' +
+            else metric('Reported implementation', 'Not enough answers to estimate yet, confirm your Unknowns first', results.unknown + ' answers still to confirm. Only ' + results.completed + ' of ' + results.total +
+                ' answers are Yes, Partial or No. Most answers are Unknown or Not applicable, so the range is too wide to be useful. Range so far: ' + results.attainment + '. ' +
                 (editable && !allowanceExhausted() ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp);
             metric('Answers confirmed', results.completed + ' of ' + results.total, results.completion + ' answered Yes, Partial or No. This measures how much is known, not how much is implemented.');
             leadWithLowerBound(metrics.querySelector('.ncsc-result-metric'), '.ncsc-result-value', results);
@@ -1370,21 +1558,35 @@
             const planSource = displayedPlanSource();
             if (typeof options.openImprovement === 'function' && planSource) {
                 const follow = node('section', 'ncsc-plan-followup');
-                follow.append(node('p', '', 'These results can become your improvement plan. Open Improvement plan and create it from this result. It lists what to fix. You can give each item an owner and a due date. Submitting does not create the plan by itself.'));
-                follow.append(button('Open improvement plan', function () {
-                    if (live() && typeof options.openImprovement === 'function') options.openImprovement(planSource);
-                }, 'dashboard-button dashboard-button-secondary'));
+                follow.append(node('h3', '', 'Follow up on this assessment'));
+                const preview = node('details'), steps = providerSummary(acknowledged, metadata).items;
+                preview.append(node('summary', '', 'Assessment follow-ups (' + steps.length + ')'));
+                const list = node('ol');
+                steps.forEach(step => {
+                    const item = node('li');
+                    item.append(node('strong', '', step.title), node('p', '', step.action));
+                    list.append(item);
+                });
+                preview.append(steps.length ? list : node('p', '', 'No answers were marked No, Partial, Unknown or Not applicable.'));
+                const link = node('a', '', 'Open improvement plan'); link.href = '#improvement-plan';
+                link.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    if (live()) options.openImprovement(planSource);
+                });
+                follow.append(preview, node('p', '', 'Open Improvement Plan to review proposed actions, including evidence to update for Yes answers. You can give each item an owner and a due date.'), link);
                 panel.append(follow);
             }
             // results.unknown already includes answers marked not applicable, so state one total.
             panel.append(node('p', '', results.unknown ? 'Answers still to confirm: ' + results.unknown + ' (' + confirmBreakdown(results.unknown - results.pending, results.pending) + ').'
                 : 'Every answer is confirmed as Yes, Partial or No.'));
-            panel.append(node('p', 'dashboard-muted', 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives answers still to confirm 0; the upper end gives them 1. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon. This is a No Fries calculation, not an NCSC score.'));
+            panel.append(node('p', 'dashboard-muted', isV2(metadata)
+                ? 'Each question has a weight from 1 to 3, shown below. Yes, in place and checked earns its full weight, Partly in place half, Sometimes a quarter and No nothing. Extra login methods earn from 30% for text or email codes to full weight for a passkey or security key. The lower end gives I don\'t know nothing; the upper end gives it full weight. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that. This is a No Fries planning score from your answers, not an official NCSC or CS-CMM rating.'
+                : 'No Fries weights every question equally: Yes earns 1, Partial 0.5 and No 0. The lower end gives answers still to confirm 0; the upper end gives them 1. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that. This is a No Fries calculation, not an NCSC score.'));
             panel.append(node('h3', '', 'Explore NCSC functions and assessment topics'));
             results.domains.forEach(function (domain) {
                 const detail = node('details', 'ncsc-result-domain'); detail.append(node('summary', '', domain.title + ' — ' + domain.attainment));
                 domain.controls.forEach(function (control) {
-                    const item = node('details', 'ncsc-result-control'); item.append(node('summary', '', control.title + ' — ' + control.attainment));
+                    const item = node('details', 'ncsc-result-control'); item.append(node('summary', '', plainControlTitle(control.title) + ' — ' + control.attainment));
                     control.questions.forEach(function (question) {
                         item.append(node('h4', '', question.prompt), node('p', '', 'Saved answer: ' + question.answer + '. Weight: ' + question.weight + '.'));
                         if (question.rationale) item.append(node('p', 'ncsc-preserve-text', 'Why it is marked not applicable: ' + question.rationale));
@@ -1405,7 +1607,7 @@
         }
         function renderNextSteps(panel) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Suggested follow-ups'));
-            const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(savedAnswer(question.id).optionId); }).length; };
+            const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(answerGroup(savedAnswer(question.id).optionId)); }).length; };
             const toFix = countOf(['no', 'partial']), toCheck = countOf(['unknown', 'not_applicable']);
             const plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
             // One plain verdict before any percentages. The list follows answer groups, not risk.
@@ -1439,6 +1641,28 @@
             if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
             handoff.append(copied); section.append(handoff); panel.append(section);
         }
+        function renderQuestionnaireAnswers(panel) {
+            const report = questionnaireAnswers(acknowledged, metadata);
+            const section = node('section', 'ncsc-questionnaire-answers'); section.setAttribute('aria-labelledby', 'ncsc-questionnaire-answers-title');
+            const title = node('h3', '', report.title); title.id = 'ncsc-questionnaire-answers-title';
+            section.append(title, node('p', '', 'Suggested answers from this saved assessment. Not answered means the detail is missing or cannot be confirmed from your answers.'), node('p', '', report.scope));
+            const list = node('ol');
+            report.items.forEach(function (item) {
+                const row = node('li'); row.setAttribute('data-answer-id', item.id);
+                row.append(node('h4', '', item.question), node('strong', '', 'Suggested answer: ' + item.answer),
+                    node('p', 'dashboard-muted', item.basis), node('p', '', item.action));
+                if (item.evidence) row.append(node('p', '', item.evidence));
+                list.append(row);
+            });
+            section.append(list);
+            const controls = node('div', 'ncsc-questionnaire-answer-controls');
+            const label = node('label', '', 'Answers to copy'); label.htmlFor = 'ncsc-questionnaire-answer-text';
+            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 5; input.value = report.text;
+            const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
+            controls.append(label, input, button('Copy answers', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary'));
+            if (win && typeof win.print === 'function') controls.append(button('Print answers', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
+            controls.append(copied); section.append(controls, node('footer', '', report.footer)); panel.append(section);
+        }
         function renderQuestion() {
             if (!live() || !questionRegion || !acknowledged) return;
             if (!restoringQuestion && typeof options.onLocation === 'function') options.onLocation({ assessmentId: acknowledged.assessmentId, questionIndex: activeQuestion });
@@ -1450,13 +1674,14 @@
             const entry = acknowledged.status === 'submitted' ? { value: savedAnswer(question.id) } : drafts.get(question.id);
             const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
             const domain = metadata.domains.find(function (item) { return control && item.id === control.domainId; });
-            questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && control.title].filter(Boolean).join(' · ')));
+            questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && plainControlTitle(control.title)].filter(Boolean).join(' · ')));
             // A stable id lets a save that re-renders the page keep focus on the
             // question text instead of dropping it to the page heading.
             const legend = node('legend', '', plainQuestion(question));
             legend.id = 'ncsc-question-text'; legend.tabIndex = -1;
             const fieldset = node('fieldset', 'ncsc-answer'); fieldset.append(legend);
-            const inputGuidance = QUESTION_INPUT_GUIDANCE[question.id];
+            // The worked examples describe the accepted profile's questions and answers only.
+            const inputGuidance = isV2(metadata) ? undefined : QUESTION_INPUT_GUIDANCE[question.id];
             const sealed = acknowledged.status === 'submitted';
             const hint = node('p', 'ncsc-input-guidance', sealed ? 'This is the answer you submitted. Submitted answers cannot be changed.'
                 : question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
@@ -1487,7 +1712,8 @@
             help.open = questionHelpOpen.has(question.id) ? questionHelpOpen.get(question.id) : !sealed && !narrow;
             help.addEventListener('toggle', function () { if (live(renderedEpoch)) questionHelpOpen.set(question.id, help.open); });
             if (acknowledged.status === 'submitted') fieldset.append(node('p', 'dashboard-badge', 'Your answer: ' + (optionById.get(entry.value.optionId)?.label || 'Not answered')));
-            if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', 'Not sure? Unknown is fine. You can ask your IT provider later.'));
+            if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', isV2(metadata)
+                ? 'Not sure? Choose I don\'t know. You can ask your IT provider later.' : 'Not sure? Unknown is fine. You can ask your IT provider later.'));
             const writable = canEdit();
             question.responseOptionIds.forEach(function (id) {
                 const option = optionById.get(id); const label = node('label', 'ncsc-option');
@@ -1524,7 +1750,7 @@
                 };
                 showNeeded();
                 const scopeHelp = writable && inputGuidance && inputGuidance.notApplicable ? inputGuidance.notApplicable + ' ' : '';
-                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. Not applicable answers count as not yet met in your result until a reviewer confirms them. Reviews are coming soon.'); help.id = 'ncsc-rationale-help-' + question.id;
+                const help = node('p', 'dashboard-muted', scopeHelp + 'Explain why this does not apply, in up to 4,000 characters. Not applicable answers count as not yet met, and they stay in your result. There is no review that changes that.'); help.id = 'ncsc-rationale-help-' + question.id;
                 rationale.addEventListener('input', function () {
                     if (!live(renderedEpoch) || !writable || !canEdit()) return;
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });
@@ -1568,7 +1794,7 @@
             const nav = node('div', 'ncsc-question-navigation');
             const previous = button('Previous question', function () {
                 if (questionRegion.contains(previous) && activeQuestion > 0) { activeQuestion -= 1; renderAssessmentQuestion(); }
-            }); previous.disabled = activeQuestion === 0;
+            }, 'dashboard-button dashboard-button-secondary'); previous.disabled = activeQuestion === 0;
             const next = button('Next question', function () {
                 if (questionRegion.contains(next) && activeQuestion < questions.length - 1) { activeQuestion += 1; renderAssessmentQuestion(); }
             }); next.disabled = activeQuestion === questions.length - 1;
@@ -1620,7 +1846,7 @@
                 if (watcher) watcher.disconnect();
                 if (win && typeof win.removeEventListener === 'function') win.removeEventListener('resize', fitNavigation);
             };
-            questionRegion.append(node('p', 'dashboard-muted', 'Still to confirm means a question has no answer yet, is answered Unknown, or is answered Not applicable and waiting for review. You can still submit with Unknown and Not applicable answers.'));
+            questionRegion.append(node('p', 'dashboard-muted', 'Still to confirm means a question has no answer yet, is answered Unknown, or is answered Not applicable. You can still submit with Unknown and Not applicable answers.'));
             applyInlineErrors();
             restoreFocus(questionRegion, focused, fieldset.querySelector('legend'));
         }
@@ -1867,19 +2093,21 @@
             if (!await saveAll(true) || !live(expected) || pending || dirtyEntries().length || !validateDraft(true)) return;
             try {
                 const command = client.normaliseCommand({ assessmentId: selected, action: 'submit', idempotencyKey: newId(), expectedRevision: acknowledged.revision, payload: {} });
-                await perform(command, []);
+                await perform(command, [], false, false, true);
             } catch (error) { if (live(expected)) fixedFailure(error); }
         }
-        // Resend an unconfirmed automatic save unchanged. Only 503 outcomes are
-        // retried: every other status is a definite answer from the server.
+        // Replay the same command after a 503. A committed submit returns its
+        // receipt without consuming another submission from the allowance.
         async function sendWithAutomaticRetry(command, expected, operation, automatic) {
-            const delays = automatic && command.action === 'save' ? autosaveRetryDelays : [];
+            const delays = !automatic ? [] : command.action === 'submit' ? [500] : autosaveRetryDelays;
             for (let attempt = 0; ; attempt += 1) {
                 try { return await call(command.action, command, expected, operation.keepalive); }
                 catch (error) {
                     if (attempt >= delays.length || !error || error.statusCode !== 503 || error.code === 'ncsc_access_denied' ||
                         !live(expected) || pending !== operation) throw error;
-                    statusText = 'Saving is taking longer than usual. Trying again automatically.'; updateStatus();
+                    statusText = command.action === 'submit' ? 'Submission is taking longer than usual. Checking the result.'
+                        : 'Saving is taking longer than usual. Trying again automatically.';
+                    updateStatus();
                     await new Promise(function (resolve) { const timer = setTimeout(resolve, delays[attempt]); if (timer && typeof timer.unref === 'function') timer.unref(); });
                     if (!live(expected) || pending !== operation) throw error;
                 }
@@ -2101,5 +2329,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));

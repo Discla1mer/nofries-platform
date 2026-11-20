@@ -26,6 +26,20 @@ describe('lifecycle email routes at the Static Web Apps edge', () => {
         expect(rule.allowedRoles).toEqual(['anonymous']);
     });
 
+    test('the public email page rewrites to its handler and the old path stays anonymous', () => {
+        const page = edgeRule('/account/email', 'GET');
+        expect(page.route).toBe('/account/email');
+        expect(page.rewrite).toBe('/api/account/email-page');
+        expect(page.methods).toEqual(['GET', 'POST']);
+        expect(page.allowedRoles).toEqual(['anonymous']);
+        expect(page.headers).toBeUndefined();
+        const handler = edgeRule('/api/account/email-page', 'POST');
+        expect(handler.route).toBe('/api/account/email-page');
+        expect(handler.allowedRoles).toEqual(['anonymous']);
+        expect(handler.headers).toBeUndefined();
+        expect(edgeRule('/api/account/email', 'GET').allowedRoles).toEqual(['anonymous']);
+    });
+
     test('the edge adds no CSP that would block the pages\' own form posts', () => {
         // The App Service responses set form-action 'self'; the /api/* rule's
         // form-action 'none' must not apply to these HTML pages.

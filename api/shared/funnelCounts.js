@@ -18,10 +18,17 @@ const UPSERT_SQL = `INSERT INTO nofries.funnel_daily_counts (day, event, count) 
 // endpoint can never evict the shared enquiry and signup buckets. IPv6
 // clients are keyed on their /64 so rotating addresses inside one network
 // share a bucket.
+// L4 (#441): behind the front end, many visitors may arrive with the same
+// client key, so the per-key cap is sized for ad traffic sharing one bucket
+// (about one event a second). A process-wide cap bounds the total number of
+// count writes whatever the keys. Counts are aggregate, so a capped or
+// skipped event only lowers a daily total.
 const RATE_WINDOW_MS = 10 * 60 * 1000;
-const RATE_MAX = 90;
+const RATE_MAX = 600;
+const GLOBAL_RATE_MAX = 3000;
 const MAX_TELEMETRY_BUCKETS = 2000;
 const telemetryBuckets = new Map();
+let globalBucket = { start: 0, count: 0 };
 
 function expandIpv6(address) {
     const value = address.split('%')[0].toLowerCase();
@@ -49,6 +56,8 @@ function telemetryKey(clientKey) {
 }
 
 function allowTelemetry(clientKey, nowMs = Date.now()) {
+    if (nowMs - globalBucket.start >= RATE_WINDOW_MS) globalBucket = { start: nowMs, count: 0 };
+    if (globalBucket.count >= GLOBAL_RATE_MAX) return false;
     const key = telemetryKey(clientKey);
     let bucket = telemetryBuckets.get(key);
     if (!bucket || nowMs - bucket.start >= RATE_WINDOW_MS) {
@@ -63,10 +72,12 @@ function allowTelemetry(clientKey, nowMs = Date.now()) {
         telemetryBuckets.set(key, bucket);
     }
     bucket.count += 1;
-    return bucket.count <= RATE_MAX;
+    if (bucket.count > RATE_MAX) return false;
+    globalBucket.count += 1;
+    return true;
 }
 
-function resetTelemetryRateLimitForTests() { telemetryBuckets.clear(); }
+function resetTelemetryRateLimitForTests() { telemetryBuckets.clear(); globalBucket = { start: 0, count: 0 }; }
 
 const NZ_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland', year: 'numeric', month: '2-digit', day: '2-digit' });
 
@@ -303,6 +314,9 @@ function result(status, body, extraHeaders = {}) {
 
 module.exports = {
     BROWSER_FUNNEL_EVENTS,
+    RATE_MAX,
+    GLOBAL_RATE_MAX,
+    allowTelemetry,
     privacySignal,
     MAX_IN_FLIGHT,
     STATEMENT_TIMEOUT_SQL,

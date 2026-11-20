@@ -25,8 +25,9 @@ const { NcscAssessmentError } = require('../ncscAssessmentService');
 const { ImprovementPlanServiceError } = require('../improvementPlan/improvementPlanService');
 const { ImprovementActionListError } = require('../improvementPlan/improvementActionListProjection');
 const { resolveImprovementAccess } = require('../improvementPlan/improvementPlanAccess');
-const { createNcscQuestionnaireMetadata } = require('../ncscQuestionnaireMetadata');
-const { ACCEPTED_PROFILE_REF } = require('../assessmentEngine/ncscAssessmentEvaluator');
+const { ContactRequestError, CONTACT_AUDIT, resolveContactAccess } = require('../contactRequests');
+const { createNcscQuestionnaireMetadata, createNcscQuestionnaireMetadataV2 } = require('../ncscQuestionnaireMetadata');
+const { listsEnabledNcscProfile, ncscProfileV2Enabled } = require('../assessmentEngine/ncscProfileSet');
 const records = require('../appLifecycle/dashboardRuntimeRecords');
 const { copy, fields, freeze, canonical, hash, equal, uuid, digest, revision, instant, scope,
     CURRENT_COLUMNS, prepareCurrentRow, normaliseSessionRow, normaliseInstanceRow,
@@ -49,6 +50,7 @@ const QUOTA_POLICY = ['schemaVersion', 'tenantId', 'organisationId', 'productGra
 const OPERATIONS = ['admission.read', 'ncsc.list', 'ncsc.read', 'ncsc.execute', 'evidence.read'];
 const NCSC_OPERATIONS = ['ncsc.list', 'ncsc.read', 'ncsc.execute'];
 const IMPROVEMENT_OPERATIONS = ['improvement.list', 'improvement.execute'];
+const CONTACT_OPERATION = 'contact.request';
 const SNAPSHOT_FIELDS = ['tenantAggregate', 'membershipState', 'entitlementState', 'flags', 'advisorAssignments', 'summary'];
 const deniedErrors = new WeakSet();
 const unavailableErrors = new WeakSet();
@@ -74,6 +76,11 @@ function mapped(error, operation = 'admission.read', denial = null) {
         if (error instanceof ImprovementPlanServiceError) return error;
         return new ImprovementPlanServiceError();
     }
+    if (operation === CONTACT_OPERATION) {
+        if (isDenied) return new ContactRequestError('contact_request_access_denied', 403);
+        if (error instanceof ContactRequestError) return error;
+        return new ContactRequestError();
+    }
     if (operation === 'evidence.read') {
         if (isDenied) return new EvidenceMetadataError('evidence_access_denied', 403);
         if (error instanceof EvidenceMetadataError) return error;
@@ -94,7 +101,7 @@ function mapped(error, operation = 'admission.read', denial = null) {
 function configuration(input) {
     try {
         if (!input || isProxy(input)) throw new Error();
-        const optional = ['ncscEnabled', 'improvementEnabled'].filter(key => Object.prototype.hasOwnProperty.call(input, key));
+        const optional = ['ncscEnabled', 'improvementEnabled', 'contactRequestsEnabled'].filter(key => Object.prototype.hasOwnProperty.call(input, key));
         fields(input, ['pool', 'clock', 'instanceId', 'historyBudget', 'captureRequest',
             'readExternalRuntimeEpoch', 'newId', 'resolveSubmissionQuota', ...optional]);
         if (optional.some(key => input[key] !== true)) throw new Error();
@@ -351,6 +358,10 @@ function currentImprovement(inv, operation, authority, at) {
         operation.name === 'improvement.execute' ? 'improvement.write' : 'improvement.read', at); }
     catch (_) { inv.deny(); }
 }
+function currentContact(inv, operation, authority, at) {
+    if (operation.name !== CONTACT_OPERATION) return;
+    try { resolveContactAccess(authority, operation.context, at); } catch (_) { inv.deny(); }
+}
 async function locator(inv) {
     let client, started = false, discard = false;
     inv.now();
@@ -424,6 +435,7 @@ function currentAuthorityAt(inv, operation, evidence, at) {
     currentBinding(inv, binding, target, at); currentAdmission(inv, admissions, target, binding, at);
     currentMember(inv, authority, binding, at);
     currentImprovement(inv, operation, authority, at);
+    currentContact(inv, operation, authority, at);
     if (operation.name === 'evidence.read') {
         try { resolveEvidenceAccess(authority, { scope: target,
             identity: { authenticated: true, subjectKey: subjectOf(inv.capture.identityPayload) }, resolvedAt }, at); }
@@ -559,12 +571,12 @@ async function writeAudit(inv, operation, event) {
     if (value.requestId !== inv.capture.requestId || value.actorSubjectKey !== subjectOf(inv.capture.identityPayload) ||
         value.tenantId !== c.scope.tenantId || value.organisationId !== c.scope.organisationId) inv.deny();
     const evidenceRead = operation.name === 'evidence.read';
-    const improvement = IMPROVEMENT_OPERATIONS.includes(operation.name);
+    const improvement = IMPROVEMENT_OPERATIONS.includes(operation.name), contact = operation.name === CONTACT_OPERATION;
     const action = improvement ? operation.name === 'improvement.execute' ? 'improvement.write' : 'improvement.read'
-        : evidenceRead ? 'evidence.read' : 'assessment.read';
-    if (!['ncsc.list', 'ncsc.read', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ||
+        : contact ? CONTACT_AUDIT.action : evidenceRead ? 'evidence.read' : 'assessment.read';
+    if (!['ncsc.list', 'ncsc.read', 'evidence.read', CONTACT_OPERATION, ...IMPROVEMENT_OPERATIONS].includes(operation.name) ||
         value.schemaVersion !== 1 || value.eventType !== 'dashboard.operation' || value.action !== action ||
-        value.module !== (improvement ? 'improvement_plan' : evidenceRead ? 'evidence' : 'cyber_security') ||
+        value.module !== (improvement ? 'improvement_plan' : contact ? CONTACT_AUDIT.module : evidenceRead ? 'evidence' : 'cyber_security') ||
         value.result !== 'succeeded') inv.unavailable();
     const current = () => {
         if (inv.owner !== operation || operation.finished || operation.active !== active || active.phase !== 'work') throw privateError(false);
@@ -593,13 +605,15 @@ async function writeAudit(inv, operation, event) {
 }
 
 function operationPair(inv, database, routing, resolvedAt, name, context) {
-    const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name);
-    if (!known || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true || inv.owner ||
+    const contact = name === CONTACT_OPERATION;
+    const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name) || contact;
+    if (!known || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true ||
+        contact && inv.options.contactRequestsEnabled !== true || inv.owner ||
         routing.portfolio && name !== 'improvement.list') {
         throw mapped(privateError(false), known ? name : 'admission.read');
     }
     try { inv.now(); } catch (error) { throw mapped(error, name); }
-    if (IMPROVEMENT_OPERATIONS.includes(name)) {
+    if (IMPROVEMENT_OPERATIONS.includes(name) || contact) {
         try {
             requireTenantRequestContext(context);
             if (context.requestId !== inv.capture.requestId || !equal(context.scope, routing.scope) ||
@@ -670,6 +684,7 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
                     currentAdmission(inv, active.context.admissions, routing.scope, active.context.binding, at);
                     currentMember(inv, authority, active.context.binding, at);
                     currentImprovement(inv, operation, authority, at);
+                    currentContact(inv, operation, authority, at);
                     active.phase = 'work';
                     const client = Object.freeze({
                         query(sql, params) {
@@ -881,10 +896,8 @@ function hostProjectionAt(frame, at, configured = true) {
     const product = currentProductGrant(frame.grants, at);
     const service = code => code !== 'managed_it_core' && frame.grants.some(grant => grant.code === code && live(grant));
     const fractional = service('fractional_advisory') && frame.flags.enabled['service:fractional_advisory'] === true;
-    const ncscReady = configured && frame.ncscEnabled && Boolean(product && product.frameworks.some(ref =>
-        ref.moduleId === 'cyber_security' && ref.profileId === ACCEPTED_PROFILE_REF.profileId &&
-        ref.version === ACCEPTED_PROFILE_REF.profileVersion && frame.flags.frameworks.some(flag =>
-            flag.moduleId === ref.moduleId && flag.profileId === ref.profileId && flag.version === ref.version)));
+    const ncscReady = configured && frame.ncscEnabled && Boolean(product && listsEnabledNcscProfile(product.frameworks.filter(ref =>
+        frame.flags.frameworks.some(flag => flag.moduleId === ref.moduleId && flag.profileId === ref.profileId && flag.version === ref.version))));
     const improvementReady = configured && frame.improvementEnabled;
     let presentationMode = null;
     const modules = registry.modules.map(item => {
@@ -1068,6 +1081,9 @@ async function bufferedHost(inv, operation, facts) {
         if (projected.vector.presentationMode !== null) {
             body.metadata = createNcscQuestionnaireMetadata();
             body.presentationMode = projected.vector.presentationMode;
+            // Scoring v2 (#399): display metadata for retained 2026-11-18.1
+            // assessments, only while the flag is on. Flag off, the body is unchanged.
+            if (ncscProfileV2Enabled()) body.profileMetadata = [createNcscQuestionnaireMetadataV2()];
         }
         buffered = freeze({ ...buffered, response: { ...buffered.response, body } });
     }

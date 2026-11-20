@@ -3,22 +3,19 @@
 const crypto = require('node:crypto');
 const { types } = require('node:util');
 const { normaliseAssessmentState } = require('./assessmentDomain');
-const { createFrameworkRegistry } = require('../assessmentEngine/frameworkProfileRegistry');
-const { createAcceptedNcscFrameworkProfile } = require('../assessmentEngine/ncscAcceptedFrameworkProfile');
-const { MODULE_ID, ACCEPTED_PROFILE_REF, evaluateAcceptedNcscAssessment } = require('../assessmentEngine/ncscAssessmentEvaluator');
-const { SCORE_CONTRACT_VERSION, calculateEvidenceSnapshotSha256,
-    calculateRiskContextSnapshotSha256 } = require('../assessmentEngine/assessmentEvaluator');
+const { MODULE_ID } = require('../assessmentEngine/ncscAssessmentEvaluator');
+const { ACCEPTED_NCSC_CONTEXT, ncscProfileContext } = require('../assessmentEngine/ncscProfileSet');
 
-const acceptedProfile = createAcceptedNcscFrameworkProfile();
-const acceptedRegistry = createFrameworkRegistry([acceptedProfile]);
+// New assessments still use the accepted profile. A retained assessment is read
+// and scored with the profile and evaluator named by its own stored reference.
+const acceptedProfile = ACCEPTED_NCSC_CONTEXT.profile;
+const acceptedRegistry = ACCEPTED_NCSC_CONTEXT.registry;
 const OWNER_FIELDS = ['tenantId', 'organisationId', 'assessmentId'];
 const RECORD_FIELDS = ['schemaVersion', ...OWNER_FIELDS, 'recordedRevision', 'recordedAt'];
 const VERSION_FIELDS = ['schemaVersion', ...OWNER_FIELDS, 'revision', 'state',
     'scopePopulation', 'rationales', 'evidence', 'risk', 'submission'];
 const HASH_KINDS = new Set(['scope', 'rationale', 'evidence', 'risk', 'version', 'intent', 'receipt', 'policy', 'result']);
 const MAX_VERSION_BYTES = 256 * 1024;
-const QUESTION_IDS = new Set(acceptedProfile.questions.map(question => question.id));
-const OPTIONS = new Map(acceptedProfile.responseOptions.map(option => [option.id, option]));
 
 class NcscCandidateSizeError extends Error {
     constructor() {
@@ -50,11 +47,15 @@ function validateNcscSupportingRecords(input) {
     exact(envelope, VERSION_FIELDS);
     if (envelope.schemaVersion !== 1 || !Number.isSafeInteger(envelope.revision) ||
         envelope.revision < 0 || envelope.revision > 128) invalid();
+    const context = ncscProfileContext(envelope.state && envelope.state.profileRef);
+    if (!context) invalid();
+    const QUESTION_IDS = new Set(context.questionIds);
+    const OPTIONS = new Map(context.profile.responseOptions.map(option => [option.id, option]));
     let state;
-    try { state = normaliseAssessmentState(envelope.state, acceptedRegistry); }
+    try { state = normaliseAssessmentState(envelope.state, context.registry); }
     catch { invalid(); }
     if (!same(state, envelope.state) || state.moduleId !== MODULE_ID ||
-        !same(state.profileRef, ACCEPTED_PROFILE_REF) ||
+        !same(state.profileRef, context.profileRef) ||
         !['created', 'in-progress', 'submitted'].includes(state.status) ||
         state.revision !== envelope.revision || OWNER_FIELDS.some(key => envelope[key] !== state[key])) invalid();
 
@@ -88,19 +89,19 @@ function validateNcscSupportingRecords(input) {
         const record = envelope[kind];
         validateRecord(record, [...RECORD_FIELDS, 'profileRef', 'scopePopulationSha256', 'entries', 'sha256'], kind, envelope);
         if (record.recordedRevision !== 0 || record.recordedAt !== state.createdAt ||
-            !same(record.profileRef, ACCEPTED_PROFILE_REF) || record.scopePopulationSha256 !== scope.sha256 ||
+            !same(record.profileRef, context.profileRef) || record.scopePopulationSha256 !== scope.sha256 ||
             !Array.isArray(record.entries) || record.entries.length !== QUESTION_IDS.size ||
             record.entries.some(entry => !entry || !QUESTION_IDS.has(entry.itemId)) ||
             new Set(record.entries.map(entry => entry.itemId)).size !== QUESTION_IDS.size) invalid();
         // ENG003 owns the exact allowed evidence/risk fields and vocabulary.
         try {
-            if (kind === 'evidence') calculateEvidenceSnapshotSha256(record.entries);
-            else calculateRiskContextSnapshotSha256(record.entries);
+            if (kind === 'evidence') context.calculateEvidenceSnapshotSha256(record.entries);
+            else context.calculateRiskContextSnapshotSha256(record.entries);
         } catch { invalid(); }
     }
     if (envelope.submission !== null) {
         exact(envelope.submission, ['input', 'evaluation']);
-        if (state.status !== 'submitted' || !same(envelope.submission, constructSubmission(envelope))) invalid();
+        if (state.status !== 'submitted' || !same(envelope.submission, constructSubmission(envelope, context))) invalid();
     }
     return freeze(envelope);
 }
@@ -113,24 +114,27 @@ function buildNcscSubmission(envelopeInput) {
         error.statusCode = 409;
         throw error;
     }
-    return envelope.submission || constructSubmission(envelope);
+    if (envelope.submission) return envelope.submission;
+    const context = ncscProfileContext(envelope.state.profileRef);
+    if (!context) invalid();
+    return constructSubmission(envelope, context);
 }
 
-function constructSubmission(envelope) {
+function constructSubmission(envelope, context) {
     const { state } = envelope;
     const responses = new Map(state.responses.map(response => [response.itemId, response]));
     const evidence = new Map(envelope.evidence.entries.map(entry => [entry.itemId, entry]));
     const risk = new Map(envelope.risk.entries.map(entry => [entry.itemId, entry]));
-    const input = freeze({ schemaVersion: 1, scoreContractVersion: SCORE_CONTRACT_VERSION,
+    const input = freeze({ schemaVersion: 1, scoreContractVersion: context.scoreContractVersion,
         organisationId: envelope.organisationId, moduleId: MODULE_ID,
         assessmentId: envelope.assessmentId, assessmentRevision: `rev-${state.submission.revision}`,
-        profileRef: { ...ACCEPTED_PROFILE_REF }, scoreAsOf: state.submission.submittedAt,
+        profileRef: { ...context.profileRef }, scoreAsOf: state.submission.submittedAt,
         scopePopulationSha256: envelope.scopePopulation.sha256,
         evidenceSnapshot: { id: `evidence-${envelope.evidence.sha256}`,
-            sha256: calculateEvidenceSnapshotSha256(envelope.evidence.entries) },
+            sha256: context.calculateEvidenceSnapshotSha256(envelope.evidence.entries) },
         riskContextSnapshot: { id: `risk-${envelope.risk.sha256}`,
-            sha256: calculateRiskContextSnapshotSha256(envelope.risk.entries) },
-        atomInputs: acceptedProfile.questions.map(question => {
+            sha256: context.calculateRiskContextSnapshotSha256(envelope.risk.entries) },
+        atomInputs: context.profile.questions.map(question => {
             const response = responses.get(question.id), evidenceEntry = evidence.get(question.id), riskEntry = risk.get(question.id);
             return { itemId: question.id, response: { optionId: response.optionId },
                 evidenceState: evidenceEntry.evidenceState, statedImpact: riskEntry.statedImpact,
@@ -140,7 +144,7 @@ function constructSubmission(envelope) {
         }) });
     // No decision registry is composed here. A rationale remains a pending claim.
     let evaluation;
-    try { evaluation = evaluateAcceptedNcscAssessment(input); }
+    try { evaluation = context.evaluate(input); }
     catch { invalid(); }
     return freeze({ input, evaluation });
 }

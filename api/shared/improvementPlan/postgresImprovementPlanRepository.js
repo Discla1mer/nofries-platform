@@ -7,6 +7,7 @@ const { applyImprovementActionCommand, ImprovementPlanError } = require('./impro
 const { ImprovementPlanServiceError, normaliseImprovementCommand, normaliseImprovementSelector,
     requireImprovementContext, serviceError } = require('./improvementPlanService');
 const { resolveImprovementAccess, resolveEligibleOwner } = require('./improvementPlanAccess');
+const { NcscAssessmentError } = require('../ncscAssessmentService');
 const store = require('./improvementPlanStore');
 const { planCarryForward, carryOperationId, applyCarriedSteps } = require('./improvementPlanCarryForward');
 const fail = (code = 'improvement_unavailable', status = 503) => { throw new ImprovementPlanServiceError(code, status); };
@@ -71,16 +72,33 @@ function createPostgresImprovementPlanRepository(options) {
             fail();
         }
     }
+    // The previous plan's source assessment stored another profile than the new
+    // plan's (for example a v2 plan read after NOFRIES_NCSC_PROFILE_V2 is turned
+    // off). previousPlanId already excludes such a plan; this keeps a stored
+    // profile that cannot be read now from turning into a 503 if one is reached.
+    async function otherProfile(tx, previousScope, profileRef) {
+        const stored = await store.sourceProfileRef(tx, previousScope);
+        if (!stored) return false;
+        try { return !store.same(stored, profileRef); } catch { return false; }
+    }
     // Reassessment: re-apply owners, due dates and open-work status from the
     // organisation's previous plan as ordinary appended commands by the current
     // writer, in this transaction. Old plans are only read. Generate still
     // returns its own revision 0, so a replay returns the same result.
-    async function carryForward(tx, scope, current, context, initial, generated, source, at, owners) {
+    async function carryForward(tx, scope, current, context, initial, generated, source, profileRef, at, owners) {
         const previousId = await store.previousPlanId(tx, scope, source);
         if (!previousId) return [];
+        const previousScope = { ...context.scope, planId: previousId };
         let previous;
-        try { previous = await store.loadHistory(tx, { ...context.scope, planId: previousId }, current.tenantAggregate); }
+        try { previous = await store.loadHistory(tx, previousScope, current.tenantAggregate); }
         catch (error) {
+            // Only an assessment-store refusal whose stored profile differs from
+            // the new plan's is "no previous plan". Database, tenant and other
+            // assessment errors still abort.
+            if (error instanceof NcscAssessmentError && await otherProfile(tx, previousScope, profileRef)) {
+                try { console.warn('[improvement-plan] carry_forward_source_other_profile'); } catch (_) { /* No logging authority. */ }
+                return [];
+            }
             // A previous plan that no longer validates must not block every
             // later plan: start fresh. Database errors still abort.
             if (!(error instanceof ImprovementPlanServiceError || error instanceof ImprovementPlanError)) throw error;
@@ -104,7 +122,9 @@ function createPostgresImprovementPlanRepository(options) {
                 const next = applyImprovementActionCommand(from, domain, { ...context.scope, actorSubjectKey: context.identity.subjectKey,
                     eligibleOwnerSubjectKeys: action.ownerSubjectKey ? [action.ownerSubjectKey] : [] });
                 return { state: next, record: store.makeRecord(intent, at, source, last.payloadSha256, next, domain) };
-            }, error => error instanceof ImprovementPlanError || error instanceof ImprovementPlanServiceError);
+            }, error => (error instanceof ImprovementPlanServiceError && error.code === 'improvement_input_invalid') ||
+                (error instanceof ImprovementPlanError && ['improvement_owner_ineligible', 'improvement_transition_invalid',
+                    'improvement_note_invalid'].includes(error.code)));
             if (!carried) continue;
             records.push(...carried.records); ({ state, head } = carried);
             if (action.ownerSubjectKey) owners.push(action.ownerSubjectKey);
@@ -175,7 +195,8 @@ function createPostgresImprovementPlanRepository(options) {
                     access(current, context, 'improvement.write', now(), generate);
                     await store.append(tx, scope, record);
                     if (generate) {
-                        for (const carried of await carryForward(tx, scope, current, context, state, record, source, at, carriedOwners)) await store.append(tx, scope, carried);
+                        for (const carried of await carryForward(tx, scope, current, context, state, record, source,
+                            evaluatorInput.profileRef, at, carriedOwners)) await store.append(tx, scope, carried);
                     }
                     if (audit) await auditCommand(context, at, now);
                     const finalAt = now();

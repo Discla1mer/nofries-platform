@@ -111,7 +111,10 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
     // The route flag stays required; the reader and its durable audit writer
     // come only from the host's environment composition, never from a header.
     const accountLookup = env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP === 'true' && accountLookupReader
-        ? createAccountLookup({ read: accountLookupReader.read, list: accountLookupReader.list ?? null, wipe: accountWipe, audit: accountLookupReader.audit, targetDigest: accountLookupReader.targetDigest, readJson, env }) : null;
+        ? createAccountLookup({ read: accountLookupReader.read, list: accountLookupReader.list ?? null, wipe: accountWipe,
+            // Staff contact request list: only with its exact flag and a host-composed reader.
+            contactRequests: env.NOFRIES_OPERATOR_CONTACT_REQUESTS_ENABLED === 'true' && typeof accountLookupReader.contactRequests === 'function' ? accountLookupReader.contactRequests : null,
+            audit: accountLookupReader.audit, targetDigest: accountLookupReader.targetDigest, readJson, env }) : null;
 
     // Anonymous daily funnel totals (#151 F5): only with the flag on and a
     // reader composed by the host. Same staff checks as the other read routes.

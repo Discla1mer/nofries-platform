@@ -16,21 +16,25 @@ test('the pricing page shows the plans in the agreed order', () => {
 
 test('every non-zero price says + GST', () => {
     const prices = [...text.matchAll(/NZ\$([\d,]+)(.{0,6})/g)];
-    expect(prices.map(match => match[1])).toEqual(['0', '1,250', '2,000', '350']);
+    expect(prices.map(match => match[1])).toEqual(['0', '1,250', '350']);
     for (const [whole, amount, after] of prices) {
         if (amount !== '0') expect([whole, after.startsWith(' + GST')]).toEqual([whole, true]);
     }
     expect(text).toContain('No card needed.');
 });
 
-test('the founding pilot and assisted plan carry their agreed terms', () => {
-    for (const phrase of ['Normally NZ$2,000 + GST', 'first three customers', 'Invoiced upfront', 'Places are limited', 'Starts are staggered',
+test('managed security and the assisted plan carry their agreed terms', () => {
+    for (const phrase of ['NZ$1,250 + GST for 90 days', 'Invoiced upfront', 'You can enquire at any time',
         'An assisted baseline', 'Three improvements we own with you', 'Two month-end reviews', 'give your board or insurer',
         'feedback, a case study and a reference', 'From NZ$350 + GST a month', 'A quarterly review', 'Up to 1 hour of help a month',
-        'pilot fee is credited', 'no automatic renewal', 'New Zealand business hours', 'reply to support requests within two business days',
+        'If you choose the assisted plan, we credit your 90-day managed security fee to it', 'no automatic renewal', 'New Zealand business hours', 'reply to support requests within two business days',
         'does not include incident response', 'Managed IT is priced separately']) {
         expect([phrase, text.toLowerCase().includes(phrase.toLowerCase())]).toEqual([phrase, true]);
     }
+});
+
+test('the managed security offer has no launch, scarcity or offer-expiry language', () => {
+    expect(text).not.toMatch(/founding|pilot|start[- ]?up|launch|first three|limited|staggered|normally NZ|while places last|offer (?:ends|expires)/i);
 });
 
 test('the page offers no self-serve plan and makes no round-the-clock or certification claims', () => {
@@ -40,11 +44,15 @@ test('the page offers no self-serve plan and makes no round-the-clock or certifi
     expect(text).not.toContain('!');
 });
 
+test('direct pricing entries use the shared enquiry campaign handling', () => {
+    expect(html).toContain('<script src="/js/enquiry-availability.js" defer></script>');
+});
+
 test('the calls to action and Managed IT link go to existing pages', () => {
     const links = [...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/g)].map(match => [match[2].trim(), match[1]]);
     expect(links).toEqual(expect.arrayContaining([
         ['Create a free account', '/login?intent=create'],
-        ['Ask about the Founding Pilot', '/contact.html'],
+        ['Ask about 90-day managed security', '/contact.html?service=managed_security_90'],
         ['Managed IT', '/managed-it.html']
     ]));
     expect(html).not.toMatch(/href="\/share|\/api\//);

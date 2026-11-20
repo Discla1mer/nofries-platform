@@ -44,7 +44,8 @@ const {
 } = require('../api/shared/nofriesCatalogue');
 const { parseStaticWebAppsPrincipal } = require('../api/shared/identity');
 const { assertSameOriginForMutation } = require('../api/shared/securityHeaders');
-const { getClientKeyFromHeaders } = require('../api/shared/abuseProtection');
+const { getClientKeyFromHeaders, checkRateLimit, checkRateLimits } = require('../api/shared/abuseProtection');
+const { dashboardReadCost } = require('../api/shared/dashboardReadCost');
 const salesBootstrapFunction = require('../api/salesBootstrap');
 
 function principal(email, tenantId = 'tenant-one', name = 'Test User') {
@@ -253,7 +254,7 @@ describe('dormant dashboard document', () => {
         const methods = {
             login: ['GET'], 'ncsc/assessments': ['GET', 'POST'], 'ncsc/assessments/*': ['GET', 'POST'],
             'improvement/*': ['GET', 'POST'],
-            session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'],
+            session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], 'contact-requests': ['POST'], 'work-queue': ['GET'],
             bootstrap: ['GET'], 'app.js': ['GET'], 'dashboard.css': ['GET'],
             'modules/overview': ['GET'], 'modules/ai_governance': ['GET'], 'modules/cyber_security': ['GET'],
             'modules/it_optimisation': ['GET'], 'modules/improvement_plan': ['GET'], 'modules/evidence': ['GET'],
@@ -276,8 +277,12 @@ describe('dormant dashboard document', () => {
             // Content-versioned assets take Cache-Control from App Service (immutable only on an exact hash match).
             const edgeCache = ['/api/dashboard/app.js', '/api/dashboard/dashboard.css'].includes(rule.route) ? {}
                 : { 'Cache-Control': 'private, no-store, max-age=0' };
+            // The 20 KB edge config has no room for this rule's headers; the app sends the
+            // same private no-store, CSP and robots headers on every response (contactRequestHttp.test.js).
+            if (rule.route === '/api/dashboard/contact-requests') { expect(rule.headers).toBeUndefined(); continue; }
             expect(rule.headers).toEqual(rule.route === '/api/dashboard/improvement/*' ? { 'Cache-Control': 'no-store' }
-                : { ...edgeCache, 'X-Robots-Tag': 'noindex, nofollow',
+                : !['/api/dashboard/login', '/api/dashboard/modules/overview', '/api/dashboard/app.js', '/api/dashboard/dashboard.css'].includes(rule.route)
+                    ? edgeCache : { ...edgeCache, 'X-Robots-Tag': 'noindex, nofollow',
                     'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" });
         }
         expect(config.routes.some(route => route.route === '/dashboard/')).toBe(false);
@@ -1914,7 +1919,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(fs.existsSync(path.join(dist, 'js', 'lead-form.js'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'founder.html'))).toBe(false);
         expect(fs.existsSync(path.join(dist, 'sample-report.html'))).toBe(false);
-        expect(fs.existsSync(path.join(dist, 'sitemap.xml'))).toBe(false);
+        expect(fs.existsSync(path.join(dist, 'sitemap.xml'))).toBe(true);
         const staticConfig = JSON.parse(fs.readFileSync(path.join(dist, 'staticwebapp.config.json'), 'utf8'));
         // Static Web Apps defaults an omitted allowedRoles field to anonymous.
         staticConfig.routes = staticConfig.routes.map(route => ({
@@ -2528,6 +2533,78 @@ describe('configured dashboard actual HTTP transport', () => {
         await h.store.deleteSession(secondId);
         expect((await read(second)).status).toBe(401);
         expect((await read(second)).status).toBe(429);
+    });
+
+    test('the combined Overview read is charged as the separate reads it replaces, before any work', async () => {
+        const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_READ_MAX: '100', NOFRIES_RATE_DASHBOARD_SESSION_READ_MAX: '8',
+            NOFRIES_RATE_DASHBOARD_ADDRESS_READ_MAX: '100' } });
+        const first = (await h.login()).cookie, second = (await h.login()).cookie;
+        const read = (cookie, target) => h.send('get', target).set('Cookie', cookie);
+        const OVERVIEW = '/api/dashboard/modules/overview?view=first-paint';
+        // Other routes still cost one.
+        const ordinary = await read(first, '/api/dashboard/session');
+        expect(ordinary.status).not.toBe(429); expect(ordinary.headers['x-ratelimit-remaining']).toBe('7');
+        // With Actions the bundle costs eight; with seven left it is refused before any work and spends nothing.
+        h.resetObservations();
+        const refused = await read(first, OVERVIEW + '&actions=1');
+        expect(refused.status).toBe(429);
+        expect(refused.body).toEqual({ error: 'Too many requests. Please try again later.', retryAfterSeconds: expect.any(Number) });
+        expect(h.configuration.clock).not.toHaveBeenCalled(); h.expectNoAuthorityWork();
+        // Without Actions it costs two.
+        const plain = await read(first, OVERVIEW);
+        expect(plain.status).not.toBe(429); expect(plain.headers['x-ratelimit-remaining']).toBe('5');
+        for (let i = 0; i < 5; i++) expect((await read(first, '/api/dashboard/session')).status).not.toBe(429);
+        expect((await read(first, '/api/dashboard/session')).status).toBe(429);
+        // A fresh session spends its whole allowance on one bundle with Actions.
+        const full = await read(second, OVERVIEW + '&actions=1');
+        expect(full.status).not.toBe(429); expect(full.headers['x-ratelimit-remaining']).toBe('0');
+        expect((await read(second, '/api/dashboard/session')).status).toBe(429);
+    });
+
+    test('requests refused by their own session allowance never spend the shared address allowance', async () => {
+        const h = dashboardHttpHarness({ env: { NOFRIES_RATE_API_READ_MAX: '100', NOFRIES_RATE_DASHBOARD_SESSION_READ_MAX: '8',
+            NOFRIES_RATE_DASHBOARD_ADDRESS_READ_MAX: '20' } });
+        const first = (await h.login()).cookie, second = (await h.login()).cookie;
+        const read = (cookie, target) => h.send('get', target).set('Cookie', cookie);
+        const OVERVIEW = '/api/dashboard/modules/overview?view=first-paint&actions=1';
+        expect((await read(first, OVERVIEW)).status).not.toBe(429); // 8 from each bucket
+        for (let i = 0; i < 5; i++) expect((await read(first, OVERVIEW)).status).toBe(429); // session refusals spend nothing
+        // The address still has 12, so a second session at the same address gets its whole allowance.
+        const full = await read(second, OVERVIEW);
+        expect(full.status).not.toBe(429); expect(full.headers['x-ratelimit-remaining']).toBe('0');
+        // Now the address has 4 left: a further bundle is refused by the address and neither bucket is charged.
+        const third = (await h.login()).cookie;
+        expect((await read(third, OVERVIEW)).status).toBe(429);
+        for (let i = 0; i < 4; i++) expect((await read(third, '/api/dashboard/session')).status).not.toBe(429);
+        expect((await read(third, '/api/dashboard/session')).status).toBe(429);
+    });
+
+    test('checkRateLimits charges every bucket by the cost only when it fits in all of them', () => {
+        const env = { NOFRIES_RATE_DASHBOARD_ADDRESS_READ_MAX: '10', NOFRIES_RATE_DASHBOARD_SESSION_READ_MAX: '4' };
+        const unique = 'charge-all-' + crypto.randomUUID();
+        const address = ['dashboardAddressRead', unique], session = ['dashboardSessionRead', unique + ':s1'], other = ['dashboardSessionRead', unique + ':s2'];
+        // Normal path: both charged by the cost; the last bucket's result is reported.
+        expect(checkRateLimits([address, session], env, 3)).toEqual({ allowed: true, limit: 4, remaining: 1 });
+        // Session refusal leaves the address untouched (7 left of 10).
+        const refused = checkRateLimits([address, session], env, 2);
+        expect(refused).toMatchObject({ allowed: false, limit: 4 }); expect(refused.retryAfterSeconds).toBeGreaterThanOrEqual(1);
+        expect(checkRateLimit(address[0], address[1], env, 7)).toMatchObject({ allowed: true, remaining: 0 });
+        // Address refusal leaves the other session untouched (all 4 still free).
+        expect(checkRateLimits([address, other], env, 1)).toMatchObject({ allowed: false, limit: 10 });
+        expect(checkRateLimit(other[0], other[1], env, 4)).toMatchObject({ allowed: true, remaining: 0 });
+        // A cost larger than the limit is refused with a finite retry time and charges nothing.
+        const fresh = ['dashboardSessionRead', unique + ':s3'];
+        expect(checkRateLimits([fresh], env, 5)).toMatchObject({ allowed: false, retryAfterSeconds: 900 });
+        expect(checkRateLimit(fresh[0], fresh[1], env, 4)).toMatchObject({ allowed: true, remaining: 0 });
+    });
+
+    test('only the two exact combined Overview GET forms cost more than one read', () => {
+        const OVERVIEW = '/api/dashboard/modules/overview?view=first-paint';
+        expect(dashboardReadCost('GET', OVERVIEW)).toBe(2);
+        expect(dashboardReadCost('GET', OVERVIEW + '&actions=1')).toBe(8);
+        for (const [method, url] of [['HEAD', OVERVIEW], ['POST', OVERVIEW + '&actions=1'], ['GET', '/api/dashboard/modules/overview?actions=1&view=first-paint'],
+            ['GET', OVERVIEW + '&actions=1&extra=1'], ['GET', '/api/dashboard/modules/overview'], ['GET', '/api/dashboard/session'],
+            ['GET', '/api/dashboard/ncsc/assessments?limit=50'], ['GET', undefined]]) expect(dashboardReadCost(method, url)).toBe(1);
     });
 
     test('verified dashboard session writes are counted per session and other API writes stay per address', async () => {

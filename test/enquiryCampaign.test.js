@@ -43,6 +43,14 @@ test('keeps the first campaign in the tab instead of overwriting it', () => {
     expect(land('?utm_source=linkedin', 'meta/paid/nov-launch').tag).toBe('meta/paid/nov-launch');
 });
 
+test('login captures before the deferred setup script can navigate to signup', () => {
+    const login = fs.readFileSync(path.join(__dirname, '../login.html'), 'utf8');
+    expect(login.match(/<script src="[^"]+" defer><\/script>/g)).toEqual([
+        '<script src="/js/enquiry-availability.js" defer></script>',
+        '<script src="/js/organisation-setup.js" defer></script>'
+    ]);
+});
+
 test('blocked storage gives no tag and does not throw', () => {
     expect(land('?utm_source=meta', null, { blocked: true }).tag).toBe('');
 });
@@ -72,6 +80,10 @@ test('the service topic list matches the dashboard service registry', () => {
     });
 });
 
+test('the 90-day managed security offer has a fixed topic', () => {
+    expect(land('?service=managed_security_90').window.enquiryTopic()).toBe('90-day managed security');
+});
+
 test.each([
     ['?service=not_a_service'],
     ['?service=%3Cscript%3Ealert(1)%3C%2Fscript%3E'],
@@ -87,4 +99,21 @@ test('the contact form only prefills an empty message with the fixed service lab
     expect(contact).toContain('window.enquiryTopic()');
     expect(contact).toContain('!messageField.value');
     expect(contact).not.toMatch(/location\.search|URLSearchParams/);
+});
+
+test.each([
+    ['', null, false], ['?utm_campaign=alone', null, false], ['?utm_source=meta', null, true],
+    ['?service=managed_security_90', 'meta/paid/launch', true]
+])('contact intro follows the accepted campaign tag (%s, %s)', async (search, stored, campaign) => {
+    const { window } = land(search, stored);
+    window.enquiryAvailability = async () => ({ available: true });
+    const elements = new Map();
+    const document = { body: { dataset: { page: 'contact' } }, getElementById(id) {
+        if (!elements.has(id)) elements.set(id, { textContent: '', addEventListener() {} });
+        return elements.get(id);
+    } };
+    const contact = fs.readFileSync(path.join(__dirname, '../js/contact.js'), 'utf8');
+    await vm.runInNewContext(contact, { window, document });
+    expect(document.getElementById('contact-heading').textContent).toBe(campaign ? '90-day managed security' : '');
+    expect(document.getElementById('contact-intro').textContent.includes('NZ$1,250 + GST')).toBe(campaign);
 });

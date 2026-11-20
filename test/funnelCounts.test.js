@@ -2,7 +2,7 @@
 
 const request = require('supertest');
 const { FUNNEL_EVENTS, BROWSER_FUNNEL_EVENTS, aucklandDay, createFunnelCountWriter, funnelCountsEnabled, handleFunnelCountRequest, UPSERT_SQL,
-    resetTelemetryRateLimitForTests, telemetryKey, STATEMENT_TIMEOUT_SQL, LOCK_TIMEOUT_SQL } = require('../api/shared/funnelCounts');
+    resetTelemetryRateLimitForTests, telemetryKey, RATE_MAX, GLOBAL_RATE_MAX, allowTelemetry, STATEMENT_TIMEOUT_SQL, LOCK_TIMEOUT_SQL } = require('../api/shared/funnelCounts');
 const { handlers } = require('../api/shared/apiRuntime');
 const { checkRateLimit, resetAbuseProtectionForTests } = require('../api/shared/abuseProtection');
 
@@ -101,16 +101,35 @@ test('oversize body, non-POST and cross-site requests are rejected', async () =>
     expect(record).not.toHaveBeenCalled();
 });
 
-test('its own in-memory rate limit returns 429 after 90 posts per client', async () => {
+test('its own in-memory rate limit returns 429 after RATE_MAX posts per client', async () => {
+    expect(RATE_MAX).toBe(600);
     const record = jest.fn(async () => {});
-    for (let i = 0; i < 90; i += 1) expect((await handleFunnelCountRequest(post({ event: 'visit' }), { env: ON, record })).status).toBe(204);
+    for (let i = 0; i < RATE_MAX; i += 1) expect((await handleFunnelCountRequest(post({ event: 'visit' }), { env: ON, record })).status).toBe(204);
     expect((await handleFunnelCountRequest(post({ event: 'visit' }), { env: ON, record })).status).toBe(429);
-    expect(record).toHaveBeenCalledTimes(90);
+    expect(record).toHaveBeenCalledTimes(RATE_MAX);
+});
+
+test('a process-wide cap bounds telemetry across all client keys and resets with the window', () => {
+    expect(GLOBAL_RATE_MAX).toBe(3000);
+    const t0 = 1_000_000;
+    let allowed = 0;
+    for (let i = 0; i < GLOBAL_RATE_MAX + 50; i += 1) if (allowTelemetry('198.51.100.' + (i % 200), t0)) allowed += 1;
+    expect(allowed).toBe(GLOBAL_RATE_MAX);
+    expect(allowTelemetry('203.0.113.250', t0 + 1)).toBe(false);
+    expect(allowTelemetry('203.0.113.250', t0 + 10 * 60 * 1000)).toBe(true);
+});
+
+test('refused posts do not use up the process-wide cap', () => {
+    const t0 = 2_000_000;
+    for (let i = 0; i < RATE_MAX + 100; i += 1) allowTelemetry('198.51.100.1', t0);
+    let others = 0;
+    for (let i = 0; i < GLOBAL_RATE_MAX - RATE_MAX; i += 1) if (allowTelemetry('198.51.100.' + (2 + (i % 100)), t0)) others += 1;
+    expect(others).toBe(GLOBAL_RATE_MAX - RATE_MAX);
 });
 
 test('telemetry traffic never touches the shared enquiry and signup rate-limit buckets', async () => {
     const record = jest.fn(async () => {});
-    for (let i = 0; i < 100; i += 1) await handleFunnelCountRequest(post({ event: 'visit' }), { env: ON, record });
+    for (let i = 0; i < RATE_MAX + 10; i += 1) await handleFunnelCountRequest(post({ event: 'visit' }), { env: ON, record });
     expect(checkRateLimit('apiEnquiry', IP, {}).allowed).toBe(true);
 });
 

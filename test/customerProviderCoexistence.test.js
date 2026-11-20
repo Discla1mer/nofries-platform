@@ -104,6 +104,7 @@ const queueCapabilityHeader = 'X-NoFries-Dashboard-Capabilities';
 const queueCapabilityRequests = [
     { name: 'old client without header', raw: [], advertised: false },
     { name: 'account label capability', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1'], advertised: true, label: true },
+    { name: 'account identity capability', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1 contact-request-v1 account-identity-v1'], advertised: true, label: true, identity: true },
     { name: 'exact capability', raw: [queueCapabilityHeader, 'work-queue-v1'], advertised: true }
 ];
 const otherQueueCapabilityRequests = [
@@ -115,6 +116,8 @@ const otherQueueCapabilityRequests = [
     { name: 'comma-combined values', raw: [queueCapabilityHeader, 'work-queue-v1, work-queue-v1'], advertised: false },
     { name: 'combined with unknown capability', raw: [queueCapabilityHeader, 'work-queue-v1, unknown'], advertised: false },
     { name: 'unknown version', raw: [queueCapabilityHeader, 'work-queue-v2'], advertised: false },
+    { name: 'identity without contact token', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1 account-identity-v1'], advertised: false },
+    { name: 'identity token reordered', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1 account-identity-v1 contact-request-v1'], advertised: false },
     { name: 'value case changed', raw: [queueCapabilityHeader, 'WORK-QUEUE-V1'], advertised: false },
     { name: 'leading whitespace', raw: [queueCapabilityHeader, ' work-queue-v1'], advertised: false },
     { name: 'trailing whitespace', raw: [queueCapabilityHeader, 'work-queue-v1 '], advertised: false },
@@ -133,7 +136,7 @@ test.each(queueCapabilityCases)
 ('session capability preserves old wire shape unless negotiated ($enabled, $provider, $accountType, $header)', async ({ enabled, provider, accountType, request: capability }) => {
     const h = fixture();
     if (enabled) h.options.improvementEnabled = true;
-    const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', bindingId: id(90), scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
+    const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', accountName: 'Synthetic Customer', bindingId: id(90), scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
         ...(accountType ? { accountType } : {}) }));
     h.options.customer.resolveActivationBinding = binding;
     h.options.externalCustomer.resolveActivationBinding = binding;
@@ -169,15 +172,133 @@ test.each(queueCapabilityCases)
     expect(response.body).toEqual({ schemaVersion: 1, authenticated: true,
         purpose: provider === 'staff' ? 'operator_dashboard' : 'customer',
         expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90),
-        ...(accountType ? { accountType } : {}), ...(capability.label && provider !== 'staff' ? { accountLabel: 'synthetic@example.test' } : {}), ...(advertised ? { workQueueAvailable: true } : {}) });
+        ...(accountType ? { accountType } : {}), ...(capability.label && provider !== 'staff' ? { accountLabel: 'synthetic@example.test' } : {}),
+        ...(capability.identity && provider !== 'staff' ? { accountName: 'Synthetic Customer' } : {}), ...(advertised ? { workQueueAvailable: true } : {}) });
     expect(binding).toHaveBeenCalledTimes(provider === 'staff' ? 0 : 1);
     expect(readSession).toHaveBeenCalledTimes(1);
     // A previously advertised capability does not survive lost authentication.
     h.store.sessions.clear();
     const denied = await host.handleRequest(request());
-    expect(denied.status).toBe(401); expect(denied.body).not.toHaveProperty('workQueueAvailable'); expect(denied.body).not.toHaveProperty('accountLabel');
+    expect(denied.status).toBe(401); expect(denied.body).not.toHaveProperty('workQueueAvailable'); expect(denied.body).not.toHaveProperty('accountLabel'); expect(denied.body).not.toHaveProperty('accountName');
     expect(readSession).toHaveBeenCalledTimes(1);
     expect(binding).toHaveBeenCalledTimes(provider === 'staff' ? 0 : 1);
+});
+
+test('the server display name drops bidi and format characters before trimming and omits unsuitable names', () => {
+    const { accountDisplayName } = require('../lib/customerSignupProduction');
+    expect(accountDisplayName('  Synthetic Customer  ')).toBe('Synthetic Customer');
+    expect(accountDisplayName('‮Synthetic‬ ⁦Customer⁩')).toBe('Synthetic Customer');
+    expect(accountDisplayName('​ Synthetic‍ Customer ﻿­')).toBe('Synthetic Customer');
+    expect(accountDisplayName('‪‫‬‭‮⁦⁧⁨⁩​')).toBe('');
+    expect(accountDisplayName('Synthetic\nCustomer')).toBe('');
+    expect(accountDisplayName('x'.repeat(161))).toBe('');
+    expect(accountDisplayName('x'.repeat(160) + '​')).toBe('x'.repeat(160));
+    expect(accountDisplayName(undefined)).toBe('');
+    // What the server sends is what the handler and browser accept: trimmed, format-free.
+    for (const name of ['Synthetic Customer', '‮A‬', ' ⁦B ⁩ ']) {
+        const out = accountDisplayName(name);
+        expect(out).toBe(out.trim()); expect(out).not.toMatch(/[\u0000-\u001f\u007f-\u009f\p{Cf}]/u);
+    }
+});
+
+// The approved binding's display name is checked again by the handler: bidi
+// controls and other format characters, and untrimmed values, fail closed.
+test.each([
+    ['right-to-left override', 'Synthetic ‮remotsuC'],
+    ['isolate controls', '⁦Synthetic⁩ Customer'],
+    ['zero-width space', 'Synthetic​Customer'],
+    ['byte order mark', 'Synthetic Customer﻿'],
+    ['soft hyphen', 'Synthe­tic'],
+    ['leading space', ' Synthetic Customer'],
+    ['control character', 'Synthetic\nCustomer']
+])('a binding display name with %s is refused', async (_, accountName) => {
+    const h = fixture();
+    const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', accountName, bindingId: id(90),
+        scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' }, accountType: 'company' }));
+    h.options.customer.resolveActivationBinding = binding;
+    const readSession = jest.fn(async () => ({ purpose: 'customer',
+        expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90) }));
+    let host;
+    jest.isolateModules(() => {
+        const runtime = require('../api/shared/appLifecycle/postgresDashboardRuntimeRepository');
+        const replacement = jest.spyOn(runtime, 'createPostgresDashboardRuntimeRepository').mockReturnValue({ readSession });
+        try { host = require('../api/shared/dashboardRuntimeHandlers').createDashboardRuntimeHandlers(h.options); }
+        finally { replacement.mockRestore(); }
+    });
+    const issued = await login(host.authServices.customer);
+    const req = new (require('node:http').IncomingMessage)(new (require('node:net').Socket)());
+    const capability = 'work-queue-v1 account-label-v1 contact-request-v1 account-identity-v1';
+    req.method = 'GET'; req.url = '/api/dashboard/session';
+    req.headers = { cookie: issued.cookie, [queueCapabilityHeader.toLowerCase()]: capability };
+    req.rawHeaders = ['cookie', issued.cookie, queueCapabilityHeader, capability];
+    req.complete = true; req.push(null);
+    const response = await host.handleRequest(req);
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ code: 'dashboard_access_denied' });
+    expect(binding).toHaveBeenCalledTimes(1);
+});
+
+// #409 stage 1c: contactRequestsAvailable is negotiated like the queue field.
+// Older open dashboards (no header, or the earlier tokens) keep their exact shape.
+const contactCapability = 'work-queue-v1 account-label-v1 contact-request-v1';
+const contactCapabilityRequests = [
+    { name: 'old client without header', raw: [], queue: false, label: false, contact: false },
+    { name: 'queue only', raw: [queueCapabilityHeader, 'work-queue-v1'], queue: true, label: false, contact: false },
+    { name: 'queue and label', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1'], queue: true, label: true, contact: false },
+    { name: 'contact client', raw: [queueCapabilityHeader, contactCapability], queue: true, label: true, contact: true },
+    { name: 'current client', raw: [queueCapabilityHeader, contactCapability + ' account-identity-v1'], queue: true, label: true, contact: true, identity: true },
+    { name: 'contact token alone', raw: [queueCapabilityHeader, 'contact-request-v1'], queue: false, label: false, contact: false },
+    { name: 'reordered tokens', raw: [queueCapabilityHeader, 'contact-request-v1 work-queue-v1 account-label-v1'], queue: false, label: false, contact: false },
+    { name: 'duplicate current value', raw: [queueCapabilityHeader, contactCapability, queueCapabilityHeader, contactCapability], queue: false, label: false, contact: false },
+    { name: 'unknown contact version', raw: [queueCapabilityHeader, 'work-queue-v1 account-label-v1 contact-request-v2'], queue: false, label: false, contact: false },
+    { name: 'trailing whitespace', raw: [queueCapabilityHeader, contactCapability + ' '], queue: false, label: false, contact: false }
+];
+const contactCapabilityCases = [true, false].flatMap(enabled => ['staff', 'legacy', 'external'].flatMap(provider =>
+    (provider === 'staff' ? [null] : ['consultant', 'company']).flatMap(accountType =>
+        contactCapabilityRequests.map(request => ({ enabled, provider, accountType, request, header: request.name })))));
+test.each(contactCapabilityCases)
+('contact capability is offered only to a negotiated customer session with the flag on ($enabled, $provider, $accountType, $header)', async ({ enabled, provider, accountType, request: capability }) => {
+    const h = fixture();
+    h.options.improvementEnabled = true;
+    if (enabled) h.options.contactRequestsEnabled = true;
+    const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', accountName: 'Synthetic Customer', bindingId: id(90), scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' },
+        ...(accountType ? { accountType } : {}) }));
+    h.options.customer.resolveActivationBinding = binding;
+    h.options.externalCustomer.resolveActivationBinding = binding;
+    const readSession = jest.fn(async () => ({ purpose: provider === 'staff' ? 'operator_dashboard' : 'customer',
+        expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90) }));
+    let host;
+    jest.isolateModules(() => {
+        const runtime = require('../api/shared/appLifecycle/postgresDashboardRuntimeRepository');
+        const replacement = jest.spyOn(runtime, 'createPostgresDashboardRuntimeRepository').mockReturnValue({ readSession });
+        try { host = require('../api/shared/dashboardRuntimeHandlers').createDashboardRuntimeHandlers(h.options); }
+        finally { replacement.mockRestore(); }
+    });
+    const services = provider === 'staff' ? host.authServices : provider === 'legacy' ? host.authServices.customer : host.authServices.externalCustomer;
+    const issued = await login(services);
+    const request = () => {
+        const req = new (require('node:http').IncomingMessage)(new (require('node:net').Socket)());
+        req.method = 'GET'; req.url = '/api/dashboard/session';
+        req.headers = { cookie: issued.cookie }; req.rawHeaders = ['cookie', issued.cookie, ...capability.raw];
+        for (let index = 0; index < capability.raw.length; index += 2) {
+            const name = capability.raw[index].toLowerCase(), value = capability.raw[index + 1];
+            req.headers[name] = Object.hasOwn(req.headers, name) ? req.headers[name] + ', ' + value : value;
+        }
+        req.complete = true; req.push(null); return req;
+    };
+    const response = await host.handleRequest(request());
+    expect(response.status).toBe(200);
+    const customer = provider !== 'staff';
+    expect(response.body).toEqual({ schemaVersion: 1, authenticated: true,
+        purpose: customer ? 'customer' : 'operator_dashboard',
+        expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90),
+        ...(accountType ? { accountType } : {}), ...(capability.label && customer ? { accountLabel: 'synthetic@example.test' } : {}),
+        ...(capability.identity && customer ? { accountName: 'Synthetic Customer' } : {}),
+        ...(capability.queue && accountType === 'consultant' ? { workQueueAvailable: true } : {}),
+        ...(enabled && capability.contact && customer ? { contactRequestsAvailable: true } : {}) });
+    h.store.sessions.clear();
+    const denied = await host.handleRequest(request());
+    expect(denied.status).toBe(401); expect(denied.body).not.toHaveProperty('contactRequestsAvailable'); expect(denied.body).not.toHaveProperty('accountName');
 });
 
 test('direct dashboard composer rejects an environment secret accessor without invoking it', () => {
@@ -621,4 +742,83 @@ test('an external customer cookie keeps precedence over unreadable old setup wit
     expect(result.status).toBe(200); expect(result.body).toEqual({ state: 'sign_in' });
     expect(result.headers['x-nofries-customer-entry']).toBe('external');
     expect(result.headers['set-cookie']).toBeUndefined();
+});
+
+// Signed-in email settings through the real Express host with the settings
+// store enabled (#462 follow-up): the old GET path redirects to the fixed page
+// address carrying only ?saved=1, and both POST paths apply the same-origin
+// check before any session or database work and share the per-subject limit.
+describe('email settings routes with the store enabled', () => {
+    const http = require('supertest');
+    const { SUBJECT_WRITE_MAX, resetEmailSettingsForTests } = require('../api/shared/lifecycleEmail/emailSettings');
+    const FORM = 'type=result_summary&action=off';
+    function settingsHost() {
+        const h = fixture(), queries = [];
+        const connect = jest.fn(async () => ({
+            async query(sql, params) {
+                const text = String(sql).replace(/\s+/g, ' ').trim(); queries.push(text);
+                if (text.startsWith('SELECT account_id')) return { rows: params[0] === h.subjects.legacy.tenant + ':' + h.subjects.legacy.oid ? [{ account_id: id(70) }] : [], rowCount: 0 };
+                if (text.startsWith('SELECT email_type')) return { rows: [], rowCount: 0 };
+                if (text.startsWith('INSERT INTO nofries.email_preferences')) return { rows: [], rowCount: 1 };
+                return { rows: [], rowCount: 0 };
+            },
+            release() {}
+        }));
+        h.options.pool = { connect, async end() {} };
+        const services = createDashboardRuntimeHandlers(h.options).authServices;
+        const app = require('../server').createNoFriesApp({ dashboard: h.options });
+        const load = jest.spyOn(h.store, 'loadSession');
+        return { h, app, services, connect, queries, load };
+    }
+    beforeEach(() => resetEmailSettingsForTests());
+    afterAll(() => resetEmailSettingsForTests());
+
+    test('GET on the old path is a 302 to the fixed page address carrying only ?saved=1', async () => {
+        const { app, connect, load } = settingsHost();
+        for (const [query, location] of [['', '/account/email'], ['?saved=1', '/account/email?saved=1'],
+            ['?saved=1&next=%2F%2Fevil.example', '/account/email'], ['?saved=2', '/account/email'],
+            ['?saved=1&saved=1', '/account/email'], ['?next=https%3A%2F%2Fevil.example', '/account/email']]) {
+            const result = await http(app).get('/api/account/email' + query);
+            expect([result.status, result.headers.location]).toEqual([302, location]);
+            expect(result.headers['cache-control']).toBe('private, no-store, max-age=0');
+        }
+        expect(connect).not.toHaveBeenCalled(); expect(load).not.toHaveBeenCalled();
+    });
+
+    test.each(['/account/email', '/api/account/email-page', '/api/account/email'])
+    ('POST %s refuses a cross-site or wrong-origin request before any session or database work', async path => {
+        const { h, app, services, connect, load } = settingsHost();
+        const { cookie } = await login(services.customer); load.mockClear();
+        for (const headers of [{ 'Sec-Fetch-Site': 'cross-site', Origin: 'https://nofries.example.test' },
+            { 'Sec-Fetch-Site': 'same-site', Origin: 'https://nofries.example.test' },
+            { Origin: 'https://evil.example' }, {}]) {
+            let call = http(app).post(path).set('Cookie', cookie).type('form');
+            for (const [name, value] of Object.entries(headers)) call = call.set(name, value);
+            const result = await call.send(FORM);
+            expect(result.status).toBe(403);
+        }
+        expect(connect).not.toHaveBeenCalled(); expect(load).not.toHaveBeenCalled();
+        expect(h.proofs.size).toBe(1);
+    });
+
+    test('POST on the page path and the rewrite path saves, then shares one per-subject limit', async () => {
+        const { app, services, connect } = settingsHost();
+        const { cookie } = await login(services.customer);
+        const post = path => http(app).post(path).set('Cookie', cookie).set('Origin', 'https://nofries.example.test')
+            .set('Sec-Fetch-Site', 'same-origin').type('form').send(FORM);
+        for (let index = 0; index < SUBJECT_WRITE_MAX; index += 1) {
+            const result = await post(index % 2 ? '/account/email' : '/api/account/email-page');
+            expect([result.status, result.headers.location]).toEqual([303, '/account/email?saved=1']);
+        }
+        const connections = connect.mock.calls.length;
+        for (const path of ['/account/email', '/api/account/email-page', '/api/account/email']) {
+            const limited = await post(path);
+            expect(limited.status).toBe(429);
+            expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+        }
+        expect(connect).toHaveBeenCalledTimes(connections);
+        // Reads are not limited.
+        const page = await http(app).get('/account/email').set('Cookie', cookie);
+        expect(page.status).toBe(200);
+    });
 });

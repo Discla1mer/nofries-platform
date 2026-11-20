@@ -200,15 +200,42 @@
      * operation IDs, retries, storage, current tenant selection or UI readiness.
      */
     function createClient(adapters) {
-        const supplied = record(adapters, ['metadata', 'fetch'], ['onAccepted']);
+        const supplied = record(adapters, ['metadata', 'fetch'], ['onAccepted', 'profileMetadata']);
         if (typeof supplied.fetch !== 'function') invalid();
         if (supplied.onAccepted !== undefined && typeof supplied.onAccepted !== 'function') invalid();
         const onAccepted = supplied.onAccepted;
         const metadata = validateMetadata(supplied.metadata), fetch = supplied.fetch;
-        const questions = new Map(metadata.questions.map(question => [question.id, question]));
-        const options = new Map(metadata.responseOptions.map(option => [option.id, option]));
+        // Scoring v2 (#399): further readable profiles, sent by the server only
+        // while their flag is on. Each response is checked against the profile its
+        // own stored reference names, matched on every field. Without them this is
+        // exactly the single accepted profile.
+        const extra = supplied.profileMetadata === undefined ? [] : supplied.profileMetadata;
+        if (!Array.isArray(extra) || extra.length > 4) invalid();
+        const profiles = [metadata, ...extra.map(value => validateMetadata(value))].map(value => Object.freeze({ metadata: value,
+            questions: new Map(value.questions.map(question => [question.id, question])),
+            options: new Map(value.responseOptions.map(option => [option.id, option])) }));
+        if (profiles.some((entry, index) => entry.metadata.moduleId !== metadata.moduleId ||
+            profiles.some((other, earlier) => earlier < index && PROFILE_FIELDS.every(key => other.metadata.profileRef[key] === entry.metadata.profileRef[key])))) invalid();
+        // The profile of each assessment this client has validated, so a later
+        // save is checked against that assessment's own questions.
+        const profileByAssessment = new Map();
+        // With one profile every assessment uses it. With several, an assessment
+        // this client has not yet validated has no known profile: a save then
+        // reads it first (see mutate), and a check before that is structural
+        // only, leaving the answers to the server. Never the wrong profile.
+        const assessmentProfile = id => profileByAssessment.get(id) || (profiles.length === 1 ? profiles[0] : null);
+        const mostQuestions = Math.max(...profiles.map(entry => entry.questions.size));
 
-        function answer(input, allowClear) {
+        function answer(input, allowClear, profileEntry) {
+            if (profileEntry === null) {
+                // Profile not yet known: shape only. The server checks the answers.
+                const row = record(input, ['itemId', 'optionId', 'rationale']); identifier(row.itemId);
+                if (row.optionId === null) { if (!allowClear || row.rationale !== null) invalid(); }
+                else { identifier(row.optionId); if (row.rationale !== null) text(record(row.rationale, ['text']).text); }
+                return { itemId: row.itemId, optionId: row.optionId,
+                    rationale: row.rationale === null ? null : { text: row.rationale.text } };
+            }
+            const { questions, options } = profileEntry;
             const row = record(input, ['itemId', 'optionId', 'rationale']), question = questions.get(identifier(row.itemId));
             if (!question) invalid();
             if (row.optionId === null) {
@@ -233,9 +260,10 @@
                 payload = { scopePopulation: { description: text(record(source.scopePopulation, ['description']).description) } };
             } else if (row.action === 'save') {
                 integer(row.expectedRevision, Number.MAX_SAFE_INTEGER);
-                const source = record(row.payload, ['responses']);
-                if (!Array.isArray(source.responses) || !source.responses.length || source.responses.length > questions.size) invalid();
-                const responses = source.responses.map(value => answer(value, true));
+                const source = record(row.payload, ['responses']), profileEntry = assessmentProfile(assessmentId);
+                if (!Array.isArray(source.responses) || !source.responses.length ||
+                    source.responses.length > (profileEntry === null ? mostQuestions : profileEntry.questions.size)) invalid();
+                const responses = source.responses.map(value => answer(value, true, profileEntry));
                 if (new Set(responses.map(value => value.itemId)).size !== responses.length) invalid();
                 responses.sort((left, right) => left.itemId < right.itemId ? -1 : left.itemId > right.itemId ? 1 : 0);
                 payload = { responses };
@@ -248,7 +276,9 @@
         function commandByteLength(input) { return utf8Length(JSON.stringify(normalise(input, PLANNING_BYTES))); }
         function profile(value) {
             record(value, PROFILE_FIELDS);
-            if (PROFILE_FIELDS.some(key => value[key] !== metadata.profileRef[key])) invalid();
+            const found = profiles.find(entry => PROFILE_FIELDS.every(key => value[key] === entry.metadata.profileRef[key]));
+            if (!found) invalid();
+            return found;
         }
         function summary(value, detail) {
             // Older list responses omit the scope. Accept that rollout shape,
@@ -256,7 +286,8 @@
             record(value, detail ? SUMMARY_FIELDS.concat(['scopePopulation', 'responses', 'submission']) : SUMMARY_FIELDS,
                 detail ? [] : ['scopePopulation']);
             if (Object.hasOwn(value, 'scopePopulation')) text(record(value.scopePopulation, ['description']).description);
-            identifier(value.assessmentId); profile(value.profileRef); digest(value.revisionSha256);
+            identifier(value.assessmentId); const profileEntry = profile(value.profileRef), questions = profileEntry.questions;
+            digest(value.revisionSha256);
             if (value.moduleId !== metadata.moduleId || !['created', 'in-progress', 'submitted'].includes(value.status)) invalid();
             integer(value.revision, 128); timestamp(value.createdAt); timestamp(value.updatedAt);
             if (value.createdAt > value.updatedAt ||
@@ -269,13 +300,14 @@
                 progress.unknown + progress.notApplicableClaims > progress.answered ||
                 (value.status === 'created' && progress.answered !== 0) ||
                 (value.status === 'submitted' && progress.missing !== 0)) invalid();
+            return profileEntry;
         }
         function detail(value, assessmentId) {
-            summary(value, true);
+            const profileEntry = summary(value, true), { questions, options } = profileEntry;
             if (value.assessmentId !== assessmentId) invalid();
             text(record(value.scopePopulation, ['description']).description);
             if (!Array.isArray(value.responses) || value.responses.length > questions.size) invalid();
-            const answers = value.responses.map(row => answer(row, false));
+            const answers = value.responses.map(row => answer(row, false, profileEntry));
             if (new Set(answers.map(row => row.itemId)).size !== answers.length ||
                 value.progress.answered !== answers.length ||
                 value.progress.unknown !== answers.filter(row => row.optionId === 'unknown').length ||
@@ -292,7 +324,7 @@
             digest(evaluation.outputSha256);
             const provenance = evaluation.provenance;
             if (!provenance || typeof provenance !== 'object' || Array.isArray(provenance)) invalid();
-            profile(provenance.profileRef);
+            if (profile(provenance.profileRef) !== profileEntry) invalid();
             if (provenance.moduleId !== metadata.moduleId || provenance.assessmentId !== assessmentId ||
                 provenance.assessmentRevision !== 'rev-' + value.revision || provenance.scoreAsOf !== submission.submittedAt) invalid();
         }
@@ -329,6 +361,8 @@
                 }
             }
             if (value.schemaVersion !== 1) invalid();
+            if (profiles.length > 1) (kind === 'list' ? value.assessments : [value.assessment])
+                .forEach(item => profileByAssessment.set(item.assessmentId, profile(item.profileRef)));
             return freeze(value);
         }
         async function request(url, kind, selected, signal, body, keepalive) {
@@ -380,6 +414,19 @@
         async function mutate(kind, input, settings) {
             // Only a save may outlive the page: the browser then still sends it
             // with the same cookies, headers and body as any other save.
+            // Several profiles and an assessment not yet seen: learn its profile
+            // first, so the save is checked against that assessment's own questions.
+            // If the read fails, the shape-only check stands and the server decides.
+            // A keepalive save may outlive the page, so it is sent at once.
+            if (kind === 'save' && profiles.length > 1 && input && typeof input === 'object' &&
+                !(settings && typeof settings === 'object' && settings.keepalive === true) &&
+                typeof input.assessmentId === 'string' && !profileByAssessment.has(input.assessmentId)) {
+                try {
+                    const signal = settings && typeof settings === 'object' ? settings.signal : undefined;
+                    await request(PREFIX + '/' + encodeURIComponent(identifier(input.assessmentId)), 'read',
+                        { assessmentId: input.assessmentId }, signal);
+                } catch { /* The server stays authoritative. */ }
+            }
             const command = normaliseCommand(input), config = record(settings === undefined ? {} : settings, [], kind === 'save' ? ['signal', 'keepalive'] : ['signal']);
             if (command.action !== kind || config.keepalive !== undefined && typeof config.keepalive !== 'boolean') invalid();
             const create = kind === 'create', url = create ? PREFIX : PREFIX + '/' + encodeURIComponent(command.assessmentId) + '/' + kind;
@@ -388,6 +435,17 @@
             return request(url, kind, command, config.signal, body, config.keepalive === true);
         }
         return Object.freeze({ normaliseCommand, commandByteLength,
+            readOverviewBody(response) {
+                // Up to two assessment payloads and five bounded action lists.
+                return readJson(response, RESPONSE_BYTES * 7, 32768 * 7);
+            },
+            validateOverview(page, detail) {
+                const checkedPage = validateResult(copyJson(page, RESPONSE_BYTES, 32768, 32).value,
+                    'list', { limit: 50, afterAssessmentId: null });
+                const checkedDetail = detail === null ? null : validateResult(copyJson(detail, RESPONSE_BYTES, 32768, 32).value,
+                    'read', { assessmentId: identifier(detail.assessment.assessmentId) });
+                return { page: checkedPage, detail: checkedDetail };
+            },
             async list(input) {
                 const config = record(input === undefined ? {} : input, [], ['limit', 'afterAssessmentId', 'signal']);
                 const limit = config.limit === undefined ? 50 : integer(config.limit, 100);
@@ -408,11 +466,11 @@
         });
     }
 
-    async function readJson(response) {
+    async function readJson(response, maximum = RESPONSE_BYTES, maxNodes = 32768) {
         const type = response.headers?.get('Content-Type');
         if (typeof type !== 'string' || !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(type)) invalid();
         const length = response.headers.get('Content-Length');
-        if (length !== null && /^\d+$/.test(length) && Number(length) > RESPONSE_BYTES) invalid();
+        if (length !== null && /^\d+$/.test(length) && Number(length) > maximum) invalid();
         let source;
         if (response.body && typeof response.body.getReader === 'function') {
             const reader = response.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
@@ -422,7 +480,7 @@
                     const chunk = await reader.read();
                     if (chunk.done) break;
                     if (!(chunk.value instanceof Uint8Array)) invalid();
-                    bytes += chunk.value.byteLength; if (bytes > RESPONSE_BYTES) invalid();
+                    bytes += chunk.value.byteLength; if (bytes > maximum) invalid();
                     parts.push(decoder.decode(chunk.value, { stream: true }));
                 }
                 parts.push(decoder.decode()); source = parts.join('');
@@ -434,9 +492,9 @@
             // An injected synthetic transport may implement text() without a
             // stream. Real Fetch responses take the bounded streaming path.
             source = await response.text();
-            if (typeof source !== 'string' || source.length > RESPONSE_BYTES || utf8Length(source) > RESPONSE_BYTES) invalid();
+            if (typeof source !== 'string' || source.length > maximum || utf8Length(source) > maximum) invalid();
         }
-        return copyJson(JSON.parse(source), RESPONSE_BYTES, 32768, 32).value;
+        return copyJson(JSON.parse(source), maximum, maxNodes, 32).value;
     }
 
     return Object.freeze({ createClient });
