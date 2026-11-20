@@ -143,6 +143,14 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
             (tenant_id, organisation_id, request_id, subject_key, topic, consent_version, requested_day, requested_at)
             VALUES ($1, $2, $3, $4, 'results', 'contact-request-v1', ($5::timestamptz AT TIME ZONE 'Pacific/Auckland')::date, $5::timestamptz)`,
         [first.scope.tenantId, first.scope.organisationId, crypto.randomUUID(), c.actor, new Date().toISOString()])));
+        const ref = { profileId: 'nf-nist-csf-2-0-core', profileVersion: '2026-09-08.1' };
+        const state = { ...first.scope, assessmentId: 'paid-1', moduleId: 'cyber_security',
+            profileRef: ref, updatedBy: c.actor, revision: 0 };
+        await tx(db, () => asRuntime(db, c.actor, first.scope, () => db.query(`INSERT INTO nofries.dashboard_framework_revisions
+            (tenant_id, organisation_id, profile_id, profile_version, assessment_id, revision, idempotency_key,
+             intent_sha256, record_sha256, record) VALUES ($1,$2,$3,$4,'paid-1',0,'start',$5,$6,$7)`,
+        [first.scope.tenantId, first.scope.organisationId, ref.profileId, ref.profileVersion,
+            'a'.repeat(64), 'b'.repeat(64), JSON.stringify({ state })])));
         return { c, tenants: [first.scope.tenantId, second.scope.tenantId] };
     }
     // Row counts per table for one account, read by the CI owner (superuser).
@@ -232,7 +240,7 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         const before = await footprint(db, doomed), sentinelBefore = await footprint(db, sentinel);
         expect(before.dashboard_tenants).toBe(2); expect(before.dashboard_starter_scopes).toBe(2);
         expect(before.signup_acceptance_receipts).toBeGreaterThan(0); expect(before.dashboard_starter_accounts).toBe(1);
-        expect(before.email_outbox).toBe(1); expect(before.dashboard_contact_requests).toBe(1);
+        expect(before.email_outbox).toBe(1); expect(before.dashboard_contact_requests).toBe(1); expect(before.dashboard_framework_revisions).toBe(1);
         const result = await createAccountWipeRepository(pool).delete(wipeTarget(doomed));
         expect(result).toMatchObject({ mode: 'delete', tenants: 2 });
         expect(Object.values(await footprint(db, doomed)).every(n => n === 0)).toBe(true);
@@ -241,11 +249,13 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
 
     test('reset clears working data and keeps the organisations, membership and sign-in', async () => {
         const db = await connect(), a = await account(db), before = await footprint(db, a);
-        expect(before.dashboard_contact_requests).toBe(1);
+        const sentinel = await account(db), sentinelBefore = await footprint(db, sentinel);
+        expect(before.dashboard_contact_requests).toBe(1); expect(before.dashboard_framework_revisions).toBe(1);
         await createAccountWipeRepository(pool).reset(wipeTarget(a));
         const after = await footprint(db, a);
         for (const table of RESET_TABLES) expect(after[table]).toBe(0);
         for (const table of DELETE_TENANT_TABLES.filter(t => !RESET_TABLES.includes(t))) expect(after[table]).toBe(before[table]);
+        expect(await footprint(db, sentinel)).toEqual(sentinelBefore);
         expect(after.dashboard_starter_accounts).toBe(1); expect(after.email_preferences).toBe(1);
     });
 
