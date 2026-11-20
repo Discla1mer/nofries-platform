@@ -159,6 +159,52 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
     }
     const wipeTarget = a => ({ accountId: a.c.account.accountId, subjectKey: a.c.actor, tenantIds: a.tenants });
 
+    // Characterise the 0028 hold using actual child rows and the staff repository.
+    async function deferredAccount(db, completed) {
+        const { deferredFixture, DATA, AT } = require('../fixtures/deferredDetailsFixture');
+        const { hash } = require('../../api/shared/appLifecycle/dashboardRuntimeRecords');
+        const { account, preparation: p, receipt } = await deferredFixture();
+        await db.query("INSERT INTO nofries.dashboard_starter_accounts (account_id,email_sha256,subject_key,account_type) VALUES ($1,$2,$3,'company')",
+            [account.accountId, hash(account.accountId), p.subjectKey]);
+        await db.query(INSERT_SCOPE, [p.scope.tenantId, p.scope.organisationId, account.accountId, 'company', p.subjectKey,
+            p.ordinal, p.slot.authorityId, p.slot.bindingId, JSON.stringify(p)]);
+        await tx(db, () => createPostgresDashboardRepository({ database: database(db, p), clock: () => p.createdAt, authoriseAdministration: () => true })
+            .initialiseOrganisation(starterBootstrapCommand(p), p.initialState));
+        await createPostgresSignupAcceptanceJournal({ database: database(db, p) }).persist(receipt);
+        if (completed) {
+            const link = { schemaVersion: 1, ...p.scope, subjectKey: p.subjectKey, receiptId: receipt.receiptId,
+                acceptanceSha256: hash(receipt), scheduleId: receipt.scheduleId, scheduleDigest: receipt.scheduleDigest,
+                authorityEvidenceId: p.representativeAuthorityEvidenceId };
+            const payload = { link, details: DATA, recordedAt: AT };
+            await db.query(`INSERT INTO nofries.dashboard_representative_details
+                (tenant_id, organisation_id, subject_key, receipt_id, payload, payload_sha256) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [p.scope.tenantId, p.scope.organisationId, p.subjectKey, receipt.receiptId, payload, hash(payload)]);
+        }
+        return { accountId: account.accountId, subjectKey: p.subjectKey, tenantIds: [p.scope.tenantId] };
+    }
+
+    test.each([false, true])('deferred enrollment reset retains agreement and delete rolls back (details recorded %s)', async completed => {
+        const db = await connect(), target = await deferredAccount(db, completed), sentinel = await deferredAccount(db, true);
+        const snapshot = async account => {
+            const result = {};
+            for (const table of ['dashboard_starter_scopes', 'signup_acceptance_receipts', 'dashboard_deferred_agreements', 'dashboard_representative_details']) {
+                result[table] = await rows(db, `SELECT * FROM nofries.${table} WHERE tenant_id = $1`, account.tenantIds);
+            }
+            return result;
+        };
+        const before = await snapshot(target), other = await snapshot(sentinel);
+        expect(before.dashboard_deferred_agreements).toHaveLength(1);
+        expect(before.dashboard_representative_details).toHaveLength(completed ? 1 : 0);
+        expect(other.dashboard_representative_details).toHaveLength(1);
+        const repository = createAccountWipeRepository(pool);
+        await repository.reset(target);
+        expect(await snapshot(target)).toEqual(before);
+        expect(await snapshot(sentinel)).toEqual(other);
+        await expect(repository.delete(target)).rejects.toMatchObject({ code: 'account_wipe_reference_blocked' });
+        expect(await snapshot(target)).toEqual(before);
+        expect(await snapshot(sentinel)).toEqual(other);
+    });
+
     test('delete removes every row of the account and leaves another account untouched', async () => {
         const db = await connect(), doomed = await account(db), sentinel = await account(db);
         const before = await footprint(db, doomed), sentinelBefore = await footprint(db, sentinel);
