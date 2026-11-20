@@ -513,11 +513,14 @@ body[data-page="managed-it-information"] .home-footer nav a {
 
 .managed-it-tier-note {
     margin: 24px 0 0;
-    color: var(--muted);
 }
 
 @media (max-width: 860px) {
     .managed-it-tiers {
         grid-template-columns: minmax(0, 1fr);
     }
+}
+
+.managed-it-main .managed-it-tier-note {
+    color: var(--ink-soft);
 }

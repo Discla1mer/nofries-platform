@@ -1766,13 +1766,13 @@
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
                         return presentation.openImprovement(sourceAssessment);
-                    }, openAction: function (target) {
+                    }, openAction: function (target, openOwnerForm) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
                         if (!target || typeof target.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(target.planId) ||
                             typeof target.actionId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(target.actionId) ||
                             !Number.isSafeInteger(target.planRevision) || target.planRevision < 0 || target.planRevision > 1024) return Promise.resolve(false);
                         const chosen = Object.freeze({ bindingId: snapshot.selectedBindingId, planId: target.planId,
-                            actionId: target.actionId, planRevision: target.planRevision });
+                            actionId: target.actionId, planRevision: target.planRevision, openOwnerForm: openOwnerForm === true });
                         cycle.workQueueTarget = chosen;
                         return Promise.resolve(presentation.openImprovement()).then(function (opened) {
                             if (opened !== true && cycle.workQueueTarget === chosen) cycle.workQueueTarget = null;
@@ -1786,7 +1786,18 @@
                         return openGapPlan(cycle, snapshot, presentation, sourceAssessment, itemId, stillCurrent);
                     } } : {}),
                     ...(typeof presentation.openImprovement === 'function' && cycle.improvement
-                        ? { readActions: function () { return improvementActions(cycle, snapshot); } } : {}) });
+                        ? { readActions: function () { return improvementActions(cycle, snapshot); },
+                            readBoardPlan: function (selection) {
+                                return window.NoFriesImprovementActionPlanClient.readBoardPlan(async function (path) {
+                                    if (!current(cycle) || cycle.authorityPending) throw invalid();
+                                    const result = await request(cycle, path, undefined, snapshot.generation);
+                                    if (!current(cycle) || cycle.authorityPending) throw invalid();
+                                    if (result.status === 401 || result.status === 403 && result.value?.code === 'dashboard_access_denied') {
+                                        const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
+                                    }
+                                    return result;
+                                }, organisationId, selection);
+                            } } : {}) });
             };
         }
         return mountCyber;
@@ -1863,7 +1874,8 @@
             const result = factory.mount(root, {
                 organisationId: organisationId,
                 ...(cycle.workQueueTarget && cycle.workQueueTarget.bindingId === snapshot.selectedBindingId
-                    ? { initialTarget: { planId: cycle.workQueueTarget.planId, actionId: cycle.workQueueTarget.actionId,
+                    ? { openOwnerForm: cycle.workQueueTarget.openOwnerForm === true,
+                        initialTarget: { planId: cycle.workQueueTarget.planId, actionId: cycle.workQueueTarget.actionId,
                         planRevision: cycle.workQueueTarget.planRevision } } : {}),
                 sourceAssessment: presentation && presentation.sourceAssessment,
                 ...(cyber && cyber.controlTitles ? { controlTitles: cyber.controlTitles } : {}),
