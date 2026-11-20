@@ -12,6 +12,8 @@ const { deferredFixture, DATA, AT } = require('../../test/fixtures/deferredDetai
 const { representativeDetails } = require('../../api/shared/customerSignup/deferredRepresentativeDetails');
 const root = path.resolve(__dirname, '../..'), read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const artifacts = path.resolve(process.env.NOFRIES_STREAM_E_ARTIFACTS || '/tmp/stream-e-browser');
+const campaign = process.env.NOFRIES_STREAM_E_CAMPAIGN || '';
+assert.ok(['', 'board', 'scam'].includes(campaign));
 assert.ok(path.relative(root, artifacts).startsWith('..' + path.sep)); fs.mkdirSync(artifacts, { recursive: true });
 const app = ['dashboardRegistry.js','dashboardShell.js','ncscAssessmentClient.js','ncscQuestionnaire.js','assessmentExplanation.js',
     'organisationPicture.js','improvementActionPlanView.js','improvementActionPlanClient.js'].map(file => read('api/shared/protectedAssets/' + file)).join('\n');
@@ -115,11 +117,12 @@ const blocked = [], errors = [], captures = [], requests = [], prints = [];
     try {
         browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
         const page = await browser.newPage({ viewport: { width: 375, height: 844 }, reducedMotion: 'reduce', permissions: ['clipboard-read', 'clipboard-write'] }); page.setDefaultTimeout(15000);
-        await page.addInitScript(() => {
+        await page.addInitScript(campaign => {
+            if (campaign) sessionStorage.setItem('nofries-enquiry-campaign', 'meta/paid/' + campaign);
             window.syntheticPrints = 0; window.syntheticBeforePrint = 0;
             addEventListener('beforeprint', () => { window.syntheticBeforePrint++; });
             const print = window.print.bind(window); window.print = () => { window.syntheticPrints++; print(); };
-        });
+        }, campaign);
         page.on('pageerror', error => errors.push(error.message));
         await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : (blocked.push('OUTSIDE'), route.abort()));
         async function capture(name, locator) {
@@ -207,6 +210,11 @@ const blocked = [], errors = [], captures = [], requests = [], prints = [];
         accountType = 'company'; audience = model.audience; ownEnrollment = true;
         // With E on, a failed server read cannot expose export controls or print output.
         enabled = true; denyRead = true; section = await openResult();
+        if (campaign) {
+            const promoted = page.locator(campaign === 'board' ? '.ncsc-board-next-step' : '.ncsc-results .picture-next-steps-help');
+            await promoted.getByText('Your details could not be checked.').waitFor();
+            assert.equal(await promoted.locator('textarea, a, pre').count(), 0);
+        }
         await section.getByText('Your details could not be checked.').waitFor();
         assert.equal(await section.locator('li').count(), 9);
         assert.equal(await section.getByRole('button', { name: /^(Copy|Print) answers$/ }).count(), 0);
@@ -243,6 +251,8 @@ const blocked = [], errors = [], captures = [], requests = [], prints = [];
         await page.reload();
         section = page.locator('.ncsc-questionnaire-answers');
         await section.getByRole('button', { name: 'Copy answers', exact: true }).waitFor();
+        if (campaign === 'board') await page.locator('.ncsc-board-next-step').getByRole('button', { name: 'Copy board summary' }).waitFor();
+        if (campaign === 'scam') await page.locator('.ncsc-results .picture-next-steps-help').getByRole('link', { name: 'Fix these with No Fries' }).waitFor();
         assert.ok(detailReads > readsBeforeReload); assert.equal(fs.readFileSync(evidenceFile, 'utf8'), storedBytes);
         await copyAnswers(section); await printEvidence('questionnaire-after-reload', section, true);
         await page.goto(origin + '/dashboard#overview'); await page.locator('.picture-summary > summary').click();
@@ -256,7 +266,7 @@ const blocked = [], errors = [], captures = [], requests = [], prints = [];
         assert.equal(await section.getByRole('button', { name: /^(Copy|Print) answers$/ }).count(), 0);
         await printEvidence('questionnaire-hidden-scope-after-reset', section, false);
         assert.deepEqual(errors, []); assert.deepEqual(blocked, []);
-        fs.writeFileSync(path.join(artifacts, 'receipt.json'), JSON.stringify({ viewport: { width: 375, height: 844 }, captures, prints, writes, audits, detailReads,
+        fs.writeFileSync(path.join(artifacts, 'receipt.json'), JSON.stringify({ campaign, viewport: { width: 375, height: 844 }, captures, prints, writes, audits, detailReads,
             persistence: 'Synthetic supplemental row written to disk and validated on each service read, including after reload',
             assertions: ['flag off full fields', 'flag on minimal signup through question one', 'first result before capture', 'summary gate',
                 'D suggestions readable with E on', 'E off questionnaire Copy/Print unchanged with outstanding details', 'failed details read withholds exports',

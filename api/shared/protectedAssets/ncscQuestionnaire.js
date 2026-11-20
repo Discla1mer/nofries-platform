@@ -288,6 +288,79 @@
         if (!clipboard || typeof clipboard.writeText !== 'function') { fallback(); return; }
         Promise.resolve(clipboard.writeText(input.value)).then(function () { status.textContent = 'Summary copied.'; }, fallback);
     }
+    // Read only the existing canonical source/medium/campaign tag in this tab.
+    // Do not capture URL tags, normalise new values, persist or forward attribution.
+    function resultsCampaign(win) {
+        try {
+            const tag = win.sessionStorage.getItem('nofries-enquiry-campaign');
+            const match = typeof tag === 'string' && /^[a-z0-9._-]{1,40}\/[a-z0-9._-]{0,40}\/(insurance|supplier|board|scam)$/.exec(tag);
+            return match ? match[1] : '';
+        } catch (_) { return ''; }
+    }
+    // Shared with Overview so campaign presentation keeps the same copy, print,
+    // enquiry availability and representative-details controls.
+    function boardSummaryBlock(node, button, win, detail, metadata, inputId, status, boardBlock = node('div', 'picture-board-summary'), addPlanControls) {
+        const boardLabel = node('label', '', 'Summary for your board or insurer');
+        const board = node('textarea', 'ncsc-textarea'); board.id = inputId; boardLabel.htmlFor = board.id;
+        board.readOnly = true; board.rows = 8; board.value = boardSummary(detail, metadata).text;
+        const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
+        const boardCopy = button('Copy board summary', () => copySummary(win, board, status));
+        boardCopy.classList.add('dashboard-button-secondary'); boardBlock.append(boardLabel, board, boardPrinted);
+        const boardPrint = win && typeof win.print === 'function' ? button('Print board summary', () => printOnly(win, boardPrinted)) : null;
+        if (addPlanControls) addPlanControls(board, boardPrinted, boardCopy, boardPrint);
+        boardBlock.append(boardCopy);
+        if (boardPrint) { boardPrint.classList.add('dashboard-button-secondary'); boardBlock.append(boardPrint); }
+        return boardBlock;
+    }
+    function managedSecurityOffer(node, gated, win, stillCurrent) {
+        const help = node('div', 'picture-next-steps-help'); help.hidden = true;
+        const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
+        help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
+            gated(() => link), node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
+        enquiryAvailable(win).then(available => { if (available && stillCurrent()) help.hidden = false; });
+        return help;
+    }
+    // Prints one block on its own (one A4 page for the board summary): every
+    // sibling along its path to <body> is hidden for print only, then
+    // restored. Nothing leaves the page.
+    function printOnly(win, target) {
+        const doc = target.ownerDocument;
+        const hidden = [];
+        for (let element = target; element && element.parentElement && element !== doc.body; element = element.parentElement) {
+            Array.from(element.parentElement.children || []).forEach(sibling => {
+                if (sibling !== element && !sibling.classList.contains('picture-print-hide')) { sibling.classList.add('picture-print-hide'); hidden.push(sibling); }
+            });
+        }
+        target.classList.add('picture-print-only');
+        try { win.print(); } finally {
+            hidden.forEach(sibling => sibling.classList.remove('picture-print-hide'));
+            target.classList.remove('picture-print-only');
+        }
+    }
+    // Mirrors js/enquiry-availability.js: a bare read-only GET of the public
+    // enquiry status. Any error, non-OK reply or 5-second timeout is unavailable.
+    async function enquiryAvailable(win) {
+        if (!win || typeof win.fetch !== 'function' || typeof win.AbortController !== 'function') return false;
+        const controller = new win.AbortController();
+        let timer;
+        try {
+            const deadline = new Promise((_, reject) => {
+                timer = setTimeout(() => { controller.abort(); reject(new Error('unavailable')); }, 5000);
+            });
+            const read = (async () => {
+                const response = await win.fetch('/api/enquiry', { method: 'GET', credentials: 'same-origin', cache: 'no-store',
+                    signal: controller.signal, headers: { Accept: 'application/json' } });
+                if (!response || !response.ok) return false;
+                const body = await response.json();
+                return !!body && body.available === true;
+            })();
+            return await Promise.race([read, deadline]);
+        } catch (_) {
+            return false;
+        } finally {
+            clearTimeout(timer); controller.abort();
+        }
+    }
     // The accepted NCSC profile's credit rule, in credit units (scale 2):
     // Yes earns full credit, Partial half and No none. Answers still to
     // confirm earn none at the lower end and full credit at the upper end.
@@ -1526,9 +1599,31 @@
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
             content.append(panel);
-            renderNextSteps(panel);
-            // The insurer answers map the accepted profile's questions only.
-            if (!isV2(metadata)) renderQuestionnaireAnswers(panel);
+            const campaign = resultsCampaign(win);
+            const boardExportGate = options.boardExportGate || (content => content());
+            const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
+            if (campaign === 'board') {
+                const section = node('section', 'ncsc-board-next-step picture-summary');
+                const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
+                section.append(node('h3', '', 'Summary for your board or insurer'),
+                    boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied)), copied);
+                panel.append(section);
+            } else if (campaign === 'scam') {
+                const payment = questionnaireAnswers(acknowledged, metadata).items.find(item => item.id === 'payment-checks');
+                const section = node('section', 'ncsc-payment-next-step');
+                section.append(node('h3', '', payment.answer === 'No' ? 'Payment-check gap and next step' : 'Check payment changes safely'),
+                    node('p', '', payment.answer === 'No'
+                        ? 'Your saved No answer reports a gap in checking payment and bank-detail changes through a trusted, separate route.'
+                        : 'Confirm how payment and bank-detail changes are checked. These saved answers do not establish a payment-check gap.'),
+                    node('p', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route.'));
+                panel.append(section, managedSecurityOffer(node, gated, win, () => live()));
+            }
+            if (!isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier')) {
+                renderQuestionnaireAnswers(panel); renderNextSteps(panel);
+            } else {
+                renderNextSteps(panel);
+                if (!isV2(metadata)) renderQuestionnaireAnswers(panel);
+            }
             if (!results) {
                 panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'),
                     button('Retry loading results', async function () {
@@ -2336,5 +2431,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));
