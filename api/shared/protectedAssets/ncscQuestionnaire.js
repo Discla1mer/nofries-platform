@@ -428,9 +428,16 @@
         }
         return section;
     }
-    function managedSecurityOffer(node, gated, win, stillCurrent) {
+    const campaignOfferBridge = {
+        scam: 'A fake invoice can start with a compromised mailbox. Once you have verified the payment details, MFA, email protection and staff awareness can help reduce the risk of another scam.',
+        insurance: 'For renewal, use your gaps to choose a next step, such as testing a backup, enabling MFA or catching up on patches. Record what changed so your renewal answers reflect the work done.',
+        supplier: 'Use any gaps behind your questionnaire answers to choose an improvement. For example, review access to customer files and keep the updated access list as evidence for your next answer.',
+        board: 'Choose a practical improvement from your top gaps. The written progress summary can show your board what changed and what still needs attention.'
+    };
+    function managedSecurityOffer(node, gated, win, stillCurrent, campaign) {
         const help = node('div', 'picture-next-steps-help'); help.hidden = true;
         const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
+        if (campaignOfferBridge[campaign]) help.append(node('p', '', campaignOfferBridge[campaign]));
         help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
             gated(() => link), node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
         enquiryAvailable(win).then(available => { if (available && stillCurrent()) help.hidden = false; });
@@ -1732,13 +1739,13 @@
                         ? 'Your saved No answer reports a gap in checking payment and bank-detail changes through a trusted, separate route.'
                         : 'Confirm how payment and bank-detail changes are checked. These saved answers do not establish a payment-check gap.'),
                     node('p', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route.'));
-                panel.append(section, managedSecurityOffer(node, gated, win, () => live()));
+                panel.append(section, managedSecurityOffer(node, gated, win, () => live(), campaign));
             }
             const questionnaireFirst = !isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier');
             if (questionnaireFirst) renderQuestionnaireAnswers(panel);
             if (results) {
                 panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps'));
-                if (campaign !== 'scam') panel.append(managedSecurityOffer(node, gated, win, () => live()));
+                if (campaign !== 'scam') panel.append(managedSecurityOffer(node, gated, win, () => live(), campaign));
             }
             renderNextSteps(panel);
             if (!questionnaireFirst && !isV2(metadata)) renderQuestionnaireAnswers(panel);
