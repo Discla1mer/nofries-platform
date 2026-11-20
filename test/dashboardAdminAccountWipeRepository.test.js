@@ -46,6 +46,9 @@ test('reset deletes only working data tables for each tenant and never the accou
     expect(deletes(f.statements)).toEqual([...RESET_TABLES, ...RESET_TABLES]);
     for (const table of ['dashboard_tenants', 'dashboard_organisations', 'dashboard_membership_states', 'dashboard_identity_bindings', 'dashboard_starter_accounts'])
         expect(RESET_TABLES).not.toContain(table);
+    // Contact requests (0026) are working data, removed first; delete removes them through the same list.
+    expect(RESET_TABLES[0]).toBe('dashboard_contact_requests');
+    expect(DELETE_TENANT_TABLES[0]).toBe('dashboard_contact_requests');
 });
 
 test('every tenant is checked against the account before its rows are deleted', async () => {

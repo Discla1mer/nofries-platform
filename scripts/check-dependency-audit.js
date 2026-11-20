@@ -387,18 +387,19 @@ function sortedMap(value) {
     return Object.fromEntries(Object.entries(value || {}).sort(([left], [right]) => left.localeCompare(right)));
 }
 
-// This is a reviewed cross-major compatibility override, not general API
-// override permission. The exact direct pin and every locked MSAL node bind it
-// to the API closure audited and exercised by the offline SDK tests.
+// This is a reviewed exact-pin override, not general API override permission.
+// Identity and MSAL move together: the exact direct pin, the locked Identity
+// version and every locked MSAL node bind it to the API closure audited and
+// exercised by the offline SDK tests.
 function isReviewedApiMsalOverride(surfaceId, manifest, lock) {
     if (surfaceId !== 'api-runtime' ||
-        manifest.dependencies?.['@azure/msal-node'] !== '7.1.1' ||
+        manifest.dependencies?.['@azure/msal-node'] !== '7.2.2' ||
         JSON.stringify(manifest.overrides) !==
-            JSON.stringify({ '@azure/identity': { '@azure/msal-node': '7.1.1' } }) ||
-        lock.packages['node_modules/@azure/identity']?.version !== '4.13.1') return false;
+            JSON.stringify({ '@azure/identity': { '@azure/msal-node': '7.2.2' } }) ||
+        lock.packages['node_modules/@azure/identity']?.version !== '4.14.1') return false;
     const nodes = lockedMsalNodes(lock);
     return nodes.length === 1 && nodes[0][0] === 'node_modules/@azure/msal-node' &&
-        nodes[0][1]?.version === '7.1.1';
+        nodes[0][1]?.version === '7.2.2';
 }
 
 function validateManifestLock(surfaceId, manifest, lock, { allowManifestOverrides = false } = {}) {

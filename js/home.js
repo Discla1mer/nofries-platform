@@ -101,3 +101,49 @@
         });
     });
 }());
+
+// Carry campaign labels only on the four public ad pages. Reuse this script:
+// no storage, click IDs, requests or changes to sign-in/service parameters.
+(function () {
+    if (!document.body || document.body.dataset.page !== 'ad-landing') return;
+    const campaign = [...new URLSearchParams(window.location.search)]
+        .filter(([name]) => /^utm_[a-z0-9_]+$/i.test(name));
+    if (!campaign.length) return;
+    document.querySelectorAll('a[href^="/"]').forEach(function (link) {
+        const target = new URL(link.getAttribute('href'), window.location.href);
+        if (target.origin !== window.location.origin) return;
+        for (const name of new Set(campaign.map(([name]) => name))) target.searchParams.delete(name);
+        for (const [name, value] of campaign) target.searchParams.append(name, value);
+        link.setAttribute('href', target.pathname + target.search + target.hash);
+    });
+}());
+
+// Ad landing (#441): match the headline to the trigger a Meta campaign was
+// written for. Reads only utm_campaign from this page's address and checks
+// it against a closed list; only fixed sentences are written. Nothing is
+// stored or sent. Any other visitor sees the page unchanged.
+(function () {
+    const MESSAGES = {
+        insurance: ['Get your cyber insurance answers right in about 15 minutes.',
+            'List your key accounts, including email and online banking, and mark which ones have multi-factor authentication turned on. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
+        supplier: ['Answer your customer’s security questionnaire with confidence.',
+            'Pick one question about who can see customer files. Check the access list for the folder where you keep them. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
+        board: ['Give your board a straight answer on cyber security.',
+            'For your next board meeting, write down when your team last restored a file from backup. If nobody knows, record that as an open question. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
+        scam: ['Would your business stop a fake invoice? Find out in about 15 minutes.',
+            'If bank details change, call your supplier on a number you already know to verify the change before paying. Do not use the number on the invoice. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.']
+    };
+    try {
+        if (!document.body || document.body.dataset.page !== 'dashboard-home') return;
+        const campaign = String(new URLSearchParams(window.location.search).get('utm_campaign') || '').toLowerCase();
+        const key = campaign.split(/[-_ ]/)[0];
+        if (!Object.prototype.hasOwnProperty.call(MESSAGES, key)) return;
+        const headline = document.getElementById('home-title');
+        const lead = document.getElementById('homepageLead');
+        if (headline) headline.textContent = MESSAGES[key][0];
+        if (lead) {
+            lead.textContent = MESSAGES[key][1];
+            lead.classList.add('homepage-campaign-lead');
+        }
+    } catch (_) { /* leave the page unchanged */ }
+}());

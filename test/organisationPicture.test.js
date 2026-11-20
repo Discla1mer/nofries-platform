@@ -86,7 +86,8 @@ test('connected view preserves golden server range, uncertainty and completion w
     assert.match(dom.root.textContent, /All 14 responses are saved/);
     assert.match(dom.root.textContent, /6.5–8.5 reported or possible credits ÷ 14/);
     assert.match(dom.root.textContent, /overall result weights questions, not the five function percentages/);
-    assert.match(dom.root.textContent, /Reviews are coming soon/);
+    assert.match(dom.root.textContent, /Not applicable answers count as not yet met, and they stay in your result\. There is no review that changes that\./);
+    assert.doesNotMatch(dom.root.textContent, /Reviews are coming soon|until a reviewer confirms|Approval is not available/i);
     assert.equal(dom.root.querySelectorAll('.picture-domain-detail').length, 5);
 });
 
@@ -100,7 +101,8 @@ test('saved Overview identifies source, scope, framework and revision without in
         'SHA-256', 'evaluatorSourceSha256', 'Evaluator', 'Score contract']) assert.ok(!dom.root.textContent.includes(hidden), hidden);
     assert.equal(dom.root.querySelectorAll('input').length, 0);
     assert.doesNotMatch(dom.root.textContent, /board snapshot|draft presentation|PDF export|management review/i);
-    assert.ok(!dom.root.querySelectorAll('button').some(b => /board|download|export|issue/i.test(b.textContent)));
+    // #441 adds one plain copy control for a board or insurer summary; no board mode, download or export.
+    assert.ok(!dom.root.querySelectorAll('button').some(b => b.textContent !== 'Copy board summary' && /board|download|export|issue/i.test(b.textContent)));
 });
 
 test('freshness copy distinguishes the saved baseline from a live organisation check', async () => {
@@ -167,7 +169,7 @@ test('same-day choices remain unambiguous without changing exact selected IDs or
     dom.controller.destroy();
 });
 
-test('a long scope is shortened in the selector so status and date stay visible, with the full label as a tooltip', async () => {
+test('D-017 shows the full scope, status and date in the selector and wrapping caption', async () => {
     const record = clone(buildFixtures().tenants[0].assessments[0]);
     const long = 'Synthetic head office, two retail sites,\n  the warehouse laptops and every cloud service we pay for each month';
     record.scopePopulation.description = long;
@@ -175,10 +177,11 @@ test('a long scope is shortened in the selector so status and date stay visible,
     const picker = dom.root.querySelector('.picture-toolbar').querySelector('select');
     const option = picker.querySelector('option');
     const flat = long.replace(/\s+/g, ' ');
-    assert.ok(option.textContent.startsWith(flat.slice(0, 59).trimEnd() + '… · In progress · '));
+    assert.ok(option.textContent.startsWith(flat + ' · In progress · '));
     assert.ok(option.textContent.endsWith(' NZ time'));
     assert.equal(option.title, flat + option.textContent.slice(option.textContent.indexOf(' · In progress · ')));
     assert.equal(picker.title, option.title);
+    assert.equal(dom.root.querySelector('.picture-selected-title').textContent, option.title);
     // The full scope is still shown on the page (one list item per line since #268).
     long.split('\n').map(line => line.trim()).forEach(line => assert.ok(dom.root.textContent.includes(line)));
     dom.controller.destroy();
@@ -231,7 +234,8 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     const ids = category => category.querySelectorAll('article').map(node => node.getAttribute('data-question-id'));
     assert.deepEqual(ids(categories[0]), expected(['unknown', 'not_applicable']));
     assert.deepEqual(ids(categories[1]), expected(['partial', 'no']));
-    assert.match(categories[0].textContent, /Not applicable answers count as not yet met until a reviewer confirms them/);
+    assert.match(categories[0].textContent, /Not applicable answers count as not yet met, and they stay in your result/);
+    assert.doesNotMatch(categories[0].textContent, /reviewer|Reviews are coming soon/);
     assert.doesNotMatch(follow.textContent, /Supporting-evidence gaps|Supporting evidence:|upload/);
     assert.match(follow.textContent, /not a combined total or a risk ranking/);
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
@@ -247,9 +251,9 @@ test.each([[false], [true]])('Overview leads with not enough answers when fewer 
     const dom = setup({ records: [record], options: canStart ? { openCyber: () => {} } : {} }); await flush();
     const primary = dom.root.querySelector('.picture-primary');
     assert.equal(primary.querySelector('h3').textContent, 'Reported implementation');
-    assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet');
+    assert.equal(primary.querySelector('.picture-large').textContent, 'Not enough answers to estimate yet, confirm your Unknowns first');
     assert.equal(primary.querySelector('.picture-metric-upper'), null);
-    assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or waiting for review, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
+    assert.match(primary.textContent, /Only 1 of 14 answers are Yes, Partial or No\. Most answers are Unknown or Not applicable, so the range is too wide to be useful\. Range so far: 7\.1%–100\.0%\./);
     // A submitted result is read-only: do not ask the customer to confirm answers.
     assert.doesNotMatch(primary.textContent, /Confirm the Unknown answers|resolved/i);
     if (canStart) assert.match(primary.textContent, /Range so far: 7\.1%–100\.0%\. Start a new assessment once more answers are known\./);
@@ -310,7 +314,7 @@ test('legacy Board options cannot expose another presentation mode or navigation
     assert.equal(dom.root.querySelector('.picture-follow-up-filter').querySelectorAll('select').length, 1);
     assert.equal(dom.root.querySelector('label').textContent, 'Saved assessment');
     assert.deepEqual(dom.root.querySelectorAll('button').map(button => button.textContent),
-        ['Refresh', 'Copy summary', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
+        ['Refresh', 'Copy summary', 'Copy board summary', 'Review 9 implementation gaps', 'Review 2 unresolved answers', 'Saved range', 'Unresolved answers', 'Framework starting actions', 'Explain this saved result', 'Clear saved explanation']);
     assert.equal(opened, 0);
 });
 
@@ -1005,6 +1009,88 @@ test('a Plan this failure says so, keeps Overview working and can be retried', a
     }
 });
 
+function openBoard(dom) {
+    const handoff = dom.root.querySelector('.picture-summary');
+    handoff.open = true;
+    for (const toggle of handoff.events.toggle || []) toggle();
+    return handoff;
+}
+
+test('the board maps saved actions in ranked question order and opens only each matching target', async () => {
+    let actions;
+    const openAction = jest.fn(async () => true), readBoardPlan = jest.fn(async () => actions);
+    const dom = setup({ options: { openAction, readBoardPlan } }); await flush();
+    const rows = dom.root.querySelectorAll('.picture-top-gap'), metadata = dom.options.metadata;
+    actions = rows.map((gap, index) => {
+        const itemId = gap.dataset.gapItem;
+        return { itemId, controlId: metadata.questions.find(question => question.id === itemId).controlId, kind: 'implementation',
+            owner: 'Synthetic owner ' + (index + 1), dueDate: '2026-11-2' + (index + 1),
+            editTarget: index === 2 ? null : { planId: 'saved-plan', planRevision: 3, actionId: 'action-' + index } };
+    }).reverse();
+    expect(readBoardPlan).not.toHaveBeenCalled();
+    const handoff = openBoard(dom); await flush();
+    const board = handoff.querySelectorAll('textarea')[1], base = handoff.querySelector('textarea').value;
+    expect(readBoardPlan).toHaveBeenCalledWith(expectedImprovementSelection(dom.seed.assessments[0]));
+    const controls = handoff.querySelector('.picture-board-actions').querySelectorAll('li');
+    rows.forEach((gap, index) => {
+        expect(controls[index].textContent).toContain(gap.querySelector('h4').textContent);
+        expect(controls[index].textContent).toContain('Synthetic owner ' + (index + 1));
+        expect(board.value).toContain((index + 1) + '. ' + gap.querySelector('h4').textContent + ' — Synthetic owner ' +
+            (index + 1) + ' · Due 2' + (index + 1) + ' Nov 2026');
+        controls[index].querySelector('button')?.click();
+    });
+    expect(openAction.mock.calls).toEqual([[actions[2].editTarget, true], [actions[1].editTarget, true]]);
+    expect(handoff.querySelector('.picture-board-print').textContent).toBe(board.value);
+    expect(base).not.toContain('Synthetic owner');
+    // Duplicated question, wrong control and wrong kind cannot fill a different gap.
+    actions = [{ ...actions[0], kind: 'evidence' }, { ...actions[1], controlId: 'other' }, actions[2], actions[2]];
+    openBoard(dom); await flush();
+    expect(handoff.querySelector('.picture-board-actions').children).toHaveLength(0);
+    expect(board.value).toMatch(/Next steps agreed \(owner and date\): $/);
+    dom.controller.destroy();
+});
+
+test('a closed export gate withholds board text, plan reads and owner controls until it releases the board', async () => {
+    let release;
+    const readBoardPlan = jest.fn(async () => []), openAction = jest.fn();
+    const gate = createDom().document.createElement('div');
+    const dom = setup({ options: { readBoardPlan, openAction, boardExportGate(render) {
+        release = () => gate.replaceChildren(render());
+        return gate;
+    } } }); await flush();
+    const handoff = openBoard(dom); await flush();
+    expect(handoff.querySelector('.picture-board-print')).toBeNull();
+    expect(handoff.querySelector('.picture-board-actions')).toBeNull();
+    expect(readBoardPlan).not.toHaveBeenCalled();
+    release(); await flush();
+    expect(readBoardPlan).toHaveBeenCalledTimes(1);
+    expect(gate.querySelector('.picture-board-print')).not.toBeNull();
+    expect(gate.querySelector('.picture-board-actions')).not.toBeNull();
+    gate.replaceChildren();
+    expect(handoff.querySelector('.picture-board-print')).toBeNull();
+    openBoard(dom); await flush(); expect(readBoardPlan).toHaveBeenCalledTimes(1);
+    dom.controller.destroy();
+});
+
+test('a late plan response cannot add an owner after an assessment switch or a failed read', async () => {
+    const first = submittedAt('recent', '2026-10-11T00:00:00.000Z', mixedResponses()), second = mixed();
+    let finish;
+    const readBoardPlan = jest.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+        .mockRejectedValueOnce(new Error('unavailable'));
+    const dom = setup({ records: [first, second], options: { initialAssessmentId: first.assessmentId, openAction: jest.fn(), readBoardPlan } });
+    await flush(); openBoard(dom);
+    const oldGap = dom.root.querySelector('.picture-top-gap').dataset.gapItem;
+    change(dom.root.querySelector('.picture-toolbar').querySelector('select'), second.assessmentId); await flush();
+    const handoff = openBoard(dom); await flush();
+    finish([{ itemId: oldGap, kind: 'implementation', owner: 'Previous owner', dueDate: '2026-11-25' }]);
+    await flush();
+    expect(readBoardPlan.mock.calls.map(([record]) => record.assessmentId)).toEqual([first.assessmentId, second.assessmentId]);
+    expect(handoff.querySelector('.picture-board-print').textContent).toContain('Saved owners and due dates could not be checked');
+    expect(handoff.querySelector('.picture-board-print').textContent).not.toContain('Previous owner');
+    expect(handoff.querySelector('.picture-board-actions').querySelector('button')).toBeNull();
+    dom.controller.destroy();
+});
+
 // Change over time: submitted results of the same profile, compared on request.
 function submittedAt(assessmentId, at, responses, scope = 'Synthetic office and cloud scope.') {
     const tenant = ncscFixture({ tenantId: 'synthetic-preview-a', organisationId: 'shared-preview-organisation' });
@@ -1333,7 +1419,11 @@ test('top three gaps put priority-tier controls first, then not-in-place before 
     const printed = section.querySelector('.picture-summary-print');
     assert.match(printed.textContent, /\nSelf-reported gaps; not a risk ranking or certification\.\n/);
     assert.equal(printed.textContent.match(/certif|complian/gi).length, 1);
-    assert.doesNotMatch(section.textContent.replace(printed.textContent, ''), /certif|complian/i);
+    // #441: the board or insurer summary carries one disclaimer of its own.
+    const boardPrinted = section.querySelectorAll('.picture-summary-print')[1];
+    assert.match(boardPrinted.textContent, /\nBasis: self-assessment [^\n]*Not certification or independent assurance\.\n/);
+    assert.equal(boardPrinted.textContent.match(/certif|complian/gi).length, 1);
+    assert.doesNotMatch(section.textContent.replace(printed.textContent, '').replace(boardPrinted.textContent, ''), /certif|complian/i);
 });
 
 test('top gaps show fewer than three when that is all there is', async () => {
@@ -1366,6 +1456,51 @@ test('top gap selection uses existing weights before answer and profile order, w
     assert.deepEqual(picture.topGaps(result, metadata, 1).map(gap => gap.itemId), ['q2']);
 });
 
+test('scoring v2 (#399): top gaps rank by weight × gap factor, count "I don\'t know" and leave v1 order alone', () => {
+    const { NCSC_V2_CONTEXT, ACCEPTED_NCSC_CONTEXT } = require('../api/shared/assessmentEngine/ncscProfileSet');
+    const profile = NCSC_V2_CONTEXT.profile;
+    const metadata = { profileRef: { ...NCSC_V2_CONTEXT.profileRef }, controls: profile.controls.map(control => ({ id: control.id, title: control.title })),
+        questions: profile.questions.map(question => ({ id: question.id, controlId: question.controlId, guidance: question.guidance })) };
+    // The #399 worked example: 7.85 / 31, fix-first scores 3.00, 2.25, 2.00, 2.00, 1.70.
+    const EXAMPLE = ['no', 'ad_hoc', 'partly', 'partly', 'partly', 'mfa_text_code', 'unknown', 'partly', 'partly', 'no', 'no',
+        'no', 'ad_hoc', 'partly', 'no', 'unknown'];
+    const rowsFor = values => ({ domains: [{ controls: [{ questions: profile.questions.map((question, index) =>
+        ({ itemId: question.id, responseOptionId: values[index], weight: question.weight, answer: values[index] })) }] }] });
+    const result = rowsFor(EXAMPLE);
+    assert.deepEqual(picture.topGaps(result, metadata, 5).map(gap => gap.itemId), ['NF-NCSC-MCSS-DR-01-Q2', 'NF-NCSC-CC-SV-01-Q1',
+        'NF-NCSC-CC-PM-01-Q1', 'NF-NCSC-CC-SU-01-Q1', 'NF-NCSC-CC-EM-01-Q1']);
+    // v2 shows up to five by default (#399, 18 Nov); the accepted profile keeps three.
+    assert.deepEqual(picture.topGaps(result, metadata).map(gap => gap.itemId), ['NF-NCSC-MCSS-DR-01-Q2', 'NF-NCSC-CC-SV-01-Q1',
+        'NF-NCSC-CC-PM-01-Q1', 'NF-NCSC-CC-SU-01-Q1', 'NF-NCSC-CC-EM-01-Q1']);
+    // Logging (I don't know, 1 × 0.85) misses the top five, so it is confirmed next.
+    assert.deepEqual(picture.confirmNext(result, metadata).map(gap => gap.itemId), ['NF-NCSC-MCSS-DU-01-Q1']);
+    const supplier = picture.topGaps(result, metadata, 4)[3];
+    assert.deepEqual([supplier.title, supplier.next], ['Limit supplier access',
+        'List who has access, turn on the extra login step, and add a breach-notice clause.']);
+    // Every gap rung is included, ordered by its factor; Yes, passkey and Not applicable are not gaps.
+    const ladder = profile.questions.map(() => 'yes');
+    const at = id => profile.questions.findIndex(question => question.id === id);
+    ladder[at('NF-NCSC-MCSS-MF-01-Q2')] = 'mfa_number_matching'; ladder[at('NF-NCSC-CC-NS-01-Q1')] = 'not_applicable';
+    assert.deepEqual(picture.topGaps(rowsFor(ladder), metadata, 16).map(gap => gap.itemId), ['NF-NCSC-MCSS-MF-01-Q2']);
+    ladder[at('NF-NCSC-MCSS-MF-01-Q2')] = 'mfa_key'; ladder[at('NF-NCSC-CC-PM-01-Q1')] = 'ad_hoc';
+    ladder[at('NF-NCSC-CC-SU-01-Q1')] = 'partly'; ladder[at('NF-NCSC-CC-EM-01-Q1')] = 'unknown'; ladder[at('NF-NCSC-MCSS-RM-01-Q1')] = 'no';
+    // PM 2×0.75=1.50, EM 2×0.85=1.70, SU 2×0.50=1.00, RM 1×1.00=1.00 (lower weight after SU).
+    assert.deepEqual(picture.topGaps(rowsFor(ladder), metadata, 16).map(gap => gap.itemId),
+        ['NF-NCSC-CC-EM-01-Q1', 'NF-NCSC-CC-PM-01-Q1', 'NF-NCSC-CC-SU-01-Q1', 'NF-NCSC-MCSS-RM-01-Q1']);
+    // Metadata for the accepted profile keeps the original rule: unknown is not a gap there.
+    const accepted = { ...metadata, profileRef: { ...ACCEPTED_NCSC_CONTEXT.profileRef } };
+    assert.deepEqual(picture.topGaps(rowsFor(EXAMPLE), accepted, 16).map(gap => gap.itemId),
+        picture.topGaps(rowsFor(EXAMPLE), { ...metadata, profileRef: undefined }, 16).map(gap => gap.itemId));
+    assert.equal(picture.topGaps(rowsFor(EXAMPLE), accepted, 16).some(gap => gap.responseOptionId === 'unknown'), false);
+    assert.deepEqual(picture.confirmNext(rowsFor(EXAMPLE), accepted), []);
+    // A reference that differs from v2 in any field other than the version is not v2.
+    for (const key of ['frameworkId', 'frameworkVersion', 'profileId', 'catalogueSha256', 'sourceCatalogueSha256']) {
+        const other = { ...metadata, profileRef: { ...metadata.profileRef, [key]: key.endsWith('Sha256') ? 'f'.repeat(64) : 'other' } };
+        assert.equal(picture.topGaps(rowsFor(EXAMPLE), other).length, 3, key);
+        assert.deepEqual(picture.confirmNext(rowsFor(EXAMPLE), other), [], key);
+    }
+});
+
 function summarySource() {
     const fixtures = buildFixtures();
     return { questionnaire: require('../api/shared/protectedAssets/ncscQuestionnaire'), record: mixed(), metadata: fixtures.metadata };
@@ -1386,8 +1521,10 @@ describe('next step under the top gaps', () => {
         const fetch = jest.fn(async () => reply(200, { available: true, promote: false }));
         const { panel, help, link, controller } = await withEnquiry(fetch);
         assert.equal(panel.hidden, false); assert.equal(help.hidden, false);
-        assert.equal(link.textContent, 'Get help closing these gaps');
-        assert.equal(link.href, '/contact.html');
+        assert.equal(link.textContent, 'Fix these with No Fries');
+        assert.equal(link.href, '/contact.html?service=managed_security_90');
+        assert.match(help.textContent, /90-day managed security: NZ\$1,250 \+ GST/);
+        assert.match(help.textContent, /board or insurer/);
         assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
         controller.destroy();
     });
@@ -1412,7 +1549,7 @@ describe('next step under the top gaps', () => {
         const { panel, help, controller } = await withEnquiry(fetch);
         assert.equal(help.hidden, true);
         assert.equal(panel.hidden, false);
-        assert.equal(panel.querySelector('summary').textContent, 'Copy or print this summary');
+        assert.equal(panel.querySelector('summary').textContent, 'Copy or print a summary');
         controller.destroy();
     });
     test('hides the help link and aborts when the status read takes longer than 5 seconds', async () => {
@@ -1428,12 +1565,28 @@ describe('next step under the top gaps', () => {
             controller.destroy();
         } finally { jest.useRealTimers(); }
     });
+    test('offers a board or insurer summary built from the same answers, self-reported and without the score', async () => {
+        const fetch = jest.fn(async () => reply(200, { available: false }));
+        const { panel, controller } = await withEnquiry(fetch);
+        const handoff = panel.querySelector('details');
+        const board = handoff.querySelectorAll('textarea')[1], labels = handoff.querySelectorAll('label');
+        assert.ok(board); assert.equal(labels[1].htmlFor, board.id); assert.equal(board.readOnly, true);
+        const { questionnaire, record, metadata } = summarySource();
+        assert.equal(board.value, questionnaire.boardSummary(record, metadata).text);
+        assert.match(board.value, /^Cyber security position: summary for the board or insurer\nScope: Synthetic office and cloud scope\./);
+        assert.match(board.value, /Not certification or independent assurance\./);
+        assert.match(board.value, /Next steps agreed \(owner and date\): $/);
+        assert.doesNotMatch(board.value, /Synthetic organisation A|shared-preview-organisation|46\.4%/);
+        assert.equal(handoff.querySelectorAll('pre')[1].textContent, board.value);
+        assert.equal(handoff.querySelectorAll('a').length, 0);
+        controller.destroy();
+    });
     test('offers Copy or print this summary with the same text as the results view', async () => {
         const fetch = jest.fn(async () => reply(200, { available: false }));
         const { dom, panel, controller } = await withEnquiry(fetch);
         const handoff = panel.querySelector('details');
         assert.equal(handoff.className, 'picture-summary');
-        assert.equal(handoff.querySelector('summary').textContent, 'Copy or print this summary');
+        assert.equal(handoff.querySelector('summary').textContent, 'Copy or print a summary');
         const input = handoff.querySelector('textarea'), label = handoff.querySelector('label');
         assert.equal(label.htmlFor, input.id); assert.equal(input.readOnly, true);
         const { questionnaire, record, metadata } = summarySource();
@@ -1449,7 +1602,7 @@ describe('next step under the top gaps', () => {
         assert.match(css, /\.picture-summary-print \{ display: none;[^}]*white-space: pre-wrap;/);
         assert.match(css, /@media print \{ \.picture-summary textarea \{ display: none; \} \.picture-summary-print \{ display: block; \} \}/);
         assert.equal(dom.window.print, undefined);
-        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary']);
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Copy board summary']);
         controller.destroy();
     });
     test('copies with the shared clipboard behaviour, falls back to selecting, prints, and calls no new endpoint', async () => {
@@ -1464,7 +1617,7 @@ describe('next step under the top gaps', () => {
         const handoff = dom.root.querySelector('.picture-next-steps').querySelector('details');
         const input = handoff.querySelector('textarea'), status = handoff.querySelector('[role="status"]');
         const press = label => handoff.querySelectorAll('button').find(button => button.textContent === label).click();
-        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Print these results']);
+        assert.deepEqual(handoff.querySelectorAll('button').map(button => button.textContent), ['Copy summary', 'Copy board summary', 'Print board summary', 'Print these results']);
         press('Copy summary'); await flush();
         expect(writeText).toHaveBeenCalledWith(input.value); assert.equal(status.textContent, 'Summary copied.');
         writeText.mockRejectedValueOnce(new Error('denied'));
@@ -1472,6 +1625,15 @@ describe('next step under the top gaps', () => {
         assert.equal(status.textContent, 'Summary selected. Press Ctrl+C or Cmd+C to copy it.');
         assert.equal(dom.document.activeElement, input);
         press('Print these results'); assert.equal(print.mock.calls.length, 1);
+        // Print board summary hides everything else for print only, then restores the page.
+        const boardPrinted = handoff.querySelector('.picture-board-print');
+        print.mockImplementationOnce(() => {
+            assert.ok(boardPrinted.classList.contains('picture-print-only'));
+            assert.ok(handoff.querySelector('textarea').classList.contains('picture-print-hide'));
+        });
+        press('Print board summary'); assert.equal(print.mock.calls.length, 2);
+        assert.equal(boardPrinted.classList.contains('picture-print-only'), false);
+        assert.equal(dom.root.querySelectorAll('.picture-print-hide').length, 0);
         expect(fetch.mock.calls.map(call => call[0])).toEqual(['/api/enquiry']);
         controller.destroy();
     });
@@ -1518,7 +1680,7 @@ test('Actions card shows overdue and next-14-day counts with up to three titles 
     assert.ok(card); assert.equal(dom.root.children[0], card);
     assert.equal(card.getAttribute('aria-labelledby'), card.querySelector('h3').id);
     assert.equal(card.querySelector('h3').textContent, 'Actions');
-    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Next open actions', 'Overdue (4)', 'Due in the next 14 days (2)']);
+    assert.deepEqual(card.querySelectorAll('h4').map(node => node.textContent), ['Start with these gaps', 'Next open actions', 'Overdue (4)', 'Due in the next 14 days (2)']);
     const next = card.querySelector('.picture-actions-next');
     assert.deepEqual([...next.querySelectorAll('a')].map(node => node.textContent),
         ['<img src=x onerror=alert(1)>', 'Synthetic action o1', 'Synthetic action o2']);
@@ -1560,7 +1722,7 @@ test('Actions card empty state links to the top three gaps panel', async () => {
     const card = dom.root.querySelector('.picture-actions');
     assert.equal(card.querySelector('.picture-actions-empty').textContent.replace(/\s+/g, ' ').trim(),
         'No actions yet. Start with your top three gaps.');
-    assert.equal(card.querySelector('h4'), null);
+    assert.equal(card.querySelector('h4').textContent, 'Start with these gaps');
     const link = card.querySelector('a'), heading = dom.root.querySelector('.picture-top-gaps').querySelector('h3');
     assert.equal(link.href, '#' + heading.id);
     link.click();
@@ -1616,7 +1778,8 @@ describe('honest saved-assessment comparisons', () => {
         const section = trendSection(dom);
         assert.ok(section.querySelector('.picture-trend-coverage').textContent.includes(coverage));
         assert.ok(section.textContent.includes(shared + ' questions have one of these answers in both.'));
-        assert.match(section.textContent, /Unknown and unapproved N\/A answers remain unresolved/);
+        assert.match(section.textContent, /Unknown and Not applicable answers stay unresolved/);
+        assert.doesNotMatch(section.textContent, /unapproved N\/A|approval workflow/);
         assert.match(section.textContent, /Not comparable as improvement or decline/);
         assert.equal(section.textContent.includes('The set of questions answered Yes, Partial or No also differs.'), differs);
         assert.doesNotMatch(section.textContent, /Up \d|Down \d|No change|Lower-bound change/);

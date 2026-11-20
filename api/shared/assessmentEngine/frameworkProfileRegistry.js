@@ -28,6 +28,10 @@ const VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,79}$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+// Only this module's validated, deeply frozen outputs qualify. Caller-owned
+// definitions (even frozen ones), copies and proxies still take the full path.
+// Weak membership retains no catalogue or request after its callers release it.
+const publishedProfiles = new WeakSet();
 
 class FrameworkProfileValidationError extends Error {
     constructor(code, path) {
@@ -47,12 +51,21 @@ class FrameworkProfileLookupError extends Error {
 }
 
 function publishFrameworkProfile(definition) {
+    if (publishedProfiles.has(definition)) return clonePublishedProfile(definition);
     const normalized = normalizeFrameworkProfile(definition, { requireDigest: true });
     const calculatedDigest = digestNormalizedProfile(normalized);
     if (normalized.catalogueSha256 !== calculatedDigest) {
         fail('catalogue_digest_mismatch', '$.catalogueSha256');
     }
-    return deepFreeze(normalized);
+    deepFreeze(normalized);
+    publishedProfiles.add(normalized);
+    return normalized;
+}
+
+function clonePublishedProfile(profile) {
+    const result = immutableClone(profile);
+    publishedProfiles.add(result);
+    return result;
 }
 
 function calculateFrameworkProfileSha256(definition) {
@@ -117,7 +130,7 @@ function createFrameworkRegistry(definitions) {
             validateLookupReference(profileId, profileVersion);
             const profile = byProfile.get(profileId)?.get(profileVersion);
             if (!profile) throw new FrameworkProfileLookupError('unsupported_framework_profile');
-            return immutableClone(profile);
+            return clonePublishedProfile(profile);
         },
         getFramework(frameworkId, frameworkVersion) {
             validateLookupReference(frameworkId, frameworkVersion);

@@ -51,6 +51,7 @@ describe('email settings handler', () => {
         expect(result.headers['Content-Security-Policy']).toContain("form-action 'self'");
         expect(result.headers['Content-Security-Policy']).not.toContain('script-src');
         const html = result.body;
+        expect(html).toContain('action="/account/email"');
         expect(html).toContain('<p role="status">Your email settings are saved.</p>');
         expect(html).toContain('Welcome email: <strong>On</strong>');
         expect(html).not.toContain('value="welcome"');
@@ -68,7 +69,7 @@ describe('email settings handler', () => {
     test('POST enforces same-origin before reading the session', async () => {
         const readSubject = jest.fn(async () => SUBJECT), store = fakeStore();
         const body = { type: 'result_summary', action: 'off' };
-        for (const headers of [{}, { origin: ENV.NOFRIES_PUBLIC_URL }, { 'sec-fetch-site': 'cross-site', origin: 'null' },
+        for (const headers of [{}, { origin: 'null' }, { origin: 'https://attacker.example.test' }, { 'sec-fetch-site': 'cross-site', origin: 'null' },
             { 'sec-fetch-site': 'same-site', origin: ENV.NOFRIES_PUBLIC_URL },
             { 'sec-fetch-site': 'same-origin', origin: 'https://attacker.example.test' },
             { 'sec-fetch-site': 'same-origin', origin: `${ENV.NOFRIES_PUBLIC_URL}/` }]) {
@@ -78,6 +79,16 @@ describe('email settings handler', () => {
         expect(store.change).not.toHaveBeenCalled();
         const ok = await run(post(body, { 'sec-fetch-site': 'same-origin', origin: ENV.NOFRIES_PUBLIC_URL }), { readSubject, store });
         expect(ok.status).toBe(303);
+    });
+
+    test('a browser without Fetch Metadata can save from the email settings form', async () => {
+        const store = fakeStore();
+        const page = await run({ method: 'GET' }, { store });
+        expect(page.headers['Referrer-Policy']).toBe('same-origin');
+        const saved = await run(post({ type: 'result_summary', action: 'off' },
+            { cookie: SAME.cookie, origin: ENV.NOFRIES_PUBLIC_URL }), { store });
+        expect(saved.status).toBe(303);
+        expect(store.change).toHaveBeenCalledTimes(1);
     });
 
     test('POST rejects unknown types, actions and extra fields', async () => {
@@ -163,10 +174,24 @@ describe('email settings handler', () => {
     });
 });
 
-describe('server route /api/account/email', () => {
+describe('email settings page URL', () => {
+    test('keeps only the saved confirmation on the public path', () => {
+        const { legacyEmailSettingsLocation, legacyEmailSettingsRedirect, LEGACY_PATH, REWRITE_PATH } = require('../api/shared/lifecycleEmail/emailSettings');
+        expect(PATH).toBe('/account/email');
+        expect(LEGACY_PATH).toBe('/api/account/email');
+        expect(REWRITE_PATH).toBe('/api/account/email-page');
+        expect(legacyEmailSettingsLocation({ saved: '1' })).toBe('/account/email?saved=1');
+        expect(legacyEmailSettingsLocation({ saved: '1', next: '/dashboard' })).toBe('/account/email');
+        expect(legacyEmailSettingsLocation({ saved: ['1'] })).toBe('/account/email');
+        expect(legacyEmailSettingsRedirect({ saved: '1' }).headers.Location).toBe('/account/email?saved=1');
+    });
+
     test('is a 404 without a dashboard database, and /api/account stays retired', async () => {
-        expect((await request(app).get(PATH)).status).toBe(404);
+        expect((await request(app).get('/account/email')).status).toBe(404);
+        expect((await request(app).get('/api/account/email')).status).toBe(404);
+        expect((await request(app).get('/api/account/email-page')).status).toBe(404);
         expect((await request(app).post(PATH).type('form').send('type=result_summary&action=off')).status).toBe(404);
+        expect((await request(app).post('/api/account/email').type('form').send('type=result_summary&action=off')).status).toBe(404);
         expect((await request(app).post('/api/account').send({})).status).toBe(410);
     });
 });

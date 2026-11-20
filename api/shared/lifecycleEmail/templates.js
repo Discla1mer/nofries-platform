@@ -7,14 +7,18 @@ const { TEMPLATE_VERSIONS: V } = require('./templateVersions');
 
 const PLACEHOLDERS = Object.freeze(['signInUrl', 'unsubscribeUrl']);
 const FOOTER = ['', '--', 'No Fries, nofries.nz',
-    'You are getting this because you have a No Fries account. To stop these emails, unsubscribe: {{unsubscribeUrl}}'];
+    'You are getting this because you have a No Fries account. To stop this kind of email, unsubscribe: {{unsubscribeUrl}}'];
 const template = (subject, ...body) => Object.freeze({ subject, lines: Object.freeze(['Kia ora,', '', ...body]) });
 const TEMPLATES = Object.freeze({
     welcome: Object.freeze({ [V.welcome]: template('Welcome to No Fries',
         'Your No Fries account is ready. Sign in to start your cyber security self-assessment:', '{{signInUrl}}') }),
-    result_summary: Object.freeze({ [V.result_summary]: template('Your No Fries results are ready',
+    result_summary: Object.freeze({ 'result-summary-v1': template('Your No Fries results are ready',
         'Your assessment results are ready. Sign in to see them and your improvement plan:', '{{signInUrl}}', '',
-        'For your security, we do not include any results in this email.') }),
+        'For your security, we do not include any results in this email.'),
+        [V.result_summary]: template('Your No Fries results are ready',
+            'Sign in to view your assessment results and improvement plan:', '{{signInUrl}}', '',
+            'In your results, open “Copy or print a summary” to get the summary for your board or insurer.', '',
+            'For your security, we do not include any results in this email.') }),
     // v2: activation queues the nudge for every new account, so the wording
     // must hold whether or not an assessment was started. Only activation (#151
     // E3) queues this type, so no v1 row was ever written.

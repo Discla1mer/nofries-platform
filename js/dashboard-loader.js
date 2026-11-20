@@ -21,6 +21,8 @@
     // own non-JSON page. That is not a No Fries decision about this person, so the opening session read keeps
     // trying for about three minutes instead of giving up after seven seconds.
     const PLATFORM_RETRY_MS = 10000, PLATFORM_RETRY_LIMIT = 18;
+    // Contact requests: three attempts in all, about 1s then 2s apart.
+    const CONTACT_ATTEMPTS = 3, CONTACT_RETRY_MS = 1000;
     const ACTION_PLAN_LIMIT = 5;
     // One steady message while the dashboard opens (round 2: three changing
     // lines over 6 to 16 seconds read as separate waits). Retries still say so.
@@ -67,6 +69,42 @@
         setAccountMenuOpen(false);
         accountToggle.focus();
     });
+    // Name and email stay visible beside Account. The menu holds Switch account.
+    function renderAccountIdentity(cycle) {
+        if (!accountMenu) return;
+        const email = cycle.session && typeof cycle.session.accountLabel === 'string' ? cycle.session.accountLabel : '';
+        const rawName = cycle.session && typeof cycle.session.accountName === 'string' ? cycle.session.accountName : '';
+        const name = rawName && (!email || rawName.toLocaleLowerCase() !== email.toLocaleLowerCase()) ? rawName : '';
+        let identity = document.getElementById('dashboardAccountIdentity');
+        if (!email && !name) {
+            if (identity) identity.remove();
+            return;
+        }
+        if (!identity) {
+            identity = document.createElement('p');
+            identity.id = 'dashboardAccountIdentity';
+            identity.className = 'dashboard-account-identity';
+            accountMenu.prepend(identity);
+        }
+        const label = document.createElement('span');
+        label.className = 'dashboard-account-identity-label';
+        label.textContent = 'Signed in as';
+        const nodes = [label];
+        if (name) {
+            const strong = document.createElement('strong');
+            // Isolate the name so right-to-left text cannot reorder the email beside it.
+            strong.setAttribute('dir', 'auto');
+            strong.textContent = name;
+            nodes.push(strong);
+        }
+        if (email) {
+            const address = document.createElement('span');
+            address.className = 'dashboard-account-identity-email';
+            address.textContent = email;
+            nodes.push(address);
+        }
+        identity.replaceChildren.apply(identity, nodes);
+    }
     const directorySearch = document.getElementById('dashboardOrganisationSearch');
     const directoryStatus = document.getElementById('dashboardOrganisationStatus');
     const directorySearchControls = document.getElementById('dashboardOrganisationSearchControls');
@@ -94,38 +132,49 @@
     // Retain one immutable command until an acknowledgement or definite denial.
     let unresolved = null;
     const commandContinuations = new WeakMap();
-    // Only the last opened organisation's binding ID is kept on this browser.
+    // Only the last opened organisation's binding ID is kept in this tab session.
     // It is a hint: a fresh directory read and the server selection check
     // decide whether it can be reopened.
     const LAST_ORGANISATION_KEY = 'nofries-dashboard-last-organisation';
     let resumeOffered = false;
-    function lastOrganisationStore() {
+    function hintStore() {
         try { return window.localStorage || null; } catch (_) { return null; }
+    }
+    function lastOrganisationStore() {
+        try { return window.sessionStorage || null; } catch (_) { return null; }
     }
     function lastOrganisation() {
         const store = lastOrganisationStore();
         let value = null;
         try { value = store ? store.getItem(LAST_ORGANISATION_KEY) : null; } catch (_) { return null; }
-        return typeof value === 'string' && UUID.test(value) ? value : null;
+        const [bindingId, expiresAt] = (value || '').split(' ');
+        if (UUID.test(bindingId) && Date.parse(expiresAt) > Date.now()) return bindingId;
+        return null;
     }
-    function saveLastOrganisation(bindingId) {
+    function saveLastOrganisation(bindingId, expiresAt) {
         const store = lastOrganisationStore();
-        try { if (store && UUID.test(bindingId)) store.setItem(LAST_ORGANISATION_KEY, bindingId); } catch (_) { /* optional */ }
+        try { if (store && UUID.test(bindingId)) store.setItem(LAST_ORGANISATION_KEY, bindingId + ' ' + expiresAt); } catch (_) { /* optional */ }
     }
-    // D-013: remembers only which organisation last opened with Cyber Security
-    // ready, so the next visit can start that module read one round trip
-    // earlier. A hint: the fresh projection still decides whether it is used.
+    // The last two ready bindings cover a consultant switching back to a client.
+    // Each visit still checks the fresh projection and reads the module.
     const CYBER_READY_KEY = 'nofries-dashboard-cyber-ready';
+    function readyBindings(store) {
+        const stored = store.getItem(CYBER_READY_KEY) || '';
+        if (stored.length > 73) return [];
+        return stored.split(' ').filter(function (id) { return UUID.test(id); });
+    }
     function cyberReadyHint(bindingId) {
-        const store = lastOrganisationStore();
-        try { return !!store && UUID.test(bindingId || '') && store.getItem(CYBER_READY_KEY) === bindingId; } catch (_) { return false; }
+        const store = hintStore();
+        try { return !!store && readyBindings(store).includes(bindingId); } catch (_) { return false; }
     }
     function saveCyberReadyHint(bindingId, ready) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (!store || !UUID.test(bindingId || '')) return;
-            if (ready) store.setItem(CYBER_READY_KEY, bindingId);
-            else if (store.getItem(CYBER_READY_KEY) === bindingId) store.removeItem(CYBER_READY_KEY);
+            const recent = readyBindings(store).filter(function (id) { return id !== bindingId; });
+            if (ready) recent.unshift(bindingId);
+            if (recent.length) store.setItem(CYBER_READY_KEY, recent.slice(0, 2).join(' '));
+            else store.removeItem(CYBER_READY_KEY);
         } catch (_) { /* optional */ }
     }
     // D-013: remembers which assessment Overview showed by default for one
@@ -134,7 +183,7 @@
     const PICTURE_LATEST_KEY = 'nofries-dashboard-picture-latest';
     const PICTURE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
     function pictureLatestHint(bindingId) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (!store || !UUID.test(bindingId || '')) return null;
             const saved = String(store.getItem(PICTURE_LATEST_KEY) || '');
@@ -144,17 +193,44 @@
         } catch (_) { return null; }
     }
     function savePictureLatestHint(bindingId, assessmentId) {
-        const store = lastOrganisationStore();
+        const store = hintStore();
         try {
             if (store && UUID.test(bindingId || '') && PICTURE_ID.test(assessmentId || '')) store.setItem(PICTURE_LATEST_KEY, bindingId + ' ' + assessmentId);
         } catch (_) { /* optional */ }
     }
+    // D-013: remembers which plans the Overview Actions card last listed for one organisation, so the
+    // next visit can read their action lists beside the plan index instead of after it. A hint only:
+    // an early list is used only if the fresh index names the same plan at the same revision.
+    const ACTION_PLANS_KEY = 'nofries-dashboard-action-plans';
+    function actionPlansHint(bindingId) {
+        const store = hintStore();
+        try {
+            if (!store || !UUID.test(bindingId || '')) return [];
+            const saved = String(store.getItem(ACTION_PLANS_KEY) || '');
+            if (saved.slice(0, bindingId.length + 1) !== bindingId + ' ') return [];
+            const ids = saved.slice(bindingId.length + 1).split(' ');
+            return ids.length <= ACTION_PLAN_LIMIT && new Set(ids).size === ids.length && ids.every(function (id) { return PICTURE_ID.test(id); }) ? ids : [];
+        } catch (_) { return []; }
+    }
+    function saveActionPlansHint(bindingId, planIds) {
+        const store = hintStore();
+        try {
+            if (!store || !UUID.test(bindingId || '')) return;
+            if (planIds.length && planIds.length <= ACTION_PLAN_LIMIT && planIds.every(function (id) { return PICTURE_ID.test(id); })) {
+                store.setItem(ACTION_PLANS_KEY, bindingId + ' ' + planIds.join(' '));
+            } else store.removeItem(ACTION_PLANS_KEY);
+        } catch (_) { /* optional */ }
+    }
+    // The last organisation was once kept browser-wide; that copy is no longer read.
+    try { const legacy = hintStore(); if (legacy) legacy.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
     function forgetLastOrganisation() {
-        const store = lastOrganisationStore();
+        const store = hintStore();
+        try { lastOrganisationStore()?.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
         try { if (store) store.removeItem(LAST_ORGANISATION_KEY); } catch (_) { /* optional */ }
         // A later sign-in may be a different person: drop the Cyber Security hint too.
         try { if (store) store.removeItem(CYBER_READY_KEY); } catch (_) { /* optional */ }
         try { if (store) store.removeItem(PICTURE_LATEST_KEY); } catch (_) { /* optional */ }
+        try { if (store) store.removeItem(ACTION_PLANS_KEY); } catch (_) { /* optional */ }
     }
     if (hasDirectorySearch) {
         directorySearch.addEventListener('input', function () {
@@ -341,7 +417,7 @@
         elements.signOut.disabled = state === 'loading';
         if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
         if (emailSettings) emailSettings.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
-        if (accountToggle) accountToggle.textContent = cycle.session?.accountLabel ? 'Account: ' + cycle.session.accountLabel : 'Account';
+        if (cycle.session || state === 'unauthenticated' || state === 'expired') renderAccountIdentity(cycle);
         if (accountMenu) {
             accountMenu.hidden = elements.signOut.hidden;
             if (accountMenu.hidden) setAccountMenuOpen(false);
@@ -374,16 +450,20 @@
     function session(value) {
         if (!fields(value, ['schemaVersion', 'authenticated', 'purpose', 'expiresAt', 'generation', 'selectedBindingId',
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountLabel') ? ['accountLabel'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountName') ? ['accountName'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsAvailable') ? ['contactRequestsAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
             Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
+            Object.prototype.hasOwnProperty.call(value, 'accountName') && (value.purpose !== 'customer' || typeof value.accountName !== 'string' || value.accountName !== value.accountName.trim() || !value.accountName || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f\p{Cf}]/u.test(value.accountName)) ||
             value.schemaVersion !== 1 || value.authenticated !== true || !['operator_dashboard', 'customer'].includes(value.purpose) ||
             Object.prototype.hasOwnProperty.call(value, 'activationAvailable') && (value.activationAvailable !== true || value.purpose !== 'operator_dashboard') ||
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
             Object.prototype.hasOwnProperty.call(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant') ||
             Object.prototype.hasOwnProperty.call(value, 'workQueueAvailable') && (value.workQueueAvailable !== true || value.accountType !== 'consultant') ||
+            Object.prototype.hasOwnProperty.call(value, 'contactRequestsAvailable') && (value.contactRequestsAvailable !== true || value.purpose !== 'customer') ||
             !canonicalDate(value.expiresAt) || typeof value.generation !== 'string' || !DIGEST.test(value.generation) ||
             value.selectedBindingId !== null && (typeof value.selectedBindingId !== 'string' || !UUID.test(value.selectedBindingId))) throw invalid();
         if (Date.parse(value.expiresAt) <= Date.now()) { const error = invalid(); error.expired = true; throw error; }
@@ -391,11 +471,13 @@
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
+            ...(value.contactRequestsAvailable === true ? { contactRequestsAvailable: true } : {}),
             ...(value.accountType ? { accountType: value.accountType } : {}),
-            ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}) });
+            ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}),
+            ...(value.accountName ? { accountName: value.accountName } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'accountType', 'accountLabel']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsAvailable', 'accountType', 'accountLabel', 'accountName']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -478,7 +560,7 @@
         refresh.requests.forEach(function (cancel) { cancel(); });
         refresh.requests.clear();
     }
-    function request(cycle, path, body, generation, csrf, refresh) {
+    function request(cycle, path, body, generation, csrf, refresh, readBody) {
         if (!current(cycle) || refresh && !currentRefresh(cycle, refresh)) return Promise.reject(invalid());
         const abort = typeof AbortController === 'function' ? new AbortController() : null;
         return new Promise(function (resolve, reject) {
@@ -501,7 +583,7 @@
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 account-identity-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
@@ -515,12 +597,16 @@
                 return fetch(path, options);
             }).then(async function (response) {
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
+                if (body === undefined && path === '/api/dashboard/session' && response?.status === 401 &&
+                    !response.redirected && !['opaque', 'opaqueredirect'].includes(response.type)) {
+                    finish(resolve, { status: 401 }); return;
+                }
                 const json = !!response && !!response.headers && /^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') || '');
                 if (response && !response.redirected && !['opaque', 'opaqueredirect'].includes(response.type) && !json &&
                     [403, 502, 503].includes(response.status)) { const error = invalid(); error.platform = true; throw error; }
                 if (!response || response.redirected || ['opaque', 'opaqueredirect'].includes(response.type) || !json) throw invalid();
                 let value;
-                try { value = await response.json(); } catch (_) { throw invalid(); }
+                try { value = readBody ? await readBody(response) : await response.json(); } catch (_) { throw invalid(); }
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
                 finish(resolve, { status: response.status, value: value });
             }).catch(function (error) { finish(reject, error); });
@@ -544,7 +630,7 @@
         if (!current(cycle) || document.body.dataset.dashboardState !== 'loading') return;
         elements.heading.textContent = 'Opening your dashboard';
         elements.message.textContent = message;
-        elements.status.textContent = detail;
+        elements.status.textContent = cycle.openingOrganisation || detail;
     }
     function waitForRetry(cycle, ms, updating) {
         if (current(cycle) && document.body.dataset.dashboardState === 'loading') {
@@ -671,7 +757,6 @@
         const value = session(requireSuccess(result));
         if (cycle.workQueueTarget && value.selectedBindingId !== cycle.workQueueTarget.bindingId) throw invalid();
         remember(cycle, value);
-        if (cycle.openSelection && value.purpose === 'customer' && value.selectedBindingId) saveLastOrganisation(value.selectedBindingId);
         // Navigation records the chosen view, never authority. Keep it across
         // focus/pageshow rechecks after a consultant selects a client.
         if (cycle.openSelection && value.accountType === 'consultant' && !currentRoute()) {
@@ -768,8 +853,10 @@
             ...(cyber ? { mountCyber: cyber } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
-            ...(improvement ? { mountImprovement: improvement } : {}) });
+            ...(improvement ? { mountImprovement: improvement } : {}),
+            ...(fresh.contactRequestsAvailable === true ? { contactRequest: contactSender(cycle, snapshot) } : {}) });
         if (!controller || typeof controller.destroy !== 'function') throw invalid();
+        if (cycle.openSelection && fresh.purpose === 'customer') saveLastOrganisation(fresh.selectedBindingId, fresh.expiresAt);
         elements.app.hidden = false;
         cycle.busy = false;
         show(cycle, 'ready');
@@ -1428,7 +1515,8 @@
         const questionnaire = window.NoFriesNcscQuestionnaire;
         if (!clientFactory || typeof clientFactory.createClient !== 'function' ||
             !questionnaire || typeof questionnaire.mount !== 'function') throw invalid();
-        const client = clientFactory.createClient({ metadata: value.metadata, fetch: async function (path, options) {
+        const profileMetadata = Array.isArray(value.profileMetadata) ? { profileMetadata: value.profileMetadata } : {};
+        const client = clientFactory.createClient({ metadata: value.metadata, ...profileMetadata, fetch: async function (path, options) {
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             // The existing client owns the bounded endpoint and command schema.
             // Bind transport to this exact selection; caller-supplied generations
@@ -1448,7 +1536,7 @@
         } });
         const mountCyber = function (root, presentation) {
             if (!current(cycle)) throw invalid();
-            return questionnaire.mount(root, { window: window, metadata: value.metadata, client: client,
+            return questionnaire.mount(root, { window: window, metadata: value.metadata, ...profileMetadata, client: client,
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
@@ -1494,20 +1582,76 @@
             };
         };
         // Plain topic titles let the Improvement Plan name actions in words.
-        mountCyber.controlTitles = Object.assign(Object.create(null), Object.fromEntries(value.metadata.controls.map(function (control) {
-            return [control.id, control.title];
-        })));
+        const planTitles = function (metadata) {
+            return Object.assign(Object.create(null), Object.fromEntries(metadata.controls.map(function (control) {
+                return [control.id, control.title];
+            })));
+        };
         // Each question's concrete follow-up, worded as on the results page, so a
         // plan gap names the actual work (F1-R10). Plan actions are per question,
         // so this is keyed by question id, not control. Display only.
-        mountCyber.itemFollowUps = Object.create(null);
-        value.metadata.questions.forEach(function (question) {
-            const followUp = question.smallBusiness && question.smallBusiness.checks.join(' ') ||
-                question.guidance && question.guidance.startingActions && question.guidance.startingActions[0];
-            if (typeof followUp === 'string' && followUp.trim() && followUp.length <= 1000) {
-                mountCyber.itemFollowUps[question.id] = followUp;
-            }
-        });
+        const planFollowUps = function (metadata) {
+            const followUps = Object.create(null);
+            metadata.questions.forEach(function (question) {
+                const followUp = question.smallBusiness && question.smallBusiness.checks.join(' ') ||
+                    question.guidance && question.guidance.startingActions && question.guidance.startingActions[0];
+                if (typeof followUp === 'string' && followUp.trim() && followUp.length <= 1000) {
+                    followUps[question.id] = followUp;
+                }
+            });
+            return followUps;
+        };
+        if (!Array.isArray(value.profileMetadata)) {
+            mountCyber.controlTitles = planTitles(value.metadata);
+            mountCyber.itemFollowUps = planFollowUps(value.metadata);
+        } else {
+            // Scoring v2 (#399), only while the server sends further profiles: a
+            // plan does not name its profile, so each plan's wording comes from
+            // the profile its source assessment stores, matched on all six fields.
+            // Until that is known, or if it cannot be, only wording that every
+            // profile having the id agrees on is used, so a plan never shows
+            // another profile's titles or follow-ups.
+            const planProfiles = [value.metadata].concat(value.profileMetadata);
+            const agreed = function (maps) {
+                const result = Object.create(null);
+                maps.forEach(function (map) {
+                    Object.keys(map).forEach(function (key) {
+                        if (Object.prototype.hasOwnProperty.call(result, key)) return;
+                        const found = maps.filter(function (other) { return Object.prototype.hasOwnProperty.call(other, key); });
+                        if (found.every(function (other) { return other[key] === map[key]; })) result[key] = map[key];
+                    });
+                });
+                return result;
+            };
+            mountCyber.controlTitles = agreed(planProfiles.map(planTitles));
+            mountCyber.itemFollowUps = agreed(planProfiles.map(planFollowUps));
+            const profileKeys = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
+            // One read per source assessment: its stored profile never changes.
+            const wordingByAssessment = new Map();
+            const readWording = async function (assessmentId) {
+                // The bounded client validates the read against the profile it names.
+                const read = await client.read(assessmentId);
+                if (!current(cycle) || cycle.authorityPending) throw invalid();
+                const stored = read && read.assessment && read.assessment.profileRef;
+                const metadata = stored && planProfiles.find(function (candidate) {
+                    return Object.keys(stored).length === profileKeys.length && profileKeys.every(function (key) {
+                        return stored[key] === candidate.profileRef[key];
+                    });
+                });
+                return metadata ? { controlTitles: planTitles(metadata), itemFollowUps: planFollowUps(metadata) } : null;
+            };
+            mountCyber.planWording = function (assessmentId) {
+                if (!current(cycle) || cycle.authorityPending) return Promise.reject(invalid());
+                if (!wordingByAssessment.has(assessmentId)) {
+                    if (wordingByAssessment.size >= 100) wordingByAssessment.clear();
+                    const pending = readWording(assessmentId);
+                    wordingByAssessment.set(assessmentId, pending);
+                    // A failed read is not remembered, so a later plan view tries again.
+                    pending.catch(function () { if (wordingByAssessment.get(assessmentId) === pending) wordingByAssessment.delete(assessmentId); });
+                }
+                return wordingByAssessment.get(assessmentId);
+            };
+        }
         // The Improvement Plan's empty state offers the latest submitted
         // assessment. This reads the same validated, bounded list as Overview.
         mountCyber.latestSubmitted = async function () {
@@ -1540,8 +1684,26 @@
         if (picture && typeof picture.mount === 'function') {
             mountCyber.mountPicture = function (root, presentation) {
                 if (!current(cycle)) throw invalid();
-                return picture.mount(root, { metadata: value.metadata, client: client, organisationId: organisationId,
+                return picture.mount(root, { metadata: value.metadata, ...profileMetadata, client: client, organisationId: organisationId,
                     displayName: presentation.displayName,
+                    ...(typeof presentation.contactControl === 'function' ? { contactControl: presentation.contactControl } : {}),
+                    ...(!pictureSelection ? { readFirstPaint: async function () {
+                        if (!current(cycle) || cycle.authorityPending) throw invalid();
+                        const actions = typeof presentation.openImprovement === 'function' && cycle.improvement;
+                        const response = await request(cycle, '/api/dashboard/modules/overview?view=first-paint' + (actions ? '&actions=1' : ''),
+                            undefined, snapshot.generation, undefined, undefined, client.readOverviewBody);
+                        if (response.status === 401 || response.status === 403 && response.value?.code === 'dashboard_access_denied') {
+                            const error = invalid(); error.status = response.status; failure(cycle, error); throw error;
+                        }
+                        const result = requireSuccess(response);
+                        if (!current(cycle) || cycle.authorityPending || !fields(result, ['page', 'detail', 'actions'])) throw invalid();
+                        const checked = client.validateOverview(result.page, result.detail);
+                        // A null Actions value means the optional card was not read; the picture reads it separately.
+                        if (!actions && result.actions !== null || actions && result.actions !== null && (!Array.isArray(result.actions.lists) ||
+                            result.actions.lists.length > ACTION_PLAN_LIMIT || picture.actionSummary(result.actions, value.metadata) === null)) throw invalid();
+                        informationRead(cycle);
+                        return { ...checked, actions: result.actions };
+                    } } : {}),
                     ...(pictureSelection ? { initialAssessmentId: pictureSelection }
                         : pictureLatestHint(snapshot.selectedBindingId) ? { likelyAssessmentId: pictureLatestHint(snapshot.selectedBindingId) } : {}),
                     onSelection: function (assessmentId, source) {
@@ -1554,13 +1716,13 @@
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
                         return presentation.openImprovement(sourceAssessment);
-                    }, openAction: function (target) {
+                    }, openAction: function (target, openOwnerForm) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
                         if (!target || typeof target.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(target.planId) ||
                             typeof target.actionId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(target.actionId) ||
                             !Number.isSafeInteger(target.planRevision) || target.planRevision < 0 || target.planRevision > 1024) return Promise.resolve(false);
                         const chosen = Object.freeze({ bindingId: snapshot.selectedBindingId, planId: target.planId,
-                            actionId: target.actionId, planRevision: target.planRevision });
+                            actionId: target.actionId, planRevision: target.planRevision, openOwnerForm: openOwnerForm === true });
                         cycle.workQueueTarget = chosen;
                         return Promise.resolve(presentation.openImprovement()).then(function (opened) {
                             if (opened !== true && cycle.workQueueTarget === chosen) cycle.workQueueTarget = null;
@@ -1574,7 +1736,18 @@
                         return openGapPlan(cycle, snapshot, presentation, sourceAssessment, itemId, stillCurrent);
                     } } : {}),
                     ...(typeof presentation.openImprovement === 'function' && cycle.improvement
-                        ? { readActions: function () { return improvementActions(cycle, snapshot); } } : {}) });
+                        ? { readActions: function () { return improvementActions(cycle, snapshot); },
+                            readBoardPlan: function (selection) {
+                                return window.NoFriesImprovementActionPlanClient.readBoardPlan(async function (path) {
+                                    if (!current(cycle) || cycle.authorityPending) throw invalid();
+                                    const result = await request(cycle, path, undefined, snapshot.generation);
+                                    if (!current(cycle) || cycle.authorityPending) throw invalid();
+                                    if (result.status === 401 || result.status === 403 && result.value?.code === 'dashboard_access_denied') {
+                                        const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
+                                    }
+                                    return result;
+                                }, organisationId, selection);
+                            } } : {}) });
             };
         }
         return mountCyber;
@@ -1588,12 +1761,25 @@
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             return value;
         };
+        const listPath = function (planId) { return '/api/dashboard/improvement/list?planId=' + encodeURIComponent(planId); };
+        // Early reads for the plans listed last time. A failure here is ignored; the normal read below decides.
+        const early = new Map(actionPlansHint(snapshot.selectedBindingId).map(function (planId) {
+            return [planId, read(listPath(planId)).then(function (value) { return value; }, function () { return null; })];
+        }));
         const page = await read('/api/dashboard/improvement/plans?limit=' + ACTION_PLAN_LIMIT);
         if (!page || !Array.isArray(page.plans) || page.plans.length > ACTION_PLAN_LIMIT) throw invalid();
         const lists = await Promise.all(page.plans.map(function (plan) {
             if (!plan || typeof plan.planId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(plan.planId)) throw invalid();
-            return read('/api/dashboard/improvement/list?planId=' + encodeURIComponent(plan.planId));
+            const started = early.get(plan.planId);
+            if (!started) return read(listPath(plan.planId));
+            return started.then(function (value) {
+                // Use the early list only for the exact plan revision the fresh index reports.
+                const same = !!value && !!value.scope && value.scope.planId === plan.planId &&
+                    Number.isSafeInteger(plan.planRevision) && value.planRevision === plan.planRevision;
+                return same ? value : read(listPath(plan.planId));
+            });
         }));
+        if (current(cycle) && !cycle.authorityPending) saveActionPlansHint(snapshot.selectedBindingId, page.plans.map(function (plan) { return plan.planId; }));
         const result = { lists: lists, more: page.nextAfterPlanId !== null };
         // Advance "Information as at" only when the Actions card will accept
         // every list it was given; an invalid list leaves the time unchanged.
@@ -1601,6 +1787,34 @@
         if (current(cycle) && !cycle.authorityPending && picture && typeof picture.actionSummary === 'function' &&
             picture.actionSummary(result) !== null) informationRead(cycle);
         return result;
+    }
+    // #409: one "Ask No Fries to contact me" action. A fresh operation id per
+    // user action; a network failure or 503 retries that same id, which the
+    // server replays as the original outcome. Nothing is stored in the browser.
+    function contactSender(cycle, snapshot) {
+        return async function (topic) {
+            const body = { operationId: secureId(), topic: topic, consentVersion: 'contact-request-v1' };
+            for (let attempt = 0; attempt < CONTACT_ATTEMPTS; attempt += 1) {
+                if (attempt) {
+                    await new Promise(function (resolve) {
+                        const timer = window.setTimeout(resolve, CONTACT_RETRY_MS * attempt);
+                        cycle.cleanup.push(function () { window.clearTimeout(timer); resolve(); });
+                    });
+                }
+                if (!current(cycle) || cycle.authorityPending) return 'failed';
+                let result;
+                try { result = await request(cycle, '/api/dashboard/contact-requests', body, snapshot.generation); }
+                catch (_) { continue; }
+                if (!current(cycle)) return 'failed';
+                if (result.status === 503) continue;
+                if (result.status === 401) { const error = invalid(); error.status = 401; failure(cycle, error); return 'failed'; }
+                const value = result.value;
+                if (result.status === 200 && fields(value, ['schemaVersion', 'status']) && value.schemaVersion === 1 &&
+                    ['requested', 'already_requested'].includes(value.status)) return value.status;
+                return 'failed';
+            }
+            return 'failed';
+        };
     }
     function improvementOptions(cycle, snapshot, organisationId, cyber) {
         const factory = window.NoFriesImprovementActionPlanClient;
@@ -1610,11 +1824,13 @@
             const result = factory.mount(root, {
                 organisationId: organisationId,
                 ...(cycle.workQueueTarget && cycle.workQueueTarget.bindingId === snapshot.selectedBindingId
-                    ? { initialTarget: { planId: cycle.workQueueTarget.planId, actionId: cycle.workQueueTarget.actionId,
+                    ? { openOwnerForm: cycle.workQueueTarget.openOwnerForm === true,
+                        initialTarget: { planId: cycle.workQueueTarget.planId, actionId: cycle.workQueueTarget.actionId,
                         planRevision: cycle.workQueueTarget.planRevision } } : {}),
                 sourceAssessment: presentation && presentation.sourceAssessment,
                 ...(cyber && cyber.controlTitles ? { controlTitles: cyber.controlTitles } : {}),
                 ...(cyber && cyber.itemFollowUps ? { itemFollowUps: cyber.itemFollowUps } : {}),
+                ...(cyber && typeof cyber.planWording === 'function' ? { planWording: cyber.planWording } : {}),
                 ...(cyber && typeof cyber.latestSubmitted === 'function' ? { latestSource: cyber.latestSubmitted } : {}),
                 newId: secureId,
                 isCurrent: function () { return current(cycle) && !cycle.authorityPending; },
@@ -1683,12 +1899,18 @@
         return opened;
     }
     function cyberContract(value) {
-        if (!fields(value, ['schemaVersion', 'context', 'generatedAt', 'module', 'summary', 'services',
-            'admissionGranted', 'providerAccessGranted', 'metadata', 'presentationMode']) ||
+        // Scoring v2 (#399): the server adds profileMetadata (one entry per extra
+        // readable profile) only while NOFRIES_NCSC_PROFILE_V2 is on.
+        const keys = ['schemaVersion', 'context', 'generatedAt', 'module', 'summary', 'services',
+            'admissionGranted', 'providerAccessGranted', 'metadata', 'presentationMode'];
+        const extra = value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'profileMetadata');
+        if (extra && (!Array.isArray(value.profileMetadata) || !value.profileMetadata.length || value.profileMetadata.length > 4)) throw invalid();
+        if (!fields(value, extra ? keys.concat(['profileMetadata']) : keys) ||
             value.schemaVersion !== 1 || value.module?.key !== 'cyber_security' || value.module?.state !== 'ready' ||
             value.admissionGranted !== false || value.providerAccessGranted !== false ||
             !['editable', 'read-only'].includes(value.presentationMode)) throw invalid();
-        return JSON.stringify([value.metadata, value.presentationMode, value.context, value.module]);
+        return JSON.stringify(extra ? [value.metadata, value.presentationMode, value.context, value.module, value.profileMetadata]
+            : [value.metadata, value.presentationMode, value.context, value.module]);
     }
     function leave(cycle, commit) {
         if (!current(cycle) || !confirmClientDiscard(cycle)) return Promise.resolve(false);
@@ -1790,7 +2012,8 @@
                     leave(cycle, function () {
                         lastOrganisationRoute = currentRoute() || lastOrganisationRoute;
                         const next = begin();
-                        elements.status.textContent = 'Opening ' + binding.organisationLabel + '…';
+                        next.openingOrganisation = 'Opening ' + binding.organisationLabel + '…';
+                        elements.status.textContent = next.openingOrganisation;
                         try {
                             const pending = command('selection', { bindingId: binding.bindingId, expectedGeneration: value.generation, operationId: secureId() });
                             execute(next, pending).catch(function (error) { failure(next, error); });

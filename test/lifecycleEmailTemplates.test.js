@@ -35,15 +35,15 @@ test('the outbox writer and the templates use the same template versions', () =>
 describe('lifecycle email templates', () => {
     test('every template uses only the allowed placeholders and carries no name, result or score', () => {
         for (const [type, versions] of Object.entries(TEMPLATES)) {
+            expect(Object.keys(versions)).toContain(TEMPLATE_VERSIONS[type]);
             for (const [version, template] of Object.entries(versions)) {
-                expect(version).toBe(TEMPLATE_VERSIONS[type]);
                 const source = [template.subject, ...template.lines, ...FOOTER].join('\n');
                 for (const [, name] of source.matchAll(/\{\{([^}]*)\}\}/g)) expect(PLACEHOLDERS).toContain(name);
                 expect(source).not.toMatch(/assessmentId|gapCount|score|\{\{name/i);
                 const text = renderTemplate(type, version, { signInUrl: 'https://nofries.nz/dashboard', unsubscribeUrl: 'https://nofries.nz/dashboard' }).text;
                 expect(text).not.toMatch(/\{\{/);
                 expect(text).toMatch(/^Kia ora,\n/);
-                expect(text).toContain('unsubscribe: https://nofries.nz/dashboard');
+                expect(text).toContain('To stop this kind of email, unsubscribe: https://nofries.nz/dashboard');
                 expect(text).not.toMatch(/<[a-z]/i);
             }
         }
@@ -85,4 +85,13 @@ describe('nudge_unfinished wording', () => {
         expect(text).not.toMatch(/You started/);
         expect(text).toContain('https://nofries.nz/dashboard');
     });
+});
+
+test('result summaries keep queued v1 mail renderable and direct new recipients to the board summary', () => {
+    const links = { signInUrl: 'https://nofries.nz/dashboard', unsubscribeUrl: 'https://nofries.nz/api/emailPreferences?t=x' };
+    const current = renderTemplate('result_summary', TEMPLATE_VERSIONS.result_summary, links).text;
+    expect(current).toContain('summary for your board or insurer');
+    expect(current.match(/https?:\/\/\S+/g)).toEqual([links.signInUrl, links.unsubscribeUrl]);
+    expect(current).not.toMatch(/90.day|1,250|managed security/i);
+    expect(renderTemplate('result_summary', 'result-summary-v1', links).text).toContain('Sign in to see them');
 });

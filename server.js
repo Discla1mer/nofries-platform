@@ -9,6 +9,7 @@ const { buildGatewayDocument } = require('./lib/gatewayDocument');
 const { withFrontendReleaseInformation } = require('./lib/frontendReleaseInfo');
 const {
     checkRateLimit,
+    checkRateLimits,
     getVerifiedDashboardSessionKey,
     getClientKeyFromHeaders,
     isBlockedUserAgent,
@@ -58,12 +59,12 @@ const { getServiceScope } = require('./api/shared/serviceScope');
 const serverTiming = require('./api/shared/serverTiming');
 const { createEnquiryService, isHoneypotEnquiry } = require('./api/shared/enquiry');
 const { errorResult: enquiryErrorResult } = require('./api/enquiry');
-const { API_SECURITY_HEADERS, assertSameOriginForMutation } = require('./api/shared/securityHeaders');
+const { API_SECURITY_HEADERS, assertSameOriginForMutation, clearDefaultPragmaForImmutable } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
 const { createFunnelCountReader, createFunnelCountWriter, createServerFunnelCounter, funnelCountsEnabled, handleFunnelCountRequest,
     isAssessmentSubmit } = require('./api/shared/funnelCounts');
 const { PATH: UNSUBSCRIBE_PATH, MAX_BODY_BYTES: UNSUBSCRIBE_BODY_BYTES, createUnsubscribeWriter, handleUnsubscribeRequest } = require('./api/shared/lifecycleEmail/unsubscribeEndpoint');
-const { PATH: EMAIL_SETTINGS_PATH, MAX_BODY_BYTES: EMAIL_SETTINGS_BODY_BYTES, handleEmailSettingsRequest } = require('./api/shared/lifecycleEmail/emailSettings');
+const { PATH: EMAIL_SETTINGS_PAGE, LEGACY_PATH: EMAIL_SETTINGS_LEGACY, REWRITE_PATH: EMAIL_SETTINGS_REWRITE, MAX_BODY_BYTES: EMAIL_SETTINGS_BODY_BYTES, handleEmailSettingsRequest, legacyEmailSettingsRedirect } = require('./api/shared/lifecycleEmail/emailSettings');
 const { createEmailSettingsStore } = require('./api/shared/lifecycleEmail/emailSettingsStore');
 const { logSafeFailure: logStaffAuthFailure } = require('./api/shared/browserAuthDiagnostics');
 const { createAuthLoginFunction } = require('./api/authLogin');
@@ -78,6 +79,7 @@ const {
 } = require('./lib/publicAssets');
 const { startStandaloneHost } = require('./lib/hostStartup');
 const { createDashboardRuntimeHandlers } = require('./api/shared/dashboardRuntimeHandlers');
+const { dashboardReadCost } = require('./api/shared/dashboardReadCost');
 const { createDashboardAdminService } = require('./api/shared/dashboardAdmin/service');
 const { createSignupListService } = require('./api/shared/dashboardAdmin/signupService');
 const { createDashboardAdminHandlers } = require('./api/shared/dashboardAdmin/handlers');
@@ -136,7 +138,7 @@ function createNoFriesApp(configuration = {}) {
             const supplied = configuration.dashboard;
             const names = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
                 'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
-            for (const optional of ['ncsc', 'improvementEnabled', 'customer', 'externalCustomer', 'activation']) if (supplied && !isProxy(supplied) && Object.prototype.hasOwnProperty.call(supplied, optional)) names.push(optional);
+            for (const optional of ['ncsc', 'improvementEnabled', 'contactRequestsEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation']) if (supplied && !isProxy(supplied) && Object.prototype.hasOwnProperty.call(supplied, optional)) names.push(optional);
             fields(supplied, names);
             const snapshot = Object.fromEntries(names.map(name => [name, supplied[name]]));
             const auth = snapshot.browserAuthOptions;
@@ -216,7 +218,7 @@ function createNoFriesApp(configuration = {}) {
         if (keys.includes('dashboardAdminAccountLookup') && configuration.dashboardAdminAccountLookup !== null) {
             // Email lookup needs the same staff administration service that
             // validates the native operator session; a reader alone is inert.
-            const lookupKeys = ['read', 'list', 'wipe', 'audit', 'targetDigest'].filter(key => !['list', 'wipe'].includes(key) || Object.hasOwn(configuration.dashboardAdminAccountLookup, key));
+            const lookupKeys = ['read', 'list', 'wipe', 'contactRequests', 'audit', 'targetDigest'].filter(key => !['list', 'wipe', 'contactRequests'].includes(key) || Object.hasOwn(configuration.dashboardAdminAccountLookup, key));
             const port = fields(configuration.dashboardAdminAccountLookup, lookupKeys);
             if (!dashboardAdminService || Object.values(port).some(value => typeof value !== 'function' || isProxy(value))) throw new Error();
             dashboardAdminAccountLookup = Object.freeze({ ...port });
@@ -375,10 +377,13 @@ app.get('/login', (req, res) => {
         return res.redirect(303, selected.external ? '/api/external-customer-auth/login' : '/api/customer-auth/login');
     }
     if (selected.external) {
-        if (!configuration.externalOrganisationSetup) return sendSignupPage(res, selected);
+        const returningEntry = selected.runtime && (req.query.intent === undefined || req.query.intent === 'login') &&
+            Object.keys(req.query).every(key => ['intent', 'provider'].includes(key));
+        if (!configuration.externalOrganisationSetup && !returningEntry) return sendSignupPage(res, selected);
         const html = withCustomerProvider(fs.readFileSync(path.join(__dirname, 'login.html'), 'utf8'), 'external')
             .replaceAll('href="/api/customer-auth/login"', 'href="/api/external-customer-auth/login"');
-        return res.type('html').send(html);
+        return res.type('html').send(returningEntry
+            ? html.replace('data-customer-provider="external"', 'data-customer-provider="external" data-customer-entry="signin"') : html);
     }
     // Legacy deployments may allow customer sign-in while new email setup is
     // disabled. Reuse the authenticated signup-state document, whose explicit
@@ -673,12 +678,23 @@ async function readEmailSettingsSubject(cookie) {
     const details = await reader.session.readSessionDetails(cookie);
     return details && details.identity && details.identity.isAuthenticated === true ? details.identity.subjectKey : null;
 }
-app.all(EMAIL_SETTINGS_PATH, (req, res, next) => emailSettingsStore ? next()
-    : sendResult(res, { status: 404, body: { error: 'Not found', code: 'not_found' } }),
-express.urlencoded({ extended: false, limit: EMAIL_SETTINGS_BODY_BYTES, parameterLimit: 4 }), asyncRoute(async (req, res) => {
+const emailSettingsParser = express.urlencoded({ extended: false, limit: EMAIL_SETTINGS_BODY_BYTES, parameterLimit: 4 });
+function emailSettingsReady(req, res, next) {
+    if (emailSettingsStore) return next();
+    sendResult(res, { status: 404, body: { error: 'Not found', code: 'not_found' } });
+}
+const emailSettingsResponse = asyncRoute(async (req, res) => {
     sendResult(res, await handleEmailSettingsRequest(req, { env: authEnvironment || {}, readSubject: readEmailSettingsSubject,
         store: emailSettingsStore, log: console }));
-}));
+});
+// GET on the old path changes the address bar. POST still saves, for a form already open there.
+app.all(EMAIL_SETTINGS_LEGACY, emailSettingsReady, (req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    sendResult(res, legacyEmailSettingsRedirect(req.query));
+}, emailSettingsParser, emailSettingsResponse);
+for (const emailSettingsPath of [EMAIL_SETTINGS_PAGE, EMAIL_SETTINGS_REWRITE]) {
+    app.all(emailSettingsPath, emailSettingsReady, emailSettingsParser, emailSettingsResponse);
+}
 app.use(express.json({ limit: '3mb' }));
 if (configuration.signupBootstrap) {
     if (typeof configuration.signupBootstrap !== 'function') throw new Error('signup_bootstrap_invalid');
@@ -1102,7 +1118,8 @@ function blockSuspiciousUserAgents(req, res, next) {
         return next();
     }
     if (req.path.startsWith('/api/')) {
-        return res.status(403).json({ error: 'Request blocked' });
+        // Runs before the /api middleware; API route rules rely on App Service for these headers.
+        return applyApiSecurityHeaders(req, res, () => res.status(403).json({ error: 'Request blocked' }));
     }
     return res.status(403).type('text/plain').send('Request blocked');
 }
@@ -1119,16 +1136,18 @@ function rateLimitApiRequests(req, res, next) {
     // Only a session the server has already issued or verified selects the
     // dashboard allowance; a fabricated cookie stays on the address limit.
     const sessionKey = req.path.startsWith('/dashboard/') ? getVerifiedDashboardSessionKey(req.headers) : null;
+    // A combined dashboard read is charged as the separate reads it replaces.
+    const cost = write ? 1 : dashboardReadCost(method, req.originalUrl);
     let result;
     if (sessionKey) {
         // Verified dashboard sessions: a generous per-address ceiling first,
         // then the per-session allowance that ordinary use stays within.
-        result = checkRateLimit(write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey, apiEnvironment);
-        if (result.allowed) {
-            result = checkRateLimit(write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey, apiEnvironment);
-        }
+        // Charged only when the cost fits in both, so a request refused by one
+        // bucket never spends the other.
+        result = checkRateLimits([[write ? 'dashboardAddressWrite' : 'dashboardAddressRead', clientKey],
+            [write ? 'dashboardSessionWrite' : 'dashboardSessionRead', clientKey + ':' + sessionKey]], apiEnvironment, cost);
     } else {
-        result = checkRateLimit(write ? 'apiWrite' : 'apiRead', clientKey, apiEnvironment);
+        result = checkRateLimit(write ? 'apiWrite' : 'apiRead', clientKey, apiEnvironment, cost);
     }
     Object.entries(rateLimitHeaders(result)).forEach(([name, value]) => {
         if (value) {
@@ -1149,6 +1168,7 @@ function applyPrivateHeaders(req, res, next) {
 
 function sendResult(res, result) {
     Object.entries(result.headers || {}).forEach(([name, value]) => res.setHeader(name, value));
+    clearDefaultPragmaForImmutable(res, result.headers);
     if (result.isRaw) {
         res.status(result.status).send(result.body);
         return;

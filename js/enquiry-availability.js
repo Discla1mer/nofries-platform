@@ -28,6 +28,8 @@
     // Only a known key is accepted and only its fixed label is returned, so
     // nothing from the address bar is ever written into the form.
     const SERVICE_TOPICS = {
+        // The standing paid offer (pricing.html), named from results and Services.
+        managed_security_90: '90-day managed security',
         fractional_advisory: 'Fractional CIO, CTO and CISO',
         managed_endpoint: 'IRMM / RMM monitoring',
         endpoint_security: 'MDR / endpoint security',

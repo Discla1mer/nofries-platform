@@ -126,4 +126,4 @@ function createEnquiryService({ env = process.env, fetchImpl = (...args) => fetc
     return { submitEnquiry, availability };
 }
 
-module.exports = { createEnquiryService, validateEnquiry, EnquiryError, LIMITS, isHoneypotEnquiry };
+module.exports = { createEnquiryService, validateEnquiry, EnquiryError, LIMITS, isHoneypotEnquiry, deliveryConfig };

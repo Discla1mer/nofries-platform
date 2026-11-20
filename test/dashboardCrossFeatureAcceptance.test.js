@@ -31,7 +31,7 @@ describe.each(['company', 'consultant'])('%s saved assessment across account acc
             await flush(); expect(h.requests).toHaveLength(first + 1); expectUsable(h, input);
             await h.refresh(first); expectUsable(h, input);
             expect(input.value).toBe('Synthetic local rationale, not yet saved.'); expect(answer.checked).toBe(true);
-            expect(h.byId('ncsc-question-index').children[2].textContent).toContain('*');
+            expect(h.byId('ncsc-question-index').children[2].textContent).toContain('Not saved yet');
             expect(h.requests.slice(first)).toHaveLength(5);
             expect(h.requests.slice(first).every(row => row.init.method === 'GET')).toBe(true);
         }
@@ -61,7 +61,7 @@ describe.each(['company', 'consultant'])('%s saved assessment across account acc
         expect(h.byId('ncsc-question-index').value).toBe('3');
         const picker = h.byId('ncsc-question-index'); picker.value = '2'; h.event(picker, 'change');
         expect(h.byId('ncsc-answer-' + h.cyber.metadata.questions[2].id + '-no').checked).toBe(true);
-        expect(h.byId('ncsc-question-index').children[2].textContent).not.toContain('*');
+        expect(h.byId('ncsc-question-index').children[2].textContent).not.toContain('Not saved yet');
         expect(h.backend.versions.get(ASSESSMENT)).toEqual(saved); expect(h.backend.mutations).toHaveLength(1);
         expect(h.requests.filter(row => row.init.method === 'POST')).toHaveLength(1);
     });
@@ -86,7 +86,7 @@ test('Consultant return guards dirty saved answers; Stay and Discard preserve st
     const first = h.requests.length, back = h.byId('consultantPortfolioControls');
     back.onclick(); await flush(); expect(h.button('Stay here')).toBeDefined();
     h.button('Stay here').click(); await flush(); expect(h.requests).toHaveLength(first);
-    expect(h.byId('ncsc-question-index').children[2].textContent).toContain('*');
+    expect(h.byId('ncsc-question-index').children[2].textContent).toContain('Not saved yet');
     back.onclick(); await flush(); h.button('Discard unsent changes').click(); await flush();
     expect(h.window.location.hash).toBe('#organisations'); expect(h.elements.dashboardApp.hidden).toBe(true);
     await h.reply(first, 200, h.session); await h.reply(first + 1, 200, h.directory);
@@ -97,6 +97,6 @@ test('Consultant return guards dirty saved answers; Stay and Discard preserve st
     h.window.location.hash = '#cyber-security'; h.window.dispatch('pagehide');
     h.window.dispatch('focus'); await flush(); await h.open(h.requests.length - 1); await h.resume();
     expect(h.byId('ncsc-question-index').value).toBe('2');
-    expect(h.byId('ncsc-question-index').children[2].textContent).not.toContain('*');
+    expect(h.byId('ncsc-question-index').children[2].textContent).not.toContain('Not saved yet');
     expect(h.requests.every(row => row.init.method === 'GET')).toBe(true);
 });

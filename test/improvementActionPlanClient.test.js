@@ -1,6 +1,6 @@
 'use strict';
 
-const { mount } = require('../api/shared/protectedAssets/improvementActionPlanClient');
+const { mount, readBoardPlan } = require('../api/shared/protectedAssets/improvementActionPlanClient');
 const view = require('../api/shared/protectedAssets/improvementActionPlanView');
 const { calendarDay } = view;
 const { createDom } = require('./fixtures/dashboardDom');
@@ -502,6 +502,77 @@ test('toolbar controls keep their DOM identity and keyboard focus through a reta
     expect(picker.parentElement.classList.contains('picture-toolbar')).toBe(true);
 });
 
+describe('board summary reads the selected assessment plan', () => {
+    const selected = { ...source(), revision: 1 };
+    const planId = 'overview-plan-' + selected.revisionSha256;
+    const named = append(seed(planId), 'assign', { ownerLabel: 'Moana', dueDate: '2026-11-24' });
+    const plan = append(named, 'assign', { ownerSubjectKey: OTHER, dueDate: '2026-11-25' }, named.proposals.find(row => row.actionId !== named.commands[0].actionId).actionId);
+    const saved = presentation(plan);
+    const editor = canWrite => editorContext({ plans: new Map([[planId, plan]]) }, planId, canWrite);
+    const reply = value => ({ status: 200, value });
+    test.each([true, false])('uses only the current per-action assign options (write %s)', async canWrite => {
+        const choices = editor(canWrite); choices.actions[0].commands = [];
+        const read = jest.fn().mockResolvedValueOnce(reply(saved)).mockResolvedValueOnce(reply(choices));
+        const actions = await readBoardPlan(read, SCOPE.organisationId, selected);
+        expect(read.mock.calls).toEqual([['/api/dashboard/improvement/view?planId=' + planId], ['/api/dashboard/improvement/editor?planId=' + planId]]);
+        for (const [index, row] of saved.actions.entries()) {
+            const item = actions.find(action => action.itemId === row.itemId);
+            expect(item.editTarget).toEqual(canWrite && index !== 0 ? { actionId: row.actionId, planId, planRevision: 2 } : null);
+            expect(item.dueDate).toBe(row.dueDate);
+            expect(item.owner).toBe(row.ownerLabel || (row.ownerSubjectKey ? 'Assigned in Improvement Plan' : null));
+        }
+        expect(actions.map(item => item.owner)).toContain('Moana');
+        expect(JSON.stringify(actions)).not.toContain(OTHER);
+    });
+    test('absent plan does not generate one; denied and failed reads do not publish assignments', async () => {
+        const read = jest.fn().mockResolvedValue({ status: 404 });
+        expect(await readBoardPlan(read, SCOPE.organisationId, selected)).toBeNull();
+        expect(read.mock.calls).toEqual([['/api/dashboard/improvement/view?planId=' + planId]]);
+        for (const status of [403, 503]) {
+            read.mockResolvedValueOnce(reply(saved)).mockResolvedValueOnce({ status });
+            await expect(readBoardPlan(read, SCOPE.organisationId, selected)).rejects.toThrow();
+        }
+    });
+    test.each(['organisation', 'plan', 'assessment', 'revision', 'digest', 'editor tenant', 'editor revision', 'editor action'])(
+        'withholds a mismatched %s', async key => {
+            const value = clone(saved), options = editor(true);
+            if (key === 'organisation') value.scope.organisationId = 'other-org';
+            if (key === 'plan') value.scope.planId = 'other-plan';
+            if (key === 'assessment') value.source.assessmentId = 'other-assessment';
+            if (key === 'revision') value.source.assessmentRevision = 'rev-2';
+            if (key === 'digest') value.source.evaluationOutputSha256 = 'b'.repeat(64);
+            if (key === 'editor tenant') options.scope.tenantId = 'other-tenant';
+            if (key === 'editor revision') options.planRevision++;
+            if (key === 'editor action') options.actions[0].actionId = 'other-action';
+            const read = jest.fn().mockResolvedValueOnce(reply(value)).mockResolvedValueOnce(reply(options));
+            await expect(readBoardPlan(read, SCOPE.organisationId, selected)).rejects.toThrow();
+        });
+    test('only explicitly saved fields return in a fresh board read for that question', async () => {
+        const initial = seed(planId), row = initial.proposals[2];
+        const h = harness({ options: { initialTarget: { planId, planRevision: 0, actionId: row.actionId }, openOwnerForm: true } });
+        h.state.plans.set(planId, initial);
+        expect(await h.controller.ready).toBe(true);
+        field(h, 'Owner name').value = 'Casey'; field(h, 'Due date').value = '2026-11-27';
+        const boardRead = async () => (await readBoardPlan(h.request, SCOPE.organisationId, selected)).find(item => item.itemId === row.itemId);
+        expect(await boardRead()).toMatchObject({ owner: null, dueDate: null });
+        expect(h.request.mock.calls.some(([, body]) => body)).toBe(false);
+        await submitForm(h);
+        expect(await boardRead()).toMatchObject({ owner: 'Casey', dueDate: '2026-11-27' });
+        const writes = h.request.mock.calls.filter(([, body]) => body);
+        expect(writes).toHaveLength(1);
+        expect(writes[0][1]).toMatchObject({ type: 'assign', planId, actionId: row.actionId, expectedRevision: 0 });
+        h.controller.destroy();
+    });
+    test.each([true, false])('the handoff rechecks assignment before opening a draft (write %s)', async canWrite => {
+        const actionId = seed().proposals[2].actionId;
+        const h = harness({ canWrite, options: { initialTarget: { planId: 'plan-a', planRevision: 0, actionId }, openOwnerForm: true } });
+        expect(await h.controller.ready).toBe(true);
+        expect(!!form(h)).toBe(canWrite);
+        expect(h.request.mock.calls.every(call => call.length === 1)).toBe(true);
+        if (canWrite) expect(field(h, 'Owner name')).toBe(h.document.activeElement);
+    });
+});
+
 function assigned() { return append(seed(), 'assign', { ownerSubjectKey: ACTOR, dueDate: '2026-10-02' }); }
 function started() { return append(assigned(), 'start', {}); }
 function completed() { return append(started(), 'complete', { note: 'Recorded workflow completion.', evidenceReference: 'synthetic:evidence:original' }); }
@@ -735,7 +806,7 @@ test.each(INVALID_ACTION_FIELDS)('$type form identifies $description in $field a
     for (const [name, value] of Object.entries(values)) fill(h, name, value);
     const control = field(h, invalid.field), feedback = control.parentElement.querySelector('span'), requestCount = h.request.mock.calls.length;
     const message = invalid.field === 'Where the proof is kept (required)' && String(invalid.value).trim() === ''
-        ? 'Enter where the proof is kept, such as a screenshot, invoice or ticket. This is required.'
+        ? 'Enter where the proof is kept, for example ticket IT-204. This is required.'
         : FORM_VALIDATION_MESSAGES[invalid.field];
     expect(retainedForm.noValidate).toBe(true);
     expect(control.getAttribute('aria-describedby')).toBeNull(); expect(feedback.hidden).toBe(true); expect(feedback.textContent).toBe('');
@@ -1217,4 +1288,36 @@ test('an editor answer is discarded when the plan view in the same round trip fa
         '/api/dashboard/improvement/view?planId=plan-a', '/api/dashboard/improvement/editor?planId=plan-a']);
     expect(h.root.querySelectorAll('form').filter(visible)).toHaveLength(0);
     expect(h.root.textContent).not.toContain('Saved plan and current action options loaded.');
+});
+
+describe('scoring v2 (#399): plan wording from the plan\'s own profile', () => {
+    test('the host\'s per-plan titles and follow-ups replace its general wording for that plan', async () => {
+        const actions = presentation(seed()).actions, source = presentation(seed()).source.assessmentId;
+        const general = Object.fromEntries(actions.map(action => [action.controlId, 'General ' + action.controlId.slice(-5)]));
+        const own = Object.fromEntries(actions.map(action => [action.controlId, 'Own ' + action.controlId.slice(-5)]));
+        const followUps = Object.fromEntries(actions.map(action => [action.itemId, 'Own follow-up for ' + action.itemId]));
+        const planWording = jest.fn(async () => ({ controlTitles: own, itemFollowUps: followUps }));
+        const h = harness({ options: { controlTitles: general, planWording } }); expect(await h.controller.ready).toBe(true);
+        expect(planWording.mock.calls).toEqual([[source]]);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toBe(view.actionTitle(actions[0], own));
+        expect(h.root.textContent).not.toContain('General ');
+        const gap = actions.findIndex(action => action.rationale.kind === 'implementation');
+        expect(h.root.querySelectorAll('article')[gap].querySelector('.improvement-action-work').textContent).toBe(followUps[actions[gap].itemId]);
+    });
+
+    test.each([['rejects', () => Promise.reject(new Error('synthetic'))], ['gives none', async () => null], ['throws', () => { throw new Error('synthetic'); }]])
+    ('when the host %s, the general wording stands and the plan still shows', async (_, planWording) => {
+        const actions = presentation(seed()).actions;
+        const general = Object.fromEntries(actions.map(action => [action.controlId, 'General ' + action.controlId.slice(-5)]));
+        const h = harness({ options: { controlTitles: general, planWording } }); expect(await h.controller.ready).toBe(true);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toBe(view.actionTitle(actions[0], general));
+    });
+
+    test('malformed per-plan wording falls back to plain names, never the general titles', async () => {
+        const actions = presentation(seed()).actions;
+        const general = Object.fromEntries(actions.map(action => [action.controlId, 'General ' + action.controlId.slice(-5)]));
+        const h = harness({ options: { controlTitles: general, planWording: async () => ({ controlTitles: { 'bad key': 'x' }, itemFollowUps: {} }) } });
+        expect(await h.controller.ready).toBe(true);
+        expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toContain('Control to review');
+    });
 });

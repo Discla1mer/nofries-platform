@@ -700,7 +700,8 @@ function registerRealPostgresTests() {
                 'dashboard_ncsc_assessments', 'dashboard_ncsc_assessment_receipts',
                 'dashboard_evidence_revisions', 'dashboard_evidence_heads', 'dashboard_evidence_receipts',
                 'signup_acceptance_receipts', 'signup_registrations', 'dashboard_starter_scopes', 'dashboard_starter_accounts',
-                'dashboard_improvement_revisions', 'dashboard_improvement_heads', 'email_outbox', 'email_preferences'];
+                'dashboard_improvement_revisions', 'dashboard_improvement_heads', 'email_outbox', 'email_preferences',
+                'dashboard_contact_requests'];
             await ownerPool.query('TRUNCATE ' + tables.map(table => 'nofries.' + table).join(', '));
             fixture = harness();
         });
@@ -4087,7 +4088,7 @@ function registerRealPostgresTests() {
             // Administration below is explicit synthetic setup, never a route.
             async function httpSetup({ rawRuntimePool = runtimePool, base = null, principal: suppliedPrincipal = null,
                 requestBudgetMs = 60000, publish = true, prepareCanonical = null, ncsc = null, membershipValidUntil = END,
-                customerProvider = false, customerAccountType = null, improvementEnabled = false, scope = null,
+                customerProvider = false, customerAccountType = null, improvementEnabled = false, contactRequestsEnabled = false, contactRequestEmail = null, scope = null,
                 appFactory = options => require('../../server').createNoFriesApp(options) } = {}) {
                 const { MemoryBrowserSessionStore } = require('../../api/shared/browserSessionStore');
                 const tenant = base ? base.operatorIdentity.identityTenantId : nextId();
@@ -4168,6 +4169,8 @@ function registerRealPostgresTests() {
                 newOperationId: () => { const value = nextId(); state.operations.push(value); return value; } };
                 if (ncsc) dashboard.ncsc = ncsc;
                 if (improvementEnabled) dashboard.improvementEnabled = true;
+                if (contactRequestsEnabled) dashboard.contactRequestsEnabled = true;
+                if (contactRequestEmail) dashboard.contactRequestEmail = contactRequestEmail;
                 if (externalProfile) {
                     const { oid: customerOid, ...customerIdentityPolicy } = principal;
                     // Explicit pre-admitted synthetic contract. This does not
@@ -4341,9 +4344,10 @@ function registerRealPostgresTests() {
                 await loginClean();
             });
             async function ncscHttpSetup({ capacity = 1, role = 'admin', configured = true, membershipValidUntil = END,
-                separateAdvisorWriteUntil = null, customerProvider = false, customerAccountType = null, improvementEnabled = false, appFactory, scope = null } = {}) {
+                separateAdvisorWriteUntil = null, customerProvider = false, customerAccountType = null, improvementEnabled = false,
+                contactRequestsEnabled = false, contactRequestEmail = null, appFactory, scope = null } = {}) {
                 const quota = createNcscAdapters({ now: () => NOW });
-                const h = await httpSetup({ membershipValidUntil, customerProvider, customerAccountType, improvementEnabled, appFactory, scope, ncsc: configured ? { resolveSubmissionQuota: quota.resolveSubmissionQuota } : null, prepareCanonical(initial) {
+                const h = await httpSetup({ membershipValidUntil, customerProvider, customerAccountType, improvementEnabled, contactRequestsEnabled, contactRequestEmail, appFactory, scope, ncsc: configured ? { resolveSubmissionQuota: quota.resolveSubmissionQuota } : null, prepareCanonical(initial) {
                     // Domain-created membership rows are frozen. Replace this
                     // synthetic seed's values without mutating domain output.
                     initial.membershipState = { ...initial.membershipState,
@@ -4961,6 +4965,22 @@ function registerRealPostgresTests() {
                     };
                     return h;
                 }
+                test('Overview first paint matches separate authorised reads for the same organisation', async () => {
+                    const h = await improvementHttpSetup();
+                    httpJson(await h.improvementPost(h.generateImprovement()), 200);
+                    const page = await h.get('ncsc/assessments?limit=50', h.generation);
+                    const detail = await h.get('ncsc/assessments/assessment-a', h.generation);
+                    const index = await h.get('improvement/plans?limit=5', h.generation);
+                    const list = await h.improvementGet();
+                    for (const part of [page, detail, index, list]) httpJson(part, 200);
+                    const combined = await h.get('modules/overview?view=first-paint&actions=1', h.generation);
+                    httpJson(combined, 200);
+                    expect(combined.body).toEqual({ page: page.body, detail: detail.body,
+                        actions: { lists: [list.body], more: index.body.nextAfterPlanId !== null } });
+                    httpJson(await h.get('modules/overview?view=first-paint'), 403, 'dashboard_access_denied');
+                    httpJson(await h.get('modules/overview?view=first-paint', digest('stale-generation')), 403, 'dashboard_access_denied');
+                    await loginClean();
+                });
                 async function improvementRows(h) {
                     const values = [h.binding.scope.tenantId, h.binding.scope.organisationId];
                     const result = {};
@@ -4984,6 +5004,8 @@ function registerRealPostgresTests() {
                     createCommand, saveCommand, submitCommand, evidenceSeedDatabase });
                 require('./accountWipeHttpPostgres')({ improvementHttpSetup, httpJson, getOwnerPool: () => ownerPool,
                     loginClean, subject, evidenceSeedDatabase });
+                require('./contactRequestHttpPostgres')({ ncscHttpSetup, httpJson, getOwnerPool: () => ownerPool,
+                    loginClean, subject, nextId, generationHeader });
 
                 test('HTTP Improvement Plan stays absent by default without private native reads', async () => {
                     const h = await ncscHttpSetup(), boundary = h.f.state.trace.length, before = await improvementSnapshot(h);

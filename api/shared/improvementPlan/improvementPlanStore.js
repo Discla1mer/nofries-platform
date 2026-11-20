@@ -7,6 +7,7 @@ const { serialiseAssessmentEvaluation } = require('../assessmentEngine/assessmen
 const { copy, fields, freeze, instant } = require('../appLifecycle/dashboardRuntimeRecords');
 const ncscStore = require('../assessmentLifecycle/postgresNcscAssessmentStore');
 const { acceptedRegistry } = require('../assessmentLifecycle/ncscAssessmentSubmission');
+const { ACCEPTED_NCSC_CONTEXT, ncscProfileV2Enabled, readableNcscProfileContext } = require('../assessmentEngine/ncscProfileSet');
 const { createImprovementPlan, getImprovementPlanView } = require('./improvementPlanDomain');
 const { ImprovementPlanServiceError, normaliseImprovementCommand } = require('./improvementPlanService');
 const TABLE = 'nofries.dashboard_improvement_revisions';
@@ -39,9 +40,18 @@ async function readSource(tx, scope, source, aggregate, retained = false) {
     }
     return version.envelope.submission.input;
 }
+// Scoring v2 (#399): a plan is made with the profile and evaluator named by its
+// source assessment's stored reference. The v2 profile resolves only while
+// NOFRIES_NCSC_PROFILE_V2 is exactly 'true'; with it off, only the accepted
+// profile is read and the call below is unchanged.
 function seed(intent, at, evaluatorInput) {
-    return createImprovementPlan({ tenantId: intent.tenantId, organisationId: intent.organisationId,
-        planId: intent.command.planId, actorSubjectKey: intent.actorSubjectKey, createdAt: at }, evaluatorInput, { registry: acceptedRegistry });
+    const scope = { tenantId: intent.tenantId, organisationId: intent.organisationId,
+        planId: intent.command.planId, actorSubjectKey: intent.actorSubjectKey, createdAt: at };
+    if (!ncscProfileV2Enabled()) return createImprovementPlan(scope, evaluatorInput, { registry: acceptedRegistry });
+    const context = readableNcscProfileContext(evaluatorInput && evaluatorInput.profileRef);
+    if (!context) fail();
+    if (context === ACCEPTED_NCSC_CONTEXT) return createImprovementPlan(scope, evaluatorInput, { registry: acceptedRegistry });
+    return createImprovementPlan(scope, evaluatorInput, { registry: context.registry }, context.scoreContractVersion);
 }
 function sourceOf(command) {
     return { assessmentId: command.payload.assessmentId, revision: command.payload.assessmentRevision,
@@ -105,6 +115,11 @@ async function loadHistory(tx, scope, aggregate, operationId = null) {
 // the assessment ID and time, so bodies are compared, not digests.
 const VERSIONS = 'nofries.dashboard_ncsc_assessment_revisions';
 const INPUT = column => `(${column}.payload#>>'{submission,input,scoreAsOf}') COLLATE "C"`;
+// Scoring v2 (#399): and only from a plan whose assessment stored the same
+// question profile, whatever NOFRIES_NCSC_PROFILE_V2 says. Every submitted v1
+// assessment stores the full accepted profileRef, so on v1-only data this
+// selects the same plan as before; after a flag rollback it never selects a v2
+// plan (unreadable then) as the previous plan of a v1 plan.
 async function previousPlanId(tx, scope, source) {
     const found = (await tx.query(`SELECT p.plan_id FROM ${TABLE} p
         JOIN ${VERSIONS} a ON a.tenant_id=p.tenant_id AND a.organisation_id=p.organisation_id AND a.assessment_id=p.assessment_id AND a.revision=p.assessment_revision AND a.payload_sha256=p.assessment_sha256
@@ -112,11 +127,22 @@ async function previousPlanId(tx, scope, source) {
         WHERE p.tenant_id=$1 AND p.organisation_id=$2 AND p.plan_id<>$3 AND p.revision=0 AND p.assessment_id<>$4
         AND a.payload->'scopePopulation'->'body' = n.payload->'scopePopulation'->'body'
         AND a.payload#>>'{submission,input,moduleId}' = n.payload#>>'{submission,input,moduleId}'
+        AND a.payload#>'{submission,input,profileRef}' = n.payload#>'{submission,input,profileRef}'
         AND ${INPUT('a')} <= ${INPUT('n')}
         ORDER BY ${INPUT('a')} DESC, (p.payload->>'at') COLLATE "C" DESC, p.plan_id COLLATE "C" DESC LIMIT 1`,
     [...values(scope), source.assessmentId, source.revision, source.revisionSha256])).rows;
     if (found.length > 1 || (found.length && typeof found[0].plan_id !== 'string')) fail();
     return found.length ? found[0].plan_id : null;
+}
+// The profileRef stored by the source assessment of a plan's first revision, as
+// raw JSON, or null. Read only to classify why a previous plan could not be read.
+async function sourceProfileRef(tx, scope) {
+    const found = (await tx.query(`SELECT a.payload#>'{submission,input,profileRef}' AS profile_ref FROM ${TABLE} p
+        JOIN ${VERSIONS} a ON a.tenant_id=p.tenant_id AND a.organisation_id=p.organisation_id AND a.assessment_id=p.assessment_id AND a.revision=p.assessment_revision AND a.payload_sha256=p.assessment_sha256
+        WHERE p.tenant_id=$1 AND p.organisation_id=$2 AND p.plan_id=$3 AND p.revision=0`, values(scope))).rows;
+    if (found.length !== 1) return null;
+    const ref = found[0].profile_ref;
+    return ref && typeof ref === 'object' && !Array.isArray(ref) ? ref : null;
 }
 async function append(tx, scope, record) {
     const { payload, revision, payloadSha256, parentSha256 } = record, source = payload.source;
@@ -131,4 +157,4 @@ async function append(tx, scope, record) {
     if (moved.rowCount !== 1) fail();
 }
 module.exports = Object.freeze({ stableIntent, domainCommand, readSource, seed, sourceOf,
-    makeRecord, loadHistory, previousPlanId, append, same, digest, result });
+    makeRecord, loadHistory, previousPlanId, sourceProfileRef, append, same, digest, result });

@@ -135,6 +135,8 @@ function harness(options = {}) {
     window.addEventListener = (name, callback) => { (listeners[name] ||= []).push(callback); originalAdd(name, callback); };
     const requests = [];
     const fetch = jest.fn((url, init) => {
+        // These cases drive the separate-read fallback. The waterfall fixture drives the combined route.
+        if (url.startsWith('/api/dashboard/modules/overview?view=first-paint')) return Promise.resolve(response(404, { code: 'dashboard_not_found' }));
         const work = deferred();
         requests.push({ url, init, ...work });
         return work.promise;
@@ -170,6 +172,7 @@ function harness(options = {}) {
             if (options.cyber) {
                 window.NoFriesNcscAssessmentClient = { createClient: input => ncscClient.createClient({
                     metadata: JSON.parse(JSON.stringify(input.metadata)), fetch: input.fetch,
+                    ...(input.profileMetadata ? { profileMetadata: JSON.parse(JSON.stringify(input.profileMetadata)) } : {}),
                     ...(input.onAccepted ? { onAccepted: input.onAccepted } : {}) }) };
                 window.NoFriesNcscQuestionnaire = { mount: (...args) => { ncscMounts.push(args); return questionnaire.mount(...args); } };
                 if (options.picture) window.NoFriesOrganisationPicture = require('../api/shared/protectedAssets/organisationPicture');
@@ -1333,7 +1336,7 @@ describe('internal dashboard loader protocol', () => {
     test.each([
         ['the app\'s own JSON 403', 403, { code: 'dashboard_access_denied' }, undefined, 'denied'],
         ['an HTML page with status 200', 200, null, platformPage, 'unavailable'],
-        ['an HTML 401', 401, null, platformPage, 'unavailable'],
+        ['D-046 an HTML session 401', 401, null, platformPage, 'unauthenticated'],
         ['a redirected HTML 403', 403, null, { ...platformPage, redirected: true }, 'unavailable']
     ])('%s is not treated as an update in progress', async (_name, status, body, extra, expected) => {
         const h = harness(); await flush();
@@ -1801,12 +1804,12 @@ describe('ready Cyber composition', () => {
         expect(h.status).toBe('denied'); expect(h.elements.dashboardApp.children).toHaveLength(0);
     });
     describe('Overview Plan this', () => {
-        async function planReady(h, stored) {
+        async function planReady(h, stored, extra = {}) {
             await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
             const model = JSON.parse(JSON.stringify(projection()));
             ['cyber_security', 'improvement_plan'].forEach(key => { model.modules.find(item => item.key === key).state = 'ready'; });
             await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
-            h.cyberProjection = { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable' };
+            h.cyberProjection = { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: 'editable', ...extra };
             await h.reply(3, 200, h.cyberProjection); await h.reply(4, 200, state());
             // With improvement actions on, Overview also reads the plan index for its Actions card.
             const atUrl = pattern => h.requests.findIndex(item => pattern.test(item.url));
@@ -1934,8 +1937,46 @@ describe('ready Cyber composition', () => {
             const followUps = h.improvementMounts[0].input.itemFollowUps;
             h.cyberProjection.metadata.questions.forEach(question => expect(followUps[question.id]).toBe(question.smallBusiness
                 ? question.smallBusiness.checks.join(' ') : question.guidance.startingActions[0]));
+            // Without further profiles (flag off) there is no per-plan wording.
+            expect(h.improvementMounts[0].input).not.toHaveProperty('planWording');
             expect(h.window.location.hash).toBe('#improvement-plan');
             expect(h.requests[11].url).toMatch(/^\/api\/dashboard\/improvement\/plans/);
+            h.window.dispatch('pagehide');
+        });
+        test('scoring v2 (#399): with v2 metadata, plans get agreed wording and each plan\'s own profile wording', async () => {
+            const v2 = require('../api/shared/ncscQuestionnaireMetadata').createNcscQuestionnaireMetadataV2();
+            const stored = await submitted();
+            const h = harness({ cyber: true, picture: true, improvement: true, hash: '#overview' });
+            const { record, planId, view } = await planReady(h, stored, { profileMetadata: [v2] });
+            control(h, 'Plan this').click(); await flush();
+            await h.reply(8, 404, { code: 'improvement_not_found' });
+            await h.reply(9, 200, { schemaVersion: 1, plan: { planId } });
+            await h.reply(10, 200, view);
+            const input = h.improvementMounts[0].input, v1 = h.cyberProjection.metadata;
+            const title = (metadata, id) => metadata.controls.find(item => item.id === id).title;
+            // Until a plan's profile is known, only wording both profiles agree on is offered.
+            expect(input.controlTitles['NF-NCSC-MCSS-RM-01']).toBe('Risk Management');
+            expect(input.controlTitles['NF-NCSC-CC-SU-01']).toBe(title(v2, 'NF-NCSC-CC-SU-01'));
+            expect(input.controlTitles['NF-NCSC-CC-AC-01']).toBe(title(v1, 'NF-NCSC-CC-AC-01'));
+            ['NF-NCSC-CC-PM-01', 'NF-NCSC-CC-SV-01', 'NF-NCSC-CC-NS-01'].forEach(id => expect(input.controlTitles).not.toHaveProperty(id));
+            expect(input.itemFollowUps['NF-NCSC-CC-EM-01-Q1']).toBe(v2.questions.find(item => item.id === 'NF-NCSC-CC-EM-01-Q1').guidance.startingActions[0]);
+            expect(input.itemFollowUps).not.toHaveProperty('NF-NCSC-CC-SV-01-Q1');
+            // The plan's own wording comes from its source assessment's stored profile, here the
+            // accepted one. One read; a second call while it runs shares it.
+            const reads = () => h.requests.filter(item => item.url === '/api/dashboard/ncsc/assessments/' + record.assessmentId);
+            const before = reads().length;
+            const pending = input.planWording(record.assessmentId), again = input.planWording(record.assessmentId); await flush();
+            expect(again).toBe(pending);
+            expect(reads()).toHaveLength(before + 1);
+            await ncscReply(h, h.requests.indexOf(reads().at(-1)), 200, stored.read('assessment-plan'));
+            const wording = await pending;
+            v1.controls.forEach(item => expect(wording.controlTitles[item.id]).toBe(item.title));
+            expect(Object.keys(wording.controlTitles)).toHaveLength(v1.controls.length);
+            expect(wording.controlTitles).not.toHaveProperty('NF-NCSC-CC-SU-01');
+            // Known after one read.
+            const count = h.requests.length;
+            expect(await input.planWording(record.assessmentId)).toBe(wording);
+            expect(h.requests).toHaveLength(count);
             h.window.dispatch('pagehide');
         });
         test('Plan this and the older create button create the same revision-derived plan ID', async () => {
@@ -2327,7 +2368,7 @@ describe('ready Cyber composition', () => {
         // Automatic saving is on here, so the short wait before it sends reads as saving.
         expect(h.elements.dashboardApp.querySelector('.ncsc-status').textContent).toBe('Saving…');
         expect(h.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).toContain('· saving…');
-        expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/\*$/);
+        expect(h.document.getElementById('ncsc-question-index').children[0].textContent).toMatch(/Not saved yet$/);
         h.homeClick(); control(h, 'Discard unsent changes').click(); await flush();
         expect(h.requests.filter(request => request.init.method === 'POST')).toHaveLength(0);
         expect(stored.read('assessment-home')).toEqual(saved); expect(h.window.location.assign.mock.calls).toEqual([['/']]);
@@ -2336,8 +2377,8 @@ describe('ready Cyber composition', () => {
         expect(reopened.elements.dashboardApp.textContent).toMatch(/Last saved .+ NZ time\./);
         expect(reopened.elements.dashboardApp.querySelector('.ncsc-status').textContent).not.toContain('not saved yet');
         expect(reopened.elements.dashboardApp.querySelector('.ncsc-draft-progress').textContent).not.toContain('unsaved changes');
-        expect(reopened.document.getElementById('ncsc-question-index').children.every(option => !/\*$/.test(option.textContent))).toBe(true);
-        expect(reopened.document.getElementById('ncsc-question-index-help').textContent).toContain('* marks unsaved changes');
+        expect(reopened.document.getElementById('ncsc-question-index').children.every(option => !/Not saved yet$/.test(option.textContent))).toBe(true);
+        expect(reopened.document.getElementById('ncsc-question-index-help').textContent).not.toContain('*');
         reopened.homeClick(); await flush();
         expect(reopened.elements.dashboardApp.querySelector('dialog')).toBeNull();
         expect(reopened.window.location.assign.mock.calls).toEqual([['/']]);
@@ -2685,6 +2726,23 @@ describe('unmounted authority refresh coalescing', () => {
         await h.reply(4, 200, state());
         expect(h.status).toBe('ready'); expect(h.mounts).toHaveLength(1);
         expect(h.requests.filter(item => item.url === '/api/dashboard/modules/cyber_security')).toHaveLength(1);
+    });
+
+    test.each([['absent', undefined, true], ['one v2 profile', 'v2', true], ['empty', [], false], ['not a list', {}, false]])
+    ('scoring v2 (#399): optional profileMetadata %s', async (_, extra, accepted) => {
+        const v2 = require('../api/shared/ncscQuestionnaireMetadata').createNcscQuestionnaireMetadataV2();
+        const h = harness({ hash: '#cyber-security', cyber: true }); await flush();
+        const model = cyberProjection();
+        await h.reply(0, 200, state()); await h.reply(1, 200, listing()); await h.reply(2, 200, model);
+        h.load(0); h.load(1); await flush();
+        await h.reply(3, 200, { ...moduleProjection(model), ...(extra === undefined ? {} : { profileMetadata: extra === 'v2' ? [v2] : extra }) });
+        if (!accepted) { expect(h.status).not.toBe('ready'); expect(h.ncscMounts).toHaveLength(0); return; }
+        await h.reply(4, 200, state());
+        expect(h.status).toBe('ready'); await flush();
+        expect(h.ncscMounts).toHaveLength(1);
+        if (extra === undefined) expect(h.ncscMounts[0][1]).not.toHaveProperty('profileMetadata');
+        else expect(h.ncscMounts[0][1].profileMetadata).toEqual([v2]);
+        h.window.dispatch('pagehide');
     });
 
     test('the Cyber Security read starts once the projection lists it ready, before the directory answers', async () => {
