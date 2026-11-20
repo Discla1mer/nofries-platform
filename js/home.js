@@ -125,13 +125,13 @@
 (function () {
     const MESSAGES = {
         insurance: ['Get your cyber insurance answers right in about 15 minutes.',
-            'Insurers now ask about multi-factor sign-in, backups and patching. Check where your business stands against New Zealand’s National Cyber Security Centre (NCSC) guidance before you fill in the renewal form. Free for New Zealand small businesses.'],
+            'List your key accounts, including email and online banking, and mark which ones have multi-factor authentication turned on. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
         supplier: ['Answer your customer’s security questionnaire with confidence.',
-            'Supplier security questionnaires ask about the same basics. See where your business stands against New Zealand’s National Cyber Security Centre (NCSC) guidance, and what to fix first. Free for New Zealand small businesses.'],
+            'Pick one question about who can see customer files. Check the access list for the folder where you keep them. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
         board: ['Give your board a straight answer on cyber security.',
-            'See where your business stands against New Zealand’s National Cyber Security Centre (NCSC) guidance, with your top gaps ranked in plain English. Free for New Zealand small businesses.'],
+            'For your next board meeting, write down when your team last restored a file from backup. If nobody knows, record that as an open question. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
         scam: ['Would your business stop a fake invoice? Find out in about 15 minutes.',
-            'Fake invoices and bank-detail changes are a common way businesses lose money. Check your payment and sign-in controls against New Zealand’s National Cyber Security Centre (NCSC) guidance. Free for New Zealand small businesses.']
+            'If bank details change, call your supplier on a number you already know to verify the change before paying. Do not use the number on the invoice. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.']
     };
     try {
         if (!document.body || document.body.dataset.page !== 'dashboard-home') return;
@@ -141,6 +141,9 @@
         const headline = document.getElementById('home-title');
         const lead = document.getElementById('homepageLead');
         if (headline) headline.textContent = MESSAGES[key][0];
-        if (lead) lead.textContent = MESSAGES[key][1];
+        if (lead) {
+            lead.textContent = MESSAGES[key][1];
+            lead.classList.add('homepage-campaign-lead');
+        }
     } catch (_) { /* leave the page unchanged */ }
 }());
