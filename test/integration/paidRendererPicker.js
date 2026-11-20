@@ -1,12 +1,13 @@
 'use strict';
 
 const { mkdtempSync, readFileSync, rmSync } = require('node:fs');
+const { createHash } = require('node:crypto');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const request = require('supertest');
 const { createProductionApplication } = require('../../lib/productionApplication');
 const { customerProductionHarness } = require('../helpers/customerProductionHarness');
-const { paidFrameworks } = require('../../api/shared/protectedAssets/dashboardRegistry');
+const { paidFrameworks, rendererAsset } = require('../../api/shared/protectedAssets/dashboardRegistry');
 const { ACCEPTED_PROFILE_REF } = require('../../api/shared/assessmentEngine/ncscAssessmentEvaluator');
 const { assetPath, checkPicker } = require('../../scripts/tests/paid-renderer-browser.cjs');
 
@@ -31,12 +32,12 @@ async function withLoopbackBrowser(work) {
 }
 
 module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
-    async function fixture(ref, origin, enabled) {
+    async function fixture(ref, origin, enabled, otherRefs = []) {
         const [tenant, oid] = NCSC_SUBJECT.split(':');
         const principal = { ...identity(), identityTenantId: tenant, oid,
             issuer: 'https://login.microsoftonline.com/' + tenant + '/v2.0', audience: nextId() };
         const f = await resourceSetup({ productionIdentity: principal, initialTime: '2026-11-19T00:01:00.000Z',
-            exampleOptions: { profileRefs: [ACCEPTED_PROFILE_REF, { profileId: ref.profileId, profileVersion: ref.version }] } });
+            exampleOptions: { profileRefs: [ACCEPTED_PROFILE_REF, ...[ref, ...otherRefs].map(row => ({ profileId: row.profileId, profileVersion: row.version }))] } });
         const h = customerProductionHarness({ pool: f.restrictedPool, identity: principal, instanceId: f.instanceId,
             restoreEpoch: f.state.restoreEpoch, now: Date.parse(f.state.now), applicationFactory: (env, deps) =>
                 createProductionApplication({ ...env, NOFRIES_PUBLIC_URL: origin, NOFRIES_PAID_FRAMEWORKS_ENABLED: enabled,
@@ -82,6 +83,70 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
     });
     // Explicit because the standalone picker base does not package the renderer/publication/runtime stack.
     if (process.env.NOFRIES_TEST_RENDERER_BROWSER === 'true') {
+        test('one signed-in browser moves from ISO to NIST to a locked client', async () => {
+            const [nist, iso] = paidFrameworks;
+            await withLoopbackBrowser(async (server, origin, browser) => {
+                const { f, h, cookie, select } = await fixture(iso, origin, 'true', [nist]);
+                server.on('request', h.app);
+                const context = await browser.newContext({ viewport: { width: 375, height: 812 }, ignoreHTTPSErrors: true });
+                try {
+                    const split = cookie.indexOf('=');
+                    await context.addCookies([{ name: cookie.slice(0, split), value: cookie.slice(split + 1), url: origin, secure: true, httpOnly: true }]);
+                    await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+                    const page = await context.newPage();
+                    page.setDefaultTimeout(8000);
+                    await page.clock.setFixedTime(new Date(f.state.now));
+                    await page.goto(origin + '/dashboard#cyber-security');
+                    const documentStart = await page.evaluate(() => performance.timeOrigin);
+                    const open = name => page.getByRole('button', { name, exact: true });
+                    const terms = page.locator('fieldset summary').filter({ hasText: / explained$/ });
+                    const delivered = [];
+                    for (const ref of [iso, nist]) {
+                        await open('Open ' + ref.label).click();
+                        await page.getByRole('textbox', { name: 'What part of your organisation will you assess?' }).fill('Synthetic workshop');
+                        const response = page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/assets/questionnaire.js'));
+                        await open('Start assessment').click();
+                        await page.getByRole('radio').first().waitFor();
+                        const script = await response;
+                        expect(script.status()).toBe(200);
+                        expect(script.headers()['cache-control']).toMatch(/private, no-store/);
+                        expect('sha256-' + createHash('sha256').update(await script.body()).digest('base64')).toBe(rendererAsset(ref, 'questionnaire').integrity);
+                        delivered.push(new URL(script.url()));
+                        if (ref === iso) {
+                            const term = terms.filter({ hasText: /^Information risk explained$/ });
+                            await term.focus();
+                            await page.keyboard.press('Enter');
+                            expect(await term.evaluate(node => node.parentElement.open)).toBe(true);
+                            await open('Back to assessment choices').click();
+                        } else {
+                            expect(await terms.count()).toBe(0);
+                            expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentStart);
+                        }
+                    }
+                    const other = await f.addResource({ tenantId: f.scope.tenantId + '-free', organisationId: f.scope.organisationId },
+                        { profileRefs: [ACCEPTED_PROFILE_REF] });
+                    await select(other.publication.binding.bindingId);
+                    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+                    await page.getByRole('radio').first().waitFor({ state: 'detached' });
+                    await page.getByText('Locked', { exact: true }).first().waitFor();
+                    expect(await page.getByText('Locked', { exact: true }).count()).toBe(2);
+                    expect(await terms.count()).toBe(0);
+                    const selection = await request(h.app).get('/api/dashboard/session').set('Cookie', cookie).expect(200);
+                    for (const [index, ref] of [iso, nist].entries()) {
+                        const prior = delivered[index];
+                        await request(h.app).get(prior.pathname + prior.search).set('Cookie', cookie).expect(403);
+                        const refused = await request(h.app).get(assetPath(ref, 'questionnaire', selection.body.generation)).set('Cookie', cookie).expect(403);
+                        expect(refused.headers['cache-control']).toMatch(/no-store/);
+                        expect(refused.text).not.toContain('NoFriesPaidQuestionnaire');
+                        await request(h.app).get('/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assessments')
+                            .set('Cookie', cookie).set('X-NoFries-Dashboard-Generation', selection.body.generation).expect(403);
+                    }
+                    await open('Open NCSC check').click();
+                    await page.getByRole('heading', { name: 'Cyber security assessment', exact: true }).waitFor();
+                    expect(await terms.count()).toBe(0);
+                } finally { await context.close(); }
+            });
+        }, 90000);
         test.each(paidFrameworks)('mounted paid picker: $label', async ref => {
             await withLoopbackBrowser(async (server, origin, browser) => {
                 const { f, h, cookie, select } = await fixture(ref, origin, 'true');

@@ -1,14 +1,14 @@
 'use strict';
 
-// Run from the disposable PostgreSQL fixture with #507, #506, #504 and #503 packaged.
+// Run on the disposable PostgreSQL fixture with the reviewed catalogue, questionnaire and results packaged.
 const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { createHash, randomBytes } = require('node:crypto');
-const { paidFrameworks, rendererIntegrity, rendererSelection } = require('../../api/shared/protectedAssets/dashboardRegistry');
+const { paidFrameworks, rendererAsset, rendererSelection } = require('../../api/shared/protectedAssets/dashboardRegistry');
 
 function assetPath(ref, name, generation) {
-    const version = Buffer.from(rendererIntegrity[name].slice(7), 'base64').toString('base64url');
+    const version = Buffer.from(rendererAsset(ref, name).integrity.slice(7), 'base64').toString('base64url');
     const nonce = randomBytes(16).toString('hex');
     const selection = createHash('sha256').update(rendererSelection(generation, ref, name, nonce)).digest('hex');
     return '/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assets/' + name + '.js?v=' + version + '&s=' + nonce + '.' + selection;
@@ -59,7 +59,29 @@ async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, swi
         assert.ok(await page.evaluate(() => !window.NoFriesPaidCollection && !window.NoFriesPaidQuestionnaire && !window.NoFriesPaidResults &&
             typeof window.NoFriesNcscQuestionnaire.mount === 'function'));
         await page.getByRole('textbox', { name: 'What part of your organisation will you assess?' }).fill('Synthetic workshop');
+        const questionnaire = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/assets/questionnaire.js'));
         await button('Start assessment').click();
+        const delivery = await questionnaire;
+        assert.equal(delivery.status(), 200);
+        assert.match(delivery.headers()['cache-control'], /private, no-store/);
+        const content = await delivery.body();
+        const expectedAsset = rendererAsset(ref, 'questionnaire');
+        assert.equal('sha256-' + createHash('sha256').update(content).digest('base64'), expectedAsset.integrity);
+        const terms = page.locator('fieldset summary').filter({ hasText: / explained$/ });
+        await page.getByRole('radio').first().waitFor();
+        if (expectedAsset.withIsoTerms) {
+            const term = terms.filter({ hasText: /^Information risk explained$/ });
+            await term.focus();
+            await page.keyboard.press('Enter');
+            assert.equal(await term.evaluate(summary => summary.parentElement.open), true);
+            const definition = await term.locator('..').locator('p').innerText();
+            assert.ok(definition.length > 0 && !bundle.includes(definition));
+            await page.keyboard.press('Escape');
+            assert.equal(await term.evaluate(summary => !summary.parentElement.open && document.activeElement === summary), true);
+        } else {
+            assert.equal(await terms.count(), 0);
+            assert.ok(!content.toString().includes('Information risk explained'));
+        }
         await page.getByRole('radio').first().check(); await button('Save progress').click();
         await page.getByText('Progress saved.', { exact: true }).waitFor();
         await open(); await button('Resume assessment').click();
@@ -82,7 +104,7 @@ async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, swi
         await request(app).get('/api/dashboard/frameworks/' + other.profileId + '/' + other.version + '/assessments')
             .set('Cookie', cookie).set('X-NoFries-Dashboard-Generation', session.body.generation).expect(403);
         const verified = await request(app).get(admitted).set('Cookie', cookie).expect(200);
-        assert.equal('sha256-' + createHash('sha256').update(verified.text).digest('base64'), rendererIntegrity.questionnaire);
+        assert.equal('sha256-' + createHash('sha256').update(verified.text).digest('base64'), rendererAsset(ref, 'questionnaire').integrity);
 
         // Answer every remaining question through the mounted controls, including the section transitions.
         await page.evaluate(() => {
@@ -119,7 +141,7 @@ async function checkPicker({ browser, app, origin, cookie, now, ref, revoke, swi
         assert.equal(script.status(), 200);
         assert.match(script.headers()['cache-control'], /private/);
         assert.match(script.headers()['cache-control'], /no-store/);
-        assert.equal('sha256-' + createHash('sha256').update(await script.body()).digest('base64'), rendererIntegrity.results);
+        assert.equal('sha256-' + createHash('sha256').update(await script.body()).digest('base64'), rendererAsset(ref, 'results').integrity);
         await board.scrollIntoViewIfNeeded();
         if (directory) await page.screenshot({ path: directory + '/' + ref.profileId + '-results.png' });
         assert.equal(assets.filter(row => row.path.includes('/results.js?') && row.status === 200 && /no-store/.test(row.cache)).length, 2);
