@@ -205,6 +205,10 @@ a.picture-action-title { font-weight: 600; text-decoration: underline; text-unde
 .picture-summary .dashboard-button { margin: 0 .5rem .5rem 0; }
 .picture-summary-print { display: none; margin: .5rem 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 @media print { .picture-summary textarea { display: none; } .picture-summary-print { display: block; } }
+.picture-board-actions ol { padding-inline-start: 1.5rem; }
+.picture-board-actions li { margin-block: .75rem; overflow-wrap: anywhere; }
+.picture-board-actions li p { margin-block: .25rem; }
+@media print { .picture-board-actions, .picture-board-actions + [role="status"] { display: none !important; } }
 .picture-summary label { display: block; margin-top: .75rem; }
 @media print { .picture-print-hide { display: none !important; } .picture-print-only { display: block; margin: 0; font-size: 11pt; line-height: 1.45; } }
 @media (max-width: 60rem) {
@@ -256,6 +260,7 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
     .ncsc-questionnaire-answers { break-before: page; padding: 0; border: 0; font-size: 11pt; line-height: 1.4; }
     .ncsc-questionnaire-answers[data-export-ready="false"] { display: none !important; }
     .ncsc-questionnaire-answers li, .ncsc-questionnaire-answers footer { break-inside: avoid; }
+    body:has(.ncsc-questionnaire-answers) #dashboardSkipLink,
     .ncsc-questionnaire-answer-controls { display: none; }
 }
 .ncsc-result-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
