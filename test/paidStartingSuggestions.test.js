@@ -119,11 +119,17 @@ test('owner responding to a customer sees only three partly-in-place ISO startin
         expect(hint.furtherCheck).toMatch(/^Check /);
     }
     expect(input.target.responses).toEqual([]);
-    const retired = { catalogueSha256: '1971ad65405f1c20d8e13a65a26a7b40e9ff48b63505db4f0336d32d64fae73d',
-        sourceCatalogueSha256: '66ce68bdf0d8ea2d271c52f68d6505b7a50f69f8d8d5ce40bcf833320caef1fd' };
-    for (const stale of [retired, { catalogueSha256: retired.catalogueSha256 }, { sourceCatalogueSha256: retired.sourceCatalogueSha256 }]) {
-        input.target.profileRef = { ...iso, ...stale };
-        expect(read(input)).toEqual([]);
+    const retired = [
+        { catalogueSha256: '1971ad65405f1c20d8e13a65a26a7b40e9ff48b63505db4f0336d32d64fae73d',
+            sourceCatalogueSha256: '66ce68bdf0d8ea2d271c52f68d6505b7a50f69f8d8d5ce40bcf833320caef1fd' },
+        { catalogueSha256: '58e37797ea4bf926ab0477522857cb9dd0ac2a84d3e1815829dee9b2390bd107',
+            sourceCatalogueSha256: '0221ff4667e5471a50711bd4e64ae56b5f253889cdcc9817ce3bfdfda4dc5654' }
+    ];
+    for (const pair of retired) {
+        for (const stale of [pair, { catalogueSha256: pair.catalogueSha256 }, { sourceCatalogueSha256: pair.sourceCatalogueSha256 }]) {
+            input.target.profileRef = { ...iso, ...stale };
+            expect(read(input)).toEqual([]);
+        }
     }
     for (const field of Object.keys(iso)) {
         input.target.profileRef = { ...iso, [field]: 'different' };
