@@ -547,7 +547,12 @@
                 card.append(badge(included ? 'Included' : 'Locked'));
                 if (included) {
                     card.append(button('Open ' + ref.label, function () { openFramework(root, ref); }));
-                } else hasLocked = true;
+                } else {
+                    hasLocked = true;
+                    const example = element('a', 'dashboard-button dashboard-button-secondary', 'View a fictional ISO 27001 example');
+                    example.href = '/fictional-iso-example.html';
+                    card.append(example);
+                }
                 cards.append(card);
             }
             root.replaceChildren(heading, cards);
