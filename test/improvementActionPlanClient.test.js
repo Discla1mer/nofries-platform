@@ -1,6 +1,6 @@
 'use strict';
 
-const { mount } = require('../api/shared/protectedAssets/improvementActionPlanClient');
+const { mount, readBoardPlan } = require('../api/shared/protectedAssets/improvementActionPlanClient');
 const view = require('../api/shared/protectedAssets/improvementActionPlanView');
 const { calendarDay } = view;
 const { createDom } = require('./fixtures/dashboardDom');
@@ -500,6 +500,77 @@ test('toolbar controls keep their DOM identity and keyboard focus through a reta
     expect(button(h, 'Refresh improvement plan')).toBe(control); expect(h.root.querySelector('select')).toBe(picker);
     expect(h.document.activeElement).toBe(control); expect(control.disabled).toBe(false);
     expect(picker.parentElement.classList.contains('picture-toolbar')).toBe(true);
+});
+
+describe('board summary reads the selected assessment plan', () => {
+    const selected = { ...source(), revision: 1 };
+    const planId = 'overview-plan-' + selected.revisionSha256;
+    const named = append(seed(planId), 'assign', { ownerLabel: 'Moana', dueDate: '2026-11-24' });
+    const plan = append(named, 'assign', { ownerSubjectKey: OTHER, dueDate: '2026-11-25' }, named.proposals.find(row => row.actionId !== named.commands[0].actionId).actionId);
+    const saved = presentation(plan);
+    const editor = canWrite => editorContext({ plans: new Map([[planId, plan]]) }, planId, canWrite);
+    const reply = value => ({ status: 200, value });
+    test.each([true, false])('uses only the current per-action assign options (write %s)', async canWrite => {
+        const choices = editor(canWrite); choices.actions[0].commands = [];
+        const read = jest.fn().mockResolvedValueOnce(reply(saved)).mockResolvedValueOnce(reply(choices));
+        const actions = await readBoardPlan(read, SCOPE.organisationId, selected);
+        expect(read.mock.calls).toEqual([['/api/dashboard/improvement/view?planId=' + planId], ['/api/dashboard/improvement/editor?planId=' + planId]]);
+        for (const [index, row] of saved.actions.entries()) {
+            const item = actions.find(action => action.itemId === row.itemId);
+            expect(item.editTarget).toEqual(canWrite && index !== 0 ? { actionId: row.actionId, planId, planRevision: 2 } : null);
+            expect(item.dueDate).toBe(row.dueDate);
+            expect(item.owner).toBe(row.ownerLabel || (row.ownerSubjectKey ? 'Assigned in Improvement Plan' : null));
+        }
+        expect(actions.map(item => item.owner)).toContain('Moana');
+        expect(JSON.stringify(actions)).not.toContain(OTHER);
+    });
+    test('absent plan does not generate one; denied and failed reads do not publish assignments', async () => {
+        const read = jest.fn().mockResolvedValue({ status: 404 });
+        expect(await readBoardPlan(read, SCOPE.organisationId, selected)).toBeNull();
+        expect(read.mock.calls).toEqual([['/api/dashboard/improvement/view?planId=' + planId]]);
+        for (const status of [403, 503]) {
+            read.mockResolvedValueOnce(reply(saved)).mockResolvedValueOnce({ status });
+            await expect(readBoardPlan(read, SCOPE.organisationId, selected)).rejects.toThrow();
+        }
+    });
+    test.each(['organisation', 'plan', 'assessment', 'revision', 'digest', 'editor tenant', 'editor revision', 'editor action'])(
+        'withholds a mismatched %s', async key => {
+            const value = clone(saved), options = editor(true);
+            if (key === 'organisation') value.scope.organisationId = 'other-org';
+            if (key === 'plan') value.scope.planId = 'other-plan';
+            if (key === 'assessment') value.source.assessmentId = 'other-assessment';
+            if (key === 'revision') value.source.assessmentRevision = 'rev-2';
+            if (key === 'digest') value.source.evaluationOutputSha256 = 'b'.repeat(64);
+            if (key === 'editor tenant') options.scope.tenantId = 'other-tenant';
+            if (key === 'editor revision') options.planRevision++;
+            if (key === 'editor action') options.actions[0].actionId = 'other-action';
+            const read = jest.fn().mockResolvedValueOnce(reply(value)).mockResolvedValueOnce(reply(options));
+            await expect(readBoardPlan(read, SCOPE.organisationId, selected)).rejects.toThrow();
+        });
+    test('only explicitly saved fields return in a fresh board read for that question', async () => {
+        const initial = seed(planId), row = initial.proposals[2];
+        const h = harness({ options: { initialTarget: { planId, planRevision: 0, actionId: row.actionId }, openOwnerForm: true } });
+        h.state.plans.set(planId, initial);
+        expect(await h.controller.ready).toBe(true);
+        field(h, 'Owner name').value = 'Casey'; field(h, 'Due date').value = '2026-11-27';
+        const boardRead = async () => (await readBoardPlan(h.request, SCOPE.organisationId, selected)).find(item => item.itemId === row.itemId);
+        expect(await boardRead()).toMatchObject({ owner: null, dueDate: null });
+        expect(h.request.mock.calls.some(([, body]) => body)).toBe(false);
+        await submitForm(h);
+        expect(await boardRead()).toMatchObject({ owner: 'Casey', dueDate: '2026-11-27' });
+        const writes = h.request.mock.calls.filter(([, body]) => body);
+        expect(writes).toHaveLength(1);
+        expect(writes[0][1]).toMatchObject({ type: 'assign', planId, actionId: row.actionId, expectedRevision: 0 });
+        h.controller.destroy();
+    });
+    test.each([true, false])('the handoff rechecks assignment before opening a draft (write %s)', async canWrite => {
+        const actionId = seed().proposals[2].actionId;
+        const h = harness({ canWrite, options: { initialTarget: { planId: 'plan-a', planRevision: 0, actionId }, openOwnerForm: true } });
+        expect(await h.controller.ready).toBe(true);
+        expect(!!form(h)).toBe(canWrite);
+        expect(h.request.mock.calls.every(call => call.length === 1)).toBe(true);
+        if (canWrite) expect(field(h, 'Owner name')).toBe(h.document.activeElement);
+    });
 });
 
 function assigned() { return append(seed(), 'assign', { ownerSubjectKey: ACTOR, dueDate: '2026-10-02' }); }
