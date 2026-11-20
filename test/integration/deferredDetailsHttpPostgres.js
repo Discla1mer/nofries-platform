@@ -32,9 +32,24 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
             const { h, f, pool } = await enrolled('company', true);
             expect(f.preparation.subjectKey).not.toBe(subject(h.principal));
             const tenant = [h.binding.scope.tenantId];
-            // Standalone #465 has no staff wipe grant yet. Model the post-reset
-            // rows here; the stacked wipe PR exercises the real repository.
-            expect((await pool.query('DELETE FROM nofries.dashboard_deferred_agreements WHERE tenant_id=$1', tenant)).rowCount).toBe(1);
+            const { hash } = require('../../api/shared/appLifecycle/dashboardRuntimeRecords');
+            const { createAccountWipeRepository } = require('../../api/shared/dashboardAdmin/accountWipeRepository');
+            const link = { schemaVersion: 1, ...f.preparation.scope, subjectKey: f.preparation.subjectKey,
+                receiptId: f.receipt.receiptId, acceptanceSha256: hash(f.receipt), scheduleId: f.receipt.scheduleId,
+                scheduleDigest: f.receipt.scheduleDigest, authorityEvidenceId: f.preparation.representativeAuthorityEvidenceId };
+            const payload = { link, details: DATA, recordedAt: AT };
+            await pool.query(`INSERT INTO nofries.dashboard_representative_details
+                (tenant_id, organisation_id, subject_key, receipt_id, payload, payload_sha256) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [link.tenantId, link.organisationId, link.subjectKey, link.receiptId, payload, hash(payload)]);
+            const count = async table => (await pool.query(`SELECT 1 FROM nofries.${table} WHERE tenant_id=$1`, tenant)).rowCount;
+            expect(await count('dashboard_deferred_agreements')).toBe(1);
+            expect(await count('dashboard_representative_details')).toBe(1);
+            await createAccountWipeRepository(pool).reset({
+                accountId: f.account.accountId, subjectKey: f.preparation.subjectKey, tenantIds: tenant
+            });
+            expect(await count('dashboard_deferred_agreements')).toBe(0);
+            expect(await count('dashboard_representative_details')).toBe(0);
+            expect(await count('dashboard_starter_scopes')).toBe(1);
             httpJson(await h.ncscPost(createCommand()), 201);
             httpJson(await h.ncscPost(saveCommand()), 200);
             httpJson(await h.ncscPost(submitCommand()), 200);
