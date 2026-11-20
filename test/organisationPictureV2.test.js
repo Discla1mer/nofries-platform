@@ -158,6 +158,47 @@ describe('Overview with v1 and v2 results in one organisation', () => {
         dom.controller.destroy();
     });
 
+    test('Copy and Print use the selected profile and the owner of a matching saved action', async () => {
+        const h = await backend();
+        await h.submitted('assessment-v1', ACCEPTED_NCSC_CONTEXT, v1Answers('no'));
+        await h.submitted('assessment-v2', NCSC_V2_CONTEXT, EXAMPLE);
+        const readBoardPlan = jest.fn(async source => {
+            const question = source.assessmentId === 'assessment-v2' ? 'NF-NCSC-CC-SU-01-Q1' : 'NF-NCSC-MCSS-MF-01-Q1';
+            const profile = source.assessmentId === 'assessment-v2' ? V2() : V1();
+            expect(source.profileRef).toEqual(profile.profileRef);
+            return [{ itemId: question, controlId: profile.questions.find(row => row.id === question).controlId,
+                kind: 'implementation', owner: 'Owner of ' + source.assessmentId, dueDate: '2026-11-26' }];
+        });
+        const dom = mountPicture(h, { options: { readBoardPlan, openAction: jest.fn() } });
+        const writeText = jest.fn(), print = jest.fn();
+        Object.assign(dom.window, { print, navigator: { clipboard: { writeText } } });
+        await until(() => loaded(dom));
+        for (const [id, title] of [['assessment-v2', 'Limit supplier access'], ['assessment-v1', 'Multi-factor']]) {
+            if (picker(dom).value !== id) choose(dom, id);
+            await until(() => loaded(dom) && picker(dom).value === id);
+            const handoff = dom.root.querySelector('.picture-summary');
+            handoff.open = true;
+            for (const toggle of handoff.events.toggle || []) toggle();
+            const board = handoff.querySelector('.picture-board-summary');
+            const input = board.querySelector('textarea');
+            await until(() => input.value.includes('Owner of ' + id));
+            expect(input.value.toLowerCase()).toContain(title.toLowerCase());
+            expect(input.value).toContain('Due 26 Nov 2026');
+            expect(input.value).not.toContain('Owner of ' + (id === 'assessment-v2' ? 'assessment-v1' : 'assessment-v2'));
+            const press = label => board.querySelectorAll('button').find(control => control.textContent === label).click();
+            press('Copy board summary');
+            expect(writeText).toHaveBeenLastCalledWith(input.value);
+            print.mockImplementationOnce(() => {
+                const printed = board.querySelector('.picture-board-print');
+                expect(printed.classList.contains('picture-print-only')).toBe(true);
+                expect(printed.textContent).toBe(input.value);
+            });
+            press('Print board summary');
+        }
+        expect(print).toHaveBeenCalledTimes(2);
+        dom.controller.destroy();
+    });
+
     test('a v2 result with no gaps says so, and the actions card names only controls every profile agrees on', async () => {
         const h = await backend();
         await h.submitted('assessment-a', NCSC_V2_CONTEXT, NCSC_V2_CONTEXT.questionIds.map(id => id === 'NF-NCSC-MCSS-MF-01-Q2' ? 'mfa_key' : 'yes'));

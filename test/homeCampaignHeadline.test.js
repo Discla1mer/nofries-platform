@@ -7,7 +7,7 @@ const script = fs.readFileSync(path.join(__dirname, '../js/home.js'), 'utf8');
 const DEFAULT_TITLE = 'Know where your business stands on cyber security in about 15 minutes.';
 
 function land(search, page = 'dashboard-home') {
-    const title = { textContent: DEFAULT_TITLE }, lead = { textContent: 'default lead' };
+    const title = { textContent: DEFAULT_TITLE }, lead = { textContent: 'default lead', classList: { add() {} } };
     const document = {
         body: { dataset: { page } },
         addEventListener() {}, querySelectorAll: () => [],
