@@ -38,9 +38,11 @@ const select = (dom, id) => { const picker = dom.root.querySelector('.picture-to
 const binding = record => ({ assessmentId: record.assessmentId, revision: record.revision,
     revisionSha256: record.revisionSha256, profileRef: record.profileRef, outputSha256: record.submission.evaluation.outputSha256 });
 
-test('counts saved Unknown separately from pending N/A and uses human question titles', async () => {
+test('counts saved Unknown separately from Not applicable and uses human question titles', async () => {
     const dom = setup([submitted('assessment-information', ['unknown', 'unknown', 'not_applicable', 'no', 'partial'])]); await flush();
-    expect(section(dom).textContent).toContain('2 saved Unknown answers · 1 saved Not applicable answer awaiting review.');
+    expect(section(dom).textContent).toContain('2 saved Unknown answers · 1 saved Not applicable answer.');
+    expect(section(dom).textContent).toContain('Saved answer: Not applicable. Confirm whether this applies to the assessment scope.');
+    expect(section(dom).textContent).not.toContain('awaiting review');
     expect(section(dom).textContent).toContain('not unanswered questions or a risk score');
     expect(section(dom).querySelectorAll('li')).toHaveLength(3);
     expect(section(dom).querySelectorAll('h4').map(item => item.textContent)).toEqual(dom.fixtures.metadata.questions.slice(0, 3).map(row => row.prompt));
@@ -76,7 +78,7 @@ test('explicit open hands off only the exact validated submission without writes
 
 test('no suggested requests offers no create shortcut or claim of verified controls', async () => {
     const dom = setup([submitted('assessment-information', [])], { openImprovement: jest.fn() }); await flush();
-    expect(section(dom).textContent).toContain('0 saved Unknown answers · 0 saved Not applicable answers awaiting review.');
+    expect(section(dom).textContent).toContain('0 saved Unknown answers · 0 saved Not applicable answers.');
     expect(section(dom).textContent).toContain('This does not verify that controls are effective.');
     expect(action(dom)).toBeNull(); dom.controller.destroy();
 });
