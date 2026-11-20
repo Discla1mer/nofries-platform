@@ -1722,7 +1722,7 @@ function registerRealPostgresTests() {
                             enabled: { ...example.state.flags.enabled, ...enabled } } });
                     return canonicalResult;
                 }
-                return { example, member, admission, admissionCommand, publication, canonicalRepository, mutateMembership, mutateFlags };
+                return { example, member, admission, admissionCommand, publication, canonicalRepository, mutateMembership, mutateFlags, seedPool };
             }
             const target = await addResource(f.scope);
             const seed = purpose === 'operator_dashboard' ? f.operatorSeed : f.session(purpose, principal);
@@ -1743,6 +1743,7 @@ function registerRealPostgresTests() {
         }
         require('./improvementPlanRecovery')({ resourceSetup,
             getPools: () => ({ ownerPool, controlPool, runtimePool, maintenancePool }), testUrl, maintenanceRole });
+        require('./paidRendererPicker')({ resourceSetup, NCSC_SUBJECT, nextId, identity });
         async function newCustomerActivationSetup({ shortWindow = false, memberLimit = null, memberRole = 'admin' } = {}) {
             const request = require('supertest');
             const { customerProductionHarness, uid: customerId } = require('../helpers/customerProductionHarness');

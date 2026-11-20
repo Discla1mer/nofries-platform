@@ -41,6 +41,15 @@
         Object.freeze({ moduleId: 'cyber_security', profileId: 'nf-iso-27001-2022-readiness', version: '2026-11-19.1',
             label: 'ISO 27001 readiness self-assessment', description: 'Review how you manage information security, record which controls apply and identify gaps to work on.' })
     ]);
+    // Public SRI pins for the fixed, separately admitted package files.
+    const rendererIntegrity = Object.freeze({
+        collection: 'sha256-kxaNJOPXpMSfz6hGnpC1BYG5Awh/CZGOcximDl9Ac7g=',
+        questionnaire: 'sha256-8QfOBBBl9FdFuTmqVEvMmhYHPR5Zx7QbsQuA+umd+wg=',
+        results: 'sha256-igK5Woag5xT1+bhWTLZXiOr9zklWBEsjnnVTR9Ran/Q='
+    });
+    function rendererSelection(generation, ref, name, nonce) {
+        return JSON.stringify(['paid-renderer-v2', nonce, generation, ref.moduleId, ref.profileId, ref.version, name, rendererIntegrity[name]]);
+    }
     function sameFramework(left, right) {
         return left.moduleId === right.moduleId && left.profileId === right.profileId && left.version === right.version;
     }
@@ -51,5 +60,5 @@
         return matched && Array.isArray(permitted) && permitted.includes(matched.key) ? matched : null;
     }
     return Object.freeze({ schemaVersion: 1, modules: modules, services: services, paidFrameworks: paidFrameworks, sameFramework: sameFramework,
-        groups: Object.freeze(['Home', 'Assess', 'Plan', 'Proof', 'More']), resolveRoute: resolveRoute });
+        rendererIntegrity: rendererIntegrity, rendererSelection: rendererSelection, groups: Object.freeze(['Home', 'Assess', 'Plan', 'Proof', 'More']), resolveRoute: resolveRoute });
 }));

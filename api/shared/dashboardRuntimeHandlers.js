@@ -35,6 +35,7 @@ const CONFIG = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', '
     'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
 const AUTH = ['env', 'store', 'clientApplication', 'cryptoProvider', 'randomBytes'];
 const STORE = ['createTransaction', 'consumeTransaction', 'deleteTransaction', 'createSession', 'loadSession', 'deleteSession'];
+const rendererAssets = require('./paidRendererAssets');
 const HEADER_NAMES = ['cookie', 'origin', 'sec-fetch-site', 'x-nofries-dashboard-generation', 'x-nofries-dashboard-purpose',
     'x-nofries-dashboard-capabilities', 'content-type', 'content-encoding'];
 // Older dashboards send the shorter values and keep their exact session shape.
@@ -453,6 +454,12 @@ function createDashboardRuntimeHandlers(configuration) {
         const query = split < 0 ? null : snapshot.url.slice(split + 1);
         const prefix = '/api/dashboard/';
         const pathRoute = path.startsWith(prefix) ? path.slice(prefix.length) : '';
+        const asset = paidFrameworksEnabled && rendererAssets.parseAsset(pathRoute, query);
+        if (asset) {
+            entry.category = 'framework-asset';
+            if (snapshot.method !== 'GET') fail(405, 'dashboard_method_not_allowed', { Allow: 'GET' });
+            return freeze({ route: 'framework-asset', asset, resource: null, improvementRoute: null, ncscRoute: null });
+        }
         const firstPaint = ncscQuota && pathRoute === 'modules/overview' && (query === 'view=first-paint' ||
             improvementEnabled && query === 'view=first-paint&actions=1');
         const route = firstPaint ? 'overview' : pathRoute;
@@ -701,6 +708,27 @@ function createDashboardRuntimeHandlers(configuration) {
         });
         entry.phase = 'providers';
         await authenticated(privateRequest.headers.cookie);
+        if (selected.asset) {
+            const asset = selected.asset;
+            const session = await bounded(() => runtime.readSession(privateRequest), 'runtime');
+            if (!session.selectedBindingId || !rendererAssets.matchesSelection(asset, session.generation)) fail(403, 'dashboard_access_denied');
+            let bound;
+            try { bound = await bounded(() => resources.forRequest(privateRequest, { expectedGeneration: session.generation })); }
+            catch (error) {
+                if (error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403) {
+                    fail(403, 'dashboard_access_denied');
+                }
+                throw error;
+            }
+            // #507 supplies the registered-publication read and all its guards.
+            if (typeof bound.paid !== 'function') fail(404, 'dashboard_not_found');
+            const file = rendererAssets.packagedAsset(asset);
+            if (!file) fail(404, 'dashboard_not_found');
+            await bounded(() => bound.paid({ profileId: asset.ref.profileId, version: asset.ref.version,
+                assessmentId: null, mutation: null }, undefined, null, check => { entry.disclosureCheck = check; }));
+            if (typeof entry.disclosureCheck !== 'function') fail(403, 'dashboard_access_denied');
+            return file;
+        }
         if (selected.route === 'session' && command?.action === 'customer_activation') {
             if (!activationPort || isCustomer(privateRequest.headers.cookie)) fail(403, 'dashboard_access_denied');
             const result = await bounded(() => runtime.customerActivation(privateRequest,
