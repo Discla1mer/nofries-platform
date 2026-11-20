@@ -2093,19 +2093,21 @@
             if (!await saveAll(true) || !live(expected) || pending || dirtyEntries().length || !validateDraft(true)) return;
             try {
                 const command = client.normaliseCommand({ assessmentId: selected, action: 'submit', idempotencyKey: newId(), expectedRevision: acknowledged.revision, payload: {} });
-                await perform(command, []);
+                await perform(command, [], false, false, true);
             } catch (error) { if (live(expected)) fixedFailure(error); }
         }
-        // Resend an unconfirmed automatic save unchanged. Only 503 outcomes are
-        // retried: every other status is a definite answer from the server.
+        // Replay the same command after a 503. A committed submit returns its
+        // receipt without consuming another submission from the allowance.
         async function sendWithAutomaticRetry(command, expected, operation, automatic) {
-            const delays = automatic && command.action === 'save' ? autosaveRetryDelays : [];
+            const delays = !automatic ? [] : command.action === 'submit' ? [500] : autosaveRetryDelays;
             for (let attempt = 0; ; attempt += 1) {
                 try { return await call(command.action, command, expected, operation.keepalive); }
                 catch (error) {
                     if (attempt >= delays.length || !error || error.statusCode !== 503 || error.code === 'ncsc_access_denied' ||
                         !live(expected) || pending !== operation) throw error;
-                    statusText = 'Saving is taking longer than usual. Trying again automatically.'; updateStatus();
+                    statusText = command.action === 'submit' ? 'Submission is taking longer than usual. Checking the result.'
+                        : 'Saving is taking longer than usual. Trying again automatically.';
+                    updateStatus();
                     await new Promise(function (resolve) { const timer = setTimeout(resolve, delays[attempt]); if (timer && typeof timer.unref === 'function') timer.unref(); });
                     if (!live(expected) || pending !== operation) throw error;
                 }

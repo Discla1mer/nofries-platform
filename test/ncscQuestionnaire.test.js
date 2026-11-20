@@ -3505,6 +3505,57 @@ describe('final submission review step', () => {
         } finally { ui.controller.destroy(); }
     });
 
+    test.each([11999, 12001])('a submit acknowledgement delayed %i ms confirms after one user action', async delay => {
+        const h = await backend({ allowance: { used: 0, limit: 1 } });
+        await h.execute(createCommand()); await h.execute(saveCommand());
+        let attempts = 0;
+        const fetch = async (url, init) => {
+            const response = await h.fetch(url, init);
+            if (url.endsWith('/submit') && ++attempts === 1) await new Promise(resolve => setTimeout(resolve, delay));
+            return response;
+        };
+        const ui = await resumeUi(h, { client: clientModule.createClient({ metadata: metadata(), fetch }) });
+        jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+        try {
+            submitUi(ui);
+            await jest.advanceTimersByTimeAsync(11998);
+            expect(h.records.filter(row => row.action === 'submit')).toHaveLength(1);
+            expect(ui.root.querySelector('.ncsc-sealed')).toBeFalsy();
+            expect(ui.root.textContent).not.toContain('This operation is unconfirmed');
+            await jest.advanceTimersByTimeAsync(2000);
+            expect(ui.root.querySelector('.ncsc-sealed')).toBeTruthy();
+            const requests = h.calls.filter(call => call.url.endsWith('/submit'));
+            expect(requests).toHaveLength(delay < 12000 ? 1 : 2);
+            expect(new Set(requests.map(call => call.init.body)).size).toBe(1);
+            expect(h.records.filter(row => row.action === 'submit')).toHaveLength(1);
+        } finally { ui.controller.destroy(); jest.useRealTimers(); }
+    });
+
+    test('unavailable submit receipts keep the exact operation available for manual retry', async () => {
+        const h = await backend();
+        await h.execute(createCommand()); await h.execute(saveCommand());
+        let drop = true;
+        const fetch = async (url, init) => {
+            const result = await h.fetch(url, init);
+            if (drop && url.endsWith('/submit')) throw new Error('synthetic response lost');
+            return result;
+        };
+        const ui = await resumeUi(h, { client: clientModule.createClient({ metadata: metadata(), fetch }) });
+        try {
+            submitUi(ui);
+            await until(() => control(ui, 'Try the save again'));
+            expect(ui.root.textContent).toContain('This operation is unconfirmed');
+            expect(ui.root.querySelector('.ncsc-sealed')).toBeFalsy();
+            drop = false;
+            control(ui, 'Try the save again').click();
+            await until(() => ui.root.querySelector('.ncsc-sealed'));
+            const requests = h.calls.filter(call => call.url.endsWith('/submit'));
+            expect(requests).toHaveLength(3);
+            expect(new Set(requests.map(call => call.init.body)).size).toBe(1);
+            expect(h.records.filter(row => row.action === 'submit')).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
     test('ready review names the explanation and answers still to confirm only when there are some', async () => {
         const h = await backend(); await h.execute(createCommand());
         const rows = allResponses('yes'); rows[0] = { itemId: rows[0].itemId, optionId: 'unknown', rationale: null };
