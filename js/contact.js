@@ -60,8 +60,8 @@ window.mountEnquiryForm = async function (root, prefill) {
             link.textContent = problem.message;
             link.addEventListener('click', function (event) {
                 event.preventDefault();
-                const field = field(problem.id);
-                if (field) field.focus();
+                const input = field(problem.id);
+                if (input) input.focus();
             });
             item.append(link);
             list.append(item);
