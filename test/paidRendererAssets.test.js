@@ -68,14 +68,15 @@ test('each questionnaire serves only the reviewed bytes for its exact tuple', as
     expect(free.body).not.toContain(shared.toString());
 });
 
-test('the host serves the exact reviewed NIST board reader', () => {
+test('the host serves the reviewed board reader with the same groups available to Overview', () => {
     const nist = paidFrameworks.find(ref => ref.profileId === 'nf-nist-csf-2-0-core');
     const asset = parse(assetPath(nist, 'results', generation));
     const response = packagedAsset(asset);
     expect(response?.status).toBe(200);
     expect(response.headers['Cache-Control']).toMatch(/no-store/);
-    // SHA-256 of the reviewed reader at #521, independent of the host registry.
-    expect(createHash('sha256').update(response.body).digest('hex'))
+    // The only reader change exposes the existing projection to the separately admitted collection.
+    expect(createHash('sha256').update(response.body.replace(
+        'mount, groups: (record, publication) => project(record, publication).groups', 'mount')).digest('hex'))
         .toBe('3e5611cb3f4a23494713b3f118cedc95f951912f4b879cdb072156325b379967');
 });
 
@@ -88,5 +89,8 @@ test('the collection screen is a separate pinned script, absent from the free bu
     expect(collection.headers['Cache-Control']).toMatch(/no-store/);
     expect(collection.body).toContain('The start could not be confirmed.');
     expect(app.body).not.toContain('The start could not be confirmed.');
+    expect(collection.body).toContain('Check more saved assessments');
+    expect(app.body).not.toContain('Check more saved assessments');
+    expect(app.body).not.toContain('Last saved draft');
     expect(app.body).not.toContain(collection.body);
 });

@@ -37,10 +37,11 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
         const principal = { ...identity(), identityTenantId: tenant, oid,
             issuer: 'https://login.microsoftonline.com/' + tenant + '/v2.0', audience: nextId() };
         const f = await resourceSetup({ productionIdentity: principal, initialTime: '2026-11-19T00:01:00.000Z',
-            exampleOptions: { profileRefs: [ACCEPTED_PROFILE_REF, ...[ref, ...otherRefs].map(row => ({ profileId: row.profileId, profileVersion: row.version }))] } });
+            exampleOptions: { profileRefs: [ACCEPTED_PROFILE_REF, ...[ref, ...otherRefs].filter(Boolean).map(row => ({ profileId: row.profileId, profileVersion: row.version }))] } });
         const h = customerProductionHarness({ pool: f.restrictedPool, identity: principal, instanceId: f.instanceId,
             restoreEpoch: f.state.restoreEpoch, now: Date.parse(f.state.now), applicationFactory: (env, deps) =>
-                createProductionApplication({ ...env, NOFRIES_PUBLIC_URL: origin, NOFRIES_PAID_FRAMEWORKS_ENABLED: enabled,
+                createProductionApplication({ ...env, NOFRIES_PUBLIC_URL: origin,
+                    ...(enabled === undefined ? {} : { NOFRIES_PAID_FRAMEWORKS_ENABLED: enabled }),
                     NOFRIES_DASHBOARD_NCSC_ENABLED: 'true' }, deps) });
         h.env.NOFRIES_PUBLIC_URL = origin;
         const user = h.addUser({ ...f.scope, bindingId: f.publication.binding.bindingId });
@@ -83,6 +84,27 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
     });
     // Explicit because the standalone picker base does not package the renderer/publication/runtime stack.
     if (process.env.NOFRIES_TEST_RENDERER_BROWSER === 'true') {
+        test.each([['free organisation', 'true', null], ['flag off', undefined, paidFrameworks[0]]])(
+            'signed-in Overview for %s requests no paid scripts or data', async (_label, flag, ref) => {
+                await withLoopbackBrowser(async (server, origin, browser) => {
+                    const { f, h, cookie } = await fixture(ref, origin, flag);
+                    server.on('request', h.app);
+                    const context = await browser.newContext({ viewport: { width: 375, height: 812 }, ignoreHTTPSErrors: true });
+                    try {
+                        const split = cookie.indexOf('=');
+                        await context.addCookies([{ name: cookie.slice(0, split), value: cookie.slice(split + 1), url: origin, secure: true, httpOnly: true }]);
+                        await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+                        const page = await context.newPage(), paid = [];
+                        page.on('request', req => { if (new URL(req.url()).pathname.startsWith('/api/dashboard/frameworks/')) paid.push(req.url()); });
+                        await page.clock.setFixedTime(new Date(f.state.now));
+                        await page.goto(origin + '/dashboard#overview');
+                        await page.getByRole('heading', { name: 'Overview', exact: true }).waitFor();
+                        await page.waitForLoadState('networkidle');
+                        expect(paid).toEqual([]);
+                        for (const row of paidFrameworks) expect(await page.getByRole('heading', { name: row.label + ' progress' }).count()).toBe(0);
+                    } finally { await context.close(); }
+                });
+            }, 30000);
         test('one signed-in browser moves from ISO to NIST to a locked client', async () => {
             const [nist, iso] = paidFrameworks;
             await withLoopbackBrowser(async (server, origin, browser) => {
@@ -123,6 +145,14 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
                             expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentStart);
                         }
                     }
+                    await page.goto(origin + '/dashboard#overview');
+                    for (const [ref, total] of [[iso, 116], [nist, 106]]) {
+                        const card = page.locator('section.dashboard-panel').filter({ has: page.getByRole('heading', { name: ref.label + ' progress' }) });
+                        await card.getByRole('link', { name: 'Resume ' + ref.label, exact: true }).waitFor();
+                        expect(await card.innerText()).toContain('0 of ' + total + ' answered');
+                    }
+                    await page.getByRole('link', { name: 'Resume ' + nist.label, exact: true }).click();
+                    await page.getByRole('radio').first().waitFor();
                     const other = await f.addResource({ tenantId: f.scope.tenantId + '-free', organisationId: f.scope.organisationId },
                         { profileRefs: [ACCEPTED_PROFILE_REF] });
                     await select(other.publication.binding.bindingId);

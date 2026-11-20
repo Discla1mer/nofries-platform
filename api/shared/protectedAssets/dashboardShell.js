@@ -133,6 +133,7 @@
         let queuedEvent = null;
         let unmanagedBoundaryHash = null;
         let planBaselineToken = 0;
+        let overviewHosts = [];
         let informationAt = model.generatedAt;
         let informationStamp = null;
         // A history pointer is a read hint, never authority or saved answers.
@@ -359,6 +360,7 @@
             return promise;
         }
         function render(initialAssessmentId, sourceAssessment) {
+            clearOverviewHosts();
             planBaselineToken += 1;
             if (child) { child.destroy(); child = null; }
             main.replaceChildren();
@@ -414,6 +416,7 @@
             }
             const connectedPicture = pictureAvailable;
             if (connectedPicture) renderPicture();
+            renderFrameworkOverview();
             if (model.summary.state === 'stale') {
                 const notice = panel('This snapshot needs a refresh', 'These figures are historical. Reopen through the authenticated dashboard before relying on them.');
                 notice.classList.add('dashboard-warning'); main.append(notice);
@@ -465,6 +468,23 @@
             posture.append(metrics);
             const grid = element('div', 'dashboard-overview-grid'); grid.append(attention, posture); main.append(grid);
         }
+        function clearOverviewHosts() {
+            for (const host of overviewHosts) host.destroy();
+            overviewHosts = [];
+        }
+        function renderFrameworkOverview() {
+            if (!options.paidFrameworks?.length || typeof options.paidHost !== 'function') return;
+            for (const ref of registry.paidFrameworks.filter(ref => options.paidFrameworks.some(row => registry.sameFramework(ref, row)))) {
+                const slot = element('div');
+                main.append(slot);
+                const host = options.paidHost(ref, () => active() && current.key === 'overview' && main.contains(slot));
+                overviewHosts.push(host);
+                host.renderer('collection').then(factory => {
+                    if (host.live()) return factory.overview(slot, { ref, element, button, host,
+                        open: assessmentId => navigate('cyber-security', true, undefined, { ref, assessmentId }) });
+                }).catch(() => slot.replaceChildren());
+            }
+        }
         function renderPicture() {
             const childRoot = element('div', 'dashboard-picture-workspace'); main.append(childRoot);
             const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
@@ -493,6 +513,7 @@
         }
         function openAttention(index) {
             const item = model.summary.attention[index]; if (!item || disposed) return;
+            clearOverviewHosts();
             if (child) { child.destroy(); child = null; }
             main.replaceChildren();
             const back = button('Back to Overview', function () {
@@ -510,7 +531,9 @@
         }
         function renderCyber(initialAssessmentId) {
             const childRoot = element('div', 'dashboard-cyber-workspace'); main.append(childRoot);
-            if (options.paidFrameworks && initialAssessmentId === undefined && !validCyberLocation(cyberLocation)) {
+            if (initialAssessmentId?.ref && options.paidFrameworks?.some(row => registry.sameFramework(row, initialAssessmentId.ref))) {
+                openFramework(childRoot, initialAssessmentId.ref, initialAssessmentId.assessmentId);
+            } else if (options.paidFrameworks && initialAssessmentId === undefined && !validCyberLocation(cyberLocation)) {
                 renderFrameworkPicker(childRoot);
             } else mountFreeCyber(childRoot, initialAssessmentId);
         }
@@ -562,7 +585,7 @@
                 root.append(contact);
             }
         }
-        function openFramework(root, ref) {
+        function openFramework(root, ref, assessmentId) {
             const back = button('Back to assessment choices', backToFrameworkPicker, 'dashboard-text-button');
             const status = element('p', '', 'Opening assessment…'); status.setAttribute('role', 'status');
             root.replaceChildren(back, status); back.focus();
@@ -577,7 +600,7 @@
                 commit(); return Promise.resolve(true);
             } };
             host.renderer('collection').then(factory => {
-                if (host.live()) mounted = factory.mount(root, { ref, element, button, back, host, win });
+                if (host.live()) mounted = factory.mount(root, { ref, element, button, back, host, win, assessmentId });
             }).catch(() => {
                 if (!disposed) status.textContent = 'This assessment is unavailable. Return to the assessment choices to try again.';
             });
@@ -821,6 +844,7 @@
         }, destroy: function () {
             if (disposed) return;
             disposed = true;
+            clearOverviewHosts();
             if (child) { child.destroy(); child = null; }
             if (navigation) { navigation.resolve(false); navigation = null; }
             if (travelling) { travelling.resolve(false); travelling = null; }
