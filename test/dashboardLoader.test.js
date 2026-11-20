@@ -1805,6 +1805,29 @@ describe('ready Cyber composition', () => {
         expect(h.requests).toHaveLength(5);
         expect(h.elements.dashboardApp.textContent).toContain('This assessment is unavailable.');
     });
+    test('paid renderer completion at session expiry cannot mount or start the collection read', async () => {
+        const ref = registry.paidFrameworks[0], h = await pick([tuple(ref)]);
+        const append = h.document.head.append;
+        let complete;
+        h.document.head.append = script => { complete = () => append(script); };
+        pickButton(h, 'Open ' + ref.label).click(); await flush();
+        // Advance the wall clock without firing the scheduled session-expiry callback.
+        jest.setSystemTime(new Date(state().expiresAt));
+        complete(); await flush();
+        expect(h.requests).toHaveLength(5);
+        expect(h.window.NoFriesPaidCollection).toBeUndefined();
+        expect(h.elements.dashboardApp.textContent).not.toContain('Saved assessments');
+    });
+    test('paid collection data delivered at session expiry stays out of the document', async () => {
+        const ref = registry.paidFrameworks[0], h = await pick([tuple(ref)]);
+        pickButton(h, 'Open ' + ref.label).click(); await flush();
+        expect(h.requests[5].url).toContain('/assessments');
+        jest.setSystemTime(new Date(state().expiresAt));
+        await h.reply(5, 200, { schemaVersion: 1, publication: { status: 'published', profile: { id: ref.profileId, version: ref.version } },
+            assessments: [{ assessmentId: 'synthetic-expired', status: 'submitted', revision: 1, updatedAt: NOW }], nextAfterAssessmentId: null });
+        expect(h.elements.dashboardApp.textContent).not.toContain('synthetic-expired');
+        expect(h.requests).toHaveLength(6);
+    });
     test('a different publication cannot disclose saved assessment headers', async () => {
         const [nist, iso] = registry.paidFrameworks, h = await pick([tuple(nist)]);
         pickButton(h, 'Open ' + nist.label).click(); await flush();
