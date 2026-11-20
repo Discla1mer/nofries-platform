@@ -117,3 +117,23 @@ test.each([
     expect(document.getElementById('contact-heading').textContent).toBe(campaign ? '90-day managed security' : '');
     expect(document.getElementById('contact-intro').textContent.includes('NZ$1,250 + GST')).toBe(campaign);
 });
+
+test.each([
+    ['NIST CSF 2.0', 'Fictional Harbour Studio', true, ''],
+    ['ISO 27001 readiness self-assessment', '', true, ''],
+    ['NIST CSF 2.0', 'Fictional Harbour Studio', true, 'Keep this edit'],
+    ['ISO 27001 readiness self-assessment', 'Fictional Harbour Studio', false, '']
+])('the editable enquiry handoff (%s, %s, current=%s, draft=%s) stays in the form', async (framework, organisation, live, existing) => {
+    const window = { enquiryAvailability: jest.fn(async () => ({ available: true })), enquiryTopic: jest.fn(), enquiryCampaign: jest.fn() };
+    const fetch = jest.fn(), document = { body: { dataset: {} } }, elements = new Map();
+    const root = { querySelector(selector) {
+        if (!elements.has(selector)) elements.set(selector, { value: existing, addEventListener() {} });
+        return elements.get(selector);
+    } };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/contact.js'), 'utf8'), { window, document, fetch });
+    await window.mountEnquiryForm(root, { framework, organisation, current: () => live });
+    expect(root.querySelector('#contact-message').value).toBe(existing || (live ? 'I would like to ask about ' + framework + '.' : ''));
+    expect(root.querySelector('#contact-organisation').value).toBe(existing || (live ? organisation : ''));
+    expect(window.enquiryTopic).not.toHaveBeenCalled(); expect(window.enquiryCampaign).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled(); expect(window.enquiryAvailability.mock.calls).toEqual([[]]);
+});

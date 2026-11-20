@@ -544,7 +544,6 @@
                 'nf-nist-csf-2-0-core': { href: '/fictional-nist-example.html', label: 'View a fictional NIST CSF 2.0 example' },
                 'nf-iso-27001-2022-readiness': { href: '/fictional-iso-example.html', label: 'View a fictional ISO 27001 example' }
             };
-            let hasLocked = false;
             for (const ref of registry.paidFrameworks) {
                 const included = options.paidFrameworks.some(row => registry.sameFramework(row, ref));
                 const card = panel(ref.label, ref.description);
@@ -552,22 +551,25 @@
                 if (included) {
                     card.append(button('Open ' + ref.label, function () { openFramework(root, ref); }));
                 } else {
-                    hasLocked = true;
                     const preview = examples[ref.profileId];
                     if (preview) {
                         const example = element('a', 'dashboard-button dashboard-button-secondary', preview.label);
                         example.href = preview.href;
                         card.append(example);
                     }
+                    const contact = element('a', 'dashboard-button dashboard-button-secondary dashboard-framework-contact', 'Ask No Fries about ' + ref.label);
+                    contact.href = '/contact.html';
+                    if (options.openFrameworkEnquiry) contact.setAttribute('aria-haspopup', 'dialog');
+                    contact.addEventListener('click', function (event) {
+                        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button > 0 ||
+                            !active() || !main.contains(contact) || typeof options.openFrameworkEnquiry !== 'function') return;
+                        if (options.openFrameworkEnquiry(contact, ref)) event.preventDefault();
+                    });
+                    card.append(contact);
                 }
                 cards.append(card);
             }
             root.replaceChildren(heading, cards);
-            if (hasLocked) {
-                const contact = element('a', 'dashboard-button dashboard-button-secondary dashboard-framework-contact', 'Ask No Fries about the paid dashboard');
-                contact.href = '/contact.html';
-                root.append(contact);
-            }
         }
         function openFramework(root, ref) {
             const back = button('Back to assessment choices', backToFrameworkPicker, 'dashboard-text-button');

@@ -84,6 +84,10 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .dashboard-service-cards .dashboard-panel { display: flex; flex-direction: column; align-items: start; gap: .4rem; }
 .dashboard-service-cards h2, .dashboard-service-cards p { margin-bottom: .5rem; }
 .dashboard-service-detail { padding-top: .7rem; border-top: 1px solid var(--dashboard-line); }
+.framework-enquiry .contact-form { display: grid; gap: .5rem; }
+.framework-enquiry .contact-form input, .framework-enquiry .contact-form textarea { box-sizing: border-box; width: 100%; padding: .6rem; font: inherit; }
+.framework-enquiry .contact-form textarea { min-height: 6rem; }
+.framework-enquiry .contact-form [inert], .framework-enquiry [hidden] { display: none; }
 .dashboard-framework-contact { display: inline-flex; align-items: center; box-sizing: border-box; max-width: 100%; margin-top: 1rem; }
 .dashboard-contact { margin-top: .75rem; }
 .dashboard-contact .dashboard-button { max-width: 100%; white-space: normal; text-align: center; }

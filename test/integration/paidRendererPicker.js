@@ -31,11 +31,11 @@ async function withLoopbackBrowser(work) {
 }
 
 module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
-    async function fixture(ref, origin, enabled) {
+    async function fixture(ref, origin, enabled, { accountType = 'consultant', prepareExample } = {}) {
         const [tenant, oid] = NCSC_SUBJECT.split(':');
         const principal = { ...identity(), identityTenantId: tenant, oid,
             issuer: 'https://login.microsoftonline.com/' + tenant + '/v2.0', audience: nextId() };
-        const f = await resourceSetup({ productionIdentity: principal, initialTime: '2026-11-19T00:01:00.000Z',
+        const f = await resourceSetup({ productionIdentity: principal, initialTime: '2026-11-19T00:01:00.000Z', prepareExample,
             exampleOptions: { profileRefs: [ACCEPTED_PROFILE_REF, { profileId: ref.profileId, profileVersion: ref.version }] } });
         const h = customerProductionHarness({ pool: f.restrictedPool, identity: principal, instanceId: f.instanceId,
             restoreEpoch: f.state.restoreEpoch, now: Date.parse(f.state.now), applicationFactory: (env, deps) =>
@@ -43,7 +43,7 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
                     NOFRIES_DASHBOARD_NCSC_ENABLED: 'true' }, deps) });
         h.env.NOFRIES_PUBLIC_URL = origin;
         const user = h.addUser({ ...f.scope, bindingId: f.publication.binding.bindingId });
-        user.authority.accountType = 'consultant'; user.save();
+        user.authority.accountType = accountType; user.save();
         const { cookie } = await h.login(user);
         await h.consent(cookie);
         await h.sameOrigin(request(h.app).post('/api/dashboard/session')).set('Cookie', cookie)
@@ -80,6 +80,9 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
         await request(h.app).get('/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assessments')
             .set('Cookie', cookie).set('X-NoFries-Dashboard-Generation', generation).expect(404);
     });
+    if (process.env.NOFRIES_TEST_ENQUIRY_BROWSER === 'true') {
+        require('./lockedFrameworkEnquiry')({ withLoopbackBrowser, fixture });
+    }
     // Explicit because the standalone picker base does not package the renderer/publication/runtime stack.
     if (process.env.NOFRIES_TEST_RENDERER_BROWSER === 'true') {
         test.each(paidFrameworks)('mounted paid picker: $label', async ref => {

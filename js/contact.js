@@ -1,12 +1,11 @@
-(async function () {
-    if (!document.body || document.body.dataset.page !== 'contact') {
-        return;
-    }
+window.mountEnquiryForm = async function (root, prefill) {
+    const field = id => root.getElementById ? root.getElementById(id) : root.querySelector('#' + id);
+    const current = () => !prefill || prefill.current();
 
-    const form = document.getElementById('contact-form');
-    const status = document.getElementById('contact-status');
-    const send = document.getElementById('contact-send');
-    const summary = document.getElementById('contact-errors');
+    const form = field('contact-form');
+    const status = field('contact-status');
+    const send = field('contact-send');
+    const summary = field('contact-errors');
     const FALLBACK = 'Please email hello@nofries.nz instead.';
     const checks = {
         'contact-name': function (value) { return value.trim() ? '' : 'Enter your name.'; },
@@ -29,8 +28,8 @@
     }
 
     function showFieldError(id, message) {
-        const input = document.getElementById(id);
-        const error = document.getElementById(id + '-error');
+        const input = field(id);
+        const error = field(id + '-error');
         if (!input || !error) return;
         error.textContent = message || '';
         error.hidden = !message;
@@ -42,7 +41,7 @@
     function validateFields() {
         const problems = [];
         Object.keys(checks).forEach(function (id) {
-            const input = document.getElementById(id);
+            const input = field(id);
             const message = input ? checks[id](input.value || '') : 'Check this field.';
             showFieldError(id, message);
             if (message) problems.push({ id: id, message: message });
@@ -61,7 +60,7 @@
             link.textContent = problem.message;
             link.addEventListener('click', function (event) {
                 event.preventDefault();
-                const field = document.getElementById(problem.id);
+                const field = field(problem.id);
                 if (field) field.focus();
             });
             item.append(link);
@@ -71,16 +70,20 @@
         return problems;
     }
 
-    if (typeof window.enquiryCampaign === 'function' && window.enquiryCampaign()) {
-        document.getElementById('contact-heading').textContent = '90-day managed security';
-        document.getElementById('contact-intro').textContent = 'NZ$1,250 + GST for 90 days. We help you fix three security gaps and give you a written summary for your board or insurer. Tell us about your organisation below.';
+    if (!prefill && typeof window.enquiryCampaign === 'function' && window.enquiryCampaign()) {
+        field('contact-heading').textContent = '90-day managed security';
+        field('contact-intro').textContent = 'NZ$1,250 + GST for 90 days. We help you fix three security gaps and give you a written summary for your board or insurer. Tell us about your organisation below.';
     }
 
     // Arriving from a dashboard service card: start the message with that service.
     // The visitor can edit or clear it, and nothing is sent until they send the form.
-    const topic = typeof window.enquiryTopic === 'function' ? window.enquiryTopic() : '';
-    const messageField = document.getElementById('contact-message');
-    if (topic && messageField && !messageField.value) {
+    const topic = !prefill && typeof window.enquiryTopic === 'function' ? window.enquiryTopic() : '';
+    const messageField = field('contact-message');
+    if (prefill && current()) {
+        if (!messageField.value) messageField.value = 'I would like to ask about ' + prefill.framework + '.';
+        const organisation = field('contact-organisation');
+        if (!organisation.value) organisation.value = prefill.organisation;
+    } else if (topic && messageField && !messageField.value) {
         messageField.value = 'I would like to talk about this service: ' + topic + '.\n\n';
     }
 
@@ -91,7 +94,7 @@
     form.addEventListener('submit', async function (event) {
         event.preventDefault();
         // Take the guard before any await so a second click cannot send a second enquiry.
-        if (submitting) {
+        if (submitting || !current()) {
             return;
         }
         submitting = true;
@@ -101,6 +104,7 @@
                 status.textContent = 'One moment…';
                 await checking;
             }
+            if (!current()) return;
             if (!available) {
                 status.textContent = 'The enquiry form is not available right now. ' + FALLBACK;
                 return;
@@ -108,7 +112,7 @@
             const problems = validateFields();
             if (problems.length) {
                 status.textContent = '';
-                const first = document.getElementById(problems[0].id);
+                const first = field(problems[0].id);
                 if (first) first.focus();
                 return;
             }
@@ -117,7 +121,7 @@
             ['name', 'email', 'organisation', 'message', 'website'].forEach(function (field) {
                 body[field] = String(data.get(field) || '');
             });
-            const campaign = typeof window.enquiryCampaign === 'function' ? window.enquiryCampaign() : '';
+            const campaign = !prefill && typeof window.enquiryCampaign === 'function' ? window.enquiryCampaign() : '';
             if (campaign) body.campaign = campaign;
 
             status.textContent = 'Sending…';
@@ -138,9 +142,9 @@
                     return;
                 }
                 form.reset();
-                if (typeof window.clearEnquiryCampaign === 'function') window.clearEnquiryCampaign();
+                if (!prefill && typeof window.clearEnquiryCampaign === 'function') window.clearEnquiryCampaign();
                 status.textContent = 'Thanks — your enquiry has been sent. We will reply by email.';
-                if (window.plausible) {
+                if (!prefill && window.plausible) {
                     window.plausible('Enquiry Sent');
                 }
             } catch (error) {
@@ -164,7 +168,8 @@
     if (!available && !submitting) {
         status.textContent = 'The enquiry form is not available right now. ' + FALLBACK;
         // Say so above the fields too, so nobody writes a message they cannot send.
-        const notice = document.getElementById('contact-unavailable');
+        const notice = field('contact-unavailable');
         if (notice) notice.hidden = false;
     }
-}());
+};
+if (document.body && document.body.dataset.page === 'contact') window.mountEnquiryForm(document);
