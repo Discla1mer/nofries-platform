@@ -1716,20 +1716,24 @@ describe('ready Cyber composition', () => {
         'fictional example links appear only on locked cards (included indices $included)', async ({ included }) => {
             const h = await pick(included.map(index => tuple(registry.paidFrameworks[index])));
             const root = h.elements.dashboardApp;
+            const previews = {
+                'nf-nist-csf-2-0-core': ['/fictional-nist-example.html', 'View a fictional NIST CSF 2.0 example'],
+                'nf-iso-27001-2022-readiness': [previewHref, 'View a fictional ISO 27001 example']
+            };
             for (const [index, ref] of registry.paidFrameworks.entries()) {
                 const card = root.querySelectorAll('.dashboard-panel').find(panel => panel.querySelector('h2')?.textContent === ref.label);
-                const links = card.querySelectorAll('a').filter(link => link.href === previewHref);
+                const links = card.querySelectorAll('a').filter(link => link.href.startsWith('/fictional-'));
                 expect(links).toHaveLength(included.includes(index) ? 0 : 1);
-                if (links.length) expect(links[0].textContent).toBe('View a fictional ISO 27001 example');
+                if (links.length) expect([links[0].href, links[0].textContent]).toEqual(previews[ref.profileId]);
             }
-            expect(root.querySelectorAll('a').filter(link => link.href === previewHref)).toHaveLength(2 - included.length);
+            expect(root.querySelectorAll('a').filter(link => link.href?.startsWith('/fictional-'))).toHaveLength(2 - included.length);
             expect(h.requests.some(row => row.url.includes('/frameworks/'))).toBe(false);
         });
     test('the flag-off Cyber Security view has no buyer example entry', async () => {
         const h = harness({ cyber: true, hash: '#cyber-security' });
         await ready(h, 'editable', {});
         expect(h.elements.dashboardApp.textContent).not.toContain('Choose an assessment');
-        expect(h.elements.dashboardApp.querySelectorAll('a').some(link => link.href === previewHref)).toBe(false);
+        expect(h.elements.dashboardApp.querySelectorAll('a').some(link => link.href?.startsWith('/fictional-'))).toBe(false);
     });
     test('locked choices open the contact form and the free choice opens the existing questionnaire', async () => {
         const h = await pick([]), root = h.elements.dashboardApp;
