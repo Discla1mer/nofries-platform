@@ -896,15 +896,96 @@
             copyButton.classList.add('dashboard-button-secondary'); handoff.append(label, input, printed, copyButton);
             // #441: the same answers, written for a board or insurer.
             if (typeof questionnaire.boardSummary === 'function') {
-                const renderBoard = parent => questionnaire.boardSummaryBlock(node, button, win, detail, selectedMetadata(), id + '-board-summary', status, parent);
-                if (options.boardExportGate) handoff.append(options.boardExportGate(() => renderBoard()));
-                else renderBoard(handoff);
+                const token = epoch;
+                const boardExport = boardBlock => {
+                    if (!live(token)) return boardBlock;
+                    return questionnaire.boardSummaryBlock(node, button, win, detail, selectedMetadata(),
+                        id + '-board-summary', status, boardBlock,
+                        (board, printed, copy, print) => boardPlanControls(handoff, boardBlock, board, printed, copy, print));
+                };
+                if (options.boardExportGate) handoff.append(options.boardExportGate(() => boardExport(node('div', 'picture-board-summary'))));
+                else if (typeof options.readBoardPlan === 'function' && typeof options.openAction === 'function') {
+                    handoff.append(boardExport(node('div', 'picture-board-summary')));
+                } else boardExport(handoff);
             }
             if (win && typeof win.print === 'function') {
                 const printButton = button('Print these results', () => win.print());
                 printButton.classList.add('dashboard-button-secondary'); handoff.append(printButton);
             }
             handoff.append(status); return handoff;
+        }
+        function boardPlanControls(handoff, boardBlock, board, boardPrinted, boardCopy, boardPrint) {
+            if (typeof options.readBoardPlan !== 'function' || typeof options.openAction !== 'function') return;
+            const source = improvementSelection(), token = epoch, binding = sourceBinding();
+            if (!source) return;
+            const baseText = board.value, assignments = node('section', 'picture-board-actions');
+            const note = node('p', 'dashboard-muted'); note.setAttribute('role', 'status');
+            boardBlock.append(assignments, note);
+            let attempt = 0;
+            const current = () => currentSubmitted(token, binding, board);
+            const setText = extra => { board.value = baseText + extra; boardPrinted.textContent = board.value; };
+            const lock = busy => { boardCopy.disabled = busy; if (boardPrint) boardPrint.disabled = busy; };
+            lock(true);
+            async function checkAssignments() {
+                if (!current()) return;
+                const read = ++attempt;
+                assignments.replaceChildren(); lock(true);
+                if (!handoff.open) return;
+                setText('');
+                note.textContent = 'Checking saved owners and due dates…';
+                try {
+                    const actions = await options.readBoardPlan(source);
+                    if (read !== attempt || !current()) return;
+                    const list = node('ol'), lines = [];
+                    displayedGaps.forEach((gap, index) => {
+                        const question = selectedMetadata().questions.find(row => row.id === gap.itemId);
+                        const matches = (actions || []).filter(row => row.itemId === gap.itemId);
+                        if (matches.length !== 1) return;
+                        const action = matches[0], kind = gap.responseOptionId === 'unknown' ? 'assessment' : 'implementation';
+                        if (action.controlId !== question.controlId || action.kind !== kind) return;
+                        const title = displayedGaps.some(other => other !== gap && other.title === gap.title) ? question.prompt : gap.title;
+                        const item = node('li'); item.value = index + 1;
+                        item.append(node('strong', '', title));
+                        const saved = (action.owner || 'Unassigned') + ' · ' + (action.dueDate ? 'Due ' + displayDay(action.dueDate) : 'No due date');
+                        item.append(node('p', '', saved));
+                        if (action.owner && action.dueDate) lines.push((index + 1) + '. ' + title + ' — ' + saved);
+                        if (action.editTarget) {
+                            const edit = button('Set owner and due date', async () => {
+                                if (!currentSubmitted(token, binding, edit) || read !== attempt || edit.disabled) return;
+                                edit.disabled = true;
+                                try { if (await options.openAction(action.editTarget, true)) return; }
+                                catch (_) { /* Keep the saved values visible. */ }
+                                if (currentSubmitted(token, binding, edit)) {
+                                    edit.disabled = false; note.textContent = 'Couldn’t open this action. Try again.';
+                                }
+                            });
+                            edit.setAttribute('aria-label', 'Set owner and due date for ' + title);
+                            item.append(edit);
+                        }
+                        list.append(item);
+                    });
+                    if (list.children.length) {
+                        assignments.append(node('h4', '', 'Owners and due dates for your top gaps'), list);
+                        note.textContent = list.querySelector('button') ? 'Save changes in Improvement Plan, then return to Overview to print.' : '';
+                    } else {
+                        note.textContent = 'There are no matching saved actions for these gaps.';
+                        if (!actions && openImprovement) {
+                            const open = button('Open Improvement Plan for this assessment', () => {
+                                if (currentSubmitted(token, binding, open)) openImprovement(source);
+                            });
+                            assignments.append(open);
+                        }
+                    }
+                    setText(lines.length ? '\n' + lines.join('\n') : '');
+                } catch (_) {
+                    if (read !== attempt || !current()) return;
+                    note.textContent = 'Couldn’t check saved owners and due dates. Close and reopen this summary to try again.';
+                    setText('\nSaved owners and due dates could not be checked.');
+                } finally { if (read === attempt && current()) lock(false); }
+            }
+            handoff.addEventListener('toggle', checkAssignments);
+            // A gate may release its content after the disclosure is already open.
+            if (handoff.open) Promise.resolve().then(checkAssignments);
         }
         // Lead with the reported (lower) figure and explain both figures in plain words.
         function leadWithLowerBound(card, model) {
