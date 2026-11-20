@@ -67,6 +67,8 @@ module.exports = ({ withLoopbackBrowser, resourceSetup, NCSC_SUBJECT, nextId, id
                     expect(await message.inputValue()).toBe('I would like to ask about ' + ref.label + '.');
                     expect(await organisation.inputValue()).toBe(accountType === 'consultant' ? name : '');
                     expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth && window.innerWidth === 375)).toBe(true);
+                    const emailLink = dialog.locator('#contact-unavailable a');
+                    expect(await emailLink.evaluate(node => getComputedStyle(node).textDecorationLine)).toContain('underline');
                     expect(new URL(page.url()).pathname + new URL(page.url()).hash).toBe('/dashboard#cyber-security');
                 }
                 await open(iso, first);
