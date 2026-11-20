@@ -159,7 +159,6 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
     }
     const wipeTarget = a => ({ accountId: a.c.account.accountId, subjectKey: a.c.actor, tenantIds: a.tenants });
 
-    // Characterise the 0028 hold using actual child rows and the staff repository.
     async function deferredAccount(db, completed) {
         const { deferredFixture, DATA, AT } = require('../fixtures/deferredDetailsFixture');
         const { hash } = require('../../api/shared/appLifecycle/dashboardRuntimeRecords');
@@ -183,7 +182,8 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         return { accountId: account.accountId, subjectKey: p.subjectKey, tenantIds: [p.scope.tenantId] };
     }
 
-    test.each([false, true])('deferred enrollment reset retains agreement and delete rolls back (details recorded %s)', async completed => {
+    test.each([['reset', false], ['reset', true], ['delete', false], ['delete', true]])(
+        '%s clears deferred enrollment rows (details recorded %s)', async (mode, completed) => {
         const db = await connect(), target = await deferredAccount(db, completed), sentinel = await deferredAccount(db, true);
         const snapshot = async account => {
             const result = {};
@@ -196,13 +196,35 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         expect(before.dashboard_deferred_agreements).toHaveLength(1);
         expect(before.dashboard_representative_details).toHaveLength(completed ? 1 : 0);
         expect(other.dashboard_representative_details).toHaveLength(1);
-        const repository = createAccountWipeRepository(pool);
-        await repository.reset(target);
-        expect(await snapshot(target)).toEqual(before);
+        await createAccountWipeRepository(pool)[mode](target);
+        expect(await snapshot(target)).toEqual({
+            dashboard_starter_scopes: mode === 'reset' ? before.dashboard_starter_scopes : [],
+            signup_acceptance_receipts: mode === 'reset' ? before.signup_acceptance_receipts : [],
+            dashboard_deferred_agreements: [], dashboard_representative_details: []
+        });
         expect(await snapshot(sentinel)).toEqual(other);
-        await expect(repository.delete(target)).rejects.toMatchObject({ code: 'account_wipe_reference_blocked' });
-        expect(await snapshot(target)).toEqual(before);
-        expect(await snapshot(sentinel)).toEqual(other);
+    });
+
+    test('deferred tables expose only scoped rows to the wipe role and retain their query ACLs', async () => {
+        const db = await connect(), account = await deferredAccount(db, true), other = await deferredAccount(db, true);
+        for (const table of ['dashboard_deferred_agreements', 'dashboard_representative_details']) {
+            const relation = 'nofries.' + table;
+            const grants = await rows(db, `SELECT grantee.rolname AS role, acl.privilege_type AS privilege
+                FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) acl
+                LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+                WHERE c.oid = $1::regclass AND acl.grantee <> c.relowner ORDER BY role, privilege`, [relation]);
+            expect(grants).toEqual([
+                { role: 'nofries_account_wipe', privilege: 'DELETE' }, { role: 'nofries_account_wipe', privilege: 'SELECT' },
+                { role: 'nofries_runtime', privilege: 'INSERT' }, { role: 'nofries_runtime', privilege: 'SELECT' }
+            ]);
+            await tx(db, async () => {
+                await db.query('SET LOCAL ROLE nofries_account_wipe');
+                expect(await rows(db, `SELECT tenant_id FROM ${relation}`)).toEqual([]);
+                await db.query("SELECT set_config('nofries.wipe_tenant_id',$1,true)", account.tenantIds);
+                expect(await rows(db, `SELECT tenant_id FROM ${relation}`)).toEqual([{ tenant_id: account.tenantIds[0] }]);
+                expect((await db.query(`DELETE FROM ${relation} WHERE tenant_id=$1`, other.tenantIds)).rowCount).toBe(0);
+            });
+        }
     });
 
     test('delete removes every row of the account and leaves another account untouched', async () => {
