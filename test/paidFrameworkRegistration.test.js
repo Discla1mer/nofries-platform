@@ -13,8 +13,8 @@ test('the reserved ISO route reads only its exact packaged publication', () => {
         expect(profileRef).toEqual({
             frameworkId: 'iso-iec-27001', frameworkVersion: '2022',
             profileId: route.profileId, profileVersion: route.version,
-            catalogueSha256: '58e37797ea4bf926ab0477522857cb9dd0ac2a84d3e1815829dee9b2390bd107',
-            sourceCatalogueSha256: '0221ff4667e5471a50711bd4e64ae56b5f253889cdcc9817ce3bfdfda4dc5654'
+            catalogueSha256: '88b628987e8117690de70b7be04ddeb60de95cbe27fd96d4353f7107a2758124',
+            sourceCatalogueSha256: 'b6b39634dbaf1060b655e99f296dbfcbae1a3b035120ffb2badd5321483b5973'
         });
     } else expect(read).toThrow(expect.objectContaining({ code: 'framework_not_found', statusCode: 404 }));
     expect(() => prepareRequest({ ...route, version: 'latest' }, undefined, null)).toThrow('framework_not_found');
