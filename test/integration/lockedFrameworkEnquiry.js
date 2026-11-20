@@ -1,17 +1,34 @@
 'use strict';
 
 const { join } = require('node:path');
+const request = require('supertest');
+const { customerProductionHarness } = require('../helpers/customerProductionHarness');
+const { createProductionApplication } = require('../../lib/productionApplication');
 const { paidFrameworks } = require('../../api/shared/protectedAssets/dashboardRegistry');
 const { ACCEPTED_PROFILE_REF } = require('../../api/shared/assessmentEngine/ncscAssessmentEvaluator');
 
-module.exports = ({ withLoopbackBrowser, fixture }) => {
+module.exports = ({ withLoopbackBrowser, resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
     test.each(['consultant', 'company'])('editable locked enquiry, signed-in %s, no send', async accountType => {
         const [nist, iso] = paidFrameworks;
         const first = 'Fictional Harbour Studio', second = 'Fictional Kōwhai Theatre';
         await withLoopbackBrowser(async (server, origin, browser) => {
-            const { f, h, cookie, select } = await fixture(nist, origin, 'true', { accountType, prepareExample(example) {
+            const [tenant, oid] = NCSC_SUBJECT.split(':');
+            const principal = { ...identity(), identityTenantId: tenant, oid, audience: nextId(),
+                issuer: 'https://login.microsoftonline.com/' + tenant + '/v2.0' };
+            const f = await resourceSetup({ productionIdentity: principal, exampleOptions: { profileRefs: [ACCEPTED_PROFILE_REF,
+                { profileId: nist.profileId, profileVersion: nist.version }] }, prepareExample(example) {
                 example.state.tenantAggregate.organisations[0].displayName = example.scope.tenantId.endsWith('-second') ? second : first;
             } });
+            const h = customerProductionHarness({ pool: f.restrictedPool, identity: principal, instanceId: f.instanceId,
+                restoreEpoch: f.state.restoreEpoch, now: Date.parse(f.state.now), applicationFactory: (env, deps) =>
+                    createProductionApplication({ ...env, NOFRIES_PUBLIC_URL: origin, NOFRIES_PAID_FRAMEWORKS_ENABLED: 'true',
+                        NOFRIES_DASHBOARD_NCSC_ENABLED: 'true' }, deps) });
+            h.env.NOFRIES_PUBLIC_URL = origin;
+            const user = h.addUser({ ...f.scope, bindingId: f.publication.binding.bindingId });
+            user.authority.accountType = accountType; user.save();
+            const { cookie } = await h.login(user); await h.consent(cookie);
+            await h.sameOrigin(request(h.app).post('/api/dashboard/session')).set('Cookie', cookie)
+                .send({ operationId: nextId() }).expect(200);
             server.on('request', h.app);
             const context = await browser.newContext({ viewport: { width: 375, height: 812 }, ignoreHTTPSErrors: true });
             try {
@@ -63,7 +80,9 @@ module.exports = ({ withLoopbackBrowser, fixture }) => {
                     await open(iso, first);
                     const other = await f.addResource({ tenantId: f.scope.tenantId + '-second', organisationId: f.scope.organisationId },
                         { profileRefs: [ACCEPTED_PROFILE_REF] });
-                    await select(other.publication.binding.bindingId);
+                    const session = await request(h.app).get('/api/dashboard/session').set('Cookie', cookie).expect(200);
+                    await h.sameOrigin(request(h.app).post('/api/dashboard/selection')).set('Cookie', cookie)
+                        .send({ operationId: nextId(), bindingId: other.publication.binding.bindingId, expectedGeneration: session.body.generation }).expect(200);
                     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
                     await dialog.waitFor({ state: 'detached' });
                     await open(nist, second);
