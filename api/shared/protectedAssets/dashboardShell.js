@@ -377,8 +377,8 @@
             if (stateFor(current.key) === 'disabled') {
                 main.append(panel('This module is temporarily unavailable', 'Your subscription includes this module, but it has not been enabled. Other included modules remain available.'));
             } else if (current.key === 'overview') {
-                renderOverview();
                 if (showFrameworkComparison) appendFrameworkComparison(main);
+                renderOverview();
             } else if (current.key === 'services') renderServices();
             else if (current.key === 'cyber_security' && stateFor(current.key) === 'ready' && typeof options.mountCyber === 'function') renderCyber(initialAssessmentId);
             else if (current.key === 'improvement_plan' && stateFor(current.key) === 'ready' && typeof options.mountImprovement === 'function') renderImprovement(sourceAssessment);
