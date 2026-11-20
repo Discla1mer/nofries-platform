@@ -211,7 +211,7 @@ function registerConsultantReaderCompatibility() {
                 '0021_lifecycle_email_outbox.sql', '0022_funnel_daily_counts.sql',
                 '0023_email_dispatcher_subject_lookup.sql', '0024_email_preferences_link_guard.sql',
                 '0025_account_wipe_role.sql', '0026_dashboard_contact_requests.sql', '0027_contact_request_retention.sql',
-                '0028_deferred_representative_details.sql', '0029_deferred_agreement_wipe.sql'
+                '0028_deferred_representative_details.sql', '0029_deferred_agreement_wipe.sql', '0030_paid_assessment_revisions.sql'
             ]));
         });
         for (const stage of ['before_claim', 'incomplete_claim', 'committed_claim']) api.test(`${stage}: normal enabled reader exposes saved own details and never completes a new-policy lifecycle`, async () => atFixtureTime(async () => {
