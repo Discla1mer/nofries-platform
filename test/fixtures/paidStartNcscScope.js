@@ -6,11 +6,18 @@ const { createAssessment, applyAssessmentCommand } = require('../../api/shared/a
 const { hash } = require('../../api/shared/appLifecycle/dashboardRuntimeRecords');
 const { createNistFrameworkProfile } = require('../../api/shared/assessmentEngine/nistFrameworkProfile');
 const { createFrameworkRegistry } = require('../../api/shared/assessmentEngine/frameworkProfileRegistry');
-const { createNistNcscCrosswalk } = require('../../api/shared/assessmentEngine/nistNcscCrosswalk');
 const { ncscFixture, createCommand, saveCommand, submitCommand } = require('./ncscAssessmentFixture');
 
-const profileRef = createNistNcscCrosswalk().toProfileRef;
-const registry = createFrameworkRegistry([createNistFrameworkProfile()]);
+const nist = createNistFrameworkProfile();
+const registry = createFrameworkRegistry([nist]);
+const profileRef = {
+    frameworkId: nist.framework.id,
+    frameworkVersion: nist.framework.version,
+    profileId: nist.profile.id,
+    profileVersion: nist.profile.version,
+    catalogueSha256: nist.catalogueSha256,
+    sourceCatalogueSha256: nist.sourceCatalogueSha256
+};
 const now = '2026-11-19T00:00:00.000Z';
 
 // Persist the real creation, answers and submission with the same local IDs
