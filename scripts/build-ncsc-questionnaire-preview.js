@@ -17,7 +17,7 @@ const cspHash = value => `'sha256-${crypto.createHash('sha256').update(value).di
 const safeJson = value => JSON.stringify(value).replace(/</g, '\\u003c')
     .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
-function buildFixtures() {
+function buildFixtures(submittedResponses) {
     const { createNcscQuestionnaireMetadata } = require('../api/shared/ncscQuestionnaireMetadata');
     const { fixture } = require('../test/fixtures/dashboardFixture');
     const { ncscFixture, createCommand, saveCommand, submitCommand, allResponses, SUBJECT, NOW } =
@@ -49,7 +49,7 @@ function buildFixtures() {
         // Explicit preview-only composition. Shared fixture/projection defaults stay planned.
         model.modules.find(item => item.key === 'cyber_security').state = 'ready';
         return { label, model, assessments: [assessment('assessment-a', partial),
-            assessment('assessment-b', allResponses('unknown')), assessment('assessment-submitted', allResponses(), true)] };
+            assessment('assessment-b', allResponses('unknown')), assessment('assessment-submitted', submittedResponses || allResponses(), true)] };
     });
     return { metadata, tenants, now: NOW,
         // Shape-valid test tokens only. Interactive transport does not verify durable hashes.
@@ -241,7 +241,7 @@ function htmlDocument(title, style, script, body, frame = false) {
     return `<!doctype html><html lang="en-NZ"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta http-equiv="Content-Security-Policy" content="${csp}"><title>${title}</title><style>${style}</style></head><body>${body}<script>${script}</script></body></html>`;
 }
 
-function buildPreview(outputInput) {
+function buildPreview(outputInput, submittedResponses) {
     if (typeof outputInput !== 'string' || !outputInput) throw new Error('Usage: node scripts/build-ncsc-questionnaire-preview.js --output /absolute/external/path/questionnaire.html');
     const output = path.resolve(outputInput), relative = path.relative(ROOT, output);
     if (!relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)) throw new Error('Preview output must be outside the repository and runtime package.');
@@ -249,7 +249,7 @@ function buildPreview(outputInput) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.html$/.test(basename)) throw new Error('Use a plain ASCII .html output filename.');
     // Read the complete actual bundle before creating either output artifact.
     const sources = BUNDLE.map(file => ({ file, content: fs.readFileSync(path.join(ROOT, file), 'utf8') }));
-    const fixtures = buildFixtures();
+    const fixtures = buildFixtures(submittedResponses);
     const frameName = basename.slice(0, -5) + '-frame.html';
     const frameOutput = path.join(path.dirname(output), frameName);
     const frameScript = sources.map(source => source.content).join('\n') + '\n' +
