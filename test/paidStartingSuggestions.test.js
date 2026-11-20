@@ -24,7 +24,7 @@ function inputs(retained) {
     return {
         access: { ...owner, entitledFrameworks: [tuple], frameworkFlags: [tuple] },
         target: { ...owner, moduleId: 'cyber_security', profileRef: nist, status: 'created', responses: [],
-            sourceScopePopulationSha256: envelope.scopePopulation.sha256 },
+            scopePopulation: { ...envelope.scopePopulation.body }, sourceScopePopulationSha256: envelope.scopePopulation.sha256 },
         selectedSource: { assessmentId: envelope.assessmentId, revision: envelope.revision, revisionSha256,
             scopePopulationSha256: envelope.scopePopulation.sha256 },
         retained
@@ -85,7 +85,7 @@ test('requires a sealed and intact submission', () => {
     const envelope = JSON.parse(JSON.stringify(submitted.envelope));
     envelope.submission.evaluation.outputSha256 = '0'.repeat(64);
     input.retained = { ...submitted, envelope };
-    expect(() => read(input)).toThrow('ncsc_record_invalid');
+    expect(read(input)).toEqual([]);
 });
 test.each(['partial', 'no', 'unknown', 'not_applicable'])('does not infer a target option from NCSC %s', option => {
     expect(read(inputs(history('synthetic-owner', option)[2]))).toEqual([]);
@@ -135,4 +135,17 @@ test('owner responding to a customer sees only three partly-in-place ISO startin
         input.target.profileRef = { ...iso, [field]: 'different' };
         expect(read(input)).toEqual([]);
     }
+});
+
+test('a saved paid scope cannot borrow a submission from its description or its description digest', () => {
+    const input = inputs(submitted);
+    const { sourceScopePopulationSha256, ...savedTarget } = input.target;
+    const { hash } = require('../api/shared/appLifecycle/dashboardRuntimeRecords');
+    expect(read({ ...input, target: savedTarget })).toEqual([]);
+    expect(read({ ...input, target: { ...savedTarget, sourceScopePopulationSha256: hash(savedTarget.scopePopulation) } })).toEqual([]);
+    for (const scopePopulation of [null, { description: savedTarget.scopePopulation.description + ' ' },
+        { description: 'Other population' }, { ...savedTarget.scopePopulation, extra: true }]) {
+        expect(read({ ...input, target: { ...savedTarget, scopePopulation, sourceScopePopulationSha256 } })).toEqual([]);
+    }
+    expect(input.target.responses).toEqual([]);
 });
