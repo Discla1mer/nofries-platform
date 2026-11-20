@@ -1360,6 +1360,7 @@ body[data-dashboard-gateway="true"]:has(#dashboardStatusPanel:not([hidden])) .ho
     #gatewayPublic .homepage-intro h1.homepage-headline { margin-bottom: 16px; }
     #gatewayPublic .homepage-intro > :is(.homepage-lead, .homepage-reassurance, #homepageEnquiry) { order: 1; }
     #gatewayPublic .homepage-intro > .homepage-lead { margin-top: 20px; }
+    #gatewayPublic .homepage-intro > #homepageLead.homepage-campaign-lead { order: 0; margin: 0 0 20px; }
     .homepage-actions { margin-top: 0; }
     .homepage-preview figcaption { padding-inline: 18px; }
     .preview-content { padding: 20px 18px; }
