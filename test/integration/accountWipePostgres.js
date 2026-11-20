@@ -294,6 +294,9 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         expect(await footprint(db, a)).toEqual(before);
     });
 
+    require('./isoReportArtifactsPostgres')({ connect, account, wipeTarget, footprint, tx, asRuntime,
+        repository: () => createAccountWipeRepository(pool) });
+
     test('the capability sees nothing without settings and can never insert or update', async () => {
         const db = await connect(), a = await account(db);
         await tx(db, async () => {
