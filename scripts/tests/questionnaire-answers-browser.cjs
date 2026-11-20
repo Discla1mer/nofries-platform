@@ -10,10 +10,15 @@ const { execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
 const { buildPreview } = require('../build-ncsc-questionnaire-preview');
 
+const { allResponses } = require('../../test/fixtures/ncscAssessmentFixture');
+
 async function main() {
     const artifacts = process.env.NOFRIES_ANSWER_ARTIFACTS || '/tmp/nofries-questionnaire-answers';
     fs.mkdirSync(artifacts, { recursive: true });
-    const preview = buildPreview(path.join(artifacts, 'questionnaire.html'));
+    const submitted = allResponses('no');
+    submitted.find(row => row.itemId === 'NF-NCSC-MCSS-LP-01-Q1').optionId = 'partial';
+    submitted.find(row => row.itemId === 'NF-NCSC-CC-SV-01-Q1').optionId = 'yes';
+    const preview = buildPreview(path.join(artifacts, 'questionnaire.html'), submitted);
     const errors = [], requests = [], transport = [];
     const server = http.createServer((req, res) => {
         requests.push(req.method);
@@ -50,11 +55,19 @@ async function main() {
         await page.locator('.ncsc-assessment-list li').filter({ hasText: 'Submitted' }).getByRole('button').first().click();
         const section = page.locator('.ncsc-questionnaire-answers'); await section.waitFor();
         assert.equal(await section.locator('li').count(), 9);
-        assert.deepEqual(await section.locator('li strong').allTextContents(), ['Yes', 'Not answered', 'Yes', 'Not answered', 'Not answered', 'Yes', 'Yes', 'Yes', 'Yes'].map(answer => 'Suggested answer: ' + answer));
+        assert.deepEqual(await section.locator('li strong').allTextContents(), ['No', 'Not answered', 'No', 'Not answered', 'Not answered', 'No', 'No', 'Partly', 'Yes'].map(answer => 'Suggested answer: ' + answer));
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         const input = section.getByLabel('Answers to copy'), expected = await input.inputValue();
+        const rows = await section.locator('li').evaluateAll(items => items.map(item => Array.from(item.children, child => child.textContent)));
+        const evidence = [];
+        for (const row of rows) {
+            const hints = row.filter(line => line.startsWith('Evidence: '));
+            assert.equal(hints.length, row[1] === 'Suggested answer: Yes' ? 0 : 1);
+            assert.ok(expected.split('\n\n').includes(row.join('\n')));
+            evidence.push(...hints);
+        }
         assert.equal(await input.getAttribute('readonly'), '');
-        await section.locator('h3').scrollIntoViewIfNeeded();
+        await section.locator('h3').evaluate(title => title.scrollIntoView({ block: 'start' }));
         await page.screenshot({ path: path.join(artifacts, 'viewport-375.png') });
         await section.screenshot({ path: path.join(artifacts, 'answers-375.png') });
         const before = await page.evaluate(() => window.answerTransport);
@@ -85,6 +98,8 @@ async function main() {
         assert.ok(last < pages.length, 'Printed footer is present');
         const printed = pages.slice(first, last + 1).join(' ').replace(/\s+/g, ' ');
         for (const question of await section.locator('h4').allTextContents()) assert.ok(printed.includes(question), question);
+        assert.equal(printed.match(/Evidence: /g)?.length, evidence.length);
+        for (const line of evidence) assert.ok(printed.includes(line), line);
         for (let i = first; i <= last; i++) execFileSync('pdftoppm', ['-f', String(i + 1), '-l', String(i + 1), '-scale-to', '1440', '-png', '-singlefile', pdf, path.join(artifacts, 'print-page-' + (i + 1))]);
         transport.push(...await page.evaluate(() => window.answerTransport));
         assert.deepEqual(transport, before); assert.ok(transport.every(method => method === 'GET'));
