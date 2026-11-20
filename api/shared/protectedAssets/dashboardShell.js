@@ -540,6 +540,10 @@
                 back.focus();
             }));
             cards.append(free);
+            const examples = {
+                'nf-nist-csf-2-0-core': { href: '/fictional-nist-example.html', label: 'View a fictional NIST CSF 2.0 example' },
+                'nf-iso-27001-2022-readiness': { href: '/fictional-iso-example.html', label: 'View a fictional ISO 27001 example' }
+            };
             let hasLocked = false;
             for (const ref of registry.paidFrameworks) {
                 const included = options.paidFrameworks.some(row => registry.sameFramework(row, ref));
@@ -549,9 +553,12 @@
                     card.append(button('Open ' + ref.label, function () { openFramework(root, ref); }));
                 } else {
                     hasLocked = true;
-                    const example = element('a', 'dashboard-button dashboard-button-secondary', 'View a fictional ISO 27001 example');
-                    example.href = '/fictional-iso-example.html';
-                    card.append(example);
+                    const preview = examples[ref.profileId];
+                    if (preview) {
+                        const example = element('a', 'dashboard-button dashboard-button-secondary', preview.label);
+                        example.href = preview.href;
+                        card.append(example);
+                    }
                 }
                 cards.append(card);
             }
