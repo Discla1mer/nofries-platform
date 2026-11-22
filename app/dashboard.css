@@ -258,6 +258,7 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-questionnaire-answer-controls button { margin: .5rem .5rem .5rem 0; }
 @media print {
     .ncsc-questionnaire-answers { break-before: page; padding: 0; border: 0; font-size: 11pt; line-height: 1.4; }
+    .ncsc-questionnaire-answers[data-export-ready="false"] { display: none !important; }
     .ncsc-questionnaire-answers li, .ncsc-questionnaire-answers footer { break-inside: avoid; }
     body:has(.ncsc-questionnaire-answers) #dashboardSkipLink,
     .ncsc-questionnaire-answer-controls { display: none; }
@@ -630,3 +631,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     .paid-results-paper h2 { margin: 1em 0 .4em; font: bold 13pt/1.2 sans-serif; }
     .paid-results-paper p { margin: 0 0 .45em; break-inside: avoid; }
 }
+
+/* Deferred representative details, shown only at the later handoff gate. */
+.dashboard-details-gate form { display: grid; gap: 1rem; max-width: 36rem; }
+.dashboard-details-gate label { display: grid; gap: .35rem; }
+.dashboard-details-gate input { width: 100%; min-width: 0; box-sizing: border-box; }
