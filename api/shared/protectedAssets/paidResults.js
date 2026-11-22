@@ -297,5 +297,5 @@
         }
         return handle;
     }
-    return Object.freeze({ mount, projectIsoOutput });
+    return Object.freeze({ mount, projectIsoOutput, groups: (record, publication) => project(record, publication).groups });
 }));
