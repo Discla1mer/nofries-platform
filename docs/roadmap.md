@@ -28,6 +28,11 @@ unlisted and noindex. The last explicit NCSC-v2 flag receipt records it unset:
 [prior release evidence](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7072631196).
 No later activation evidence was found. Do not infer activation from a merged PR.
 
+The service note follows #543’s published responsibility distinction: working
+through three improvements does not include hands-on implementation unless it is
+separately agreed in scope. #543 merged as `35ff8729975c46af6f3d614ddd704b34982e59fc`
+and is included in the current release. No agreement or signed-in service copy changes.
+
 Release receipts and source PRs below are review evidence only. The generator
 never emits these references into customer HTML. Keep the per-item source PR
 mapping in the PR description as well as this source of truth.
@@ -67,7 +72,7 @@ customer distinction separately from release-engineering evidence.
   "lead": "What you can use today, what is being built and what is planned.",
   "notice": "NZ financial-year quarters are planning windows, not delivery commitments. Planned scope, order and availability may change; a quarter does not promise delivery or subscription inclusion.",
   "historicalNotice": "No verified releases recorded for this quarter.",
-  "serviceNote": "90-day managed security includes a written summary you can give your board or insurer now. That summary is part of the paid service. Managed IT is the separate day-to-day service.",
+  "serviceNote": "90-day managed security includes a written summary you can give your board or insurer now. That summary is part of the paid service. We work through three improvements with you. For each improvement, the agreed scope needs to say whether No Fries, you or your IT provider makes the change. Hands-on changes by No Fries need to be separately agreed in that scope. Managed IT is the separate day-to-day service.",
   "quarters": [
     {"id": "fy26-q4", "label": "FY26 Q4", "period": "Apr–Jun 2026", "state": "historical"},
     {"id": "fy27-q1", "label": "FY27 Q1", "period": "Jul–Sep 2026", "state": "historical"},
