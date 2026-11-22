@@ -172,6 +172,10 @@ function harness(fixtureOptions = {}) {
         }
         if (/FROM nofries\.dashboard_ncsc_assessments\b/i.test(sql)) return { rows: [] };
         if (/FROM nofries\.dashboard_starter_scopes\b/i.test(sql)) return { rows: [] };
+        // Staff framework decisions (#519): this fixed driver holds none, so the
+        // purchased and activated tuples decide. Only the parameterised scoped read is answered.
+        if (/FROM nofries\.dashboard_paid_framework_access WHERE tenant_id=\$1 AND organisation_id=\$2 AND product_grant_id=\$3\b/i.test(sql) &&
+            params.length === 3) return { rows: [] };
         if (/SELECT octet_length\(\$1::jsonb::text\) AS payload_bytes/i.test(sql)) return { rows: [{ payload_bytes: 1024 }] }; // Synthetic result, not JSONB measurement.
         if (/FROM nofries\.dashboard_runtime_audit\b/i.test(sql)) return { rows: state.auditRows.has(params[0]) ? [clone(state.auditRows.get(params[0]))] : [] };
         if (/INSERT INTO nofries\.dashboard_runtime_audit\b/i.test(sql)) {
