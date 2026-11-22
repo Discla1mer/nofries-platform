@@ -31,7 +31,7 @@ test('flag off: the homepage sends no visit count', async () => {
     expect(fetch).not.toHaveBeenCalled();
 });
 
-test('flag on: the homepage sends one visit count to the same origin without cookies, referrer or identifiers', async () => {
+test('flag on: the homepage sends one visit count to the same origin without cookies, path referrer or identifiers', async () => {
     const fetch = jest.fn(async () => ({ ok: true, status: 204 }));
     runHome({ funnel: true, fetch });
     await flush();
@@ -39,7 +39,7 @@ test('flag on: the homepage sends one visit count to the same origin without coo
     const [url, options] = fetch.mock.calls[0];
     expect(url).toBe('/api/telemetry');
     expect(options).toEqual({ method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin', cache: 'no-store',
-        redirect: 'error', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: '{"event":"visit"}' });
+        redirect: 'error', referrerPolicy: 'strict-origin', headers: { 'Content-Type': 'application/json' }, body: '{"event":"visit"}' });
 });
 
 test.each([
@@ -100,6 +100,24 @@ test('every browser count helper uses only the relative same-origin endpoint', (
     }
 });
 
+// A non-CORS ('same-origin' mode) POST under 'no-referrer' carries Origin: null
+// in WebKit and Firefox, which the telemetry handler's same-origin check refuses.
+// 'strict-origin' keeps the real Origin and limits Referer to the origin.
+test('every browser count beacon sends its real Origin (strict-origin), never no-referrer', () => {
+    for (const file of ['js/enquiry-home.js', 'js/organisation-setup.js', 'js/dashboard-loader.js']) {
+        const source = read(file);
+        const beacons = source.match(/window\.fetch\('\/api\/telemetry', \{[^}]*\}/g);
+        expect(beacons).toHaveLength(1);
+        expect(beacons[0]).toContain("referrerPolicy: 'strict-origin',");
+        expect(beacons[0]).not.toContain('no-referrer');
+    }
+    const signup = read('lib/signupDocument.js');
+    const beacons = signup.match(/funnelNativeFetch\.call\(window, '\/api\/telemetry', \{[^}]*\}/g);
+    expect(beacons).toHaveLength(1);
+    expect(beacons[0]).toContain("referrerPolicy: 'strict-origin',");
+    expect(beacons[0]).not.toContain('no-referrer');
+});
+
 test('the dashboard passes its count helper to the questionnaire and arms it only from a marked API response', () => {
     const source = read('js/dashboard-loader.js');
     expect(source).toMatch(/questionnaire\.mount\(root, \{[\s\S]*?onFunnelStep: funnelStep,/);
@@ -131,7 +149,8 @@ describe('managed signup document', () => {
         const { fetch } = await run('?intent=create', true);
         const counts = fetch.mock.calls.filter(([url]) => url === '/api/telemetry');
         expect(counts).toHaveLength(1);
-        expect(counts[0][1]).toMatchObject({ method: 'POST', keepalive: true, credentials: 'omit', body: '{"event":"signup_started"}' });
+        expect(counts[0][1]).toEqual({ method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin', cache: 'no-store',
+            redirect: 'error', referrerPolicy: 'strict-origin', headers: { 'Content-Type': 'application/json' }, body: '{"event":"signup_started"}' });
     });
 
     test.each([['flag off', '?intent=create', false, {}], ['no create intent', '', true, {}],

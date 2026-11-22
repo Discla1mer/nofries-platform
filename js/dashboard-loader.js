@@ -1579,7 +1579,7 @@
         funnelSent.add(step);
         try {
             window.fetch('/api/telemetry', { method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
-                cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
+                cache: 'no-store', redirect: 'error', referrerPolicy: 'strict-origin',
                 headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: step }) })
                 .then(function (response) { if (!response || !response.ok) funnelOff = true; }, function () { funnelOff = true; });
         } catch (_) { funnelOff = true; }

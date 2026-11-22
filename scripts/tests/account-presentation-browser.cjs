@@ -74,6 +74,13 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/customer-signup/bootstrap') {
         let body = ''; for await (const chunk of req) body += chunk;
         assert.equal(req.method, 'POST'); assert.deepEqual(JSON.parse(body), { invitationToken: 'x'.repeat(43) });
+        // Same rule as assertExactSameOriginRequest: the real Origin (never 'null',
+        // which WebKit/Firefox send for a same-origin-mode POST under no-referrer),
+        // Sec-Fetch-Site same-origin, and a Referer of the origin only.
+        const origin = 'http://' + req.headers.host;
+        assert.equal(req.headers.origin, origin, 'invitation bootstrap must send its real Origin');
+        assert.equal(req.headers['sec-fetch-site'], 'same-origin');
+        assert.equal(req.headers.referer, origin + '/', 'invitation bootstrap Referer contains only origin');
         if (holdBootstrap) await new Promise(resolve => { releaseBootstrap = resolve; });
         res.statusCode = 204; return res.end();
     }
