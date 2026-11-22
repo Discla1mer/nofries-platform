@@ -27,6 +27,7 @@ function usesUnlimitedConsultantPolicy(input) {
 // their exact retained text and digest; new schedules select it in trusted
 // server composition and state the access terms in the new wording.
 const ACCESS_POLICY = 'no-fixed-end-v1';
+const DETAILS_POLICY = 'after-first-result-v1';
 const preparations = new WeakMap();
 const sha = value => crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 const fail = () => { throw new Error('starter_plan_invalid'); };
@@ -110,7 +111,8 @@ function compileStarterSchedule(input) {
     const value = fields(copy(input, 16384), ['tenantId', 'organisationId', 'organisationName',
         'accountType', 'kind', 'grantId', 'scheduleId', 'contact', 'framework', ...(Object.hasOwn(input, 'planId') ? ['planId'] : []),
         ...(Object.hasOwn(input, 'consultantOrganisationPolicy') ? ['consultantOrganisationPolicy'] : []),
-        ...(Object.hasOwn(input, 'accessPolicy') ? ['accessPolicy'] : [])]);
+        ...(Object.hasOwn(input, 'accessPolicy') ? ['accessPolicy'] : []),
+        ...(Object.hasOwn(input, 'detailsPolicy') ? ['detailsPolicy'] : [])]);
     const open = Object.hasOwn(value, 'accessPolicy');
     if (open && value.accessPolicy !== ACCESS_POLICY) fail();
     uuid(value.tenantId); uuid(value.organisationId); uuid(value.grantId); uuid(value.scheduleId);
@@ -119,10 +121,14 @@ function compileStarterSchedule(input) {
     if (!['own', 'client'].includes(value.kind) || value.kind === 'client' && value.accountType !== 'consultant') fail();
     const unlimited = Object.hasOwn(value, 'consultantOrganisationPolicy');
     if (unlimited && (value.consultantOrganisationPolicy !== CONSULTANT_ORGANISATION_POLICY || value.accountType !== 'consultant')) fail();
-    const contact = fields(value.contact, ['name', 'role', 'email', 'address', 'registrationId', 'authorityEvidenceId']);
-    text(contact.name, 160); text(contact.role, 120); text(contact.address, 500); id(contact.authorityEvidenceId);
+    const deferred = Object.hasOwn(value, 'detailsPolicy');
+    if (deferred && (value.detailsPolicy !== DETAILS_POLICY || value.kind !== 'own')) fail();
+    const contact = fields(value.contact, deferred ? ['email', 'authorityEvidenceId']
+        : ['name', 'role', 'email', 'address', 'registrationId', 'authorityEvidenceId']);
+    if (!deferred) { text(contact.name, 160); text(contact.role, 120); text(contact.address, 500); }
+    id(contact.authorityEvidenceId);
     if (contact.email !== workEmail(contact.email)) fail();
-    if (contact.registrationId !== null) text(contact.registrationId, 160);
+    if (!deferred && contact.registrationId !== null) text(contact.registrationId, 160);
     const framework = fields(value.framework, ['moduleId', 'profileId', 'version', 'scoringVersion']);
     if (framework.moduleId !== 'cyber_security') fail();
     id(framework.profileId); id(framework.version); id(framework.scoringVersion);
@@ -140,9 +146,10 @@ function compileStarterSchedule(input) {
         `Organisation: ${quote(value.organisationName)}`,
         `Organisation ID: ${value.organisationId}`,
         `Account: ${value.accountType}; organisation kind: ${value.kind}`,
-        `Registration identifier: ${contact.registrationId === null ? 'Not applicable' : quote(contact.registrationId)}`,
-        `Principal address: ${quote(contact.address)}`,
-        `Representative: ${quote(contact.name)}; role: ${quote(contact.role)}; verified email: ${quote(contact.email)}`,
+        ...(deferred ? [`Verified email: ${quote(contact.email)}`] : [
+            `Registration identifier: ${contact.registrationId === null ? 'Not applicable' : quote(contact.registrationId)}`,
+            `Principal address: ${quote(contact.address)}`,
+            `Representative: ${quote(contact.name)}; role: ${quote(contact.role)}; verified email: ${quote(contact.email)}`]),
         `Representative authority evidence: ${quote(contact.authorityEvidenceId)}`,
         open ? 'Access period: no fixed end date. Access continues until it is suspended or the agreement ends.' :
             legacy ? `Access period: ${plan.durationDays} days from account activation, as recorded in the canonical activation receipt.` :
@@ -184,7 +191,8 @@ function compileStarterOrganisation(input, occurredAt = input.activatedAt) {
     const value = fields(copy(input, 16384), ['tenantId', 'organisationId', 'organisationName',
         'accountType', 'kind', 'activatedAt', 'grantId', 'scheduleId', 'contact', 'framework', ...(Object.hasOwn(input, 'planId') ? ['planId'] : []),
         ...(Object.hasOwn(input, 'consultantOrganisationPolicy') ? ['consultantOrganisationPolicy'] : []),
-        ...(Object.hasOwn(input, 'accessPolicy') ? ['accessPolicy'] : [])]);
+        ...(Object.hasOwn(input, 'accessPolicy') ? ['accessPolicy'] : []),
+        ...(Object.hasOwn(input, 'detailsPolicy') ? ['detailsPolicy'] : [])]);
     const { activatedAt, ...scheduleInput } = value;
     const offer = compileStarterSchedule(scheduleInput);
     const plan = starterOfferPlan(value), shared = accountWindow(activatedAt, plan.planId), framework = value.framework;
@@ -290,5 +298,5 @@ function compileStarterActivation(input) {
     return freeze({ nextState, activationIntent });
 }
 
-module.exports = { LEGACY_PLAN_ID, THREE_MONTH_PLAN_ID, CONSULTANT_ORGANISATION_POLICY, ACCESS_POLICY, usesUnlimitedConsultantPolicy, approvedStarterPlan, starterOfferPlan, accountWindow,
+module.exports = { DETAILS_POLICY, LEGACY_PLAN_ID, THREE_MONTH_PLAN_ID, CONSULTANT_ORGANISATION_POLICY, ACCESS_POLICY, usesUnlimitedConsultantPolicy, approvedStarterPlan, starterOfferPlan, accountWindow,
     starterAuthorityExpiry, compileStarterSchedule, compileStarterPreparation, compileStarterActivation };

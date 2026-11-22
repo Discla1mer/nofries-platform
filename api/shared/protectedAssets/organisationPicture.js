@@ -240,6 +240,7 @@
         const organisationId = options.organisationId, organisationName = options.displayName || organisationId;
         const openImprovement = typeof options.openImprovement === 'function' ? options.openImprovement : null;
         const planGap = typeof options.planGap === 'function' ? options.planGap : null;
+        const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
         const contactControl = typeof options.contactControl === 'function' ? options.contactControl : null;
         const readActions = openImprovement && typeof options.readActions === 'function' ? options.readActions : null;
         let actions = null, displayedGaps = [];
@@ -881,7 +882,7 @@
             const help = node('div', 'picture-next-steps-help'); help.hidden = true;
             const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
             help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
-                link, node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
+                gated(() => link), node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
             panel.append(help);
             // #409: present only when the host negotiated contact requests.
             if (contactControl) panel.append(contactControl());
