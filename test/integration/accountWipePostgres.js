@@ -235,7 +235,7 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         expect(await snapshot(target)).toEqual({
             dashboard_starter_scopes: mode === 'reset' ? before.dashboard_starter_scopes : [],
             signup_acceptance_receipts: mode === 'reset' ? before.signup_acceptance_receipts : [],
-            dashboard_deferred_agreements: [], dashboard_representative_details: []
+            dashboard_deferred_agreements: mode === 'reset' ? before.dashboard_deferred_agreements : [], dashboard_representative_details: []
         });
         expect(await snapshot(sentinel)).toEqual(other);
     });

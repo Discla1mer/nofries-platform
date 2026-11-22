@@ -28,7 +28,7 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
             expect(session.body.questionnaireExportGateAvailable).toBe(true);
             await loginClean();
         });
-        test('an enrolled company member with a hidden starter scope cannot export a new result after marker removal', async () => {
+        test('an enrolled company member with a hidden starter scope reads completed readiness but cannot record details or request contact after reset', async () => {
             const { h, f, pool } = await enrolled('company', true);
             expect(f.preparation.subjectKey).not.toBe(subject(h.principal));
             const tenant = [h.binding.scope.tenantId];
@@ -44,10 +44,12 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
             const count = async table => (await pool.query(`SELECT 1 FROM nofries.${table} WHERE tenant_id=$1`, tenant)).rowCount;
             expect(await count('dashboard_deferred_agreements')).toBe(1);
             expect(await count('dashboard_representative_details')).toBe(1);
+            expect((await read(h)).body).toMatchObject({ status: 'ready' });
+            httpJson(await save(h), 403, 'representative_details_access_denied');
             await createAccountWipeRepository(pool).reset({
                 accountId: f.account.accountId, subjectKey: f.preparation.subjectKey, tenantIds: tenant
             });
-            expect(await count('dashboard_deferred_agreements')).toBe(0);
+            expect(await count('dashboard_deferred_agreements')).toBe(1);
             expect(await count('dashboard_representative_details')).toBe(0);
             expect(await count('dashboard_starter_scopes')).toBe(1);
             httpJson(await h.ncscPost(createCommand()), 201);
@@ -55,7 +57,9 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
             httpJson(await h.ncscPost(submitCommand()), 200);
             const session = await h.get('session').set('X-NoFries-Dashboard-Capabilities', 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1');
             expect(session.body.questionnaireExportGateAvailable).toBe(true);
-            httpJson(await read(h), 403, 'representative_details_access_denied');
+            expect((await read(h)).body.status).toBe('details_required');
+            httpJson(await h.post('contact-requests', { operationId: nextId(), topic: 'results', consentVersion: 'contact-request-v1' })
+                .set(generationHeader, h.generation), 409, 'representative_details_required');
             httpJson(await save(h), 403, 'representative_details_access_denied');
             expect((await pool.query('SELECT 1 FROM nofries.dashboard_representative_details WHERE tenant_id=$1', tenant)).rowCount).toBe(0);
             await loginClean();

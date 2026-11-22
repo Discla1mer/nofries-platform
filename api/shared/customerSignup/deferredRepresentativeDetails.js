@@ -1,6 +1,6 @@
 'use strict';
 
-const { fields, copy, freeze, hash, equal, instant } = require('../appLifecycle/dashboardRuntimeRecords');
+const { fields, copy, freeze, hash, equal, instant, id } = require('../appLifecycle/dashboardRuntimeRecords');
 const { requireTenantRequestContext } = require('../appLifecycle/tenantRequestContext');
 const { retainedStarterPreparation, retainedStarterActivation } = require('./starterProvisioning');
 const { starterRepresentativeDetails } = require('./starterSetupDetails');
@@ -29,7 +29,7 @@ async function agreement(tx, context) {
         // hidden enrolled scope for a historical account and waive its gate.
         const marker = (await tx.query(`SELECT organisation_id FROM nofries.dashboard_deferred_agreements
             WHERE tenant_id=$1 AND organisation_id=$2`, [tenantId, organisationId])).rows;
-        if (marker.length) fail('representative_details_access_denied', 403);
+        if (marker.length) return { memberScope: { tenantId, organisationId } };
         return null;
     }
     if (rows.length !== 1) fail();
@@ -57,14 +57,40 @@ async function readEvidence(tx, link) {
         !equal(value.details, normaliseRepresentativeDetails(value.details))) fail();
     return value;
 }
+// Only the readiness result leaves this transaction. The marker distinguishes
+// enrolled organisations from historical ones; completion must match the
+// selected scope and the original acceptance receipt, not the current member.
+async function memberReady(tx, scope, resolvedAt) {
+    const { rows } = await tx.query(`SELECT d.payload, d.payload_sha256, a.payload->'receipt' AS receipt
+        FROM nofries.dashboard_representative_details d
+        JOIN nofries.signup_acceptance_receipts a ON a.tenant_id=d.tenant_id
+            AND a.organisation_id=d.organisation_id AND a.receipt_id=d.receipt_id AND a.subject_key=d.subject_key
+        WHERE d.tenant_id=$1 AND d.organisation_id=$2`, [scope.tenantId, scope.organisationId]);
+    if (!rows.length) return false;
+    if (rows.length !== 1) fail();
+    const { payload, payload_sha256, receipt } = rows[0];
+    const value = fields(copy(payload, 16384), ['link', 'details', 'recordedAt']);
+    const expected = { schemaVersion: 1, ...scope, subjectKey: receipt.subjectKey,
+        receiptId: receipt.receiptId, acceptanceSha256: hash(receipt), scheduleId: receipt.scheduleId,
+        scheduleDigest: receipt.scheduleDigest, authorityEvidenceId: id(value.link.authorityEvidenceId) };
+    if (receipt.tenantId !== scope.tenantId || receipt.organisationId !== scope.organisationId ||
+        receipt.acceptedAt > Date.parse(resolvedAt) || instant(value.recordedAt) > resolvedAt ||
+        payload_sha256 !== hash(value) || !equal(value.link, expected) ||
+        !equal(value.details, normaliseRepresentativeDetails(value.details))) fail();
+    return true;
+}
 async function representativeDetails({ database, context: input, clock, audit, enrolledScope }, detailsInput) {
     const context = requireTenantRequestContext(input);
     const details = detailsInput === undefined ? null : normaliseRepresentativeDetails(detailsInput);
     return database.withTenantTransaction(context.scope.tenantId, async tx => {
         const link = await agreement(tx, context);
+        if (link?.memberScope) {
+            if (details) fail('representative_details_access_denied', 403);
+            return { schemaVersion: 1, status: await memberReady(tx, link.memberScope, context.resolvedAt) ? 'ready' : 'details_required' };
+        }
         if (!link) {
             if (details) fail('representative_details_not_required', 409);
-            // Reset removes the lookup marker. A subject-private scope can also
+            // If the lookup marker is unavailable, a subject-private scope can also
             // be invisible here. Neither overrides the retained enrollment.
             if (enrolledScope?.tenantId === context.scope.tenantId &&
                 enrolledScope.organisationId === context.scope.organisationId) fail('representative_details_access_denied', 403);
@@ -102,6 +128,6 @@ async function representativeDetails({ database, context: input, clock, audit, e
 // or notifying. No browser assertion can satisfy the gate.
 async function requireRepresentativeDetails(tx, context) {
     const link = await agreement(tx, context);
-    if (link && !await readEvidence(tx, link)) fail('representative_details_required', 409);
+    if (link && !(link.memberScope ? await memberReady(tx, link.memberScope, context.resolvedAt) : await readEvidence(tx, link))) fail('representative_details_required', 409);
 }
 module.exports = { RepresentativeDetailsError, normaliseRepresentativeDetails, representativeDetails, requireRepresentativeDetails };
