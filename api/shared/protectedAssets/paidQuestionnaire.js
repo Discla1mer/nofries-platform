@@ -7,7 +7,7 @@
 
     // The host supplies the authorised GET/start envelope and pinned publication,
     // and disposes this mount whenever the organisation, session or selection changes.
-    function mount(container, { record, publication, isCurrent, mutate, showResults }) {
+    function mount(container, { record, publication, isCurrent, mutate, showResults }, appendQuestionHelp) {
         const doc = container.ownerDocument;
         function node(tag, text, className) {
             const el = doc.createElement(tag);
@@ -206,6 +206,7 @@
                     refresh();
                 };
                 question.append(reasonLabel);
+                if (appendQuestionHelp) appendQuestionHelp(question, current.id);
                 const examples = current.guidance?.evidenceExamples || [];
                 if (examples.length) {
                     const details = node('details', undefined, 'ncsc-question-help');

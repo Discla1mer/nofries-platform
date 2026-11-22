@@ -228,4 +228,12 @@ test('the pinned renderer integrity matches every packaged paid renderer file', 
         const bytes = fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets', file));
         expect('sha256-' + createHash('sha256').update(bytes).digest('base64')).toBe(rendererIntegrity[name]);
     }
+    // The ISO questionnaire pin covers the shared questionnaire followed by the ISO glossary.
+    const { paidFrameworks, rendererAsset } = require('../api/shared/protectedAssets/dashboardRegistry');
+    const iso = paidFrameworks.find(ref => ref.profileId === 'nf-iso-27001-2022-readiness');
+    const directory = path.join(__dirname, '../api/shared/protectedAssets');
+    const isoBytes = Buffer.concat([fs.readFileSync(path.join(directory, 'paidQuestionnaire.js')),
+        fs.readFileSync(path.join(directory, 'isoQuestionnaireGlossary.js'))]);
+    expect(rendererAsset(iso, 'questionnaire')).toEqual({ withIsoTerms: true,
+        integrity: 'sha256-' + createHash('sha256').update(isoBytes).digest('base64') });
 });
