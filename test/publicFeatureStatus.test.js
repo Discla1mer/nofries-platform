@@ -78,7 +78,12 @@ describe('public feature-status registry', () => {
     });
 
     test('the pricing page does not present a non-live capability as available', () => {
-        const text = publicText(readPage('pricing.html'));
+        const html = readPage('pricing.html');
+        // Names are allowed only in the explicitly unavailable planned paragraph,
+        // whose wording and absence of prices are guarded separately.
+        const planned = html.match(/<p id="pricing-future-assessments">[\s\S]*?<\/p>/)[0];
+        expect(publicText(planned)).toContain('self-assessments are planned and are not available yet.');
+        const text = publicText(html.replace(planned, ''));
         for (const item of notLive) {
             for (const claim of item.availabilityClaims) {
                 expect([item.id, text.match(new RegExp(claim, 'i'))?.[0] || null]).toEqual([item.id, null]);
