@@ -5,7 +5,7 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
 
-    function mount(root, { ref, element, button, back, host, win }) {
+    function records(ref, host) {
         const collection = host.prefix + '/assessments';
         async function readPage(after) {
             const id = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
@@ -37,6 +37,83 @@
             return envelope;
         }
 
+        return { readPage, readRecord };
+    }
+
+    // Collection pages are ordered by ID. Update the newest draft and submission
+    // independently, including when the user chooses to inspect another page.
+    async function overview(root, { ref, element, button, host, open }) {
+        const { readPage, readRecord } = records(ref, host);
+        let cursor = null, draft = null, submitted = null, busy = false;
+        const section = element('section', 'dashboard-panel');
+        const title = element('h2', '', ref.label + ' progress');
+        const content = element('div');
+        const more = button('Check more saved assessments', load);
+        section.append(title, content, more);
+        function recent(prior, row) {
+            if (!prior || row.updatedAt > prior.updatedAt) return row;
+            return row.updatedAt === prior.updatedAt && row.assessmentId > prior.assessmentId ? row : prior;
+        }
+        async function load() {
+            if (busy || !host.live()) return;
+            busy = true; more.disabled = true;
+            try {
+                const page = await readPage(cursor);
+                const publication = page.publication;
+                if (!Array.isArray(publication.questions) || !publication.questions.length) throw host.invalid();
+                for (const row of page.assessments) {
+                    if (row.status === 'submitted') submitted = recent(submitted, row);
+                    else if (host.editable && ['created', 'in-progress'].includes(row.status)) draft = recent(draft, row);
+                }
+                const questions = new Set(publication.questions.map(q => q.id));
+                const rows = [];
+                for (const header of [draft, submitted].filter(Boolean)) {
+                    const record = await readRecord(header.assessmentId, 'read');
+                    const a = record.assessment;
+                    if (!/^[a-f0-9]{64}$/.test(publication.catalogueSha256) || !/^[a-f0-9]{64}$/.test(publication.sourceCatalogueSha256) ||
+                        a.revision !== header.revision || a.status !== header.status ||
+                        a.profileRef.catalogueSha256 !== publication.catalogueSha256 ||
+                        a.profileRef.sourceCatalogueSha256 !== publication.sourceCatalogueSha256) throw host.invalid();
+                    const answered = new Set(a.responses.map(answer => answer.itemId));
+                    if (a.responses.length !== answered.size || a.responses.some(answer => !questions.has(answer.itemId))) throw host.invalid();
+                    const sealed = header === submitted;
+                    const row = element('div');
+                    row.append(element('h3', '', sealed ? 'Last submission' : 'Last saved draft'),
+                        element('p', '', answered.size + ' of ' + publication.questions.length + ' answered · ' + header.updatedAt.slice(0, 10) + ' UTC'));
+                    if (sealed) {
+                        const reader = await host.renderer('results');
+                        const list = element('ul');
+                        for (const group of reader.groups(record, publication)) {
+                            list.append(element('li', '', group.title + ' — ' + group.readiness));
+                        }
+                        row.append(element('h4', '', 'Readiness by group'), list);
+                    }
+                    const link = element('a', 'dashboard-text-button', (sealed ? 'View results for ' : 'Resume ') + ref.label);
+                    link.href = '#cyber-security';
+                    link.addEventListener('click', event => {
+                        event.preventDefault();
+                        if (host.live()) open(header.assessmentId);
+                    });
+                    row.append(link); rows.push(row);
+                }
+                if (!host.live()) return;
+                cursor = page.nextAfterAssessmentId;
+                if (!rows.length) rows.push(element('p', '', cursor ? 'No current assessment on these pages.' :
+                    host.editable ? 'No saved assessments yet.' : 'No submitted assessments yet.'));
+                if (cursor) rows.push(element('p', 'dashboard-muted', 'Showing the latest on the pages checked so far.'));
+                content.replaceChildren(...rows);
+                more.hidden = cursor === null; more.disabled = false;
+                if (!root.contains(section)) root.append(section);
+            } catch (_) {
+                // An incomplete or refused read must clear any previously shown figures.
+                root.replaceChildren();
+            } finally { busy = false; }
+        }
+        await load();
+    }
+
+    function mount(root, { ref, element, button, back, host, win, assessmentId }) {
+        const { readPage, readRecord } = records(ref, host);
         const heading = element('h2', '', ref.label); heading.tabIndex = -1;
         const list = element('ul', 'ncsc-assessment-list'), status = element('p');
         status.setAttribute('role', 'status');
@@ -138,8 +215,13 @@
                 unavailable();
             } finally { listing = false; }
         }
-        load(null);
+        if (assessmentId === undefined) load(null);
+        else readPage(null).then(page => {
+            if (!host.live()) return;
+            publication = page.publication;
+            return showRecord(assessmentId);
+        }).catch(unavailable);
         return controller;
     }
-    return Object.freeze({ mount });
+    return Object.freeze({ mount, overview });
 }));
