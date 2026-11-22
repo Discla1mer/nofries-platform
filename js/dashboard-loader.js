@@ -42,6 +42,12 @@
     const elements = {};
     Object.keys(ids).forEach(function (key) { elements[key] = document.getElementById(ids[key]); });
     if (Object.keys(elements).some(function (key) { return !elements[key]; })) return;
+    // Fixed public return targets contain no client, session or assessment data.
+    const exampleReturns = { '#cyber-security/nist-example': 'nist', '#cyber-security/iso-example': 'iso' };
+    const exampleReturn = exampleReturns[window.location.hash];
+    if (exampleReturn) window.history.replaceState(Object.assign({}, window.history.state,
+        { nofriesExampleFocus: exampleReturn }), '', '#cyber-security');
+    let restoreExampleFocus = true;
     const accountMenu = document.getElementById('dashboardAccountMenu');
     // Escape closes the account menu and returns focus to its summary.
     if (accountMenu && typeof accountMenu.addEventListener === 'function') accountMenu.addEventListener('keydown', function (event) {
@@ -454,6 +460,8 @@
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'representativeDetailsAvailable') ? ['representativeDetailsAvailable'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'questionnaireExportGateAvailable') ? ['questionnaireExportGateAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsAvailable') ? ['contactRequestsAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
             Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
@@ -463,6 +471,8 @@
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
             Object.prototype.hasOwnProperty.call(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant') ||
             Object.prototype.hasOwnProperty.call(value, 'workQueueAvailable') && (value.workQueueAvailable !== true || value.accountType !== 'consultant') ||
+            Object.prototype.hasOwnProperty.call(value, 'representativeDetailsAvailable') && (value.representativeDetailsAvailable !== true || value.purpose !== 'customer') ||
+            Object.prototype.hasOwnProperty.call(value, 'questionnaireExportGateAvailable') && (value.questionnaireExportGateAvailable !== true || value.representativeDetailsAvailable !== true) ||
             Object.prototype.hasOwnProperty.call(value, 'contactRequestsAvailable') && (value.contactRequestsAvailable !== true || value.purpose !== 'customer') ||
             !canonicalDate(value.expiresAt) || typeof value.generation !== 'string' || !DIGEST.test(value.generation) ||
             value.selectedBindingId !== null && (typeof value.selectedBindingId !== 'string' || !UUID.test(value.selectedBindingId))) throw invalid();
@@ -471,13 +481,15 @@
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
+            ...(value.representativeDetailsAvailable === true ? { representativeDetailsAvailable: true } : {}),
+            ...(value.questionnaireExportGateAvailable === true ? { questionnaireExportGateAvailable: true } : {}),
             ...(value.contactRequestsAvailable === true ? { contactRequestsAvailable: true } : {}),
             ...(value.accountType ? { accountType: value.accountType } : {}),
             ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}),
             ...(value.accountName ? { accountName: value.accountName } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsAvailable', 'accountType', 'accountLabel', 'accountName']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsAvailable', 'representativeDetailsAvailable', 'questionnaireExportGateAvailable', 'accountType', 'accountLabel', 'accountName']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -583,7 +595,7 @@
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 account-identity-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
@@ -824,7 +836,8 @@
         if (model.admissionGranted !== false || model.providerAccessGranted !== false) throw invalid();
         cycle.selectedOrganisationName = model.context.displayName;
         const cyberReady = model.modules.some(function (item) { return item.key === 'cyber_security' && item.state === 'ready'; });
-        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1]) : null;
+        const gateOwnExports = value.questionnaireExportGateAvailable === true && value.accountType === 'company' && model.audience !== 'Scoped advisor';
+        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1], gateOwnExports) : null;
         const improvementReady = model.modules.some(function (item) { return item.key === 'improvement_plan' && item.state === 'ready'; });
         const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId, cyber) : null;
         const witnessed = await sessionForReconcile(cycle, OPENING_MESSAGE, OPENING_DETAIL);
@@ -856,12 +869,21 @@
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}),
+            ...(fresh.representativeDetailsAvailable === true ? { representativeDetails: detailsPort(cycle, snapshot) } : {}),
             ...(fresh.contactRequestsAvailable === true ? { contactRequest: contactSender(cycle, snapshot) } : {}) });
         if (!controller || typeof controller.destroy !== 'function') throw invalid();
         if (cycle.openSelection && fresh.purpose === 'customer') saveLastOrganisation(fresh.selectedBindingId, fresh.expiresAt);
         elements.app.hidden = false;
         cycle.busy = false;
         show(cycle, 'ready');
+        if (restoreExampleFocus) {
+            restoreExampleFocus = false;
+            const key = window.history.state && window.history.state.nofriesExampleFocus;
+            if (window.location.hash === '#cyber-security' && ['nist', 'iso'].includes(key)) {
+                const link = document.getElementById('framework-example-' + key);
+                if (link && elements.app.contains(link)) link.focus();
+            }
+        }
         if (fresh.accountType === 'consultant') portfolioControls(cycle);
     }
     let enquiryScripts;
@@ -1562,7 +1584,7 @@
                 .then(function (response) { if (!response || !response.ok) funnelOff = true; }, function () { funnelOff = true; });
         } catch (_) { funnelOff = true; }
     }
-    async function cyberOptions(cycle, snapshot, organisationId, preparedValue) {
+    async function cyberOptions(cycle, snapshot, organisationId, preparedValue, questionnaireExportGateAvailable = false) {
         const value = preparedValue || requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
         if (!current(cycle)) throw invalid();
         const contract = cyberContract(value);
@@ -1594,6 +1616,9 @@
         const mountCyber = function (root, presentation) {
             if (!current(cycle)) throw invalid();
             return questionnaire.mount(root, { window: window, metadata: value.metadata, ...profileMetadata, client: client,
+                ...(questionnaireExportGateAvailable ? { questionnaireExportGate: function (content) {
+                    return window.NoFriesDashboard.detailsGate(document, detailsPort(cycle, snapshot), content, 'questionnaire');
+                } } : {}),
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
@@ -1818,6 +1843,8 @@
                         // Only the default choice is remembered, never a manual one.
                         else if (!pictureSelection) savePictureLatestHint(snapshot.selectedBindingId, assessmentId);
                     },
+                    detailsGate: presentation.detailsGate,
+                    boardExportGate: questionnaireExportGateAvailable ? presentation.detailsGate : undefined,
                     openCyber: presentation.openCyber,
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
@@ -1893,6 +1920,17 @@
         if (current(cycle) && !cycle.authorityPending && picture && typeof picture.actionSummary === 'function' &&
             picture.actionSummary(result) !== null) informationRead(cycle);
         return result;
+    }
+    function detailsPort(cycle, snapshot) {
+        const isCurrent = () => current(cycle) && !cycle.authorityPending;
+        async function perform(body) {
+            if (!isCurrent()) throw invalid();
+            const result = await request(cycle, '/api/dashboard/representative-details', body, snapshot.generation);
+            if (!isCurrent() || result.status !== 200 || !fields(result.value, ['schemaVersion', 'status']) ||
+                result.value.schemaVersion !== 1 || !['ready', 'details_required', 'result_required'].includes(result.value.status)) throw invalid();
+            return result.value;
+        }
+        return { read: () => perform(), save: perform, isCurrent };
     }
     // #409: one "Ask No Fries to contact me" action. A fresh operation id per
     // user action; a network failure or 503 retries that same id, which the
@@ -2365,7 +2403,9 @@
             !cycle.clientMutationPending) { revalidate(cycle); return; }
         restore();
     });
-    window.addEventListener('pageshow', function (event) { if (event && event.persisted) restore(); });
+    window.addEventListener('pageshow', function (event) {
+        if (event && event.persisted) { restoreExampleFocus = true; restore(); }
+    });
     window.addEventListener('beforeunload', function (event) {
         if (!active || !current(active) || !active.session || Date.parse(active.session.expiresAt) <= Date.now()) return;
         const draft = clientDraft(active);
