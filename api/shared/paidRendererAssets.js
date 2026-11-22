@@ -13,20 +13,25 @@ function parseAsset(route, query) {
     const [, profileId, version, name] = match;
     const ref = registry.paidFrameworks.find(row => row.profileId === profileId && row.version === version);
     const params = /^v=([A-Za-z0-9_-]{43})&s=([a-f0-9]{32})\.([a-f0-9]{64})$/.exec(query || '');
-    const integrity = registry.rendererIntegrity[name];
-    if (!ref || !params || params[1] !== Buffer.from(integrity.slice(7), 'base64').toString('base64url')) return null;
-    return { ref, name, integrity, nonce: params[2], fingerprint: params[3] };
+    const asset = registry.rendererAsset(ref, name);
+    if (!asset || !params || params[1] !== Buffer.from(asset.integrity.slice(7), 'base64').toString('base64url')) return null;
+    return { ref, name, integrity: asset.integrity, nonce: params[2], fingerprint: params[3] };
 }
 
 function matchesSelection(asset, generation) {
     const message = registry.rendererSelection(generation, asset.ref, asset.name, asset.nonce);
-    return createHash('sha256').update(message).digest('hex') === asset.fingerprint;
+    return message !== null && createHash('sha256').update(message).digest('hex') === asset.fingerprint;
 }
 
 function packagedAsset(asset) {
-    const filename = path.join(__dirname, 'protectedAssets', files[asset.name]);
+    const reviewed = registry.rendererAsset(asset.ref, asset.name);
+    if (!reviewed || reviewed.integrity !== asset.integrity) return null;
+    const directory = path.join(__dirname, 'protectedAssets');
     let bytes;
-    try { bytes = fs.readFileSync(filename); } catch (error) {
+    try {
+        bytes = fs.readFileSync(path.join(directory, files[asset.name]));
+        if (reviewed.withIsoTerms) bytes = Buffer.concat([bytes, fs.readFileSync(path.join(directory, 'isoQuestionnaireGlossary.js'))]);
+    } catch (error) {
         if (error.code === 'ENOENT') return null;
         throw error;
     }
