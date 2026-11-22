@@ -159,6 +159,7 @@
                 item.key === 'improvement_plan' && typeof options.mountImprovement === 'function';
             return implemented && stateFor(item.key) === 'ready';
         });
+        const showFrameworkComparison = Array.isArray(options.paidFrameworks) && options.paidFrameworks.length === 0;
         const secondary = available.filter(function (item) { return !primary.includes(item); });
         const pictureAvailable = typeof options.mountPicture === 'function' && model.modules.some(function (item) {
             return item.key === 'cyber_security' && item.state === 'ready';
@@ -195,6 +196,7 @@
         let queuedEvent = null;
         let unmanagedBoundaryHash = null;
         let planBaselineToken = 0;
+        let overviewHosts = [];
         let informationAt = model.generatedAt;
         let informationStamp = null;
         // A history pointer is a read hint, never authority or saved answers.
@@ -421,6 +423,7 @@
             return promise;
         }
         function render(initialAssessmentId, sourceAssessment) {
+            clearOverviewHosts();
             planBaselineToken += 1;
             if (child) { child.destroy(); child = null; }
             main.replaceChildren();
@@ -437,8 +440,10 @@
             }
             if (stateFor(current.key) === 'disabled') {
                 main.append(panel('This module is temporarily unavailable', 'Your subscription includes this module, but it has not been enabled. Other included modules remain available.'));
-            } else if (current.key === 'overview') renderOverview();
-            else if (current.key === 'services') renderServices();
+            } else if (current.key === 'overview') {
+                if (showFrameworkComparison) appendFrameworkComparison(main);
+                renderOverview();
+            } else if (current.key === 'services') renderServices();
             else if (current.key === 'cyber_security' && stateFor(current.key) === 'ready' && typeof options.mountCyber === 'function') renderCyber(initialAssessmentId);
             else if (current.key === 'improvement_plan' && stateFor(current.key) === 'ready' && typeof options.mountImprovement === 'function') renderImprovement(sourceAssessment);
             else renderModule(planBaselineToken);
@@ -476,6 +481,7 @@
             }
             const connectedPicture = pictureAvailable;
             if (connectedPicture) renderPicture();
+            renderFrameworkOverview();
             if (model.summary.state === 'stale') {
                 const notice = panel('This snapshot needs a refresh', 'These figures are historical. Reopen through the authenticated dashboard before relying on them.');
                 notice.classList.add('dashboard-warning'); main.append(notice);
@@ -527,6 +533,23 @@
             posture.append(metrics);
             const grid = element('div', 'dashboard-overview-grid'); grid.append(attention, posture); main.append(grid);
         }
+        function clearOverviewHosts() {
+            for (const host of overviewHosts) host.destroy();
+            overviewHosts = [];
+        }
+        function renderFrameworkOverview() {
+            if (!options.paidFrameworks?.length || typeof options.paidHost !== 'function') return;
+            for (const ref of registry.paidFrameworks.filter(ref => options.paidFrameworks.some(row => registry.sameFramework(ref, row)))) {
+                const slot = element('div');
+                main.append(slot);
+                const host = options.paidHost(ref, () => active() && current.key === 'overview' && main.contains(slot));
+                overviewHosts.push(host);
+                host.renderer('collection').then(factory => {
+                    if (host.live()) return factory.overview(slot, { ref, element, button, host,
+                        open: assessmentId => navigate('cyber-security', true, undefined, { ref, assessmentId }) });
+                }).catch(() => slot.replaceChildren());
+            }
+        }
         function renderPicture() {
             const childRoot = element('div', 'dashboard-picture-workspace'); main.append(childRoot);
             const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
@@ -556,6 +579,7 @@
         }
         function openAttention(index) {
             const item = model.summary.attention[index]; if (!item || disposed) return;
+            clearOverviewHosts();
             if (child) { child.destroy(); child = null; }
             main.replaceChildren();
             const back = button('Back to Overview', function () {
@@ -573,7 +597,9 @@
         }
         function renderCyber(initialAssessmentId) {
             const childRoot = element('div', 'dashboard-cyber-workspace'); main.append(childRoot);
-            if (options.paidFrameworks && initialAssessmentId === undefined && !validCyberLocation(cyberLocation)) {
+            if (initialAssessmentId?.ref && options.paidFrameworks?.some(row => registry.sameFramework(row, initialAssessmentId.ref))) {
+                openFramework(childRoot, initialAssessmentId.ref, initialAssessmentId.assessmentId);
+            } else if (options.paidFrameworks && initialAssessmentId === undefined && !validCyberLocation(cyberLocation)) {
                 renderFrameworkPicker(childRoot);
             } else mountFreeCyber(childRoot, initialAssessmentId);
         }
@@ -590,6 +616,19 @@
             if (child) child.requestLeave(showPicker);
             else showPicker();
         }
+        function appendFrameworkComparison(root) {
+            const line = element('p', '', 'NIST CSF 2.0 shows gaps across six functions, and the ISO 27001 readiness self-assessment shows which controls apply. ');
+            const link = element('a', '', 'Compare assessment options');
+            link.href = '/dashboard#cyber-security';
+            link.addEventListener('click', function (event) {
+                if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button > 0) return;
+                event.preventDefault();
+                if (current.key === 'cyber_security') backToFrameworkPicker();
+                else navigate('cyber-security', true);
+            });
+            line.append(link);
+            root.append(line);
+        }
         function renderFrameworkPicker(root) {
             const heading = element('h2', '', 'Choose an assessment');
             const cards = element('div', 'dashboard-service-cards');
@@ -603,7 +642,10 @@
                 back.focus();
             }));
             cards.append(free);
-            let hasLocked = false;
+            const examples = {
+                'nf-nist-csf-2-0-core': { href: '/fictional-nist-example.html', label: 'View a fictional NIST CSF 2.0 example' },
+                'nf-iso-27001-2022-readiness': { href: '/fictional-iso-example.html', label: 'View a fictional ISO 27001 example' }
+            };
             for (const ref of registry.paidFrameworks) {
                 const included = options.paidFrameworks.some(row => registry.sameFramework(row, ref));
                 const card = panel(ref.label, ref.description);
@@ -611,21 +653,48 @@
                 if (included) {
                     card.append(button('Open ' + ref.label, function () { openFramework(root, ref); }));
                 } else {
-                    hasLocked = true;
-                    const example = element('a', 'dashboard-button dashboard-button-secondary', 'View a fictional ISO 27001 example');
-                    example.href = '/fictional-iso-example.html';
-                    card.append(example);
+                    const preview = examples[ref.profileId];
+                    if (preview) {
+                        const example = element('a', 'dashboard-button dashboard-button-secondary', preview.label);
+                        example.href = preview.href;
+                        const focusKey = ref.profileId === 'nf-nist-csf-2-0-core' ? 'nist' : 'iso';
+                        example.id = 'framework-example-' + focusKey;
+                        example.addEventListener('click', function (event) {
+                            if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button > 0 || !active()) return;
+                            // Public UI identity only; each history entry keeps its own originating card.
+                            win.history.replaceState(Object.assign({}, win.history.state, { nofriesExampleFocus: focusKey }), '');
+                        });
+                        card.append(example);
+                    }
+                    const label = element('label', '', 'Invoice plan for ' + ref.label + ' ');
+                    const plan = element('select');
+                    plan.required = true;
+                    for (const [value, title] of [['', 'Choose a plan'], ['monthly', 'Monthly'], ['annual', 'Annual']]) {
+                        const option = element('option', '', title);
+                        option.value = value;
+                        plan.append(option);
+                    }
+                    label.append(plan);
+                    card.append(element('p', '', 'NZ$99 + GST per organisation per month or NZ$990 + GST per year (two months free).'), label);
+                    const contact = element('a', 'dashboard-button dashboard-button-secondary dashboard-framework-contact', 'Ask No Fries to set this up');
+                    contact.href = '/contact.html';
+                    if (options.openFrameworkEnquiry) contact.setAttribute('aria-haspopup', 'dialog');
+                    contact.addEventListener('click', function (event) {
+                        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button > 0 ||
+                            !active() || !main.contains(contact) || typeof options.openFrameworkEnquiry !== 'function') return;
+                        if (!plan.value) {
+                            event.preventDefault(); plan.focus(); plan.reportValidity(); return;
+                        }
+                        if (options.openFrameworkEnquiry(contact, ref, plan.value)) event.preventDefault();
+                    });
+                    card.append(contact);
                 }
                 cards.append(card);
             }
-            root.replaceChildren(heading, cards);
-            if (hasLocked) {
-                const contact = element('a', 'dashboard-button dashboard-button-secondary dashboard-framework-contact', 'Ask No Fries about the paid dashboard');
-                contact.href = '/contact.html';
-                root.append(contact);
-            }
+            const terms = element('p', '', 'NZ$99 + GST per organisation per month or NZ$990 + GST per year (two months free). One plan includes both the NIST CSF 2.0 and ISO 27001 readiness self-assessments. There is no per-framework charge. Both are included at no extra charge during the NZ$1,250 + GST 90-day engagement. Advisers pay the same rate per client organisation and we invoice the adviser. We invoice manually, then our staff enable access. No payment card is needed.');
+            root.replaceChildren(heading, terms, cards);
         }
-        function openFramework(root, ref) {
+        function openFramework(root, ref, assessmentId) {
             const back = button('Back to assessment choices', backToFrameworkPicker, 'dashboard-text-button');
             const status = element('p', '', 'Opening assessment…'); status.setAttribute('role', 'status');
             root.replaceChildren(back, status); back.focus();
@@ -640,7 +709,7 @@
                 commit(); return Promise.resolve(true);
             } };
             host.renderer('collection').then(factory => {
-                if (host.live()) mounted = factory.mount(root, { ref, element, button, back, host, win });
+                if (host.live()) mounted = factory.mount(root, { ref, element, button, back, host, win, assessmentId });
             }).catch(() => {
                 if (!disposed) status.textContent = 'This assessment is unavailable. Return to the assessment choices to try again.';
             });
@@ -648,6 +717,7 @@
         function mountFreeCyber(childRoot, initialAssessmentId) {
             try {
                 const presentation = { generation: generation };
+                if (showFrameworkComparison) presentation.appendFrameworkComparison = appendFrameworkComparison;
                 if (initialAssessmentId === undefined && validCyberLocation(cyberLocation)) {
                     presentation.initialAssessmentId = cyberLocation.assessmentId;
                     presentation.initialQuestionIndex = cyberLocation.questionIndex;
@@ -884,6 +954,7 @@
         }, destroy: function () {
             if (disposed) return;
             disposed = true;
+            clearOverviewHosts();
             if (child) { child.destroy(); child = null; }
             if (navigation) { navigation.resolve(false); navigation = null; }
             if (travelling) { travelling.resolve(false); travelling = null; }
