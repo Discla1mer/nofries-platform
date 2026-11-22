@@ -1768,7 +1768,7 @@ function registerRealPostgresTests() {
         require('./improvementPlanRecovery')({ resourceSetup,
             getPools: () => ({ ownerPool, controlPool, runtimePool, maintenancePool }), testUrl, maintenanceRole });
         // Runs wherever this native suite runs, including both CI PostgreSQL jobs.
-        require('./staffFrameworkMounted')({ resourceSetup, harness, NCSC_SUBJECT, identity, nextId,
+        require('./staffFrameworkMounted')({ resourceSetup, NCSC_SUBJECT, identity, nextId,
             pools: () => ({ controlPool, ownerPool }), runtimeRole });
         require('./paidRendererPicker')({ resourceSetup, NCSC_SUBJECT, nextId, identity });
         async function newCustomerActivationSetup({ shortWindow = false, memberLimit = null, memberRole = 'admin' } = {}) {
