@@ -35,9 +35,12 @@ function createAccountActionsRuntime(configuration, dashboard, authorise) {
                 sessionSha256: capture.sessionSha256, instanceId: capture.instanceId, restoreEpoch: capture.restoreEpoch,
                 identityPolicySha256: hash(dashboard.identityPolicy) };
         } };
-    const membership = createMembershipAction({ ...options, identityPolicy: dashboard.identityPolicy,
-        createRepository: (guard, allowed, context) => createAccountActionsRepository(pool, dashboard.clock, guard, allowed, context) });
+    const actionOptions = { ...options, identityPolicy: dashboard.identityPolicy,
+        createRepository: (guard, allowed, context) => createAccountActionsRepository(pool, dashboard.clock, guard, allowed, context) };
+    const membership = createMembershipAction(actionOptions);
+    const framework = require('./frameworkActions').createFrameworkAction(actionOptions);
     return Object.freeze({ execute(actor, input, invocation, action) {
+        if (action === 'framework-access') return framework(actor, input, invocation);
         if (!['suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(action)) throw new Error('dashboard_admin_unavailable');
         return membership.execute(actor, input, invocation, action);
     } });
