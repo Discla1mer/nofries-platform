@@ -26,6 +26,7 @@ const PERMISSIONS = freeze({
     'services.read': ['services'],
     // Ask No Fries to contact the organisation (#409). Normal roles only.
     'contact.request': ['overview'],
+    'representative.record': ['overview'],
     'membership.manage': ['overview'],
     'advisor.manage': ['overview']
 });

@@ -35,11 +35,39 @@
         ['ai_service_desk', 'AI-assisted service desk', 'Assistance does not authorise supplier actions.']
     ].map(function (row) { return Object.freeze({ key: row[0], label: row[1], description: row[2] }); }));
 
+    const isoProfileId = 'nf-iso-27001-2022-readiness';
+    const paidFrameworks = Object.freeze([
+        Object.freeze({ moduleId: 'cyber_security', profileId: 'nf-nist-csf-2-0-core', version: '2026-09-08.1',
+            label: 'NIST CSF 2.0', description: 'Review how your organisation manages cyber risk across the six NIST functions and see where work is needed.' }),
+        Object.freeze({ moduleId: 'cyber_security', profileId: isoProfileId, version: '2026-11-19.1',
+            label: 'ISO 27001 readiness self-assessment', description: 'Review how you manage information security, record which controls apply and identify gaps to work on.' })
+    ]);
+    // Public SRI pins for the fixed, separately admitted package files.
+    const rendererIntegrity = Object.freeze({
+        collection: 'sha256-4iLaelW+2xCFyCw72BCgqsvKP43Sp3r1on6sSARgIS8=',
+        questionnaire: 'sha256-1e+kBgIHqZ2ax8vSuP/ZMttXuWLh3ftNaHMvTmGu3S4=',
+        results: 'sha256-WGvpeAntN0ySg4UrW7pt7qhzTS8BqdmzjWaTR7oRjG8='
+    });
+    function rendererAsset(ref, name) {
+        if (!ref || !Object.hasOwn(rendererIntegrity, name) || !paidFrameworks.some(row => sameFramework(row, ref))) return null;
+        const withIsoTerms = name === 'questionnaire' && ref.profileId === isoProfileId;
+        const integrity = withIsoTerms ? 'sha256-S/h9JEL/Ud85YBGvyBy7iLDYH+Z+kLdNt9oS1XC5yQU=' : rendererIntegrity[name];
+        return { integrity, withIsoTerms };
+    }
+    function rendererSelection(generation, ref, name, nonce) {
+        const asset = rendererAsset(ref, name);
+        if (!asset) return null;
+        return JSON.stringify(['paid-renderer-v2', nonce, generation, ref.moduleId, ref.profileId, ref.version, name, asset.integrity]);
+    }
+    function sameFramework(left, right) {
+        return left.moduleId === right.moduleId && left.profileId === right.profileId && left.version === right.version;
+    }
+
     function resolveRoute(route, permitted) {
         const key = typeof route === 'string' ? route.replace(/^#/, '') : '';
         const matched = modules.find(function (item) { return item.route === (key === 'plan' ? 'improvement-plan' : key); });
         return matched && Array.isArray(permitted) && permitted.includes(matched.key) ? matched : null;
     }
-    return Object.freeze({ schemaVersion: 1, modules: modules, services: services,
-        groups: Object.freeze(['Home', 'Assess', 'Plan', 'Proof', 'More']), resolveRoute: resolveRoute });
+    return Object.freeze({ schemaVersion: 1, modules: modules, services: services, paidFrameworks: paidFrameworks, sameFramework: sameFramework,
+        rendererIntegrity: rendererIntegrity, rendererAsset: rendererAsset, rendererSelection: rendererSelection, groups: Object.freeze(['Home', 'Assess', 'Plan', 'Proof', 'More']), resolveRoute: resolveRoute });
 }));

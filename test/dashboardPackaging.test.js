@@ -335,6 +335,35 @@ for (const useExample of [false, true]) {
                 assert.ok(csp.includes("script-src-attr 'none'"));
                 assert.ok(!csp.includes("'unsafe-inline'"));
             }
+            // The first SWA match must preserve the API fallback response protections: the deployed paid framework
+            // route carries the same robots and CSP headers as the /api/* fallback.
+            const paidRoot = '/api/dashboard/frameworks/example-profile/1/';
+            const fallback = config.routes.find(rule => rule.route === '/api/*');
+            for (const [method, suffix] of [
+                ['GET', 'assets/collection.js'], ['GET', 'assets/questionnaire.js'], ['GET', 'assets/results.js'],
+                ['GET', 'assessments'], ['POST', 'assessments'], ['GET', 'assessments/fixture'],
+                ['POST', 'assessments/fixture/save'], ['POST', 'assessments/fixture/submit']
+            ]) {
+                const route = matched(method, paidRoot + suffix);
+                assert.equal(route?.route, '/api/dashboard/frameworks/*');
+                assert.deepEqual(route.allowedRoles ?? ['anonymous'], ['anonymous']);
+                assert.deepEqual(route.methods, ['GET', 'POST']);
+                assert.equal(route.rewrite, undefined);
+                assert.equal(route.redirect, undefined);
+                assert.equal(route.headers['X-Robots-Tag'], fallback.headers['X-Robots-Tag']);
+                assert.equal(route.headers['Content-Security-Policy'], fallback.headers['Content-Security-Policy']);
+                assertEquivalentHeaders({ 'X-Robots-Tag': route.headers['X-Robots-Tag'] }, { 'X-Robots-Tag': 'noindex, nofollow' });
+                assertEquivalentHeaders({ 'Cache-Control': route.headers['Cache-Control'] }, { 'Cache-Control': 'private, no-store, max-age=0' });
+                assertEquivalentHeaders(route.headers, fallback.headers);
+                assertEquivalentHeaders(route.headers, {
+                    'Cache-Control': 'no-store',
+                    'X-Robots-Tag': 'noindex, nofollow',
+                    'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+                });
+            }
+            assert.deepEqual(matched('DELETE', paidRoot + 'assessments')?.allowedRoles, ['authenticated']);
+            assert.equal(matched('DELETE', paidRoot + 'assessments/fixture'), fallback);
+            assert.equal(matched('GET', '/api/dashboard/frameworks-extra/example'), fallback);
             const endpoints = [
                 ['GET', '/api/organisation-setup/state'],
                 ['POST', '/api/organisation-setup/state'],

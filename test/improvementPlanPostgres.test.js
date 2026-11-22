@@ -201,9 +201,17 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             const privileges = (await runtimePool.query("SELECT has_table_privilege(current_user,$1,'SELECT') AS read,has_table_privilege(current_user,$1,'INSERT') AS insert,has_table_privilege(current_user,$1,'UPDATE') AS update,has_table_privilege(current_user,$1,'DELETE') AS delete,has_table_privilege(current_user,$1,'TRUNCATE') AS truncate", [`nofries.${table}`])).rows[0];
             expect(privileges).toEqual({ read: true, insert: true, update: table.endsWith('heads'), delete: false, truncate: false });
         }
+        const trigger = (await ownerPool.query(`SELECT p.prosecdef AS definer,
+            EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f',p.proowner))) a
+                    WHERE a.grantee=0 AND a.privilege_type='EXECUTE') AS public_execute,
+            has_function_privilege('nofries_runtime',p.oid,'EXECUTE') AS runtime_execute,
+            has_function_privilege('nofries_account_wipe',p.oid,'EXECUTE') AS wipe_execute
+            FROM pg_proc p WHERE p.oid='nofries.check_plan_gap_source()'::regprocedure`)).rows;
+        expect(trigger).toEqual([{ definer: false, public_execute: false, runtime_execute: false, wipe_execute: false }]);
         const keys = (await ownerPool.query("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid='nofries.dashboard_improvement_revisions'::regclass AND contype='f'")).rows;
-        expect(keys).toHaveLength(2);
-        expect(keys.some(row => row.definition.includes('assessment_id, assessment_revision, assessment_sha256'))).toBe(true);
+        expect(keys).toHaveLength(3);
+        expect(keys.some(row => row.definition.includes('ncsc_assessment_id, assessment_revision, assessment_sha256) REFERENCES nofries.dashboard_ncsc_assessment_revisions'))).toBe(true);
+        expect(keys.some(row => row.definition.includes('paid_profile_id, paid_profile_version, assessment_id, assessment_revision, assessment_sha256) REFERENCES nofries.dashboard_framework_revisions'))).toBe(true);
         expect(keys.some(row => row.definition.includes('plan_id, parent_revision, parent_sha256'))).toBe(true);
         expect((await ownerPool.query("SELECT migration_id FROM nofries.schema_migrations WHERE migration_id ILIKE '%improvement%'")).rows)
             .toEqual([{ migration_id: '0016_dashboard_improvement_plans.sql' }]);
@@ -998,6 +1006,29 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             const read = await restarted.readImprovementPlan(example.context, { planId: 'plan-v2' });
             expect(read.plan).toEqual(assigned.plan);
             expect(await restarted.executeImprovementPlan(example.context, generateFor(submitted, 'plan-v2'))).toEqual(created);
+        });
+
+        test('0032 upgrades retained NCSC v1 and v2 plans with identical payloads, heads and replay results', async () => {
+            const v1 = await generated(), v2 = await organisation();
+            const submitted = await submitV2(v2, 'historical-v2');
+            const request = generateFor(submitted, 'historical-plan');
+            const stored = await repository.executeImprovementPlan(v2.context, request);
+            const db = await ownerPool.connect();
+            try {
+                await db.query('BEGIN');
+                await db.query(fs.readFileSync(path.join(__dirname, '../database/proposals/0032-paid-gap-sources-rollback.sql'), 'utf8'));
+                const snapshot = async table => (await db.query(`SELECT tenant_id, organisation_id, plan_id, revision, payload_sha256
+                    ${table === TABLES[0] ? ', payload' : ''} FROM nofries.${table} ORDER BY tenant_id, organisation_id, plan_id, revision`)).rows;
+                const revisions = await snapshot(TABLES[0]), heads = await snapshot(TABLES[1]);
+                await db.query(fs.readFileSync(path.join(__dirname, '../database/migrations/0032_paid_gap_sources.sql'), 'utf8'));
+                expect(await snapshot(TABLES[0])).toEqual(revisions);
+                expect(await snapshot(TABLES[1])).toEqual(heads);
+                await db.query('COMMIT');
+            } catch (error) {
+                await db.query('ROLLBACK'); throw error;
+            } finally { db.release(); }
+            expect(await repository.executeImprovementPlan(v1.example.context, generate(v1.example))).toEqual(v1.initial);
+            expect(await repository.executeImprovementPlan(v2.context, request)).toEqual(stored);
         });
 
         test('flag turned off again: a v2 plan is not read and no v2 plan is generated, and both work once it is back on', async () => {
