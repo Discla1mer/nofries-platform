@@ -1,12 +1,12 @@
 # Grant or revoke one paid assessment
 
-**Held for review. Rehearse only with fictional accounts on disposable loopback.** Each change covers one organisation, current product and assessment version.
+**Paid access is off by default (`NOFRIES_PAID_FRAMEWORKS_ENABLED`). Rehearse only with fictional accounts on disposable loopback.** Each change covers one organisation, current product and assessment version.
 
 ## Before you start
 
 Sign in as a workforce admin on both staff allowlists, with a current operator session. Staff console, account lookup, account actions and `NOFRIES_PAID_FRAMEWORKS_ENABLED` must each be exactly `true` (paid defaults off). The customer needs active membership and product, enabled dashboard and Cyber Security module, a current session and assessment permission. [Staff console settings](staff-admin.md#turn-it-on)
 
-Joel must approve migrations 0028–0034 in order. After 0034, the application login needs separate approval for `nofries_framework_operator` membership with SET true, INHERIT false and ADMIN false. A migration creator’s ADMIN-only membership is separate. Release and activation also need approval. [Approval order and checks](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7024473266)
+Migrations 0028–0034 are applied, and the application login holds `nofries_framework_operator` SET-only (SET true, INHERIT false, ADMIN false). Turning paid assessments on still needs owner approval. [Approval order and checks](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7024473266)
 
 ## In the staff console
 
@@ -34,4 +34,4 @@ Use a separate customer session in the selected organisation. Open the Cyber Sec
 
 Repeat for both profiles. Check NCSC still opens and a second, unentitled organisation has no paid selection.
 
-**Check the private staff record.** Get `operationId` from the local approval response. Under `dashboard-admin-framework-access/<operationId>/`, match `approval.json`, `attempt.json` and `outcome.json` to the staff subject, organisation, profile/version, action and reason. Expect `succeeded`. **Outcome unconfirmed?** Stop. SQL may have committed before the success record. Reconcile the same operation ID in `nofries.dashboard_paid_framework_access` with the available private records before any retry.
+**Check the private staff record.** Get `operationId` from the local approval response. Under `dashboard-admin-framework-access/<operationId>/`, match `approval.json`, `attempt.json` and `outcome.json` to the staff subject, organisation, profile/version, action and the reason's SHA-256 digest. The plaintext reason is not stored. Expect `succeeded`. **Outcome unconfirmed?** Stop. SQL may have committed before the success record. Reconcile the same operation ID in `nofries.dashboard_paid_framework_access` with the available private records before any retry.
