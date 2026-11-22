@@ -67,7 +67,7 @@ describe('public feature-status registry', () => {
         }
     });
 
-    test('the roadmap lists only live capabilities under Live', () => {
+    test('the roadmap lists only live capabilities under Done', () => {
         const live = publicText(sectionBody(readPage('roadmap.html'), 'roadmap-live'));
         for (const item of notLive) {
             if (item.roadmapTitle) expect([item.id, live.includes(item.roadmapTitle)]).toEqual([item.id, false]);
