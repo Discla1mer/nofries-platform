@@ -14,6 +14,8 @@ function renderChangelog(data = readChangelog()) {
         `<p class="home-lead">${escape(data.lead)}</p><p>${escape(data.notice)}</p>`,
         '<p><a href="/roadmap.html">Explore the roadmap</a>.</p></header>'];
     for (const [key, label] of [['published', 'Published information and changes'], ['planned', 'Planned — not available yet']]) {
+        // An empty planned list renders no section: planned work then lives only on the roadmap.
+        if (key === 'planned' && !(data.planned || []).length) continue;
         lines.push(`<section aria-labelledby="changelog-${key}"><h2 id="changelog-${key}">${label}</h2>`);
         // The period labels published entries only; planned work stays undated.
         if (key === 'published') lines.push(`<p class="changelog-period">${escape(data.period)}</p>`);

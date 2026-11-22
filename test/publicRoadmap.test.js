@@ -31,7 +31,9 @@ test('every item has source PRs; only Done has release proof and a period', () =
             expect(item.period).toMatch(/^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)–(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4}$/);
             expect([
                 'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928',
-                'https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704'
+                'https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704',
+                // Activation of the paid-frameworks and deferred-details flags on 62a9702.
+                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099'
             ]).toContain(item.release);
             for (const pr of item.prs) expect(source).toMatch(new RegExp(`\\| \\[#${pr}\\]\\([^\\n]+\\| \\x60[a-f0-9]{40}\\x60 \\|`));
         } else {
@@ -51,16 +53,23 @@ test('engineering provenance remains in review sources and cannot enter customer
     expect(renderRoadmap(evidenceOnlyChange)).toBe(renderRoadmap(data));
 });
 
-test('planned paid work, copy limits and undated planned lanes cannot be lost', () => {
+test('paid work is Done without prices, copy limits and undated planned lanes cannot be lost', () => {
     const generated = html.match(marker)[0];
     const copy = generated.replace(/<p>Last updated <time[^>]*>[^<]*<\/time>\.<\/p>/, ' ').replace(/<[^>]*>/g, ' ');
     expect(copy).not.toMatch(/\b(?:certified|compliant|audit)\b|NZ\$|\$\d|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2} (?:January|February|March|April|May|June|July|August|September|October|November|December)\b/i);
     expect(html).not.toMatch(/\bFY\d{2}\b|\bquarters?\b|financial year|No verified releases recorded/i);
     const paid = data.items.find(i => i.id === 'paid-assessments');
-    expect(paid.lane).not.toBe('Done');
-    expect(paid.text).toContain('Paid NIST CSF 2.0 and ISO 27001 readiness self-assessments are planned and are not available yet');
-    expect(paid.text).toContain('Prices will be published when these options become available.');
-    expect(data.items.find(i => i.id === 'consultant-services').text).toContain('Consultants will see paid assessment status for the client organisations they are authorised to manage.');
+    expect(paid.lane).toBe('Done');
+    expect(paid.text).toContain('NIST CSF 2.0 and ISO 27001 readiness self-assessments are available as a paid add-on.');
+    expect(paid.text).toContain('We invoice manually, then our staff enable access.');
+    expect(paid.text).toContain('The ISO 27001 readiness self-assessment is not certification. For accredited certification, use an accredited certification body.');
+    expect(paid.link).toEqual({ href: '/pricing.html#pricing-assessments', label: 'See pricing and how to get access' });
+    expect(data.items.find(i => i.id === 'adviser-paid-status')).toMatchObject({ lane: 'Done',
+        text: 'Advisers can see paid assessment status for the client organisations they are authorised to manage. They see status only, not answers or results.' });
+    expect(data.items.find(i => i.id === 'simpler-signin')).toMatchObject({ lane: 'Done', title: 'Simpler sign-up' });
+    expect(data.items.find(i => i.id === 'simpler-signin').text).toContain('We ask for your name, role and business address after your first result');
+    expect(data.items.find(i => i.id === 'signup-return').lane).toBe('In progress');
+    expect(generated).not.toMatch(/readiness self-assessments are planned|Prices will be published|not available yet and their prices/i);
     for (const item of data.items.filter(i => i.lane !== 'Done')) {
         const article = html.match(new RegExp(`<article data-roadmap-item="${item.id}"[\\s\\S]*?</article>`))[0];
         expect(article).toContain(`<p class="roadmap-status">${item.lane === 'In progress' ? 'In progress' : 'Planned'}</p>`);
@@ -89,14 +98,16 @@ test('roadmap links and inbound public fragments resolve without changing unlist
     expect(html).not.toMatch(/href="\/fictional-(?:iso|nist)-example.html/);
 });
 
-// The release published information, not access to the disabled assessments.
-test('942ea19 information is Done while the paid capability remains planned', () => {
-    const information = ['planned-assessment-information', 'fictional-readiness-examples'].map(id => data.items.find(item => item.id === id));
-    for (const item of information) {
-        expect(item).toMatchObject({ period: 'Oct–Dec 2026', lane: 'Done', release: 'https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704' });
-        expect(item.text).toContain('not available yet');
+// 942ea19 published the fictional examples; the activation receipt makes the paid, adviser and sign-up items Done.
+test('942ea19 examples and the activated items are Done in Oct–Dec 2026', () => {
+    const examples = data.items.find(item => item.id === 'fictional-readiness-examples');
+    expect(examples).toMatchObject({ period: 'Oct–Dec 2026', lane: 'Done', release: 'https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704' });
+    expect(examples.text).toMatch(/fictional.*made-up/);
+    expect(data.items.find(item => item.id === 'planned-assessment-information')).toBeUndefined();
+    for (const id of ['paid-assessments', 'adviser-paid-status', 'simpler-signin']) {
+        expect(data.items.find(item => item.id === id)).toMatchObject({ period: 'Oct–Dec 2026', lane: 'Done',
+            release: 'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099' });
     }
-    expect(information[1].text).toMatch(/fictional.*made-up/);
-    expect(data.items.find(item => item.id === 'paid-assessments').lane).toBe('In progress');
+    expect(data.lastUpdated).toBe('2026-11-23');
     expect(data.items.filter(item => item.lane === 'Done' && item.period !== 'Oct–Dec 2026')).toEqual([]);
 });
