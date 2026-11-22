@@ -1756,26 +1756,43 @@ describe('ready Cyber composition', () => {
         'fictional example links appear only on locked cards (included indices $included)', async ({ included }) => {
             const h = await pick(included.map(index => tuple(registry.paidFrameworks[index])));
             const root = h.elements.dashboardApp;
+            const previews = {
+                'nf-nist-csf-2-0-core': ['/fictional-nist-example.html', 'View a fictional NIST CSF 2.0 example'],
+                'nf-iso-27001-2022-readiness': [previewHref, 'View a fictional ISO 27001 example']
+            };
             for (const [index, ref] of registry.paidFrameworks.entries()) {
                 const card = root.querySelectorAll('.dashboard-panel').find(panel => panel.querySelector('h2')?.textContent === ref.label);
-                const links = card.querySelectorAll('a').filter(link => link.href === previewHref);
+                const enquiries = card.querySelectorAll('a').filter(link => link.href === '/contact.html');
+                expect(enquiries.map(link => link.textContent)).toEqual(included.includes(index) ? [] : ['Ask No Fries to set this up']);
+                for (const price of ['NZ$99 + GST', 'NZ$990 + GST']) expect(card.textContent.includes(price)).toBe(!included.includes(index));
+                const links = card.querySelectorAll('a').filter(link => link.href.startsWith('/fictional-'));
                 expect(links).toHaveLength(included.includes(index) ? 0 : 1);
-                if (links.length) expect(links[0].textContent).toBe('View a fictional ISO 27001 example');
+                if (links.length) expect([links[0].href, links[0].textContent]).toEqual(previews[ref.profileId]);
             }
-            expect(root.querySelectorAll('a').filter(link => link.href === previewHref)).toHaveLength(2 - included.length);
+            expect(root.querySelectorAll('a').filter(link => link.href?.startsWith('/fictional-'))).toHaveLength(2 - included.length);
             expect(h.requests.some(row => row.url.includes('/frameworks/'))).toBe(false);
         });
     test('the flag-off Cyber Security view has no buyer example entry', async () => {
         const h = harness({ cyber: true, hash: '#cyber-security' });
         await ready(h, 'editable', {});
         expect(h.elements.dashboardApp.textContent).not.toContain('Choose an assessment');
-        expect(h.elements.dashboardApp.querySelectorAll('a').some(link => link.href === previewHref)).toBe(false);
+        expect(h.elements.dashboardApp.textContent).not.toContain('Ask No Fries to set this up');
+        expect(h.elements.dashboardApp.textContent).not.toMatch(/NZ\$(?:99|990|1,250)/);
+        expect(h.elements.dashboardApp.querySelectorAll('a').some(link => link.href?.startsWith('/fictional-'))).toBe(false);
+    });
+    test('a consultant without a selected organisation cannot open an enquiry with client context', async () => {
+        const h = harness({ cyber: true, hash: '#cyber-security' });
+        await flush(); await h.reply(0, 200, state(null, GA, { purpose: 'customer', accountType: 'consultant' }));
+        await h.reply(1, 200, listing([A, B]));
+        expect(h.status).toBe('selection');
+        expect(h.elements.dashboardApp.querySelector('dialog')).toBeNull();
+        expect(h.requests.map(row => row.url)).toEqual(['/api/dashboard/session', '/api/dashboard/organisations?limit=50']);
     });
     test('locked choices open the contact form and the free choice opens the existing questionnaire', async () => {
         const h = await pick([]), root = h.elements.dashboardApp;
         expect(root.textContent.match(/Locked/g)).toHaveLength(2);
         expect(root.textContent).toContain('This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.');
-        const link = root.querySelectorAll('a').find(a => a.textContent === 'Ask No Fries about the paid dashboard');
+        const link = root.querySelectorAll('a').find(a => a.textContent === 'Ask No Fries to set this up');
         expect(link.href).toBe('/contact.html'); expect(h.requests).toHaveLength(5);
         pickButton(h, 'Open NCSC check').click(); await flush();
         expect(h.requests[5].url).toMatch(/^\/api\/dashboard\/ncsc\/assessments/);
