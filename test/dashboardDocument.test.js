@@ -181,3 +181,19 @@ test('generic document provides labelled keyboard controls and an empty hidden p
     assert.match(template, /id="dashboardSignIn" href="\/api\/auth\/login\?returnTo=%2Fdashboard" hidden/);
     assert.match(template, /<div id="dashboardApp" hidden><\/div>/);
 });
+
+test('the dashboard enquiry template carries the public form privacy statement link and pinned scripts', () => {
+    const built = buildDashboardDocument(inputs());
+    const template = built.html.match(/<template id="frameworkEnquiryForm" data-availability="([^"]+)" data-contact="([^"]+)">([\s\S]*?)<\/template>/);
+    assert.ok(template);
+    assert.equal(template[1], digest(read('js/enquiry-availability.js')));
+    assert.equal(template[2], digest(read('js/contact.js')));
+    assert.match(template[3], /<form id="contact-form"/);
+    assert.match(template[3], /See the <a href="\/privacy\.html">privacy statement<\/a> for how enquiries are handled\./);
+    // The public page keeps one privacy statement paragraph, now inside the shared markers.
+    const contact = read('contact.html');
+    assert.equal(contact.split('privacy statement</a> for how enquiries are handled.').length - 1, 1);
+    const shared = contact.match(/<!-- ENQUIRY_FORM_START -->([\s\S]*?)<!-- ENQUIRY_FORM_END -->/)[1];
+    assert.equal(shared, template[3]);
+    assert.ok(shared.indexOf('</form>') < shared.indexOf('href="/privacy.html"'));
+});
