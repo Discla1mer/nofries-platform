@@ -45,6 +45,7 @@ function renderRoadmap(data = readRoadmap()) {
                 lines.push(`<p class="roadmap-period">${escape(period)}</p>`);
             }
             const badge = lane === 'Done' ? '' : `<p class="roadmap-status">${lane === 'In progress' ? 'In progress' : 'Planned'}</p>`;
+            // The paid item keeps its historical #roadmap-planned anchor now that it is Done, so earlier links still land on it.
             lines.push(`<article data-roadmap-item="${escape(item.id)}"${item.id === 'paid-assessments' ? ' id="roadmap-planned" tabindex="-1"' : ''}>`,
                 `<h3>${escape(item.title)}</h3>${badge}<p>${escape(item.text)}</p>`);
             if (item.link) lines.push(`<p><a href="${escape(item.link.href)}">${escape(item.link.label)}</a></p>`);

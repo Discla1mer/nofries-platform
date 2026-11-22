@@ -13,41 +13,43 @@ the release that made them available.
 
 ## Evidence and interpretation
 
-Snapshot: NZ FY27 Q2 (Oct–Dec 2026). Integration main is
-`c443f9177172685cd3154c2dc77276138260d1a2`. Independently verified live is now
-`c443f9177172685cd3154c2dc77276138260d1a2`, following the
-[new official release receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7076315188)
-and matching public health/release identities. This receipt arrived during the
-refresh and supersedes the previous verified live `9977199`; a main merge alone
-did not establish this live state.
-It includes #543's managed-security responsibility clarification, #539's
-sign-up fixes, and the test-only changes in #544/#545. #539 remains planned
-for customers because the [previous receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928)
-records deferred details off, with no later activation evidence. The new receipt
-confirms #541 and test-only #551 released. Their normal main merge is preserved;
-H adds no campaign or setup implementation changes and no new availability claim.
+Snapshot: NZ FY27 Q2 (Oct–Dec 2026). Integration main and independently verified
+live are both `62a970280592b55fba08a8ffe8f041a034d61e21`, per the
+[`62a9702` release receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7077287283).
+The [activation receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099)
+records `NOFRIES_PAID_FRAMEWORKS_ENABLED=true` and
+`NOFRIES_DEFER_STARTER_DETAILS=true` on production at `62a9702`, with live health
+ok and the adviser status route answering 401 instead of 404. That receipt is the
+release proof for the three Done items it activates:
 
-The paid assessment availability recorded in the
-[earlier receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277)
-remains unchanged: `NOFRIES_PAID_FRAMEWORKS_ENABLED` is unset. #501, #518,
-#528, #529, #530, #538 and #546 are merged and included in the verified releases, but
-paid assessments remain planned, not Done customer capabilities. No paid
-assessment prices are published. The customer-visible changes from `942ea19` were the planned-assessment information
-and two fictional readiness examples. These published information items are Done
-in Oct–Dec 2026; the paid capability stays planned. The fictional examples remain
-unlisted and noindex. The last explicit NCSC-v2 flag receipt records it unset:
-[prior release evidence](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7072631196).
-No later activation evidence was found. Do not infer activation from a merged PR.
+- **Paid readiness self-assessments** (#501, #518, #528, #530, #538, #546):
+  available, with access enabled by staff after a manual invoice. The public
+  price and terms match the dashboard terms from #538 exactly. ISO 27001 stays a
+  readiness self-assessment; certification comes only from an accredited
+  certification body.
+- **Paid assessment status for advisers** (#527, #555): status only for the
+  client organisations an adviser is authorised to manage, without answers or
+  results content. #555 was released in `12592b4` behind the same flag.
+- **Simpler sign-up** (#531, #539): with deferred details on, new organisation
+  setup asks for account type, organisation name and the authority confirmation
+  only (`signupJourney.js` skips the name, role, address and NZBN fields; the
+  server stores no contact details). The dashboard details gate returns
+  `result_required` until the first result, then asks for name, role and
+  business address before a board or insurer summary, a service request or a
+  questionnaire copy. #424 (interrupted sign-up return) is still open and stays
+  In progress.
+
+The two earlier information items from `942ea19` are superseded: the
+"Information about planned assessments" item is removed because the paid item
+now describes the capability itself, and the fictional examples item no longer
+says the assessments are unavailable. The fictional examples remain unlisted and
+noindex. Scoring v2 (`NOFRIES_NCSC_PROFILE_V2`) stays off per the same receipt,
+so "Updated NCSC questions" stays In progress.
 
 The service note follows #543’s published responsibility distinction: working
 through three improvements does not include hands-on implementation unless it is
 separately agreed in scope. #543 merged as `35ff8729975c46af6f3d614ddd704b34982e59fc`
 and is included in the current release. No agreement or signed-in service copy changes.
-
-The [adviser-status decision](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7076131506)
-resolves #527’s scope question: status-only views for authorised client
-organisations, without answers or results content. This remains planned; a scope
-decision is not release or activation evidence.
 
 Release receipts and source PRs below are review evidence only. The generator
 never emits these references into customer HTML. Keep the per-item source PR
@@ -72,19 +74,29 @@ by the description and the public feature-status registry.
 | [#261](https://github.com/Discla1mer/nofries-platform/pull/261) | `587cbc32a953a8df0ee80654e071f1b36f50950f` | Ancestor of `9977199`. |
 | [#501](https://github.com/Discla1mer/nofries-platform/pull/501) | `942ea196c1bbfe8151ea0ad7971eff60cfee45ba` | Released in `942ea19`; ancestor of `9977199`. |
 | [#529](https://github.com/Discla1mer/nofries-platform/pull/529) | `771cadf39267d2e2adb73e44068ae82bc97316a9` | Merged into the follow-on chain, included by #501's `942ea19` squash; the receipt explicitly confirms both fictional pages. |
+| [#518](https://github.com/Discla1mer/nofries-platform/pull/518) | `164efaf6083b639058e9ac6ed65d8751bc9edf71` | Ancestor of `62a9702`; activated by the paid flag. |
+| [#528](https://github.com/Discla1mer/nofries-platform/pull/528) | `5abb8588b38143d333abbd7728d1b466c9a4ffcd` | Ancestor of `62a9702`; activated by the paid flag. |
+| [#530](https://github.com/Discla1mer/nofries-platform/pull/530) | `9741f16733477d94b3ccbd08fe5b7af2cfa55b02` | Ancestor of `62a9702`; activated by the paid flag. |
+| [#538](https://github.com/Discla1mer/nofries-platform/pull/538) | `3d70f398f45204519bbd7f40b5e6854d387ffc52` | Ancestor of `62a9702`; activated by the paid flag. |
+| [#546](https://github.com/Discla1mer/nofries-platform/pull/546) | `28b434f50305e9775efcb4b70eeba52d8ef5e5ab` | Released in `79239e9`; activated by the paid flag. |
+| [#527](https://github.com/Discla1mer/nofries-platform/pull/527) | `ccb6db2f9328fd655aec982e2793c1a4e4fcbeeb` | Ancestor of `62a9702`; design and hold superseded by #555. |
+| [#555](https://github.com/Discla1mer/nofries-platform/pull/555) | `12592b46d855cf9de072eb39ff73a1cc35a5fe1c` | Released in `12592b4`; activated by the paid flag. |
+| [#531](https://github.com/Discla1mer/nofries-platform/pull/531) | `0227f0a6f50653076ec8fff3e3fa7cdd6f14425a` | Ancestor of `62a9702`; activated by the deferred-details flag. |
+| [#539](https://github.com/Discla1mer/nofries-platform/pull/539) | `ac21ee80ac7e78bc01fb219978d6589ff61c1dda` | Released in `9977199`; activated by the deferred-details flag. |
 
 The [942ea19 receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704)
-is proof for the two published information items below. It was superseded by
-`9977199`, and then verified live `c443f91`. #518/#528/#530/#538 remain provenance for planned paid work,
-not evidence of customer availability. The editorial changelog records the same
-customer distinction separately from release-engineering evidence.
+remains the proof for the fictional examples item. The
+[activation receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099)
+is the proof for the paid, adviser status and sign-up items. The editorial
+changelog records the same customer distinction separately from
+release-engineering evidence.
 
 ## Published timeline data
 
 ```json
 {
   "title": "What’s next.",
-  "lastUpdated": "2026-11-22",
+  "lastUpdated": "2026-11-23",
   "lead": "What you can use today, what is being built and what is planned.",
   "notice": "Planned work has no confirmed dates. Scope, order and availability may change, and planned work does not promise subscription inclusion.",
   "serviceNote": "90-day managed security includes a written summary you can give your board or insurer now. That summary is part of the paid service. We work through three improvements with you. For each improvement, the agreed scope needs to say whether No Fries, you or your IT provider makes the change. Hands-on changes by No Fries need to be separately agreed in that scope. Managed IT is the separate day-to-day service.",
@@ -96,10 +108,11 @@ customer distinction separately from release-engineering evidence.
     {"id": "demo", "lane": "Done", "period": "Oct–Dec 2026", "title": "Try the demo", "text": "Explore a fictional business before creating an account. Entries stay in your browser on this device until you choose Reset demo; they are not sent to No Fries.", "prs": [440], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928", "link": {"href": "/try", "label": "Try the demo"}},
     {"id": "service-enquiries", "lane": "Done", "period": "Oct–Dec 2026", "title": "Ask about a service", "text": "Open the contact form from a service in the dashboard, with that service already named.", "prs": [408], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928"},
     {"id": "emails", "lane": "Done", "period": "Oct–Dec 2026", "title": "Welcome and result emails", "text": "Receive a welcome email when you create an account and a link to your result when you submit an assessment.", "prs": [261], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928"},
-    {"id": "planned-assessment-information", "lane": "Done", "period": "Oct–Dec 2026", "title": "Information about planned assessments", "text": "The pricing page and roadmap distinguish planned paid assessments from options available today. Paid assessments are not available yet and their prices are not published.", "prs": [501], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704"},
-    {"id": "fictional-readiness-examples", "lane": "Done", "period": "Oct–Dec 2026", "title": "Fictional readiness examples", "text": "Two fictional readiness examples show what results for the planned assessments could look like. They use made-up information. The assessments themselves are not available yet.", "prs": [501, 529], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704"},
-    {"id": "simpler-signin", "lane": "In progress", "title": "Simpler sign-up and return visits", "text": "Planned improvements to account setup and returning to saved work, including organisations with several members. These changes are still being checked.", "prs": [424, 539]},
-    {"id": "paid-assessments", "lane": "In progress", "title": "Planned paid assessments", "text": "Paid NIST CSF 2.0 and ISO 27001 readiness self-assessments are planned and are not available yet. Work includes separate saved answers, readiness results and assessment progress. Prices will be published when these options become available.", "prs": [501, 518, 528, 529, 530, 538, 546]},
+    {"id": "fictional-readiness-examples", "lane": "Done", "period": "Oct–Dec 2026", "title": "Fictional readiness examples", "text": "Two fictional readiness examples show what results for the paid assessments could look like. They use made-up information.", "prs": [501, 529], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704"},
+    {"id": "paid-assessments", "lane": "Done", "period": "Oct–Dec 2026", "title": "Paid readiness self-assessments", "text": "NIST CSF 2.0 and ISO 27001 readiness self-assessments are available as a paid add-on. We invoice manually, then our staff enable access. The ISO 27001 readiness self-assessment is not certification. For accredited certification, use an accredited certification body.", "prs": [501, 518, 528, 530, 538, 546], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099", "link": {"href": "/pricing.html#pricing-assessments", "label": "See pricing and how to get access"}},
+    {"id": "adviser-paid-status", "lane": "Done", "period": "Oct–Dec 2026", "title": "Paid assessment status for advisers", "text": "Advisers can see paid assessment status for the client organisations they are authorised to manage. They see status only, not answers or results.", "prs": [527, 555], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099"},
+    {"id": "simpler-signin", "lane": "Done", "period": "Oct–Dec 2026", "title": "Simpler sign-up", "text": "Set up your organisation with its name and a confirmation that you are authorised to set it up. We ask for your name, role and business address after your first result, before you share a board or insurer summary or request a service.", "prs": [531, 539], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099"},
+    {"id": "signup-return", "lane": "In progress", "title": "Returning to an unfinished sign-up", "text": "Planned guidance that brings an interrupted sign-up back to the same account. These changes are still being checked.", "prs": [424]},
     {"id": "weighted-assessment", "lane": "In progress", "title": "Updated NCSC questions", "text": "A planned 16-question assessment with weighted scoring. Existing submitted results keep their original scoring.", "prs": [440]},
     {"id": "contact-request", "lane": "In progress", "title": "Ask No Fries to contact you", "text": "A planned request button on results and Services that explains what staff will see before you choose it. Nothing is shared through this request unless you ask. This is separate from the existing link to the contact form.", "prs": [440, 454, 461]},
     {"id": "review-not-applicable", "lane": "Next", "title": "Review of not applicable answers", "text": "A planned way to review and confirm answers marked not applicable. For now, these answers count as not yet met and stay in your result; no review changes that.", "prs": [440, 480]},
@@ -111,7 +124,7 @@ customer distinction separately from release-engineering evidence.
     {"id": "connected-evidence", "lane": "Later", "title": "Connected evidence and continuous checks", "text": "Planned connections to supported systems, with scope, freshness and missing data visible. Potential sources include Microsoft 365, Datto RMM and managed detection and response. These are not active integrations or included services.", "prs": [3, 440]},
     {"id": "controls-reviews", "lane": "Later", "title": "Controls, evidence and review workflows", "text": "Planned reusable controls, traceable evidence, risk exceptions, policies and approvals. Longer-term work covers assets, access, suppliers, people, recovery and technical reviews. Claims, technical checks and independent assurance would remain distinct.", "prs": [3, 440]},
     {"id": "questionnaires-privacy", "lane": "Later", "title": "Questionnaires and privacy responsibilities", "text": "Planned reuse of reviewed answers for customer questionnaires and preparation for independent SOC 2 assessment. Track data handling, retention and deletion responsibilities. Legal decisions stay separate from technical evidence; No Fries does not issue an independent assurance opinion.", "prs": [3, 440]},
-    {"id": "consultant-services", "lane": "Later", "title": "Client and service overview", "text": "Planned status views for agreed No Fries services and client organisations a consultant is authorised to manage. Consultants will see paid assessment status for the client organisations they are authorised to manage.", "prs": [440, 527]},
+    {"id": "consultant-services", "lane": "Later", "title": "Client and service overview", "text": "Planned status views for agreed No Fries services across the client organisations a consultant is authorised to manage.", "prs": [440, 527]},
     {"id": "ai-governance", "lane": "Later", "title": "AI governance and IT optimisation", "text": "Planned ways to understand AI use and identify opportunities to improve IT.", "prs": [3, 440]}
   ]
 }
