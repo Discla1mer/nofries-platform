@@ -88,6 +88,21 @@ test('homepage create entry shows an explicit opening state instead of a disable
     h.lifecycle('pagehide');
 });
 
+test.each(['legacy', 'external'])('campaign entry suppresses setup request referrers with %s provider selection', async provider => {
+    const h = fixture({ search: '?intent=create&utm_source=meta&utm_medium=paid&utm_campaign=insurance' });
+    expect(h.requests[0].url).toBe('/api/organisation-setup/state');
+    expect(h.requests[0].options.referrerPolicy).toBe('no-referrer');
+    await h.reply(0, 200, { state: 'start' }, true, { 'x-nofries-customer-entry': provider });
+    if (provider === 'external') {
+        expect(h.window.location.replace).toHaveBeenCalledWith('/signup?provider=external&intent=create');
+        expect(h.requests).toHaveLength(1);
+    } else {
+        h.nodes.email.value = 'synthetic@example.test'; h.submit('form');
+        expect(h.requests[1].options).toMatchObject({ method: 'POST', referrerPolicy: 'no-referrer' });
+    }
+    h.lifecycle('pagehide');
+});
+
 test('a failed first read still offers Check progress (F1-R03)', async () => {
     const h = fixture({ search: '?intent=create' });
     expect(h.nodes.refresh.hidden).toBe(true);
