@@ -1,0 +1,2 @@
+.public-changelog :is(p, li) a { color: var(--green); font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
+.public-changelog :focus-visible { outline: 3px solid var(--green); outline-offset: 4px; }
