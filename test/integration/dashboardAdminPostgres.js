@@ -190,11 +190,23 @@ module.exports = function registerDashboardAdminPostgresTests() {
             const decisions = async f => (await owner.query(
                 'SELECT * FROM nofries.dashboard_paid_framework_access WHERE tenant_id=$1 AND organisation_id=$2 ORDER BY operation_id',
                 [f.selector.tenantId, f.selector.organisationId])).rows;
+            const readProduct = async f => (await read(f)).entitlementState.grants.find(row => row.grantId === 'synthetic-product');
             const before = clone(await raw(h));
+            const original = await readProduct(h);
             const untouched = await Promise.all([other, sibling].map(async f => ({ snapshot: clone(await raw(f)), decisions: await decisions(f) })));
             const first = await repo.frameworkDecision(input, null);
+            const flagsRow = async () => (await owner.query('SELECT revision, payload FROM nofries.dashboard_feature_flags WHERE tenant_id=$1 AND organisation_id=$2',
+                [h.selector.tenantId, h.selector.organisationId])).rows;
+            const decisionCount = async () => (await owner.query('SELECT count(*)::int AS n FROM nofries.dashboard_paid_framework_access WHERE tenant_id=$1 AND organisation_id=$2',
+                [h.selector.tenantId, h.selector.organisationId])).rows[0].n;
+            const flagsBefore = await flagsRow();
+            expect(flagsBefore).toHaveLength(1);
             const beforeDecisions = await decisions(h);
-            await expect(repo.frameworkDecision(input, first)).rejects.toMatchObject({ statusCode: 503, code: 'dashboard_admin_unavailable' });
+            // Without the operator role membership the grant is refused before any write.
+            await expect(repo.frameworkDecision(input, first)).rejects.toMatchObject({ statusCode: 503, code: 'dashboard_admin_unavailable',
+                notApplied: 'operator_capability_unbound' });
+            expect(await flagsRow()).toEqual(flagsBefore);
+            expect(await decisionCount()).toBe(0);
             expect(await raw(h)).toEqual(before);
             expect(await decisions(h)).toEqual(beforeDecisions);
             await control.query(`GRANT nofries_framework_operator TO ${quote(runtimeRole)} WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`);
@@ -205,6 +217,7 @@ module.exports = function registerDashboardAdminPostgresTests() {
                         const witness = await repo.frameworkDecision(command, null);
                         const result = await repo.frameworkDecision(command, witness);
                         expect(result.granted).toBe(action === 'grant');
+                        expect((await readProduct(other)).frameworks).toEqual(original.frameworks);
                         const selected = await read(h);
                         const product = selected.entitlementState.grants.find(row => row.grantId === 'synthetic-product');
                         if (result.granted) {
