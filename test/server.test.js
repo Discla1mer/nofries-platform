@@ -253,7 +253,7 @@ describe('dormant dashboard document', () => {
         const config = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', filename), 'utf8'));
         const methods = {
             login: ['GET'], 'ncsc/assessments': ['GET', 'POST'], 'ncsc/assessments/*': ['GET', 'POST'],
-            'improvement/*': ['GET', 'POST'],
+            'improvement/*': ['GET', 'POST'], 'frameworks/*': ['GET', 'POST'],
             session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], 'contact-requests': ['POST'], 'work-queue': ['GET'],
             bootstrap: ['GET'], 'app.js': ['GET'], 'dashboard.css': ['GET'],
             'modules/overview': ['GET'], 'modules/ai_governance': ['GET'], 'modules/cyber_security': ['GET'],

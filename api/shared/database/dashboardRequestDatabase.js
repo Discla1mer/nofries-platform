@@ -25,6 +25,7 @@ const { NcscAssessmentError } = require('../ncscAssessmentService');
 const { ImprovementPlanServiceError } = require('../improvementPlan/improvementPlanService');
 const { ImprovementActionListError } = require('../improvementPlan/improvementActionListProjection');
 const { resolveImprovementAccess } = require('../improvementPlan/improvementPlanAccess');
+const { paidAccess, PaidAssessmentError } = require('../assessmentLifecycle/paidAssessments');
 const { ContactRequestError, CONTACT_AUDIT, resolveContactAccess } = require('../contactRequests');
 const { createNcscQuestionnaireMetadata, createNcscQuestionnaireMetadataV2 } = require('../ncscQuestionnaireMetadata');
 const { listsEnabledNcscProfile, ncscProfileV2Enabled } = require('../assessmentEngine/ncscProfileSet');
@@ -48,6 +49,7 @@ const QUOTA_SELECTION = ['tenantId', 'organisationId', 'assessmentId', 'actorSub
 const QUOTA_POLICY = ['schemaVersion', 'tenantId', 'organisationId', 'productGrantId', 'agreementRef', 'moduleId',
     'profileRef', 'policyId', 'policyRevision', 'validFrom', 'validUntil', 'limit', 'amount'];
 const OPERATIONS = ['admission.read', 'ncsc.list', 'ncsc.read', 'ncsc.execute', 'evidence.read'];
+const PAID_OPERATIONS = ['framework.read', 'framework.write'];
 const NCSC_OPERATIONS = ['ncsc.list', 'ncsc.read', 'ncsc.execute'];
 const IMPROVEMENT_OPERATIONS = ['improvement.list', 'improvement.execute'];
 const CONTACT_OPERATION = 'contact.request';
@@ -78,6 +80,10 @@ function mapped(error, operation = 'admission.read', denial = null) {
         if (error instanceof ImprovementPlanServiceError) return error;
         return new ImprovementPlanServiceError();
     }
+    if (PAID_OPERATIONS.includes(operation)) {
+        if (isDenied) return new PaidAssessmentError('access_denied');
+        return error instanceof PaidAssessmentError ? error : new PaidAssessmentError();
+    }
     if (DETAILS_OPERATIONS.includes(operation)) {
         if (isDenied) return new RepresentativeDetailsError('representative_details_access_denied', 403);
         return error instanceof RepresentativeDetailsError ? error : new RepresentativeDetailsError();
@@ -107,7 +113,7 @@ function mapped(error, operation = 'admission.read', denial = null) {
 function configuration(input) {
     try {
         if (!input || isProxy(input)) throw new Error();
-        const optional = ['ncscEnabled', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled'].filter(key => Object.prototype.hasOwnProperty.call(input, key));
+        const optional = ['paidFrameworksEnabled', 'ncscEnabled', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled'].filter(key => Object.prototype.hasOwnProperty.call(input, key));
         fields(input, ['pool', 'clock', 'instanceId', 'historyBudget', 'captureRequest',
             'readExternalRuntimeEpoch', 'newId', 'resolveSubmissionQuota', ...optional]);
         if (optional.some(key => input[key] !== true)) throw new Error();
@@ -364,6 +370,14 @@ function currentImprovement(inv, operation, authority, at) {
         operation.name === 'improvement.execute' ? 'improvement.write' : 'improvement.read', at); }
     catch (_) { inv.deny(); }
 }
+function currentPaidAccess(inv, operation, authority, at) {
+    if (!PAID_OPERATIONS.includes(operation.name)) return;
+    let decision;
+    try { decision = paidAccess(authority, operation.context, operation.name === 'framework.write', operation.profileRef, at); }
+    catch { inv.deny(); }
+    if (operation.grantId && decision.product.grantId !== operation.grantId) inv.deny();
+    operation.grantId = decision.product.grantId;
+}
 function currentContact(inv, operation, authority, at) {
     if (operation.name !== CONTACT_OPERATION && !DETAILS_OPERATIONS.includes(operation.name)) return;
     try {
@@ -411,7 +425,7 @@ async function businessContext(inv, tx, routing) {
 }
 async function loadAuthority(inv, operation, context, shared = false) {
     try {
-        const snapshot = await (!shared && ['ncsc.execute', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ? dataStorage.loadSnapshotForUpdate : dataStorage.loadSnapshotForShare)(
+        const snapshot = await (!shared && ['framework.write', 'ncsc.execute', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ? dataStorage.loadSnapshotForUpdate : dataStorage.loadSnapshotForShare)(
             Object.freeze({ query: (sql, params) => inv.query(context.tx, sql, params) }), context.scope);
         if (inv.options.paidFrameworksEnabled === true && ['framework.read', 'framework.write'].includes(operation.name)) {
             const tx = { query: (sql, params) => inv.query(context.tx, sql, params) };
@@ -451,6 +465,7 @@ function currentAuthorityAt(inv, operation, evidence, at) {
     currentMember(inv, authority, binding, at);
     currentImprovement(inv, operation, authority, at);
     currentContact(inv, operation, authority, at);
+    currentPaidAccess(inv, operation, authority, at);
     if (operation.name === 'evidence.read') {
         try { resolveEvidenceAccess(authority, { scope: target,
             identity: { authenticated: true, subjectKey: subjectOf(inv.capture.identityPayload) }, resolvedAt }, at); }
@@ -587,9 +602,9 @@ async function writeAudit(inv, operation, event) {
         value.tenantId !== c.scope.tenantId || value.organisationId !== c.scope.organisationId) inv.deny();
     const evidenceRead = operation.name === 'evidence.read';
     const improvement = IMPROVEMENT_OPERATIONS.includes(operation.name), contact = operation.name === CONTACT_OPERATION, details = operation.name === 'representative.record';
-    const action = improvement ? operation.name === 'improvement.execute' ? 'improvement.write' : 'improvement.read'
+    const action = operation.name === 'framework.write' ? 'assessment.write' : improvement ? operation.name === 'improvement.execute' ? 'improvement.write' : 'improvement.read'
         : details ? 'representative.record' : contact ? CONTACT_AUDIT.action : evidenceRead ? 'evidence.read' : 'assessment.read';
-    if (!['ncsc.list', 'ncsc.read', 'evidence.read', 'representative.record', CONTACT_OPERATION, ...IMPROVEMENT_OPERATIONS].includes(operation.name) ||
+    if (!['ncsc.list', 'ncsc.read', 'evidence.read', ...PAID_OPERATIONS, 'representative.record', CONTACT_OPERATION, ...IMPROVEMENT_OPERATIONS].includes(operation.name) ||
         value.schemaVersion !== 1 || value.eventType !== 'dashboard.operation' || value.action !== action ||
         value.module !== (improvement ? 'improvement_plan' : details ? 'overview' : contact ? CONTACT_AUDIT.module : evidenceRead ? 'evidence' : 'cyber_security') ||
         value.result !== 'succeeded') inv.unavailable();
@@ -619,24 +634,26 @@ async function writeAudit(inv, operation, event) {
     current();
 }
 
-function operationPair(inv, database, routing, resolvedAt, name, context) {
+function operationPair(inv, database, routing, resolvedAt, name, context, profileRef) {
+    const paid = PAID_OPERATIONS.includes(name);
+    let paidDisclosureEvidence = null;
     const contact = name === CONTACT_OPERATION;
     const details = DETAILS_OPERATIONS.includes(name);
-    const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name) || contact || details;
-    if (!known || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true ||
+    const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name) || contact || details || paid;
+    if (!known || paid && inv.options.paidFrameworksEnabled !== true || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true ||
         contact && inv.options.contactRequestsEnabled !== true || details && inv.options.representativeDetailsEnabled !== true || inv.owner ||
         routing.portfolio && name !== 'improvement.list') {
         throw mapped(privateError(false), known ? name : 'admission.read');
     }
     try { inv.now(); } catch (error) { throw mapped(error, name); }
-    if (IMPROVEMENT_OPERATIONS.includes(name) || contact || details) {
+    if (IMPROVEMENT_OPERATIONS.includes(name) || contact || details || paid) {
         try {
             requireTenantRequestContext(context);
             if (context.requestId !== inv.capture.requestId || !equal(context.scope, routing.scope) ||
                 context.identity.subjectKey !== subjectOf(inv.capture.identityPayload) || context.resolvedAt !== resolvedAt) throw privateError(true);
         } catch (_) { throw mapped(privateError(true), name); }
     }
-    const operation = { name, context, active: null, finished: false, denial: null, quota: null, events: new WeakSet(), resolvedAt };
+    const operation = { name, context, profileRef, active: null, finished: false, denial: null, quota: null, events: new WeakSet(), resolvedAt };
     inv.owner = operation;
     const available = () => {
         if (inv.owner !== operation || operation.finished) throw privateError(false);
@@ -701,6 +718,7 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
                     currentMember(inv, authority, active.context.binding, at);
                     currentImprovement(inv, operation, authority, at);
                     currentContact(inv, operation, authority, at);
+                    currentPaidAccess(inv, operation, authority, at);
                     active.phase = 'work';
                     const client = Object.freeze({
                         query(sql, params) {
@@ -721,7 +739,7 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
                         }
                     });
                     let value, failure;
-                    try { value = await work(client); } catch (error) { failure = error; }
+                    try { value = paid ? await work(client, authority) : await work(client); } catch (error) { failure = error; }
                     // A callback cannot return a client while its continuation is still pending.
                     active.phase = 'finalizing';
                     if (active.pending.size) {
@@ -737,6 +755,7 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
                     inv.now(); return value;
                 });
                 inv.now();
+                if (paid) paidDisclosureEvidence = active.finalAuthority;
                 if (routing.portfolio) routing.readContext = context;
                 return result;
             } catch (error) {
@@ -812,7 +831,14 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
         if (inv.owner !== operation || operation.finished || operation.active) throw mapped(privateError(false), name);
         operation.finished = true; operation.quota = null; inv.owner = null;
     }
-    return Object.freeze({ database: guardedDatabase, audit, clock, resolveSubmissionQuota, finish });
+    function assertPaidDisclosure() {
+        try {
+            if (!paidDisclosureEvidence) throw privateError(false);
+            currentAuthorityAt(inv, operation, paidDisclosureEvidence, inv.now());
+        } catch (error) { throw mapped(error, name, operation.denial); }
+    }
+    return Object.freeze({ database: guardedDatabase, audit, clock, resolveSubmissionQuota, finish,
+        ...(paid ? { assertPaidDisclosure } : {}) });
 }
 
 function hostBaseFacts(inv, context, input) {
@@ -904,6 +930,7 @@ function prepareHostFacts(inv, context, input, resource, writeAuthority = null, 
         membershipUpdatedAt: base.state.updatedAt, grants: base.grants, flags: snapshot.flags,
         advisors, normal, resource, snapshot, jobTitle: currentUserProfile?.jobTitle ?? null,
         ncscEnabled: inv.options.ncscEnabled === true, ncscNormalWrite, ncscWriteAdvisors,
+        paidFrameworksEnabled: inv.options.paidFrameworksEnabled === true,
         improvementEnabled: inv.options.improvementEnabled === true });
 }
 
@@ -967,13 +994,22 @@ function baseHostProjectionAt(frame, at, configured = true) {
         const entitled = service(item.key), enabled = entitled && frame.flags.enabled['service:' + item.key] === true;
         return { key: item.key, state: !entitled ? 'not_included' : !enabled ? 'disabled' : 'setup_required', operational: false };
     }) : [];
+    // Display only. Re-evaluate the exact current grant and activation at each
+    // authority witness, including when the product changes during the read.
+    const paidFrameworks = presentationMode !== null && frame.paidFrameworksEnabled
+        ? registry.paidFrameworks.filter(ref => product.frameworks.some(row => registry.sameFramework(ref, row)) &&
+            frame.flags.frameworks.some(row => registry.sameFramework(ref, row)))
+            .map(({ moduleId, profileId, version }) => ({ moduleId, profileId, version })) : null;
     return { outcome: 'succeeded', vector: { subscription: !assets && selected === null
         ? product.code === 'dashboard_govern' ? 'Govern' : 'Score' : null,
-        jobTitle: !assets && selected === null ? frame.jobTitle : null, modules: included, services, presentationMode } };
+        jobTitle: !assets && selected === null ? frame.jobTitle : null, modules: included, services, presentationMode, paidFrameworks } };
 }
 function sameHostVector(left, right) {
     if (left === null || right === null) return left === right;
     return left.subscription === right.subscription && left.jobTitle === right.jobTitle &&
+        (left.paidFrameworks === right.paidFrameworks || left.paidFrameworks !== null && right.paidFrameworks !== null &&
+            left.paidFrameworks.length === right.paidFrameworks.length &&
+            left.paidFrameworks.every((ref, i) => registry.sameFramework(ref, right.paidFrameworks[i]))) &&
         left.presentationMode === right.presentationMode && left.modules.length === right.modules.length &&
         left.modules.every((item, i) => item.key === right.modules[i].key && item.state === right.modules[i].state) &&
         left.services.length === right.services.length && left.services.every((item, i) =>
@@ -981,9 +1017,9 @@ function sameHostVector(left, right) {
 }
 function bufferedHostVector(resource, buffered) {
     if (buffered.outcome === 'denied') return null;
-    if (!resource.requiresGeneration) return { subscription: null, jobTitle: null, modules: [], services: [], presentationMode: null };
+    if (!resource.requiresGeneration) return { subscription: null, jobTitle: null, modules: [], services: [], presentationMode: null, paidFrameworks: null };
     const body = buffered.response.body;
-    return { subscription: resource.moduleKey === null ? body.subscription : null,
+    return { paidFrameworks: body.paidFrameworks ?? null, subscription: resource.moduleKey === null ? body.subscription : null,
         jobTitle: resource.moduleKey === null ? body.currentUser?.jobTitle ?? null : null, presentationMode: body.presentationMode ?? null,
         modules: (resource.moduleKey === null ? body.modules : [body.module]).map(item => ({ key: item.key, state: item.state })),
         services: body.services.map(item => ({ key: item.key, state: item.state, operational: item.operational })) };
@@ -1109,6 +1145,7 @@ async function bufferedHost(inv, operation, facts) {
             if (['cyber_security', 'improvement_plan'].includes(item.key) && expected.state === 'ready') item.state = 'ready';
         }
         if (projected.vector.presentationMode !== null) {
+            if (projected.vector.paidFrameworks !== null) body.paidFrameworks = projected.vector.paidFrameworks;
             body.metadata = createNcscQuestionnaireMetadata();
             body.presentationMode = projected.vector.presentationMode;
             // Scoring v2 (#399): display metadata for retained 2026-11-18.1
@@ -1454,7 +1491,7 @@ function createDashboardRequestDatabase(input) {
                 const database = checkedDatabase(inv);
                 const identity = freeze({ authenticated: true, subjectKey: subjectOf(inv.capture.identityPayload) });
                 return Object.freeze({ requestId: inv.capture.requestId, identity, scope: routing.scope, resolvedAt,
-                    createOperation: (name, context) => operationPair(inv, database, routing, resolvedAt, name, context) });
+                    createOperation: (name, context, profileRef) => operationPair(inv, database, routing, resolvedAt, name, context, profileRef) });
             } catch (error) { throw mapped(error); }
         }).then(resolveBinding, rejectBinding);
         return entry.promise;

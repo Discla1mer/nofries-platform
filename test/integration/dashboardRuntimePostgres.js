@@ -8,6 +8,21 @@
 let mockResourceAfterWork = null;
 let mockRuntimeAfterReconcile = null;
 let mockAfterHostDecision = null;
+// Expire a synthetic session when the HTTP host constructs the response,
+// after the real operation (including COMMIT) has returned its data.
+let mockPaidJsonReady = null;
+jest.mock('../../api/shared/securityHeaders', () => {
+    const actual = jest.requireActual('../../api/shared/securityHeaders');
+    return { ...actual, apiSecurityHeaders(extra) {
+        const headers = actual.apiSecurityHeaders(extra);
+        if (mockPaidJsonReady && extra?.['Content-Type'] === 'application/json; charset=utf-8') {
+            const ready = mockPaidJsonReady;
+            mockPaidJsonReady = null;
+            ready();
+        }
+        return headers;
+    } };
+});
 jest.mock('../../api/shared/dashboardAdmission', () => {
     const actual = jest.requireActual('../../api/shared/dashboardAdmission');
     return { ...actual, createDashboardAdmissionDecision(adapters) {
@@ -1672,9 +1687,10 @@ function registerRealPostgresTests() {
         // synthetic trusted identity, quota and time; it never primes the role
         // for the resource runtime or substitutes its paired SQL audit.
         async function resourceSetup({ role = 'admin', service = false, rawRuntimePool = runtimePool,
-            purpose = 'customer', exampleOptions = {}, historyBudget = BUDGET, prepareExample = null, productionIdentity = null } = {}) {
+            purpose = 'customer', exampleOptions = {}, historyBudget = BUDGET, prepareExample = null, productionIdentity = null, initialTime = NOW } = {}) {
             const principal = productionIdentity || { ...identity(), identityTenantId: NCSC_SUBJECT.split(':')[0], oid: NCSC_SUBJECT.split(':')[1] };
             const f = harness({ rawRuntimePool, resourceIdentity: principal, historyBudget });
+            f.state.now = initialTime;
             await f.initialize();
             const quota = createNcscAdapters({ now: () => f.state.now });
             const resourceOptions = { pool: f.restrictedPool, clock: () => f.state.now, instanceId: f.instanceId,
@@ -1728,7 +1744,7 @@ function registerRealPostgresTests() {
                             enabled: { ...example.state.flags.enabled, ...enabled } } });
                     return canonicalResult;
                 }
-                return { example, member, admission, admissionCommand, publication, canonicalRepository, mutateMembership, mutateFlags };
+                return { example, member, admission, admissionCommand, publication, canonicalRepository, mutateMembership, mutateFlags, seedPool };
             }
             const target = await addResource(f.scope);
             const seed = purpose === 'operator_dashboard' ? f.operatorSeed : f.session(purpose, principal);
@@ -1747,12 +1763,15 @@ function registerRealPostgresTests() {
             const bound = await bindResource();
             return { ...f, ...target, ...bound, seed, selected, quota, resourceOptions, bindResource, addResource };
         }
+        require('./paidAssessmentLifecycle')({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner: () => ownerPool,
+            atJsonResponse: action => { mockPaidJsonReady = action; } });
         require('./improvementPlanRecovery')({ resourceSetup,
             getPools: () => ({ ownerPool, controlPool, runtimePool, maintenancePool }), testUrl, maintenanceRole });
         if (process.env.NOFRIES_TEST_PAID_STAFF_STACK === 'true') {
             require('./staffFrameworkMounted')({ resourceSetup, harness, NCSC_SUBJECT, identity, nextId,
                 pools: () => ({ controlPool, ownerPool }), runtimeRole });
         }
+        require('./paidRendererPicker')({ resourceSetup, NCSC_SUBJECT, nextId, identity });
         async function newCustomerActivationSetup({ shortWindow = false, memberLimit = null, memberRole = 'admin' } = {}) {
             const request = require('supertest');
             const { customerProductionHarness, uid: customerId } = require('../helpers/customerProductionHarness');
