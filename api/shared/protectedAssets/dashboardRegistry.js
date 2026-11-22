@@ -44,7 +44,7 @@
     // Public SRI pins for the fixed, separately admitted package files.
     const rendererIntegrity = Object.freeze({
         collection: 'sha256-kxaNJOPXpMSfz6hGnpC1BYG5Awh/CZGOcximDl9Ac7g=',
-        questionnaire: 'sha256-8QfOBBBl9FdFuTmqVEvMmhYHPR5Zx7QbsQuA+umd+wg=',
+        questionnaire: 'sha256-6saiN311U/Otfl4xbJovH3Q4Tvb5//CWTBqbQTeL82s=',
         results: 'sha256-igK5Woag5xT1+bhWTLZXiOr9zklWBEsjnnVTR9Ran/Q='
     });
     function rendererSelection(generation, ref, name, nonce) {

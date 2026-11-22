@@ -220,3 +220,12 @@ test('a profile mismatch or a stale selection refuses to render', () => {
     expect(() => render(data)).toThrow('assessment_mismatch');
     expect(() => render(inProgress(), { isCurrent: () => false })).toThrow('assessment_unavailable');
 });
+
+test('the pinned renderer integrity matches every packaged paid renderer file', () => {
+    const fs = require('node:fs'), path = require('node:path'), { createHash } = require('node:crypto');
+    const { rendererIntegrity } = require('../api/shared/protectedAssets/dashboardRegistry');
+    for (const [name, file] of [['collection', 'paidCollection.js'], ['questionnaire', 'paidQuestionnaire.js'], ['results', 'paidResults.js']]) {
+        const bytes = fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets', file));
+        expect('sha256-' + createHash('sha256').update(bytes).digest('base64')).toBe(rendererIntegrity[name]);
+    }
+});
