@@ -175,6 +175,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
     }
 
     async function execute(request, route, checked, signal) {
+        let frameworkAccess = false;
         try {
             if (['accounts/lookup', 'accounts/app.js'].includes(route)) {
                 if (!accountLookup) fail(404, 'dashboard_admin_not_found');
@@ -210,6 +211,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 const input = await checked(() => readJson(request, signal));
                 if (route === 'lookup' && input && Object.hasOwn(input, 'frameworkAccess')) {
                     if (!frameworkControl) fail(404, 'dashboard_admin_not_found');
+                    frameworkAccess = true;
                     if (Object.keys(input).length !== 1) fail(400, 'dashboard_admin_input_invalid');
                     const target = normaliseSelector(input.frameworkAccess?.selector);
                     const operator = await checked(() => principal(request, actor));
@@ -256,6 +258,9 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             const result = failure(error);
             if (isAccountAction(route)) {
                 try { console.warn('[dashboard-admin-account-actions] ' + result.body.code); } catch (_) { /* No logging authority. */ }
+            } else if (frameworkAccess) {
+                // Category, status and bounded code only: no selector, email, reason or operation ID.
+                try { console.warn('[dashboard-admin-account-actions] framework-access ' + result.status + ' ' + result.body.code); } catch (_) { /* No logging authority. */ }
             }
             return result;
         }

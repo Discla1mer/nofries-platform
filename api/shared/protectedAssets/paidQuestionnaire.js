@@ -61,13 +61,32 @@
             return !!value && (choices.get(value.optionId).applicable || !!value.rationale?.trim());
         };
         const same = (a, b) => a?.optionId === b?.optionId && a?.rationale === b?.rationale;
+        const hasUnsavedChanges = () => edits.size > 0;
+        // Warn before the tab closes or reloads only while answers are unsaved.
+        const win = doc.defaultView;
+        let guarded = false;
+        function beforeUnload(event) {
+            if (closed || !hasUnsavedChanges()) return undefined;
+            event.preventDefault();
+            event.returnValue = '';
+            return '';
+        }
+        function guard() {
+            const wanted = !closed && hasUnsavedChanges();
+            if (wanted === guarded || typeof win?.addEventListener !== 'function') return;
+            if (wanted) win.addEventListener('beforeunload', beforeUnload);
+            else win.removeEventListener('beforeunload', beforeUnload);
+            guarded = wanted;
+        }
         function edit(value) {
             if (same(value, saved.get(value.itemId))) edits.delete(value.itemId);
             else edits.set(value.itemId, value);
             message = '';
+            guard();
         }
         function destroy() {
             closed = true;
+            guard();
             view.remove();
             view.replaceChildren();
             edits.clear();
@@ -260,6 +279,7 @@
                         next.assessment.status !== 'submitted' || !next.assessment.submission)) throw new Error('unconfirmed');
                 saved = accepted;
                 for (const row of command.body.payload.responses || []) edits.delete(row.itemId);
+                guard();
                 record = next;
                 pending = null;
                 if (action === 'submit') { sealed(); return; }
@@ -284,7 +304,7 @@
         if (['created', 'in-progress'].includes(record.assessment.status)) render();
         else sealed();
         return {
-            destroy, hasUnsavedChanges: () => edits.size > 0,
+            destroy, hasUnsavedChanges,
             async requestLeave(commit) {
                 if (busy) return false;
                 if (!closed && pending && !doc.defaultView.confirm('The last request is unconfirmed. Leave and check the saved assessment later?')) return false;

@@ -335,6 +335,19 @@ for (const useExample of [false, true]) {
                 assert.ok(csp.includes("script-src-attr 'none'"));
                 assert.ok(!csp.includes("'unsafe-inline'"));
             }
+            // The deployed paid framework route carries the same robots and CSP headers as the /api/* fallback.
+            const fallback = config.routes.find(rule => rule.route === '/api/*');
+            for (const [method, suffix] of [['GET', 'assets/questionnaire.js'], ['GET', 'assessments'], ['POST', 'assessments'],
+                ['GET', 'assessments/fixture'], ['POST', 'assessments/fixture/save'], ['POST', 'assessments/fixture/submit']]) {
+                const route = matched(method, '/api/dashboard/frameworks/example-profile/1/' + suffix);
+                assert.equal(route?.route, '/api/dashboard/frameworks/*');
+                assert.deepEqual(route.allowedRoles ?? ['anonymous'], ['anonymous']);
+                assert.equal(route.headers['X-Robots-Tag'], fallback.headers['X-Robots-Tag']);
+                assert.equal(route.headers['Content-Security-Policy'], fallback.headers['Content-Security-Policy']);
+                assertEquivalentHeaders({ 'X-Robots-Tag': route.headers['X-Robots-Tag'] }, { 'X-Robots-Tag': 'noindex, nofollow' });
+                assertEquivalentHeaders({ 'Cache-Control': route.headers['Cache-Control'] }, { 'Cache-Control': 'private, no-store, max-age=0' });
+            }
+            assert.deepEqual(matched('DELETE', '/api/dashboard/frameworks/example-profile/1/assessments')?.allowedRoles, ['authenticated']);
             const endpoints = [
                 ['GET', '/api/organisation-setup/state'],
                 ['POST', '/api/organisation-setup/state'],
