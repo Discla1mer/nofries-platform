@@ -42,6 +42,12 @@
     const elements = {};
     Object.keys(ids).forEach(function (key) { elements[key] = document.getElementById(ids[key]); });
     if (Object.keys(elements).some(function (key) { return !elements[key]; })) return;
+    // Fixed public return targets contain no client, session or assessment data.
+    const exampleReturns = { '#cyber-security/nist-example': 'nist', '#cyber-security/iso-example': 'iso' };
+    const exampleReturn = exampleReturns[window.location.hash];
+    if (exampleReturn) window.history.replaceState(Object.assign({}, window.history.state,
+        { nofriesExampleFocus: exampleReturn }), '', '#cyber-security');
+    let restoreExampleFocus = true;
     const accountMenu = document.getElementById('dashboardAccountMenu');
     // Escape closes the account menu and returns focus to its summary.
     if (accountMenu && typeof accountMenu.addEventListener === 'function') accountMenu.addEventListener('keydown', function (event) {
@@ -858,7 +864,8 @@
             ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
-            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, paidHost: cyber.paidHost } : {}),
+            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, paidHost: cyber.paidHost,
+                openFrameworkEnquiry: (link, ref, plan) => openFrameworkEnquiry(cycle, snapshot, cyber.paidFrameworks, link, ref, plan) } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}),
@@ -869,7 +876,70 @@
         elements.app.hidden = false;
         cycle.busy = false;
         show(cycle, 'ready');
+        if (restoreExampleFocus) {
+            restoreExampleFocus = false;
+            const key = window.history.state && window.history.state.nofriesExampleFocus;
+            if (window.location.hash === '#cyber-security' && ['nist', 'iso'].includes(key)) {
+                const link = document.getElementById('framework-example-' + key);
+                if (link && elements.app.contains(link)) link.focus();
+            }
+        }
         if (fresh.accountType === 'consultant') portfolioControls(cycle);
+    }
+    let enquiryScripts;
+    function loadEnquiryScripts(template) {
+        if (enquiryScripts) return enquiryScripts;
+        function load(src, integrity) {
+            return new Promise((resolve, reject) => {
+                if (!/^sha256-[A-Za-z0-9+/]{43}=$/.test(integrity || '')) { reject(invalid()); return; }
+                const script = document.createElement('script');
+                const timer = window.setTimeout(() => finish(false), REQUEST_MS);
+                function finish(ok) {
+                    window.clearTimeout(timer); script.onload = null; script.onerror = null;
+                    script.remove(); if (ok) resolve(); else reject(invalid());
+                }
+                script.src = src; script.integrity = integrity; script.crossOrigin = 'anonymous';
+                script.referrerPolicy = 'no-referrer'; script.dataset.enquiryForm = 'true';
+                script.onload = () => finish(true); script.onerror = () => finish(false);
+                document.head.append(script);
+            });
+        }
+        enquiryScripts = Promise.all([load('/js/contact.js', template.dataset.contact),
+            load('/js/enquiry-availability.js', template.dataset.availability)]).catch(error => { enquiryScripts = null; throw error; });
+        return enquiryScripts;
+    }
+    function openFrameworkEnquiry(cycle, snapshot, included, link, ref, plan) {
+        const template = document.getElementById('frameworkEnquiryForm');
+        const registry = window.NoFriesDashboardRegistry;
+        const locked = registry.paidFrameworks.find(row => registry.sameFramework(row, ref) &&
+            !included.some(grant => registry.sameFramework(row, grant)));
+        const live = () => current(cycle) && !cycle.busy && !cycle.authorityPending && !cycle.revalidating && !cycle.quietRefreshFailed &&
+            !unresolved && Date.parse(cycle.session?.expiresAt) > Date.now() && snapshot.selectedBindingId !== null &&
+            cycle.session.selectedBindingId === snapshot.selectedBindingId && cycle.session.generation === snapshot.generation &&
+            link.isConnected && elements.app.contains(link);
+        if (!template || !locked || !live() || !['monthly', 'annual'].includes(plan)) return false;
+        const dialog = document.createElement('dialog');
+        if (typeof dialog.showModal !== 'function') return false;
+        dialog.className = 'ncsc-leave-dialog framework-enquiry'; dialog.setAttribute('aria-labelledby', 'frameworkEnquiryTitle');
+        const title = document.createElement('h2'); title.id = 'frameworkEnquiryTitle'; title.textContent = 'Ask No Fries';
+        const close = document.createElement('button'); close.type = 'button'; close.className = 'dashboard-button dashboard-button-secondary';
+        close.textContent = 'Close'; close.addEventListener('click', () => dialog.close());
+        const notice = document.createElement('p'); notice.setAttribute('role', 'status'); notice.textContent = 'Opening the enquiry form…';
+        dialog.append(title, close, notice); link.parentElement.append(dialog);
+        dialog.addEventListener('close', () => dialog.remove(), { once: true });
+        dialog.showModal();
+        const currentForm = () => dialog.open && dialog.isConnected && live();
+        loadEnquiryScripts(template).then(() => {
+            if (!currentForm()) { if (dialog.open) dialog.close(); return; }
+            notice.remove(); dialog.append(template.content.cloneNode(true));
+            return window.mountEnquiryForm(dialog, { framework: locked.label + ' on the ' + plan + ' plan',
+                organisation: cycle.session.accountType === 'consultant' ? cycle.selectedOrganisationName : '', current: currentForm });
+        }).catch(() => {
+            if (!currentForm()) return;
+            const fallback = document.createElement('a'); fallback.href = '/contact.html'; fallback.textContent = 'Open the contact form';
+            notice.textContent = 'The enquiry form could not open here.'; dialog.replaceChildren(title, close, notice, fallback);
+        });
+        return true;
     }
     function clientSetupControls(cycle) {
         const section = document.createElement('section'); section.id = 'clientSetupControls'; section.className = 'client-workspace';
@@ -1553,6 +1623,7 @@
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
                 onLocation: presentation && presentation.onLocation, onFunnelStep: funnelStep,
+                appendFrameworkComparison: presentation && presentation.appendFrameworkComparison,
                 // Overview's first-use action opens the new-assessment step directly.
                 startNew: !!(presentation && presentation.startNew === true),
                 ...(presentation && typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
@@ -1570,10 +1641,11 @@
                 const prefix = '/api/dashboard/frameworks/' + encodeURIComponent(ref.profileId) + '/' + encodeURIComponent(ref.version);
                 const cleanups = new Set();
                 async function renderer(name) {
-                    if (!live() || !Object.hasOwn(registry.rendererIntegrity, name)) throw invalid();
+                    const asset = registry.rendererAsset(ref, name);
+                    if (!live() || !asset) throw invalid();
                     // A fresh salt keeps separate loads from sharing a selection identifier in access logs.
                     const nonce = secureId().replace(/-/g, '');
-                    const sri = registry.rendererIntegrity[name], message = registry.rendererSelection(snapshot.generation, ref, name, nonce);
+                    const sri = asset.integrity, message = registry.rendererSelection(snapshot.generation, ref, name, nonce);
                     const hash = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
                     const fingerprint = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
                     if (!live()) throw invalid();
@@ -2333,7 +2405,9 @@
             !cycle.clientMutationPending) { revalidate(cycle); return; }
         restore();
     });
-    window.addEventListener('pageshow', function (event) { if (event && event.persisted) restore(); });
+    window.addEventListener('pageshow', function (event) {
+        if (event && event.persisted) { restoreExampleFocus = true; restore(); }
+    });
     window.addEventListener('beforeunload', function (event) {
         if (!active || !current(active) || !active.session || Date.parse(active.session.expiresAt) <= Date.now()) return;
         const draft = clientDraft(active);

@@ -76,9 +76,35 @@ test('an RLS-hidden deferred agreement never takes the historical-account bypass
     const tx = { async query(sql) {
         if (sql.includes('dashboard_starter_scopes')) return { rows: [] };
         if (sql.includes('dashboard_deferred_agreements')) return { rows: [{ organisation_id: f.context.scope.organisationId }] };
+        if (sql.includes('JOIN nofries.signup_acceptance_receipts')) return { rows: [] };
         throw new Error('Unexpected query');
     } };
-    await expect(requireRepresentativeDetails(tx, f.context)).rejects.toMatchObject({ code: 'representative_details_access_denied' });
+    await expect(requireRepresentativeDetails(tx, f.context)).rejects.toMatchObject({ code: 'representative_details_required' });
+});
+test('hidden starter scope: verified completion unlocks only readiness, never a write', async () => {
+    const f = await fixture(); f.submit(); await representativeDetails(f.deps, DATA);
+    const tx = { async query(sql, args) {
+        expect(args).toEqual([f.context.scope.tenantId, f.context.scope.organisationId]);
+        if (sql.includes('dashboard_starter_scopes')) return { rows: [] };
+        if (sql.includes('dashboard_deferred_agreements')) return { rows: [f.context.scope] };
+        if (sql.includes('JOIN nofries.signup_acceptance_receipts')) return { rows: [{ ...f.row(), receipt: f.receipt, authority_id: f.preparation.representativeAuthorityEvidenceId }] };
+        throw new Error('Unexpected query');
+    } };
+    const deps = { ...f.deps, database: { withTenantTransaction: (_, cb) => cb(tx) } };
+    await expect(representativeDetails(deps)).resolves.toEqual({ schemaVersion: 1, status: 'ready' });
+    await expect(requireRepresentativeDetails(tx, f.context)).resolves.toBeUndefined();
+    await expect(representativeDetails(deps, DATA)).rejects.toMatchObject({ code: 'representative_details_access_denied' });
+    const retained = JSON.parse(JSON.stringify(f.row().payload));
+    f.row().payload.link.authorityEvidenceId = 'different-authority';
+    f.row().payload_sha256 = hash(f.row().payload);
+    await expect(requireRepresentativeDetails(tx, f.context)).rejects.toThrow();
+    f.row().payload = JSON.parse(JSON.stringify(retained));
+    f.row().payload.link.organisationId = 'other-organisation';
+    f.row().payload_sha256 = hash(f.row().payload);
+    await expect(requireRepresentativeDetails(tx, f.context)).rejects.toThrow();
+    f.row().payload = retained; f.row().payload_sha256 = hash(retained);
+    f.row().payload.details.role = 'Corrupt';
+    await expect(requireRepresentativeDetails(tx, f.context)).rejects.toThrow();
 });
 test.each([{ ...DATA, tenantId: 'foreign' }, { ...DATA, address: '' }, { ...DATA, name: '<script>' }, { ...DATA, role: 'a'.repeat(121) }])('rejects scope injection and invalid details', data => {
     expect(() => normaliseRepresentativeDetails(data)).toThrow();

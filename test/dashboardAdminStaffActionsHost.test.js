@@ -78,7 +78,13 @@ test('staff launcher serves the paid control and binds its approval before apply
     const operationId = approval.body.operationId;
     await submit({ step: 'apply', operationId }).expect(200);
     const outcome = h.bucket('syntheticdata', 'account-action-audit').get('dashboard-admin-framework-access/' + operationId + '/outcome.json');
-    expect(JSON.parse(outcome.bytes).command).toMatchObject({ action: 'grant', tuple: input.tuple, selector: input.selector, reason: input.reason });
+    expect(JSON.parse(outcome.bytes).command).toMatchObject({ action: 'grant', tuple: input.tuple, selector: input.selector,
+        reasonSha256: hash(input.reason), reasonLength: input.reason.length });
+    const audit = h.bucket('syntheticdata', 'account-action-audit');
+    for (const key of [...audit.keys()].filter(name => name.startsWith('dashboard-admin-framework-access/'))) {
+        expect(JSON.parse(audit.get(key).bytes).command).not.toHaveProperty('reason');
+        expect(Buffer.from(audit.get(key).bytes).toString('utf8')).not.toContain(input.reason);
+    }
 });
 
 test('staff suspend then restore succeeds end to end with session-bound approvals and attempt/terminal audit records', async () => {
