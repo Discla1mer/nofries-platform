@@ -172,6 +172,10 @@ function harness(fixtureOptions = {}) {
         }
         if (/FROM nofries\.dashboard_ncsc_assessments\b/i.test(sql)) return { rows: [] };
         if (/FROM nofries\.dashboard_starter_scopes\b/i.test(sql)) return { rows: [] };
+        // Staff framework decisions (#519): this fixed driver holds none, so the
+        // purchased and activated tuples decide. Only the parameterised scoped read is answered.
+        if (/FROM nofries\.dashboard_paid_framework_access WHERE tenant_id=\$1 AND organisation_id=\$2 AND product_grant_id=\$3\b/i.test(sql) &&
+            params.length === 3) return { rows: [] };
         if (/SELECT octet_length\(\$1::jsonb::text\) AS payload_bytes/i.test(sql)) return { rows: [{ payload_bytes: 1024 }] }; // Synthetic result, not JSONB measurement.
         if (/FROM nofries\.dashboard_runtime_audit\b/i.test(sql)) return { rows: state.auditRows.has(params[0]) ? [clone(state.auditRows.get(params[0]))] : [] };
         if (/INSERT INTO nofries\.dashboard_runtime_audit\b/i.test(sql)) {
@@ -1387,6 +1391,41 @@ describe('configured NCSC host presentation remains authority-bound', () => {
         expect(result.body.metadata).toEqual(require('../api/shared/ncscQuestionnaireMetadata').createNcscQuestionnaireMetadata());
         frozen(result); expectHostSettled(f, true);
         expect(f.options.resolveSubmissionQuota).not.toHaveBeenCalled();
+    });
+    describe('paid assessment choices', () => {
+        const [nist, iso] = require('../api/shared/protectedAssets/dashboardRegistry').paidFrameworks
+            .map(({ moduleId, profileId, version }) => ({ moduleId, profileId, version }));
+        function account(grants, flags, enabled = true) {
+            const f = configured(), product = f.snapshot.entitlementState.grants.find(g => g.grantId === 'synthetic-product');
+            if (enabled) f.options.paidFrameworksEnabled = true;
+            product.frameworks.push(...grants); f.snapshot.flags.frameworks.push(...flags);
+            return f;
+        }
+        test('disabled discovery omits the picker even with both grants', async () => {
+            const result = await hostRead(account([nist, iso], [nist, iso], false), 'modules/cyber_security');
+            expect(result.status).toBe(200);
+            expect(result.body).not.toHaveProperty('paidFrameworks');
+        });
+        test.each([[[], [], []], [[nist], [nist, iso], [nist]], [[nist, iso], [iso], [iso]],
+            [[nist, iso], [nist, iso], [nist, iso]], [[nist], [{ ...nist, version: 'other-version' }], []],
+            [[nist], [{ ...nist, moduleId: 'ai_governance' }], []]])('only the exact purchased and activated tuples appear', async (grants, flags, expected) => {
+            const f = account(grants, flags), result = await hostRead(f, 'modules/cyber_security');
+            expect(result.status).toBe(200); expect(result.body.paidFrameworks).toEqual(expected);
+            expect(result.body.admissionGranted).toBe(false);
+            expect((await hostRead(f)).body).not.toHaveProperty('paidFrameworks');
+        });
+        test('revalidates a change of purchased version at the closing witness', async () => {
+            const f = account([nist], [nist, iso]);
+            const product = f.snapshot.entitlementState.grants.find(g => g.grantId === 'synthetic-product');
+            product.validUntil = HOST_END;
+            const next = { ...clone(product), grantId: 'successor', validFrom: HOST_END, validUntil: END };
+            next.frameworks = next.frameworks.filter(row => row.profileId !== nist.profileId).concat([iso]);
+            f.snapshot.entitlementState.grants.push(next);
+            let decisions = 0;
+            mockAfterHostDecision = () => { if (++decisions === 2) f.state.at = HOST_END; };
+            await expectFailure(() => hostRead(f, 'modules/cyber_security'), DashboardPersistenceError, 'unavailable', 503);
+            expect(decisions).toBe(2);
+        });
     });
     test('scoring v2 (#399): v2 display metadata is added only when NOFRIES_NCSC_PROFILE_V2 is exactly true', async () => {
         const original = process.env.NOFRIES_NCSC_PROFILE_V2;
