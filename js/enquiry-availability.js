@@ -18,7 +18,8 @@
         };
         let source = label(params.get('utm_source'));
         if (!source && params.has('fbclid')) source = 'meta';
-        if (source && !window.enquiryCampaign()) {
+        const formOnly = typeof document !== 'undefined' && document.currentScript?.dataset.enquiryForm === 'true';
+        if (!formOnly && source && !window.enquiryCampaign()) {
             const tag = [source, label(params.get('utm_medium')), label(params.get('utm_campaign'))].join('/');
             window.sessionStorage.setItem('nofries-enquiry-campaign', tag);
         }

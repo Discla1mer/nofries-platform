@@ -10,9 +10,10 @@ const { createNistFrameworkProfile } = require('../../api/shared/assessmentEngin
 function isoFixture() {
     const ids = ['C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'A.5', 'A.6', 'A.7', 'A.8'];
     const domains = ids.map((id, order) => ({id, order, title: 'Practice group ' + id}));
-    const counts = [4, 3, 3, 5, 3, 3, 2, 37, 8, 14, 34];
+    const clauseIds = { C6: ['C6.1.2', 'C6.1.3', 'C6.2', 'C6.3'], C7: ['C7.1', 'C7.2', 'C7.4', 'C7.5'] };
+    const counts = [4, 3, 4, 4, 3, 3, 2, 37, 8, 14, 34];
     const controls = domains.flatMap(({id}, i) => Array.from({length: counts[i]}, (_, n) => ({
-        domainId: id, order: n + 1, id: id + '.' + (n + 1)
+        domainId: id, order: n + 1, id: clauseIds[id]?.[n] || id + '.' + (n + 1)
     })));
     const responseOptions = ['Not started', 'Partly in place', 'In place', 'In place with evidence', 'Not applicable']
         .map(label => ({id: label.toLowerCase().replaceAll(' ', '_'), label, applicable: label !== 'Not applicable'}));
@@ -26,6 +27,63 @@ function isoFixture() {
             guidance: {evidenceExamples: ['A dated entry from the practice register.']}
         }))
     };
+}
+
+async function checkGlossary(page, publication, iso, output) {
+    // Walk the actual rendered sequence, including sections without glossary entries.
+    const found = await page.evaluate(() => {
+        const questions = [];
+        for (;;) {
+            const field = document.querySelector('fieldset');
+            const labels = [...field.querySelectorAll('summary')].map(s => s.textContent).filter(s => s.endsWith(' explained'));
+            questions.push({ prompt: field.querySelector('legend').textContent, labels });
+            const next = [...document.querySelectorAll('button')].find(b => b.textContent === 'Next');
+            if (!next) return questions;
+            next.click();
+        }
+    });
+    assert.equal(found.length, publication.questions.length);
+    const expected = iso ? {
+        'C4.1-Q1': ['Information risk'], 'C4.3-Q1': ['Scope', 'ISMS'], 'C5.3-Q1': ['Risk owner'],
+        'C6.1.2-Q1': ['Likelihood'], 'C6.1.3-Q1': ['Annex A', 'Risk treatment', 'Statement of Applicability'],
+        'C9.2-Q1': ['Internal audit'], 'C9.3-Q1': ['Management review'], 'C10.2-Q1': ['Corrective action']
+    } : {};
+    const questions = new Map(publication.questions.map(q => [q.prompt, q.id]));
+    assert.equal(questions.size, found.length);
+    for (const row of found) {
+        assert.ok(questions.has(row.prompt));
+        assert.deepEqual(row.labels, (expected[questions.get(row.prompt)] || []).map(term => term + ' explained'));
+    }
+    if (!iso) return;
+    await page.getByRole('combobox', { name: 'Section', exact: true }).selectOption({ index: 2 });
+    await page.getByRole('button', { name: 'Next', exact: true }).press('Enter');
+    const help = page.locator('summary').filter({ hasText: /^Risk treatment explained$/ });
+    // Keep the existing tab order through the answers. Native summary owns expand/collapse.
+    await page.getByRole('radio').first().focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Annex A explained');
+    await page.keyboard.press('Tab');
+    assert.ok(await help.evaluate(el => el === document.activeElement));
+    await page.keyboard.press('Space');
+    const meaning = page.getByText(/^What you decide to do about a risk/);
+    await meaning.waitFor({ state: 'visible' });
+    const ax = await page.context().newCDPSession(page);
+    const { nodes } = await ax.send('Accessibility.getFullAXTree');
+    const disclosure = nodes.find(n => n.name?.value === 'Risk treatment explained' && !n.ignored);
+    assert.ok(disclosure?.properties.some(p => p.name === 'expanded' && p.value.value === true));
+    await ax.detach();
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.locator('legend').evaluate(el => el.scrollIntoView({ block: 'start' }));
+    await page.screenshot({ path: path.join(output, 'iso-glossary-375.png') });
+    await page.keyboard.press('Escape');
+    await meaning.waitFor({ state: 'hidden' });
+    assert.ok(await help.evaluate(el => el === document.activeElement));
+    await page.keyboard.press('Enter');
+    await meaning.waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: 'Next', exact: true }).press('Enter');
+    assert.ok(await page.locator('legend').evaluate(el => el === document.activeElement));
+    assert.equal(await help.count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Save progress' }).isEnabled(), false);
 }
 
 async function exercise(browser, iso, output) {
@@ -42,6 +100,10 @@ async function exercise(browser, iso, output) {
     const page = await context.newPage();
     page.setDefaultTimeout(4000);
     page.on('pageerror', e => errors.push(e.message));
+    const assetDir = 'api/shared/protectedAssets/';
+    const scripts = ['paidQuestionnaire.js'];
+    if (iso) scripts.push('isoQuestionnaireGlossary.js');
+    const renderer = Buffer.concat(scripts.map(file => fs.readFileSync(assetDir + file)));
     await context.route('**/*', async route => {
         const req = route.request(), url = new URL(req.url());
         assert.equal(url.origin, 'https://fixture.test');
@@ -49,7 +111,7 @@ async function exercise(browser, iso, output) {
         if (url.pathname === '/') return route.fulfill({contentType: 'text/html', body:
             '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/style"><body class="nofries-dashboard"><main class="dashboard-main"></main><script src="/module"></script>'});
         if (url.pathname === '/style') return route.fulfill({path: 'app/dashboard.css', contentType: 'text/css'});
-        if (url.pathname === '/module') return route.fulfill({path: 'api/shared/protectedAssets/paidQuestionnaire.js', contentType: 'application/javascript'});
+        if (url.pathname === '/module') return route.fulfill({body: renderer, contentType: 'application/javascript'});
         if (url.pathname === base && req.method() === 'GET') return reply(envelope());
         assert.equal(req.method(), 'POST');
         assert.ok([base + '/save', base + '/submit'].includes(url.pathname));
@@ -99,6 +161,9 @@ async function exercise(browser, iso, output) {
     const section = page.getByRole('combobox', {name: 'Section'});
     const na = role('radio', p.responseOptions.find(o => !o.applicable).label), reason = page.getByRole('textbox');
     const filter = role('checkbox', 'Show unanswered questions only');
+    await open();
+    await checkGlossary(page, p, iso, output);
+    assert.equal(commands.length, 0);
     await open();
     assert.equal(await section.locator('option').count(), iso ? 11 : 6);
     assert.equal(await na.count(), iso ? 0 : 1);
