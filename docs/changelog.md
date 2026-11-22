@@ -7,16 +7,20 @@ The separate News site remains retired; this page does not revive it.
 
 ## Review evidence (not rendered)
 
-Checked main and live are `99771994a1d94e6e777ae8673a6da90a8aec799e`, supported by
-the [official receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928).
-This supersedes `942ea196c1bbfe8151ea0ad7971eff60cfee45ba` as the live release.
+Integration main is `c443f9177172685cd3154c2dc77276138260d1a2`. Independently
+verified live is now the same commit, supported by the
+[new official receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7076315188)
+and matching public identities. This receipt arrived during the refresh, replacing
+previously verified live `9977199`, which had superseded `942ea19`. A main merge
+alone did not establish the live state. #541 and test-only #551 are now separately
+release-verified; they do not change the existing editorial availability claims.
 The [942ea19 receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704)
 confirms the planned-assessment copy and both fictional examples were published.
 #501 was the squash release of the reviewed follow-on chain, including #529.
 
 The [latest paid-availability receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277)
-still records the paid flag unset; the current official receipt confirms deferred
-details is off. A merged or deployed change behind a disabled flag is not available.
+still records the paid flag unset; the [9977199 receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928)
+records deferred details off, with no later activation evidence. A merged or deployed change behind a disabled flag is not available.
 No flag, permission, account or operational details belong in customer copy.
 #546, #544 and #545 do not establish new customer availability and have no
 separate editorial entry. No releases in earlier quarters are inferred.
