@@ -97,7 +97,7 @@ describe('public feature-status registry', () => {
     test('every roadmap title named in the registry appears on the roadmap', () => {
         const roadmap = readPage('roadmap.html');
         for (const item of registry.capabilities.filter(entry => entry.roadmapTitle)) {
-            expect([item.id, roadmap.includes(`<h4>${item.roadmapTitle}</h4>`)]).toEqual([item.id, true]);
+            expect([item.id, roadmap.includes(`<h3>${item.roadmapTitle}</h3>`)]).toEqual([item.id, true]);
         }
     });
 });
