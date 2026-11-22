@@ -44,9 +44,9 @@
     ]);
     // Public SRI pins for the fixed, separately admitted package files.
     const rendererIntegrity = Object.freeze({
-        collection: 'sha256-kxaNJOPXpMSfz6hGnpC1BYG5Awh/CZGOcximDl9Ac7g=',
+        collection: 'sha256-4iLaelW+2xCFyCw72BCgqsvKP43Sp3r1on6sSARgIS8=',
         questionnaire: 'sha256-7uNUdqKXH144EUyS7+mbScmoiVmc9L1M/sKupp61s8s=',
-        results: 'sha256-W56U35JlRI31/ROM6NG7Nvhw7bfmlGetW+pWARMsLIk='
+        results: 'sha256-WGvpeAntN0ySg4UrW7pt7qhzTS8BqdmzjWaTR7oRjG8='
     });
     function rendererAsset(ref, name) {
         if (!ref || !Object.hasOwn(rendererIntegrity, name) || !paidFrameworks.some(row => sameFramework(row, ref))) return null;
