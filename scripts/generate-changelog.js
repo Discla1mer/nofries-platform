@@ -12,10 +12,12 @@ function renderChangelog(data = readChangelog()) {
     const lines = ['<!-- CHANGELOG:START -->', '<header class="public-roadmap-intro">',
         '<p class="eyebrow">Product changelog</p>', `<h1>${escape(data.title)}</h1>`,
         `<p class="home-lead">${escape(data.lead)}</p><p>${escape(data.notice)}</p>`,
-        '<p><a href="/roadmap.html">Explore the quarterly roadmap</a>.</p></header>',
-        `<h2>${escape(data.period)}</h2>`];
+        '<p><a href="/roadmap.html">Explore the roadmap</a>.</p></header>'];
     for (const [key, label] of [['published', 'Published information and changes'], ['planned', 'Planned — not available yet']]) {
-        lines.push(`<section aria-labelledby="changelog-${key}"><h2 id="changelog-${key}">${label}</h2><div class="public-roadmap-grid">`);
+        lines.push(`<section aria-labelledby="changelog-${key}"><h2 id="changelog-${key}">${label}</h2>`);
+        // The period labels published entries only; planned work stays undated.
+        if (key === 'published') lines.push(`<p class="changelog-period">${escape(data.period)}</p>`);
+        lines.push('<div class="public-roadmap-grid">');
         for (const entry of data[key]) {
             lines.push(`<article data-changelog-entry="${escape(entry.id)}"><h3>${escape(entry.title)}</h3>`,
                 `<p class="roadmap-status">${key === 'published' ? 'Published' : 'Planned'}</p><p>${escape(entry.text)}</p>`);

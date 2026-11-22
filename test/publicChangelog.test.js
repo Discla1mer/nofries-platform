@@ -9,7 +9,7 @@ const data = readChangelog(), html = read('changelog.html');
 
 test('the customer changelog has strict parity with its editorial source', () => {
     expect(html.match(marker)?.[0]).toBe(renderChangelog(data));
-    expect(data.period).toBe('FY27 Q2 (Oct–Dec 2026)');
+    expect(data.period).toBe('Oct–Dec 2026');
     expect(data.published.map(e => e.id)).toEqual(['planned-assessment-information', 'fictional-readiness-examples', 'service-responsibilities']);
     expect(data.published.slice(0, 2).every(e => e.release === '942ea196c1bbfe8151ea0ad7971eff60cfee45ba')).toBe(true);
     expect(data.published[2].release).toBe('99771994a1d94e6e777ae8673a6da90a8aec799e');
@@ -21,7 +21,8 @@ test('published information does not claim paid or deferred functionality is ava
     expect(data.published[1].text).toMatch(/fictional.*made-up/);
     expect(data.published[1].text).toContain('do not provide access');
     for (const entry of data.planned) expect(entry.text).toContain('not available yet');
-    expect(data.planned.find(e => e.id === 'paid-assessments').text).toContain('Prices remain unpublished');
+    expect(data.planned.find(e => e.id === 'paid-assessments').text).toContain('Prices will be published when these options become available.');
+    expect(data.published.find(e => e.id === 'service-responsibilities').text).toBe('The pricing page now explains that, for each improvement, the agreed scope says whether No Fries, you or your IT provider makes the change, and that hands-on changes by No Fries must be agreed separately. The clarification preserves the agreed service scope and existing terms.');
     expect(html).not.toMatch(/\b(?:certified|compliant|audit)\b|NZ\$|\$\s*\d|\b\d{4}-\d{2}-\d{2}\b/i);
 });
 
@@ -50,4 +51,19 @@ test('every changelog customer link resolves including its fragment', () => {
         expect(fs.existsSync(path.join(root, file))).toBe(true);
         if (url.hash) expect(read(file)).toContain(`id="${url.hash.slice(1)}"`);
     }
+});
+
+test('headings run h1, section h2, entry h3 with no empty heading; only published work has a period', () => {
+    const generated = html.match(marker)[0];
+    const headings = [...generated.matchAll(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/g)].map(([, level, text]) => [Number(level), text.replace(/<[^>]*>/g, '').trim()]);
+    for (const [, text] of headings) expect(text).not.toBe('');
+    expect(headings[0][0]).toBe(1);
+    for (let i = 1; i < headings.length; i++) expect(headings[i][0] - headings[i - 1][0]).toBeLessThanOrEqual(1);
+    expect(headings.filter(([level]) => level === 2).map(([, text]) => text)).toEqual(['Published information and changes', 'Planned — not available yet']);
+    expect(headings.some(([, text]) => text === data.period)).toBe(false);
+    const sections = Object.fromEntries([...generated.matchAll(/<section aria-labelledby="changelog-(\w+)">([\s\S]*?)<\/section>/g)].map(([, key, body]) => [key, body]));
+    expect(sections.published).toContain(`<p class="changelog-period">${data.period}</p>`);
+    expect(sections.planned).not.toContain('changelog-period');
+    expect(sections.planned.replace(/<[^>]*>/g, ' ')).not.toMatch(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b|\b20\d{2}\b|\bQ[1-4]\b/);
+    expect(html).not.toMatch(/\bFY\d{2}\b|\bquarter(?:s|ly)?\b/i);
 });
