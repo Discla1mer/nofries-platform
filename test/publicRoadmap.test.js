@@ -33,7 +33,10 @@ test('every item has source PRs; Done has release proof and only historical Done
         if (quarter.state === 'historical') expect(item.lane).toBe('Done');
         if (item.lane === 'Done') {
             expect(quarter.state).not.toBe('planned');
-            expect(item.release).toBe('https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928');
+            expect([
+                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928',
+                'https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704'
+            ]).toContain(item.release);
             for (const pr of item.prs) expect(source).toMatch(new RegExp(`\\| \\[#${pr}\\]\\([^\\n]+\\| \\x60[a-f0-9]{40}\\x60 \\|`));
         } else expect(item.release).toBeUndefined();
     }
@@ -75,4 +78,16 @@ test('roadmap links and inbound public fragments resolve without changing unlist
         for (const match of read(file).matchAll(/href="\/roadmap.html#([^"]+)"/g)) expect(html).toContain(`id="${match[1]}"`);
     }
     expect(html).not.toMatch(/href="\/fictional-(?:iso|nist)-example.html/);
+});
+
+// The release published information, not access to the disabled assessments.
+test('942ea19 information is Done while the paid capability remains planned', () => {
+    const information = ['planned-assessment-information', 'fictional-readiness-examples'].map(id => data.items.find(item => item.id === id));
+    for (const item of information) {
+        expect(item).toMatchObject({ quarter: 'fy27-q2', lane: 'Done', release: 'https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704' });
+        expect(item.text).toContain('not available yet');
+    }
+    expect(information[1].text).toMatch(/fictional.*made-up/);
+    expect(data.items.find(item => item.id === 'paid-assessments').lane).toBe('In progress');
+    expect(data.items.filter(item => item.quarter !== 'fy27-q2' && item.lane === 'Done')).toEqual([]);
 });

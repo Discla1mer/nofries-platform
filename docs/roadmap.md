@@ -21,8 +21,10 @@ The paid assessment availability recorded in the
 remains unchanged: `NOFRIES_PAID_FRAMEWORKS_ENABLED` is unset. #501, #518,
 #528, #529, #530, #538 and #546 are merged and included in this release, but
 paid assessments remain planned, not Done customer capabilities. No paid
-assessment prices are published. The fictional examples remain unlisted and
-noindex. The last explicit NCSC-v2 flag receipt records it unset:
+assessment prices are published. The customer-visible changes from `942ea19` were the planned-assessment information
+and two fictional readiness examples. These published information items are Done
+in FY27 Q2; the paid capability stays planned. The fictional examples remain
+unlisted and noindex. The last explicit NCSC-v2 flag receipt records it unset:
 [prior release evidence](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7072631196).
 No later activation evidence was found. Do not infer activation from a merged PR.
 
@@ -37,16 +39,24 @@ from repository age. Current-quarter Done items have merged source PRs and a rel
 receipt whose deployed commit contains those changes. Availability remains bounded
 by the description and the public feature-status registry.
 
-| Done source PR | Verified merge commit (ancestor of released 9977199) |
-| --- | --- |
-| [#249](https://github.com/Discla1mer/nofries-platform/pull/249) | `82a4bf4df2f040a75102b949cd70bbc9b6f786fc` |
-| [#300](https://github.com/Discla1mer/nofries-platform/pull/300) | `70bad3bb4e742688e0f36f51fe5a20ec364fce0b` |
-| [#397](https://github.com/Discla1mer/nofries-platform/pull/397) | `dbe81b8dbc2649bb9c8bf8674e57a5d4dee9c286` |
-| [#254](https://github.com/Discla1mer/nofries-platform/pull/254) | `5cc761d959708a97285ec2f033804cd7ca6388fd` |
-| [#355](https://github.com/Discla1mer/nofries-platform/pull/355) | `448cb59d393b53116757d865c9db60be9e3d76fc` |
-| [#440](https://github.com/Discla1mer/nofries-platform/pull/440) | `4e16dc198c3abee63099cadf524db158f414ad66` |
-| [#408](https://github.com/Discla1mer/nofries-platform/pull/408) | `5d4c43716a249938caaa66079730f35210d70a46` |
-| [#261](https://github.com/Discla1mer/nofries-platform/pull/261) | `587cbc32a953a8df0ee80654e071f1b36f50950f` |
+| Done source PR | Verified merge commit | Release inclusion |
+| --- | --- | --- |
+| [#249](https://github.com/Discla1mer/nofries-platform/pull/249) | `82a4bf4df2f040a75102b949cd70bbc9b6f786fc` | Ancestor of `9977199`. |
+| [#300](https://github.com/Discla1mer/nofries-platform/pull/300) | `70bad3bb4e742688e0f36f51fe5a20ec364fce0b` | Ancestor of `9977199`. |
+| [#397](https://github.com/Discla1mer/nofries-platform/pull/397) | `dbe81b8dbc2649bb9c8bf8674e57a5d4dee9c286` | Ancestor of `9977199`. |
+| [#254](https://github.com/Discla1mer/nofries-platform/pull/254) | `5cc761d959708a97285ec2f033804cd7ca6388fd` | Ancestor of `9977199`. |
+| [#355](https://github.com/Discla1mer/nofries-platform/pull/355) | `448cb59d393b53116757d865c9db60be9e3d76fc` | Ancestor of `9977199`. |
+| [#440](https://github.com/Discla1mer/nofries-platform/pull/440) | `4e16dc198c3abee63099cadf524db158f414ad66` | Ancestor of `9977199`. |
+| [#408](https://github.com/Discla1mer/nofries-platform/pull/408) | `5d4c43716a249938caaa66079730f35210d70a46` | Ancestor of `9977199`. |
+| [#261](https://github.com/Discla1mer/nofries-platform/pull/261) | `587cbc32a953a8df0ee80654e071f1b36f50950f` | Ancestor of `9977199`. |
+| [#501](https://github.com/Discla1mer/nofries-platform/pull/501) | `942ea196c1bbfe8151ea0ad7971eff60cfee45ba` | Released in `942ea19`; ancestor of `9977199`. |
+| [#529](https://github.com/Discla1mer/nofries-platform/pull/529) | `771cadf39267d2e2adb73e44068ae82bc97316a9` | Merged into the follow-on chain, included by #501's `942ea19` squash; the receipt explicitly confirms both fictional pages. |
+
+The [942ea19 receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704)
+is proof for the two published information items below. `9977199` supersedes it
+as the live release. #518/#528/#530/#538 remain provenance for planned paid work,
+not evidence of customer availability. The editorial changelog records the same
+customer distinction separately from release-engineering evidence.
 
 ## Published timeline data
 
@@ -73,6 +83,8 @@ by the description and the public feature-status registry.
     {"id": "demo", "quarter": "fy27-q2", "lane": "Done", "title": "Try the demo", "text": "Explore a fictional business before creating an account. Entries stay in your browser on this device until you choose Reset demo; they are not sent to No Fries.", "prs": [440], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928", "link": {"href": "/try", "label": "Try the demo"}},
     {"id": "service-enquiries", "quarter": "fy27-q2", "lane": "Done", "title": "Ask about a service", "text": "Open the contact form from a service in the dashboard, with that service already named.", "prs": [408], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928"},
     {"id": "emails", "quarter": "fy27-q2", "lane": "Done", "title": "Welcome and result emails", "text": "Receive a welcome email when you create an account and a link to your result when you submit an assessment.", "prs": [261], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928"},
+    {"id": "planned-assessment-information", "quarter": "fy27-q2", "lane": "Done", "title": "Information about planned assessments", "text": "The pricing page and roadmap distinguish planned paid assessments from options available today. Paid assessments are not available yet and their prices are not published.", "prs": [501], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704"},
+    {"id": "fictional-readiness-examples", "quarter": "fy27-q2", "lane": "Done", "title": "Fictional readiness examples", "text": "Two fictional readiness examples show what results for the planned assessments could look like. They use made-up information. The assessments themselves are not available yet.", "prs": [501, 529], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704"},
     {"id": "simpler-signin", "quarter": "fy27-q2", "lane": "In progress", "title": "Simpler sign-up and return visits", "text": "Planned improvements to account setup and returning to saved work, including organisations with several members. These changes are still being checked.", "prs": [424, 539]},
     {"id": "paid-assessments", "quarter": "fy27-q2", "lane": "In progress", "title": "Planned paid assessments", "text": "Paid NIST CSF 2.0 and ISO 27001 readiness self-assessments are planned and are not available yet. Work includes separate saved answers, readiness results and assessment progress. Prices are not published here while these options remain unavailable.", "prs": [501, 518, 528, 529, 530, 538, 546]},
     {"id": "weighted-assessment", "quarter": "fy27-q2", "lane": "In progress", "title": "Updated NCSC questions", "text": "A planned 16-question assessment with weighted scoring. Existing submitted results keep their original scoring.", "prs": [440]},
