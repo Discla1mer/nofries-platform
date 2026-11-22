@@ -13,6 +13,9 @@ const { fail } = dataCodec;
 
 function ncscFail(code = 'ncsc_unavailable', status = 503) { throw new NcscAssessmentError(code, status); }
 function resolveNcscAccess(snapshot, context, permission, at) {
+    return resolveAssessmentAccess(snapshot, context, permission, at, listsEnabledNcscProfile);
+}
+function resolveAssessmentAccess(snapshot, context, permission, at, acceptsProfiles) {
     try {
         if (at < context.resolvedAt) ncscFail('ncsc_access_denied', 403);
         const scope = context.scope, subjectKey = context.identity.subjectKey;
@@ -24,7 +27,7 @@ function resolveNcscAccess(snapshot, context, permission, at) {
         if (!decision.product || decision.modules[NCSC_MODULE].eligible !== true ||
             // Module gate: the product lists a switched-on profile. Each write is
             // then checked against its own assessment's stored profile.
-            !listsEnabledNcscProfile(decision.frameworks) ||
+            !acceptsProfiles(decision.frameworks) ||
             (permissionDecision.role === 'fractional_advisor' && decision.services.fractional_advisory.enabled !== true)) ncscFail('ncsc_access_denied', 403);
         return decision;
     } catch { ncscFail('ncsc_access_denied', 403); }
@@ -60,4 +63,4 @@ function resolveEvidenceAccess(snapshot, context, at) {
     } catch { throw new EvidenceMetadataError('evidence_access_denied', 403); }
 }
 
-module.exports = Object.freeze({ resolveNcscAccess, resolveEvidenceAccess, normalRole, selectAdvisor });
+module.exports = Object.freeze({ resolveAssessmentAccess, resolveNcscAccess, resolveEvidenceAccess, normalRole, selectAdvisor });

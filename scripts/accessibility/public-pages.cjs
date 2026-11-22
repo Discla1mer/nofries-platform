@@ -194,7 +194,7 @@ async function adLinks(page, base, route) {
     try {
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined, args: ['--no-sandbox'] });
         console.log('Chromium ' + browser.version());
-        const routes = ['/', '/login', '/managed-it.html', '/privacy.html', '/terms.html', '/roadmap.html', '/pricing.html', '/sample-result.html', '/report.html', '/try', ...adPages];
+        const routes = ['/', '/login', '/managed-it.html', '/privacy.html', '/terms.html', '/roadmap.html', '/pricing.html', '/sample-result.html', '/fictional-iso-example.html', '/report.html', '/try', ...adPages];
         if (fs.existsSync(path.join(dist, 'contact.html'))) routes.push('/contact.html');
         else console.log('Contact form absent: deferred to #42/#43, not a passing contact-form check.');
         for (const route of routes) for (const width of route === '/' ? [1280, 701, 700, 390, 320] : adPages.includes(route) ? [1280, 375, 320] : [1280, 320]) for (const scale of [1, 2]) {

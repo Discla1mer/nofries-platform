@@ -1,6 +1,7 @@
 'use strict';
 
 const { starterSetupRecord, starterSetupKey } = require('./starterSetupDetails');
+const { DETAILS_POLICY } = require('./customerStarterPlan');
 const MAX_BYTES = 65536;
 const fail = () => { throw new Error('starter_details_store_unavailable'); };
 // Immutable representative evidence and accepted-offer source are durable. They
@@ -34,6 +35,16 @@ class AzureStarterSetupStore {
             if (error?.statusCode === 404 && error.code === 'BlobNotFound') return null;
             fail();
         }
+    }
+    async ownDeferredCompany(scope) {
+        // Historical organisation IDs need not be starter UUIDs.
+        let key;
+        try { key = starterSetupKey(scope.organisationId); } catch (_) { return false; }
+        const saved = await this.load(key);
+        if (!saved) return false;
+        const offer = saved.offerInput;
+        return offer.tenantId === scope.tenantId && offer.organisationId === scope.organisationId &&
+            offer.accountType === 'company' && offer.kind === 'own' && offer.detailsPolicy === DETAILS_POLICY;
     }
     async create(key, raw) {
         const bytes = Buffer.from(JSON.stringify(this.check(key, raw)));
