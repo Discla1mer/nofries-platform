@@ -13,9 +13,9 @@ const { activationKey, activationReferenceKey, activationReference } = require('
 const uid = n => `60000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const clone = value => JSON.parse(JSON.stringify(value));
 const sha = value => crypto.createHash('sha256').update(value).digest('hex');
-function container() {
+function container(url) {
     const records = new Map(), versions = new Map(); let serial = 0;
-    return { records, async getProperties() { return {}; },
+    return { url, records, async getProperties() { return {}; },
         listBlobsFlat({ prefix, abortSignal }) {
             return { async *byPage({ continuationToken, maxPageSize }) {
                 abortSignal?.throwIfAborted();
@@ -39,7 +39,9 @@ function container() {
             async uploadData(bytes, options) {
                 if (options?.conditions?.ifNoneMatch === '*' && records.has(key)) throw Object.assign(new Error('exists'), { statusCode: 412, code: 'ConditionNotMet' });
                 if (options?.conditions?.ifMatch && options.conditions.ifMatch !== (versions.get(key) || '"0"')) throw Object.assign(new Error('changed'), { statusCode: 412, code: 'ConditionNotMet' });
-                records.set(key, Buffer.from(bytes)); versions.set(key, JSON.stringify(String(++serial)));
+                const etag = JSON.stringify(String(++serial));
+                records.set(key, Buffer.from(bytes)); versions.set(key, etag);
+                return { etag };
             },
             async delete() { records.delete(key); }, async deleteIfExists() { records.delete(key); },
             getBlobLeaseClient(id = crypto.randomUUID()) { return {
@@ -93,7 +95,7 @@ function customerProductionHarness({ pool = signupSql(), identity, instanceId = 
     const getContainer = (name, account) => {
         account ||= ['customer-authority','starter-authority','external-starter-authority'].includes(name) ? env.AZURE_STORAGE_ACCOUNT_NAME : env.NOFRIES_BROWSER_AUTH_STORAGE_ACCOUNT;
         const key = account + '/' + name;
-        if (!state.containers.has(key)) state.containers.set(key, container());
+        if (!state.containers.has(key)) state.containers.set(key, container(`https://${account}.blob.core.windows.net/${name}`));
         return state.containers.get(key);
     };
     const env = { NODE_ENV: 'production', NOFRIES_REQUIRE_AUTH: 'true', NOFRIES_BROWSER_AUTH_MODE: 'entra_bff',
