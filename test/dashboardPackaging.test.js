@@ -335,6 +335,29 @@ for (const useExample of [false, true]) {
                 assert.ok(csp.includes("script-src-attr 'none'"));
                 assert.ok(!csp.includes("'unsafe-inline'"));
             }
+            // The first SWA match must preserve the API fallback response protections.
+            const paidRoot = '/api/dashboard/frameworks/example-profile/1/';
+            const fallback = config.routes.find(rule => rule.route === '/api/*');
+            for (const [method, suffix] of [
+                ['GET', 'assets/collection.js'], ['GET', 'assets/questionnaire.js'], ['GET', 'assets/results.js'],
+                ['GET', 'assessments'], ['POST', 'assessments'], ['GET', 'assessments/fixture'],
+                ['POST', 'assessments/fixture/save'], ['POST', 'assessments/fixture/submit']
+            ]) {
+                const route = matched(method, paidRoot + suffix);
+                assert.equal(route?.route, '/api/dashboard/frameworks/*');
+                assert.deepEqual(route.allowedRoles ?? ['anonymous'], ['anonymous']);
+                assert.deepEqual(route.methods, ['GET', 'POST']);
+                assert.equal(route.rewrite, undefined);
+                assert.equal(route.redirect, undefined);
+                assertEquivalentHeaders(route.headers, fallback.headers);
+                assertEquivalentHeaders(route.headers, {
+                    'Cache-Control': 'no-store',
+                    'X-Robots-Tag': 'noindex, nofollow',
+                    'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+                });
+            }
+            assert.equal(matched('DELETE', paidRoot + 'assessments/fixture'), fallback);
+            assert.equal(matched('GET', '/api/dashboard/frameworks-extra/example'), fallback);
             const endpoints = [
                 ['GET', '/api/organisation-setup/state'],
                 ['POST', '/api/organisation-setup/state'],
