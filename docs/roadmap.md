@@ -7,19 +7,24 @@ shared navigation and the existing legal limitation remain in the page shell.
 
 ## Evidence and interpretation
 
-Snapshot: NZ FY27 Q2 (Oct–Dec 2026). Current main and production both identify
-`99771994a1d94e6e777ae8673a6da90a8aec799e`.
-The [official release receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928)
-records this release; the public health and release endpoints agree.
+Snapshot: NZ FY27 Q2 (Oct–Dec 2026). Integration main is
+`c443f9177172685cd3154c2dc77276138260d1a2`. Independently verified live is now
+`c443f9177172685cd3154c2dc77276138260d1a2`, following the
+[new official release receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7076315188)
+and matching public health/release identities. This receipt arrived during the
+refresh and supersedes the previous verified live `9977199`; a main merge alone
+did not establish this live state.
 It includes #543's managed-security responsibility clarification, #539's
 sign-up fixes, and the test-only changes in #544/#545. #539 remains planned
-for customers because the receipt confirms deferred details is still off.
-#541 remains held outside Stream H; no campaign or setup changes are included.
+for customers because the [previous receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928)
+records deferred details off, with no later activation evidence. The new receipt
+confirms #541 and test-only #551 released. Their normal main merge is preserved;
+H adds no campaign or setup implementation changes and no new availability claim.
 
 The paid assessment availability recorded in the
 [earlier receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277)
 remains unchanged: `NOFRIES_PAID_FRAMEWORKS_ENABLED` is unset. #501, #518,
-#528, #529, #530, #538 and #546 are merged and included in this release, but
+#528, #529, #530, #538 and #546 are merged and included in the verified releases, but
 paid assessments remain planned, not Done customer capabilities. No paid
 assessment prices are published. The customer-visible changes from `942ea19` were the planned-assessment information
 and two fictional readiness examples. These published information items are Done
@@ -32,6 +37,11 @@ The service note follows #543’s published responsibility distinction: working
 through three improvements does not include hands-on implementation unless it is
 separately agreed in scope. #543 merged as `35ff8729975c46af6f3d614ddd704b34982e59fc`
 and is included in the current release. No agreement or signed-in service copy changes.
+
+The [adviser-status decision](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7076131506)
+resolves #527’s scope question: status-only views for authorised client
+organisations, without answers or results content. This remains planned; a scope
+decision is not release or activation evidence.
 
 Release receipts and source PRs below are review evidence only. The generator
 never emits these references into customer HTML. Keep the per-item source PR
@@ -58,8 +68,8 @@ by the description and the public feature-status registry.
 | [#529](https://github.com/Discla1mer/nofries-platform/pull/529) | `771cadf39267d2e2adb73e44068ae82bc97316a9` | Merged into the follow-on chain, included by #501's `942ea19` squash; the receipt explicitly confirms both fictional pages. |
 
 The [942ea19 receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704)
-is proof for the two published information items below. `9977199` supersedes it
-as the live release. #518/#528/#530/#538 remain provenance for planned paid work,
+is proof for the two published information items below. It was superseded by
+`9977199`, and then verified live `c443f91`. #518/#528/#530/#538 remain provenance for planned paid work,
 not evidence of customer availability. The editorial changelog records the same
 customer distinction separately from release-engineering evidence.
 
@@ -103,7 +113,7 @@ customer distinction separately from release-engineering evidence.
     {"id": "connected-evidence", "quarter": "fy27-q4", "lane": "Later", "title": "Connected evidence and continuous checks", "text": "Planned connections to supported systems, with scope, freshness and missing data visible. Potential sources include Microsoft 365, Datto RMM and managed detection and response. These are not active integrations or included services.", "prs": [3, 440]},
     {"id": "controls-reviews", "quarter": "fy27-q4", "lane": "Later", "title": "Controls, evidence and review workflows", "text": "Planned reusable controls, traceable evidence, risk exceptions, policies and approvals. Longer-term work covers assets, access, suppliers, people, recovery and technical reviews. Claims, technical checks and independent assurance would remain distinct.", "prs": [3, 440]},
     {"id": "questionnaires-privacy", "quarter": "fy27-q4", "lane": "Later", "title": "Questionnaires and privacy responsibilities", "text": "Planned reuse of reviewed answers for customer questionnaires and preparation for independent SOC 2 assessment. Track data handling, retention and deletion responsibilities. Legal decisions stay separate from technical evidence; No Fries does not issue an independent assurance opinion.", "prs": [3, 440]},
-    {"id": "consultant-services", "quarter": "fy27-q4", "lane": "Later", "title": "Client and service overview", "text": "Planned status views for agreed No Fries services and client organisations a consultant is authorised to manage. Paid assessment status across clients remains subject to a separate scope decision.", "prs": [440, 527]},
+    {"id": "consultant-services", "quarter": "fy27-q4", "lane": "Later", "title": "Client and service overview", "text": "Planned status views for agreed No Fries services and client organisations a consultant is authorised to manage. Paid assessment views would show status only, without answers or results content.", "prs": [440, 527]},
     {"id": "ai-governance", "quarter": "fy27-q4", "lane": "Later", "title": "AI governance and IT optimisation", "text": "Planned ways to understand AI use and identify opportunities to improve IT.", "prs": [3, 440]}
   ]
 }

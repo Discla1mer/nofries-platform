@@ -1,14 +1,19 @@
 # Stream H public-page checklist
 
-Snapshot: current main and live `99771994a1d94e6e777ae8673a6da90a8aec799e`.
-The [official receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928)
-and public health/release identities agree. This supersedes `942ea19` as live;
+Integration snapshot: main `c443f9177172685cd3154c2dc77276138260d1a2`.
+Independently verified live snapshot: `c443f9177172685cd3154c2dc77276138260d1a2`.
+The [new official receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7076315188)
+and both public identities confirm the release. This evidence arrived during the
+refresh, superseding previously verified live `9977199`, which followed `942ea19`;
 its customer-visible information remains recorded in [the roadmap source](../../roadmap.md).
+#541 and #551 are integrated in main and now separately release-verified.
+The `9977199`-to-`c443f91` diff has no public HTML/CSS or feature-status changes;
+the existing page checks and availability distinctions remain relevant.
 
 The checklist below is reproduced directly in #548's PR description so it can be
 reviewed there. All 21 registered HTML sources are covered: `/index.html` redirects
 301 to Home; the other 20 return 200. Live GETs also confirm the redirects and 404s
-listed below. Content checks use the released main source, public responses and
+listed below. Content checks distinguish the verified released source from integration main, public responses and
 availability tests. Legal pages were reviewed only for references and meaning.
 “No change needed” is scoped to this availability/roadmap task.
 
@@ -26,7 +31,7 @@ availability tests. Legal pages were reviewed only for references and meaning.
 | Frameworks — [/pricing.html#pricing-future-assessments](https://nofries.nz/pricing.html#pricing-future-assessments) | Existing section is the public framework-options surface; name planned NIST CSF 2.0 and ISO 27001 readiness and link the roadmap, without implying activation. | #549; no separate frameworks page needed. |
 | [/managed-it.html](https://nofries.nz/managed-it.html) | `managed-it.html`: separate scoped service tiers; automatic dashboard updates and connected feeds already labelled planned; no new free entitlement. | No change needed. |
 | [/scope.html](https://nofries.nz/scope.html) | `scope.html`: access-checked service-guide shell, explicitly information rather than a signed agreement; no paid-assessment availability claim. | No change needed. |
-| [/insurance.html](https://nofries.nz/insurance.html) | `insurance.html`: free NCSC check/top gaps and separate paid service summary. Preserve campaign ownership in #490/#493; #541 remains outside H. | No change needed for H. |
+| [/insurance.html](https://nofries.nz/insurance.html) | `insurance.html`: free NCSC check/top gaps and separate paid service summary. Preserve campaign ownership in #490/#493; #541 is merged and release-verified separately; no H campaign changes. | No change needed for H. |
 | [/supplier-questionnaire.html](https://nofries.nz/supplier-questionnaire.html) | `supplier-questionnaire.html`: self-reported answers and separate service; no claim of enabled paid frameworks. Preserve #490/#493 campaign work. | No change needed for H. |
 | [/board.html](https://nofries.nz/board.html) | `board.html`: current summary versus separate paid written summary; no self-service downloadable assessment-report promise. Preserve #490/#493. | No change needed for H. |
 | [/invoice-scams.html](https://nofries.nz/invoice-scams.html) | `invoice-scams.html`: payment checks/free NCSC entry and separately scoped help. Preserve #490/#493 campaign edits. | No change needed for H. |
@@ -45,7 +50,7 @@ availability tests. Legal pages were reviewed only for references and meaning.
 | [/try](https://nofries.nz/try) | Live generated demo: fictional business, browser-local data and reset explanation; no paid framework promise. | No change needed. |
 | [/signup](https://nofries.nz/signup), [/dashboard](https://nofries.nz/dashboard) | Generated entry shells inspected in source only; no protected customer data accessed. Session/availability behavior remains with existing owners. | No change needed. |
 | Shared navigation/footer — [Home](https://nofries.nz/), [Roadmap](https://nofries.nz/roadmap.html) | Across shared-shell public pages: navigation links, current-page markings and Privacy/Terms; no retired News or fictional-example link. Login, Report and Scope retain their specialized shells. | No change needed; #550 uses the same navigation. |
-| Site version — [/roadmap.html#site-version](https://nofries.nz/roadmap.html#site-version) | Generated version disclosure is release identity, not an editorial changelog. Health/release identities match 9977199; no hand-edit of version data. | No change needed. |
+| Site version — [/roadmap.html#site-version](https://nofries.nz/roadmap.html#site-version) | Generated version disclosure is release identity, not an editorial changelog. Health/release identities now match c443f91; no hand-edit of version data. | No change needed. |
 | Changelog — [/changelog.html](https://nofries.nz/changelog.html) | `changelog.html`: currently 404; no current public editorial changelog or release-notes page. Add evidence-grounded published information versus planned functionality, with quarter precision. | #550 (new page, editorial source and Home link). |
 | Retired News — [news.nofries.nz](https://news.nofries.nz/) | `sites/news/README.md` records retirement; source mirror is excluded from the dashboard build and no longer linked. It is not the current changelog and is not resurrected. | No change needed. |
 | [/sitemap.xml](https://nofries.nz/sitemap.xml) | Roadmap already discoverable; fictional paid examples absent. Add only the new changelog URL. | #550. |
@@ -59,7 +64,9 @@ availability tests. Legal pages were reviewed only for references and meaning.
   either existing draft. No other existing page has a confirmed status mismatch.
 - #543's managed-security responsibility clarification is live and retained.
   #539 is included in 9977199 but deferred details remains off, so it stays planned.
-  #544/#545 are test-only. #541 remains held outside Stream H.
+  #544/#545 are released test-only changes. #541 and test-only #551 were first
+  integrated into main, then independently release-verified by the new receipt.
+  Their main merge alone did not establish availability.
 - The [942ea19 receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704)
   confirms two published information changes: planned-assessment positioning and
   the fictional ISO/NIST examples. #501 and #529 are their source PRs. Locked cards,
@@ -69,8 +76,11 @@ availability tests. Legal pages were reviewed only for references and meaning.
   still records it unset. Keep all paid capability work planned and prices unpublished.
 - Open #424/#477/#484/#490/#493 keep their account/campaign/result scopes. No legal,
   runtime, flag, authorisation or production changes are part of H.
-- #548 already includes current main. #549 was refreshed by an ordinary merge
-  from main; the follow-up uses ordinary pushes, without rewriting branch history.
+- #548, #549 and #550 each include integration main `c443f91` through normal
+  merges and ordinary pushes, without rewriting branch history.
+- #527’s adviser-status scope decision is now resolved in #500. The existing
+  planned item now describes status-only views, without answers/results; it is
+  not promoted to available and its quarter/lane is unchanged.
 
 ## Verification and review
 
