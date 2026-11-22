@@ -1,0 +1,40 @@
+{
+  "requests": [
+    {
+      "action": "save",
+      "revision": 1,
+      "answers": 1
+    },
+    {
+      "action": "save",
+      "revision": 2,
+      "answers": 106
+    },
+    {
+      "action": "submit",
+      "revision": 3,
+      "answers": 106
+    }
+  ],
+  "observations": [
+    {
+      "stage": "form",
+      "width": 375,
+      "contentWidth": 375,
+      "violations": []
+    },
+    {
+      "stage": "resumed",
+      "width": 375,
+      "contentWidth": 375,
+      "violations": []
+    },
+    {
+      "stage": "results",
+      "width": 375,
+      "contentWidth": 375,
+      "violations": []
+    }
+  ],
+  "errors": []
+}

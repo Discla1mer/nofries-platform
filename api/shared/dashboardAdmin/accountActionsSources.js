@@ -40,7 +40,7 @@ function createAccountActionsSources(configuration, dashboard, authorise, create
     }
     return Object.freeze({
         async execute(actor, input, invocation, action) {
-            if (!['suspend', 'restore', 'approve-suspend', 'approve-restore'].includes(action)) denied();
+            if (!['suspend', 'restore', 'approve-suspend', 'approve-restore', 'framework-access'].includes(action)) denied();
             return (await select(actor, input, invocation)).execute(actor, input, invocation, action);
         }
     });

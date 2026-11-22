@@ -43,7 +43,7 @@ module.exports = function registerDashboardAdminPostgresTests() {
         let control, owner, runtimePool, closeOwner, closeRuntime, databaseCreated = false, roleCreated = false, sequence = 100;
         const nextId = () => '82000000-0000-4000-8000-' + String(++sequence).padStart(12, '0');
 
-        async function harness() {
+        async function harness(siblingOf = null) {
             const instanceId = nextId(), restoreEpoch = nextId(), identity = { policyId: 'synthetic-admin-native', policyRevision: 1,
                 issuer: 'https://identity.example.invalid/v2.0', identityTenantId: nextId(), oid: nextId(), audience: nextId() };
             const actor = identity.identityTenantId + ':' + identity.oid, request = Object.freeze({ syntheticRequestId: nextId() });
@@ -78,10 +78,12 @@ module.exports = function registerDashboardAdminPostgresTests() {
                 authoriseOperatorOperation: () => false, newGenerationToken: () => hash(nextId()) });
             await runtime.initializeOperatorSession(request, { operationId: nextId() });
             const f = clone(fixture());
-            const tenantId = 'synthetic-admin-' + runKey + '-' + sequence;
+            const tenantId = siblingOf?.tenantId ?? ('synthetic-admin-' + runKey + '-' + sequence);
+            const organisationId = siblingOf ? nextId() : f.scope.organisationId;
             function tenant(value) {
                 if (!value || typeof value !== 'object') return;
                 if (Object.hasOwn(value, 'tenantId')) value.tenantId = tenantId;
+                if (Object.hasOwn(value, 'organisationId')) value.organisationId = organisationId;
                 Object.values(value).forEach(tenant);
             }
             tenant(f);
@@ -92,6 +94,7 @@ module.exports = function registerDashboardAdminPostgresTests() {
                 ['dashboard_membership_states', snapshot.membershipState], ['dashboard_entitlement_states', snapshot.entitlementState],
                 ['dashboard_feature_flags', snapshot.flags], ...snapshot.usage.map(value => ['dashboard_usage', value])];
             for (const [table, value] of payloads) {
+                if (siblingOf && table === 'dashboard_tenants') continue;
                 const columns = ['tenant_id', ...(table === 'dashboard_tenants' ? [] : ['organisation_id']),
                     ...(table === 'dashboard_usage' ? ['grant_id'] : []), 'schema_version', 'revision', 'payload'];
                 const values = [value.tenantId, ...(table === 'dashboard_tenants' ? [] : [value.organisationId]),
@@ -162,6 +165,84 @@ module.exports = function registerDashboardAdminPostgresTests() {
             expect(read.snapshot.usage).toEqual(h.snapshot.usage);
             expect(read.revisions).toEqual(dataCodec.revisionVector(h.snapshot));
             expect(h.state.trace.some(({ sql }) => /^(INSERT|UPDATE|DELETE|TRUNCATE)/.test(sql))).toBe(false);
+        });
+
+        test('staff append independent paid decisions with a live session, scoped role and preserved product history', async () => {
+            const { tuples, paidSnapshot } = require('../../api/shared/appLifecycle/paidFrameworkDecisions');
+            const h = await harness(), other = await harness(), sibling = await harness(h.selector);
+            expect(sibling.selector.tenantId).toBe(h.selector.tenantId);
+            expect(sibling.selector.organisationId).not.toBe(h.selector.organisationId);
+            const operator = h.capture.identityPayload.identityTenantId + ':' + h.capture.identityPayload.oid;
+            const guard = () => h.repository.validateSession(h.request, h.selector);
+            const repo = createAccountActionsRepository(h.pool, () => NOW, guard, cmd => cmd.actorSubjectKey === operator && cmd.selector === h.selector, h.capture);
+            const input = { selector: h.selector, actorSubjectKey: operator, expectedMembershipRevision: h.snapshot.membershipState.revision,
+                tuple: tuples[0], reason: 'Synthetic reviewed purchase', action: 'grant', operationId: nextId() };
+            const read = async f => {
+                const c = await runtimePool.connect();
+                try {
+                    await c.query('BEGIN'); await c.query('SET LOCAL ROLE nofries_runtime');
+                    await c.query("SELECT set_config('nofries.tenant_id',$1,true),set_config('nofries.organisation_id',$2,true)",
+                        [f.selector.tenantId, f.selector.organisationId]);
+                    return await paidSnapshot(c, f.selector, await raw(f), NOW);
+                } finally { await c.query('ROLLBACK'); c.release(); }
+            };
+            const raw = async f => (await f.repository.readAuthoritySnapshot(f.request, f.selector)).snapshot;
+            const decisions = async f => (await owner.query(
+                'SELECT * FROM nofries.dashboard_paid_framework_access WHERE tenant_id=$1 AND organisation_id=$2 ORDER BY operation_id',
+                [f.selector.tenantId, f.selector.organisationId])).rows;
+            const readProduct = async f => (await read(f)).entitlementState.grants.find(row => row.grantId === 'synthetic-product');
+            const before = clone(await raw(h));
+            const original = await readProduct(h);
+            const untouched = await Promise.all([other, sibling].map(async f => ({ snapshot: clone(await raw(f)), decisions: await decisions(f) })));
+            const first = await repo.frameworkDecision(input, null);
+            const flagsRow = async () => (await owner.query('SELECT revision, payload FROM nofries.dashboard_feature_flags WHERE tenant_id=$1 AND organisation_id=$2',
+                [h.selector.tenantId, h.selector.organisationId])).rows;
+            const decisionCount = async () => (await owner.query('SELECT count(*)::int AS n FROM nofries.dashboard_paid_framework_access WHERE tenant_id=$1 AND organisation_id=$2',
+                [h.selector.tenantId, h.selector.organisationId])).rows[0].n;
+            const flagsBefore = await flagsRow();
+            expect(flagsBefore).toHaveLength(1);
+            const beforeDecisions = await decisions(h);
+            // Without the operator role membership the grant is refused before any write.
+            await expect(repo.frameworkDecision(input, first)).rejects.toMatchObject({ statusCode: 503, code: 'dashboard_admin_unavailable',
+                notApplied: 'operator_capability_unbound' });
+            expect(await flagsRow()).toEqual(flagsBefore);
+            expect(await decisionCount()).toBe(0);
+            expect(await raw(h)).toEqual(before);
+            expect(await decisions(h)).toEqual(beforeDecisions);
+            await control.query(`GRANT nofries_framework_operator TO ${quote(runtimeRole)} WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`);
+            try {
+                for (const tuple of tuples) {
+                    for (const action of ['grant', 'revoke', 'grant']) {
+                        const command = { ...input, tuple, action, operationId: nextId() };
+                        const witness = await repo.frameworkDecision(command, null);
+                        const result = await repo.frameworkDecision(command, witness);
+                        expect(result.granted).toBe(action === 'grant');
+                        expect((await readProduct(other)).frameworks).toEqual(original.frameworks);
+                        const selected = await read(h);
+                        const product = selected.entitlementState.grants.find(row => row.grantId === 'synthetic-product');
+                        if (result.granted) {
+                            expect(product.frameworks).toContainEqual(tuple);
+                            expect(selected.flags.frameworks).toContainEqual(tuple);
+                        } else {
+                            expect(selected.flags.frameworks).not.toContainEqual(tuple);
+                            expect((await raw(h)).flags.frameworks).toContainEqual(tuple);
+                        }
+                        for (const [index, f] of [other, sibling].entries()) {
+                            expect(await raw(f)).toEqual(untouched[index].snapshot);
+                            expect(await decisions(f)).toEqual(untouched[index].decisions);
+                        }
+                        await expect(repo.frameworkDecision(command, witness)).rejects.toMatchObject({ statusCode: 409 });
+                    }
+                }
+                expect((await h.repository.readAuthoritySnapshot(h.request, h.selector)).snapshot.entitlementState).toEqual(before.entitlementState);
+                expect((await h.repository.readAuthoritySnapshot(h.request, h.selector)).snapshot.usage).toEqual(before.usage);
+                const cmd = { ...input, action: 'revoke', operationId: nextId() };
+                const approval = await repo.frameworkDecision(cmd, null);
+                await h.runtime.revokeSession(h.request, { operationId: nextId() });
+                await expect(repo.frameworkDecision(cmd, approval)).rejects.toBeDefined();
+                expect((await owner.query('SELECT count(*)::int AS n FROM nofries.dashboard_paid_framework_access WHERE tenant_id=$1',
+                    [h.selector.tenantId])).rows[0].n).toBe(6);
+            } finally { await control.query(`REVOKE nofries_framework_operator FROM ${quote(runtimeRole)}`); }
         });
 
         test('session revocation waits for membership COMMIT after the final native validation savepoint', async () => {
