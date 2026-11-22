@@ -27,6 +27,7 @@ const { copy, fields, freeze, uuid, digest, instant } = require('./appLifecycle/
 const { hostResourceForRoute } = require('./appLifecycle/dashboardRuntimeEvents');
 const { apiSecurityHeaders } = require('./securityHeaders');
 const { OVERVIEW_PLAN_LIMIT } = require('./dashboardReadCost');
+const { parsePaidRoute, PaidAssessmentError } = require('./assessmentLifecycle/paidAssessments');
 const { ContactRequestError, normaliseContactRequest } = require('./contactRequests');
 // Dashboards before the signed-in name advertise all three; they keep their exact session shape.
 const CONTACT_CAPABILITIES = 'work-queue-v1 account-label-v1 contact-request-v1';
@@ -38,6 +39,7 @@ const CONFIG = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', '
     'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
 const AUTH = ['env', 'store', 'clientApplication', 'cryptoProvider', 'randomBytes'];
 const STORE = ['createTransaction', 'consumeTransaction', 'deleteTransaction', 'createSession', 'loadSession', 'deleteSession'];
+const rendererAssets = require('./paidRendererAssets');
 const HEADER_NAMES = ['cookie', 'origin', 'sec-fetch-site', 'x-nofries-dashboard-generation', 'x-nofries-dashboard-purpose',
     'x-nofries-dashboard-capabilities', 'content-type', 'content-encoding'];
 // Older dashboards send the shorter values and keep their exact session shape.
@@ -111,6 +113,8 @@ function failure(error, category) {
         const known = { evidence_input_invalid: 400, evidence_access_denied: 403,
             evidence_not_found: 404, evidence_unavailable: 503 };
         if (own(known, error.code) && known[error.code] === error.statusCode) { status = error.statusCode; code = error.code; }
+    } else if (error instanceof PaidAssessmentError) {
+        status = error.statusCode; code = error.code;
     } else if (error instanceof RepresentativeDetailsError) {
         const known = { representative_details_invalid: 400, representative_details_access_denied: 403,
             representative_details_not_required: 409, representative_details_locked: 409, representative_details_result_required: 409,
@@ -472,12 +476,20 @@ function createDashboardRuntimeHandlers(configuration) {
         const query = split < 0 ? null : snapshot.url.slice(split + 1);
         const prefix = '/api/dashboard/';
         const pathRoute = path.startsWith(prefix) ? path.slice(prefix.length) : '';
+        const asset = paidFrameworksEnabled && rendererAssets.parseAsset(pathRoute, query);
+        if (asset) {
+            entry.category = 'framework-asset';
+            if (snapshot.method !== 'GET') fail(405, 'dashboard_method_not_allowed', { Allow: 'GET' });
+            return freeze({ route: 'framework-asset', asset, resource: null, improvementRoute: null, ncscRoute: null });
+        }
         const firstPaint = ncscQuota && pathRoute === 'modules/overview' && (query === 'view=first-paint' ||
             improvementEnabled && query === 'view=first-paint&actions=1');
         const route = firstPaint ? 'overview' : pathRoute;
         const workQueue = improvementEnabled && route === 'work-queue';
         // Default off: without the flag this path stays an unknown route (404), before any body is read.
         const contact = contactRequestsEnabled && route === 'contact-requests';
+        const paid = paidFrameworksEnabled && parsePaidRoute(route);
+        let paidCursor = null;
         const details = representativeDetailsEnabled && route === 'representative-details';
         let resource = null, ncscRoute = null, improvementRoute = null;
         if (improvementEnabled && ['improvement/plans', 'improvement/list', 'improvement/view', 'improvement/editor', 'improvement/execute'].includes(route)) {
@@ -496,11 +508,11 @@ function createDashboardRuntimeHandlers(configuration) {
             }
         }
         const methods = { ...(firstPaint ? { overview: ['GET'] } : {}), session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], evidence: ['GET'] };
-        if (!workQueue && !contact && !details && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
+        if (!workQueue && !contact && !details && !paid && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
             try { resource = hostResourceForRoute(route); } catch (_) { fail(404, 'dashboard_not_found'); }
         }
-        entry.category = improvementRoute !== null ? 'improvement' : ncscRoute === null ? route : 'ncsc';
-        const allow = details ? ['GET', 'POST'] : workQueue ? ['GET'] : contact ? ['POST'] : improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
+        entry.category = paid ? 'frameworks' : improvementRoute !== null ? 'improvement' : ncscRoute === null ? route : 'ncsc';
+        const allow = paid ? (paid.mutation ? ['POST'] : paid.assessmentId ? ['GET'] : ['GET', 'POST']) : details ? ['GET', 'POST'] : workQueue ? ['GET'] : contact ? ['POST'] : improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
             : ncscRoute !== null ? (ncscRoute === '' ? ['GET', 'POST'] : ncscRoute.includes('/') ? ['POST'] : ['GET']) : resource ? ['GET'] : methods[route];
         if (!allow.includes(snapshot.method)) fail(405, 'dashboard_method_not_allowed', { Allow: allow.join(', ') });
         const directory = { limit: 50, afterBindingId: null };
@@ -508,7 +520,12 @@ function createDashboardRuntimeHandlers(configuration) {
         let improvementSelector = null;
         let workQueueSelector = null;
         const ncscQuery = {};
-        if (workQueue) {
+        if (paid && !paid.assessmentId && snapshot.method === 'GET' && query !== null) {
+            const match = /^afterAssessmentId=([^&=]+)$/.exec(query);
+            if (!match) bad();
+            try { paidCursor = decodeURIComponent(match[1]); } catch { bad(); }
+            if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(paidCursor) || encodeURIComponent(paidCursor) !== match[1]) bad();
+        } else if (workQueue) {
             const values = {};
             if (query !== null) {
                 if (!query || query.length > 3072) bad();
@@ -601,7 +618,7 @@ function createDashboardRuntimeHandlers(configuration) {
         } else if (['app.js', 'dashboard.css'].includes(route) && query !== null) {
             if (!/^v=[A-Za-z0-9_-]{43}$/.test(query)) bad();
         } else if (!firstPaint && query !== null) bad();
-        return freeze({ route, contact, details, resource, overviewActions: firstPaint && query === 'view=first-paint&actions=1', assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
+        return freeze({ route, paid, paidCursor, contact, details, resource, overviewActions: firstPaint && query === 'view=first-paint&actions=1', assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
     }
     async function readWire(original, entry, snapshot) {
         entry.phase = 'wire';
@@ -697,7 +714,7 @@ function createDashboardRuntimeHandlers(configuration) {
     }
     async function execute(original, entry) {
         const selected = routeFor(entry.transport, entry);
-        entry.category = selected.improvementRoute !== null ? 'improvement' : selected.ncscRoute === null ? selected.route : 'ncsc';
+        entry.category = selected.paid ? 'frameworks' : selected.improvementRoute !== null ? 'improvement' : selected.ncscRoute === null ? selected.route : 'ncsc';
         entry.resource = selected.resource !== null;
         const snapshot = entry.transport;
         const purposes = snapshot.headers['x-nofries-dashboard-purpose'];
@@ -723,6 +740,27 @@ function createDashboardRuntimeHandlers(configuration) {
         });
         entry.phase = 'providers';
         await authenticated(privateRequest.headers.cookie);
+        if (selected.asset) {
+            const asset = selected.asset;
+            const session = await bounded(() => runtime.readSession(privateRequest), 'runtime');
+            if (!session.selectedBindingId || !rendererAssets.matchesSelection(asset, session.generation)) fail(403, 'dashboard_access_denied');
+            let bound;
+            try { bound = await bounded(() => resources.forRequest(privateRequest, { expectedGeneration: session.generation })); }
+            catch (error) {
+                if (error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403) {
+                    fail(403, 'dashboard_access_denied');
+                }
+                throw error;
+            }
+            // #507 supplies the registered-publication read and all its guards.
+            if (typeof bound.paid !== 'function') fail(404, 'dashboard_not_found');
+            const file = rendererAssets.packagedAsset(asset);
+            if (!file) fail(404, 'dashboard_not_found');
+            await bounded(() => bound.paid({ profileId: asset.ref.profileId, version: asset.ref.version,
+                assessmentId: null, mutation: null }, undefined, null, check => { entry.disclosureCheck = check; }));
+            if (typeof entry.disclosureCheck !== 'function') fail(403, 'dashboard_access_denied');
+            return file;
+        }
         if (selected.route === 'session' && command?.action === 'customer_activation') {
             if (!activationPort || isCustomer(privateRequest.headers.cookie)) fail(403, 'dashboard_access_denied');
             const result = await bounded(() => runtime.customerActivation(privateRequest,
@@ -732,7 +770,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 next: result.phase === 'prepared' ? 'customer_terms' : 'owner_finalisation' });
         }
         let expectedGeneration = null;
-        if (selected.route === 'overview' || selected.contact || selected.details || selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
+        if (selected.route === 'overview' || selected.paid || selected.contact || selected.details || selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
             const generations = snapshot.headers['x-nofries-dashboard-generation'];
             try { if (generations.length !== 1) throw new Error(); expectedGeneration = digest(generations[0]); }
             catch (_) { fail(403, 'dashboard_access_denied'); }
@@ -814,6 +852,19 @@ function createDashboardRuntimeHandlers(configuration) {
             entry.disclosureCheck = () => resources.assertWorkQueueDisclosure(privateRequest);
             return response(200, await bounded(() => resources.readWorkQueue(privateRequest,
                 { expectedGeneration }, selected.workQueueSelector)));
+        }
+        if (selected.paid) {
+            return response(200, await bounded(async () => {
+                let bound;
+                try { bound = await resources.forRequest(privateRequest, { expectedGeneration }); }
+                catch (error) {
+                    const denied = error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403;
+                    throw new PaidAssessmentError(denied ? 'access_denied' : 'unavailable');
+                }
+                const value = await bound.paid(selected.paid, command, selected.paidCursor, check => { entry.disclosureCheck = check; });
+                if (typeof entry.disclosureCheck !== 'function') throw new PaidAssessmentError();
+                return value;
+            }));
         }
         if (selected.details) {
             if (!isCustomer(privateRequest.headers.cookie)) fail(403, 'dashboard_access_denied');
@@ -991,7 +1042,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 return value;
             }
             catch (error) { return failure(error, entry.category); }
-            finally { settle(entry, original); }
+            finally { entry.disclosureCheck = null; settle(entry, original); }
         }));
         entry.initialising = false;
         return entry.promise;

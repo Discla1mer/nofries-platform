@@ -25,6 +25,7 @@ const { NcscAssessmentError } = require('../ncscAssessmentService');
 const { ImprovementPlanServiceError } = require('../improvementPlan/improvementPlanService');
 const { ImprovementActionListError } = require('../improvementPlan/improvementActionListProjection');
 const { resolveImprovementAccess } = require('../improvementPlan/improvementPlanAccess');
+const { paidAccess, PaidAssessmentError } = require('../assessmentLifecycle/paidAssessments');
 const { ContactRequestError, CONTACT_AUDIT, resolveContactAccess } = require('../contactRequests');
 const { createNcscQuestionnaireMetadata, createNcscQuestionnaireMetadataV2 } = require('../ncscQuestionnaireMetadata');
 const { listsEnabledNcscProfile, ncscProfileV2Enabled } = require('../assessmentEngine/ncscProfileSet');
@@ -48,6 +49,7 @@ const QUOTA_SELECTION = ['tenantId', 'organisationId', 'assessmentId', 'actorSub
 const QUOTA_POLICY = ['schemaVersion', 'tenantId', 'organisationId', 'productGrantId', 'agreementRef', 'moduleId',
     'profileRef', 'policyId', 'policyRevision', 'validFrom', 'validUntil', 'limit', 'amount'];
 const OPERATIONS = ['admission.read', 'ncsc.list', 'ncsc.read', 'ncsc.execute', 'evidence.read'];
+const PAID_OPERATIONS = ['framework.read', 'framework.write'];
 const NCSC_OPERATIONS = ['ncsc.list', 'ncsc.read', 'ncsc.execute'];
 const IMPROVEMENT_OPERATIONS = ['improvement.list', 'improvement.execute'];
 const CONTACT_OPERATION = 'contact.request';
@@ -77,6 +79,10 @@ function mapped(error, operation = 'admission.read', denial = null) {
         if (isDenied) return new ImprovementPlanServiceError('improvement_access_denied', 403);
         if (error instanceof ImprovementPlanServiceError) return error;
         return new ImprovementPlanServiceError();
+    }
+    if (PAID_OPERATIONS.includes(operation)) {
+        if (isDenied) return new PaidAssessmentError('access_denied');
+        return error instanceof PaidAssessmentError ? error : new PaidAssessmentError();
     }
     if (DETAILS_OPERATIONS.includes(operation)) {
         if (isDenied) return new RepresentativeDetailsError('representative_details_access_denied', 403);
@@ -364,6 +370,14 @@ function currentImprovement(inv, operation, authority, at) {
         operation.name === 'improvement.execute' ? 'improvement.write' : 'improvement.read', at); }
     catch (_) { inv.deny(); }
 }
+function currentPaidAccess(inv, operation, authority, at) {
+    if (!PAID_OPERATIONS.includes(operation.name)) return;
+    let decision;
+    try { decision = paidAccess(authority, operation.context, operation.name === 'framework.write', operation.profileRef, at); }
+    catch { inv.deny(); }
+    if (operation.grantId && decision.product.grantId !== operation.grantId) inv.deny();
+    operation.grantId = decision.product.grantId;
+}
 function currentContact(inv, operation, authority, at) {
     if (operation.name !== CONTACT_OPERATION && !DETAILS_OPERATIONS.includes(operation.name)) return;
     try {
@@ -411,8 +425,13 @@ async function businessContext(inv, tx, routing) {
 }
 async function loadAuthority(inv, operation, context, shared = false) {
     try {
-        return await (!shared && ['ncsc.execute', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ? dataStorage.loadSnapshotForUpdate : dataStorage.loadSnapshotForShare)(
+        const snapshot = await (!shared && ['framework.write', 'ncsc.execute', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ? dataStorage.loadSnapshotForUpdate : dataStorage.loadSnapshotForShare)(
             Object.freeze({ query: (sql, params) => inv.query(context.tx, sql, params) }), context.scope);
+        if (inv.options.paidFrameworksEnabled === true && ['framework.read', 'framework.write'].includes(operation.name)) {
+            const tx = { query: (sql, params) => inv.query(context.tx, sql, params) };
+            return await require('../appLifecycle/paidFrameworkDecisions').paidSnapshot(tx, context.scope, snapshot, inv.now());
+        }
+        return snapshot;
     } catch (error) {
         if (error instanceof DashboardPersistenceError && error.statusCode === 404) inv.deny();
         throw error;
@@ -446,6 +465,7 @@ function currentAuthorityAt(inv, operation, evidence, at) {
     currentMember(inv, authority, binding, at);
     currentImprovement(inv, operation, authority, at);
     currentContact(inv, operation, authority, at);
+    currentPaidAccess(inv, operation, authority, at);
     if (operation.name === 'evidence.read') {
         try { resolveEvidenceAccess(authority, { scope: target,
             identity: { authenticated: true, subjectKey: subjectOf(inv.capture.identityPayload) }, resolvedAt }, at); }
@@ -582,9 +602,9 @@ async function writeAudit(inv, operation, event) {
         value.tenantId !== c.scope.tenantId || value.organisationId !== c.scope.organisationId) inv.deny();
     const evidenceRead = operation.name === 'evidence.read';
     const improvement = IMPROVEMENT_OPERATIONS.includes(operation.name), contact = operation.name === CONTACT_OPERATION, details = operation.name === 'representative.record';
-    const action = improvement ? operation.name === 'improvement.execute' ? 'improvement.write' : 'improvement.read'
+    const action = operation.name === 'framework.write' ? 'assessment.write' : improvement ? operation.name === 'improvement.execute' ? 'improvement.write' : 'improvement.read'
         : details ? 'representative.record' : contact ? CONTACT_AUDIT.action : evidenceRead ? 'evidence.read' : 'assessment.read';
-    if (!['ncsc.list', 'ncsc.read', 'evidence.read', 'representative.record', CONTACT_OPERATION, ...IMPROVEMENT_OPERATIONS].includes(operation.name) ||
+    if (!['ncsc.list', 'ncsc.read', 'evidence.read', ...PAID_OPERATIONS, 'representative.record', CONTACT_OPERATION, ...IMPROVEMENT_OPERATIONS].includes(operation.name) ||
         value.schemaVersion !== 1 || value.eventType !== 'dashboard.operation' || value.action !== action ||
         value.module !== (improvement ? 'improvement_plan' : details ? 'overview' : contact ? CONTACT_AUDIT.module : evidenceRead ? 'evidence' : 'cyber_security') ||
         value.result !== 'succeeded') inv.unavailable();
@@ -614,24 +634,26 @@ async function writeAudit(inv, operation, event) {
     current();
 }
 
-function operationPair(inv, database, routing, resolvedAt, name, context) {
+function operationPair(inv, database, routing, resolvedAt, name, context, profileRef) {
+    const paid = PAID_OPERATIONS.includes(name);
+    let paidDisclosureEvidence = null;
     const contact = name === CONTACT_OPERATION;
     const details = DETAILS_OPERATIONS.includes(name);
-    const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name) || contact || details;
-    if (!known || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true ||
+    const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name) || contact || details || paid;
+    if (!known || paid && inv.options.paidFrameworksEnabled !== true || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true ||
         contact && inv.options.contactRequestsEnabled !== true || details && inv.options.representativeDetailsEnabled !== true || inv.owner ||
         routing.portfolio && name !== 'improvement.list') {
         throw mapped(privateError(false), known ? name : 'admission.read');
     }
     try { inv.now(); } catch (error) { throw mapped(error, name); }
-    if (IMPROVEMENT_OPERATIONS.includes(name) || contact || details) {
+    if (IMPROVEMENT_OPERATIONS.includes(name) || contact || details || paid) {
         try {
             requireTenantRequestContext(context);
             if (context.requestId !== inv.capture.requestId || !equal(context.scope, routing.scope) ||
                 context.identity.subjectKey !== subjectOf(inv.capture.identityPayload) || context.resolvedAt !== resolvedAt) throw privateError(true);
         } catch (_) { throw mapped(privateError(true), name); }
     }
-    const operation = { name, context, active: null, finished: false, denial: null, quota: null, events: new WeakSet(), resolvedAt };
+    const operation = { name, context, profileRef, active: null, finished: false, denial: null, quota: null, events: new WeakSet(), resolvedAt };
     inv.owner = operation;
     const available = () => {
         if (inv.owner !== operation || operation.finished) throw privateError(false);
@@ -696,6 +718,7 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
                     currentMember(inv, authority, active.context.binding, at);
                     currentImprovement(inv, operation, authority, at);
                     currentContact(inv, operation, authority, at);
+                    currentPaidAccess(inv, operation, authority, at);
                     active.phase = 'work';
                     const client = Object.freeze({
                         query(sql, params) {
@@ -716,7 +739,7 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
                         }
                     });
                     let value, failure;
-                    try { value = await work(client); } catch (error) { failure = error; }
+                    try { value = paid ? await work(client, authority) : await work(client); } catch (error) { failure = error; }
                     // A callback cannot return a client while its continuation is still pending.
                     active.phase = 'finalizing';
                     if (active.pending.size) {
@@ -732,6 +755,7 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
                     inv.now(); return value;
                 });
                 inv.now();
+                if (paid) paidDisclosureEvidence = active.finalAuthority;
                 if (routing.portfolio) routing.readContext = context;
                 return result;
             } catch (error) {
@@ -807,7 +831,14 @@ function operationPair(inv, database, routing, resolvedAt, name, context) {
         if (inv.owner !== operation || operation.finished || operation.active) throw mapped(privateError(false), name);
         operation.finished = true; operation.quota = null; inv.owner = null;
     }
-    return Object.freeze({ database: guardedDatabase, audit, clock, resolveSubmissionQuota, finish });
+    function assertPaidDisclosure() {
+        try {
+            if (!paidDisclosureEvidence) throw privateError(false);
+            currentAuthorityAt(inv, operation, paidDisclosureEvidence, inv.now());
+        } catch (error) { throw mapped(error, name, operation.denial); }
+    }
+    return Object.freeze({ database: guardedDatabase, audit, clock, resolveSubmissionQuota, finish,
+        ...(paid ? { assertPaidDisclosure } : {}) });
 }
 
 function hostBaseFacts(inv, context, input) {
@@ -904,6 +935,20 @@ function prepareHostFacts(inv, context, input, resource, writeAuthority = null, 
 }
 
 function hostProjectionAt(frame, at, configured = true) {
+    const projected = baseHostProjectionAt(frame, at, configured);
+    if (!frame.frameworkDecisions || !Array.isArray(projected.vector?.paidFrameworks)) return projected;
+    const product = currentProductGrant(frame.grants, at);
+    if (product?.grantId !== frame.frameworkDecisions.productGrantId) return projected;
+    const { tuples, sameTuple } = require('../appLifecycle/paidFrameworkDecisions');
+    const paidFrameworks = tuples.filter(tuple => {
+        const decision = frame.frameworkDecisions.rows.find(row => sameTuple(tuple, row));
+        return decision ? decision.granted && frame.flags.frameworks.some(row => sameTuple(tuple, row))
+            : projected.vector.paidFrameworks.some(row => sameTuple(tuple, row));
+    });
+    return { ...projected, vector: { ...projected.vector, paidFrameworks } };
+}
+
+function baseHostProjectionAt(frame, at, configured = true) {
     const live = grant => grant.status === 'active' && grant.validFrom <= at && at < grant.validUntil;
     const product = currentProductGrant(frame.grants, at);
     const service = code => code !== 'managed_it_core' && frame.grants.some(grant => grant.code === code && live(grant));
@@ -1191,7 +1236,14 @@ async function hostOperation(inv, routing, resource) {
                                 ...Object.fromEntries(['membershipId', 'invitationId', 'grantEvidenceId', 'validFrom', 'validUntil']
                                     .map(key => [key, binding[key]])) }, inv.now());
                         }
-                        return prepareHostFacts(inv, active.context, snapshot, resource, writeAuthority, profile);
+                        const facts = prepareHostFacts(inv, active.context, snapshot, resource, writeAuthority, profile);
+                        if (inv.options.paidFrameworksEnabled !== true || resource.moduleKey !== 'cyber_security' ||
+                            !resource.requiresGeneration) return facts;
+                        const product = currentProductGrant(facts.grants, inv.now());
+                        if (!product) return facts;
+                        const decisions = await require('../appLifecycle/paidFrameworkDecisions').latestDecisions(
+                            { query: (sql, params) => inv.query(tx, sql, params) }, active.context.scope, product.grantId);
+                        return decisions.length ? freeze({ ...facts, frameworkDecisions: { productGrantId: product.grantId, rows: decisions } }) : facts;
                     }
                     if (!recovery) {
                         const initial = await presentationFacts();
@@ -1439,7 +1491,7 @@ function createDashboardRequestDatabase(input) {
                 const database = checkedDatabase(inv);
                 const identity = freeze({ authenticated: true, subjectKey: subjectOf(inv.capture.identityPayload) });
                 return Object.freeze({ requestId: inv.capture.requestId, identity, scope: routing.scope, resolvedAt,
-                    createOperation: (name, context) => operationPair(inv, database, routing, resolvedAt, name, context) });
+                    createOperation: (name, context, profileRef) => operationPair(inv, database, routing, resolvedAt, name, context, profileRef) });
             } catch (error) { throw mapped(error); }
         }).then(resolveBinding, rejectBinding);
         return entry.promise;
