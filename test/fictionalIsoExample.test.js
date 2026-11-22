@@ -15,7 +15,7 @@ test('the unlisted example has three fictional views and no assessment or custom
     expect(Array.from(html.matchAll(/<h2[^>]*>([^<]+)<\/h2>/g), match => match[1]))
         .toEqual(['Readiness view', 'Statement of Applicability', 'Board summary']);
     expect(html).toContain('ISO 27001 readiness self-assessment');
-    expect(html).toContain('href="/dashboard#cyber-security"');
+    expect(html).toContain('href="/dashboard#cyber-security/iso-example"');
     expect(html).not.toMatch(/<(?:script|form|iframe)\b|\/api\/|paidQuestionnaire|paidResults|[a-f\d]{64}|certif|conform|complianc|\baudit\b/i);
     for (const file of [...PUBLIC_ROOT_FILES.filter(name => name.endsWith('.html') && name !== filename), 'sitemap.xml']) {
         expect(fs.readFileSync(path.join(root, file), 'utf8')).not.toContain('/' + filename);
