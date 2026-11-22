@@ -858,6 +858,7 @@
             ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
+            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, paidHost: cyber.paidHost } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}),
@@ -1559,6 +1560,55 @@
                     return presentation.openImprovement(sourceAssessment);
                 } } : {}) });
         };
+        if (value.paidFrameworks) {
+            mountCyber.paidFrameworks = value.paidFrameworks;
+            mountCyber.paidHost = function (ref, selected) {
+                const registry = window.NoFriesDashboardRegistry;
+                const live = () => current(cycle) && !cycle.authorityPending &&
+                    Date.parse(cycle.session?.expiresAt) > Date.now() && selected() &&
+                    value.paidFrameworks.some(row => registry.sameFramework(row, ref));
+                const prefix = '/api/dashboard/frameworks/' + encodeURIComponent(ref.profileId) + '/' + encodeURIComponent(ref.version);
+                const cleanups = new Set();
+                async function renderer(name) {
+                    if (!live() || !Object.hasOwn(registry.rendererIntegrity, name)) throw invalid();
+                    // A fresh salt keeps separate loads from sharing a selection identifier in access logs.
+                    const nonce = secureId().replace(/-/g, '');
+                    const sri = registry.rendererIntegrity[name], message = registry.rendererSelection(snapshot.generation, ref, name, nonce);
+                    const hash = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
+                    const fingerprint = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+                    if (!live()) throw invalid();
+                    return new Promise((resolve, reject) => {
+                        const node = document.createElement('script');
+                        const key = { collection: 'NoFriesPaidCollection', questionnaire: 'NoFriesPaidQuestionnaire', results: 'NoFriesPaidResults' }[name];
+                        const cancel = () => finish(null);
+                        const timer = window.setTimeout(cancel, REQUEST_MS);
+                        function finish(factory) {
+                            cleanups.delete(cancel); window.clearTimeout(timer);
+                            node.remove();
+                            if (factory && typeof factory.mount === 'function' && live()) resolve(factory);
+                            else reject(invalid());
+                        }
+                        node.onload = () => {
+                            const factory = window[key]; delete window[key]; finish(factory);
+                        };
+                        node.onerror = cancel; cleanups.add(cancel);
+                        node.integrity = sri; node.crossOrigin = 'anonymous'; node.referrerPolicy = 'no-referrer';
+                        node.src = prefix + '/assets/' + name + '.js?v=' + sri.slice(7, -1).replace(/\+/g, '-').replace(/\//g, '_') + '&s=' + nonce + '.' + fingerprint;
+                        document.head.append(node);
+                    });
+                }
+                const encodedId = '[A-Za-z0-9](?:[A-Za-z0-9._-]|%3A){0,119}';
+                const allowedPath = new RegExp('^/assessments(?:\\?afterAssessmentId=' + encodedId + '|/' + encodedId + '(?:/(?:save|submit))?)?$');
+                async function requestSelected(path, body) {
+                    if (!live() || !allowedPath.test(path)) throw invalid();
+                    const result = await request(cycle, prefix + path, body, snapshot.generation);
+                    if (!live()) throw invalid();
+                    return requireSuccess(result);
+                }
+                return { live, renderer, request: requestSelected, prefix, invalid, fields, canonicalDate, newId: secureId, editable: value.presentationMode === 'editable',
+                    destroy() { for (const cancel of cleanups) cancel(); } };
+            };
+        }
         mountCyber.readBaseline = async function () {
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             // The list is ordered by assessment id and a page can be shorter than
@@ -1929,12 +1979,24 @@
             'admissionGranted', 'providerAccessGranted', 'metadata', 'presentationMode'];
         const extra = value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'profileMetadata');
         if (extra && (!Array.isArray(value.profileMetadata) || !value.profileMetadata.length || value.profileMetadata.length > 4)) throw invalid();
-        if (!fields(value, extra ? keys.concat(['profileMetadata']) : keys) ||
+        if (extra) keys.push('profileMetadata');
+        const paid = value && Object.prototype.hasOwnProperty.call(value, 'paidFrameworks');
+        if (paid) {
+            keys.push('paidFrameworks');
+            const registry = window.NoFriesDashboardRegistry, rows = value.paidFrameworks;
+            if (!Array.isArray(rows) || rows.length > registry.paidFrameworks.length ||
+                rows.some((row, i) => !fields(row, ['moduleId', 'profileId', 'version']) ||
+                    !registry.paidFrameworks.some(ref => registry.sameFramework(ref, row)) ||
+                    rows.slice(0, i).some(other => registry.sameFramework(other, row)))) throw invalid();
+        }
+        if (!fields(value, keys) ||
             value.schemaVersion !== 1 || value.module?.key !== 'cyber_security' || value.module?.state !== 'ready' ||
             value.admissionGranted !== false || value.providerAccessGranted !== false ||
             !['editable', 'read-only'].includes(value.presentationMode)) throw invalid();
-        return JSON.stringify(extra ? [value.metadata, value.presentationMode, value.context, value.module, value.profileMetadata]
-            : [value.metadata, value.presentationMode, value.context, value.module]);
+        const contract = [value.metadata, value.presentationMode, value.context, value.module];
+        if (extra) contract.push(value.profileMetadata);
+        if (paid) contract.push({ paidFrameworks: value.paidFrameworks });
+        return JSON.stringify(contract);
     }
     function leave(cycle, commit) {
         if (!current(cycle) || !confirmClientDiscard(cycle)) return Promise.resolve(false);

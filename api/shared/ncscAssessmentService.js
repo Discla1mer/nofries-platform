@@ -116,6 +116,10 @@ function freeze(value) {
 }
 
 function normaliseNcscCommand(input) {
+    return normaliseAssessmentWrite(input, maximumNcscResponses, knownNcscQuestionOptions);
+}
+
+function normaliseAssessmentWrite(input, maximumResponses, questionOptions) {
     const row = record(detachInput(input), ['assessmentId', 'action', 'idempotencyKey', 'expectedRevision', 'payload']);
     const assessmentId = identifier(row.assessmentId), idempotencyKey = identifier(row.idempotencyKey);
     let payload;
@@ -128,12 +132,12 @@ function normaliseNcscCommand(input) {
         revision(row.expectedRevision);
         const source = record(row.payload, ['responses']);
         if (!Array.isArray(source.responses) || !source.responses.length ||
-            source.responses.length > maximumNcscResponses()) fail();
+            source.responses.length > maximumResponses()) fail();
         const responses = source.responses.map(value => {
             const answer = record(value, ['itemId', 'optionId', 'rationale']);
             const itemId = identifier(answer.itemId);
             // Shape only: the store checks each answer against the assessment's own profile.
-            const options = knownNcscQuestionOptions(itemId);
+            const options = questionOptions(itemId);
             if (!options) fail();
             const optionId = answer.optionId === null ? null : identifier(answer.optionId);
             let rationale = null;
@@ -246,5 +250,5 @@ function createNcscAssessmentService(adapters) {
     });
 }
 
-module.exports = { NcscAssessmentError, normaliseNcscCommand, normaliseNcscPage,
+module.exports = { normaliseAssessmentWrite, NcscAssessmentError, normaliseNcscCommand, normaliseNcscPage,
     normaliseNcscSelector, requireNcscContext, projectNcscSummary, projectNcscDetail, createNcscAssessmentService };

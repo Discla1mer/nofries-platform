@@ -26,6 +26,17 @@ Public main reviewed: `00bf0f0f85990bc95f9bf060b612e934ea60894b`. Follow current
 
 Before enabling the bridge, prove wrong-tenant denial, duplicate payment, expired/overlapping term, stale approval, concurrent usage, failed payment/renewal, refund/dispute handling, and return/sign-in after starter expiry with synthetic tests. Do not change permissions, flags or production records as part of this decision note.
 
+## Manually invoiced assessment profiles
+
+Staff match the approved invoice and agreement to the tenant and organisation. Record which of these `cyber_security` profiles the organisation bought in the approved finance process.
+
+| Assessment | Profile ID | Version |
+| --- | --- | --- |
+| NIST CSF 2.0 | `nf-nist-csf-2-0-core` | `2026-09-08.1` |
+| ISO 27001 readiness self-assessment | `nf-iso-27001-2022-readiness` | `2026-11-19.1` |
+
+The repository's audited `entitlement.update` command checks the expected revision, preserves grant history and records an operation receipt. A qualified staff workflow must retain the free NCSC scope in the successor product grant, specify only the purchased profile tuples and verify the effective result for that organisation. Framework activation is a separate server decision. The current operator console can inspect entitlements but has no approved control for issuing this grant. Hold fulfilment until the staff workflow is qualified. See [the paid frameworks tracking issue](https://github.com/Discla1mer/nofries-platform/issues/500).
+
 ## Data/privacy and Joel's decisions
 
 Link this inventory delta to [#74's privacy/export/deletion review](https://github.com/Discla1mer/nofries-platform/blob/74c1e70d51cdb04ef67e2b49ed0851c09f43f284/docs/privacy/data-handling-readiness.md): billing contact/address if necessary, invoice/order IDs, amount/currency/tax, payment status/time and processor customer/subscription references are additional personal/commercial data. Keep card details with a hosted processor; do not put bank statements, card numbers, payment payloads or assessment content in app logs, Stripe metadata or public GitHub. Finance staff access, provider/offshore processing, dispute evidence, financial retention and residual copies need approved schedules. Account closure does not automatically erase financial records, and a failed payment must not block statutory privacy requests.
