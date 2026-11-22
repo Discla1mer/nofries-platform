@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const { createHash } = require('node:crypto');
 const { paidFrameworks } = require('../api/shared/protectedAssets/dashboardRegistry');
 const { parseAsset, matchesSelection, packagedAsset } = require('../api/shared/paidRendererAssets');
 const { assetPath } = require('../scripts/tests/paid-renderer-browser.cjs');
@@ -34,6 +35,53 @@ test.each(paidFrameworks)('fixed renderer URLs bind $label, its generation and i
     finally { read.mockRestore(); }
 });
 
+test('each questionnaire serves only the reviewed bytes for its exact tuple', async () => {
+    const [nist, iso] = paidFrameworks;
+    const nistAsset = parse(assetPath(nist, 'questionnaire', generation));
+    const isoAsset = parse(assetPath(iso, 'questionnaire', generation));
+    const shared = fs.readFileSync(require.resolve('../api/shared/protectedAssets/paidQuestionnaire.js'));
+    const terms = fs.readFileSync(require.resolve('../api/shared/protectedAssets/isoQuestionnaireGlossary.js'));
+    for (const [asset, expected, size, sri] of [
+        [nistAsset, shared, 17393, 'sha256-7uNUdqKXH144EUyS7+mbScmoiVmc9L1M/sKupp61s8s='],
+        [isoAsset, Buffer.concat([shared, terms]), 21287, 'sha256-uPXUYG6kI9hkxxxowe6STXrIfyu7LJR4+9rvNezqZHg=']
+    ]) {
+        const response = packagedAsset(asset);
+        expect(response.status).toBe(200);
+        expect(response.headers['Cache-Control']).toMatch(/private, no-store/);
+        const body = Buffer.from(response.body);
+        expect(body).toEqual(expected);
+        expect(body.length).toBe(size);
+        expect('sha256-' + createHash('sha256').update(body).digest('base64')).toBe(sri);
+        expect(asset.integrity).toBe(sri);
+    }
+    expect(parse(assetPath(nist, 'questionnaire', generation).replace(nist.profileId + '/' + nist.version,
+        iso.profileId + '/' + iso.version))).toBeNull();
+    expect(parse(assetPath(iso, 'questionnaire', generation).replace(iso.profileId + '/' + iso.version,
+        nist.profileId + '/' + nist.version))).toBeNull();
+    expect(packagedAsset({ ...isoAsset, ref: { ...iso, version: 'other' } })).toBeNull();
+    expect(packagedAsset({ ...isoAsset, ref: nist })).toBeNull();
+    const { createDashboardService } = require('../api/shared/dashboardService');
+    const { admissionFixture } = require('./fixtures/dashboardAdmissionFixture');
+    const free = await createDashboardService(admissionFixture().adapters).handleRequest({ method: 'GET' }, 'app.js');
+    expect(free.status).toBe(200);
+    expect(free.body).not.toContain(terms.toString());
+    expect(free.body).not.toContain(shared.toString());
+});
+
+test('the host serves the reviewed board reader with the same groups available to Overview', () => {
+    const nist = paidFrameworks.find(ref => ref.profileId === 'nf-nist-csf-2-0-core');
+    const asset = parse(assetPath(nist, 'results', generation));
+    const response = packagedAsset(asset);
+    expect(response?.status).toBe(200);
+    expect(response.headers['Cache-Control']).toMatch(/no-store/);
+    // The only #528 reader change exposes the existing projection to the separately admitted collection.
+    // Without it, this is the reader combining #521 and #512's issued ISO outputs (the #521 reader alone was
+    // 3e5611cb3f4a23494713b3f118cedc95f951912f4b879cdb072156325b379967), independent of the host registry.
+    expect(createHash('sha256').update(response.body.replace(
+        'mount, projectIsoOutput, groups: (record, publication) => project(record, publication).groups', 'mount, projectIsoOutput')).digest('hex'))
+        .toBe('5b9e94df9265448df5fd138ce8d1bb36f870edb7e69467ad5bea5601132c2c89');
+});
+
 test('the collection screen is a separate pinned script, absent from the free bundle', async () => {
     const { createDashboardService } = require('../api/shared/dashboardService');
     const { admissionFixture } = require('./fixtures/dashboardAdmissionFixture');
@@ -43,5 +91,8 @@ test('the collection screen is a separate pinned script, absent from the free bu
     expect(collection.headers['Cache-Control']).toMatch(/no-store/);
     expect(collection.body).toContain('The start could not be confirmed.');
     expect(app.body).not.toContain('The start could not be confirmed.');
+    expect(collection.body).toContain('Check more saved assessments');
+    expect(app.body).not.toContain('Check more saved assessments');
+    expect(app.body).not.toContain('Last saved draft');
     expect(app.body).not.toContain(collection.body);
 });
