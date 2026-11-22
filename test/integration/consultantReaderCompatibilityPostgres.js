@@ -200,8 +200,8 @@ function registerConsultantReaderCompatibility() {
             assert.equal(provenance.writerHead, WRITER_SHA); assert.equal(sha(bytes), provenance.fixtureSha256);
             assert.equal(sha(fs.readFileSync(path.join(fixtureRoot, 'prospective-organisation-count.sql'))),
                 provenance.sourceSha256['database/migrations/0012_consultant_organisations.sql']);
-            assert.equal(JSON.stringify(fs.readdirSync(path.resolve(__dirname, '../../database/migrations'))
-                .filter(name => /^\d+.*\.sql$/.test(name)).sort()), JSON.stringify([
+            assert.deepEqual(new Set(fs.readdirSync(path.resolve(__dirname, '../../database/migrations'))
+                .filter(name => /^\d+.*\.sql$/.test(name))), new Set([
                 '0001_core_service_desk.sql', '0002_lifecycle.sql', '0003_dashboard.sql',
                 '0004_ncsc_assessments.sql', '0005_dashboard_runtime.sql', '0006_dashboard_host_events.sql',
                 '0007_evidence_metadata.sql', '0008_signup_acceptance_receipts.sql',
@@ -211,6 +211,8 @@ function registerConsultantReaderCompatibility() {
                 '0021_lifecycle_email_outbox.sql', '0022_funnel_daily_counts.sql',
                 '0023_email_dispatcher_subject_lookup.sql', '0024_email_preferences_link_guard.sql',
                 '0025_account_wipe_role.sql', '0026_dashboard_contact_requests.sql', '0027_contact_request_retention.sql',
+                '0028_deferred_representative_details.sql', '0029_deferred_agreement_wipe.sql', '0030_paid_assessment_revisions.sql',
+                '0031_iso_report_artifacts.sql', '0032_paid_gap_sources.sql', '0033_paid_start_ncsc_scope.sql',
                 '0034_paid_framework_access.sql'
             ]));
         });

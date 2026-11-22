@@ -51,6 +51,8 @@ const OPERATIONS = ['admission.read', 'ncsc.list', 'ncsc.read', 'ncsc.execute', 
 const NCSC_OPERATIONS = ['ncsc.list', 'ncsc.read', 'ncsc.execute'];
 const IMPROVEMENT_OPERATIONS = ['improvement.list', 'improvement.execute'];
 const CONTACT_OPERATION = 'contact.request';
+const DETAILS_OPERATIONS = ['representative.read', 'representative.record'];
+const { RepresentativeDetailsError } = require('../customerSignup/deferredRepresentativeDetails');
 const SNAPSHOT_FIELDS = ['tenantAggregate', 'membershipState', 'entitlementState', 'flags', 'advisorAssignments', 'summary'];
 const deniedErrors = new WeakSet();
 const unavailableErrors = new WeakSet();
@@ -76,9 +78,13 @@ function mapped(error, operation = 'admission.read', denial = null) {
         if (error instanceof ImprovementPlanServiceError) return error;
         return new ImprovementPlanServiceError();
     }
+    if (DETAILS_OPERATIONS.includes(operation)) {
+        if (isDenied) return new RepresentativeDetailsError('representative_details_access_denied', 403);
+        return error instanceof RepresentativeDetailsError ? error : new RepresentativeDetailsError();
+    }
     if (operation === CONTACT_OPERATION) {
         if (isDenied) return new ContactRequestError('contact_request_access_denied', 403);
-        if (error instanceof ContactRequestError) return error;
+        if (error instanceof ContactRequestError || error instanceof RepresentativeDetailsError) return error;
         return new ContactRequestError();
     }
     if (operation === 'evidence.read') {
@@ -101,7 +107,7 @@ function mapped(error, operation = 'admission.read', denial = null) {
 function configuration(input) {
     try {
         if (!input || isProxy(input)) throw new Error();
-        const optional = ['ncscEnabled', 'improvementEnabled', 'contactRequestsEnabled'].filter(key => Object.prototype.hasOwnProperty.call(input, key));
+        const optional = ['ncscEnabled', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled'].filter(key => Object.prototype.hasOwnProperty.call(input, key));
         fields(input, ['pool', 'clock', 'instanceId', 'historyBudget', 'captureRequest',
             'readExternalRuntimeEpoch', 'newId', 'resolveSubmissionQuota', ...optional]);
         if (optional.some(key => input[key] !== true)) throw new Error();
@@ -359,8 +365,12 @@ function currentImprovement(inv, operation, authority, at) {
     catch (_) { inv.deny(); }
 }
 function currentContact(inv, operation, authority, at) {
-    if (operation.name !== CONTACT_OPERATION) return;
-    try { resolveContactAccess(authority, operation.context, at); } catch (_) { inv.deny(); }
+    if (operation.name !== CONTACT_OPERATION && !DETAILS_OPERATIONS.includes(operation.name)) return;
+    try {
+        resolveContactAccess(authority, operation.context, at);
+        if (operation.name === 'representative.record') resolvePortalPermission(authority.membershipState, authority.tenantAggregate,
+            { ...operation.context.scope, subjectKey: operation.context.identity.subjectKey, permission: 'representative.record', module: 'overview' }, null, at);
+    } catch (_) { inv.deny(); }
 }
 async function locator(inv) {
     let client, started = false, discard = false;
@@ -576,12 +586,12 @@ async function writeAudit(inv, operation, event) {
     if (value.requestId !== inv.capture.requestId || value.actorSubjectKey !== subjectOf(inv.capture.identityPayload) ||
         value.tenantId !== c.scope.tenantId || value.organisationId !== c.scope.organisationId) inv.deny();
     const evidenceRead = operation.name === 'evidence.read';
-    const improvement = IMPROVEMENT_OPERATIONS.includes(operation.name), contact = operation.name === CONTACT_OPERATION;
+    const improvement = IMPROVEMENT_OPERATIONS.includes(operation.name), contact = operation.name === CONTACT_OPERATION, details = operation.name === 'representative.record';
     const action = improvement ? operation.name === 'improvement.execute' ? 'improvement.write' : 'improvement.read'
-        : contact ? CONTACT_AUDIT.action : evidenceRead ? 'evidence.read' : 'assessment.read';
-    if (!['ncsc.list', 'ncsc.read', 'evidence.read', CONTACT_OPERATION, ...IMPROVEMENT_OPERATIONS].includes(operation.name) ||
+        : details ? 'representative.record' : contact ? CONTACT_AUDIT.action : evidenceRead ? 'evidence.read' : 'assessment.read';
+    if (!['ncsc.list', 'ncsc.read', 'evidence.read', 'representative.record', CONTACT_OPERATION, ...IMPROVEMENT_OPERATIONS].includes(operation.name) ||
         value.schemaVersion !== 1 || value.eventType !== 'dashboard.operation' || value.action !== action ||
-        value.module !== (improvement ? 'improvement_plan' : contact ? CONTACT_AUDIT.module : evidenceRead ? 'evidence' : 'cyber_security') ||
+        value.module !== (improvement ? 'improvement_plan' : details ? 'overview' : contact ? CONTACT_AUDIT.module : evidenceRead ? 'evidence' : 'cyber_security') ||
         value.result !== 'succeeded') inv.unavailable();
     const current = () => {
         if (inv.owner !== operation || operation.finished || operation.active !== active || active.phase !== 'work') throw privateError(false);
@@ -611,14 +621,15 @@ async function writeAudit(inv, operation, event) {
 
 function operationPair(inv, database, routing, resolvedAt, name, context) {
     const contact = name === CONTACT_OPERATION;
-    const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name) || contact;
+    const details = DETAILS_OPERATIONS.includes(name);
+    const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name) || contact || details;
     if (!known || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true ||
-        contact && inv.options.contactRequestsEnabled !== true || inv.owner ||
+        contact && inv.options.contactRequestsEnabled !== true || details && inv.options.representativeDetailsEnabled !== true || inv.owner ||
         routing.portfolio && name !== 'improvement.list') {
         throw mapped(privateError(false), known ? name : 'admission.read');
     }
     try { inv.now(); } catch (error) { throw mapped(error, name); }
-    if (IMPROVEMENT_OPERATIONS.includes(name) || contact) {
+    if (IMPROVEMENT_OPERATIONS.includes(name) || contact || details) {
         try {
             requireTenantRequestContext(context);
             if (context.requestId !== inv.capture.requestId || !equal(context.scope, routing.scope) ||
