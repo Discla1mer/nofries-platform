@@ -447,7 +447,9 @@
             informationStamp = stamp; showInformationTime();
             stamp.hidden = true;
             footer.append(stamp,
-                element('p', '', 'Assessment indicators are not audit, assurance or certification.'));
+                element('p', '', current.key === 'cyber_security' && options.paidFrameworks
+                    ? 'This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.'
+                    : 'Assessment indicators are not audit, assurance or certification.'));
             main.append(footer);
         }
         // People read local time; keep the exact instant in the datetime attribute.
@@ -571,6 +573,74 @@
         }
         function renderCyber(initialAssessmentId) {
             const childRoot = element('div', 'dashboard-cyber-workspace'); main.append(childRoot);
+            if (options.paidFrameworks && initialAssessmentId === undefined && !validCyberLocation(cyberLocation)) {
+                renderFrameworkPicker(childRoot);
+            } else mountFreeCyber(childRoot, initialAssessmentId);
+        }
+        function backToFrameworkPicker() {
+            function showPicker() {
+                if (child) { child.destroy(); child = null; }
+                cyberLocation = null;
+                if (managedHistory && committedEntry) {
+                    committedEntry.location = null;
+                    win.history.replaceState(stateWith(committedEntry), '', committedEntry.hash);
+                }
+                navigate('cyber-security', true);
+            }
+            if (child) child.requestLeave(showPicker);
+            else showPicker();
+        }
+        function renderFrameworkPicker(root) {
+            const heading = element('h2', '', 'Choose an assessment');
+            const cards = element('div', 'dashboard-service-cards');
+            const free = panel('NCSC cyber security check', 'Check the basics and see what your organisation can improve first.');
+            free.append(badge('Free'), button('Open NCSC check', function () {
+                root.replaceChildren();
+                const back = button('Back to assessment choices', backToFrameworkPicker, 'dashboard-text-button');
+                const workspace = element('div');
+                root.append(back, workspace);
+                mountFreeCyber(workspace);
+                back.focus();
+            }));
+            cards.append(free);
+            let hasLocked = false;
+            for (const ref of registry.paidFrameworks) {
+                const included = options.paidFrameworks.some(row => registry.sameFramework(row, ref));
+                const card = panel(ref.label, ref.description);
+                card.append(badge(included ? 'Included' : 'Locked'));
+                if (included) {
+                    card.append(button('Open ' + ref.label, function () { openFramework(root, ref); }));
+                } else hasLocked = true;
+                cards.append(card);
+            }
+            root.replaceChildren(heading, cards);
+            if (hasLocked) {
+                const contact = element('a', 'dashboard-button dashboard-button-secondary dashboard-framework-contact', 'Ask No Fries about the paid dashboard');
+                contact.href = '/contact.html';
+                root.append(contact);
+            }
+        }
+        function openFramework(root, ref) {
+            const back = button('Back to assessment choices', backToFrameworkPicker, 'dashboard-text-button');
+            const status = element('p', '', 'Opening assessment…'); status.setAttribute('role', 'status');
+            root.replaceChildren(back, status); back.focus();
+            let disposed = false, mounted = null;
+            const host = options.paidHost(ref, () => !disposed);
+            child = { destroy() {
+                disposed = true; host.destroy();
+                if (mounted) mounted.destroy();
+                root.replaceChildren();
+            }, requestLeave(commit) {
+                if (mounted) return mounted.requestLeave(commit);
+                commit(); return Promise.resolve(true);
+            } };
+            host.renderer('collection').then(factory => {
+                if (host.live()) mounted = factory.mount(root, { ref, element, button, back, host, win });
+            }).catch(() => {
+                if (!disposed) status.textContent = 'This assessment is unavailable. Return to the assessment choices to try again.';
+            });
+        }
+        function mountFreeCyber(childRoot, initialAssessmentId) {
             try {
                 const presentation = { generation: generation };
                 if (initialAssessmentId === undefined && validCyberLocation(cyberLocation)) {

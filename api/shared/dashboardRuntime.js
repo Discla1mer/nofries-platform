@@ -18,6 +18,7 @@ const { ImprovementActionListError } = require('./improvementPlan/improvementAct
 const { ConsultantWorkQueueError, normaliseConsultantWorkQueuePage,
     createConsultantWorkQueueService } = require('./improvementPlan/consultantWorkQueueService');
 const { apiSecurityHeaders } = require('./securityHeaders');
+const { prepareRequest, paidRequest } = require('./assessmentLifecycle/paidAssessments');
 const { ContactRequestError, normaliseContactRequest, writeContactRequest } = require('./contactRequests');
 
 const { representativeDetails, RepresentativeDetailsError } = require('./customerSignup/deferredRepresentativeDetails');
@@ -31,6 +32,7 @@ function createDashboardResourceRuntime(options) {
     // production host forwards its explicit Improvement setting; each release
     // must qualify schema/audit readiness before enabling that setting.
     const improvementEnabled = options.improvementEnabled === true;
+    const paidFrameworksEnabled = options.paidFrameworksEnabled === true;
     const contactRequestsEnabled = options.contactRequestsEnabled === true;
     const representativeDetailsEnabled = options.representativeDetailsEnabled === true;
     const queueClock = options.clock;
@@ -177,6 +179,16 @@ function createDashboardResourceRuntime(options) {
             }
             return Object.freeze({
                 requestContext,
+                ...(paidFrameworksEnabled ? { async paid(route, body, cursor, onDisclosure) {
+                    const request = prepareRequest(route, body, cursor);
+                    const pair = binding.createOperation(body === undefined ? 'framework.read' : 'framework.write', context, request.profileRef);
+                    try {
+                        const result = await paidRequest(pair, context, request);
+                        pair.assertPaidDisclosure();
+                        if (onDisclosure) onDisclosure(pair.assertPaidDisclosure);
+                        return result;
+                    } finally { pair.finish(); }
+                } } : {}),
                 ...(representativeDetailsEnabled ? { representativeDetails: details } : {}),
                 ...(contactRequestsEnabled ? { contact: Object.freeze({ request: (input, onStored) => contactRequest(input, onStored) }) } : {}),
                 ...(improvementEnabled ? { improvement: Object.freeze({
