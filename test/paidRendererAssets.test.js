@@ -74,10 +74,12 @@ test('the host serves the reviewed board reader with the same groups available t
     const response = packagedAsset(asset);
     expect(response?.status).toBe(200);
     expect(response.headers['Cache-Control']).toMatch(/no-store/);
-    // The only reader change exposes the existing projection to the separately admitted collection.
+    // The only #528 reader change exposes the existing projection to the separately admitted collection.
+    // Without it, this is the reader combining #521 and #512's issued ISO outputs (the #521 reader alone was
+    // 3e5611cb3f4a23494713b3f118cedc95f951912f4b879cdb072156325b379967), independent of the host registry.
     expect(createHash('sha256').update(response.body.replace(
-        'mount, groups: (record, publication) => project(record, publication).groups', 'mount')).digest('hex'))
-        .toBe('3e5611cb3f4a23494713b3f118cedc95f951912f4b879cdb072156325b379967');
+        'mount, projectIsoOutput, groups: (record, publication) => project(record, publication).groups', 'mount, projectIsoOutput')).digest('hex'))
+        .toBe('5b9e94df9265448df5fd138ce8d1bb36f870edb7e69467ad5bea5601132c2c89');
 });
 
 test('the collection screen is a separate pinned script, absent from the free bundle', async () => {
