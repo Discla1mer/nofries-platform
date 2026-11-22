@@ -36,7 +36,7 @@ const server = http.createServer((req, res) => {
             await page.goto(origin + '/changelog.html');
             await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
             assert.equal(await page.locator(':focus').getAttribute('id'), 'main-content');
-            const links = ['/roadmap.html', '/pricing.html#pricing-pilot', '/roadmap.html#roadmap-planned'];
+            const links = ['/roadmap.html', '/pricing.html#pricing-pilot', '/pricing.html#pricing-assessments'];
             for (const href of links) {
                 await page.keyboard.press('Tab');
                 assert.equal(await page.locator(':focus').getAttribute('href'), href, 'Editorial links follow reading order');
