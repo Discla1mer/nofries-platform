@@ -219,6 +219,11 @@ function environment(overrides = {}) {
         NOFRIES_DASHBOARD_EPOCH_CONTAINER: 'dashboard-epochs', NOFRIES_POSTGRES_HOST: 'synthetic.postgres.database.azure.com',
         NOFRIES_POSTGRES_DATABASE: 'nofries', NOFRIES_POSTGRES_USER: 'nofries_app', ...overrides };
 }
+test.each([undefined, 'false', 'TRUE', '1', ' true', 'true'])('paid frameworks only enable for exact true (%p)', value => {
+    const config = createProductionDashboardConfiguration(environment({ NOFRIES_PAID_FRAMEWORKS_ENABLED: value }), dependencies());
+    expect(config.paidFrameworksEnabled).toBe(value === 'true' ? true : undefined);
+});
+
 function dependencies() {
     const pool = { connect: jest.fn(), end: jest.fn() }, store = require('../api/shared/browserSessionStore').MemoryBrowserSessionStore;
     const credential = { getToken: jest.fn() };
