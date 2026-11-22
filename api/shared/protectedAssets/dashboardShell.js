@@ -557,6 +557,13 @@
                     if (preview) {
                         const example = element('a', 'dashboard-button dashboard-button-secondary', preview.label);
                         example.href = preview.href;
+                        const focusKey = ref.profileId === 'nf-nist-csf-2-0-core' ? 'nist' : 'iso';
+                        example.id = 'framework-example-' + focusKey;
+                        example.addEventListener('click', function (event) {
+                            if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button > 0 || !active()) return;
+                            // Public UI identity only; each history entry keeps its own originating card.
+                            win.history.replaceState(Object.assign({}, win.history.state, { nofriesExampleFocus: focusKey }), '');
+                        });
                         card.append(example);
                     }
                 }

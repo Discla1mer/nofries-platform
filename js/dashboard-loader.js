@@ -42,6 +42,12 @@
     const elements = {};
     Object.keys(ids).forEach(function (key) { elements[key] = document.getElementById(ids[key]); });
     if (Object.keys(elements).some(function (key) { return !elements[key]; })) return;
+    // Fixed public return targets contain no client, session or assessment data.
+    const exampleReturns = { '#cyber-security/nist-example': 'nist', '#cyber-security/iso-example': 'iso' };
+    const exampleReturn = exampleReturns[window.location.hash];
+    if (exampleReturn) window.history.replaceState(Object.assign({}, window.history.state,
+        { nofriesExampleFocus: exampleReturn }), '', '#cyber-security');
+    let restoreExampleFocus = true;
     const accountMenu = document.getElementById('dashboardAccountMenu');
     // Escape closes the account menu and returns focus to its summary.
     if (accountMenu && typeof accountMenu.addEventListener === 'function') accountMenu.addEventListener('keydown', function (event) {
@@ -861,6 +867,14 @@
         elements.app.hidden = false;
         cycle.busy = false;
         show(cycle, 'ready');
+        if (restoreExampleFocus) {
+            restoreExampleFocus = false;
+            const key = window.history.state && window.history.state.nofriesExampleFocus;
+            if (window.location.hash === '#cyber-security' && ['nist', 'iso'].includes(key)) {
+                const link = document.getElementById('framework-example-' + key);
+                if (link && elements.app.contains(link)) link.focus();
+            }
+        }
         if (fresh.accountType === 'consultant') portfolioControls(cycle);
     }
     function clientSetupControls(cycle) {
@@ -2309,7 +2323,9 @@
             !cycle.clientMutationPending) { revalidate(cycle); return; }
         restore();
     });
-    window.addEventListener('pageshow', function (event) { if (event && event.persisted) restore(); });
+    window.addEventListener('pageshow', function (event) {
+        if (event && event.persisted) { restoreExampleFocus = true; restore(); }
+    });
     window.addEventListener('beforeunload', function (event) {
         if (!active || !current(active) || !active.session || Date.parse(active.session.expiresAt) <= Date.now()) return;
         const draft = clientDraft(active);
