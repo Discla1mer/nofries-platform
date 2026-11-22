@@ -42,8 +42,8 @@ test('each questionnaire serves only the reviewed bytes for its exact tuple', as
     const shared = fs.readFileSync(require.resolve('../api/shared/protectedAssets/paidQuestionnaire.js'));
     const terms = fs.readFileSync(require.resolve('../api/shared/protectedAssets/isoQuestionnaireGlossary.js'));
     for (const [asset, expected, size, sri] of [
-        [nistAsset, shared, 17393, 'sha256-7uNUdqKXH144EUyS7+mbScmoiVmc9L1M/sKupp61s8s='],
-        [isoAsset, Buffer.concat([shared, terms]), 21287, 'sha256-uPXUYG6kI9hkxxxowe6STXrIfyu7LJR4+9rvNezqZHg=']
+        [nistAsset, shared, 18216, 'sha256-1e+kBgIHqZ2ax8vSuP/ZMttXuWLh3ftNaHMvTmGu3S4='],
+        [isoAsset, Buffer.concat([shared, terms]), 22110, 'sha256-S/h9JEL/Ud85YBGvyBy7iLDYH+Z+kLdNt9oS1XC5yQU=']
     ]) {
         const response = packagedAsset(asset);
         expect(response.status).toBe(200);

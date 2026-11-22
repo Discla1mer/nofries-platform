@@ -30,7 +30,9 @@ async function frameworkDecision(tx, command, approved, clock) {
     if ((action === 'grant' ? granted && frameworkEnabled : !granted) || approved && !equal(approved, witness)) refuse();
     if (!approved) return witness;
     const capability = await tx.query("SELECT pg_has_role(session_user,'nofries_framework_operator','SET') AND NOT pg_has_role(session_user,'nofries_framework_operator','USAGE') AS available");
-    if (capability.rows[0]?.available !== true) throw new DashboardAdminError(503, 'dashboard_admin_unavailable');
+    // Checked before any write in this transaction; the caller audits it as not applied.
+    if (capability.rows[0]?.available !== true) throw Object.assign(new DashboardAdminError(503, 'dashboard_admin_unavailable'),
+        { notApplied: 'operator_capability_unbound' });
     // Apply only the selected profile switch. Its independent withdrawal still
     // blocks a retained grant. Dashboard and module settings are never enabled here.
     if (action === 'grant' && !frameworkEnabled) {

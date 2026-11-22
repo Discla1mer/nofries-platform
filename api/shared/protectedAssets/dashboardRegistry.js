@@ -45,13 +45,13 @@
     // Public SRI pins for the fixed, separately admitted package files.
     const rendererIntegrity = Object.freeze({
         collection: 'sha256-4iLaelW+2xCFyCw72BCgqsvKP43Sp3r1on6sSARgIS8=',
-        questionnaire: 'sha256-7uNUdqKXH144EUyS7+mbScmoiVmc9L1M/sKupp61s8s=',
+        questionnaire: 'sha256-1e+kBgIHqZ2ax8vSuP/ZMttXuWLh3ftNaHMvTmGu3S4=',
         results: 'sha256-WGvpeAntN0ySg4UrW7pt7qhzTS8BqdmzjWaTR7oRjG8='
     });
     function rendererAsset(ref, name) {
         if (!ref || !Object.hasOwn(rendererIntegrity, name) || !paidFrameworks.some(row => sameFramework(row, ref))) return null;
         const withIsoTerms = name === 'questionnaire' && ref.profileId === isoProfileId;
-        const integrity = withIsoTerms ? 'sha256-uPXUYG6kI9hkxxxowe6STXrIfyu7LJR4+9rvNezqZHg=' : rendererIntegrity[name];
+        const integrity = withIsoTerms ? 'sha256-S/h9JEL/Ud85YBGvyBy7iLDYH+Z+kLdNt9oS1XC5yQU=' : rendererIntegrity[name];
         return { integrity, withIsoTerms };
     }
     function rendererSelection(generation, ref, name, nonce) {
