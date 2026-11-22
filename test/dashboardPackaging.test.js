@@ -349,6 +349,11 @@ for (const useExample of [false, true]) {
                 assert.deepEqual(route.methods, ['GET', 'POST']);
                 assert.equal(route.rewrite, undefined);
                 assert.equal(route.redirect, undefined);
+                const fallback = config.routes.find(rule => rule.route === '/api/*');
+                assert.equal(route.headers['X-Robots-Tag'], 'none');
+                assert.equal(route.headers['X-Robots-Tag'], fallback.headers['X-Robots-Tag']);
+                assert.equal(route.headers['Content-Security-Policy'], "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+                assert.equal(route.headers['Content-Security-Policy'], fallback.headers['Content-Security-Policy']);
                 assert.deepEqual(route.headers['Cache-Control'].split(',').map(v => v.trim()), ['private', 'no-store']);
             }
             for (const [method, endpoint] of [
