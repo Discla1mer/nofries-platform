@@ -9,6 +9,7 @@ const { createDashboardResourceRuntime } = require('../../api/shared/dashboardRu
 const { createPostgresDashboardRuntimeRepository, createPostgresDashboardMaintenanceRepository } =
     require('../../api/shared/appLifecycle/postgresDashboardRuntimeRepository');
 const { createCommand, saveCommand, submitCommand, allResponses, SUBJECT } = require('../fixtures/ncscAssessmentFixture');
+const { profiles, insertSource, insertPlan, insertHead } = require('../fixtures/paidGapPlanRows');
 const { trackPoolClientEnds } = require('../helpers/postgresPoolLifecycle');
 
 const TABLES = Object.freeze(['dashboard_tenants', 'dashboard_organisations', 'dashboard_membership_states',
@@ -18,7 +19,7 @@ const TABLES = Object.freeze(['dashboard_tenants', 'dashboard_organisations', 'd
     'dashboard_onboarding_proofs', 'dashboard_onboarding_decisions', 'dashboard_identity_bindings',
     'dashboard_session_gates', 'dashboard_runtime_receipts', 'dashboard_runtime_audit',
     'dashboard_ncsc_assessment_revisions', 'dashboard_ncsc_assessments', 'dashboard_ncsc_assessment_receipts',
-    'dashboard_improvement_revisions', 'dashboard_improvement_heads']);
+    'dashboard_framework_revisions', 'dashboard_improvement_revisions', 'dashboard_improvement_heads']);
 const SELECTOR = Object.freeze({ planId: 'recovery-plan', filters: Object.freeze({ status: 'all', owner: 'all', overdueOnly: false }) });
 const quote = value => '"' + value.replaceAll('"', '""') + '"';
 
@@ -44,7 +45,9 @@ async function restore(pool, retained) {
             // Self-linked immutable revisions must precede their children.
             const ordered = [...retained[table]].sort((a, b) => (a.revision ?? 0) - (b.revision ?? 0));
             for (const row of ordered) {
-                const columns = Object.keys(row);
+                // The snapshot retains the derived NCSC key for the full equality check.
+                // PostgreSQL recomputes it when restoring the writable source columns.
+                const columns = Object.keys(row).filter(key => table !== 'dashboard_improvement_revisions' || key !== 'ncsc_assessment_id');
                 // These two existing tables require JSONB literal null for a
                 // scopeless event/receipt; ordinary SQL-null references retain
                 // their original meaning. Reuse the native fixture convention.
@@ -97,21 +100,30 @@ module.exports = function registerImprovementPlanRecovery({ resourceSetup, getPo
         expect(originalList.actions[0].history.map(row => row.type)).toEqual(['assign', 'start', 'complete', 'reopen']);
 
         const { ownerPool, controlPool } = getPools();
-        const retained = await snapshot(ownerPool);
-        expect(retained.dashboard_improvement_revisions).toHaveLength(5);
-        expect(retained.dashboard_improvement_heads).toHaveLength(1);
-        const parent = retained.dashboard_ncsc_assessment_revisions.find(row => row.tenant_id === f.scope.tenantId &&
+        const legacy = await snapshot(ownerPool);
+        expect(legacy.dashboard_improvement_revisions).toHaveLength(5);
+        expect(legacy.dashboard_improvement_heads).toHaveLength(1);
+        const parent = legacy.dashboard_ncsc_assessment_revisions.find(row => row.tenant_id === f.scope.tenantId &&
             row.organisation_id === f.scope.organisationId && row.assessment_id === 'assessment-a' &&
             row.revision === submitted.assessment.revision && row.payload_sha256 === submitted.assessment.revisionSha256);
         expect(parent).toBeDefined();
-        for (const row of retained.dashboard_improvement_revisions) expect(row).toMatchObject({
+        for (const row of legacy.dashboard_improvement_revisions) expect(row).toMatchObject({
             assessment_id: parent.assessment_id, assessment_revision: parent.revision, assessment_sha256: parent.payload_sha256 });
-        const actionAudit = retained.dashboard_runtime_audit.filter(row => row.payload.module === 'improvement_plan');
+        const actionAudit = legacy.dashboard_runtime_audit.filter(row => row.payload.module === 'improvement_plan');
         expect(actionAudit.filter(row => row.payload.action === 'improvement.write')).toHaveLength(5);
         expect(actionAudit.filter(row => row.payload.action === 'improvement.read')).toHaveLength(2);
         const revisionTransactions = (await ownerPool.query('SELECT xmin::text AS id FROM nofries.dashboard_improvement_revisions')).rows.map(row => row.id).sort();
         const auditTransactions = (await ownerPool.query("SELECT xmin::text AS id FROM nofries.dashboard_runtime_audit WHERE payload->>'action'='improvement.write'")).rows.map(row => row.id).sort();
         expect(auditTransactions).toEqual(revisionTransactions);
+
+        const paid = await insertSource(ownerPool, f.scope, SUBJECT, profiles.iso);
+        const paidRoot = await insertPlan(ownerPool, paid, 'held-paid-gap');
+        const paidAssignment = await insertPlan(ownerPool, paid, 'held-paid-gap', paidRoot);
+        await insertHead(ownerPool, paid, 'held-paid-gap', 1, paidAssignment);
+        const retained = await snapshot(ownerPool);
+        expect(retained.dashboard_framework_revisions).toHaveLength(1);
+        expect(retained.dashboard_improvement_revisions).toHaveLength(7);
+        expect(retained.dashboard_improvement_heads).toHaveLength(2);
 
         const name = 'nf_improvement_restore_' + crypto.randomBytes(8).toString('hex');
         let owner, runtime, maintenance, closeOwner, closeRuntime, closeMaintenance, created = false;

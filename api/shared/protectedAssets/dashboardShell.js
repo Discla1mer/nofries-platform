@@ -69,6 +69,66 @@
         control.append(ask, confirm, status);
         return control;
     }
+    // All inputs stay in this mount. No storage, automatic submission or legal
+    // re-acceptance. A scoped host read must succeed before content is created.
+    function detailsGate(doc, port, content, purpose) {
+        const root = doc.createElement('div'); root.className = 'dashboard-details-gate';
+        const status = doc.createElement('p'); status.setAttribute('role', 'status');
+        root.append(status);
+        const make = (tag, text) => { const node = doc.createElement(tag); if (text) node.textContent = text; return node; };
+        const button = text => { const node = make('button', text); node.type = 'button'; node.className = 'dashboard-button'; return node; };
+        let busy = false;
+        const live = () => !port.isCurrent || port.isCurrent();
+        function ready() { if (live()) { root.replaceChildren(); root.append(content()); } }
+        function form() {
+            root.replaceChildren();
+            root.append(make('h4', 'Your details'));
+            const form = make('form'), controls = {};
+            for (const [name, label, max, autocomplete] of [['name', 'Your name', 160, 'name'],
+                ['role', 'Your role', 120, 'organization-title'], ['address', 'Business address', 500, 'street-address']]) {
+                const field = make('label', label), input = make('input'); input.name = name; input.required = true;
+                input.maxLength = max; input.autocomplete = autocomplete; input.className = 'ncsc-input';
+                field.append(input); form.append(field); controls[name] = input;
+            }
+            const save = button('Save details and continue'); save.type = 'submit';
+            const cancel = button('Cancel'); cancel.addEventListener('click', () => { if (!busy) check(); });
+            form.append(save, cancel, status); root.append(form); controls.name.focus();
+            form.addEventListener('submit', async event => {
+                event.preventDefault(); if (busy || !live() || !form.reportValidity()) return;
+                busy = true; save.disabled = true; cancel.disabled = true; status.textContent = 'Saving your details…';
+                try {
+                    const result = await port.save(Object.fromEntries(Object.entries(controls).map(([name, input]) => [name, input.value])));
+                    if (result.status !== 'ready') throw new Error();
+                    if ((await port.read()).status !== 'ready') throw new Error();
+                    ready();
+                } catch (_) {
+                    if (live()) status.textContent = 'Your details could not be confirmed. Retry with the same details, or cancel and check what was saved.';
+                } finally { busy = false; save.disabled = false; cancel.disabled = false; }
+            });
+        }
+        async function check() {
+            root.replaceChildren(status); status.textContent = 'Checking your details…';
+            try {
+                const value = await port.read(); if (!live()) return;
+                if (value.status === 'ready') return ready();
+                if (value.status === 'result_required') { status.textContent = 'Complete your first assessment before continuing.'; return; }
+                if (value.status !== 'details_required') throw new Error();
+                status.textContent = purpose === 'questionnaire'
+                    ? 'Add your name, role and business address before copying or printing questionnaire answers.'
+                    : 'Add your name, role and business address before sharing a board or insurer summary or requesting a service.';
+                const open = button('Add your details'); open.addEventListener('click', async () => {
+                    if (busy) return; busy = true;
+                    try { const current = await port.read(); if (live()) current.status === 'ready' ? ready() : current.status === 'details_required' ? form() : check(); }
+                    catch (_) { check(); } finally { busy = false; }
+                }); root.append(open);
+            } catch (_) {
+                if (!live()) return;
+                status.textContent = 'Your details could not be checked.';
+                const retry = button('Retry'); retry.addEventListener('click', check); root.append(retry);
+            }
+        }
+        check(); return root;
+    }
     const mounted = new WeakMap();
     const START_NEW_ASSESSMENT = Object.freeze({ startNew: true });
     let mountSequence = 0;
@@ -107,6 +167,8 @@
         // The host passes send only when the session negotiated contact requests.
         // An advisor-only projection has no contact.request permission.
         const contactSend = typeof options.contactRequest === 'function' && model.audience !== 'Scoped advisor' ? options.contactRequest : null;
+        const gated = content => options.representativeDetails
+            ? detailsGate(doc, options.representativeDetails, content) : content();
         const first = available.find(function (item) { return item.key === 'overview'; }) || available[0];
         let current = first;
         let disposed = false;
@@ -134,6 +196,7 @@
         let queuedEvent = null;
         let unmanagedBoundaryHash = null;
         let planBaselineToken = 0;
+        let overviewHosts = [];
         let informationAt = model.generatedAt;
         let informationStamp = null;
         // A history pointer is a read hint, never authority or saved answers.
@@ -360,6 +423,7 @@
             return promise;
         }
         function render(initialAssessmentId, sourceAssessment) {
+            clearOverviewHosts();
             planBaselineToken += 1;
             if (child) { child.destroy(); child = null; }
             main.replaceChildren();
@@ -417,6 +481,7 @@
             }
             const connectedPicture = pictureAvailable;
             if (connectedPicture) renderPicture();
+            renderFrameworkOverview();
             if (model.summary.state === 'stale') {
                 const notice = panel('This snapshot needs a refresh', 'These figures are historical. Reopen through the authenticated dashboard before relying on them.');
                 notice.classList.add('dashboard-warning'); main.append(notice);
@@ -468,6 +533,23 @@
             posture.append(metrics);
             const grid = element('div', 'dashboard-overview-grid'); grid.append(attention, posture); main.append(grid);
         }
+        function clearOverviewHosts() {
+            for (const host of overviewHosts) host.destroy();
+            overviewHosts = [];
+        }
+        function renderFrameworkOverview() {
+            if (!options.paidFrameworks?.length || typeof options.paidHost !== 'function') return;
+            for (const ref of registry.paidFrameworks.filter(ref => options.paidFrameworks.some(row => registry.sameFramework(ref, row)))) {
+                const slot = element('div');
+                main.append(slot);
+                const host = options.paidHost(ref, () => active() && current.key === 'overview' && main.contains(slot));
+                overviewHosts.push(host);
+                host.renderer('collection').then(factory => {
+                    if (host.live()) return factory.overview(slot, { ref, element, button, host,
+                        open: assessmentId => navigate('cyber-security', true, undefined, { ref, assessmentId }) });
+                }).catch(() => slot.replaceChildren());
+            }
+        }
         function renderPicture() {
             const childRoot = element('div', 'dashboard-picture-workspace'); main.append(childRoot);
             const cyber = available.find(function (item) { return item.key === 'cyber_security' && stateFor(item.key) === 'ready'; });
@@ -478,7 +560,8 @@
             try {
                 const result = options.mountPicture(childRoot, { generation: generation,
                     displayName: model.context.displayName,
-                    contactControl: contactSend ? function () { return contactControl(doc, 'results', contactSend); } : undefined,
+                    detailsGate: options.representativeDetails ? gated : undefined,
+                    contactControl: contactSend ? function () { return gated(() => contactControl(doc, 'results', contactSend)); } : undefined,
                     openCyber: cyber ? function (assessmentId, intent) {
                         if (!active() || !pictureChild || child !== pictureChild) return Promise.resolve(false);
                         // The first-use action opens the new-assessment step directly.
@@ -496,6 +579,7 @@
         }
         function openAttention(index) {
             const item = model.summary.attention[index]; if (!item || disposed) return;
+            clearOverviewHosts();
             if (child) { child.destroy(); child = null; }
             main.replaceChildren();
             const back = button('Back to Overview', function () {
@@ -513,7 +597,9 @@
         }
         function renderCyber(initialAssessmentId) {
             const childRoot = element('div', 'dashboard-cyber-workspace'); main.append(childRoot);
-            if (options.paidFrameworks && initialAssessmentId === undefined && !validCyberLocation(cyberLocation)) {
+            if (initialAssessmentId?.ref && options.paidFrameworks?.some(row => registry.sameFramework(row, initialAssessmentId.ref))) {
+                openFramework(childRoot, initialAssessmentId.ref, initialAssessmentId.assessmentId);
+            } else if (options.paidFrameworks && initialAssessmentId === undefined && !validCyberLocation(cyberLocation)) {
                 renderFrameworkPicker(childRoot);
             } else mountFreeCyber(childRoot, initialAssessmentId);
         }
@@ -578,7 +664,7 @@
                 root.append(contact);
             }
         }
-        function openFramework(root, ref) {
+        function openFramework(root, ref, assessmentId) {
             const back = button('Back to assessment choices', backToFrameworkPicker, 'dashboard-text-button');
             const status = element('p', '', 'Opening assessment…'); status.setAttribute('role', 'status');
             root.replaceChildren(back, status); back.focus();
@@ -593,7 +679,7 @@
                 commit(); return Promise.resolve(true);
             } };
             host.renderer('collection').then(factory => {
-                if (host.live()) mounted = factory.mount(root, { ref, element, button, back, host, win });
+                if (host.live()) mounted = factory.mount(root, { ref, element, button, back, host, win, assessmentId });
             }).catch(() => {
                 if (!disposed) status.textContent = 'This assessment is unavailable. Return to the assessment choices to try again.';
             });
@@ -723,7 +809,7 @@
             offer.classList.add('dashboard-offer-panel');
             const offerLink = element('a', 'dashboard-button', 'Ask about 90-day managed security');
             offerLink.href = '/contact.html?service=managed_security_90';
-            offer.append(offerLink, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
+            offer.append(gated(() => offerLink), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
             main.append(offer);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {
@@ -741,7 +827,7 @@
                 // Nothing is sent from the dashboard, and the form does not include assessment answers.
                 const ask = element('a', 'dashboard-button', 'Ask No Fries about this service');
                 ask.href = '/contact.html?service=' + encodeURIComponent(item.key);
-                detail.append(ask, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
+                detail.append(gated(() => ask), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
                 const control = button(service.state === 'not_included' ? 'How to scope this service'
                     : service.state === 'disabled' ? 'About availability' : 'What is needed for setup', function () {
                     detail.hidden = !detail.hidden; control.setAttribute('aria-expanded', String(!detail.hidden));
@@ -749,7 +835,7 @@
                 control.setAttribute('aria-expanded', 'false');
                 detail.id = 'dashboard-service-' + item.key; control.setAttribute('aria-controls', detail.id);
                 card.append(control, detail);
-                if (contactSend) card.append(contactControl(doc, item.key, contactSend, item.label));
+                if (contactSend) card.append(gated(() => contactControl(doc, item.key, contactSend, item.label)));
                 cards.append(card);
             });
             main.append(cards);
@@ -838,6 +924,7 @@
         }, destroy: function () {
             if (disposed) return;
             disposed = true;
+            clearOverviewHosts();
             if (child) { child.destroy(); child = null; }
             if (navigation) { navigation.resolve(false); navigation = null; }
             if (travelling) { travelling.resolve(false); travelling = null; }
@@ -916,5 +1003,5 @@
         } };
         mounted.set(root, controller); return controller;
     }
-    return Object.freeze({ mount: mount, showState: showState, validate: validate, contactControl: contactControl });
+    return Object.freeze({ mount: mount, showState: showState, validate: validate, contactControl: contactControl, detailsGate: detailsGate });
 }));

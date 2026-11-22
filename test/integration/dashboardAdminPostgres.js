@@ -164,6 +164,54 @@ module.exports = function registerDashboardAdminPostgresTests() {
             expect(h.state.trace.some(({ sql }) => /^(INSERT|UPDATE|DELETE|TRUNCATE)/.test(sql))).toBe(false);
         });
 
+        test('staff append independent paid decisions with a live session, scoped role and preserved product history', async () => {
+            const { tuples, paidSnapshot } = require('../../api/shared/appLifecycle/paidFrameworkDecisions');
+            const h = await harness(), other = await harness();
+            const operator = h.capture.identityPayload.identityTenantId + ':' + h.capture.identityPayload.oid;
+            const guard = () => h.repository.validateSession(h.request, h.selector);
+            const repo = createAccountActionsRepository(h.pool, () => NOW, guard, cmd => cmd.actorSubjectKey === operator && cmd.selector === h.selector, h.capture);
+            const input = { selector: h.selector, actorSubjectKey: operator, expectedMembershipRevision: h.snapshot.membershipState.revision,
+                tuple: tuples[0], reason: 'Synthetic reviewed purchase', action: 'grant', operationId: nextId() };
+            const read = async f => {
+                const c = await runtimePool.connect();
+                try {
+                    await c.query('BEGIN'); await c.query('SET LOCAL ROLE nofries_runtime');
+                    await c.query("SELECT set_config('nofries.tenant_id',$1,true),set_config('nofries.organisation_id',$2,true)",
+                        [f.selector.tenantId, f.selector.organisationId]);
+                    return await paidSnapshot(c, f.selector, f.snapshot, NOW);
+                } finally { await c.query('ROLLBACK'); c.release(); }
+            };
+            const readProduct = async f => (await read(f)).entitlementState.grants.find(row => row.grantId === 'synthetic-product');
+            const before = clone((await h.repository.readAuthoritySnapshot(h.request, h.selector)).snapshot);
+            const original = await readProduct(h);
+            const first = await repo.frameworkDecision(input, null);
+            await expect(repo.frameworkDecision(input, first)).rejects.toBeDefined();
+            await control.query(`GRANT nofries_framework_operator TO ${quote(runtimeRole)} WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`);
+            try {
+                for (const tuple of tuples) {
+                    for (const action of ['grant', 'revoke', 'grant']) {
+                        const command = { ...input, tuple, action, operationId: nextId() };
+                        const witness = await repo.frameworkDecision(command, null);
+                        const result = await repo.frameworkDecision(command, witness);
+                        expect(result.granted).toBe(action === 'grant');
+                        expect((await readProduct(other)).frameworks).toEqual(original.frameworks);
+                        const selected = await read(h);
+                        if (result.granted) expect(selected.entitlementState.grants[0].frameworks).toContainEqual(tuple);
+                        else expect(selected.flags.frameworks).not.toContainEqual(tuple);
+                        await expect(repo.frameworkDecision(command, witness)).rejects.toMatchObject({ statusCode: 409 });
+                    }
+                }
+                expect((await h.repository.readAuthoritySnapshot(h.request, h.selector)).snapshot.entitlementState).toEqual(before.entitlementState);
+                expect((await h.repository.readAuthoritySnapshot(h.request, h.selector)).snapshot.usage).toEqual(before.usage);
+                const cmd = { ...input, action: 'revoke', operationId: nextId() };
+                const approval = await repo.frameworkDecision(cmd, null);
+                await h.runtime.revokeSession(h.request, { operationId: nextId() });
+                await expect(repo.frameworkDecision(cmd, approval)).rejects.toBeDefined();
+                expect((await owner.query('SELECT count(*)::int AS n FROM nofries.dashboard_paid_framework_access WHERE tenant_id=$1',
+                    [h.selector.tenantId])).rows[0].n).toBe(6);
+            } finally { await control.query(`REVOKE nofries_framework_operator FROM ${quote(runtimeRole)}`); }
+        });
+
         test('session revocation waits for membership COMMIT after the final native validation savepoint', async () => {
             const h = await harness(), scope = { tenantId: h.selector.tenantId, organisationId: h.selector.organisationId };
             const repo = createAccountActionsRepository(h.pool, () => NOW,

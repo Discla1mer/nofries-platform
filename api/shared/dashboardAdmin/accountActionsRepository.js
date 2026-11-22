@@ -29,6 +29,11 @@ function createAccountActionsRepository(pool, clock, guard, authoriseAdministrat
     } };
     const database = createPostgresDatabase({ pool: guarded });
     const repository = { ...createPostgresDashboardRepository({ database, clock, authoriseAdministration }),
+        frameworkDecision(command, approved) {
+            if (authoriseAdministration(command) !== true) throw new Error('dashboard_admin_access_denied');
+            return database.withTenantTransaction(command.selector.tenantId,
+                tx => require('./frameworkDecisionRepository').frameworkDecision(tx, command, approved, clock));
+        },
         verifyRestore: (selector, snapshot, readTerminal) => database.withTenantTransaction(selector.tenantId,
             tx => verifyRestore(tx, selector, snapshot, { instanceId: context.instanceId, restoreEpoch: context.restoreEpoch }, readTerminal, clock())) };
     return Object.freeze(Object.fromEntries(Object.entries(repository).map(([key, fn]) =>
