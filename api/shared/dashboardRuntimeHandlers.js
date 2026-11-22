@@ -46,6 +46,8 @@ const HEADER_NAMES = ['cookie', 'origin', 'sec-fetch-site', 'x-nofries-dashboard
 // The current dashboard adds account-identity-v1, which returns the signed-in name
 // beside the email; it does not grant access.
 const CURRENT_CAPABILITIES = QUESTIONNAIRE_CAPABILITIES + ' account-identity-v1';
+// Display negotiation only: the status route performs its own authorisation.
+const PAID_STATUS_CAPABILITIES = CURRENT_CAPABILITIES + ' paid-status-v1';
 const QUEUE_CAPABILITY = 'work-queue-v1';
 const LABEL_CAPABILITY = 'work-queue-v1 account-label-v1';
 const IDENTITY_CAPABILITY = CONTACT_CAPABILITIES + ' account-identity-v1';
@@ -489,7 +491,9 @@ function createDashboardRuntimeHandlers(configuration) {
         // Default off: without the flag this path stays an unknown route (404), before any body is read.
         const contact = contactRequestsEnabled && route === 'contact-requests';
         const paid = paidFrameworksEnabled && parsePaidRoute(route);
-        let paidCursor = null;
+        // Default off: without the flag this path stays an unknown route (404) before any directory read.
+        const paidStatusRoute = paidFrameworksEnabled && route === 'organisations/paid-framework-status';
+        let paidCursor = null, paidStatus = null;
         const details = representativeDetailsEnabled && route === 'representative-details';
         let resource = null, ncscRoute = null, improvementRoute = null;
         if (improvementEnabled && ['improvement/plans', 'improvement/list', 'improvement/view', 'improvement/editor', 'improvement/execute'].includes(route)) {
@@ -508,11 +512,11 @@ function createDashboardRuntimeHandlers(configuration) {
             }
         }
         const methods = { ...(firstPaint ? { overview: ['GET'] } : {}), session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], evidence: ['GET'] };
-        if (!workQueue && !contact && !details && !paid && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
+        if (!workQueue && !contact && !details && !paid && !paidStatusRoute && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
             try { resource = hostResourceForRoute(route); } catch (_) { fail(404, 'dashboard_not_found'); }
         }
-        entry.category = paid ? 'frameworks' : improvementRoute !== null ? 'improvement' : ncscRoute === null ? route : 'ncsc';
-        const allow = paid ? (paid.mutation ? ['POST'] : paid.assessmentId ? ['GET'] : ['GET', 'POST']) : details ? ['GET', 'POST'] : workQueue ? ['GET'] : contact ? ['POST'] : improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
+        entry.category = paid || paidStatusRoute ? 'frameworks' : improvementRoute !== null ? 'improvement' : ncscRoute === null ? route : 'ncsc';
+        const allow = paid ? (paid.mutation ? ['POST'] : paid.assessmentId ? ['GET'] : ['GET', 'POST']) : details ? ['GET', 'POST'] : workQueue || paidStatusRoute ? ['GET'] : contact ? ['POST'] : improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
             : ncscRoute !== null ? (ncscRoute === '' ? ['GET', 'POST'] : ncscRoute.includes('/') ? ['POST'] : ['GET']) : resource ? ['GET'] : methods[route];
         if (!allow.includes(snapshot.method)) fail(405, 'dashboard_method_not_allowed', { Allow: allow.join(', ') });
         const directory = { limit: 50, afterBindingId: null };
@@ -525,6 +529,16 @@ function createDashboardRuntimeHandlers(configuration) {
             if (!match) bad();
             try { paidCursor = decodeURIComponent(match[1]); } catch { bad(); }
             if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(paidCursor) || encodeURIComponent(paidCursor) !== match[1]) bad();
+        } else if (paidStatusRoute) {
+            // Only the chooser's own directory position. No subject, tenant,
+            // organisation, framework or version can be supplied.
+            let afterBindingId = null;
+            if (query !== null) {
+                const match = /^afterBindingId=([0-9a-f-]{36})$/.exec(query);
+                if (!match) bad();
+                try { afterBindingId = uuid(match[1]); } catch (_) { bad(); }
+            }
+            paidStatus = freeze({ afterBindingId });
         } else if (workQueue) {
             const values = {};
             if (query !== null) {
@@ -618,7 +632,7 @@ function createDashboardRuntimeHandlers(configuration) {
         } else if (['app.js', 'dashboard.css'].includes(route) && query !== null) {
             if (!/^v=[A-Za-z0-9_-]{43}$/.test(query)) bad();
         } else if (!firstPaint && query !== null) bad();
-        return freeze({ route, paid, paidCursor, contact, details, resource, overviewActions: firstPaint && query === 'view=first-paint&actions=1', assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
+        return freeze({ route, paid, paidCursor, paidStatus, contact, details, resource, overviewActions: firstPaint && query === 'view=first-paint&actions=1', assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
     }
     async function readWire(original, entry, snapshot) {
         entry.phase = 'wire';
@@ -714,7 +728,7 @@ function createDashboardRuntimeHandlers(configuration) {
     }
     async function execute(original, entry) {
         const selected = routeFor(entry.transport, entry);
-        entry.category = selected.paid ? 'frameworks' : selected.improvementRoute !== null ? 'improvement' : selected.ncscRoute === null ? selected.route : 'ncsc';
+        entry.category = selected.paid || selected.paidStatus ? 'frameworks' : selected.improvementRoute !== null ? 'improvement' : selected.ncscRoute === null ? selected.route : 'ncsc';
         entry.resource = selected.resource !== null;
         const snapshot = entry.transport;
         const purposes = snapshot.headers['x-nofries-dashboard-purpose'];
@@ -770,7 +784,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 next: result.phase === 'prepared' ? 'customer_terms' : 'owner_finalisation' });
         }
         let expectedGeneration = null;
-        if (selected.route === 'overview' || selected.paid || selected.contact || selected.details || selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
+        if (selected.route === 'overview' || selected.paid || selected.paidStatus || selected.contact || selected.details || selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
             const generations = snapshot.headers['x-nofries-dashboard-generation'];
             try { if (generations.length !== 1) throw new Error(); expectedGeneration = digest(generations[0]); }
             catch (_) { fail(403, 'dashboard_access_denied'); }
@@ -852,6 +866,15 @@ function createDashboardRuntimeHandlers(configuration) {
             entry.disclosureCheck = () => resources.assertWorkQueueDisclosure(privateRequest);
             return response(200, await bounded(() => resources.readWorkQueue(privateRequest,
                 { expectedGeneration }, selected.workQueueSelector)));
+        }
+        if (selected.paidStatus) {
+            if (!isCustomer(privateRequest.headers.cookie) || typeof resources.readPaidFrameworkStatus !== 'function') fail(403, 'dashboard_access_denied');
+            const approved = await approvedCustomerBinding(privateRequest);
+            if (approved.accountType !== 'consultant') fail(403, 'dashboard_access_denied');
+            const value = await bounded(() => resources.readPaidFrameworkStatus(privateRequest, { expectedGeneration },
+                selected.paidStatus, check => { entry.disclosureCheck = check; }));
+            if (typeof entry.disclosureCheck !== 'function') throw new PaidAssessmentError();
+            return response(200, value);
         }
         if (selected.paid) {
             return response(200, await bounded(async () => {
@@ -965,7 +988,8 @@ function createDashboardRuntimeHandlers(configuration) {
             const customerAccount = value.purpose === 'customer' ? await approvedCustomerBinding(privateRequest) : null;
             const admin = activationPort && value.purpose === 'operator_dashboard' ? await bounded(() => captureRequest(privateRequest)) : null;
             const activationAvailable = admin && adminSubjects.has(admin.identityPayload.identityTenantId + ':' + admin.identityPayload.oid);
-            const capabilities = snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 ? snapshot.headers['x-nofries-dashboard-capabilities'][0] : null;
+            const offered = snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 ? snapshot.headers['x-nofries-dashboard-capabilities'][0] : null;
+            const capabilities = offered === PAID_STATUS_CAPABILITIES ? CURRENT_CAPABILITIES : offered;
             return response(200, { schemaVersion: 1, authenticated: true, purpose: value.purpose, expiresAt: value.expiresAt,
                 generation: value.generation, selectedBindingId: value.selectedBindingId,
                 ...(customerAccount?.accountType ? { accountType: customerAccount.accountType } : {}),
@@ -984,6 +1008,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 ...([QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && questionnaireExportGateEnabled && customerAccount?.ownDeferredAgreement &&
                     customerAccount.bindingId === value.selectedBindingId ? { questionnaireExportGateAvailable: true } : {}),
                 ...([CONTACT_CAPABILITIES, IDENTITY_CAPABILITY, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && contactRequestsEnabled && customerAccount ? { contactRequestsAvailable: true } : {}),
+                ...(offered === PAID_STATUS_CAPABILITIES && paidFrameworksEnabled && customerAccount?.accountType === 'consultant' ? { paidFrameworkStatusAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }
         if (selected.route === 'session') {

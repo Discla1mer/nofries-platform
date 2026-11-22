@@ -44,6 +44,10 @@ test('terms require loaded CSRF and post only exact consent', async () => {
     expect(f.fetch).toHaveBeenLastCalledWith('/api/customer-signup/terms', expect.objectContaining({
         method: 'POST', body: JSON.stringify(terms), headers: expect.objectContaining({ 'X-CSRF-Token': token })
     }));
+    // POSTs keep their real Origin but send only the origin as Referer (no path or campaign query);
+    // the state GET keeps 'same-origin'.
+    expect(f.fetch.mock.calls[0][1].referrerPolicy).toBe('same-origin');
+    expect(f.fetch.mock.calls[1][1]).toMatchObject({ method: 'POST', mode: 'same-origin', referrerPolicy: 'strict-origin' });
     await expect(f.client.acceptTerms(terms)).rejects.toThrow('signup_unavailable');
 });
 test('provider return cannot assert identity or access; refresh comes from fixed server endpoint', async () => {

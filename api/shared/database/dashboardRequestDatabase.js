@@ -25,7 +25,8 @@ const { NcscAssessmentError } = require('../ncscAssessmentService');
 const { ImprovementPlanServiceError } = require('../improvementPlan/improvementPlanService');
 const { ImprovementActionListError } = require('../improvementPlan/improvementActionListProjection');
 const { resolveImprovementAccess } = require('../improvementPlan/improvementPlanAccess');
-const { paidAccess, PaidAssessmentError } = require('../assessmentLifecycle/paidAssessments');
+const { paidAccess, PaidAssessmentError, requirePublication } = require('../assessmentLifecycle/paidAssessments');
+const paidStatus = require('../assessmentLifecycle/paidFrameworkStatus');
 const { ContactRequestError, CONTACT_AUDIT, resolveContactAccess } = require('../contactRequests');
 const { createNcscQuestionnaireMetadata, createNcscQuestionnaireMetadataV2 } = require('../ncscQuestionnaireMetadata');
 const { listsEnabledNcscProfile, ncscProfileV2Enabled } = require('../assessmentEngine/ncscProfileSet');
@@ -378,6 +379,14 @@ function currentPaidAccess(inv, operation, authority, at) {
     if (operation.grantId && decision.product.grantId !== operation.grantId) inv.deny();
     operation.grantId = decision.product.grantId;
 }
+// Every tuple that contributed a status row must still be exactly entitled
+// and readable. An empty assessment history is still a disclosed status.
+function currentPaidStatus(inv, operation, authority, at) {
+    if (operation.name !== 'framework.status') return;
+    for (const ref of operation.profileRefs) {
+        try { paidAccess(authority, operation.context, false, ref, at); } catch { inv.deny(); }
+    }
+}
 function currentContact(inv, operation, authority, at) {
     if (operation.name !== CONTACT_OPERATION && !DETAILS_OPERATIONS.includes(operation.name)) return;
     try {
@@ -427,7 +436,7 @@ async function loadAuthority(inv, operation, context, shared = false) {
     try {
         const snapshot = await (!shared && ['framework.write', 'ncsc.execute', 'evidence.read', ...IMPROVEMENT_OPERATIONS].includes(operation.name) ? dataStorage.loadSnapshotForUpdate : dataStorage.loadSnapshotForShare)(
             Object.freeze({ query: (sql, params) => inv.query(context.tx, sql, params) }), context.scope);
-        if (inv.options.paidFrameworksEnabled === true && ['framework.read', 'framework.write'].includes(operation.name)) {
+        if (inv.options.paidFrameworksEnabled === true && ['framework.read', 'framework.write', 'framework.status'].includes(operation.name)) {
             const tx = { query: (sql, params) => inv.query(context.tx, sql, params) };
             return await require('../appLifecycle/paidFrameworkDecisions').paidSnapshot(tx, context.scope, snapshot, inv.now());
         }
@@ -466,6 +475,7 @@ function currentAuthorityAt(inv, operation, evidence, at) {
     currentImprovement(inv, operation, authority, at);
     currentContact(inv, operation, authority, at);
     currentPaidAccess(inv, operation, authority, at);
+    currentPaidStatus(inv, operation, authority, at);
     if (operation.name === 'evidence.read') {
         try { resolveEvidenceAccess(authority, { scope: target,
             identity: { authenticated: true, subjectKey: subjectOf(inv.capture.identityPayload) }, resolvedAt }, at); }
@@ -1325,8 +1335,8 @@ async function portfolioParent(inv, tx, routing) {
     if (!equal(instance, routing.instance) || !equal(gate, routing.gate)) inv.deny();
     return { instance, gate };
 }
-async function portfolioTransaction(inv, routing, work, seal) {
-    if (inv.owner) throw mapped(privateError(false), 'improvement.list');
+async function portfolioTransaction(inv, routing, work, seal, name = 'improvement.list') {
+    if (inv.owner) throw mapped(privateError(false), name);
     const operation = { name: 'portfolio.finish', active: { finalAuthority: null, finalFailure: null,
         phase: 'entering', commitNotSent: null }, finished: false, denial: null };
     inv.owner = operation;
@@ -1350,12 +1360,41 @@ async function portfolioTransaction(inv, routing, work, seal) {
         inv.now();
         if (seal) seal(operation.active.finalAuthority);
         return result;
-    } catch (error) { throw mapped(error, 'improvement.list', operation.denial); }
+    } catch (error) { throw mapped(error, name, operation.denial); }
     finally {
         if (started && client) { try { await client.query('ROLLBACK'); } catch (_) { discard = true; } }
         if (client) { try { client.release(discard); } catch (_) { /* No driver detail crosses the boundary. */ } }
         operation.active.phase = 'settled'; operation.finished = true; inv.owner = null;
     }
+}
+// Routing identifiers only, from the subject-restricted directory. A row is a
+// candidate and never permission; each consumer authorises it separately.
+async function directoryPage(inv, tx, identity, page) {
+    await inv.query(tx, 'SET LOCAL ROLE nofries_dashboard_subject_reader');
+    const result = await inv.query(tx, 'SELECT binding_id, organisation_label, tenant_id, organisation_id, identity_sha256, subject_key ' +
+        'FROM nofries.dashboard_identity_bindings WHERE identity_sha256 = $1 AND subject_key = $2 ' +
+        'AND ($3::uuid IS NULL OR binding_id > $3::uuid) ORDER BY binding_id LIMIT $4',
+    [hash(inv.capture.identityPayload), subjectOf(inv.capture.identityPayload), page.afterBindingId, page.limit + 1]);
+    const selected = inv.inspect(() => {
+        if (!result || isProxy(result)) throw new Error();
+        const descriptor = Object.getOwnPropertyDescriptor(result, 'rows');
+        if (!descriptor || !Object.hasOwn(descriptor, 'value') || isProxy(descriptor.value) ||
+            !Array.isArray(descriptor.value) || descriptor.value.length > page.limit + 1) throw new Error();
+        return copy(descriptor.value, MAX_SMALL * (page.limit + 1));
+    });
+    let after = page.afterBindingId;
+    const admitted = selected.map(raw => inv.inspect(() => {
+        const row = fields(raw, ['binding_id', 'organisation_label', 'tenant_id', 'organisation_id', 'identity_sha256', 'subject_key']);
+        uuid(row.binding_id);
+        const targetScope = freeze(scope({ tenantId: row.tenant_id, organisationId: row.organisation_id }));
+        if (row.identity_sha256 !== hash(inv.capture.identityPayload) || row.subject_key !== identity.subjectKey ||
+            after !== null && row.binding_id <= after || typeof row.organisation_label !== 'string' ||
+            !row.organisation_label || row.organisation_label.length > 200 || /[\u0000-\u001f\u007f]/.test(row.organisation_label)) throw new Error();
+        after = row.binding_id;
+        inv.charge(row);
+        return { bindingId: row.binding_id, organisationLabel: row.organisation_label, scope: targetScope };
+    }));
+    return admitted;
 }
 function portfolioBinding(inv, routing, resolvedAt) {
     const database = checkedDatabase(inv), targets = new Map();
@@ -1377,30 +1416,7 @@ function portfolioBinding(inv, routing, resolvedAt) {
             busy = true;
             try {
                 return await portfolioTransaction(inv, routing, async tx => {
-                    await inv.query(tx, 'SET LOCAL ROLE nofries_dashboard_subject_reader');
-                    const result = await inv.query(tx, 'SELECT binding_id, organisation_label, tenant_id, organisation_id, identity_sha256, subject_key ' +
-                        'FROM nofries.dashboard_identity_bindings WHERE identity_sha256 = $1 AND subject_key = $2 ' +
-                        'AND ($3::uuid IS NULL OR binding_id > $3::uuid) ORDER BY binding_id LIMIT $4',
-                    [hash(inv.capture.identityPayload), subjectOf(inv.capture.identityPayload), page.afterBindingId, page.limit + 1]);
-                    const selected = inv.inspect(() => {
-                        if (!result || isProxy(result)) throw new Error();
-                        const descriptor = Object.getOwnPropertyDescriptor(result, 'rows');
-                        if (!descriptor || !Object.hasOwn(descriptor, 'value') || isProxy(descriptor.value) ||
-                            !Array.isArray(descriptor.value) || descriptor.value.length > page.limit + 1) throw new Error();
-                        return copy(descriptor.value, MAX_SMALL * (page.limit + 1));
-                    });
-                    let after = page.afterBindingId;
-                    const admitted = selected.map(raw => inv.inspect(() => {
-                        const row = fields(raw, ['binding_id', 'organisation_label', 'tenant_id', 'organisation_id', 'identity_sha256', 'subject_key']);
-                        uuid(row.binding_id);
-                        const targetScope = freeze(scope({ tenantId: row.tenant_id, organisationId: row.organisation_id }));
-                        if (row.identity_sha256 !== hash(inv.capture.identityPayload) || row.subject_key !== identity.subjectKey ||
-                            after !== null && row.binding_id <= after || typeof row.organisation_label !== 'string' ||
-                            !row.organisation_label || row.organisation_label.length > 200 || /[\u0000-\u001f\u007f]/.test(row.organisation_label)) throw new Error();
-                        after = row.binding_id;
-                        inv.charge(row);
-                        return { bindingId: row.binding_id, organisationLabel: row.organisation_label, scope: targetScope };
-                    }));
+                    const admitted = await directoryPage(inv, tx, identity, page);
                     for (const target of admitted.slice(0, page.limit)) {
                         const previous = targets.get(target.bindingId);
                         if (previous && (!equal(previous.scope, target.scope) || previous.organisationLabel !== target.organisationLabel)) inv.deny();
@@ -1463,6 +1479,130 @@ function portfolioBinding(inv, routing, resolvedAt) {
             }
         }
     });
+}
+
+// Status-only paid portfolio read (docs/design/consultant-paid-framework-status.md).
+// The directory names candidates only. Each contributing client needs a
+// matching activated starter client scope, the ordinary scoped binding,
+// admission and membership checks, and the paid reader's exact tuple decision.
+// One transaction holds SHARE authority locks in scope order from the first
+// read through a full recheck and COMMIT; the disclosure check repeats every
+// time predicate at response time. Selection, records and usage never change.
+const STATUS_NAME = 'framework.read';
+const statusRef = pin => freeze({ profileId: pin.profileId, profileVersion: pin.version });
+async function statusAudit(inv, tx, business, resolvedAt) {
+    const occurredAt = inv.now();
+    if (occurredAt < resolvedAt) inv.unavailable();
+    const event = inv.inspect(() => freeze({ schemaVersion: 1, eventType: 'dashboard.operation', eventId: uuid(inv.options.newId()),
+        requestId: inv.capture.requestId, actorSubjectKey: subjectOf(inv.capture.identityPayload),
+        tenantId: business.scope.tenantId, organisationId: business.scope.organisationId,
+        action: 'assessment.read', module: 'cyber_security', result: 'succeeded', occurredAt }));
+    const projected = inv.inspect(() => auditProjection(inv, business, event));
+    inv.inspect(() => copy(projected.envelope, MAX_SMALL));
+    const parameters = AUDIT_COLUMNS.map(key => ['payload', 'scope_json'].includes(key) ? JSON.stringify(projected.row[key]) : projected.row[key]);
+    await inv.query(tx, `INSERT INTO nofries.dashboard_runtime_audit (${AUDIT_COLUMNS.join(', ')}) VALUES (${AUDIT_COLUMNS.map((_, i) => '$' + (i + 1)).join(', ')})`, parameters);
+}
+async function starterProofs(inv, tx, subjectKey, bindingIds) {
+    if (!bindingIds.length) return new Map();
+    const result = await inv.query(tx, paidStatus.STARTER_PROOF_SQL, [subjectKey, bindingIds]);
+    return inv.inspect(() => {
+        if (!result || isProxy(result) || !Array.isArray(result.rows) || isProxy(result.rows) || result.rows.length > bindingIds.length) throw new Error();
+        const found = new Map();
+        for (const raw of copy(result.rows, MAX_SMALL * bindingIds.length)) {
+            const row = fields(raw, ['binding_id', 'tenant_id', 'organisation_id', 'authority_id']);
+            uuid(row.binding_id); uuid(row.authority_id);
+            if (!bindingIds.includes(row.binding_id) || found.has(row.binding_id) ||
+                typeof row.tenant_id !== 'string' || typeof row.organisation_id !== 'string') throw new Error();
+            found.set(row.binding_id, freeze(row));
+        }
+        inv.charge([...found.values()]);
+        return found;
+    });
+}
+async function paidStatusRead(inv, routing, resolvedAt, page) {
+    const identity = freeze({ authenticated: true, subjectKey: subjectOf(inv.capture.identityPayload) });
+    const listed = await portfolioTransaction(inv, routing, tx => directoryPage(inv, tx, identity,
+        { afterBindingId: page.afterBindingId, limit: paidStatus.PAGE_BINDINGS }), null, STATUS_NAME);
+    const candidates = listed.slice(0, paidStatus.PAGE_BINDINGS);
+    const order = new Map(candidates.map((target, index) => [target.bindingId, index]));
+    const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+    const sorted = candidates.slice().sort((a, b) => compare(a.scope.tenantId, b.scope.tenantId) ||
+        compare(a.scope.organisationId, b.scope.organisationId) || compare(a.bindingId, b.bindingId));
+    let disclosure = null, disclosureFailure = null;
+    const rows = await portfolioTransaction(inv, routing, async (tx, operation, parent) => {
+        const contributions = [], evidence = [];
+        const frameOf = (business, authority) => ({ instance: business.instance, gate: business.gate, binding: business.binding,
+            admissions: business.admissions, authority, scope: business.scope, resolvedAt, quota: null });
+        const proofs = await starterProofs(inv, tx, identity.subjectKey, sorted.map(target => target.bindingId));
+        for (const target of sorted) {
+            const proof = proofs.get(target.bindingId);
+            if (!proof || proof.tenant_id !== target.scope.tenantId || proof.organisation_id !== target.scope.organisationId) continue;
+            const context = freeze({ scope: target.scope, identity, resolvedAt });
+            let business, frame, refs;
+            try {
+                business = await businessContext(inv, tx, { ...routing, ...target, portfolio: true });
+                if (business.binding.authorityRef.authorityId !== proof.authority_id) inv.deny();
+                const probe = { name: 'framework.status', context, profileRefs: [] };
+                frame = frameOf(business, await loadAuthority(inv, probe, business, true));
+                const at = inv.now();
+                currentAuthorityAt(inv, probe, frame, at);
+                refs = paidStatus.PINS.map(statusRef).filter(ref => {
+                    try { paidAccess(frame.authority, context, false, ref, at); return true; } catch { return false; }
+                });
+            } catch (error) {
+                // A client the adviser cannot currently read contributes no row.
+                // Loss of an earlier contributing client still fails the page.
+                if (!deniedErrors.has(error) || operation.active.finalFailure) throw error;
+                operation.denial = null; continue;
+            }
+            if (!refs.length) continue;
+            for (const ref of refs) requirePublication(ref.profileId, ref.profileVersion);
+            const result = await inv.query(tx, paidStatus.STATUS_SQL, [target.scope.tenantId, target.scope.organisationId,
+                refs.map(ref => ref.profileId), refs.map(ref => ref.profileVersion)]);
+            const statuses = inv.inspect(() => paidStatus.statusRows(result, refs.map(ref => ({ profileId: ref.profileId, version: ref.profileVersion }))));
+            await statusAudit(inv, tx, business, resolvedAt);
+            evidence.push({ operation: { name: 'framework.status', context, profileRefs: refs }, evidence: frame });
+            operation.active.finalAuthority = freeze({ ...parent, targets: evidence.slice() });
+            contributions.push({ target, business, context, refs, statuses });
+        }
+        // Recheck every contributing client and tuple before release. Any
+        // change now discards the whole page.
+        if (contributions.length) {
+            const again = await starterProofs(inv, tx, identity.subjectKey, contributions.map(item => item.target.bindingId));
+            const rechecked = [];
+            for (const item of contributions) {
+                const proof = again.get(item.target.bindingId);
+                if (!proof || proof.tenant_id !== item.target.scope.tenantId || proof.organisation_id !== item.target.scope.organisationId ||
+                    proof.authority_id !== item.business.binding.authorityRef.authorityId) inv.deny();
+                const business = await businessContext(inv, tx, { ...routing, ...item.target, portfolio: true });
+                if (!equal(business.binding, item.business.binding) || !equal(business.admissions, item.business.admissions)) inv.deny();
+                const child = { name: 'framework.status', context: item.context, profileRefs: item.refs };
+                const frame = frameOf(business, await loadAuthority(inv, child, business, true));
+                currentAuthorityAt(inv, child, frame, inv.now());
+                rechecked.push({ operation: child, evidence: frame });
+                operation.active.finalAuthority = freeze({ ...parent, targets: rechecked.concat(evidence.slice(rechecked.length)) });
+            }
+        }
+        const output = contributions.sort((a, b) => order.get(a.target.bindingId) - order.get(b.target.bindingId))
+            .flatMap(item => item.refs.map((ref, index) => freeze({ bindingId: item.target.bindingId, moduleId: 'cyber_security',
+                profileId: ref.profileId, version: ref.profileVersion, status: item.statuses[index] })));
+        if (output.length > paidStatus.MAX_ROWS) inv.unavailable();
+        return freeze(output);
+    }, sealed => { disclosure = sealed; }, STATUS_NAME);
+    function assertDisclosure() {
+        if (disclosureFailure) throw disclosureFailure;
+        try {
+            if (!disclosure || inv.owner) throw privateError(false);
+            const at = inv.now();
+            currentAuthorityAt(inv, { name: 'portfolio.finish' }, disclosure, at);
+            return at;
+        } catch (error) {
+            disclosureFailure = mapped(error, STATUS_NAME);
+            throw disclosureFailure;
+        }
+    }
+    assertDisclosure();
+    return Object.freeze({ result: freeze({ rows }), assertDisclosure });
 }
 
 function createDashboardRequestDatabase(input) {
@@ -1556,7 +1696,34 @@ function createDashboardRequestDatabase(input) {
         }).then(resolveHost, rejectHost);
         return entry.promise;
     }
-    return Object.freeze({ bindRequest, handleHostResource, bindPortfolioRequest });
+    function readPaidFrameworkStatus(request, transport, input) {
+        let expectedGeneration, page;
+        try {
+            if (options.paidFrameworksEnabled !== true || !request || typeof request !== 'object' || isProxy(request)) throw privateError(true);
+            expectedGeneration = digest(fields(copy(transport, MAX_SMALL), ['expectedGeneration']).expectedGeneration);
+            page = paidStatus.normalisePaidStatusPage(input);
+        } catch (_) { return Promise.reject(mapped(privateError(true), STATUS_NAME)); }
+        // One status read per request object; it never shares another mode's capability.
+        if (requests.has(request)) return Promise.reject(mapped(privateError(true), STATUS_NAME));
+        let resolveRead, rejectRead;
+        const entry = { mode: 'paid-status', expectedGeneration, promise: new Promise((resolve, reject) => { resolveRead = resolve; rejectRead = reject; }) };
+        requests.set(request, entry);
+        let inv;
+        try { inv = invocation(options, request, expectedGeneration); }
+        catch (error) { rejectRead(mapped(error, STATUS_NAME)); return entry.promise; }
+        Promise.resolve().then(async () => {
+            try {
+                await capture(inv);
+                if (inv.capture.kind !== 'customer') inv.deny();
+                await externalEpoch(inv);
+                const routing = await locator(inv), resolvedAt = inv.now();
+                return await paidStatusRead(inv, routing, resolvedAt, page);
+            } catch (error) { throw mapped(error, STATUS_NAME); }
+        }).then(resolveRead, rejectRead);
+        return entry.promise;
+    }
+    return Object.freeze({ bindRequest, handleHostResource, bindPortfolioRequest,
+        ...(options.paidFrameworksEnabled === true ? { readPaidFrameworkStatus } : {}) });
 }
 
 module.exports = { createDashboardRequestDatabase };

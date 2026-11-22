@@ -999,14 +999,14 @@ describe('anonymous signup_started count (#151 F4)', () => {
         expect(beacon).not.toHaveBeenCalled();
     });
 
-    test('flag on: choosing Create account sends one same-origin count without cookies or referrer', async () => {
+    test('flag on: choosing Create account sends one same-origin count without cookies or a path referrer', async () => {
         const beacon = beaconReply(204);
         const h = fixture({ search: '?intent=create', beacon });
         expect(beacon).not.toHaveBeenCalled();
         await h.reply(0, 200, { state: 'start' }, true, ON);
         expect(sentEvents(beacon)).toEqual([['/api/telemetry', 'signup_started']]);
         expect(beacon.mock.calls[0][1]).toMatchObject({ method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
-            referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' } });
+            referrerPolicy: 'strict-origin', headers: { 'Content-Type': 'application/json' } });
         expect(beacon.mock.calls[0][1].body).toBe('{"event":"signup_started"}');
         h.submit('form');
         await h.reply(1, 202, { state: 'awaiting_code', emailHint: 'o***@acme.example' }, true, ON);
