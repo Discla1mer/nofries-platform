@@ -25,7 +25,7 @@ test('every non-zero price says + GST', () => {
 
 test('managed security and the assisted plan carry their agreed terms', () => {
     for (const phrase of ['NZ$1,250 + GST for 90 days', 'Invoiced upfront', 'You can enquire at any time',
-        'An assisted baseline', 'Three improvements we own with you', 'Two month-end reviews', 'give your board or insurer',
+        'An assisted baseline', 'Three improvements we work through with you', 'Two month-end reviews', 'give your board or insurer',
         'feedback, a case study and a reference', 'From NZ$350 + GST a month', 'A quarterly review', 'Up to 1 hour of help a month',
         'If you choose the assisted plan, we credit your 90-day managed security fee to it', 'no automatic renewal', 'New Zealand business hours', 'reply to support requests within two business days',
         'does not include incident response', 'Managed IT is priced separately']) {
