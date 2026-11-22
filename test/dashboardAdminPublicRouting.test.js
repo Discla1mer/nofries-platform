@@ -93,9 +93,12 @@ test.each(browserRoutes)('forwarded %s uses the same staff session, authority an
     const original = await h.send('get', url).set('Cookie', cookie);
     const forwarded = await h.send('get', target).set('Cookie', cookie);
     expect(forwarded.status).toBe(200); expect(forwarded.text).toBe(original.text);
-    for (const name of ['cache-control', 'x-robots-tag', 'content-security-policy', 'content-type']) {
+    for (const name of ['cache-control', 'x-robots-tag', 'content-security-policy', 'content-type', 'referrer-policy']) {
         expect(forwarded.headers[name]).toBe(original.headers[name]);
     }
+    // Both documents carry a native sign-out form: origin-only, so its POST keeps a real Origin.
+    expect(forwarded.headers['referrer-policy']).toBe('strict-origin');
+    expect(forwarded.text).toContain('<meta name="referrer" content="strict-origin">');
     expect(forwarded.headers['content-security-policy']).toContain("script-src 'self'");
     expect(h.pool.connect).not.toHaveBeenCalled(); expect(readAuthoritySnapshot).not.toHaveBeenCalled(); expect(audit).not.toHaveBeenCalled();
     expect(authoriseOperator.mock.calls.length > 0).toBe(url === '/dashboard-admin');
@@ -105,6 +108,8 @@ test.each(browserRoutes)('forwarded %s preserves sign-in, customer exclusion and
     const { h } = composed();
     const signIn = await h.send('get', target).set('X-MS-Client-Principal', 'forged');
     expect(signIn.status).toBe(302); expect(signIn.headers.location).toMatch(/^https:\/\/login\.microsoftonline\.com\//);
+    // The hop to the identity provider still sends no referrer.
+    expect(signIn.headers['referrer-policy']).toBe('no-referrer');
     expect([...h.store.transactions.values()][0].returnTo).toBe('/dashboard-admin/entry');
     const before = h.store.transactions.size;
     for (const name of ['customer', 'external-customer', 'retained-read']) {
