@@ -139,6 +139,11 @@ test.each(['#invitation=invalid-private-value', '#invitation=' + 'x'.repeat(43)]
     expect(dom.root.querySelector('button')).toBeNull();
     expect(assign).not.toHaveBeenCalled(); expect(replace).not.toHaveBeenCalled();
     expect(fetch.mock.calls.map(([url]) => url)).toEqual(fragment.includes('invalid') ? [] : ['/api/customer-signup/bootstrap']);
+    // 'strict-origin', not 'no-referrer': a 'same-origin' mode POST under no-referrer
+    // sends Origin: null from WebKit and Firefox, which the exact-Origin check refuses.
+    if (!fragment.includes('invalid')) expect(fetch.mock.calls[0][1]).toEqual({ method: 'POST', credentials: 'same-origin',
+        mode: 'same-origin', redirect: 'error', cache: 'no-store', referrerPolicy: 'strict-origin',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invitationToken: fragment.slice(12) }) });
 });
 
 test.each([
@@ -198,6 +203,7 @@ test('production document exchanges the invitation fragment through HTTP before 
     expect(history.replaceState).toHaveBeenCalledWith(null, '', '/signup');
     expect(cookie).toBe('__Host-nofries-signup=' + user.invitationToken);
     expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/customer-signup/bootstrap', '/api/customer-signup/state']);
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST', mode: 'same-origin', referrerPolicy: 'strict-origin' });
     expect(dom.root.textContent).toContain('Sign up / Sign in');
     dom.root.querySelector('button').click();
     // Existing invitations must work even when organisation setup is disabled.

@@ -85,7 +85,7 @@ function createSignupClient({ fetch: fetchImpl, createAccount, customerTransport
         if (body && !token) throw failure();
         const options = {
             method: body ? 'POST' : 'GET', mode: 'same-origin', credentials: 'same-origin',
-            redirect: 'error', cache: 'no-store', referrerPolicy: 'same-origin', signal,
+            redirect: 'error', cache: 'no-store', referrerPolicy: body ? 'strict-origin' : 'same-origin', signal,
             headers: { Accept: 'application/json', ...(body ? {
                 'Content-Type': 'application/json', 'X-CSRF-Token': token
             } : {}) }, ...(body ? { body: JSON.stringify(body) } : {})
