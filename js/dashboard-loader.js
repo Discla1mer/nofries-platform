@@ -865,7 +865,7 @@
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
             ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, paidHost: cyber.paidHost,
-                openFrameworkEnquiry: (link, ref) => openFrameworkEnquiry(cycle, snapshot, cyber.paidFrameworks, link, ref) } : {}),
+                openFrameworkEnquiry: (link, ref, plan) => openFrameworkEnquiry(cycle, snapshot, cyber.paidFrameworks, link, ref, plan) } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}),
@@ -908,7 +908,7 @@
             load('/js/enquiry-availability.js', template.dataset.availability)]).catch(error => { enquiryScripts = null; throw error; });
         return enquiryScripts;
     }
-    function openFrameworkEnquiry(cycle, snapshot, included, link, ref) {
+    function openFrameworkEnquiry(cycle, snapshot, included, link, ref, plan) {
         const template = document.getElementById('frameworkEnquiryForm');
         const registry = window.NoFriesDashboardRegistry;
         const locked = registry.paidFrameworks.find(row => registry.sameFramework(row, ref) &&
@@ -917,7 +917,7 @@
             !unresolved && Date.parse(cycle.session?.expiresAt) > Date.now() && snapshot.selectedBindingId !== null &&
             cycle.session.selectedBindingId === snapshot.selectedBindingId && cycle.session.generation === snapshot.generation &&
             link.isConnected && elements.app.contains(link);
-        if (!template || !locked || !live()) return false;
+        if (!template || !locked || !live() || !['monthly', 'annual'].includes(plan)) return false;
         const dialog = document.createElement('dialog');
         if (typeof dialog.showModal !== 'function') return false;
         dialog.className = 'ncsc-leave-dialog framework-enquiry'; dialog.setAttribute('aria-labelledby', 'frameworkEnquiryTitle');
@@ -932,7 +932,7 @@
         loadEnquiryScripts(template).then(() => {
             if (!currentForm()) { if (dialog.open) dialog.close(); return; }
             notice.remove(); dialog.append(template.content.cloneNode(true));
-            return window.mountEnquiryForm(dialog, { framework: locked.label,
+            return window.mountEnquiryForm(dialog, { framework: locked.label + ' on the ' + plan + ' plan',
                 organisation: cycle.session.accountType === 'consultant' ? cycle.selectedOrganisationName : '', current: currentForm });
         }).catch(() => {
             if (!currentForm()) return;
