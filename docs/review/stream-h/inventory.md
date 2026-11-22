@@ -1,6 +1,7 @@
 # Stream H public-page inventory
 
-Inspected against main `79239e9de2a73b449c9ef05d2d56d567bf7f19df` in FY27 Q2.
+Inspected from main `79239e9de2a73b449c9ef05d2d56d567bf7f19df` in FY27 Q2,
+then reconciled with `ac21ee80ac7e78bc01fb219978d6589ff61c1dda`.
 The source list is `lib/publicAssets.js`, plus generated entry points and redirects.
 “No change” means verified for this availability/roadmap task, not a claim that every
 future copy improvement is complete. Source and release reconciliation is in
@@ -12,7 +13,7 @@ future copy improvement is complete. Source and release reconciliation is in
 | `index.html` — home and how it works | Verified no change: 14-question NCSC check, saved progress, free non-expiring access, illustrative result and separately priced service. How-it-works CTA was removed in #372; no standalone how page exists. |
 | FAQ | Verified no standalone FAQ page, FAQ section or routed FAQ entry in the public source; no page created. |
 | About (`/about.html`, `/About.html`) | Verified no-change redirects to `/` in server and SWA config; no separate About copy. |
-| `pricing.html` — plans/frameworks | Separate page-group draft needed: name both planned paid assessments directly and link their roadmap entry without publishing a price. Leave #543's managed-security scope lines untouched. |
+| `pricing.html` — plans/frameworks | Separate page-group draft needed: name both planned paid assessments directly and link their roadmap entry without publishing a price. Preserve the now-merged #543 managed-security scope lines. |
 | `managed-it.html` — services | Verified no change: services are separately scoped and priced; its dashboard paragraph already marks automatic updates and connected feeds planned. No new free-dashboard entitlement is promised. |
 | `scope.html` | Verified no change: access-checked service guide shell; expressly service information, not a signed agreement. |
 | `insurance.html` | Verified no change for Stream H: free check, top gaps and separate paid summary. #490/#493 own campaign journey and sample-link changes. #541 owns setup referrer handling. |
@@ -36,15 +37,16 @@ future copy improvement is complete. Source and release reconciliation is in
 
 ## Concurrent work and reconciliation
 
-- #543 remains open at `a4e2af6541a4fdc89c873deebd5d1b1fd96eccea` and changes
-  `pricing.html` managed-security scope plus `test/publicPricingPage.test.js`.
-  The planned-assessment paragraph and a separate test file avoid those edits.
+- #543 merged as `35ff872` while this work was in progress. Its managed-security
+  scope wording is retained. Pricing draft #549 starts from `ac21ee8`, including
+  #543 and #539; only the separate planned-assessment paragraph changes.
 - #546 merged as `28b434f50305e9775efcb4b70eeba52d8ef5e5ab` and is in the
   released `79239e9`. No duplicate activation-readiness work is needed here.
 - #501/#518/#528/#529/#530/#538 are merged; their gated runtime remains off.
   Public price absence is intentional. Activation-copy alignment belongs to #500.
-- Open #477/#484/#490/#493/#539/#541 own campaign, signup and authenticated
-  result work; no edits to those page groups or runtime files here.
+- #539 also merged as `ac21ee8`; no new deployment or activation proof was found.
+  Open #477/#484/#490/#493/#541 own campaign and authenticated result work;
+  no edits to those page groups or runtime files here.
 - Older roadmap proposals are retained as grouped planned themes. Removing
   “audit-ready” marketing language does not change the existing legal limitation.
 

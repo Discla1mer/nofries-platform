@@ -7,9 +7,12 @@ shared navigation and the existing legal limitation remain in the page shell.
 
 ## Evidence and interpretation
 
-Snapshot: NZ FY27 Q2 (Oct–Dec 2026), main `79239e9de2a73b449c9ef05d2d56d567bf7f19df`.
+Snapshot: NZ FY27 Q2 (Oct–Dec 2026). Initial main was
+`79239e9de2a73b449c9ef05d2d56d567bf7f19df`; rechecked against current main
+`ac21ee80ac7e78bc01fb219978d6589ff61c1dda` after #543 and #539 merged.
 [Current release receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277)
-records this SHA live. It supersedes the
+records `79239e9` live. No newer release receipt was found for #543/#539;
+#539 also depends on the deferred-details flag, last recorded unset. This supersedes the
 [942ea19 receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704).
 #501, #518, #528, #529, #530 and #538 are merged through the 942ea19 chain;
 #546 is now merged and released. `NOFRIES_PAID_FRAMEWORKS_ENABLED` remains unset.
