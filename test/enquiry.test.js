@@ -235,7 +235,8 @@ describe('contact form progressive enhancement', () => {
             activeElement: null,
             body: { dataset: { page: 'contact' } },
             createElement(tag) {
-                const node = { tag, textContent: '', children: [], href: '', append(...items) { node.children.push(...items); }, addEventListener() {} };
+                const node = { tag, textContent: '', children: [], href: '', append(...items) { node.children.push(...items); },
+                    addEventListener(type, callback) { node['on' + type] = callback; } };
                 return node;
             },
             getElementById: id => ({
@@ -323,6 +324,13 @@ describe('contact form progressive enhancement', () => {
         expect(page.document.getElementById('contact-message').getAttribute('aria-describedby')).toContain('contact-message-error');
         expect(page.document.getElementById('contact-errors').hidden).toBe(false);
         expect(page.document.activeElement).toBe(page.document.getElementById('contact-name'));
+        const [, list] = page.document.getElementById('contact-errors').children;
+        const emailLink = list.children[1].children[0];
+        expect(emailLink.href).toBe('#contact-email');
+        emailLink.onclick(event);
+        expect(event.preventDefault).toHaveBeenCalledTimes(2);
+        expect(page.document.activeElement).toBe(page.document.getElementById('contact-email'));
+        expect(page.fetchImpl).not.toHaveBeenCalled();
     });
 
     test('no submit control can override the POST fallback with GET', () => {
