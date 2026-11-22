@@ -476,7 +476,11 @@
       "route": "/api/dashboard/frameworks/*",
       "methods": ["GET", "POST"],
       "allowedRoles": ["anonymous"],
-      "headers": { "Cache-Control": "private, no-store" }
+      "headers": {
+        "Cache-Control": "private, no-store",
+        "X-Robots-Tag": "noindex, nofollow",
+        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+      }
     },
     {
       "route": "/api/dashboard/ncsc/assessments",
