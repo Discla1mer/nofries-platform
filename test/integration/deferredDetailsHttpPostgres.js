@@ -19,6 +19,18 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
             VALUES ($1,$2,$3,'company',$4,0,$5,$6,$7::jsonb,$8::jsonb)`, [h.binding.scope.tenantId, h.binding.scope.organisationId,
             f.account.accountId, f.preparation.subjectKey, f.preparation.slot.authorityId, f.preparation.slot.bindingId,
             JSON.stringify(f.preparation), JSON.stringify(f.activation)]);
+        if (differentSigner) {
+            // Seed the original signer's canonical accepted invitation alongside the editor.
+            const { compileStarterPreparation, compileStarterActivation } = require('../../api/shared/customerSignup/customerStarterPlan');
+            const p = f.preparation, signed = compileStarterActivation({ preparation: compileStarterPreparation(p.source),
+                accountId: p.accountId, activationId: p.slot.activationId, membershipId: p.slot.membershipId,
+                acceptance: f.receipt, occurredAt: AT, accountActivatedAt: null }).nextState.membershipState;
+            await pool.query(`UPDATE nofries.dashboard_membership_states SET payload=payload || jsonb_build_object(
+                'updatedAt', greatest(payload->>'updatedAt', $5::text),
+                'invitations', (payload->'invitations') || $3::jsonb, 'memberships', (payload->'memberships') || $4::jsonb)
+                WHERE tenant_id=$1 AND organisation_id=$2`, [p.scope.tenantId, p.scope.organisationId,
+                JSON.stringify(signed.invitations), JSON.stringify(signed.memberships), signed.updatedAt]);
+        }
         return { h, f, pool };
     }
     describe('Stream E native selected-organisation gate', () => {

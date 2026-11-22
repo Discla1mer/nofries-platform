@@ -61,18 +61,23 @@ async function readEvidence(tx, link) {
 // enrolled organisations from historical ones; completion must match the
 // selected scope and the original acceptance receipt, not the current member.
 async function memberReady(tx, scope, resolvedAt) {
-    const { rows } = await tx.query(`SELECT d.payload, d.payload_sha256, a.payload->'receipt' AS receipt
+    const { rows } = await tx.query(`SELECT d.payload, d.payload_sha256, a.payload->'receipt' AS receipt, invite->>'grantEvidenceId' AS authority_id
         FROM nofries.dashboard_representative_details d
         JOIN nofries.signup_acceptance_receipts a ON a.tenant_id=d.tenant_id
             AND a.organisation_id=d.organisation_id AND a.receipt_id=d.receipt_id AND a.subject_key=d.subject_key
-        WHERE d.tenant_id=$1 AND d.organisation_id=$2`, [scope.tenantId, scope.organisationId]);
+        JOIN nofries.dashboard_membership_states m ON m.tenant_id=d.tenant_id AND m.organisation_id=d.organisation_id
+        CROSS JOIN LATERAL jsonb_array_elements(m.payload->'invitations') invite
+        WHERE invite->>'tenantId'=d.tenant_id AND invite->>'organisationId'=d.organisation_id
+            AND invite->>'invitationId'=a.payload#>>'{receipt,invitationId}'
+            AND invite->>'subjectKey'=d.subject_key AND invite->>'status'='accepted'
+            AND d.tenant_id=$1 AND d.organisation_id=$2`, [scope.tenantId, scope.organisationId]);
     if (!rows.length) return false;
     if (rows.length !== 1) fail();
-    const { payload, payload_sha256, receipt } = rows[0];
+    const { payload, payload_sha256, receipt, authority_id } = rows[0];
     const value = fields(copy(payload, 16384), ['link', 'details', 'recordedAt']);
     const expected = { schemaVersion: 1, ...scope, subjectKey: receipt.subjectKey,
         receiptId: receipt.receiptId, acceptanceSha256: hash(receipt), scheduleId: receipt.scheduleId,
-        scheduleDigest: receipt.scheduleDigest, authorityEvidenceId: id(value.link.authorityEvidenceId) };
+        scheduleDigest: receipt.scheduleDigest, authorityEvidenceId: id(authority_id) };
     if (receipt.tenantId !== scope.tenantId || receipt.organisationId !== scope.organisationId ||
         receipt.acceptedAt > Date.parse(resolvedAt) || instant(value.recordedAt) > resolvedAt ||
         payload_sha256 !== hash(value) || !equal(value.link, expected) ||
