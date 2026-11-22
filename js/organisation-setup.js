@@ -283,7 +283,7 @@
         try {
             const response = await fetch(setupRoute + route, {
                 method: body ? 'POST' : 'GET', credentials: 'same-origin', mode: 'same-origin', redirect: 'error', cache: 'no-store',
-                referrerPolicy: 'same-origin', signal: controller.signal,
+                referrerPolicy: 'strict-origin', signal: controller.signal,
                 headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}),
                     ...(automaticEntry ? { 'X-NoFries-Customer-Entry': 'auto' } : {}),
                     ...(body && route !== 'request' && requestId ? { 'X-NoFries-Setup-Request': requestId } : {}) },
