@@ -20,6 +20,7 @@ const { ConsultantWorkQueueError, normaliseConsultantWorkQueuePage,
 const { apiSecurityHeaders } = require('./securityHeaders');
 const { ContactRequestError, normaliseContactRequest, writeContactRequest } = require('./contactRequests');
 
+const { representativeDetails, RepresentativeDetailsError } = require('./customerSignup/deferredRepresentativeDetails');
 const denied = () => new DashboardPersistenceError('access_denied', 403);
 const unavailable = () => new DashboardPersistenceError('unavailable', 503);
 const ncscDenied = () => new NcscAssessmentError('ncsc_access_denied', 403);
@@ -31,6 +32,7 @@ function createDashboardResourceRuntime(options) {
     // must qualify schema/audit readiness before enabling that setting.
     const improvementEnabled = options.improvementEnabled === true;
     const contactRequestsEnabled = options.contactRequestsEnabled === true;
+    const representativeDetailsEnabled = options.representativeDetailsEnabled === true;
     const queueClock = options.clock;
     const requests = new WeakMap();
     // Correlation only. Authority and active SQL handles never enter this store.
@@ -156,16 +158,26 @@ function createDashboardResourceRuntime(options) {
                 try {
                     pair = binding.createOperation('contact.request', context);
                     const result = await writeContactRequest({ database: pair.database, clock: pair.clock,
-                        audit: pair.audit, context, ...(typeof onStored === 'function' ? { onStored } : {}) }, command);
+                        audit: pair.audit, context, representativeDetailsEnabled, ...(typeof onStored === 'function' ? { onStored } : {}) }, command);
                     pair.clock();
                     return result;
                 } catch (error) {
-                    if (error instanceof ContactRequestError) throw error;
+                    if (error instanceof ContactRequestError || error instanceof RepresentativeDetailsError) throw error;
                     throw new ContactRequestError();
                 } finally { if (pair) pair.finish(); }
             }
+            async function details(input, enrolledScope) {
+                let pair;
+                try {
+                    pair = binding.createOperation(input === undefined ? 'representative.read' : 'representative.record', context);
+                    const result = await representativeDetails({ database: pair.database, clock: pair.clock, audit: pair.audit, context, enrolledScope }, input);
+                    pair.clock(); return result;
+                } catch (error) { throw error instanceof RepresentativeDetailsError ? error : new RepresentativeDetailsError(); }
+                finally { if (pair) pair.finish(); }
+            }
             return Object.freeze({
                 requestContext,
+                ...(representativeDetailsEnabled ? { representativeDetails: details } : {}),
                 ...(contactRequestsEnabled ? { contact: Object.freeze({ request: (input, onStored) => contactRequest(input, onStored) }) } : {}),
                 ...(improvementEnabled ? { improvement: Object.freeze({
                     plans: input => improvement('plans', input),
