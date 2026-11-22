@@ -1744,7 +1744,7 @@ function registerRealPostgresTests() {
                             enabled: { ...example.state.flags.enabled, ...enabled } } });
                     return canonicalResult;
                 }
-                return { example, member, admission, admissionCommand, publication, canonicalRepository, mutateMembership, mutateFlags };
+                return { example, member, admission, admissionCommand, publication, canonicalRepository, mutateMembership, mutateFlags, seedPool };
             }
             const target = await addResource(f.scope);
             const seed = purpose === 'operator_dashboard' ? f.operatorSeed : f.session(purpose, principal);
@@ -1767,6 +1767,11 @@ function registerRealPostgresTests() {
             atJsonResponse: action => { mockPaidJsonReady = action; } });
         require('./improvementPlanRecovery')({ resourceSetup,
             getPools: () => ({ ownerPool, controlPool, runtimePool, maintenancePool }), testUrl, maintenanceRole });
+        if (process.env.NOFRIES_TEST_PAID_STAFF_STACK === 'true') {
+            require('./staffFrameworkMounted')({ resourceSetup, harness, NCSC_SUBJECT, identity, nextId,
+                pools: () => ({ controlPool, ownerPool }), runtimeRole });
+        }
+        require('./paidRendererPicker')({ resourceSetup, NCSC_SUBJECT, nextId, identity });
         async function newCustomerActivationSetup({ shortWindow = false, memberLimit = null, memberRole = 'admin' } = {}) {
             const request = require('supertest');
             const { customerProductionHarness, uid: customerId } = require('../helpers/customerProductionHarness');

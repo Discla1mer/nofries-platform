@@ -609,7 +609,7 @@
                 const card = panel(ref.label, ref.description);
                 card.append(badge(included ? 'Included' : 'Locked'));
                 if (included) {
-                    card.append(button('Open ' + ref.label, function () { renderPaidCollection(root, ref); }));
+                    card.append(button('Open ' + ref.label, function () { openFramework(root, ref); }));
                 } else hasLocked = true;
                 cards.append(card);
             }
@@ -620,38 +620,25 @@
                 root.append(contact);
             }
         }
-        function renderPaidCollection(root, ref) {
+        function openFramework(root, ref) {
             const back = button('Back to assessment choices', backToFrameworkPicker, 'dashboard-text-button');
-            const heading = element('h2', '', ref.label); heading.tabIndex = -1;
-            const list = element('ul', 'ncsc-assessment-list'), status = element('p');
-            status.setAttribute('role', 'status');
-            const more = button('Load more assessments', function () { load(cursor); }, 'dashboard-button dashboard-button-secondary');
-            more.hidden = true;
-            root.replaceChildren(back, heading, status, list, more); heading.focus();
-            const states = { created: 'Started', 'in-progress': 'In progress', submitted: 'Submitted', reviewed: 'Reviewed', archived: 'Archived' };
-            let disposed = false, cursor = null;
-            child = { destroy: function () { disposed = true; }, requestLeave: function (commit) { commit(); return Promise.resolve(true); } };
-            async function load(after) {
-                more.disabled = true; status.textContent = 'Loading assessments…';
-                try {
-                    const page = await options.readPaidFramework(ref, after);
-                    if (disposed) return;
-                    for (const row of page.assessments) {
-                        const item = element('li', 'ncsc-assessment-card');
-                        item.append(element('strong', '', states[row.status]), element('p', '', 'Last saved ' + row.updatedAt.slice(0, 10) + ' UTC'),
-                            element('p', 'ncsc-preserve-text', 'Assessment reference: ' + row.assessmentId));
-                        list.append(item);
-                    }
-                    cursor = page.nextAfterAssessmentId;
-                    more.hidden = cursor === null; more.disabled = false;
-                    status.textContent = (list.children.length ? '' : 'No saved assessments yet. ') + 'The questionnaire is currently unavailable.';
-                } catch (_) {
-                    if (disposed) return;
-                    list.replaceChildren(); more.hidden = true;
-                    status.textContent = 'This assessment is unavailable. Return to the assessment choices to try again.';
-                }
-            }
-            load(null);
+            const status = element('p', '', 'Opening assessment…'); status.setAttribute('role', 'status');
+            root.replaceChildren(back, status); back.focus();
+            let disposed = false, mounted = null;
+            const host = options.paidHost(ref, () => !disposed);
+            child = { destroy() {
+                disposed = true; host.destroy();
+                if (mounted) mounted.destroy();
+                root.replaceChildren();
+            }, requestLeave(commit) {
+                if (mounted) return mounted.requestLeave(commit);
+                commit(); return Promise.resolve(true);
+            } };
+            host.renderer('collection').then(factory => {
+                if (host.live()) mounted = factory.mount(root, { ref, element, button, back, host, win });
+            }).catch(() => {
+                if (!disposed) status.textContent = 'This assessment is unavailable. Return to the assessment choices to try again.';
+            });
         }
         function mountFreeCyber(childRoot, initialAssessmentId) {
             try {

@@ -870,6 +870,39 @@ describe('opt-in NCSC HTTP request boundary', () => {
     }));
 });
 
+test.each(['allowed', 'missing', 'refused'])('paid renderer checks the registered disclosure guard (%s)', async outcome => {
+    const h = harness(); h.build(); const issued = await h.login();
+    const generation = digest('selected-generation');
+    const ref = require('../api/shared/protectedAssets/dashboardRegistry').paidFrameworks[0];
+    const url = require('../scripts/tests/paid-renderer-browser.cjs').assetPath(ref, 'questionnaire', generation);
+    const file = { status: 200, isRaw: true, body: 'synthetic renderer' };
+    let handler, guard;
+    const paid = jest.fn(async (route, body, cursor, register) => {
+        expect([route, body, cursor]).toEqual([{ profileId: ref.profileId, version: ref.version, assessmentId: null, mutation: null }, undefined, null]);
+        if (outcome !== 'missing') register(guard);
+    });
+    jest.isolateModules(() => {
+        const { DashboardOnboardingError } = require('../api/shared/appLifecycle/dashboardOnboardingDomain');
+        guard = jest.fn(() => { if (outcome === 'refused') throw new DashboardOnboardingError('onboarding_access_denied', 403); });
+        jest.doMock('../api/shared/appLifecycle/postgresDashboardRuntimeRepository', () => ({
+            createPostgresDashboardRuntimeRepository: () => ({ readSession: async () => ({ selectedBindingId: uid(9), generation }) })
+        }));
+        jest.doMock('../api/shared/dashboardRuntime', () => ({ createDashboardResourceRuntime: () => ({
+            forRequest: async (_req, transport) => { expect(transport).toEqual({ expectedGeneration: generation }); return { paid }; }
+        }) }));
+        jest.doMock('../api/shared/paidRendererAssets', () => ({ ...jest.requireActual('../api/shared/paidRendererAssets'), packagedAsset: () => file }));
+        handler = require('../api/shared/dashboardRuntimeHandlers').createDashboardRuntimeHandlers({ ...h.options, paidFrameworksEnabled: true });
+    });
+    jest.dontMock('../api/shared/dashboardRuntime'); jest.dontMock('../api/shared/paidRendererAssets');
+    jest.dontMock('../api/shared/appLifecycle/postgresDashboardRuntimeRepository');
+    const read = () => handler.handleRequest(request({ url, cookieHeader: issued.cookie }));
+    if (outcome === 'allowed') expect(await read()).toBe(file);
+    else await withExpectedWarning({ route: 'framework-asset', status: 403, code: 'dashboard_access_denied' },
+        async () => expectError(await read(), 403, 'dashboard_access_denied'));
+    expect(paid).toHaveBeenCalledTimes(1);
+    expect(guard).toHaveBeenCalledTimes(outcome === 'missing' ? 0 : 1);
+});
+
 describe('versioned dashboard asset cache policy', () => {
     // Resource I/O is controlled here; genuine host authentication and URL parsing run.
     // Existing resource/request-database suites retain authority and disclosure coverage.
