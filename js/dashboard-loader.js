@@ -460,6 +460,7 @@
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'paidFrameworkStatusAvailable') ? ['paidFrameworkStatusAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'representativeDetailsAvailable') ? ['representativeDetailsAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'questionnaireExportGateAvailable') ? ['questionnaireExportGateAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsAvailable') ? ['contactRequestsAvailable'] : []),
@@ -471,6 +472,7 @@
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
             Object.prototype.hasOwnProperty.call(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant') ||
             Object.prototype.hasOwnProperty.call(value, 'workQueueAvailable') && (value.workQueueAvailable !== true || value.accountType !== 'consultant') ||
+            Object.prototype.hasOwnProperty.call(value, 'paidFrameworkStatusAvailable') && (value.paidFrameworkStatusAvailable !== true || value.accountType !== 'consultant') ||
             Object.prototype.hasOwnProperty.call(value, 'representativeDetailsAvailable') && (value.representativeDetailsAvailable !== true || value.purpose !== 'customer') ||
             Object.prototype.hasOwnProperty.call(value, 'questionnaireExportGateAvailable') && (value.questionnaireExportGateAvailable !== true || value.representativeDetailsAvailable !== true) ||
             Object.prototype.hasOwnProperty.call(value, 'contactRequestsAvailable') && (value.contactRequestsAvailable !== true || value.purpose !== 'customer') ||
@@ -481,6 +483,7 @@
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
+            ...(value.paidFrameworkStatusAvailable === true ? { paidFrameworkStatusAvailable: true } : {}),
             ...(value.representativeDetailsAvailable === true ? { representativeDetailsAvailable: true } : {}),
             ...(value.questionnaireExportGateAvailable === true ? { questionnaireExportGateAvailable: true } : {}),
             ...(value.contactRequestsAvailable === true ? { contactRequestsAvailable: true } : {}),
@@ -489,7 +492,7 @@
             ...(value.accountName ? { accountName: value.accountName } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsAvailable', 'representativeDetailsAvailable', 'questionnaireExportGateAvailable', 'accountType', 'accountLabel', 'accountName']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'paidFrameworkStatusAvailable', 'contactRequestsAvailable', 'representativeDetailsAvailable', 'questionnaireExportGateAvailable', 'accountType', 'accountLabel', 'accountName']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -595,7 +598,7 @@
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1 paid-status-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
@@ -2113,9 +2116,41 @@
         return typeof value === 'string' && value.trim().length > 0 && value.length <= 200 &&
             !/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(value);
     }
+    const PAID_STATUS_PROFILES = { 'nf-nist-csf-2-0-core': ['2026-09-08.1', 'NIST CSF 2.0'],
+        'nf-iso-27001-2022-readiness': ['2026-11-19.1', 'ISO 27001 readiness'] };
+    const PAID_STATUS_LABELS = { not_started: 'Not started', in_progress: 'In progress', submitted: 'Submitted' };
+    // Status only, for the bindings on this exact directory page and session
+    // generation. Any refusal or failure shows no status for the page.
+    async function paidFrameworkStatus(cycle, value, bindings, cursor, refresh) {
+        const statuses = new Map(bindings.map(function (binding) { return [binding.bindingId, []]; }));
+        let result;
+        try {
+            result = await request(cycle, '/api/dashboard/organisations/paid-framework-status' + (cursor === null ? '' : '?afterBindingId=' + cursor),
+                undefined, value.generation, undefined, refresh);
+        } catch (error) {
+            if (error && (error.timeout || error.platform)) result = { status: 503 };
+            else throw error;
+        }
+        if (!current(cycle) || refresh && !currentRefresh(cycle, refresh)) throw invalid();
+        const page = result.status === 200 ? result.value : null;
+        const valid = fields(page, ['rows']) && Array.isArray(page.rows) && page.rows.length <= 20 && page.rows.every(function (row) {
+            const profile = fields(row, ['bindingId', 'moduleId', 'profileId', 'version', 'status']) && row.moduleId === 'cyber_security' &&
+                Object.prototype.hasOwnProperty.call(PAID_STATUS_PROFILES, row.profileId) && PAID_STATUS_PROFILES[row.profileId];
+            const list = profile && statuses.get(row.bindingId);
+            if (!list || row.version !== profile[0] || !Object.prototype.hasOwnProperty.call(PAID_STATUS_LABELS, row.status) ||
+                list.some(function (item) { return item.indexOf(profile[1] + ':') === 0; })) return false;
+            list.push(profile[1] + ': ' + PAID_STATUS_LABELS[row.status]);
+            return true;
+        });
+        return bindings.map(function (binding) {
+            return Object.freeze({ bindingId: binding.bindingId, organisationLabel: binding.organisationLabel,
+                paidStatus: valid ? statuses.get(binding.bindingId).join(' · ') : null });
+        });
+    }
     async function directory(cycle, value, previous, cursor, refresh, quiet) {
         const pageCount = cursor === null ? 1 : cycle.directoryPageCount + 1;
-        const path = '/api/dashboard/organisations?limit=50' + (cursor === null ? '' : '&afterBindingId=' + cursor);
+        const paidStatus = value.paidFrameworkStatusAvailable === true;
+        const path = '/api/dashboard/organisations?limit=' + (paidStatus ? 10 : 50) + (cursor === null ? '' : '&afterBindingId=' + cursor);
         const page = requireSuccess(await request(cycle, path, undefined, undefined, undefined, refresh));
         if (!current(cycle) || refresh && !currentRefresh(cycle, refresh)) return;
         if (!fields(page, ['schemaVersion', 'bindings', 'nextAfterBindingId']) || page.schemaVersion !== 1 ||
@@ -2128,7 +2163,9 @@
             last = binding.bindingId;
         });
         if (page.nextAfterBindingId !== null && (!page.bindings.length || page.nextAfterBindingId !== last || page.nextAfterBindingId === cursor)) throw invalid();
-        const rows = previous.concat(page.bindings.map(function (row) { return Object.freeze({ bindingId: row.bindingId, organisationLabel: row.organisationLabel }); }));
+        const bindings = page.bindings.map(function (row) { return Object.freeze({ bindingId: row.bindingId, organisationLabel: row.organisationLabel }); });
+        const rows = previous.concat(paidStatus && bindings.length ? await paidFrameworkStatus(cycle, value, bindings, cursor, refresh) : bindings);
+        if (!current(cycle) || refresh && !currentRefresh(cycle, refresh)) return;
         if (quiet) return { rows: rows, nextAfterBindingId: page.nextAfterBindingId };
         renderDirectory(cycle, value, rows, page.nextAfterBindingId, pageCount);
     }
@@ -2180,11 +2217,19 @@
                 });
             }
             button.textContent = binding.organisationLabel;
+            const paidStatus = Object.prototype.hasOwnProperty.call(binding, 'paidStatus')
+                ? (binding.paidStatus === null ? 'Assessment status unavailable' : binding.paidStatus) : '';
+            if (paidStatus) {
+                const detail = document.createElement('span');
+                detail.className = 'consultant-organisation-paid-status';
+                detail.textContent = paidStatus;
+                button.append(detail);
+            }
             if (value.accountType === 'consultant') {
                 // Discovery retains bindings even when current membership denies
                 // access. Selection and resource reads establish current access.
                 button.className = 'consultant-organisation-ready';
-                button.setAttribute('aria-label', binding.organisationLabel + ' · Open organisation');
+                button.setAttribute('aria-label', binding.organisationLabel + (paidStatus ? ' · ' + paidStatus : '') + ' · Open organisation');
             }
             button.setAttribute('aria-pressed', String(binding.bindingId === value.selectedBindingId));
             return button;

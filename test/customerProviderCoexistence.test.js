@@ -822,3 +822,50 @@ describe('email settings routes with the store enabled', () => {
         expect(page.status).toBe(200);
     });
 });
+
+// Consultant paid status (docs/design/consultant-paid-framework-status.md).
+// With the flag off the session shape and the unknown status route are unchanged.
+const paidStatusCapability = contactCapability + ' starter-details-v1 questionnaire-details-v1 account-identity-v1 paid-status-v1';
+test.each([true, false].flatMap(enabled => ['consultant', 'company'].map(accountType => ({ enabled, accountType }))))
+('paid status is advertised and routed only with the flag on for a consultant ($enabled, $accountType)', async ({ enabled, accountType }) => {
+    const h = fixture();
+    h.options.improvementEnabled = true;
+    if (enabled) h.options.paidFrameworksEnabled = true;
+    const binding = jest.fn(async () => ({ accountLabel: 'synthetic@example.test', bindingId: id(90),
+        scope: { tenantId: 'synthetic-tenant', organisationId: 'synthetic-org' }, accountType }));
+    h.options.externalCustomer.resolveActivationBinding = binding;
+    const readSession = jest.fn(async () => ({ purpose: 'customer',
+        expiresAt: new Date(now + 3600000).toISOString(), generation: 'a'.repeat(64), selectedBindingId: id(90) }));
+    let host;
+    jest.isolateModules(() => {
+        const runtime = require('../api/shared/appLifecycle/postgresDashboardRuntimeRepository');
+        const replacement = jest.spyOn(runtime, 'createPostgresDashboardRuntimeRepository').mockReturnValue({ readSession });
+        try { host = require('../api/shared/dashboardRuntimeHandlers').createDashboardRuntimeHandlers(h.options); }
+        finally { replacement.mockRestore(); }
+    });
+    const issued = await login(host.authServices.externalCustomer);
+    const send = (url, raw = []) => {
+        const req = new (require('node:http').IncomingMessage)(new (require('node:net').Socket)());
+        req.method = 'GET'; req.url = url;
+        req.headers = { cookie: issued.cookie }; req.rawHeaders = ['cookie', issued.cookie, ...raw];
+        for (let index = 0; index < raw.length; index += 2) req.headers[raw[index].toLowerCase()] = raw[index + 1];
+        req.complete = true; req.push(null); return host.handleRequest(req);
+    };
+    const session = await send('/api/dashboard/session', [queueCapabilityHeader, paidStatusCapability]);
+    expect(session.status).toBe(200);
+    const current = await send('/api/dashboard/session', [queueCapabilityHeader, paidStatusCapability.replace(' paid-status-v1', '')]);
+    expect(session.body).toEqual({ ...current.body, ...(enabled && accountType === 'consultant' ? { paidFrameworkStatusAvailable: true } : {}) });
+    const generation = ['X-NoFries-Dashboard-Generation', 'a'.repeat(64)];
+    const route = '/api/dashboard/organisations/paid-framework-status';
+    const statuses = [await send(route, generation), await send(route + '?afterBindingId=' + id(91), generation),
+        await send(route + '?tenantId=synthetic-tenant', generation), await send(route)];
+    if (!enabled) expect(statuses.map(response => response.status)).toEqual([404, 404, 404, 404]);
+    else {
+        expect(statuses[2].status).toBe(400);
+        expect(statuses[3].status).toBe(403);
+        if (accountType === 'company') expect([statuses[0].status, statuses[1].status]).toEqual([403, 403]);
+        // No database is attached here: an authorised consultant read fails closed.
+        else expect([statuses[0].body, statuses[1].body]).toEqual([{ code: 'framework_unavailable' }, { code: 'framework_unavailable' }]);
+    }
+    for (const response of statuses) expect(response.body).not.toHaveProperty('rows');
+});
