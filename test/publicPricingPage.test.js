@@ -8,7 +8,7 @@ const text = html.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<[^>]+>/g, ' ').repl
 const headings = [...html.matchAll(/<h2 id="([^"]+)"/g)].map(match => match[1]);
 
 test('the pricing page shows the plans in the agreed order', () => {
-    expect(headings).toEqual(['pricing-free', 'pricing-pilot', 'pricing-assisted', 'pricing-support', 'pricing-managed-it', 'pricing-start']);
+    expect(headings).toEqual(['pricing-free', 'pricing-pilot', 'pricing-assisted', 'pricing-assessments', 'pricing-support', 'pricing-managed-it', 'pricing-start']);
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('<link rel="canonical" href="https://nofries.nz/pricing.html">');
     expect(html).toContain('<a class="skip-link" href="#main-content">Skip to content</a>');
@@ -16,7 +16,7 @@ test('the pricing page shows the plans in the agreed order', () => {
 
 test('every non-zero price says + GST', () => {
     const prices = [...text.matchAll(/NZ\$([\d,]+)(.{0,6})/g)];
-    expect(prices.map(match => match[1])).toEqual(['0', '1,250', '350']);
+    expect(prices.map(match => match[1])).toEqual(['0', '1,250', '350', '99', '990', '1,250']);
     for (const [whole, amount, after] of prices) {
         if (amount !== '0') expect([whole, after.startsWith(' + GST')]).toEqual([whole, true]);
     }
@@ -38,7 +38,13 @@ test('the managed security offer has no launch, scarcity or offer-expiry languag
 });
 
 test('the page offers no self-serve plan and makes no round-the-clock or certification claims', () => {
-    expect(text).not.toMatch(/NZ\$99|self[- ]serve|self-service plan/i);
+    // Deliberate change: the NZ$99 flag-off guard belongs to the dashboard (#538).
+    // Public pages are not flag-gated, and the paid assessments are now available,
+    // so NZ$99 may appear here, but only inside the paid assessments section.
+    const outsidePaid = html.replace(/<section aria-labelledby="pricing-assessments"[\s\S]*?<\/section>/, '');
+    expect(outsidePaid).not.toBe(html);
+    expect(outsidePaid).not.toMatch(/NZ\$99/);
+    expect(text).not.toMatch(/self[- ]serve|self-service plan/i);
     expect(text).not.toMatch(/24\s*\/\s*7|24 hours|around the clock|round the clock/i);
     expect(text).not.toMatch(/\bcertified\b|\bcompliant\b|guarantee|\bfounder\b/i);
     expect(text).not.toContain('!');
