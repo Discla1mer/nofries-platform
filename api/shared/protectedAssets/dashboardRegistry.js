@@ -35,11 +35,21 @@
         ['ai_service_desk', 'AI-assisted service desk', 'Assistance does not authorise supplier actions.']
     ].map(function (row) { return Object.freeze({ key: row[0], label: row[1], description: row[2] }); }));
 
+    const paidFrameworks = Object.freeze([
+        Object.freeze({ moduleId: 'cyber_security', profileId: 'nf-nist-csf-2-0-core', version: '2026-09-08.1',
+            label: 'NIST CSF 2.0', description: 'Review how your organisation manages cyber risk across the six NIST functions and see where work is needed.' }),
+        Object.freeze({ moduleId: 'cyber_security', profileId: 'nf-iso-27001-2022-readiness', version: '2026-11-19.1',
+            label: 'ISO 27001 readiness self-assessment', description: 'Review how you manage information security, record which controls apply and identify gaps to work on.' })
+    ]);
+    function sameFramework(left, right) {
+        return left.moduleId === right.moduleId && left.profileId === right.profileId && left.version === right.version;
+    }
+
     function resolveRoute(route, permitted) {
         const key = typeof route === 'string' ? route.replace(/^#/, '') : '';
         const matched = modules.find(function (item) { return item.route === (key === 'plan' ? 'improvement-plan' : key); });
         return matched && Array.isArray(permitted) && permitted.includes(matched.key) ? matched : null;
     }
-    return Object.freeze({ schemaVersion: 1, modules: modules, services: services,
+    return Object.freeze({ schemaVersion: 1, modules: modules, services: services, paidFrameworks: paidFrameworks, sameFramework: sameFramework,
         groups: Object.freeze(['Home', 'Assess', 'Plan', 'Proof', 'More']), resolveRoute: resolveRoute });
 }));
