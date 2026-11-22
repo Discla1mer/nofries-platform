@@ -335,6 +335,25 @@ for (const useExample of [false, true]) {
                 assert.ok(csp.includes("script-src-attr 'none'"));
                 assert.ok(!csp.includes("'unsafe-inline'"));
             }
+            // Exercise the packaged SWA policy, not just its source. The BFF
+            // still authenticates the customer and enforces method and entitlement.
+            const paid = '/api/dashboard/frameworks/example-profile/1/';
+            for (const [method, suffix] of [
+                ['GET', 'assets/collection.js'], ['GET', 'assets/questionnaire.js'], ['GET', 'assets/results.js'],
+                ['GET', 'assessments'], ['POST', 'assessments'], ['GET', 'assessments/fixture'],
+                ['POST', 'assessments/fixture/save'], ['POST', 'assessments/fixture/submit']
+            ]) {
+                const route = matched(method, paid + suffix);
+                assert.equal(route?.route, '/api/dashboard/frameworks/*');
+                assert.deepEqual(route.allowedRoles ?? ['anonymous'], ['anonymous']);
+                assert.deepEqual(route.methods, ['GET', 'POST']);
+                assert.equal(route.rewrite, undefined);
+                assert.equal(route.redirect, undefined);
+                assert.deepEqual(route.headers['Cache-Control'].split(',').map(v => v.trim()), ['private', 'no-store']);
+            }
+            for (const [method, endpoint] of [
+                ['DELETE', paid + 'assessments/fixture'], ['GET', '/api/dashboard/frameworks-extra/example']
+            ]) assert.deepEqual(matched(method, endpoint)?.allowedRoles, ['authenticated']);
             const endpoints = [
                 ['GET', '/api/organisation-setup/state'],
                 ['POST', '/api/organisation-setup/state'],
