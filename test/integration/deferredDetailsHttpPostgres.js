@@ -56,7 +56,20 @@ module.exports = function ({ ncscHttpSetup, httpJson, getOwnerPool, loginClean, 
             const count = async table => (await pool.query(`SELECT 1 FROM nofries.${table} WHERE tenant_id=$1`, tenant)).rowCount;
             expect(await count('dashboard_deferred_agreements')).toBe(1);
             expect(await count('dashboard_representative_details')).toBe(1);
-            expect((await read(h)).body).toMatchObject({ status: 'ready' });
+            expect((await read(h)).body).toEqual({ schemaVersion: 1, status: 'ready' });
+            const scoped = await pool.connect();
+            try {
+                await scoped.query('BEGIN');
+                await scoped.query('SET LOCAL ROLE nofries_runtime');
+                const visible = async organisation => {
+                    await scoped.query("SELECT set_config('nofries.tenant_id',$1,true), set_config('nofries.organisation_id',$2,true)",
+                        [link.tenantId, organisation]);
+                    return (await scoped.query(`SELECT 1 FROM nofries.dashboard_representative_details
+                        WHERE tenant_id=$1 AND organisation_id=$2`, [link.tenantId, link.organisationId])).rowCount;
+                };
+                expect(await visible(link.organisationId)).toBe(1);
+                expect(await visible(nextId())).toBe(0);
+            } finally { try { await scoped.query('ROLLBACK'); } finally { scoped.release(); } }
             httpJson(await save(h), 403, 'representative_details_access_denied');
             await createAccountWipeRepository(pool).reset({
                 accountId: f.account.accountId, subjectKey: f.preparation.subjectKey, tenantIds: tenant
