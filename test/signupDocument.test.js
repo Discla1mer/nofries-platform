@@ -67,6 +67,8 @@ test('actual served document executes the existing client/view through HTTP stat
     } });
     const page = await request(app).get('/signup');
     expect(page.status).toBe(200);
+    // The setup journey's native sign-out form needs a real Origin: origin-only referrer.
+    expect(page.headers['referrer-policy']).toBe('strict-origin');
     const runtime = page.text.match(/<script>([\s\S]*?)<\/script>/)[1];
     const hash = crypto.createHash('sha256').update(runtime).digest('base64');
     expect(page.headers['content-security-policy']).toContain(`'sha256-${hash}'`);

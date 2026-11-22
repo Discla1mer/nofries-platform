@@ -144,6 +144,9 @@ for (const client of [false, true]) test(`actual production launcher joins the r
     assert.equal(backend.status, 200); assert.match(backend.headers['cache-control'], /private, no-store/);
     assert.equal(backend.headers['x-robots-tag'], 'noindex, nofollow');
     assert.equal(backend.headers['content-security-policy'], page.headers['content-security-policy']);
+    // The saved-result sign-out form needs a real Origin: origin-only referrer, header and meta.
+    for (const response of [page, backend]) assert.equal(response.headers['referrer-policy'], 'strict-origin');
+    assert.ok(page.text.includes('<meta name="referrer" content="strict-origin">'));
     assert.equal(t.sql.audits.size, 2);
     assert.equal(JSON.stringify({ account: t.f.state.account, versions: t.f.versionRows, scopes: [...t.f.scopes] }), before);
     const replay = await request(t.h.app).post('/api/external-customer-auth/callback').set('Cookie', login.tx).type('form').send(login.body);

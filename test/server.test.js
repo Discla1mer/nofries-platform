@@ -478,6 +478,9 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         const operatorShell = await request(app).get('/operator');
         expect(operatorShell.status).toBe(200);
         expect(operatorShell.headers['cache-control']).toContain('no-store');
+        // Its native sign-out form needs a real Origin, so this document is origin-only, not no-referrer.
+        expect(operatorShell.headers['referrer-policy']).toBe('strict-origin');
+        expect(operatorShell.text).toContain('<meta name="referrer" content="strict-origin">');
         expect(operatorShell.text).toContain('Loading work that needs attention');
         expect(operatorShell.text).toContain('>Work</a>');
         expect(operatorShell.text).toContain('>Sales</a>');
@@ -608,6 +611,8 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
     test('workspace shell embeds only a CSP-authorised loader before the protected sales runtime', async () => {
         const response = await request(app).get('/scoping');
         expect(response.status).toBe(200);
+        expect(response.headers['referrer-policy']).toBe('strict-origin');
+        expect(response.text).toContain('<meta name="referrer" content="strict-origin">');
         expect(response.headers['x-robots-tag']).toBe('noindex, nofollow');
         const contentSecurityPolicy = response.headers['content-security-policy'];
         expect(contentSecurityPolicy).not.toContain('assets.apollo.io');
@@ -658,6 +663,8 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
     test('support shell embeds only a CSP-authorised loader before the protected runtime', async () => {
         const response = await request(app).get('/support');
         expect(response.status).toBe(200);
+        expect(response.headers['referrer-policy']).toBe('strict-origin');
+        expect(response.text).toContain('<meta name="referrer" content="strict-origin">');
         expect(response.headers['cache-control']).toContain('no-store');
         expect(response.headers['x-robots-tag']).toBe('noindex, nofollow');
         const runtime = extractSupportRuntime(response.text);
@@ -2230,6 +2237,8 @@ describe('configured dashboard actual HTTP transport', () => {
             const portal = await request(target).get('/portal');
             expect(portal.status).toBe(200);
             expect(portal.headers['cache-control']).toContain('no-store');
+            expect(portal.headers['referrer-policy']).toBe('strict-origin');
+            expect(portal.text).toContain('<meta name="referrer" content="strict-origin">');
             expect(portal.text).toContain('/api/customer-portal/app.js');
         }
     });

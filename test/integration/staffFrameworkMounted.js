@@ -8,6 +8,7 @@ module.exports = function register({ resourceSetup, NCSC_SUBJECT, identity, next
     const { customerProductionHarness, uid } = require('../helpers/customerProductionHarness');
     const { ACCEPTED_PROFILE_REF } = require('../../api/shared/assessmentEngine/ncscAssessmentEvaluator');
     const { tuples } = require('../../api/shared/appLifecycle/paidFrameworkDecisions');
+    const { readActionRecord } = require('../../api/shared/dashboardAdmin/accountActionsStorage');
     const decisions = 'SELECT * FROM nofries.dashboard_paid_framework_access WHERE tenant_id=$1 AND organisation_id=$2 ORDER BY operation_id';
     const flags = 'SELECT revision, payload FROM nofries.dashboard_feature_flags WHERE tenant_id=$1 AND organisation_id=$2';
     // One customer and one staff HTTP session on the production app, for one paid tuple.
@@ -72,9 +73,19 @@ module.exports = function register({ resourceSetup, NCSC_SUBJECT, identity, next
             await post('/api/dashboard/selection', { operationId: nextId(), bindingId, expectedGeneration: generation }).expect(200);
             generation = await gen();
         };
+        // The staff audit as the application wrote it, read with the application's own reader.
+        async function auditRecord(operationId, name) {
+            const containers = [...h.state.containers].filter(([key]) => key.endsWith('/account-action-audit')).map(([, value]) => value);
+            expect(containers).toHaveLength(1);
+            return (await readActionRecord(containers[0], 'dashboard-admin-framework-access/' + operationId + '/' + name + '.json')).record;
+        }
+        // Whether the runtime login can SET the operator role (the capability the grant needs).
+        const operatorBound = async () => (await controlPool.query(
+            "SELECT pg_has_role($1, 'nofries_framework_operator', 'SET') AS bound", [runtimeRole])).rows[0].bound;
         const grantRole = () => controlPool.query('GRANT nofries_framework_operator TO "' + runtimeRole + '" WITH SET TRUE, INHERIT FALSE, ADMIN FALSE');
         const revokeRole = () => controlPool.query('REVOKE nofries_framework_operator FROM "' + runtimeRole + '"');
-        return { f, second, ownerPool, base, assets, get, post, select, attempt, change, snapshot, picker, grantRole, revokeRole };
+        return { f, second, ownerPool, base, assets, get, post, select, attempt, change, snapshot, picker, grantRole, revokeRole,
+            auditRecord, operatorBound };
     }
 
     test.each(tuples)('staff control protects saved assessments and actual assets for $profileId', async tuple => {
@@ -122,21 +133,29 @@ module.exports = function register({ resourceSetup, NCSC_SUBJECT, identity, next
     });
 
     test.each(tuples)('the mounted grant route answers 503 and writes nothing before the operator role is bound, for $profileId', async tuple => {
-        const { f, ownerPool, base, get, attempt, change, picker, grantRole, revokeRole } = await mounted(tuple);
+        const { f, ownerPool, base, get, attempt, change, picker, grantRole, revokeRole, auditRecord, operatorBound } = await mounted(tuple);
+        // Precondition: the runtime login really holds no SET on the operator role.
+        expect(await operatorBound()).toBe(false);
         const scope = [f.scope.tenantId, f.scope.organisationId];
         const flagsBefore = (await ownerPool.query(flags, scope)).rows;
         expect(flagsBefore).toHaveLength(1);
         expect((await ownerPool.query(decisions, scope)).rows).toEqual([]);
         // The approval reads only; the apply is refused before any write while the role is unbound.
-        const { applied } = await attempt('grant');
+        const { approval, applied } = await attempt('grant');
         expect(applied.status).toBe(503);
         expect(applied.body).toMatchObject({ code: 'dashboard_admin_unavailable' });
+        // The same 503 code also covers timeouts; only the audit says why. The
+        // repository refused with notApplied 'operator_capability_unbound',
+        // which the action records as a deterministic not_applied outcome.
+        expect(await auditRecord(approval.body.operationId, 'outcome')).toMatchObject({ schemaVersion: 1,
+            outcome: 'not_applied', code: 'operator_capability_unbound' });
         expect((await ownerPool.query(decisions, scope)).rows).toEqual([]);
         expect((await ownerPool.query(flags, scope)).rows).toEqual(flagsBefore);
         expect((await picker()).paidFrameworks).toEqual([]);
         await get(base).expect(403);
         await grantRole();
         try {
+            expect(await operatorBound()).toBe(true);
             await change('grant');
             expect((await ownerPool.query(decisions, scope)).rows).toEqual([expect.objectContaining({ granted: true, revision: 1 })]);
             expect((await picker()).paidFrameworks).toContainEqual(tuple);

@@ -16,6 +16,9 @@ const { buildFixtures, createSyntheticTransport } = require('../build-ncsc-quest
 const { ncscFixture, createCommand, saveCommand, submitCommand, SUBJECT } = require('../../test/fixtures/ncscAssessmentFixture');
 const { makeVersion } = require('../../api/shared/assessmentLifecycle/postgresNcscAssessmentStore');
 const { projectNcscDetail } = require('../../api/shared/ncscAssessmentService');
+// The real request checks these fixture routes stand in for.
+const { assertExactSameOriginRequest } = require('../../api/shared/browserAuth');
+const { assertSameOriginForMutation } = require('../../api/shared/securityHeaders');
 const root = path.resolve(__dirname, '../..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const viewport = { width: 375, height: 844 }, campaign = 'meta/paid/insurance';
@@ -55,14 +58,25 @@ async function journey(browser, engine, provider, tls, output) {
             res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer');
             // Arm the browser funnel counts so their same-origin POSTs are exercised too.
             if (pathname.startsWith('/api/')) res.setHeader('x-nofries-funnel', 'on');
-            // Same rule as assertExactSameOriginRequest/assertSameOriginForMutation for
-            // non-CORS POSTs: the real HTTPS Origin, never 'null' (WebKit/Firefox
-            // send 'null' under no-referrer), and a Referer of the origin only.
-            const sameOriginPost = () => {
+            // Non-CORS POSTs keep the real HTTPS Origin, never 'null' (WebKit/Firefox
+            // send 'null' under no-referrer), and a Referer of the origin only. Then
+            // the real check for the route runs on the real request headers:
+            // - 'exact' is assertExactSameOriginRequest, which also requires
+            //   Sec-Fetch-Site: same-origin (dashboard assessment POSTs);
+            // - 'mutation' is assertSameOriginForMutation, which refuses cross-site
+            //   and needs Sec-Fetch-Site only without an Origin (telemetry, signup).
+            const realCheckEnv = { NODE_ENV: 'production', NOFRIES_PUBLIC_URL: origin + '/' };
+            // The dashboard's own fetches keep its document policy, so its Referer is not asserted here.
+            const sameOriginPost = (rule, { referer = true } = {}) => {
                 assert.equal(req.headers.origin, origin, req.method + ' ' + pathname + ' must preserve its HTTPS Origin');
-                assert.ok(!req.headers['sec-fetch-site'] || req.headers['sec-fetch-site'] === 'same-origin');
-                assert.equal(req.headers.referer, origin + '/', req.method + ' ' + pathname + ' Referer contains only origin');
+                if (referer) assert.equal(req.headers.referer, origin + '/', req.method + ' ' + pathname + ' Referer contains only origin');
                 assert.match(req.headers['content-type'] || '', /^application\/json(?:\s*;|$)/i);
+                if (rule === 'exact') {
+                    assert.equal(req.headers['sec-fetch-site'], 'same-origin', req.method + ' ' + pathname + ' must send Sec-Fetch-Site: same-origin');
+                    assert.doesNotThrow(() => assertExactSameOriginRequest(req, realCheckEnv), req.method + ' ' + pathname + ' exact same-origin check');
+                } else if (rule === 'mutation') {
+                    assert.doesNotThrow(() => assertSameOriginForMutation(req, realCheckEnv), req.method + ' ' + pathname + ' same-origin mutation check');
+                } else throw new Error('unknown same-origin rule');
             };
             const telemetryPost = req.method === 'POST' && pathname === '/api/telemetry';
             const setupPost = provider === 'legacy' && /^\/api\/organisation-setup\/(?:request|verify|choose|details)$/.test(pathname);
@@ -73,7 +87,7 @@ async function journey(browser, engine, provider, tls, output) {
             }
             let body, type = 'application/json', status = 200;
             if (telemetryPost) {
-                sameOriginPost(); receipt.telemetry.push(JSON.parse(raw).event); res.writeHead(204); return res.end();
+                sameOriginPost('mutation'); receipt.telemetry.push(JSON.parse(raw).event); res.writeHead(204); return res.end();
             } else if (pathname.startsWith('/api/organisation-setup/')) {
                 // Match the production setup origin/content-type rule on normal browser POSTs.
                 // No supplied or rewritten Origin/Referer headers or negative test cases.
@@ -98,7 +112,7 @@ async function journey(browser, engine, provider, tls, output) {
             } else if (pathname === '/api/customer-signup/state' && provider === 'legacy') {
                 body = { state: { status: 'continue_to_dashboard', accountType: 'company' } };
             } else if (pathname.startsWith('/api/external-customer-signup/') && provider === 'external') {
-                if (req.method === 'POST') sameOriginPost();
+                if (req.method === 'POST') sameOriginPost('mutation');
                 if (pathname.endsWith('/setup')) { assert.equal(JSON.parse(raw).organisationName, 'Synthetic Renewal Workshop'); phase = 'terms'; }
                 if (pathname.endsWith('/terms')) { assert.equal(JSON.parse(raw).accepted, true); phase = 'continue_to_dashboard'; }
                 const state = phase === 'setup_details' ? { status: phase, email: 'synthetic@example.test' } : phase === 'terms' ? {
@@ -116,6 +130,7 @@ async function journey(browser, engine, provider, tls, output) {
                 schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === pathname.split('/').pop()),
                 summary: model.summary, services: model.services, admissionGranted: false, providerAccessGranted: false, metadata: fixtures.metadata, presentationMode: 'editable' };
             else if (pathname.startsWith('/api/dashboard/ncsc/assessments')) {
+                if (req.method === 'POST') sameOriginPost('exact', { referer: false });
                 const result = await transport.fetch(req.url, { method: req.method, ...(raw ? { body: raw } : {}) }); status = result.status; body = JSON.parse(await result.text());
                 if (pathname.endsWith('/submit') && status === 200) submitted = body.assessment = evaluated(body.assessment);
                 if (submitted && pathname.endsWith('/' + submitted.assessmentId) && req.method === 'GET') body.assessment = submitted;

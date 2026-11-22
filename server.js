@@ -262,6 +262,11 @@ const authLogoutFunction = createAuthLogoutFunction(dashboard ? { env: authEnvir
 const authSessionFunction = createAuthSessionFunction(dashboard ? { env: authEnvironment, service: dashboard.authServices.session } : {});
 const publicContentSecurityPolicy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; connect-src 'self'; upgrade-insecure-requests";
 const privateContentSecurityPolicy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; connect-src 'self'; upgrade-insecure-requests";
+// Documents that carry a native same-origin sign-out form. Under no-referrer a
+// navigate-mode POST sends Origin: null, which older browsers without Fetch
+// Metadata cannot pair with Sec-Fetch-Site. strict-origin keeps the real Origin
+// on that POST and sends only the origin (HTTPS only) as any Referer.
+const signOutDocumentReferrerPolicy = 'strict-origin';
 const securityHeaders = {
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
     'Content-Security-Policy': publicContentSecurityPolicy,
@@ -333,6 +338,7 @@ function signupSelection(req, res) {
 }
 function sendSignupPage(res, selected) {
     if (selected.document) res.setHeader('Content-Security-Policy', selected.document.contentSecurityPolicy);
+    res.setHeader('Referrer-Policy', signOutDocumentReferrerPolicy);
     return res.status(selected.runtime ? 200 : 503).type('html').send(selected.runtime
         ? selected.document.html : buildSignupUnavailableDocument());
 }
@@ -391,6 +397,7 @@ app.get('/login', (req, res) => {
     // or creating an automatic redirect loop after a provider failure.
     if (!configuration.organisationSetup && dashboard?.authServices.customer && customerSignup) {
         res.setHeader('Content-Security-Policy', signupDocument.contentSecurityPolicy);
+        res.setHeader('Referrer-Policy', signOutDocumentReferrerPolicy);
         return res.type('html').send(signupDocument.html);
     }
     res.type('html').send(fs.readFileSync(path.join(__dirname, 'login.html'), 'utf8'));
@@ -530,6 +537,7 @@ if (retainedTrialRead) {
     app.get('/api/retained-results', applyPrivateDocumentHeaders, asyncRoute(async (req, res) => {
         let selection = null;
         res.setHeader('Content-Security-Policy', retainedReadContentSecurityPolicy);
+        res.setHeader('Referrer-Policy', signOutDocumentReferrerPolicy);
         if (req.method !== 'GET') return res.status(405).set('Allow', 'GET').end();
         try {
             selection = retainedSelection(req);
@@ -963,6 +971,7 @@ app.all('/api/*', (req, res) => {
 });
 
 app.get(['/scoping', '/scoping/'], (req, res) => {
+    res.setHeader('Referrer-Policy', signOutDocumentReferrerPolicy);
     res.setHeader('Content-Security-Policy', scopingDocument.contentSecurityPolicy);
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
@@ -970,6 +979,7 @@ app.get(['/scoping', '/scoping/'], (req, res) => {
 });
 
 app.get(['/support', '/support/'], (req, res) => {
+    res.setHeader('Referrer-Policy', signOutDocumentReferrerPolicy);
     res.setHeader('Content-Security-Policy', supportDocument.contentSecurityPolicy);
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
@@ -977,6 +987,7 @@ app.get(['/support', '/support/'], (req, res) => {
 });
 
 app.get(['/portal', '/portal/'], (req, res) => {
+    res.setHeader('Referrer-Policy', signOutDocumentReferrerPolicy);
     res.setHeader('Content-Security-Policy', portalDocument.contentSecurityPolicy);
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
@@ -999,6 +1010,7 @@ app.get(['/signup', '/signup/'], (req, res) => {
 });
 
 app.get(['/operator', '/operator/'], (req, res) => {
+    res.setHeader('Referrer-Policy', signOutDocumentReferrerPolicy);
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     res.type('html').send(fs.readFileSync(path.join(__dirname, 'app', 'operator.html'), 'utf8'));
