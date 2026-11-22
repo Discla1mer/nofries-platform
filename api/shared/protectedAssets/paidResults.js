@@ -10,6 +10,36 @@
         ['nf-nist-csf-2-0-core', ['2026-09-08.1', 'nist-cybersecurity-framework', '2.0', 'NIST CSF 2.0']],
         ['nf-iso-27001-2022-readiness', ['2026-11-19.1', 'iso-iec-27001', '2022', 'ISO 27001 readiness self-assessment']]
     ]);
+    // Board prompts are editorial guidance. The registered publication supplies the
+    // outcomes, response factors, function order and attribution.
+    const functionPurpose = {
+        GV: 'Set direction and accountability', ID: 'Understand assets and risks', PR: 'Safeguard services and data',
+        DE: 'Spot signs of an incident', RS: 'Manage an incident', RC: 'Restore services'
+    };
+    const nistTopics = {
+        'GV.OC': { topic: 'business needs', action: 'Pick a critical service and ask who relies on it and which commitments are at stake.' },
+        'GV.RM': { topic: 'risk decisions', action: 'Ask the risk owner to show how a recent cyber risk decision was made.' },
+        'GV.RR': { topic: 'roles and responsibilities', action: 'Name the person accountable for this outcome and check they have the authority to act.' },
+        'GV.PO': { topic: 'security policy', action: 'Ask the policy owner to show where staff find the current policy and how changes reach them.' },
+        'GV.OV': { topic: 'oversight', action: 'Agree which evidence the board will review and when it will check progress.' },
+        'GV.SC': { topic: 'supplier risk', action: 'Choose a critical supplier and ask its owner to show how this outcome is checked.' },
+        'ID.AM': { topic: 'assets and dependencies', action: 'Trace one critical service and check its assets and dependencies against the inventory.' },
+        'ID.RA': { topic: 'assessing risk', action: 'Ask the risk owner to walk through a recent assessment and its evidence.' },
+        'ID.IM': { topic: 'learning from experience', action: 'Choose a lesson from a recent review and check who will act on it.' },
+        'PR.AA': { topic: 'identity and access', action: 'Ask the system owner to demonstrate this access safeguard on a critical service.' },
+        'PR.AT': { topic: 'staff training', action: 'Ask someone in the affected role to demonstrate what they would do in a realistic situation.' },
+        'PR.DS': { topic: 'protecting data', action: 'Choose a sensitive record and check how it is protected throughout its use.' },
+        'PR.PS': { topic: 'platform security', action: 'Ask the platform owner to show the safeguard working on a system in scope.' },
+        'PR.IR': { topic: 'keeping services running', action: 'Rehearse a disruption with the service owner and record how the service would keep running.' },
+        'DE.CM': { topic: 'security monitoring', action: 'Ask the monitoring team to show what it can see for one critical service and where coverage stops.' },
+        'DE.AE': { topic: 'investigating unusual activity', action: 'Walk through a recent alert and check what information helped staff decide what to do.' },
+        'RS.MA': { topic: 'managing incidents', action: 'Rehearse an incident handover and check who can make the next decision.' },
+        'RS.AN': { topic: 'incident analysis', action: 'Ask an investigator to show how they established what happened in a sample incident.' },
+        'RS.CO': { topic: 'incident communications', action: 'Practise one incident update and check who must send it and who needs to receive it.' },
+        'RS.MI': { topic: 'limiting incident damage', action: 'Ask responders to demonstrate how they would contain a realistic incident.' },
+        'RC.RP': { topic: 'restoring services', action: 'Ask the recovery lead to exercise this outcome and show what needs to change.' },
+        'RC.CO': { topic: 'recovery communications', action: 'Practise a recovery update and check that affected people receive the information they need.' }
+    };
     const inOrder = rows => [...rows].sort((a, b) => a.order - b.order);
     function requireValue(condition) {
         if (!condition) throw new Error('paid_results_unavailable');
@@ -48,7 +78,7 @@
                 const reason = answer.rationale?.text;
                 requireValue(option.applicable ? answer.rationale === null :
                     (!iso || annex) && typeof reason === 'string' && reason.trim().length > 0);
-                const row = { id: control.id, title: control.title, status: option.label, reason, applies: option.applicable,
+                const row = { id: control.id, domainId: control.domainId, title: control.title, status: option.label, reason, applies: option.applicable,
                     factor: option.implementationFactor, weight: question.weight, action: question.guidance.startingActions[0] };
                 groups.get(control.domainId).rows.push(row);
                 if (annex) statement.push(row);
@@ -59,7 +89,32 @@
         const rank = row => row.factor === null ? 2 : row.factor;
         gaps.sort((a, b) => rank(a) - rank(b));
         return { title: expected[3], iso, identity: 'Assessment ' + a.assessmentId + ' · Revision ' + a.revision + ' · Submitted ' + a.submission.submittedAt.slice(0, 10) + ' UTC',
+            boardBrief: iso ? null : nistBoardBrief(gaps, answers.size, groups),
             groups: domains.map(domain => groupSummary(domain, iso)), statement, gaps: gaps.slice(0, 3) };
+    }
+
+    function nistBoardBrief(gaps, total, groups) {
+        if (!gaps.length) return 'The team marked all ' + total + ' outcomes Yes. At the next board meeting, ask a service owner to show recent evidence that these practices are working.';
+        const first = gaps[0], functionName = groups.get(first.domainId).title;
+        const toConfirm = gaps.filter(row => row.factor === null).length;
+        const known = gaps.length - toConfirm;
+        const counts = 'The team reported gaps in ' + known + ' of ' + total + ' outcomes. ' +
+            (toConfirm ? toConfirm + (toConfirm === 1 ? ' answer needs' : ' answers need') + ' confirmation.' : 'None were marked Unknown or Not applicable.');
+        const priority = nistTopic(first).topic + ' (' + functionName + ', ' + first.id + ')';
+        const decision = known
+            ? 'Start with ' + priority + '. Agree who owns the next step, when it is due and what evidence the board will see.'
+            : 'Ask management to check the answer about ' + priority + ' and bring supporting evidence to the next meeting.';
+        return counts + ' ' + decision;
+    }
+
+    function nistTopic(row) {
+        return nistTopics[row.id.split('-')[0]] || { topic: row.title, action: row.action };
+    }
+
+    function nistGapAction(gap) {
+        if (gap.factor !== null) return nistTopic(gap).action;
+        return gap.applies ? 'Find the person who can answer this question and ask for a dated example.'
+            : 'Check the recorded reason against the scope and confirm whether this outcome applies.';
     }
 
     function groupSummary(domain, iso) {
@@ -79,7 +134,8 @@
         const applicable = domain.rows.length - excluded;
         return { title: domain.id + ' · ' + domain.title, readiness,
             detail: iso ? applicable + ' applicable · ' + excluded + ' marked not applicable' :
-                domain.rows.length + ' outcomes · ' + excluded + ' marked not applicable, to confirm' };
+                functionPurpose[domain.id] + ' · ' + domain.rows.length + ' outcomes · ' +
+                    domain.rows.filter(row => row.applies && row.factor === null).length + ' unknown · ' + excluded + ' marked not applicable' };
     }
 
     const boardKind = 'iso_board_summary', statementKind = 'iso_statement_of_applicability';
@@ -91,11 +147,12 @@
     function boardCopy(model, publication) {
         return {
             groupHeading: 'Readiness by ' + (model.iso ? 'clause group and theme' : 'function'),
-            explanation: 'Figures use the answers in this submission. Partly in place counts as half. ' +
-                (model.iso ? 'Items marked not applicable are excluded.' :
-                    'Unknown answers and claims of non-applicability stay in the range until confirmed.'),
-            gapNote: model.gaps.length ? 'Lower reported readiness comes first. Ties follow publication order.' :
-                'No gaps were identified in the applicable answers.',
+            explanation: model.iso
+                ? 'Figures use the answers in this submission. Partly in place counts as half. Items marked not applicable are excluded.'
+                : 'Yes counts in full and Partial counts as half. A range starts at the reported readiness and ends at the result if every Unknown or Not applicable outcome were in place.',
+            gapNote: !model.gaps.length ? 'No gaps were identified in the applicable answers.' : model.iso
+                ? 'Lower reported readiness comes first. Ties follow publication order.'
+                : 'Outcomes marked No come first, followed by those marked Partial. Unknown and Not applicable answers are items to check. Ties follow questionnaire order.',
             limit: model.iso ? 'This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.' :
                 'This summary reflects your own answers about the functions in scope. ' + publication.statements.attribution
         };
@@ -156,19 +213,24 @@
         panel.append(heading, node('p', model.identity));
         const board = node('section');
         const { groupHeading, explanation, gapNote, limit } = boardCopy(model, publication);
-        board.append(node('h3', 'Board summary'), node('h4', groupHeading));
+        board.append(node('h3', 'Board summary'));
+        if (model.boardBrief) board.append(node('p', model.boardBrief));
+        board.append(node('h4', groupHeading));
         const list = node('ul', undefined, 'paid-readiness-groups');
         for (const group of model.groups) {
             const item = node('li');
             item.append(node('strong', group.title), node('span', group.readiness), node('small', group.detail));
             list.append(item);
         }
-        board.append(list, node('p', explanation), node('h4', 'Top gaps'));
+        if (model.iso) board.append(list, node('p', explanation));
+        else board.append(node('p', explanation), list);
+        board.append(node('h4', 'Top gaps'));
         const gapList = node('ol');
         for (const gap of model.gaps) {
             const label = gapLabel(gap);
             const item = node('li'); item.append(node('strong', label));
-            if (gap.action) item.append(node('p', gap.action));
+            const action = model.iso ? gap.action : nistGapAction(gap);
+            if (action) item.append(node('p', action));
             gapList.append(item);
         }
         board.append(node('p', gapNote), gapList);
