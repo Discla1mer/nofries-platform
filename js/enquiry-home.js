@@ -11,7 +11,7 @@
         } catch (_) { return; }
         try {
             window.fetch('/api/telemetry', { method: 'POST', keepalive: true, credentials: 'omit', mode: 'same-origin',
-                cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
+                cache: 'no-store', redirect: 'error', referrerPolicy: 'strict-origin',
                 headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'visit' }) }).catch(function () {});
         } catch (_) { /* best-effort */ }
     }

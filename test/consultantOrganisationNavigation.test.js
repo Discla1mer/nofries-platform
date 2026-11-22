@@ -703,3 +703,55 @@ test('Switch account clears the readiness, picture and action-plan hints, but a 
     click({ preventDefault: jest.fn() });
     expect(local.values.size).toBe(0);
 });
+
+// Consultant paid status (docs/design/consultant-paid-framework-status.md).
+const paidRow = (bindingId, profileId, version, status) => ({ bindingId, moduleId: 'cyber_security', profileId, version, status });
+const NIST_ROW = (bindingId, status) => paidRow(bindingId, 'nf-nist-csf-2-0-core', '2026-09-08.1', status);
+const ISO_ROW = (bindingId, status) => paidRow(bindingId, 'nf-iso-27001-2022-readiness', '2026-11-19.1', status);
+
+test('advertised paid status reads ten bindings and that page\'s status as text only', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(null, GA, { paidFrameworkStatusAvailable: true }));
+    expect(h.requests[1].url).toBe('/api/dashboard/organisations?limit=10');
+    await h.reply(1, 200, listing([row(A, 'Client <b>A</b>'), row(B, 'Client B')], B));
+    expect(h.requests[2].url).toBe('/api/dashboard/organisations/paid-framework-status');
+    expect(h.requests[2].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+    await h.reply(2, 200, { rows: [ISO_ROW(A, 'submitted'), NIST_ROW(A, 'in_progress')] });
+    const [first, second] = h.elements.dashboardChoices.children;
+    expect(first.children.map(node => [node.className, node.textContent])).toEqual([['consultant-organisation-paid-status',
+        'ISO 27001 readiness: Submitted · NIST CSF 2.0: In progress']]);
+    expect(first.getAttribute('aria-label')).toBe('Client <b>A</b> · ISO 27001 readiness: Submitted · NIST CSF 2.0: In progress · Open organisation');
+    expect(second.children).toEqual([]);
+    expect(second.getAttribute('aria-label')).toBe('Client B · Open organisation');
+    h.elements.dashboardMore.onclick(); await flush();
+    expect(h.requests[3].url).toBe('/api/dashboard/organisations?limit=10&afterBindingId=' + B);
+    await h.reply(3, 200, listing([row(C, 'Client C')]));
+    expect(h.requests[4].url).toBe('/api/dashboard/organisations/paid-framework-status?afterBindingId=' + B);
+    await h.reply(4, 200, { rows: [NIST_ROW(C, 'not_started')] });
+    expect(h.elements.dashboardChoices.children[2].children[0].textContent).toBe('NIST CSF 2.0: Not started');
+    expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
+});
+
+test.each([
+    ['unavailable', 503, { code: 'framework_unavailable' }],
+    ['refused', 403, { code: 'framework_access_denied' }],
+    ['another page\'s binding', 200, { rows: [NIST_ROW(C, 'submitted')] }],
+    ['an unknown status', 200, { rows: [NIST_ROW(A, 'scored')] }],
+    ['extra fields', 200, { rows: [{ ...NIST_ROW(A, 'submitted'), score: 3 }] }]
+])('a %s status response shows no status for the page', async (_label, status, body) => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(null, GA, { paidFrameworkStatusAvailable: true }));
+    await h.reply(1, 200, listing([row(A, 'Client A')]));
+    await h.reply(2, status, body);
+    expect(h.status).toBe('selection');
+    expect(h.elements.dashboardChoices.children[0].children.map(node => node.textContent)).toEqual(['Assessment status unavailable']);
+    expect(h.requests).toHaveLength(3);
+});
+
+test('without the advertised field the chooser makes no status request', async () => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(null, GA));
+    await h.reply(1, 200, listing([row(A, 'Client A')]));
+    expect(h.requests.map(item => item.url)).toEqual(['/api/dashboard/session', '/api/dashboard/organisations?limit=50']);
+    expect(h.elements.dashboardChoices.children[0].children).toEqual([]);
+});

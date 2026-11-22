@@ -247,7 +247,7 @@ describe('dashboard loader', () => {
     test('advertises the contact capability on session reads', async () => {
         const h = harness(); await ready(h);
         h.requests.filter(item => item.url === '/api/dashboard/session').forEach(item =>
-            expect(item.init.headers['X-NoFries-Dashboard-Capabilities']).toBe('work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1'));
+            expect(item.init.headers['X-NoFries-Dashboard-Capabilities']).toBe('work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1 paid-status-v1'));
     });
     test('without the session field no control is shown', async () => {
         const session = account(); delete session.contactRequestsAvailable;

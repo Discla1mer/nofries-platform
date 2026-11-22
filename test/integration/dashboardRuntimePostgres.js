@@ -4116,7 +4116,7 @@ function registerRealPostgresTests() {
             // Administration below is explicit synthetic setup, never a route.
             async function httpSetup({ rawRuntimePool = runtimePool, base = null, principal: suppliedPrincipal = null,
                 requestBudgetMs = 60000, publish = true, prepareCanonical = null, ncsc = null, membershipValidUntil = END,
-                customerProvider = false, customerAccountType = null, ownDeferredAgreement = false, improvementEnabled = false, contactRequestsEnabled = false, representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, contactRequestEmail = null, scope = null,
+                customerProvider = false, customerAccountType = null, ownDeferredAgreement = false, improvementEnabled = false, paidFrameworksEnabled = false, contactRequestsEnabled = false, representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, contactRequestEmail = null, scope = null,
                 appFactory = options => require('../../server').createNoFriesApp(options) } = {}) {
                 const { MemoryBrowserSessionStore } = require('../../api/shared/browserSessionStore');
                 const tenant = base ? base.operatorIdentity.identityTenantId : nextId();
@@ -4197,6 +4197,7 @@ function registerRealPostgresTests() {
                 newOperationId: () => { const value = nextId(); state.operations.push(value); return value; } };
                 if (ncsc) dashboard.ncsc = ncsc;
                 if (improvementEnabled) dashboard.improvementEnabled = true;
+                if (paidFrameworksEnabled) dashboard.paidFrameworksEnabled = true;
                 if (contactRequestsEnabled) dashboard.contactRequestsEnabled = true;
                 if (representativeDetailsEnabled) dashboard.representativeDetailsEnabled = true;
                 if (questionnaireExportGateEnabled) dashboard.questionnaireExportGateEnabled = true;
@@ -5032,6 +5033,8 @@ function registerRealPostgresTests() {
                 require('./consultantWorkQueuePostgres')({ improvementHttpSetup, ncscHttpSetup, httpJson,
                     getOwnerPool: () => ownerPool, loginClean, subject, nextId, exportAll,
                     createCommand, saveCommand, submitCommand, evidenceSeedDatabase });
+                require('./paidFrameworkStatusPostgres')({ httpSetup, httpJson, getOwnerPool: () => ownerPool, loginClean,
+                    subject, nextId, exportAll, evidenceSeedDatabase, generationHeader });
                 require('./accountWipeHttpPostgres')({ improvementHttpSetup, httpJson, getOwnerPool: () => ownerPool,
                     loginClean, subject, evidenceSeedDatabase });
                 require('./deferredDetailsHttpPostgres')({ ncscHttpSetup, httpJson, getOwnerPool: () => ownerPool, loginClean, subject, nextId, generationHeader, createCommand, saveCommand, submitCommand });

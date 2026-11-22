@@ -67,7 +67,7 @@ describe('public feature-status registry', () => {
         }
     });
 
-    test('the roadmap lists only live capabilities under Live', () => {
+    test('the roadmap lists only live capabilities under Done', () => {
         const live = publicText(sectionBody(readPage('roadmap.html'), 'roadmap-live'));
         for (const item of notLive) {
             if (item.roadmapTitle) expect([item.id, live.includes(item.roadmapTitle)]).toEqual([item.id, false]);
@@ -78,7 +78,13 @@ describe('public feature-status registry', () => {
     });
 
     test('the pricing page does not present a non-live capability as available', () => {
-        const text = publicText(readPage('pricing.html'));
+        const html = readPage('pricing.html');
+        // Exempt only the exact qualified paid sentence; other claims in this
+        // paragraph still pass through every non-live capability guard.
+        const planned = html.match(/<p id="pricing-future-assessments">[\s\S]*?<\/p>/)[0];
+        const qualified = 'Paid NIST CSF 2.0 and ISO 27001 readiness self-assessments are planned and are not available yet.';
+        expect(planned).toContain(qualified);
+        const text = publicText(html.replace(qualified, ''));
         for (const item of notLive) {
             for (const claim of item.availabilityClaims) {
                 expect([item.id, text.match(new RegExp(claim, 'i'))?.[0] || null]).toEqual([item.id, null]);

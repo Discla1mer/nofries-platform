@@ -42,6 +42,10 @@ function publication(id, version) {
     }
     return catalogues.get(key);
 }
+// A status read requires each entitled tuple's publication; absence is unavailable.
+function requirePublication(profileId, version) {
+    try { publication(profileId, version); } catch { fail('unavailable'); }
+}
 function parsePaidRoute(path) {
     const match = /^frameworks\/([\w.-]+)\/([\w.-]+)\/assessments(?:\/([\w.:%-]+)(?:\/(save|submit))?)?$/.exec(path);
     if (!match) return null;
@@ -196,4 +200,4 @@ async function paidRequest(pair, context, { registry, profile, profileRef, asses
         return result;
     });
 }
-module.exports = { PaidAssessmentError, parsePaidRoute, prepareRequest, paidAccess, paidRequest };
+module.exports = { PaidAssessmentError, parsePaidRoute, prepareRequest, paidAccess, paidRequest, requirePublication };
