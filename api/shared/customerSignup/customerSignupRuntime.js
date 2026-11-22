@@ -44,9 +44,11 @@ function state(value) {
     const scheduled = statusValue === 'terms' && Reflect.ownKeys(value).some(key => ['scheduleId', 'scheduleText', 'scheduleDigest'].includes(key));
     const typedDestination = statusValue === 'continue_to_dashboard' && Object.hasOwn(value, 'accountType');
     const setup = ['setup_details', 'resume_setup'].includes(statusValue);
+    const deferred = statusValue === 'setup_details' && Object.hasOwn(value, 'deferredDetails');
+    if (deferred && value.deferredDetails !== true) fail(503, 'signup_unavailable');
     const reserved = statusValue === 'setup_details' && Object.hasOwn(value, 'reservation');
     let reservation;
-    try { snapshot = exact(value, ['status', ...(setup ? ['email'] : []), ...(reserved ? ['reservation'] : []),
+    try { snapshot = exact(value, ['status', ...(deferred ? ['deferredDetails'] : []), ...(setup ? ['email'] : []), ...(reserved ? ['reservation'] : []),
         ...(statusValue === 'resume_setup' ? ['accountType', 'organisationName'] : []), ...(typedDestination ? ['accountType'] : []), ...(statusValue === 'terms' ? ['termsText', 'termsVersion', 'termsDigest',
         ...(scheduled ? ['scheduleId', 'scheduleText', 'scheduleDigest'] : [])] : [])]); }
     catch (_) { fail(503, 'signup_unavailable'); }
@@ -72,7 +74,7 @@ function state(value) {
         ? { status: 'terms', termsText: snapshot.termsText, termsVersion: snapshot.termsVersion, termsDigest: snapshot.termsDigest,
             ...(scheduled ? { scheduleId: snapshot.scheduleId, scheduleText: snapshot.scheduleText,
                 scheduleDigest: snapshot.scheduleDigest } : {}) }
-        : { status: snapshot.status, ...(setup ? { email: snapshot.email } : {}), ...(reserved ? { reservation } : {}),
+        : { status: snapshot.status, ...(deferred ? { deferredDetails: true } : {}), ...(setup ? { email: snapshot.email } : {}), ...(reserved ? { reservation } : {}),
             ...(snapshot.status === 'resume_setup' ? { accountType: snapshot.accountType, organisationName: snapshot.organisationName } : {}),
             ...(typedDestination ? { accountType: snapshot.accountType } : {}) });
 }
@@ -116,7 +118,12 @@ function createCustomerSignupRuntime(options = {}) {
                     const input = exact(req.body, ['accountType', 'organisationName', 'details']);
                     if (!['company', 'consultant'].includes(input.accountType) || typeof input.organisationName !== 'string' ||
                         !input.organisationName.trim() || input.organisationName.length > 120) fail(400, 'signup_request_invalid');
-                    exact(input.details, ['name', 'role', 'address', 'registrationId', 'authorityConfirmed']);
+                    const minimal = input.details && typeof input.details === 'object' && !isProxy(input.details) &&
+                        Reflect.ownKeys(input.details).length === 1;
+                    const details = exact(input.details, minimal ? ['authorityConfirmed'] : ['name', 'role', 'address', 'registrationId', 'authorityConfirmed']);
+                    if (minimal && details.authorityConfirmed !== true) fail(400, 'signup_request_invalid');
+                    // The trusted setup service selects the retained/default-off
+                    // policy; accepting either wire shape cannot enroll a caller.
                     return { status: 200, body: { state: state(await options.completeSetup({ req, input })) } };
                 }
                 if (route === 'terms' && method === 'POST') {

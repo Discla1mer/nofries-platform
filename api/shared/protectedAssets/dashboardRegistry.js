@@ -46,7 +46,7 @@
     const rendererIntegrity = Object.freeze({
         collection: 'sha256-kxaNJOPXpMSfz6hGnpC1BYG5Awh/CZGOcximDl9Ac7g=',
         questionnaire: 'sha256-7uNUdqKXH144EUyS7+mbScmoiVmc9L1M/sKupp61s8s=',
-        results: 'sha256-PlYRyz9KI0lHE7PxGM7clflRkS9Lh5zbByFWMls3mWc='
+        results: 'sha256-W56U35JlRI31/ROM6NG7Nvhw7bfmlGetW+pWARMsLIk='
     });
     function rendererAsset(ref, name) {
         if (!ref || !Object.hasOwn(rendererIntegrity, name) || !paidFrameworks.some(row => sameFramework(row, ref))) return null;

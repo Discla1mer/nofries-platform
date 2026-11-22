@@ -1,0 +1,8 @@
+{
+    "frameworkId": "iso-iec-27001",
+    "frameworkVersion": "2022",
+    "profileId": "nf-iso-27001-2022-readiness",
+    "profileVersion": "2026-11-19.1",
+    "catalogueSha256": "88b628987e8117690de70b7be04ddeb60de95cbe27fd96d4353f7107a2758124",
+    "sourceCatalogueSha256": "b6b39634dbaf1060b655e99f296dbfcbae1a3b035120ffb2badd5321483b5973"
+}

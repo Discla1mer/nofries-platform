@@ -74,9 +74,10 @@ test('the host serves the exact reviewed NIST board reader', () => {
     const response = packagedAsset(asset);
     expect(response?.status).toBe(200);
     expect(response.headers['Cache-Control']).toMatch(/no-store/);
-    // SHA-256 of the reviewed reader at #521, independent of the host registry.
+    // SHA-256 of the reader combining #521 and #512's issued ISO outputs, independent of the host registry.
+    // The #521 reader alone was 3e5611cb3f4a23494713b3f118cedc95f951912f4b879cdb072156325b379967.
     expect(createHash('sha256').update(response.body).digest('hex'))
-        .toBe('3e5611cb3f4a23494713b3f118cedc95f951912f4b879cdb072156325b379967');
+        .toBe('5b9e94df9265448df5fd138ce8d1bb36f870edb7e69467ad5bea5601132c2c89');
 });
 
 test('the collection screen is a separate pinned script, absent from the free bundle', async () => {
