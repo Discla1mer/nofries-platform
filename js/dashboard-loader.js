@@ -864,7 +864,8 @@
             ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
-            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, paidHost: cyber.paidHost } : {}),
+            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, paidHost: cyber.paidHost,
+                openFrameworkEnquiry: (link, ref, plan) => openFrameworkEnquiry(cycle, snapshot, cyber.paidFrameworks, link, ref, plan) } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}),
@@ -884,6 +885,61 @@
             }
         }
         if (fresh.accountType === 'consultant') portfolioControls(cycle);
+    }
+    let enquiryScripts;
+    function loadEnquiryScripts(template) {
+        if (enquiryScripts) return enquiryScripts;
+        function load(src, integrity) {
+            return new Promise((resolve, reject) => {
+                if (!/^sha256-[A-Za-z0-9+/]{43}=$/.test(integrity || '')) { reject(invalid()); return; }
+                const script = document.createElement('script');
+                const timer = window.setTimeout(() => finish(false), REQUEST_MS);
+                function finish(ok) {
+                    window.clearTimeout(timer); script.onload = null; script.onerror = null;
+                    script.remove(); if (ok) resolve(); else reject(invalid());
+                }
+                script.src = src; script.integrity = integrity; script.crossOrigin = 'anonymous';
+                script.referrerPolicy = 'no-referrer'; script.dataset.enquiryForm = 'true';
+                script.onload = () => finish(true); script.onerror = () => finish(false);
+                document.head.append(script);
+            });
+        }
+        enquiryScripts = Promise.all([load('/js/contact.js', template.dataset.contact),
+            load('/js/enquiry-availability.js', template.dataset.availability)]).catch(error => { enquiryScripts = null; throw error; });
+        return enquiryScripts;
+    }
+    function openFrameworkEnquiry(cycle, snapshot, included, link, ref, plan) {
+        const template = document.getElementById('frameworkEnquiryForm');
+        const registry = window.NoFriesDashboardRegistry;
+        const locked = registry.paidFrameworks.find(row => registry.sameFramework(row, ref) &&
+            !included.some(grant => registry.sameFramework(row, grant)));
+        const live = () => current(cycle) && !cycle.busy && !cycle.authorityPending && !cycle.revalidating && !cycle.quietRefreshFailed &&
+            !unresolved && Date.parse(cycle.session?.expiresAt) > Date.now() && snapshot.selectedBindingId !== null &&
+            cycle.session.selectedBindingId === snapshot.selectedBindingId && cycle.session.generation === snapshot.generation &&
+            link.isConnected && elements.app.contains(link);
+        if (!template || !locked || !live() || !['monthly', 'annual'].includes(plan)) return false;
+        const dialog = document.createElement('dialog');
+        if (typeof dialog.showModal !== 'function') return false;
+        dialog.className = 'ncsc-leave-dialog framework-enquiry'; dialog.setAttribute('aria-labelledby', 'frameworkEnquiryTitle');
+        const title = document.createElement('h2'); title.id = 'frameworkEnquiryTitle'; title.textContent = 'Ask No Fries';
+        const close = document.createElement('button'); close.type = 'button'; close.className = 'dashboard-button dashboard-button-secondary';
+        close.textContent = 'Close'; close.addEventListener('click', () => dialog.close());
+        const notice = document.createElement('p'); notice.setAttribute('role', 'status'); notice.textContent = 'Opening the enquiry form…';
+        dialog.append(title, close, notice); link.parentElement.append(dialog);
+        dialog.addEventListener('close', () => dialog.remove(), { once: true });
+        dialog.showModal();
+        const currentForm = () => dialog.open && dialog.isConnected && live();
+        loadEnquiryScripts(template).then(() => {
+            if (!currentForm()) { if (dialog.open) dialog.close(); return; }
+            notice.remove(); dialog.append(template.content.cloneNode(true));
+            return window.mountEnquiryForm(dialog, { framework: locked.label + ' on the ' + plan + ' plan',
+                organisation: cycle.session.accountType === 'consultant' ? cycle.selectedOrganisationName : '', current: currentForm });
+        }).catch(() => {
+            if (!currentForm()) return;
+            const fallback = document.createElement('a'); fallback.href = '/contact.html'; fallback.textContent = 'Open the contact form';
+            notice.textContent = 'The enquiry form could not open here.'; dialog.replaceChildren(title, close, notice, fallback);
+        });
+        return true;
     }
     function clientSetupControls(cycle) {
         const section = document.createElement('section'); section.id = 'clientSetupControls'; section.className = 'client-workspace';

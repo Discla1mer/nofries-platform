@@ -82,6 +82,9 @@ module.exports = ({ resourceSetup, NCSC_SUBJECT, nextId, identity }) => {
         await request(h.app).get('/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assessments')
             .set('Cookie', cookie).set('X-NoFries-Dashboard-Generation', generation).expect(404);
     });
+    if (process.env.NOFRIES_TEST_ENQUIRY_BROWSER === 'true') {
+        require('./lockedFrameworkEnquiry')({ withLoopbackBrowser, resourceSetup, NCSC_SUBJECT, nextId, identity });
+    }
     // Explicit because the standalone picker base does not package the renderer/publication/runtime stack.
     if (process.env.NOFRIES_TEST_RENDERER_BROWSER === 'true') {
         test.each([['free organisation', 'true', null], ['flag off', undefined, paidFrameworks[0]]])(
