@@ -1476,7 +1476,7 @@ body[data-page="public-error"] .public-shell { min-height: 0; }
 
 /* The roadmap reads in quarter order at every width, without horizontal scrolling. */
 .roadmap-jump { display: flex; flex-wrap: wrap; gap: 12px 24px; }
-.roadmap-jump a, .roadmap-timeline summary { padding-block: 12px; }
+.roadmap-jump a { padding-block: 12px; }
 .roadmap-legend { display: grid; gap: 16px; margin-block: 24px 40px; }
 .roadmap-legend dt { font-weight: 700; }
 .roadmap-legend dd { margin: 4px 0 0; }
@@ -1488,8 +1488,7 @@ body[data-page="public-error"] .public-shell { min-height: 0; }
 .roadmap-lane h3 { font-size: 1.15rem; margin-top: 28px; }
 .roadmap-lane article { padding-block: 16px; border-top: 1px solid var(--line-strong); }
 .roadmap-lane h4 { margin: 0; font-size: 1.1rem; }
-.roadmap-timeline p, .roadmap-timeline summary { font-size: 1rem; line-height: 1.6; }
-.roadmap-timeline summary { cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
+.roadmap-timeline p { font-size: 1rem; line-height: 1.6; }
 .roadmap-timeline :focus-visible, .roadmap-jump a:focus-visible { outline: 3px solid var(--green); outline-offset: 4px; }
 @media (min-width: 1200px) {
     .roadmap-timeline { grid-template-columns: repeat(5, minmax(0, 1fr)); }

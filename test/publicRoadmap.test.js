@@ -33,10 +33,20 @@ test('every item has source PRs; Done has release proof and only historical Done
         if (quarter.state === 'historical') expect(item.lane).toBe('Done');
         if (item.lane === 'Done') {
             expect(quarter.state).not.toBe('planned');
-            expect(item.release).toMatch(/^https:\/\/github.com\/Discla1mer\/nofries-platform\/issues\/500#issuecomment-\d+$/);
+            expect(item.release).toBe('https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928');
             for (const pr of item.prs) expect(source).toMatch(new RegExp(`\\| \\[#${pr}\\]\\([^\\n]+\\| \\x60[a-f0-9]{40}\\x60 \\|`));
         } else expect(item.release).toBeUndefined();
     }
+});
+
+test('engineering provenance remains in review sources and cannot enter customer HTML', () => {
+    expect(html).not.toMatch(/github\.com|issuecomment-|Release evidence|Source PRs|Sources for/);
+    const evidenceOnlyChange = JSON.parse(JSON.stringify(data));
+    for (const item of evidenceOnlyChange.items) {
+        item.prs = [999999];
+        item.release = 'https://github.com/Discla1mer/nofries-platform/issues/999#issuecomment-999';
+    }
+    expect(renderRoadmap(evidenceOnlyChange)).toBe(renderRoadmap(data));
 });
 
 test('planned paid work, copy limits and quarter precision cannot be lost', () => {
@@ -54,10 +64,7 @@ test('planned paid work, copy limits and quarter precision cannot be lost', () =
 test('roadmap links and inbound public fragments resolve without changing unlisted previews', () => {
     for (const match of html.matchAll(/href="([^"]+)"/g)) {
         const url = new URL(match[1], 'https://nofries.nz/roadmap.html');
-        if (url.origin !== 'https://nofries.nz') {
-            expect(url.href).toMatch(/^https:\/\/github.com\/Discla1mer\/nofries-platform\/(?:pull\/\d+|issues\/500#issuecomment-\d+)$/);
-            continue;
-        }
+        expect(url.origin).toBe('https://nofries.nz');
         const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         if (['login', 'try'].includes(file)) continue; // Existing routed entry points.
         expect(fs.existsSync(path.join(root, file))).toBe(true);

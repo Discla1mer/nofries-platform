@@ -35,7 +35,8 @@ function renderRoadmap(data = readRoadmap()) {
                 lines.push(`<article data-roadmap-item="${escape(item.id)}"${item.id === 'paid-assessments' ? ' id="roadmap-planned" tabindex="-1"' : ''}>`,
                     `<h4>${escape(item.title)}</h4>${lane === 'Done' ? '' : '<p class="roadmap-status">Planned</p>'}<p>${escape(item.text)}</p>`);
                 if (item.link) lines.push(`<p><a href="${escape(item.link.href)}">${escape(item.link.label)}</a></p>`);
-                lines.push(`<details><summary>Sources for ${escape(item.title)}</summary><p>Source PRs: ${item.prs.map(pr => `<a href="https://github.com/Discla1mer/nofries-platform/pull/${pr}">#${pr}</a>`).join(', ')}.${item.release ? ` <a href="${escape(item.release)}">Release evidence</a>.` : ' Planned scope; these sources do not establish availability.'}</p></details></article>`);
+                // PR and release provenance belongs in review evidence, not the customer page.
+                lines.push('</article>');
             }
             lines.push('</section>');
         }
