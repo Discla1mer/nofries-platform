@@ -157,9 +157,11 @@ function createSignupClient({ fetch: fetchImpl, createAccount, customerTransport
         if (state.status === 'setup_read_only' && (!exactKeys(payload, ['state']) ||
             !exactKeys(state, ['status']))) throw failure();
         const setup = ['setup_details', 'resume_setup'].includes(state.status);
+        const deferred = state.status === 'setup_details' && Object.hasOwn(state, 'deferredDetails');
+        if (deferred && state.deferredDetails !== true) throw failure();
         const reserved = state.status === 'setup_details' && Object.hasOwn(state, 'reservation');
         if (setup && (!exactKeys(payload, ['state', 'csrfToken']) || !exactKeys(state,
-            ['status', 'email', ...(reserved ? ['reservation'] : []), ...(state.status === 'resume_setup' ? ['accountType', 'organisationName'] : [])]) ||
+            ['status', 'email', ...(deferred ? ['deferredDetails'] : []), ...(reserved ? ['reservation'] : []), ...(state.status === 'resume_setup' ? ['accountType', 'organisationName'] : [])]) ||
             typeof state.email !== 'string' || state.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+(?![\s\S])/.test(state.email))) throw failure();
         if (reserved && (!exactKeys(state.reservation, ['accountType', 'organisationName']) || !validAccount(state.reservation))) throw failure();
         if (state.status === 'resume_setup' && !validAccount(state)) throw failure();
@@ -181,7 +183,7 @@ function createSignupClient({ fetch: fetchImpl, createAccount, customerTransport
         const result = Object.freeze(state.status === 'terms' ? { status: 'terms', termsText: state.termsText,
             termsVersion: state.termsVersion, termsDigest: state.termsDigest,
             ...(scheduled ? { scheduleId: state.scheduleId, scheduleText: state.scheduleText,
-                scheduleDigest: state.scheduleDigest } : {}) } : { status: state.status, ...(setup ? { email: state.email } : {}),
+                scheduleDigest: state.scheduleDigest } : {}) } : { status: state.status, ...(deferred ? { deferredDetails: true } : {}), ...(setup ? { email: state.email } : {}),
                 ...(reserved ? { reservation: Object.freeze({ accountType: state.reservation.accountType,
                     organisationName: state.reservation.organisationName }) } : {}),
                 ...(state.status === 'resume_setup' ? { accountType: state.accountType, organisationName: state.organisationName } : {}),

@@ -18,7 +18,7 @@ test('the public NIST example is a fictional six-function snapshot with one rest
     expect(html).toContain('has never timed a restore');
     expect(html).toContain('Before the next committee meeting, Mere will restore a test copy');
     expect(html).toContain('record how long it takes and keep the dated result');
-    expect(html).toContain('href="/dashboard#cyber-security"');
+    expect(html).toContain('href="/dashboard#cyber-security/nist-example"');
     expect(html).not.toMatch(/<(?:script|form|iframe)\b|\/api\/|paidQuestionnaire|paidResults/i);
 });
 

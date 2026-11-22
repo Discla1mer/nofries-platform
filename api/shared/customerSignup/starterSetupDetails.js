@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const { fields, copy, freeze, uuid, instant, hash } = require('../appLifecycle/dashboardRuntimeRecords');
 const { starterSetupSnapshot: verifiedSnapshot } = require('./managedSignupProof');
-const { compileStarterSchedule, approvedStarterPlan, usesUnlimitedConsultantPolicy, ACCESS_POLICY } = require('./customerStarterPlan');
+const { compileStarterSchedule, approvedStarterPlan, usesUnlimitedConsultantPolicy, ACCESS_POLICY, DETAILS_POLICY } = require('./customerStarterPlan');
 const { workEmail } = require('../organisationSetup');
 const ASSERTION_VERSION = 'nf-starter-authority-2026-09-r1';
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
@@ -43,7 +43,7 @@ const starterSetupKey = organisationId => 'starter-setups/' + uuid(organisationI
 // This service records the person's deliberate authority assertion after mailbox
 // verification. It does not accept dashboard terms, invite a user or grant access.
 // The only HTTP caller resolves proof from the original opaque setup cookie.
-function createStarterSetupDetails({ accounts, store, framework, now = Date.now, newId = crypto.randomUUID }) {
+function createStarterSetupDetails({ accounts, store, framework, deferDetails = false, now = Date.now, newId = crypto.randomUUID }) {
     if (!accounts || !['readInitial', 'reserveInitial'].every(k => typeof accounts[k] === 'function') ||
         !store || !['load', 'create'].every(k => typeof store[k] === 'function') || typeof framework !== 'function') fail('starter_details_configuration_invalid');
     function proof(input) {
@@ -71,8 +71,15 @@ function createStarterSetupDetails({ accounts, store, framework, now = Date.now,
     }
     return Object.freeze({ read,
         async save(input, rawDetails) {
-            const snapshot = proof(input), supplied = details(rawDetails);
-            const existing = await read(input);
+            const snapshot = proof(input), existing = await read(input);
+            // A retry uses the retained variant, including after enrollment is disabled.
+            const deferred = existing ? existing.offerInput.detailsPolicy === DETAILS_POLICY : deferDetails === true;
+            let supplied;
+            if (deferred) {
+                fields(copy(rawDetails, 8192), ['authorityConfirmed']);
+                if (rawDetails.authorityConfirmed !== true) fail('starter_authority_required');
+                supplied = {};
+            } else supplied = details(rawDetails);
             if (existing && usesUnlimitedConsultantPolicy(existing.offerInput)) fail('starter_details_read_only');
             const account = await accounts.reserveInitial(input), slot = account.organisations[0];
             const key = starterSetupKey(slot.organisationId), before = await store.load(key);
@@ -89,6 +96,7 @@ function createStarterSetupDetails({ accounts, store, framework, now = Date.now,
             const offerInput = { tenantId: slot.tenantId, organisationId: slot.organisationId,
                 organisationName: slot.organisationName, grantId: slot.grantId, scheduleId: slot.scheduleId,
                 kind: 'own', accountType: account.accountType,
+                ...(deferred ? { detailsPolicy: DETAILS_POLICY } : {}),
                 ...(plan.schemaVersion === 2 ? { planId: plan.planId } : {}), accessPolicy: ACCESS_POLICY,
                 contact: { ...supplied, email: snapshot.email, authorityEvidenceId: evidenceId }, framework: await framework() };
             proof(input);
