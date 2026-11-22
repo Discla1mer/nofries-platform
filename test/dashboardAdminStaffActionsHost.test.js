@@ -36,6 +36,12 @@ function host() {
         return { rows: sql.includes('ORDER BY') ? [...state.receipts.values()].reverse().slice(0, 101) : [state.receipts.get(p[2])].filter(Boolean) };
     } };
     createAccountActionsRepository.mockImplementation((_pool, clock, guard, allowed, context) => ({
+        async frameworkDecision(command, witness) {
+            await guard();
+            if (!allowed(command)) throw new Error('staff scope refused');
+            return witness ? { granted: command.action === 'grant', revision: 1 } :
+                { productGrantId: 'synthetic-product', revision: 0, granted: false };
+        },
         verifyRestore: (target, snapshot, read) => verifyRestore(tx, target, snapshot, { instanceId: context.instanceId, restoreEpoch: context.restoreEpoch }, read, clock()),
         async readAuthoritySnapshot() { await guard(); return { snapshot: clone(state.snapshot), revisions: dataCodec.revisionVector(state.snapshot), evaluatedAt: clock() }; },
         async executeAuthorityCommand(command) {
@@ -57,6 +63,23 @@ async function signedIn(h) {
         .set('Sec-Fetch-Site', 'same-origin').send({ operationId: h.nextId() })).status).toBe(200);
     return { app, cookie };
 }
+
+test('staff launcher serves the paid control and binds its approval before applying', async () => {
+    const h = host();
+    h.env.NOFRIES_PAID_FRAMEWORKS_ENABLED = 'true';
+    const { app, cookie } = await signedIn(h);
+    const script = await h.send('get', '/api/dashboard-admin/entry.js', app).set('Cookie', cookie).expect(200);
+    expect(script.text).toContain('frameworkAccessPanel');
+    const input = { selector: h.selector, expectedMembershipRevision: h.state.snapshot.membershipState.revision,
+        confirmationEmail: h.record.email, action: 'grant', tuple: require('../api/shared/appLifecycle/paidFrameworkDecisions').tuples[1],
+        reason: 'Synthetic purchase' };
+    const submit = params => post(h, app, cookie, 'lookup', { frameworkAccess: { ...input, ...params } });
+    const approval = await submit({ step: 'approve' }).expect(200);
+    const operationId = approval.body.operationId;
+    await submit({ step: 'apply', operationId }).expect(200);
+    const outcome = h.bucket('syntheticdata', 'account-action-audit').get('dashboard-admin-framework-access/' + operationId + '/outcome.json');
+    expect(JSON.parse(outcome.bytes).command).toMatchObject({ action: 'grant', tuple: input.tuple, selector: input.selector, reason: input.reason });
+});
 
 test('staff suspend then restore succeeds end to end with session-bound approvals and attempt/terminal audit records', async () => {
     const h = host(), { app, cookie } = await signedIn(h), before = clone(h.state.snapshot);

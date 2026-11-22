@@ -780,6 +780,22 @@ describe('fixed evidence metadata HTTP request boundary', () => {
     });
 });
 
+describe('paid framework routes', () => {
+    const url = '/api/dashboard/frameworks/nf-nist-csf-2-0-core/2026-09-08.1/assessments';
+    test('off returns 404 without reading authority', async () => {
+        const h = harness();
+        expectError(await h.build().handleRequest(request({ url })), 404, 'dashboard_not_found');
+        expectNoAuthorityIo(h);
+    });
+    test('collection requires the existing session', async () => withExpectedWarning({
+        route: 'frameworks', status: 401, code: 'dashboard_authentication_required'
+    }, async () => {
+        const h = harness(); h.options.paidFrameworksEnabled = true;
+        expectError(await h.build().handleRequest(request({ url })), 401, 'dashboard_authentication_required');
+        expectNoAuthorityIo(h);
+    }));
+});
+
 describe('opt-in NCSC HTTP request boundary', () => {
     function configured() {
         const h = harness(); h.options.ncsc = { resolveSubmissionQuota: jest.fn(() => null) };
@@ -852,6 +868,39 @@ describe('opt-in NCSC HTTP request boundary', () => {
             headers: { 'x-nofries-dashboard-generation': digest('generation') } })), 503, 'dashboard_unavailable');
         expect(h.options.pool.connect).not.toHaveBeenCalled(); expect(h.options.ncsc.resolveSubmissionQuota).not.toHaveBeenCalled();
     }));
+});
+
+test.each(['allowed', 'missing', 'refused'])('paid renderer checks the registered disclosure guard (%s)', async outcome => {
+    const h = harness(); h.build(); const issued = await h.login();
+    const generation = digest('selected-generation');
+    const ref = require('../api/shared/protectedAssets/dashboardRegistry').paidFrameworks[0];
+    const url = require('../scripts/tests/paid-renderer-browser.cjs').assetPath(ref, 'questionnaire', generation);
+    const file = { status: 200, isRaw: true, body: 'synthetic renderer' };
+    let handler, guard;
+    const paid = jest.fn(async (route, body, cursor, register) => {
+        expect([route, body, cursor]).toEqual([{ profileId: ref.profileId, version: ref.version, assessmentId: null, mutation: null }, undefined, null]);
+        if (outcome !== 'missing') register(guard);
+    });
+    jest.isolateModules(() => {
+        const { DashboardOnboardingError } = require('../api/shared/appLifecycle/dashboardOnboardingDomain');
+        guard = jest.fn(() => { if (outcome === 'refused') throw new DashboardOnboardingError('onboarding_access_denied', 403); });
+        jest.doMock('../api/shared/appLifecycle/postgresDashboardRuntimeRepository', () => ({
+            createPostgresDashboardRuntimeRepository: () => ({ readSession: async () => ({ selectedBindingId: uid(9), generation }) })
+        }));
+        jest.doMock('../api/shared/dashboardRuntime', () => ({ createDashboardResourceRuntime: () => ({
+            forRequest: async (_req, transport) => { expect(transport).toEqual({ expectedGeneration: generation }); return { paid }; }
+        }) }));
+        jest.doMock('../api/shared/paidRendererAssets', () => ({ ...jest.requireActual('../api/shared/paidRendererAssets'), packagedAsset: () => file }));
+        handler = require('../api/shared/dashboardRuntimeHandlers').createDashboardRuntimeHandlers({ ...h.options, paidFrameworksEnabled: true });
+    });
+    jest.dontMock('../api/shared/dashboardRuntime'); jest.dontMock('../api/shared/paidRendererAssets');
+    jest.dontMock('../api/shared/appLifecycle/postgresDashboardRuntimeRepository');
+    const read = () => handler.handleRequest(request({ url, cookieHeader: issued.cookie }));
+    if (outcome === 'allowed') expect(await read()).toBe(file);
+    else await withExpectedWarning({ route: 'framework-asset', status: 403, code: 'dashboard_access_denied' },
+        async () => expectError(await read(), 403, 'dashboard_access_denied'));
+    expect(paid).toHaveBeenCalledTimes(1);
+    expect(guard).toHaveBeenCalledTimes(outcome === 'missing' ? 0 : 1);
 });
 
 describe('versioned dashboard asset cache policy', () => {
