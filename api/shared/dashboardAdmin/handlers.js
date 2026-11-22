@@ -253,7 +253,9 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             const current = await checked(() => principal(request, actor));
             if (!isEntry) await checked(() => route === 'signups' ? signupListService.authoriseDisclosure(current, body) : permission(current, route, selector, checked));
             return response(200, body, contentType ? { 'Content-Type': contentType,
-                ...(['document', 'entry'].includes(route) ? { 'Content-Security-Policy': contentSecurityPolicy } : {}) } : {}, contentType !== null);
+                ...(['document', 'entry'].includes(route) ? { 'Content-Security-Policy': contentSecurityPolicy,
+                    // Both documents carry the native sign-out form; see their referrer meta.
+                    'Referrer-Policy': 'strict-origin' } : {}) } : {}, contentType !== null);
         } catch (error) {
             const result = failure(error);
             if (isAccountAction(route)) {

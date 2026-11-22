@@ -18,7 +18,7 @@ const { ImprovementActionListError } = require('./improvementPlan/improvementAct
 const { ConsultantWorkQueueError, normaliseConsultantWorkQueuePage,
     createConsultantWorkQueueService } = require('./improvementPlan/consultantWorkQueueService');
 const { apiSecurityHeaders } = require('./securityHeaders');
-const { prepareRequest, paidRequest } = require('./assessmentLifecycle/paidAssessments');
+const { prepareRequest, paidRequest, PaidAssessmentError } = require('./assessmentLifecycle/paidAssessments');
 const { ContactRequestError, normaliseContactRequest, writeContactRequest } = require('./contactRequests');
 
 const { representativeDetails, RepresentativeDetailsError } = require('./customerSignup/deferredRepresentativeDetails');
@@ -334,7 +334,17 @@ function createDashboardResourceRuntime(options) {
         requests.set(request, entry);
         return entry.promise;
     }
-    return Object.freeze({ forRequest, handleHostResource, ...(improvementEnabled ? { readWorkQueue, assertWorkQueueDisclosure } : {}) });
+    // Status-only adviser view of client organisations. The binder enumerates,
+    // authorises and rechecks every client; this layer adds no authority.
+    async function readPaidFrameworkStatus(request, transport, input, onDisclosure) {
+        let read;
+        try { read = await binder.readPaidFrameworkStatus(request, transport, input); }
+        catch (error) { throw error instanceof PaidAssessmentError ? error : new PaidAssessmentError(); }
+        if (typeof onDisclosure === 'function') onDisclosure(() => read.assertDisclosure());
+        return read.result;
+    }
+    return Object.freeze({ forRequest, handleHostResource, ...(improvementEnabled ? { readWorkQueue, assertWorkQueueDisclosure } : {}),
+        ...(paidFrameworksEnabled ? { readPaidFrameworkStatus } : {}) });
 }
 
 module.exports = { createDashboardResourceRuntime };
