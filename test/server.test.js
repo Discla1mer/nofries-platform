@@ -253,7 +253,7 @@ describe('dormant dashboard document', () => {
         const config = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', filename), 'utf8'));
         const methods = {
             login: ['GET'], 'ncsc/assessments': ['GET', 'POST'], 'ncsc/assessments/*': ['GET', 'POST'],
-            'improvement/*': ['GET', 'POST'],
+            'improvement/*': ['GET', 'POST'], 'frameworks/*': ['GET', 'POST'],
             session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], 'contact-requests': ['POST'], 'work-queue': ['GET'],
             bootstrap: ['GET'], 'app.js': ['GET'], 'dashboard.css': ['GET'],
             'modules/overview': ['GET'], 'modules/ai_governance': ['GET'], 'modules/cyber_security': ['GET'],
@@ -281,7 +281,8 @@ describe('dormant dashboard document', () => {
             // same private no-store, CSP and robots headers on every response (contactRequestHttp.test.js).
             if (rule.route === '/api/dashboard/contact-requests') { expect(rule.headers).toBeUndefined(); continue; }
             expect(rule.headers).toEqual(rule.route === '/api/dashboard/improvement/*' ? { 'Cache-Control': 'no-store' }
-                : !['/api/dashboard/login', '/api/dashboard/modules/overview', '/api/dashboard/app.js', '/api/dashboard/dashboard.css'].includes(rule.route)
+                : !['/api/dashboard/login', '/api/dashboard/modules/overview', '/api/dashboard/app.js', '/api/dashboard/dashboard.css',
+                    '/api/dashboard/frameworks/*'].includes(rule.route)
                     ? edgeCache : { ...edgeCache, 'X-Robots-Tag': 'noindex, nofollow',
                     'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" });
         }

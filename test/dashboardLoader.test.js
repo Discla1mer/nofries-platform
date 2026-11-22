@@ -148,7 +148,7 @@ function harness(options = {}) {
         mounts.push({ root, model, config, controller, destroy });
         return controller;
     }) };
-    const context = vm.createContext({ document, window, fetch, AbortController, Date, console: { log: jest.fn(), error: jest.fn() } });
+    const context = vm.createContext({ document, window, fetch, TextEncoder, AbortController, Date, console: { log: jest.fn(), error: jest.fn() } });
     const source = options.documentHtml ? options.documentHtml.match(/<script id="dashboardRuntime">([\s\S]*?)<\/script>/)[1] : options.source || SOURCE;
     vm.runInContext(source, context, { filename: 'dashboard-loader.js' });
     async function reply(index, status, value, extra) {
@@ -1683,15 +1683,252 @@ describe('dashboard asynchronous ownership and sign-out', () => {
 
 
 describe('ready Cyber composition', () => {
-    async function ready(h, mode = 'editable') {
+    async function ready(h, mode = 'editable', extra = {}) {
         await flush(); await h.reply(0, 200, state()); await h.reply(1, 200, listing());
         const model = JSON.parse(JSON.stringify(projection())); model.modules.find(item => item.key === 'cyber_security').state = 'ready';
         await h.reply(2, 200, model); h.load(0); h.load(1); await flush();
         expect(h.requests[3].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
-        h.cyberProjection = { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: mode };
+        h.cyberProjection = { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt, module: model.modules.find(item => item.key === 'cyber_security'), summary: { state: 'empty', attention: [], metrics: [] }, services: [], admissionGranted: false, providerAccessGranted: false, metadata: createNcscQuestionnaireMetadata(), presentationMode: mode, ...extra };
         await h.reply(3, 200, h.cyberProjection);
         await h.reply(4, 200, state());
     }
+    const registry = require('../api/shared/protectedAssets/dashboardRegistry');
+    const tuple = ({ moduleId, profileId, version }) => ({ moduleId, profileId, version });
+    async function pick(grants, allowCollection = true, hash = '#cyber-security', mode = 'editable') {
+        const h = harness({ cyber: true, hash });
+        h.paidScripts = [];
+        h.window.NoFriesDashboardRegistry = registry;
+        h.window.crypto.subtle = { digest: async (_algorithm, bytes) => crypto.createHash('sha256').update(bytes).digest() };
+        const append = h.document.head.append;
+        h.document.head.append = node => {
+            append(node);
+            if (node.src?.includes('/frameworks/')) h.paidScripts.push(node.src);
+            if (!node.src?.includes('/assets/collection.js?')) return;
+            expect(node.integrity).toBe(registry.rendererIntegrity.collection);
+            if (!allowCollection) { node.onerror(); return; }
+            h.window.NoFriesPaidCollection = require('../api/shared/protectedAssets/paidCollection');
+            node.onload();
+        };
+        await ready(h, mode, grants ? { paidFrameworks: grants } : {});
+        return h;
+    }
+    const pickButton = (h, text) => h.elements.dashboardApp.querySelectorAll('button').find(button => button.textContent === text);
+    const previewHref = '/fictional-iso-example.html';
+    test.each([
+        ['flag off', undefined, 0], ['free only', [], 1], ['NIST', [0], 0], ['ISO', [1], 0], ['both', [0, 1], 0]
+    ])('free comparison on Overview and submitted NCSC results: %s', async (_, included, count) => {
+        const h = harness({ cyber: true, hash: '#overview' });
+        h.window.NoFriesDashboardRegistry = registry;
+        const projection = included ? { paidFrameworks: included.map(i => tuple(registry.paidFrameworks[i])) } : {};
+        await ready(h, 'editable', projection);
+        const root = h.elements.dashboardApp;
+        const comparison = () => root.querySelectorAll('a').filter(link => link.textContent === 'Compare assessment options');
+        expect(comparison()).toHaveLength(count);
+        if (count) {
+            expect(comparison()[0].href).toBe('/dashboard#cyber-security');
+            comparison()[0].click();
+        } else {
+            root.querySelectorAll('a').find(link => link.href === '#cyber-security').click();
+        }
+        await flush();
+        expect(comparison()).toHaveLength(0);
+        if (included) pickButton(h, 'Open NCSC check').click();
+        await flush();
+        const stored = await records();
+        stored.execute(createCommand('result', 'create-result', 'Fictional workshop'));
+        stored.execute(saveCommand('result', 0, 'save-result', allResponses('yes')));
+        stored.execute(submitCommand('result', 1, 'submit-result'));
+        await ncscReply(h, 5, 200, stored.list());
+        expect(comparison()).toHaveLength(0);
+        root.querySelector('.ncsc-assessment-list').querySelector('button').click();
+        await flush(); await ncscReply(h, 6, 200, stored.read('result'));
+        expect(root.querySelector('.ncsc-results')).toBeTruthy();
+        expect(comparison()).toHaveLength(count);
+        if (count) {
+            comparison()[0].click(); await flush();
+            expect(root.textContent).toContain('Choose an assessment');
+            expect(root.querySelectorAll('a').some(link => link.href === previewHref)).toBe(true);
+            expect(comparison()).toHaveLength(0);
+        }
+        expect(h.requests.every(row => row.init.method === 'GET' && !row.url.includes('/frameworks/'))).toBe(true);
+    });
+    test.each([{ included: [] }, { included: [0] }, { included: [1] }, { included: [0, 1] }])(
+        'fictional example links appear only on locked cards (included indices $included)', async ({ included }) => {
+            const h = await pick(included.map(index => tuple(registry.paidFrameworks[index])));
+            const root = h.elements.dashboardApp;
+            const previews = {
+                'nf-nist-csf-2-0-core': ['/fictional-nist-example.html', 'View a fictional NIST CSF 2.0 example'],
+                'nf-iso-27001-2022-readiness': [previewHref, 'View a fictional ISO 27001 example']
+            };
+            for (const [index, ref] of registry.paidFrameworks.entries()) {
+                const card = root.querySelectorAll('.dashboard-panel').find(panel => panel.querySelector('h2')?.textContent === ref.label);
+                const enquiries = card.querySelectorAll('a').filter(link => link.href === '/contact.html');
+                expect(enquiries.map(link => link.textContent)).toEqual(included.includes(index) ? [] : ['Ask No Fries to set this up']);
+                for (const price of ['NZ$99 + GST', 'NZ$990 + GST']) expect(card.textContent.includes(price)).toBe(!included.includes(index));
+                const links = card.querySelectorAll('a').filter(link => link.href.startsWith('/fictional-'));
+                expect(links).toHaveLength(included.includes(index) ? 0 : 1);
+                if (links.length) expect([links[0].href, links[0].textContent]).toEqual(previews[ref.profileId]);
+            }
+            expect(root.querySelectorAll('a').filter(link => link.href?.startsWith('/fictional-'))).toHaveLength(2 - included.length);
+            expect(h.requests.some(row => row.url.includes('/frameworks/'))).toBe(false);
+        });
+    test('the flag-off Cyber Security view has no buyer example entry', async () => {
+        const h = harness({ cyber: true, hash: '#cyber-security' });
+        await ready(h, 'editable', {});
+        expect(h.elements.dashboardApp.textContent).not.toContain('Choose an assessment');
+        expect(h.elements.dashboardApp.textContent).not.toContain('Ask No Fries to set this up');
+        expect(h.elements.dashboardApp.textContent).not.toMatch(/NZ\$(?:99|990|1,250)/);
+        expect(h.elements.dashboardApp.querySelectorAll('a').some(link => link.href?.startsWith('/fictional-'))).toBe(false);
+    });
+    test('a consultant without a selected organisation cannot open an enquiry with client context', async () => {
+        const h = harness({ cyber: true, hash: '#cyber-security' });
+        await flush(); await h.reply(0, 200, state(null, GA, { purpose: 'customer', accountType: 'consultant' }));
+        await h.reply(1, 200, listing([A, B]));
+        expect(h.status).toBe('selection');
+        expect(h.elements.dashboardApp.querySelector('dialog')).toBeNull();
+        expect(h.requests.map(row => row.url)).toEqual(['/api/dashboard/session', '/api/dashboard/organisations?limit=50']);
+    });
+    test('locked choices open the contact form and the free choice opens the existing questionnaire', async () => {
+        const h = await pick([]), root = h.elements.dashboardApp;
+        expect(root.textContent.match(/Locked/g)).toHaveLength(2);
+        expect(root.textContent).toContain('This is a readiness self-assessment, not certification. For accredited certification, use an accredited certification body.');
+        const link = root.querySelectorAll('a').find(a => a.textContent === 'Ask No Fries to set this up');
+        expect(link.href).toBe('/contact.html'); expect(h.requests).toHaveLength(5);
+        pickButton(h, 'Open NCSC check').click(); await flush();
+        expect(h.requests[5].url).toMatch(/^\/api\/dashboard\/ncsc\/assessments/);
+        pickButton(h, 'Back to assessment choices').click(); await flush();
+        expect(root.textContent).toContain('Choose an assessment');
+        expect(h.requests.every(row => row.init.method === 'GET')).toBe(true);
+    });
+    test.each(registry.paidFrameworks)('only the selected $label collection can be opened', async ref => {
+        const h = await pick([tuple(ref)]), root = h.elements.dashboardApp;
+        expect(root.textContent.match(/Locked/g)).toHaveLength(1);
+        expect(pickButton(h, 'Open ' + registry.paidFrameworks.find(other => other !== ref).label)).toBeUndefined();
+        pickButton(h, 'Open ' + ref.label).click(); await flush();
+        const path = '/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assessments';
+        expect(h.requests[5].url).toBe(path);
+        expect(h.requests[5].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        const page = { schemaVersion: 1, publication: { status: 'published', profile: { id: ref.profileId, version: ref.version } },
+            assessments: [{ assessmentId: 'saved-1', status: 'submitted', revision: 3, updatedAt: NOW }], nextAfterAssessmentId: 'saved-1' };
+        await h.reply(5, 200, page); expect(root.textContent).toContain('saved-1');
+        pickButton(h, 'Load more assessments').click(); await flush();
+        expect(h.requests[6].url).toBe(path + '?afterAssessmentId=saved-1');
+        await h.reply(6, 403, {}); expect(root.textContent).not.toContain('saved-1');
+        pickButton(h, 'Back to assessment choices').click(); await flush();
+        expect(root.textContent).toContain('Choose an assessment');
+        expect(h.requests.every(row => row.init.method === 'GET')).toBe(true);
+    });
+    test.each([['flag off', null], ['free only', []]])('Overview %s does not request a paid script or record', async (_label, grants) => {
+        const h = await pick(grants, true, '#overview');
+        expect(h.elements.dashboardApp.textContent).toContain('Overview');
+        expect(h.requests.some(row => row.url.includes('/frameworks/'))).toBe(false);
+        expect(h.paidScripts).toHaveLength(0);
+        expect(h.elements.dashboardApp.textContent).not.toContain('Last saved draft');
+    });
+    test('Overview counts saved answers, follows the next page and resumes the exact draft with a fresh read', async () => {
+        const ref = registry.paidFrameworks[0], h = await pick([tuple(ref)], true, '#overview');
+        const root = h.elements.dashboardApp, prefix = '/api/dashboard/frameworks/' + ref.profileId + '/' + ref.version + '/assessments';
+        const publication = { status: 'published', profile: { id: ref.profileId, version: ref.version },
+            catalogueSha256: 'a'.repeat(64), sourceCatalogueSha256: 'b'.repeat(64), questions: [{ id: 'q1' }, { id: 'q2' }] };
+        const list = (id, next) => ({ schemaVersion: 1, publication, assessments: [{ assessmentId: id, status: 'in-progress', revision: 2, updatedAt: NOW }], nextAfterAssessmentId: next });
+        const detail = (id, responses) => ({ schemaVersion: 1, assessment: { assessmentId: id, revision: 2, status: 'in-progress',
+            moduleId: ref.moduleId, profileRef: { profileId: ref.profileId, profileVersion: ref.version,
+                catalogueSha256: publication.catalogueSha256, sourceCatalogueSha256: publication.sourceCatalogueSha256 }, responses } });
+        async function reply(path, body) {
+            const index = h.requests.findLastIndex(row => row.url === path);
+            expect(index).toBeGreaterThan(4); expect(h.requests[index].init.method).toBe('GET');
+            await h.reply(index, 200, body);
+        }
+        await reply(prefix, list('draft-a', 'draft-a')); await reply(prefix + '/draft-a', detail('draft-a', []));
+        expect(root.textContent).toContain('0 of 2 answered');
+        pickButton(h, 'Check more saved assessments').click(); await flush();
+        await reply(prefix + '?afterAssessmentId=draft-a', list('draft-b', null));
+        await reply(prefix + '/draft-b', detail('draft-b', [{ itemId: 'q2' }]));
+        expect(root.textContent).toContain('1 of 2 answered'); expect(root.textContent).not.toContain('0 of 2 answered');
+        root.querySelectorAll('a').find(link => link.textContent === 'Resume ' + ref.label).click(); await flush();
+        await reply(prefix, list('draft-a', 'draft-a'));
+        expect(h.requests.at(-1).url).toBe(prefix + '/draft-b');
+        expect(h.requests.at(-1).init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+    });
+    test('read-only Overview never fetches draft responses or offers resume', async () => {
+        const ref = registry.paidFrameworks[1], h = await pick([tuple(ref)], true, '#overview', 'read-only');
+        const root = h.elements.dashboardApp;
+        const list = h.requests.findIndex(row => row.url.includes('/frameworks/'));
+        await h.reply(list, 200, { schemaVersion: 1, publication: { status: 'published', profile: { id: ref.profileId, version: ref.version },
+            questions: [{ id: 'q' }] }, assessments: [{ assessmentId: 'private-draft', status: 'in-progress', revision: 1, updatedAt: NOW }],
+            nextAfterAssessmentId: null });
+        expect(root.textContent).toContain('No submitted assessments yet.');
+        expect(root.textContent).not.toContain('Resume');
+        expect(h.requests.some(row => row.url.includes('private-draft'))).toBe(false);
+    });
+    test('switching organisations while a paid Overview page is pending cannot paint its saved records', async () => {
+        const ref = registry.paidFrameworks[0], h = await pick([tuple(ref)], true, '#overview');
+        const pending = h.requests.findIndex(row => row.url.includes('/frameworks/'));
+        expect(pending).toBeGreaterThan(4);
+        expect(h.requests[pending].init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+        h.window.dispatch('focus'); await flush();
+        const check = h.requests.findLastIndex(row => row.url === '/api/dashboard/session');
+        await h.reply(check, 200, state(B, GB));
+        await h.reply(pending, 200, { schemaVersion: 1, publication: { status: 'published',
+            profile: { id: ref.profileId, version: ref.version }, questions: [{id:'q'}] },
+            assessments: [{ assessmentId: 'prior-org-draft', status: 'in-progress', revision: 2, updatedAt: NOW }], nextAfterAssessmentId: null });
+        expect(h.elements.dashboardApp.textContent).not.toContain(ref.label + ' progress');
+        expect(h.requests.some(row => row.url.includes('prior-org-draft'))).toBe(false);
+    });
+    test('refused collection script cannot read or mount a paid screen', async () => {
+        const ref = registry.paidFrameworks[0], h = await pick([tuple(ref)], false);
+        pickButton(h, 'Open ' + ref.label).click(); await flush();
+        expect(h.requests).toHaveLength(5);
+        expect(h.elements.dashboardApp.textContent).toContain('This assessment is unavailable.');
+    });
+    test('paid renderer completion at session expiry cannot mount or start the collection read', async () => {
+        const ref = registry.paidFrameworks[0], h = await pick([tuple(ref)]);
+        const append = h.document.head.append;
+        let complete;
+        h.document.head.append = script => { complete = () => append(script); };
+        pickButton(h, 'Open ' + ref.label).click(); await flush();
+        // Advance the wall clock without firing the scheduled session-expiry callback.
+        jest.setSystemTime(new Date(state().expiresAt));
+        complete(); await flush();
+        expect(h.requests).toHaveLength(5);
+        expect(h.window.NoFriesPaidCollection).toBeUndefined();
+        expect(h.elements.dashboardApp.textContent).not.toContain('Saved assessments');
+    });
+    test('paid collection data delivered at session expiry stays out of the document', async () => {
+        const ref = registry.paidFrameworks[0], h = await pick([tuple(ref)]);
+        pickButton(h, 'Open ' + ref.label).click(); await flush();
+        expect(h.requests[5].url).toContain('/assessments');
+        jest.setSystemTime(new Date(state().expiresAt));
+        await h.reply(5, 200, { schemaVersion: 1, publication: { status: 'published', profile: { id: ref.profileId, version: ref.version } },
+            assessments: [{ assessmentId: 'synthetic-expired', status: 'submitted', revision: 1, updatedAt: NOW }], nextAfterAssessmentId: null });
+        expect(h.elements.dashboardApp.textContent).not.toContain('synthetic-expired');
+        expect(h.requests).toHaveLength(6);
+    });
+    test('a different publication cannot disclose saved assessment headers', async () => {
+        const [nist, iso] = registry.paidFrameworks, h = await pick([tuple(nist)]);
+        pickButton(h, 'Open ' + nist.label).click(); await flush();
+        await h.reply(5, 200, { schemaVersion: 1, publication: { status: 'published', profile: { id: iso.profileId, version: iso.version } },
+            assessments: [{ assessmentId: 'wrong-profile', status: 'submitted', revision: 1, updatedAt: NOW }], nextAfterAssessmentId: null });
+        expect(h.elements.dashboardApp.textContent).toContain('This assessment is unavailable.');
+        expect(h.elements.dashboardApp.textContent).not.toContain('wrong-profile');
+    });
+    test('a late read after returning to the picker cannot paint the previous collection', async () => {
+        const ref = registry.paidFrameworks[1], h = await pick([tuple(ref)]);
+        pickButton(h, 'Open ' + ref.label).click(); await flush();
+        pickButton(h, 'Back to assessment choices').click(); await flush();
+        await h.reply(5, 200, { schemaVersion: 1, publication: { status: 'published', profile: { id: ref.profileId, version: ref.version } },
+            assessments: [], nextAfterAssessmentId: null });
+        expect(h.elements.dashboardApp.textContent).toContain('Choose an assessment');
+        expect(h.elements.dashboardApp.textContent).not.toContain('No saved assessments yet.');
+    });
+    test('a revoked grant on focus clears the selected paid collection', async () => {
+        const ref = registry.paidFrameworks[0], h = await pick([tuple(ref)]);
+        pickButton(h, 'Open ' + ref.label).click(); await flush();
+        h.window.dispatch('focus'); await flush(); await refreshToModule(h, 6);
+        await h.reply(9, 200, { ...h.cyberProjection, paidFrameworks: [] });
+        expect(h.mounts[0].destroy).toHaveBeenCalledTimes(1);
+        expect(h.elements.dashboardApp.textContent).not.toContain(ref.label);
+    });
     async function refreshToModule(h, first) {
         await h.reply(first, 200, state()); await h.reply(first + 1, 200, listing());
         await h.reply(first + 2, 200, h.mounts[0].model);

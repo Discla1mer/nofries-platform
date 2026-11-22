@@ -42,6 +42,12 @@
     const elements = {};
     Object.keys(ids).forEach(function (key) { elements[key] = document.getElementById(ids[key]); });
     if (Object.keys(elements).some(function (key) { return !elements[key]; })) return;
+    // Fixed public return targets contain no client, session or assessment data.
+    const exampleReturns = { '#cyber-security/nist-example': 'nist', '#cyber-security/iso-example': 'iso' };
+    const exampleReturn = exampleReturns[window.location.hash];
+    if (exampleReturn) window.history.replaceState(Object.assign({}, window.history.state,
+        { nofriesExampleFocus: exampleReturn }), '', '#cyber-security');
+    let restoreExampleFocus = true;
     const accountMenu = document.getElementById('dashboardAccountMenu');
     // Escape closes the account menu and returns focus to its summary.
     if (accountMenu && typeof accountMenu.addEventListener === 'function') accountMenu.addEventListener('keydown', function (event) {
@@ -454,6 +460,8 @@
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'activationAvailable') ? ['activationAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'clientSetupAvailable') ? ['clientSetupAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'workQueueAvailable') ? ['workQueueAvailable'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'representativeDetailsAvailable') ? ['representativeDetailsAvailable'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'questionnaireExportGateAvailable') ? ['questionnaireExportGateAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsAvailable') ? ['contactRequestsAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
             Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
@@ -463,6 +471,8 @@
             Object.prototype.hasOwnProperty.call(value, 'accountType') && (value.purpose !== 'customer' || !['company', 'consultant'].includes(value.accountType)) ||
             Object.prototype.hasOwnProperty.call(value, 'clientSetupAvailable') && (value.clientSetupAvailable !== true || value.accountType !== 'consultant') ||
             Object.prototype.hasOwnProperty.call(value, 'workQueueAvailable') && (value.workQueueAvailable !== true || value.accountType !== 'consultant') ||
+            Object.prototype.hasOwnProperty.call(value, 'representativeDetailsAvailable') && (value.representativeDetailsAvailable !== true || value.purpose !== 'customer') ||
+            Object.prototype.hasOwnProperty.call(value, 'questionnaireExportGateAvailable') && (value.questionnaireExportGateAvailable !== true || value.representativeDetailsAvailable !== true) ||
             Object.prototype.hasOwnProperty.call(value, 'contactRequestsAvailable') && (value.contactRequestsAvailable !== true || value.purpose !== 'customer') ||
             !canonicalDate(value.expiresAt) || typeof value.generation !== 'string' || !DIGEST.test(value.generation) ||
             value.selectedBindingId !== null && (typeof value.selectedBindingId !== 'string' || !UUID.test(value.selectedBindingId))) throw invalid();
@@ -471,13 +481,15 @@
             ...(value.activationAvailable === true ? { activationAvailable: true } : {}),
             ...(value.clientSetupAvailable === true ? { clientSetupAvailable: true } : {}),
             ...(value.workQueueAvailable === true ? { workQueueAvailable: true } : {}),
+            ...(value.representativeDetailsAvailable === true ? { representativeDetailsAvailable: true } : {}),
+            ...(value.questionnaireExportGateAvailable === true ? { questionnaireExportGateAvailable: true } : {}),
             ...(value.contactRequestsAvailable === true ? { contactRequestsAvailable: true } : {}),
             ...(value.accountType ? { accountType: value.accountType } : {}),
             ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}),
             ...(value.accountName ? { accountName: value.accountName } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsAvailable', 'accountType', 'accountLabel', 'accountName']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'contactRequestsAvailable', 'representativeDetailsAvailable', 'questionnaireExportGateAvailable', 'accountType', 'accountLabel', 'accountName']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -583,7 +595,7 @@
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 account-identity-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
@@ -824,7 +836,8 @@
         if (model.admissionGranted !== false || model.providerAccessGranted !== false) throw invalid();
         cycle.selectedOrganisationName = model.context.displayName;
         const cyberReady = model.modules.some(function (item) { return item.key === 'cyber_security' && item.state === 'ready'; });
-        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1]) : null;
+        const gateOwnExports = value.questionnaireExportGateAvailable === true && value.accountType === 'company' && model.audience !== 'Scoped advisor';
+        const cyber = cyberReady ? await cyberOptions(cycle, snapshot, model.context.organisationId, prepared[1], gateOwnExports) : null;
         const improvementReady = model.modules.some(function (item) { return item.key === 'improvement_plan' && item.state === 'ready'; });
         const improvement = improvementReady ? improvementOptions(cycle, snapshot, model.context.organisationId, cyber) : null;
         const witnessed = await sessionForReconcile(cycle, OPENING_MESSAGE, OPENING_DETAIL);
@@ -851,16 +864,82 @@
             ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
+            ...(cyber && cyber.paidFrameworks ? { paidFrameworks: cyber.paidFrameworks, paidHost: cyber.paidHost,
+                openFrameworkEnquiry: (link, ref, plan) => openFrameworkEnquiry(cycle, snapshot, cyber.paidFrameworks, link, ref, plan) } : {}),
             ...(cyber && cyber.mountPicture ? { mountPicture: cyber.mountPicture } : {}),
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}),
+            ...(fresh.representativeDetailsAvailable === true ? { representativeDetails: detailsPort(cycle, snapshot) } : {}),
             ...(fresh.contactRequestsAvailable === true ? { contactRequest: contactSender(cycle, snapshot) } : {}) });
         if (!controller || typeof controller.destroy !== 'function') throw invalid();
         if (cycle.openSelection && fresh.purpose === 'customer') saveLastOrganisation(fresh.selectedBindingId, fresh.expiresAt);
         elements.app.hidden = false;
         cycle.busy = false;
         show(cycle, 'ready');
+        if (restoreExampleFocus) {
+            restoreExampleFocus = false;
+            const key = window.history.state && window.history.state.nofriesExampleFocus;
+            if (window.location.hash === '#cyber-security' && ['nist', 'iso'].includes(key)) {
+                const link = document.getElementById('framework-example-' + key);
+                if (link && elements.app.contains(link)) link.focus();
+            }
+        }
         if (fresh.accountType === 'consultant') portfolioControls(cycle);
+    }
+    let enquiryScripts;
+    function loadEnquiryScripts(template) {
+        if (enquiryScripts) return enquiryScripts;
+        function load(src, integrity) {
+            return new Promise((resolve, reject) => {
+                if (!/^sha256-[A-Za-z0-9+/]{43}=$/.test(integrity || '')) { reject(invalid()); return; }
+                const script = document.createElement('script');
+                const timer = window.setTimeout(() => finish(false), REQUEST_MS);
+                function finish(ok) {
+                    window.clearTimeout(timer); script.onload = null; script.onerror = null;
+                    script.remove(); if (ok) resolve(); else reject(invalid());
+                }
+                script.src = src; script.integrity = integrity; script.crossOrigin = 'anonymous';
+                script.referrerPolicy = 'no-referrer'; script.dataset.enquiryForm = 'true';
+                script.onload = () => finish(true); script.onerror = () => finish(false);
+                document.head.append(script);
+            });
+        }
+        enquiryScripts = Promise.all([load('/js/contact.js', template.dataset.contact),
+            load('/js/enquiry-availability.js', template.dataset.availability)]).catch(error => { enquiryScripts = null; throw error; });
+        return enquiryScripts;
+    }
+    function openFrameworkEnquiry(cycle, snapshot, included, link, ref, plan) {
+        const template = document.getElementById('frameworkEnquiryForm');
+        const registry = window.NoFriesDashboardRegistry;
+        const locked = registry.paidFrameworks.find(row => registry.sameFramework(row, ref) &&
+            !included.some(grant => registry.sameFramework(row, grant)));
+        const live = () => current(cycle) && !cycle.busy && !cycle.authorityPending && !cycle.revalidating && !cycle.quietRefreshFailed &&
+            !unresolved && Date.parse(cycle.session?.expiresAt) > Date.now() && snapshot.selectedBindingId !== null &&
+            cycle.session.selectedBindingId === snapshot.selectedBindingId && cycle.session.generation === snapshot.generation &&
+            link.isConnected && elements.app.contains(link);
+        if (!template || !locked || !live() || !['monthly', 'annual'].includes(plan)) return false;
+        const dialog = document.createElement('dialog');
+        if (typeof dialog.showModal !== 'function') return false;
+        dialog.className = 'ncsc-leave-dialog framework-enquiry'; dialog.setAttribute('aria-labelledby', 'frameworkEnquiryTitle');
+        const title = document.createElement('h2'); title.id = 'frameworkEnquiryTitle'; title.textContent = 'Ask No Fries';
+        const close = document.createElement('button'); close.type = 'button'; close.className = 'dashboard-button dashboard-button-secondary';
+        close.textContent = 'Close'; close.addEventListener('click', () => dialog.close());
+        const notice = document.createElement('p'); notice.setAttribute('role', 'status'); notice.textContent = 'Opening the enquiry form…';
+        dialog.append(title, close, notice); link.parentElement.append(dialog);
+        dialog.addEventListener('close', () => dialog.remove(), { once: true });
+        dialog.showModal();
+        const currentForm = () => dialog.open && dialog.isConnected && live();
+        loadEnquiryScripts(template).then(() => {
+            if (!currentForm()) { if (dialog.open) dialog.close(); return; }
+            notice.remove(); dialog.append(template.content.cloneNode(true));
+            return window.mountEnquiryForm(dialog, { framework: locked.label + ' on the ' + plan + ' plan',
+                organisation: cycle.session.accountType === 'consultant' ? cycle.selectedOrganisationName : '', current: currentForm });
+        }).catch(() => {
+            if (!currentForm()) return;
+            const fallback = document.createElement('a'); fallback.href = '/contact.html'; fallback.textContent = 'Open the contact form';
+            notice.textContent = 'The enquiry form could not open here.'; dialog.replaceChildren(title, close, notice, fallback);
+        });
+        return true;
     }
     function clientSetupControls(cycle) {
         const section = document.createElement('section'); section.id = 'clientSetupControls'; section.className = 'client-workspace';
@@ -1505,7 +1584,7 @@
                 .then(function (response) { if (!response || !response.ok) funnelOff = true; }, function () { funnelOff = true; });
         } catch (_) { funnelOff = true; }
     }
-    async function cyberOptions(cycle, snapshot, organisationId, preparedValue) {
+    async function cyberOptions(cycle, snapshot, organisationId, preparedValue, questionnaireExportGateAvailable = false) {
         const value = preparedValue || requireSuccess(await request(cycle, '/api/dashboard/modules/cyber_security', undefined, snapshot.generation));
         if (!current(cycle)) throw invalid();
         const contract = cyberContract(value);
@@ -1537,10 +1616,14 @@
         const mountCyber = function (root, presentation) {
             if (!current(cycle)) throw invalid();
             return questionnaire.mount(root, { window: window, metadata: value.metadata, ...profileMetadata, client: client,
+                ...(questionnaireExportGateAvailable ? { questionnaireExportGate: function (content) {
+                    return window.NoFriesDashboard.detailsGate(document, detailsPort(cycle, snapshot), content, 'questionnaire');
+                } } : {}),
                 presentationMode: value.presentationMode, organisationId: organisationId,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
                 onLocation: presentation && presentation.onLocation, onFunnelStep: funnelStep,
+                appendFrameworkComparison: presentation && presentation.appendFrameworkComparison,
                 // Overview's first-use action opens the new-assessment step directly.
                 startNew: !!(presentation && presentation.startNew === true),
                 ...(presentation && typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
@@ -1548,6 +1631,56 @@
                     return presentation.openImprovement(sourceAssessment);
                 } } : {}) });
         };
+        if (value.paidFrameworks) {
+            mountCyber.paidFrameworks = value.paidFrameworks;
+            mountCyber.paidHost = function (ref, selected) {
+                const registry = window.NoFriesDashboardRegistry;
+                const live = () => current(cycle) && !cycle.authorityPending &&
+                    Date.parse(cycle.session?.expiresAt) > Date.now() && selected() &&
+                    value.paidFrameworks.some(row => registry.sameFramework(row, ref));
+                const prefix = '/api/dashboard/frameworks/' + encodeURIComponent(ref.profileId) + '/' + encodeURIComponent(ref.version);
+                const cleanups = new Set();
+                async function renderer(name) {
+                    const asset = registry.rendererAsset(ref, name);
+                    if (!live() || !asset) throw invalid();
+                    // A fresh salt keeps separate loads from sharing a selection identifier in access logs.
+                    const nonce = secureId().replace(/-/g, '');
+                    const sri = asset.integrity, message = registry.rendererSelection(snapshot.generation, ref, name, nonce);
+                    const hash = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
+                    const fingerprint = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+                    if (!live()) throw invalid();
+                    return new Promise((resolve, reject) => {
+                        const node = document.createElement('script');
+                        const key = { collection: 'NoFriesPaidCollection', questionnaire: 'NoFriesPaidQuestionnaire', results: 'NoFriesPaidResults' }[name];
+                        const cancel = () => finish(null);
+                        const timer = window.setTimeout(cancel, REQUEST_MS);
+                        function finish(factory) {
+                            cleanups.delete(cancel); window.clearTimeout(timer);
+                            node.remove();
+                            if (factory && typeof factory.mount === 'function' && live()) resolve(factory);
+                            else reject(invalid());
+                        }
+                        node.onload = () => {
+                            const factory = window[key]; delete window[key]; finish(factory);
+                        };
+                        node.onerror = cancel; cleanups.add(cancel);
+                        node.integrity = sri; node.crossOrigin = 'anonymous'; node.referrerPolicy = 'no-referrer';
+                        node.src = prefix + '/assets/' + name + '.js?v=' + sri.slice(7, -1).replace(/\+/g, '-').replace(/\//g, '_') + '&s=' + nonce + '.' + fingerprint;
+                        document.head.append(node);
+                    });
+                }
+                const encodedId = '[A-Za-z0-9](?:[A-Za-z0-9._-]|%3A){0,119}';
+                const allowedPath = new RegExp('^/assessments(?:\\?afterAssessmentId=' + encodedId + '|/' + encodedId + '(?:/(?:save|submit))?)?$');
+                async function requestSelected(path, body) {
+                    if (!live() || !allowedPath.test(path)) throw invalid();
+                    const result = await request(cycle, prefix + path, body, snapshot.generation);
+                    if (!live()) throw invalid();
+                    return requireSuccess(result);
+                }
+                return { live, renderer, request: requestSelected, prefix, invalid, fields, canonicalDate, newId: secureId, editable: value.presentationMode === 'editable',
+                    destroy() { for (const cancel of cleanups) cancel(); } };
+            };
+        }
         mountCyber.readBaseline = async function () {
             if (!current(cycle) || cycle.authorityPending) throw invalid();
             // The list is ordered by assessment id and a page can be shorter than
@@ -1712,6 +1845,8 @@
                         // Only the default choice is remembered, never a manual one.
                         else if (!pictureSelection) savePictureLatestHint(snapshot.selectedBindingId, assessmentId);
                     },
+                    detailsGate: presentation.detailsGate,
+                    boardExportGate: questionnaireExportGateAvailable ? presentation.detailsGate : undefined,
                     openCyber: presentation.openCyber,
                     ...(typeof presentation.openImprovement === 'function' ? { openImprovement: function (sourceAssessment) {
                         if (!current(cycle) || cycle.authorityPending) return Promise.resolve(false);
@@ -1787,6 +1922,17 @@
         if (current(cycle) && !cycle.authorityPending && picture && typeof picture.actionSummary === 'function' &&
             picture.actionSummary(result) !== null) informationRead(cycle);
         return result;
+    }
+    function detailsPort(cycle, snapshot) {
+        const isCurrent = () => current(cycle) && !cycle.authorityPending;
+        async function perform(body) {
+            if (!isCurrent()) throw invalid();
+            const result = await request(cycle, '/api/dashboard/representative-details', body, snapshot.generation);
+            if (!isCurrent() || result.status !== 200 || !fields(result.value, ['schemaVersion', 'status']) ||
+                result.value.schemaVersion !== 1 || !['ready', 'details_required', 'result_required'].includes(result.value.status)) throw invalid();
+            return result.value;
+        }
+        return { read: () => perform(), save: perform, isCurrent };
     }
     // #409: one "Ask No Fries to contact me" action. A fresh operation id per
     // user action; a network failure or 503 retries that same id, which the
@@ -1905,12 +2051,24 @@
             'admissionGranted', 'providerAccessGranted', 'metadata', 'presentationMode'];
         const extra = value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'profileMetadata');
         if (extra && (!Array.isArray(value.profileMetadata) || !value.profileMetadata.length || value.profileMetadata.length > 4)) throw invalid();
-        if (!fields(value, extra ? keys.concat(['profileMetadata']) : keys) ||
+        if (extra) keys.push('profileMetadata');
+        const paid = value && Object.prototype.hasOwnProperty.call(value, 'paidFrameworks');
+        if (paid) {
+            keys.push('paidFrameworks');
+            const registry = window.NoFriesDashboardRegistry, rows = value.paidFrameworks;
+            if (!Array.isArray(rows) || rows.length > registry.paidFrameworks.length ||
+                rows.some((row, i) => !fields(row, ['moduleId', 'profileId', 'version']) ||
+                    !registry.paidFrameworks.some(ref => registry.sameFramework(ref, row)) ||
+                    rows.slice(0, i).some(other => registry.sameFramework(other, row)))) throw invalid();
+        }
+        if (!fields(value, keys) ||
             value.schemaVersion !== 1 || value.module?.key !== 'cyber_security' || value.module?.state !== 'ready' ||
             value.admissionGranted !== false || value.providerAccessGranted !== false ||
             !['editable', 'read-only'].includes(value.presentationMode)) throw invalid();
-        return JSON.stringify(extra ? [value.metadata, value.presentationMode, value.context, value.module, value.profileMetadata]
-            : [value.metadata, value.presentationMode, value.context, value.module]);
+        const contract = [value.metadata, value.presentationMode, value.context, value.module];
+        if (extra) contract.push(value.profileMetadata);
+        if (paid) contract.push({ paidFrameworks: value.paidFrameworks });
+        return JSON.stringify(contract);
     }
     function leave(cycle, commit) {
         if (!current(cycle) || !confirmClientDiscard(cycle)) return Promise.resolve(false);
@@ -2247,7 +2405,9 @@
             !cycle.clientMutationPending) { revalidate(cycle); return; }
         restore();
     });
-    window.addEventListener('pageshow', function (event) { if (event && event.persisted) restore(); });
+    window.addEventListener('pageshow', function (event) {
+        if (event && event.persisted) { restoreExampleFocus = true; restore(); }
+    });
     window.addEventListener('beforeunload', function (event) {
         if (!active || !current(active) || !active.session || Date.parse(active.session.expiresAt) <= Date.now()) return;
         const draft = clientDraft(active);

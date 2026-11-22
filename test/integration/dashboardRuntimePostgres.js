@@ -8,6 +8,21 @@
 let mockResourceAfterWork = null;
 let mockRuntimeAfterReconcile = null;
 let mockAfterHostDecision = null;
+// Expire a synthetic session when the HTTP host constructs the response,
+// after the real operation (including COMMIT) has returned its data.
+let mockPaidJsonReady = null;
+jest.mock('../../api/shared/securityHeaders', () => {
+    const actual = jest.requireActual('../../api/shared/securityHeaders');
+    return { ...actual, apiSecurityHeaders(extra) {
+        const headers = actual.apiSecurityHeaders(extra);
+        if (mockPaidJsonReady && extra?.['Content-Type'] === 'application/json; charset=utf-8') {
+            const ready = mockPaidJsonReady;
+            mockPaidJsonReady = null;
+            ready();
+        }
+        return headers;
+    } };
+});
 jest.mock('../../api/shared/dashboardAdmission', () => {
     const actual = jest.requireActual('../../api/shared/dashboardAdmission');
     return { ...actual, createDashboardAdmissionDecision(adapters) {
@@ -701,11 +716,13 @@ function registerRealPostgresTests() {
                 'dashboard_evidence_revisions', 'dashboard_evidence_heads', 'dashboard_evidence_receipts',
                 'signup_acceptance_receipts', 'signup_registrations', 'dashboard_starter_scopes', 'dashboard_starter_accounts',
                 'dashboard_improvement_revisions', 'dashboard_improvement_heads', 'email_outbox', 'email_preferences',
-                'dashboard_contact_requests'];
+                'dashboard_contact_requests', 'dashboard_representative_details', 'dashboard_deferred_agreements',
+                'dashboard_framework_revisions', 'dashboard_iso_report_artifacts', 'dashboard_iso_report_decisions',
+                'dashboard_paid_framework_access'];
             await ownerPool.query('TRUNCATE ' + tables.map(table => 'nofries.' + table).join(', '));
             fixture = harness();
         });
-        test.each([[false, false], [true, false], [false, true], [true, true]])('new starter signup atomically grants fixed allowances and replays after lost COMMIT=%s (lifecycle email enqueue: %s)', async (loseCommit, enqueue) => {
+        test.each([[false, false, false], [true, false, false], [false, true, false], [true, true, false], [false, false, true], [true, false, true]])('new starter signup atomically grants fixed allowances and replays after lost COMMIT=%s (lifecycle email enqueue: %s, deferred details: %s)', async (loseCommit, enqueue, deferred) => {
             const f = fixture; f.state.now = new Date().toISOString(); await f.initialize();
             if (enqueue) process.env.NOFRIES_LIFECYCLE_EMAIL_ENQUEUE_ENABLED = 'true';
             const { createStarterAccountAllocator } = require('../../api/shared/customerSignup/starterAccountAllocation');
@@ -726,6 +743,10 @@ function registerRealPostgresTests() {
                 accountType: 'company', contact: { name: 'Synthetic User', role: 'Owner', address: 'Synthetic address', registrationId: null,
                     email: account.email, authorityEvidenceId: nextId() }, framework: { moduleId: 'cyber_security', profileId: 'synthetic', version: '1', scoringVersion: '1' } },
                 subjectKey: customer, issuerSubjectKey: customer, invitationId: nextId(), createdAt: new Date().toISOString() };
+            if (deferred) {
+                source.offerInput.detailsPolicy = 'after-first-result-v1';
+                source.offerInput.contact = { email: account.email, authorityEvidenceId: source.offerInput.contact.authorityEvidenceId };
+            }
             const provisioning = { account, requestId, source }, p = compileStarterProvisioning(provisioning);
             const runtime = instantiate({ ...f.options, clock: () => new Date().toISOString(),
                 readStarterProvisioning: async () => ({ provisioning, deadline: new Date(Date.now() + 60000).toISOString() }) });
@@ -1666,9 +1687,10 @@ function registerRealPostgresTests() {
         // synthetic trusted identity, quota and time; it never primes the role
         // for the resource runtime or substitutes its paired SQL audit.
         async function resourceSetup({ role = 'admin', service = false, rawRuntimePool = runtimePool,
-            purpose = 'customer', exampleOptions = {}, historyBudget = BUDGET, prepareExample = null, productionIdentity = null } = {}) {
+            purpose = 'customer', exampleOptions = {}, historyBudget = BUDGET, prepareExample = null, productionIdentity = null, initialTime = NOW } = {}) {
             const principal = productionIdentity || { ...identity(), identityTenantId: NCSC_SUBJECT.split(':')[0], oid: NCSC_SUBJECT.split(':')[1] };
             const f = harness({ rawRuntimePool, resourceIdentity: principal, historyBudget });
+            f.state.now = initialTime;
             await f.initialize();
             const quota = createNcscAdapters({ now: () => f.state.now });
             const resourceOptions = { pool: f.restrictedPool, clock: () => f.state.now, instanceId: f.instanceId,
@@ -1722,7 +1744,7 @@ function registerRealPostgresTests() {
                             enabled: { ...example.state.flags.enabled, ...enabled } } });
                     return canonicalResult;
                 }
-                return { example, member, admission, admissionCommand, publication, canonicalRepository, mutateMembership, mutateFlags };
+                return { example, member, admission, admissionCommand, publication, canonicalRepository, mutateMembership, mutateFlags, seedPool };
             }
             const target = await addResource(f.scope);
             const seed = purpose === 'operator_dashboard' ? f.operatorSeed : f.session(purpose, principal);
@@ -1741,8 +1763,14 @@ function registerRealPostgresTests() {
             const bound = await bindResource();
             return { ...f, ...target, ...bound, seed, selected, quota, resourceOptions, bindResource, addResource };
         }
+        require('./paidAssessmentLifecycle')({ resourceSetup, NCSC_SUBJECT, nextId, identity, owner: () => ownerPool,
+            atJsonResponse: action => { mockPaidJsonReady = action; } });
         require('./improvementPlanRecovery')({ resourceSetup,
             getPools: () => ({ ownerPool, controlPool, runtimePool, maintenancePool }), testUrl, maintenanceRole });
+        // Runs wherever this native suite runs, including both CI PostgreSQL jobs.
+        require('./staffFrameworkMounted')({ resourceSetup, harness, NCSC_SUBJECT, identity, nextId,
+            pools: () => ({ controlPool, ownerPool }), runtimeRole });
+        require('./paidRendererPicker')({ resourceSetup, NCSC_SUBJECT, nextId, identity });
         async function newCustomerActivationSetup({ shortWindow = false, memberLimit = null, memberRole = 'admin' } = {}) {
             const request = require('supertest');
             const { customerProductionHarness, uid: customerId } = require('../helpers/customerProductionHarness');
@@ -4088,7 +4116,7 @@ function registerRealPostgresTests() {
             // Administration below is explicit synthetic setup, never a route.
             async function httpSetup({ rawRuntimePool = runtimePool, base = null, principal: suppliedPrincipal = null,
                 requestBudgetMs = 60000, publish = true, prepareCanonical = null, ncsc = null, membershipValidUntil = END,
-                customerProvider = false, customerAccountType = null, improvementEnabled = false, contactRequestsEnabled = false, contactRequestEmail = null, scope = null,
+                customerProvider = false, customerAccountType = null, ownDeferredAgreement = false, improvementEnabled = false, contactRequestsEnabled = false, representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, contactRequestEmail = null, scope = null,
                 appFactory = options => require('../../server').createNoFriesApp(options) } = {}) {
                 const { MemoryBrowserSessionStore } = require('../../api/shared/browserSessionStore');
                 const tenant = base ? base.operatorIdentity.identityTenantId : nextId();
@@ -4170,6 +4198,8 @@ function registerRealPostgresTests() {
                 if (ncsc) dashboard.ncsc = ncsc;
                 if (improvementEnabled) dashboard.improvementEnabled = true;
                 if (contactRequestsEnabled) dashboard.contactRequestsEnabled = true;
+                if (representativeDetailsEnabled) dashboard.representativeDetailsEnabled = true;
+                if (questionnaireExportGateEnabled) dashboard.questionnaireExportGateEnabled = true;
                 if (contactRequestEmail) dashboard.contactRequestEmail = contactRequestEmail;
                 if (externalProfile) {
                     const { oid: customerOid, ...customerIdentityPolicy } = principal;
@@ -4187,7 +4217,7 @@ function registerRealPostgresTests() {
                                 if (assurance.subjectKey !== identity.subjectKey) throw new Error('synthetic assurance mismatch'); }
                         },
                         async resolveActivationBinding() { return { bindingId: h.binding.bindingId, scope: clone(h.binding.scope),
-                            ...(customerAccountType ? { accountType: customerAccountType } : {}) }; }
+                            ...(ownDeferredAgreement ? { ownDeferredAgreement: true } : {}), ...(customerAccountType ? { accountType: customerAccountType } : {}) }; }
                     };
                     if (coexist) {
                         dashboard.externalCustomer = { ...dashboard.customer,
@@ -4344,10 +4374,10 @@ function registerRealPostgresTests() {
                 await loginClean();
             });
             async function ncscHttpSetup({ capacity = 1, role = 'admin', configured = true, membershipValidUntil = END,
-                separateAdvisorWriteUntil = null, customerProvider = false, customerAccountType = null, improvementEnabled = false,
-                contactRequestsEnabled = false, contactRequestEmail = null, appFactory, scope = null } = {}) {
+                separateAdvisorWriteUntil = null, customerProvider = false, customerAccountType = null, ownDeferredAgreement = false, improvementEnabled = false,
+                contactRequestsEnabled = false, representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, contactRequestEmail = null, appFactory, scope = null } = {}) {
                 const quota = createNcscAdapters({ now: () => NOW });
-                const h = await httpSetup({ membershipValidUntil, customerProvider, customerAccountType, improvementEnabled, contactRequestsEnabled, contactRequestEmail, appFactory, scope, ncsc: configured ? { resolveSubmissionQuota: quota.resolveSubmissionQuota } : null, prepareCanonical(initial) {
+                const h = await httpSetup({ membershipValidUntil, customerProvider, customerAccountType, ownDeferredAgreement, improvementEnabled, contactRequestsEnabled, representativeDetailsEnabled, questionnaireExportGateEnabled, contactRequestEmail, appFactory, scope, ncsc: configured ? { resolveSubmissionQuota: quota.resolveSubmissionQuota } : null, prepareCanonical(initial) {
                     // Domain-created membership rows are frozen. Replace this
                     // synthetic seed's values without mutating domain output.
                     initial.membershipState = { ...initial.membershipState,
@@ -5004,6 +5034,7 @@ function registerRealPostgresTests() {
                     createCommand, saveCommand, submitCommand, evidenceSeedDatabase });
                 require('./accountWipeHttpPostgres')({ improvementHttpSetup, httpJson, getOwnerPool: () => ownerPool,
                     loginClean, subject, evidenceSeedDatabase });
+                require('./deferredDetailsHttpPostgres')({ ncscHttpSetup, httpJson, getOwnerPool: () => ownerPool, loginClean, subject, nextId, generationHeader, createCommand, saveCommand, submitCommand });
                 require('./contactRequestHttpPostgres')({ ncscHttpSetup, httpJson, getOwnerPool: () => ownerPool,
                     loginClean, subject, nextId, generationHeader });
 

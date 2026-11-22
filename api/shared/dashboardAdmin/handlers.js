@@ -103,6 +103,8 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
     // Applying a reset or delete is a mutation on the lookup route: once it
     // starts, the response waits for its bounded outcome and audit (as for
     // suspend/restore) instead of the read budget's 503.
+    const frameworkControl = env.NOFRIES_PAID_FRAMEWORKS_ENABLED === 'true' &&
+        env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && typeof accountActions?.execute === 'function';
     const mutations = new WeakSet();
     const accountWipe = accountWipeRoute && (async (input, actor, request, signal) => {
         if (input && typeof input === 'object' && input.step === 'execute') { signal.throwIfAborted(); mutations.add(request); }
@@ -173,6 +175,7 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
     }
 
     async function execute(request, route, checked, signal) {
+        let frameworkAccess = false;
         try {
             if (['accounts/lookup', 'accounts/app.js'].includes(route)) {
                 if (!accountLookup) fail(404, 'dashboard_admin_not_found');
@@ -206,6 +209,16 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 try { assertExactSameOriginRequest(request, env); }
                 catch (_) { fail(403, 'dashboard_admin_access_denied'); }
                 const input = await checked(() => readJson(request, signal));
+                if (route === 'lookup' && input && Object.hasOwn(input, 'frameworkAccess')) {
+                    if (!frameworkControl) fail(404, 'dashboard_admin_not_found');
+                    frameworkAccess = true;
+                    if (Object.keys(input).length !== 1) fail(400, 'dashboard_admin_input_invalid');
+                    const target = normaliseSelector(input.frameworkAccess?.selector);
+                    const operator = await checked(() => principal(request, actor));
+                    await checked(() => permission(operator, 'lookup', target, checked));
+                    mutations.add(request);
+                    return response(200, await accountActions.execute(operator, input.frameworkAccess, { request, signal }, 'framework-access'));
+                }
                 selector = action ? normaliseSelector(input?.selector) : route === 'lookup' ? normaliseSelector(input) : signupListInput(input);
                 const currentActor = await checked(() => principal(request, actor));
                 if (action) {
@@ -219,10 +232,12 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
                 } else body = await checked(() => route === 'lookup' ? service.lookup(currentActor, selector) : signupListService.list(currentActor, selector));
             } else if (route === 'entry-capabilities') body = { entry: true,
                 ...(env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.execute ? { accountActions: true } : {}),
+                ...(frameworkControl ? { frameworkAccess: true } : {}),
                 ...(accountLookup && accountWipe ? { accountWipe: true } : {}) };
             else if (route === 'entry') { body = buildDashboardAdminEntryDocument(); contentType = 'text/html; charset=utf-8'; }
             else if (route === 'entry.js') {
                 body = fs.readFileSync(path.join(__dirname, '../protectedAssets/dashboardAdminEntry.js'), 'utf8');
+                if (frameworkControl) body += '\n' + fs.readFileSync(path.join(__dirname, '../protectedAssets/frameworkActions.js'), 'utf8');
                 if (env.NOFRIES_DASHBOARD_ADMIN_ACCOUNT_ACTIONS === 'true' && accountActions?.execute)
                     body += '\n' + fs.readFileSync(path.join(__dirname, '../protectedAssets/accountActions.js'), 'utf8');
                 if (accountLookup && accountWipe) body += '\n' + fs.readFileSync(path.join(__dirname, '../protectedAssets/accountWipe.js'), 'utf8');
@@ -243,6 +258,9 @@ function createDashboardAdminHandlers({ service = null, signupListService = null
             const result = failure(error);
             if (isAccountAction(route)) {
                 try { console.warn('[dashboard-admin-account-actions] ' + result.body.code); } catch (_) { /* No logging authority. */ }
+            } else if (frameworkAccess) {
+                // Category, status and bounded code only: no selector, email, reason or operation ID.
+                try { console.warn('[dashboard-admin-account-actions] framework-access ' + result.status + ' ' + result.body.code); } catch (_) { /* No logging authority. */ }
             }
             return result;
         }

@@ -263,14 +263,19 @@ describe('flag off: output unchanged', () => {
             return files.map(full => [path.relative(repo, full).split(path.sep).join('/'), fs.readFileSync(full, 'utf8')]);
         };
         const served = scan(['api', 'src', 'public', 'js', 'app', 'lib', 'server.js', 'connector-functions']);
-        // Any served or handler file that names the crosswalk modules at all.
+        const paidHelper = 'api/shared/assessmentEngine/paidStartingSuggestions.js';
+        // The paid projection is server-only and currently has no serving caller.
+        expect(served.filter(([file, source]) => file !== paidHelper && /paidStartingSuggestions/.test(source))).toEqual([]);
+        const paidSource = served.find(([file]) => file === paidHelper)[1];
+        expect(paidSource.match(/require\(\s*['"][^'"]*nistNcscCrosswalk[^'"]*['"]\s*\)/g))
+            .toEqual(["require('./nistNcscCrosswalk')"]);
+        // Every other reference in the serving tree stays in the crosswalk internals.
         expect(served.filter(([, source]) => /nistNcscCrosswalk/.test(source)).map(([file]) => file).sort()).toEqual([
             'api/shared/assessmentEngine/nistNcscCrosswalkSet.js',
-            'api/shared/assessmentEngine/nistNcscCrosswalkV2.js'
+            'api/shared/assessmentEngine/nistNcscCrosswalkV2.js',
+            paidHelper
         ]);
-        // Any file that names either factory or loads either crosswalk module directly. Only the
-        // selector consumes them; the crosswalk modules themselves (v2 builds on v1) and their own
-        // tests are the only other files allowed.
+        // Track all direct consumers, including the isolated v1 paid projection and its tests.
         const importsFactory = source => /\bcreateNistNcscCrosswalk(V2)?\b/.test(source)
             || /(require\s*\(|import\s*\(|\bfrom)\s*['"`][^'"`]*nistNcscCrosswalk(V2)?(\.js)?['"`]/.test(source);
         const importers = [...served, ...scan(['test'])].filter(([, source]) => importsFactory(source))
@@ -279,8 +284,10 @@ describe('flag off: output unchanged', () => {
             'api/shared/assessmentEngine/nistNcscCrosswalk.js',
             'api/shared/assessmentEngine/nistNcscCrosswalkSet.js',
             'api/shared/assessmentEngine/nistNcscCrosswalkV2.js',
+            paidHelper,
             'test/nistNcscCrosswalk.test.js',
-            'test/nistNcscCrosswalkV2.test.js'
+            'test/nistNcscCrosswalkV2.test.js',
+            'test/paidStartingSuggestions.test.js'
         ]);
         // The v2 module loads only the v1 crosswalk, never the selector.
         const v2Source = served.find(([file]) => file === 'api/shared/assessmentEngine/nistNcscCrosswalkV2.js')[1];

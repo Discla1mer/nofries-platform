@@ -16,6 +16,8 @@ const { compileStarterProvisioning, compileStarterAdmission, starterBootstrapCom
 const { createPostgresDashboardRepository } = require('../../api/shared/appLifecycle/postgresDashboardRepository');
 const { createPostgresSignupAcceptanceJournal } = require('../../api/shared/customerSignup/postgresSignupAcceptanceJournal');
 const { createAccountWipeRepository, RESET_TABLES, DELETE_TENANT_TABLES } = require('../../api/shared/dashboardAdmin/accountWipeRepository');
+const { profiles, insertSource, insertPlan, insertHead } = require('../fixtures/paidGapPlanRows');
+const { seedSource, selectedSource, insertStart, saveUnbound } = require('../fixtures/paidStartNcscScope');
 const outbox = require('../../api/shared/lifecycleEmail/outboxWriter');
 
 const target = String(process.env.NOFRIES_TEST_DATABASE_URL || '').trim();
@@ -62,9 +64,12 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         await db.query('BEGIN');
         try { const result = await work(); await db.query('COMMIT'); return result; } catch (error) { await db.query('ROLLBACK'); throw error; }
     }
-    async function asRuntime(db, subject, scope, work) {
+    async function setScope(db, subject, scope) {
         await db.query("SELECT set_config('nofries.subject_key',$1,true),set_config('nofries.tenant_id',$2,true),set_config('nofries.organisation_id',$3,true)",
             [subject, scope.tenantId, scope.organisationId]);
+    }
+    async function asRuntime(db, subject, scope, work) {
+        await setScope(db, subject, scope);
         await db.query('SET LOCAL ROLE nofries_runtime');
         try { return await work(); } finally { await db.query('RESET ROLE').catch(() => {}); }
     }
@@ -102,7 +107,7 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
             offerInput: { ...Object.fromEntries(['tenantId', 'organisationId', 'organisationName', 'grantId', 'scheduleId', 'kind'].map(k => [k, slot[k]])),
                 accountType: 'consultant', contact: { name: 'Synthetic Owner', role: 'Owner', email: c.email, address: 'Synthetic address',
                     registrationId: null, authorityEvidenceId: crypto.randomUUID() },
-                framework: { moduleId: 'cyber_security', profileId: 'synthetic-native', version: '1', scoringVersion: '1' } },
+                framework: { moduleId: 'cyber_security', profileId: c.profile.profileId, version: c.profile.profileVersion, scoringVersion: '1' } },
             subjectKey: c.actor, issuerSubjectKey: c.actor, invitationId: crypto.randomUUID(), createdAt: c.createdAt } });
     }
     // Prepare, record consent and activate one organisation as production does.
@@ -130,9 +135,11 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         });
         return p;
     }
-    async function account(db) {
+    async function account(db, profile = profiles.nist, bound = false) {
         // Two client organisations, set up and activated through the same path as production.
-        const c = await consultant(db), first = await organisation(db, c, 1), second = await organisation(db, c, 2);
+        const c = await consultant(db);
+        c.profile = profile;
+        const first = await organisation(db, c, 1), second = await organisation(db, c, 2);
         await db.query("INSERT INTO nofries.email_preferences (account_id,email_type,unsubscribed_at,source) VALUES ($1,'nudge_unfinished',clock_timestamp(),'settings')",
             [c.account.accountId]);
         // A queued lifecycle email, written by the runtime as production writes it.
@@ -143,7 +150,30 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
             (tenant_id, organisation_id, request_id, subject_key, topic, consent_version, requested_day, requested_at)
             VALUES ($1, $2, $3, $4, 'results', 'contact-request-v1', ($5::timestamptz AT TIME ZONE 'Pacific/Auckland')::date, $5::timestamptz)`,
         [first.scope.tenantId, first.scope.organisationId, crypto.randomUUID(), c.actor, new Date().toISOString()])));
-        return { c, tenants: [first.scope.tenantId, second.scope.tenantId] };
+        const source = await tx(db, () => asRuntime(db, c.actor, first.scope, () => insertSource(db, first.scope, c.actor, profile)));
+        const planId = 'shared-plan';
+        const root = await insertPlan(db, source, planId);
+        const assigned = await insertPlan(db, source, planId, root);
+        await insertHead(db, source, planId, 1, assigned);
+        // An NCSC-bound paid start (0033): three submitted NCSC revisions and a start bound to revision 2.
+        let ncsc;
+        if (bound) await tx(db, async () => {
+            ncsc = await asRuntime(db, c.actor, first.scope, () => seedSource(db, first.scope, c.actor));
+            // Only the disposable fixture owner seeds a bound row; the normal runtime cannot.
+            const submitted = ncsc.get(2);
+            await insertStart(db, first.scope, c.actor, submitted.envelope.scopePopulation.body, selectedSource(submitted));
+        });
+        // A staff revocation for one exact framework (0034), written by the operator capability.
+        await tx(db, async () => {
+            await db.query("SELECT set_config('nofries.tenant_id',$1,true),set_config('nofries.organisation_id',$2,true),set_config('nofries.subject_key',$3,true)",
+                [first.scope.tenantId, first.scope.organisationId, c.actor]);
+            await db.query('SET LOCAL ROLE nofries_framework_operator');
+            await db.query(`INSERT INTO nofries.dashboard_paid_framework_access
+                (tenant_id,organisation_id,product_grant_id,module_id,profile_id,version,revision,granted,operation_id,operator_subject,reason_sha256)
+                VALUES ($1,$2,'synthetic-product','cyber_security','nf-nist-csf-2-0-core','2026-09-08.1',1,false,$3,$4,$5)`,
+            [first.scope.tenantId, first.scope.organisationId, crypto.randomUUID(), c.actor, '0'.repeat(64)]);
+        });
+        return { c, scope: first.scope, source, root, assigned, ncsc, tenants: [first.scope.tenantId, second.scope.tenantId] };
     }
     // Row counts per table for one account, read by the CI owner (superuser).
     async function footprint(db, a) {
@@ -157,28 +187,295 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         }
         return result;
     }
+    async function boundStart(db, account) {
+        return (await db.query(`SELECT ncsc_assessment_id, ncsc_revision, ncsc_revision_sha256, ncsc_scope_sha256
+            FROM nofries.dashboard_framework_revisions WHERE tenant_id=$1 AND organisation_id=$2 AND assessment_id='source-bound-start'`,
+        [account.scope.tenantId, account.scope.organisationId])).rows;
+    }
     const wipeTarget = a => ({ accountId: a.c.account.accountId, subjectKey: a.c.actor, tenantIds: a.tenants });
 
+    async function deferredAccount(db, completed) {
+        const { deferredFixture, DATA, AT } = require('../fixtures/deferredDetailsFixture');
+        const { hash } = require('../../api/shared/appLifecycle/dashboardRuntimeRecords');
+        const { account, preparation: p, receipt } = await deferredFixture();
+        await db.query("INSERT INTO nofries.dashboard_starter_accounts (account_id,email_sha256,subject_key,account_type) VALUES ($1,$2,$3,'company')",
+            [account.accountId, hash(account.accountId), p.subjectKey]);
+        await db.query(INSERT_SCOPE, [p.scope.tenantId, p.scope.organisationId, account.accountId, 'company', p.subjectKey,
+            p.ordinal, p.slot.authorityId, p.slot.bindingId, JSON.stringify(p)]);
+        await tx(db, () => createPostgresDashboardRepository({ database: database(db, p), clock: () => p.createdAt, authoriseAdministration: () => true })
+            .initialiseOrganisation(starterBootstrapCommand(p), p.initialState));
+        await createPostgresSignupAcceptanceJournal({ database: database(db, p) }).persist(receipt);
+        if (completed) {
+            const link = { schemaVersion: 1, ...p.scope, subjectKey: p.subjectKey, receiptId: receipt.receiptId,
+                acceptanceSha256: hash(receipt), scheduleId: receipt.scheduleId, scheduleDigest: receipt.scheduleDigest,
+                authorityEvidenceId: p.representativeAuthorityEvidenceId };
+            const payload = { link, details: DATA, recordedAt: AT };
+            await db.query(`INSERT INTO nofries.dashboard_representative_details
+                (tenant_id, organisation_id, subject_key, receipt_id, payload, payload_sha256) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [p.scope.tenantId, p.scope.organisationId, p.subjectKey, receipt.receiptId, payload, hash(payload)]);
+        }
+        return { accountId: account.accountId, subjectKey: p.subjectKey, tenantIds: [p.scope.tenantId] };
+    }
+
+    test.each([['reset', false], ['reset', true], ['delete', false], ['delete', true]])(
+        '%s clears deferred enrollment rows (details recorded %s)', async (mode, completed) => {
+        const db = await connect(), target = await deferredAccount(db, completed), sentinel = await deferredAccount(db, true);
+        const snapshot = async account => {
+            const result = {};
+            for (const table of ['dashboard_starter_scopes', 'signup_acceptance_receipts', 'dashboard_deferred_agreements', 'dashboard_representative_details']) {
+                result[table] = await rows(db, `SELECT * FROM nofries.${table} WHERE tenant_id = $1`, account.tenantIds);
+            }
+            return result;
+        };
+        const before = await snapshot(target), other = await snapshot(sentinel);
+        expect(before.dashboard_deferred_agreements).toHaveLength(1);
+        expect(before.dashboard_representative_details).toHaveLength(completed ? 1 : 0);
+        expect(other.dashboard_representative_details).toHaveLength(1);
+        await createAccountWipeRepository(pool)[mode](target);
+        expect(await snapshot(target)).toEqual({
+            dashboard_starter_scopes: mode === 'reset' ? before.dashboard_starter_scopes : [],
+            signup_acceptance_receipts: mode === 'reset' ? before.signup_acceptance_receipts : [],
+            dashboard_deferred_agreements: mode === 'reset' ? before.dashboard_deferred_agreements : [], dashboard_representative_details: []
+        });
+        expect(await snapshot(sentinel)).toEqual(other);
+    });
+
+    test('deferred tables expose only scoped rows to the wipe role and retain their query ACLs', async () => {
+        const db = await connect(), account = await deferredAccount(db, true), other = await deferredAccount(db, true);
+        for (const table of ['dashboard_deferred_agreements', 'dashboard_representative_details']) {
+            const relation = 'nofries.' + table;
+            const grants = await rows(db, `SELECT grantee.rolname AS role, acl.privilege_type AS privilege
+                FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) acl
+                LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+                WHERE c.oid = $1::regclass AND acl.grantee <> c.relowner ORDER BY role, privilege`, [relation]);
+            expect(grants).toEqual([
+                { role: 'nofries_account_wipe', privilege: 'DELETE' }, { role: 'nofries_account_wipe', privilege: 'SELECT' },
+                { role: 'nofries_runtime', privilege: 'INSERT' }, { role: 'nofries_runtime', privilege: 'SELECT' }
+            ]);
+            await tx(db, async () => {
+                await db.query('SET LOCAL ROLE nofries_account_wipe');
+                expect(await rows(db, `SELECT tenant_id FROM ${relation}`)).toEqual([]);
+                await db.query("SELECT set_config('nofries.wipe_tenant_id',$1,true)", account.tenantIds);
+                expect(await rows(db, `SELECT tenant_id FROM ${relation}`)).toEqual([{ tenant_id: account.tenantIds[0] }]);
+                expect((await db.query(`DELETE FROM ${relation} WHERE tenant_id=$1`, other.tenantIds)).rowCount).toBe(0);
+            });
+        }
+    });
+
+    async function planRows(db, a) {
+        const result = await db.query(`SELECT payload, paid_item_id FROM nofries.dashboard_improvement_revisions
+            WHERE tenant_id = $1 ORDER BY revision`, [a.source.tenantId]);
+        return result.rows;
+    }
+
+    test.each([profiles.nist, profiles.iso])('0032 holds paid reads and writes even with the exact synthetic product grant ($profileId)', async profile => {
+        const db = await connect(), a = await account(db, profile), scope = a.source;
+        const entitlement = (await db.query(`SELECT payload FROM nofries.dashboard_entitlement_states
+            WHERE tenant_id = $1 AND organisation_id = $2`, [scope.tenantId, scope.organisationId])).rows[0].payload;
+        expect(entitlement.grants).toContainEqual(expect.objectContaining({ status: 'active', modules: expect.arrayContaining(['improvement_plan']),
+            frameworks: expect.arrayContaining([{ moduleId: 'cyber_security', profileId: profile.profileId, version: profile.profileVersion }]) }));
+        expect((await planRows(db, a))[1].payload.command.payload).toEqual({ ownerLabel: 'Operations lead', dueDate: '2027-01-31' });
+        const runtime = work => tx(db, () => asRuntime(db, a.c.actor, scope, work));
+        await runtime(async () => {
+            expect(await planRows(db, a)).toEqual([]);
+            expect((await db.query('SELECT plan_id FROM nofries.dashboard_improvement_heads WHERE tenant_id=$1', [scope.tenantId])).rows).toEqual([]);
+            expect((await db.query('UPDATE nofries.dashboard_improvement_heads SET revision=revision WHERE tenant_id=$1',
+                [scope.tenantId])).rowCount).toBe(0);
+        });
+        await expect(runtime(() => insertPlan(db, scope, 'held'))).rejects.toMatchObject({ code: '42501' });
+        const root = await insertPlan(db, scope, 'held-head');
+        await expect(runtime(() => insertHead(db, scope, 'held-head', 0, root))).rejects.toMatchObject({ code: '42501' });
+    });
+
+    test('0032 binds the tenant, organisation, publication, submitted revision, digest and a single eligible answer', async () => {
+        const db = await connect(), a = await account(db), peer = await account(db);
+        const source = a.source;
+        // Same tenant, another real organisation and the same assessment/item identifiers.
+        const sibling = { tenantId: source.tenantId, organisationId: 'sibling' };
+        await db.query(`INSERT INTO nofries.dashboard_organisations (tenant_id,organisation_id,schema_version,revision,payload)
+            SELECT tenant_id,$3,schema_version,revision,jsonb_set(payload,'{organisationId}',to_jsonb($3::text))
+            FROM nofries.dashboard_organisations WHERE tenant_id=$1 AND organisation_id=$2`,
+        [source.tenantId, source.organisationId, sibling.organisationId]);
+        const siblingSource = await insertSource(db, sibling, a.c.actor, profiles.nist);
+        await insertPlan(db, siblingSource, 'shared-plan');
+        for (const patch of [{ organisationId: sibling.organisationId }, { digest: siblingSource.digest }, { tenantId: peer.source.tenantId }, { organisationId: peer.source.organisationId },
+            { tenantId: peer.source.tenantId, organisationId: peer.source.organisationId }, { profileVersion: 'other' },
+            { assessmentId: 'other' }, { assessmentRevision: 128 }, { digest: 'f'.repeat(64) },
+            { itemId: 'missing-item' }, { profileId: null }, { profileVersion: null }, { itemId: null }]) {
+            await expect(insertPlan(db, { ...source, ...patch }, 'reject')).rejects.toMatchObject({ code: expect.stringMatching(/^235(03|14)$/) });
+        }
+        const scope = { tenantId: source.tenantId, organisationId: source.organisationId };
+        for (const [index, changes] of [
+            { status: 'in-progress' }, { submittedRevision: 128 }, { responses: [] },
+            { responses: [{ itemId: profiles.nist.itemId, optionId: 'yes' }] },
+            { responses: Array(2).fill({ itemId: profiles.nist.itemId, optionId: 'no' }) }
+        ].entries()) {
+            const bad = await insertSource(db, scope, a.c.actor, profiles.nist, { assessmentId: 'invalid-' + index, ...changes });
+            await expect(insertPlan(db, bad, 'reject')).rejects.toMatchObject({ code: '23514' });
+        }
+        const different = await insertSource(db, scope, a.c.actor, profiles.iso, { assessmentId: 'different' });
+        const root = await insertPlan(db, source, 'lineage');
+        await expect(insertPlan(db, different, 'lineage', root)).rejects.toMatchObject({ code: '23514' });
+        const omitted = await insertSource(db, scope, a.c.actor, profiles.iso, { assessmentId: 'excluded',
+            responses: [{ itemId: profiles.iso.itemId, optionId: 'not_applicable' }] });
+        await expect(insertPlan(db, omitted, 'reject')).rejects.toMatchObject({ code: '23514' });
+    });
+
+    test('0032 inverse preserves the legacy constraint and refuses to discard retained links', async () => {
+        const db = await connect(), a = await account(db), before = await planRows(db, a);
+        const inverse = fs.readFileSync(path.join(__dirname, '../../database/proposals/0032-paid-gap-sources-rollback.sql'), 'utf8');
+        await expect(tx(db, () => db.query(inverse))).rejects.toThrow('retained paid plans require a recovery decision');
+        expect(await planRows(db, a)).toEqual(before);
+        // Rehearse absence of all paid rows in a rolled-back transaction of this disposable fixture only.
+        await db.query('BEGIN');
+        try {
+            await db.query('DELETE FROM nofries.dashboard_improvement_heads');
+            await db.query('DELETE FROM nofries.dashboard_improvement_revisions');
+            await db.query(inverse);
+            const constraints = (await db.query(`SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+                WHERE conrelid='nofries.dashboard_improvement_revisions'::regclass AND contype='f'`)).rows;
+            expect(constraints).toHaveLength(2);
+            expect(constraints.map(row => row.def)).toContainEqual(expect.stringContaining(
+                'assessment_id, assessment_revision, assessment_sha256) REFERENCES nofries.dashboard_ncsc_assessment_revisions'));
+        } finally { await db.query('ROLLBACK'); }
+        expect(await planRows(db, a)).toEqual(before);
+    });
+
     test('delete removes every row of the account and leaves another account untouched', async () => {
-        const db = await connect(), doomed = await account(db), sentinel = await account(db);
-        const before = await footprint(db, doomed), sentinelBefore = await footprint(db, sentinel);
+        const db = await connect(), doomed = await account(db, profiles.nist, true), sentinel = await account(db, profiles.nist, true);
+        const before = await footprint(db, doomed), sentinelBefore = await footprint(db, sentinel), preserved = await planRows(db, sentinel);
         expect(before.dashboard_tenants).toBe(2); expect(before.dashboard_starter_scopes).toBe(2);
         expect(before.signup_acceptance_receipts).toBeGreaterThan(0); expect(before.dashboard_starter_accounts).toBe(1);
-        expect(before.email_outbox).toBe(1); expect(before.dashboard_contact_requests).toBe(1);
+        expect(before.email_outbox).toBe(1); expect(before.dashboard_contact_requests).toBe(1); expect(before.dashboard_framework_revisions).toBe(2);
+        expect(before.dashboard_improvement_revisions).toBe(2); expect(before.dashboard_improvement_heads).toBe(1);
+        expect(before.dashboard_ncsc_assessment_revisions).toBe(3); expect(before.dashboard_paid_framework_access).toBe(1);
+        const controlBinding = await boundStart(db, sentinel);
+        expect(controlBinding).toHaveLength(1);
         const result = await createAccountWipeRepository(pool).delete(wipeTarget(doomed));
         expect(result).toMatchObject({ mode: 'delete', tenants: 2 });
         expect(Object.values(await footprint(db, doomed)).every(n => n === 0)).toBe(true);
         expect(await footprint(db, sentinel)).toEqual(sentinelBefore);
+        expect(await planRows(db, sentinel)).toEqual(preserved);
+        expect(await boundStart(db, sentinel)).toEqual(controlBinding);
     });
 
     test('reset clears working data and keeps the organisations, membership and sign-in', async () => {
-        const db = await connect(), a = await account(db), before = await footprint(db, a);
-        expect(before.dashboard_contact_requests).toBe(1);
+        const db = await connect(), a = await account(db, profiles.iso, true), before = await footprint(db, a);
+        const sentinel = await account(db, profiles.nist, true), sentinelBefore = await footprint(db, sentinel), preserved = await planRows(db, sentinel);
+        expect(before.dashboard_contact_requests).toBe(1); expect(before.dashboard_framework_revisions).toBe(2);
+        expect(before.dashboard_improvement_revisions).toBe(2); expect(before.dashboard_improvement_heads).toBe(1);
+        expect(before.dashboard_ncsc_assessment_revisions).toBe(3); expect(before.dashboard_paid_framework_access).toBe(1);
+        const controlBinding = await boundStart(db, sentinel);
+        expect(controlBinding).toHaveLength(1);
         await createAccountWipeRepository(pool).reset(wipeTarget(a));
         const after = await footprint(db, a);
         for (const table of RESET_TABLES) expect(after[table]).toBe(0);
         for (const table of DELETE_TENANT_TABLES.filter(t => !RESET_TABLES.includes(t))) expect(after[table]).toBe(before[table]);
+        expect(await footprint(db, sentinel)).toEqual(sentinelBefore);
+        expect(await planRows(db, sentinel)).toEqual(preserved);
+        expect(await boundStart(db, sentinel)).toEqual(controlBinding);
         expect(after.dashboard_starter_accounts).toBe(1); expect(after.email_preferences).toBe(1);
+    });
+
+    test('0033 binds only an explicit same-owner submission and its exact captured scope at an empty paid start', async () => {
+        const db = await connect(), a = await account(db, profiles.nist, true), other = await account(db, profiles.nist, true);
+        const submitted = a.ncsc.get(2), body = submitted.envelope.scopePopulation.body, selected = selectedSource(submitted);
+        const inAccount = (account, work) => tx(db, () => asRuntime(db, account.c.actor, account.scope, work));
+        const start = (choice, scope = body, options = {}) => tx(db, async () => {
+            await setScope(db, a.c.actor, a.scope);
+            return insertStart(db, a.scope, a.c.actor, scope, choice, { assessmentId: 'probe', ...options });
+        });
+        const records = () => db.query(`SELECT ncsc_assessment_id, ncsc_revision, ncsc_revision_sha256, ncsc_scope_sha256,
+            record#>'{state,responses}' AS answers FROM nofries.dashboard_framework_revisions
+            WHERE tenant_id=$1 AND organisation_id=$2 ORDER BY assessment_id`, [a.scope.tenantId, a.scope.organisationId]);
+        const bound = { ncsc_assessment_id: selected[0], ncsc_revision: selected[1], ncsc_revision_sha256: selected[2],
+            ncsc_scope_sha256: selected[3], answers: [] };
+        expect((await records()).rows).toContainEqual(bound);
+        // A missing selection stays unbound even when every character of the text matches.
+        await start([null, null, null, null], body, { assessmentId: 'text-only' });
+        expect((await records()).rows.at(-1)).toEqual({ ncsc_assessment_id: null, ncsc_revision: null,
+            ncsc_revision_sha256: null, ncsc_scope_sha256: null, answers: [] });
+        const foreign = selectedSource(other.ncsc.get(2));
+        expect(other.ncsc.get(2).envelope.scopePopulation.body).toEqual(body);
+        expect(foreign[3]).not.toBe(selected[3]);
+        for (const choice of [selectedSource(a.ncsc.get(1)), foreign, [selected[0], selected[1], selected[2], foreign[3]],
+            [selected[0], selected[1], foreign[2], selected[3]], [null, ...selected.slice(1)], [...selected.slice(0, 3), null]]) {
+            await expect(start(choice)).rejects.toMatchObject({ code: expect.stringMatching(/^235(03|14)$/) });
+        }
+        await expect(start(selected, { description: body.description + ' ' })).rejects.toMatchObject({ code: '23514' });
+        await expect(start(selected, body, { revision: 1 })).rejects.toMatchObject({ code: '23514' });
+        await expect(start(selected, body, { responses: [{ itemId: 'PR.DS-11-Q1', optionId: 'partial' }] }))
+            .rejects.toMatchObject({ code: '23514' });
+        await expect(inAccount(a, () => db.query('UPDATE nofries.dashboard_framework_revisions SET ncsc_scope_sha256 = NULL')))
+            .rejects.toMatchObject({ code: '42501' });
+        // Even a maintenance writer with UPDATE cannot retrofit a source or remove one.
+        const update = (id, pin) => db.query(`UPDATE nofries.dashboard_framework_revisions
+            SET ncsc_assessment_id=$4, ncsc_revision=$5, ncsc_revision_sha256=$6, ncsc_scope_sha256=$7
+            WHERE tenant_id=$1 AND organisation_id=$2 AND assessment_id=$3`,
+        [a.scope.tenantId, a.scope.organisationId, id, ...pin]);
+        for (const [id, pin] of [['text-only', selected], ['source-bound-start', [null, null, null, null]]]) {
+            await expect(update(id, pin)).rejects.toMatchObject({ code: '23514', message: 'paid start source is immutable' });
+        }
+        expect((await records()).rows).toHaveLength(3);
+        expect((await records()).rows).toContainEqual(bound);
+    });
+
+    test('0033 fences the original runtime role from bound reads and writes while ordinary paid history remains usable', async () => {
+        const db = await connect(), a = await account(db, profiles.nist, true), submitted = a.ncsc.get(2);
+        const runtime = work => tx(db, () => asRuntime(db, a.c.actor, a.scope, work));
+        const body = submitted.envelope.scopePopulation.body, pin = selectedSource(submitted);
+        const unbound = [null, null, null, null];
+        const start = (selection, assessmentId) => runtime(() => insertStart(db, a.scope, a.c.actor, body, selection, { assessmentId }));
+        // The 0030 table grant really does include the four new columns. The
+        // restrictive policy controls which values the role can see or store.
+        const { rows: privileges } = await runtime(() => db.query(`SELECT col,
+            has_column_privilege(current_user,'nofries.dashboard_framework_revisions',col,'SELECT') AS can_select,
+            has_column_privilege(current_user,'nofries.dashboard_framework_revisions',col,'INSERT') AS can_insert
+            FROM unnest(ARRAY['ncsc_assessment_id','ncsc_revision','ncsc_revision_sha256','ncsc_scope_sha256']) AS c(col)`));
+        expect(privileges).toHaveLength(4);
+        expect(privileges.every(row => row.can_select && row.can_insert)).toBe(true);
+        expect(await boundStart(db, a)).toHaveLength(1);
+        expect(await runtime(() => boundStart(db, a))).toEqual([]);
+        const denied = { code: '42501', message: expect.stringMatching(/row-level security/) };
+        for (const choice of [pin, ['missing', ...pin.slice(1)], [null, ...pin.slice(1)]]) {
+            await expect(start(choice, 'denied-runtime-start')).rejects.toMatchObject(denied);
+        }
+        await start(unbound, 'ordinary-runtime-start');
+        await runtime(() => saveUnbound(db, a.scope, a.c.actor, 'ordinary-runtime-start'));
+        const { rows: history } = await runtime(() => db.query(`SELECT revision, record#>>'{state,status}' AS status,
+            ncsc_assessment_id FROM nofries.dashboard_framework_revisions
+            WHERE tenant_id=$1 AND organisation_id=$2 AND assessment_id=$3 ORDER BY revision`,
+        [a.scope.tenantId, a.scope.organisationId, 'ordinary-runtime-start']));
+        expect(history).toEqual([{ revision: 0, status: 'created', ncsc_assessment_id: null },
+            { revision: 1, status: 'in-progress', ncsc_assessment_id: null }]);
+    });
+
+    test('0033 isolates organisations sharing a tenant and rolls back deletion of a referenced submission', async () => {
+        const db = await connect(), a = await account(db, profiles.nist, true), submitted = a.ncsc.get(2);
+        const selected = selectedSource(submitted), body = submitted.envelope.scopePopulation.body;
+        const sibling = { tenantId: a.scope.tenantId, organisationId: crypto.randomUUID() };
+        await db.query(`INSERT INTO nofries.dashboard_organisations
+            SELECT tenant_id, $3, schema_version, revision, jsonb_set(payload,'{organisationId}',to_jsonb($3::text))
+            FROM nofries.dashboard_organisations WHERE tenant_id=$1 AND organisation_id=$2`,
+        [a.scope.tenantId, a.scope.organisationId, sibling.organisationId]);
+        const fromSibling = (target, source) => tx(db, async () => {
+            await setScope(db, a.c.actor, sibling);
+            return insertStart(db, target, a.c.actor, body, source, { assessmentId: 'sibling-start' });
+        });
+        await expect(fromSibling(sibling, selected)).rejects.toMatchObject({ code: expect.stringMatching(/^235(03|14)$/) });
+        // The real foreign pin and an invented one give the same refusal when the
+        // writer also tries to claim the other organisation as the paid target.
+        await expect(fromSibling(a.scope, selected)).rejects.toMatchObject({ code: '23514' });
+        await expect(fromSibling(a.scope, [...selected.slice(0, 3), '0'.repeat(64)])).rejects.toMatchObject({ code: '23514' });
+        const keys = [a.scope.tenantId, a.scope.organisationId, selected[0]];
+        const owner = 'tenant_id=$1 AND organisation_id=$2 AND assessment_id=$3';
+        await expect(tx(db, async () => {
+            await db.query('DELETE FROM nofries.dashboard_ncsc_assessments WHERE ' + owner, keys);
+            await db.query('DELETE FROM nofries.dashboard_ncsc_assessment_revisions WHERE ' + owner + ' AND revision=$4',
+                [...keys, selected[1]]);
+        })).rejects.toMatchObject({ code: '23503', constraint: 'paid_start_ncsc_revision' });
+        expect((await db.query('SELECT payload_sha256 FROM nofries.dashboard_ncsc_assessments WHERE ' + owner, keys)).rows)
+            .toEqual([{ payload_sha256: selected[2] }]);
     });
 
     test('a tenant of another account aborts the whole call and removes nothing', async () => {
@@ -215,6 +512,9 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         await expect(repository.delete({ accountId: a.c.account.accountId, subjectKey: null, tenantIds: a.tenants })).rejects.toMatchObject({ code: 'onboarding_input_invalid' });
         expect(await footprint(db, a)).toEqual(before);
     });
+
+    require('./isoReportArtifactsPostgres')({ connect, account, wipeTarget, footprint, tx, asRuntime,
+        repository: () => createAccountWipeRepository(pool) });
 
     test('the capability sees nothing without settings and can never insert or update', async () => {
         const db = await connect(), a = await account(db);

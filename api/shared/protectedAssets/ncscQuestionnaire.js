@@ -1526,6 +1526,7 @@
             const panel = node('section', 'ncsc-results'); panel.setAttribute('aria-label', 'Assessment results');
             panel.append(node('h2', '', 'Assessment results'));
             content.append(panel);
+            if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
             renderNextSteps(panel);
             // The insurer answers map the accepted profile's questions only.
             if (!isV2(metadata)) renderQuestionnaireAnswers(panel);
@@ -1655,13 +1656,20 @@
                 list.append(row);
             });
             section.append(list);
-            const controls = node('div', 'ncsc-questionnaire-answer-controls');
-            const label = node('label', '', 'Answers to copy'); label.htmlFor = 'ncsc-questionnaire-answer-text';
-            const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 5; input.value = report.text;
-            const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
-            controls.append(label, input, button('Copy answers', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary'));
-            if (win && typeof win.print === 'function') controls.append(button('Print answers', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
-            controls.append(copied); section.append(controls, node('footer', '', report.footer)); panel.append(section);
+            const gated = typeof options.questionnaireExportGate === 'function';
+            if (gated) section.setAttribute('data-export-ready', 'false');
+            const exports = function () {
+                const controls = node('div', 'ncsc-questionnaire-answer-controls');
+                const label = node('label', '', 'Answers to copy'); label.htmlFor = 'ncsc-questionnaire-answer-text';
+                const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 5; input.value = report.text;
+                const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
+                controls.append(label, input, button('Copy answers', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary'));
+                if (win && typeof win.print === 'function') controls.append(button('Print answers', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
+                controls.append(copied);
+                if (gated) section.setAttribute('data-export-ready', 'true');
+                return controls;
+            };
+            section.append(gated ? options.questionnaireExportGate(exports) : exports(), node('footer', '', report.footer)); panel.append(section);
         }
         function renderQuestion() {
             if (!live() || !questionRegion || !acknowledged) return;

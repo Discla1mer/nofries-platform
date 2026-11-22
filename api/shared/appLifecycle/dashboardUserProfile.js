@@ -31,6 +31,7 @@ async function readDashboardUserProfile(tx, selector, at) {
             preparation.slot.membershipId !== target.membershipId || preparation.invitationId !== target.invitationId ||
             preparation.representativeAuthorityEvidenceId !== target.grantEvidenceId ||
             activation.occurredAt !== target.validFrom || activation.validUntil !== target.validUntil) throw new Error();
+        if (preparation.source.offerInput.detailsPolicy === 'after-first-result-v1') return null;
         return freeze({ ...target.scope, subjectKey: target.subjectKey, membershipId: target.membershipId,
             jobTitle: preparation.source.offerInput.contact.role });
     } catch (_) {
