@@ -487,7 +487,6 @@
         "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
       }
     },
-
     {
       "route": "/api/dashboard/ncsc/assessments",
       "methods": [

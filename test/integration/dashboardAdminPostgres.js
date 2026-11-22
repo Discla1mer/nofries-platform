@@ -185,7 +185,16 @@ module.exports = function registerDashboardAdminPostgresTests() {
             const before = clone((await h.repository.readAuthoritySnapshot(h.request, h.selector)).snapshot);
             const original = await readProduct(h);
             const first = await repo.frameworkDecision(input, null);
-            await expect(repo.frameworkDecision(input, first)).rejects.toBeDefined();
+            const flagsRow = async () => (await owner.query('SELECT revision, payload FROM nofries.dashboard_feature_flags WHERE tenant_id=$1 AND organisation_id=$2',
+                [h.selector.tenantId, h.selector.organisationId])).rows;
+            const decisionCount = async () => (await owner.query('SELECT count(*)::int AS n FROM nofries.dashboard_paid_framework_access WHERE tenant_id=$1 AND organisation_id=$2',
+                [h.selector.tenantId, h.selector.organisationId])).rows[0].n;
+            const flagsBefore = await flagsRow();
+            expect(flagsBefore).toHaveLength(1);
+            // Without the operator role membership the grant is refused before any write.
+            await expect(repo.frameworkDecision(input, first)).rejects.toMatchObject({ statusCode: 503, notApplied: 'operator_capability_unbound' });
+            expect(await flagsRow()).toEqual(flagsBefore);
+            expect(await decisionCount()).toBe(0);
             await control.query(`GRANT nofries_framework_operator TO ${quote(runtimeRole)} WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`);
             try {
                 for (const tuple of tuples) {

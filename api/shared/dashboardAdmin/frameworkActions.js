@@ -10,6 +10,11 @@ const { subjectHash } = require('../customerSignup/customerAuthority');
 const { APPROVAL_AUTHORITY } = require('./accountActionsMembershipApproval');
 
 function fail(status, code) { throw new DashboardAdminError(status, 'dashboard_admin_' + code); }
+// Audit records carry the reason digest the database stores, never the text.
+function audited(command) {
+    const { reason, ...rest } = command;
+    return { ...rest, reasonSha256: hash(reason), reasonLength: reason.length };
+}
 
 function createFrameworkAction(options) {
     const { authorityContainer, auditContainer, readContext, createRepository, clock, identityPolicy } = options;
@@ -63,23 +68,26 @@ function createFrameworkAction(options) {
             const witness = await repo.frameworkDecision(command, null);
             await current();
             const approvedAt = now(), expiresAt = new Date(Date.parse(approvedAt) + 900000).toISOString();
-            await audit('approval', { approvalAuthority: APPROVAL_AUTHORITY, command, binding, witness, approvedAt, expiresAt });
+            await audit('approval', { approvalAuthority: APPROVAL_AUTHORITY, command: audited(command), binding, witness, approvedAt, expiresAt });
             return { operationId: command.operationId, approvalExpiresAt: expiresAt, action: command.action, tuple: command.tuple };
         }
         try { approval = (await readActionRecord(auditContainer, directory + 'approval.json', signal)).record; }
         catch (error) { if (error.statusCode === 404) fail(403, 'access_denied'); throw error; }
         if (approval.schemaVersion !== 1 || approval.approvalAuthority !== APPROVAL_AUTHORITY ||
-            !equal(approval.command, command) || !equal(approval.binding, binding) ||
+            !equal(approval.command, audited(command)) || !equal(approval.binding, binding) ||
             Date.parse(instant(approval.expiresAt)) - Date.parse(instant(approval.approvedAt)) !== 900000) fail(403, 'access_denied');
         await current();
         // The create-only attempt consumes this approval across all processes before any mutation.
-        const event = { command, approvalSha256: hash(approval), before: approval.witness };
+        const event = { command: audited(command), approvalSha256: hash(approval), before: approval.witness };
         try { await audit('attempt', { ...event, at: now() }); }
         catch (error) { if (error.statusCode === 409 || error.statusCode === 412) fail(409, 'conflict'); throw error; }
         let result;
         try { result = await repo.frameworkDecision(command, approval.witness); }
         catch (error) {
-            await audit('outcome', { ...event, outcome: error.statusCode === 409 || error.statusCode === 403 ? 'refused' : 'uncertain', at: instant(clock()) });
+            // An unbound operator capability is refused before any write, so it is deterministic.
+            const notApplied = error.statusCode === 503 && error.notApplied === 'operator_capability_unbound';
+            await audit('outcome', { ...event, outcome: notApplied ? 'not_applied' : error.statusCode === 409 || error.statusCode === 403 ? 'refused' : 'uncertain',
+                ...(notApplied ? { code: error.notApplied } : {}), at: instant(clock()) });
             throw error;
         }
         await audit('outcome', { ...event, result, outcome: 'succeeded', at: instant(clock()) });
