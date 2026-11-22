@@ -1,0 +1,85 @@
+# Product roadmap — source of truth
+
+Part of #547. Edit the JSON below, then run `node scripts/generate-roadmap.js`.
+`test/publicRoadmap.test.js` requires exact generated parity with `roadmap.html`.
+The source controls the customer-facing timeline, introduction and lane meanings;
+shared navigation and the existing legal limitation remain in the page shell.
+
+## Evidence and interpretation
+
+Snapshot: NZ FY27 Q2 (Oct–Dec 2026), main `79239e9de2a73b449c9ef05d2d56d567bf7f19df`.
+[Current release receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277)
+records this SHA live. It supersedes the
+[942ea19 receipt](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704).
+#501, #518, #528, #529, #530 and #538 are merged through the 942ea19 chain;
+#546 is now merged and released. `NOFRIES_PAID_FRAMEWORKS_ENABLED` remains unset.
+Their paid runtime, previews from locked cards, enquiry pricing and Overview progress
+are therefore **not Done customer capabilities**. The fictional pages themselves
+are released, unlisted and noindex; this roadmap does not advertise them.
+The last explicit deferred-details and NCSC-v2 flag receipt also records them unset:
+[02ce619 release](https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7072631196).
+No later activation evidence was found. Do not infer activation from a merged PR.
+
+Each item records source PRs. For planned work these are proposal/copy provenance,
+not a claim that the feature ships. Future quarter placement is a proposed planning
+window for review, not a date stated by those PRs. No prior-quarter items are inferred
+from repository age. Current-quarter Done items have merged source PRs and a release
+receipt whose deployed commit contains those changes. Availability remains bounded
+by the description and the public feature-status registry.
+
+| Done source PR | Verified merge commit (ancestor of released 79239e9) |
+| --- | --- |
+| [#249](https://github.com/Discla1mer/nofries-platform/pull/249) | `82a4bf4df2f040a75102b949cd70bbc9b6f786fc` |
+| [#300](https://github.com/Discla1mer/nofries-platform/pull/300) | `70bad3bb4e742688e0f36f51fe5a20ec364fce0b` |
+| [#397](https://github.com/Discla1mer/nofries-platform/pull/397) | `dbe81b8dbc2649bb9c8bf8674e57a5d4dee9c286` |
+| [#254](https://github.com/Discla1mer/nofries-platform/pull/254) | `5cc761d959708a97285ec2f033804cd7ca6388fd` |
+| [#355](https://github.com/Discla1mer/nofries-platform/pull/355) | `448cb59d393b53116757d865c9db60be9e3d76fc` |
+| [#440](https://github.com/Discla1mer/nofries-platform/pull/440) | `4e16dc198c3abee63099cadf524db158f414ad66` |
+| [#408](https://github.com/Discla1mer/nofries-platform/pull/408) | `5d4c43716a249938caaa66079730f35210d70a46` |
+| [#261](https://github.com/Discla1mer/nofries-platform/pull/261) | `587cbc32a953a8df0ee80654e071f1b36f50950f` |
+
+## Published timeline data
+
+```json
+{
+  "currentQuarter": "fy27-q2",
+  "title": "What’s next.",
+  "lead": "What you can use today, what is being built and what is planned.",
+  "notice": "NZ financial-year quarters are planning windows, not delivery commitments. Planned scope, order and availability may change; a quarter does not promise delivery or subscription inclusion.",
+  "historicalNotice": "No verified releases recorded for this quarter.",
+  "serviceNote": "90-day managed security includes a written summary you can give your board or insurer now. That summary is part of the paid service. Managed IT is the separate day-to-day service.",
+  "quarters": [
+    {"id": "fy26-q4", "label": "FY26 Q4", "period": "Apr–Jun 2026", "state": "historical"},
+    {"id": "fy27-q1", "label": "FY27 Q1", "period": "Jul–Sep 2026", "state": "historical"},
+    {"id": "fy27-q2", "label": "FY27 Q2", "period": "Oct–Dec 2026", "state": "current"},
+    {"id": "fy27-q3", "label": "FY27 Q3", "period": "Jan–Mar 2027", "state": "planned"},
+    {"id": "fy27-q4", "label": "FY27 Q4", "period": "Apr–Jun 2027", "state": "planned"}
+  ],
+  "lanes": {"Done": "Released and available for the accounts described.", "In progress": "Planned work being built or checked; not available yet.", "Next": "Planned work for the next planning window.", "Later": "Planned longer-term work; scope and order may change."},
+  "items": [
+    {"id": "free-dashboard", "quarter": "fy27-q2", "lane": "Done", "title": "Free NCSC dashboard", "text": "Create a Company account, save and resume the 14-question NCSC assessment, and compare submitted results over time. Free dashboard; it doesn’t expire. Existing agreed offers and their terms remain unchanged.", "prs": [249, 300], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277"},
+    {"id": "top-gaps", "quarter": "fy27-q2", "lane": "Done", "title": "Results with your top three gaps", "text": "See gaps in your saved answers, with reasons and next steps. Multi-factor authentication, patching, backups and payment-change checks come first. Copy or print a summary to share.", "prs": [249, 397], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277", "link": {"href": "/sample-result.html", "label": "See a fictional result"}},
+    {"id": "improvement-actions", "quarter": "fy27-q2", "lane": "Done", "title": "Improvement actions", "text": "Give assessment gaps an owner, due date and status. Carry those into the next assessment’s plan. A completed task does not prove that a control works.", "prs": [254, 355], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277"},
+    {"id": "demo", "quarter": "fy27-q2", "lane": "Done", "title": "Try the demo", "text": "Explore a fictional business before creating an account. Entries stay in your browser on this device until you choose Reset demo; they are not sent to No Fries.", "prs": [440], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277", "link": {"href": "/try", "label": "Try the demo"}},
+    {"id": "service-enquiries", "quarter": "fy27-q2", "lane": "Done", "title": "Ask about a service", "text": "Open the contact form from a service in the dashboard, with that service already named.", "prs": [408], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277"},
+    {"id": "emails", "quarter": "fy27-q2", "lane": "Done", "title": "Welcome and result emails", "text": "Receive a welcome email when you create an account and a link to your result when you submit an assessment.", "prs": [261], "release": "https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074639277"},
+    {"id": "simpler-signin", "quarter": "fy27-q2", "lane": "In progress", "title": "Simpler sign-up and return visits", "text": "Planned improvements to account setup and returning to saved work, including organisations with several members. These changes are still being checked.", "prs": [424, 539]},
+    {"id": "paid-assessments", "quarter": "fy27-q2", "lane": "In progress", "title": "Planned paid assessments", "text": "Paid NIST CSF 2.0 and ISO 27001 readiness self-assessments are planned and are not available yet. Work includes separate saved answers, readiness results and assessment progress. Prices are not published here while these options remain unavailable.", "prs": [501, 518, 528, 529, 530, 538, 546]},
+    {"id": "weighted-assessment", "quarter": "fy27-q2", "lane": "In progress", "title": "Updated NCSC questions", "text": "A planned 16-question assessment with weighted scoring. Existing submitted results keep their original scoring.", "prs": [440]},
+    {"id": "contact-request", "quarter": "fy27-q2", "lane": "In progress", "title": "Ask No Fries to contact you", "text": "A planned request button on results and Services that explains what staff will see before you choose it. Nothing is shared through this request unless you ask. This is separate from the existing link to the contact form.", "prs": [440, 454, 461]},
+    {"id": "review-not-applicable", "quarter": "fy27-q3", "lane": "Next", "title": "Review of not applicable answers", "text": "A planned way to review and confirm answers marked not applicable. For now, these answers count as not yet met and stay in your result; no review changes that.", "prs": [440, 480]},
+    {"id": "update-answers", "quarter": "fy27-q3", "lane": "Next", "title": "Update submitted answers", "text": "Planned ways to update submitted answers and refresh the result without starting again.", "prs": [249, 440]},
+    {"id": "evidence-reports", "quarter": "fy27-q3", "lane": "Next", "title": "Evidence and board reporting", "text": "Planned evidence references, owners, recurring reviews and downloadable assessment reports. Customer uploads and a report you can download yourself are not available yet. A reference or completed review does not independently verify a control.", "prs": [440, 478]},
+    {"id": "client-requirements", "quarter": "fy27-q3", "lane": "Next", "title": "Assess against your own requirements", "text": "Planned question review alongside the source requirements, with customer-specific results kept separate from NCSC results. Text import is being developed; PDF, DOCX and scanned-document imports are later options.", "prs": [3, 440]},
+    {"id": "reminders", "quarter": "fy27-q3", "lane": "Next", "title": "Email reminders", "text": "Planned unfinished-assessment nudges, reassessment reminders and monthly status emails. Settings and unsubscribe links exist; reminders still need testing and activation.", "prs": [261, 440]},
+    {"id": "assessment-types", "quarter": "fy27-q4", "lane": "Later", "title": "Separate assessment types", "text": "Planned CIS, Essential Eight and distinct ASD Essentials assessments, plus a view of how answers map to SMB1001. Each assessment would keep its own version, scope and results; a mapping is not certification.", "prs": [3, 440]},
+    {"id": "connected-evidence", "quarter": "fy27-q4", "lane": "Later", "title": "Connected evidence and continuous checks", "text": "Planned connections to supported systems, with scope, freshness and missing data visible. Potential sources include Microsoft 365, Datto RMM and managed detection and response. These are not active integrations or included services.", "prs": [3, 440]},
+    {"id": "controls-reviews", "quarter": "fy27-q4", "lane": "Later", "title": "Controls, evidence and review workflows", "text": "Planned reusable controls, traceable evidence, risk exceptions, policies and approvals. Longer-term work covers assets, access, suppliers, people, recovery and technical reviews. Claims, technical checks and independent assurance would remain distinct.", "prs": [3, 440]},
+    {"id": "questionnaires-privacy", "quarter": "fy27-q4", "lane": "Later", "title": "Questionnaires and privacy responsibilities", "text": "Planned reuse of reviewed answers for customer questionnaires and preparation for independent SOC 2 assessment. Track data handling, retention and deletion responsibilities. Legal decisions stay separate from technical evidence; No Fries does not issue an independent assurance opinion.", "prs": [3, 440]},
+    {"id": "consultant-services", "quarter": "fy27-q4", "lane": "Later", "title": "Client and service overview", "text": "Planned status views for agreed No Fries services and client organisations a consultant is authorised to manage. Paid assessment status across clients remains subject to a separate scope decision.", "prs": [440, 527]},
+    {"id": "ai-governance", "quarter": "fy27-q4", "lane": "Later", "title": "AI governance and IT optimisation", "text": "Planned ways to understand AI use and identify opportunities to improve IT.", "prs": [3, 440]}
+  ]
+}
+```
+
+Public page inventory and conflict decisions: [Stream H review](review/stream-h/inventory.md).
