@@ -16,7 +16,7 @@ const UNTIMED_QUERY_MS = 30000, ROLLBACK_MS = 1000, COMMIT_MIN_MS = 1000;
 const RESET_TABLES = Object.freeze([
     // A contact request is the organisation's own working data (0026); nothing references it.
     'dashboard_contact_requests',
-    'dashboard_deferred_agreements', 'dashboard_representative_details',
+    'dashboard_representative_details',
     'dashboard_improvement_heads', 'dashboard_improvement_revisions',
     'dashboard_iso_report_decisions', 'dashboard_iso_report_artifacts',
     'dashboard_evidence_heads', 'dashboard_evidence_receipts', 'dashboard_evidence_revisions',
@@ -29,7 +29,8 @@ const RESET_TABLES = Object.freeze([
 // admission decisions, onboarding proofs before decisions and cases); the
 // deferrable cycles are complete by COMMIT.
 const DELETE_TENANT_TABLES = Object.freeze([...RESET_TABLES,
-    'dashboard_paid_framework_access', 'email_outbox',
+    // Enrollment belongs to the retained agreement, not the cleared working data.
+    'dashboard_deferred_agreements', 'dashboard_paid_framework_access', 'email_outbox',
     'dashboard_runtime_receipts', 'dashboard_runtime_audit', 'dashboard_identity_bindings',
     'dashboard_onboarding_proofs', 'dashboard_onboarding_decisions', 'dashboard_onboarding_cases',
     'dashboard_admission_decisions', 'dashboard_admission_authorities', 'dashboard_operation_receipts',
