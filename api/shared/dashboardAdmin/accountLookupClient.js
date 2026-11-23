@@ -44,18 +44,35 @@
         return 'Account lookup is unavailable.';
     }
     function membershipCell(row, cell) {
-        if (!row.selector) { cell.textContent = '—'; return; }
+        // plan and effectiveAt come only from the matched starter account, not a sign-in record.
+        const summary = document.createElement('p'); summary.setAttribute('aria-live', 'polite');
+        const describe = (membership = 'Not checked', activeMember = false) => {
+            const formed = Boolean(row.plan), activated = formed && Boolean(row.effectiveAt);
+            const last = activeMember ? 'Active dashboard membership' : activated ? 'Workspace activated' : formed ? 'Starter account formed' : 'None confirmed here';
+            summary.textContent = [
+                'Last confirmed onboarding checkpoint: ' + last + '.',
+                'Starter account: ' + (formed ? 'Formed' : 'Not confirmed here') + '.',
+                'Agreement acceptance: Not verified by this lookup.',
+                'Workspace activation: ' + (activated ? row.effectiveAt : 'Not confirmed here') + '.',
+                'Dashboard membership: ' + membership + '.',
+                'First successful dashboard load: Not recorded by this lookup.'
+            ].join(' ');
+        };
+        describe(); cell.append(summary);
+        if (!row.selector) return;
         const show = document.createElement('button'); show.type = 'button'; show.textContent = 'Show dashboard access';
         const output = document.createElement('div'); output.setAttribute('aria-live', 'polite');
         show.addEventListener('click', async () => {
-            show.disabled = true; output.textContent = 'Reading dashboard access…';
+            show.disabled = true; describe(); output.textContent = 'Reading dashboard access…';
             const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12000);
             try {
                 const response = await request('/api/dashboard-admin/lookup', row.selector, controller.signal);
                 if (response.status !== 200) throw Object.assign(new Error('denied'), { status: response.status });
                 const value = response.value.result;
                 output.replaceChildren();
-                if (value.status !== 'found') { output.textContent = value.status === 'not_found' ? 'No dashboard membership in this organisation.' : 'Dashboard access is unavailable right now.'; return; }
+                if (value.status !== 'found') { describe(value.status === 'not_found' ? 'Not found in this organisation' : 'Unavailable'); output.textContent = value.status === 'not_found' ? 'No dashboard membership in this organisation.' : 'Dashboard access is unavailable right now.'; return; }
+                const activeMember = value.memberships.some(member => member.effectiveStatus === 'active');
+                describe(activeMember ? 'Active in this organisation' : 'No active membership in this organisation', activeMember);
                 row.membershipRevision = value.revisions.membership; row.memberships = value.memberships;
                 const list = document.createElement('ul');
                 value.memberships.forEach(member => {
@@ -66,7 +83,7 @@
                 if (!value.memberships.length) output.textContent = 'Invited only; no membership yet.';
                 output.append(list, Object.assign(document.createElement('p'), { textContent: `${value.organisation.displayName} · membership revision ${value.revisions.membership}` }));
                 if (window.nofriesAccountSelection === row) select(row);
-            } catch (error) { output.textContent = message(error); }
+            } catch (error) { describe('Unavailable'); output.textContent = message(error); }
             finally { clearTimeout(timer); show.disabled = false; }
         });
         cell.append(show, output);
