@@ -442,7 +442,10 @@
             forgetLastOrganisation();
             show(cycle, hadSession ? 'expired' : 'unauthenticated');
         } else if (unresolved && unresolved.kind === 'logout') show(cycle, 'signout');
-        else show(cycle, error && error.status === 403 ? 'denied' : 'unavailable');
+        else {
+            show(cycle, error && error.status === 403 ? 'denied' : 'unavailable');
+            if (error && error.status >= 500 && error.supportReference) elements.status.textContent += ' Support reference: ' + error.supportReference + '.';
+        }
     }
     function invalid(transport) { const error = new Error('dashboard_response_invalid'); error.validation = !transport; return error; }
     function fields(value, keys) {
@@ -597,6 +600,7 @@
             if (refresh) refresh.requests.add(cancel);
             else cycle.cleanup.push(cancel);
             const headers = { Accept: 'application/json' };
+            if (body === undefined) headers['X-NoFries-Support-Receipt'] = '1';
             if (body === undefined && path === '/api/dashboard/session') {
                 headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1 paid-status-v1';
             }
@@ -623,7 +627,9 @@
                 let value;
                 try { value = readBody ? await readBody(response) : await response.json(); } catch (_) { throw invalid(); }
                 if (!current(cycle) || settled || refresh && !currentRefresh(cycle, refresh)) throw invalid();
-                finish(resolve, { status: response.status, value: value });
+                const ref = response.status >= 500 && response.status <= 599 ? response.headers.get('x-nofries-support-reference') : null;
+                const supportReference = typeof ref === 'string' && ref.length === 19 && /^NF-[A-F0-9]{16}$/.test(ref) ? ref : null;
+                finish(resolve, { status: response.status, value: value, supportReference });
             }).catch(function (error) { finish(reject, error); });
         });
     }
@@ -633,7 +639,7 @@
         if (current(cycle) && controller && typeof controller.informationRead === 'function') controller.informationRead(new Date().toISOString());
     }
     function requireSuccess(result) {
-        if (result.status !== 200) { const error = invalid(); error.status = result.status; throw error; }
+        if (result.status !== 200) { const error = invalid(); error.status = result.status; error.supportReference = result.supportReference; throw error; }
         return result.value;
     }
     function transientSessionFailure(error) {
@@ -647,12 +653,13 @@
         elements.message.textContent = message;
         elements.status.textContent = cycle.openingOrganisation || detail;
     }
-    function waitForRetry(cycle, ms, updating) {
+    function waitForRetry(cycle, ms, updating, reference) {
         if (current(cycle) && document.body.dataset.dashboardState === 'loading') {
             elements.heading.textContent = updating ? 'No Fries is being updated' : 'No Fries is having a temporary problem';
             elements.message.textContent = updating ? 'This usually takes a couple of minutes. We\'ll keep trying…' : 'We\'ll keep trying…';
             elements.status.textContent = updating ? 'Your work is saved. You do not need to sign in again.'
                 : 'This is a temporary service problem. You do not need to sign in again.';
+            if (reference) elements.status.textContent += ' Support reference: ' + reference + '.';
         }
         return new Promise(function (resolve) {
             const timer = window.setTimeout(resolve, ms);
@@ -678,7 +685,7 @@
             }
             if (!current(cycle)) throw invalid();
             if (result.status >= 500 && transientSessionFailure({ status: result.status }) && attempt < SESSION_RETRY_MS.length) {
-                await waitForRetry(cycle, SESSION_RETRY_MS[attempt]);
+                await waitForRetry(cycle, SESSION_RETRY_MS[attempt], false, result.supportReference);
                 continue;
             }
             return result;

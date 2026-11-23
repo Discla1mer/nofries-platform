@@ -1273,6 +1273,22 @@ describe('internal dashboard loader protocol', () => {
             await h.reply(h.requests.length - 1, status, body);
         }
     }
+    test('temporary problem quotes only the logged reference from the current response', async () => {
+        const h = harness(); await flush();
+        const header = ref => ({ headers: { get: key => key === 'content-type' ? 'application/json' : key === 'x-nofries-support-reference' ? ref : null } });
+        const first = 'NF-0123456789ABCDEF', last = 'NF-FEDCBA9876543210';
+        await h.reply(0, 503, { code: 'unavailable' }, header(first));
+        expect(h.elements.dashboardStatus.textContent).toContain(first);
+        for (const [index, delay, ref] of [[1, 1000, 'person@example.invalid'], [2, 2000, null], [3, 4000, last]]) {
+            jest.advanceTimersByTime(delay); await flush();
+            await h.reply(index, 503, { supportReference: first }, header(ref));
+            expect(h.elements.dashboardStatus.textContent).not.toMatch(/0123456789ABCDEF|example/);
+        }
+        expect(h.status).toBe('unavailable');
+        expect(h.elements.dashboardStatus.textContent).toContain(last);
+        h.click('dashboardRetry'); await flush();
+        expect(h.elements.dashboardStatus.textContent).not.toContain(last);
+    });
     test.each([401, 403, 410, 503])('shows fixed safe state for HTTP %s without initializing or redirect loops', async status => {
         const h = harness(); await flush(); const body = { code: 'private_subject', error: '<private provider record>' };
         await h.reply(0, status, body);

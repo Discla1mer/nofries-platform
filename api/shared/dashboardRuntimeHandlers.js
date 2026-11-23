@@ -4,7 +4,7 @@
 // routes, provider, runtime, publication capability or customer admission.
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { IncomingMessage } = require('node:http');
-const { createHash } = require('node:crypto');
+const { createHash, randomBytes } = require('node:crypto');
 const { TextDecoder } = require('node:util');
 const { isProxy } = require('node:util').types;
 const { BrowserAuthError, createBrowserAuthService, assertExactSameOriginRequest } = require('./browserAuth');
@@ -41,7 +41,7 @@ const AUTH = ['env', 'store', 'clientApplication', 'cryptoProvider', 'randomByte
 const STORE = ['createTransaction', 'consumeTransaction', 'deleteTransaction', 'createSession', 'loadSession', 'deleteSession'];
 const rendererAssets = require('./paidRendererAssets');
 const HEADER_NAMES = ['cookie', 'origin', 'sec-fetch-site', 'x-nofries-dashboard-generation', 'x-nofries-dashboard-purpose',
-    'x-nofries-dashboard-capabilities', 'content-type', 'content-encoding'];
+    'x-nofries-dashboard-capabilities', 'x-nofries-support-receipt', 'content-type', 'content-encoding'];
 // Older dashboards send the shorter values and keep their exact session shape.
 // The current dashboard adds account-identity-v1, which returns the signed-in name
 // beside the email; it does not grant access.
@@ -95,6 +95,18 @@ function method(object, name, optional = false) {
 }
 function response(status, body, extra = {}) {
     return freeze({ status, headers: apiSecurityHeaders({ 'Content-Type': 'application/json; charset=utf-8', ...extra }), body, isRaw: false });
+}
+// Only already-failed dashboard reads get a receipt. Never pass request material
+// to this sink, and do not issue a reference if writing the log failed.
+function supportReceipt(result, entry) {
+    const marker = entry.transport.headers['x-nofries-support-receipt'];
+    if (marker.length !== 1 || marker[0] !== '1' || entry.transport.method !== 'GET' || result.status < 500 || result.status > 599 || result.isRaw !== false) return result;
+    try {
+        const reference = 'NF-' + randomBytes(8).toString('hex').toUpperCase();
+        const stage = ['session', 'bootstrap', 'overview', 'organisations', 'work-queue'].includes(entry.category) ? entry.category : 'dashboard';
+        console.warn('Dashboard support: ' + JSON.stringify({ reference, stage, category: 'service_failure' }));
+        return freeze({ ...result, headers: { ...result.headers, 'X-NoFries-Support-Reference': reference } });
+    } catch (_) { return result; }
 }
 function logFailure(category, status, code) {
     try { console.warn('Dashboard request failed: ' + JSON.stringify({ route: category, status, code })); } catch (_) { /* Logging cannot grant access. */ }
@@ -1068,7 +1080,7 @@ function createDashboardRuntimeHandlers(configuration) {
             }
             catch (error) { return failure(error, entry.category); }
             finally { entry.disclosureCheck = null; settle(entry, original); }
-        }));
+        })).then(result => supportReceipt(result, entry));
         entry.initialising = false;
         return entry.promise;
     }

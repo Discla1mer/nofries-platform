@@ -407,9 +407,18 @@ describe('dashboard authentication and safe host projections', () => {
         const h = harness(), handler = h.build(), issued = await h.login();
         h.state.afterLoad = () => { throw new Error('private driver detail ' + SUBJECT + ' ' + issued.cookie); };
         const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const read = () => request({ cookieHeader: issued.cookie, headers: { 'x-nofries-support-receipt': '1' } });
         try {
-            expectError(await handler.handleRequest(request({ cookieHeader: issued.cookie })), 503, 'dashboard_unavailable');
-            expect(warn).toHaveBeenCalledTimes(1);
+            const failed = await handler.handleRequest(read());
+            expectError(failed, 503, 'dashboard_unavailable');
+            const reference = failed.headers['X-NoFries-Support-Reference'];
+            expect(reference).toMatch(/^NF-[A-F0-9]{16}$/);
+            expect(warn.mock.calls[1]).toEqual(['Dashboard support: ' + JSON.stringify({ reference, stage: 'session', category: 'service_failure' })]);
+            warn.mockImplementation(() => { throw new Error('log offline'); });
+            const unlogged = await handler.handleRequest(read());
+            expectError(unlogged, 503, 'dashboard_unavailable');
+            expect(unlogged.headers['X-NoFries-Support-Reference']).toBeUndefined();
+            expect(warn).toHaveBeenCalledTimes(4);
             const line = warn.mock.calls[0];
             expect(line).toHaveLength(1);
             expect(line[0]).toBe('Dashboard request failed: ' + JSON.stringify({ route: 'session', status: 503, code: 'dashboard_unavailable' }));
