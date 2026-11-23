@@ -208,3 +208,29 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
         expect(h.dialog.showModal).not.toHaveBeenCalled(); expect(h.perform).not.toHaveBeenCalled();
     });
 });
+
+test.each([
+    ['active', 'Active dashboard membership', 'Active in this organisation'],
+    ['not_started', 'Workspace activated', 'No active membership'],
+    [null, 'Workspace activated', 'No active membership'],
+])('checkpoint summary separates scoped membership (%s) from a browser load', async (effectiveStatus, last, membership) => {
+    const selected = { ...row('selected@example.test'), effectiveAt: '2026-10-01T10:00:00.000Z', selector: { subjectKey: 'synthetic' } };
+    const fetch = sessionThenLookup(json(200, { rows: [selected] })).mockResolvedValueOnce(json(200, { result: {
+        status: 'found', revisions: { membership: 1 }, organisation: { displayName: 'Synthetic' },
+        memberships: effectiveStatus ? [{ effectiveStatus, status: 'active', roles: ['owner'], validUntil: 'later' }] : []
+    } }));
+    const h = harness(fetch); await h.submit();
+    const result = h.nodes.get('accountLookupResults');
+    expect(result.textContent).toContain('Dashboard membership: Not checked');
+    await [...result.querySelectorAll('button')[0].events.click][0]();
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(result.textContent).toContain('Last confirmed onboarding checkpoint: ' + last);
+    expect(result.textContent).toContain('Dashboard membership: ' + membership);
+    expect(result.textContent).toContain('Agreement acceptance: Not verified');
+    expect(result.textContent).toContain('First successful dashboard load: Not recorded');
+});
+
+test('sign-in record alone is not a starter, workspace or membership checkpoint', async () => {
+    const h = harness(sessionThenLookup(json(200, { rows: [{ ...row('only@example.test'), plan: null }] }))); await h.submit();
+    expect(h.nodes.get('accountLookupResults').textContent).toContain('Last confirmed onboarding checkpoint: None confirmed here');
+});
