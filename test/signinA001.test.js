@@ -107,10 +107,15 @@ describe('journey: opening failure is a sign-in error with a working retry', () 
         } finally { f.view.dispose(); }
     });
 
-    test('a retry that fails again keeps the retry available', async () => {
-        const f = mount(async () => { throw new Error('synthetic'); });
+    test.each(['rejected', 'unavailable'])('a second %s login read puts sign-in before retry', async outcome => {
+        const f = mount(async () => {
+            if (outcome === 'rejected') throw new Error('synthetic');
+            return { status: 'unavailable' };
+        }, { customerTransport: 'external', entryIntent: 'login' });
         try {
             await f.view.ready;
+            const firstSignIn = f.root.querySelectorAll('a').find(link => link.textContent === 'Sign in again');
+            expect(f.root.children.indexOf(f.root.querySelector('button'))).toBeLessThan(f.root.children.indexOf(firstSignIn));
             f.root.querySelector('button').click(); await flush();
             expect(f.client.load).toHaveBeenCalledTimes(2);
             expect(f.root.querySelector('h1').textContent).toBe('We could not open your account');

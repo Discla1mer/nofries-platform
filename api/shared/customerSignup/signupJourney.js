@@ -517,7 +517,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             const state = await Promise.race([action(controller.signal), cancelled]);
             if (!disposed && current === generation) {
                 if (opening && customerTransport && entryIntent === 'login' && state.status === 'unavailable') {
-                    showAccessUnconfirmed(state);
+                    showAccessUnconfirmed(state, current > 1);
                 } else {
                     opening = false;
                     show(state, state, restoreDraft);
