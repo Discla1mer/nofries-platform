@@ -1202,6 +1202,26 @@ function registerRealPostgresTests() {
             const directory = await request(h.app).get('/api/dashboard/organisations?limit=50').set('Cookie', login.cookie);
             expect(directory.status).toBe(200); expect(directory.body.bindings).toHaveLength(1);
             expectNoGraphAttempts();
+            const assertBareConsultantLanding = async (fresh = false) => {
+                const { servedDashboard } = require('../helpers/servedDashboard');
+                const landing = await servedDashboard({ app: h.app, cookie: login.cookie,
+                    now: new Date(h.state.now).toISOString(), origin: h.env.NOFRIES_PUBLIC_URL });
+                expect(landing.trace.every(item => item.status < 400 ||
+                    (item.url === '/api/dashboard/session' && item.method === 'get' && item.status === 409))).toBe(true);
+                expect(['selection', 'ready']).toContain(landing.state);
+                if (fresh) expect(landing.trace).toEqual(expect.arrayContaining([
+                    { url: '/api/dashboard/session', method: 'get', status: 409 },
+                    { url: '/api/dashboard/session', method: 'post', status: 200 }
+                ]));
+                console.info('isolated bare Consultant stage=' + (fresh ? 'returning' : 'first') + ' state=' + landing.state);
+                expect(landing.trace.some(item => item.url === '/api/dashboard/selection')).toBe(false);
+                const state = await request(h.app).get('/api/dashboard/session').set('Cookie', login.cookie);
+                expect(state.status).toBe(200);
+                expect(state.body.selectedBindingId).toBe(landing.state === 'ready' ? directory.body.bindings[0].bindingId : null);
+                const list = await request(h.app).get('/api/dashboard/organisations?limit=50').set('Cookie', login.cookie);
+                expect(list.body.bindings).toEqual(directory.body.bindings);
+            };
+            if (accountType === 'consultant' && userType === 'External') await assertBareConsultantLanding();
             const { createProductionDashboardConfiguration } = require('../../lib/dashboardProduction');
             const { createProductionCustomerSignupConfiguration, createExternalCustomerSignupConfiguration } = require('../../lib/customerSignupProduction');
             const { starterAccountKey } = require('../../api/shared/customerSignup/starterAccountAllocation');
@@ -1268,12 +1288,13 @@ function registerRealPostgresTests() {
                     status: 409, body: { code: 'dashboard_initialization_required' } });
                 // A fresh login deliberately requires the ordinary served loader
                 // to initialize its new gate; login alone does not reuse the old one.
+                if (accountType === 'consultant' && userType === 'External') await assertBareConsultantLanding(true);
                 const { servedDashboard } = require('../helpers/servedDashboard');
                 const rendered = await servedDashboard({ app: h.app, cookie: login.cookie,
                     now: new Date(h.state.now).toISOString(), origin: h.env.NOFRIES_PUBLIC_URL,
                     ...(accountType === 'consultant' ? { hash: '#organisations', chooseOrganisationLabel: directory.body.bindings[0].organisationLabel } : {}) });
                 expect({ state: rendered.state, hidden: rendered.hidden }).toEqual({ state: 'ready', hidden: false });
-                expect(rendered.trace).toEqual(expect.arrayContaining([
+                if (!(accountType === 'consultant' && userType === 'External')) expect(rendered.trace).toEqual(expect.arrayContaining([
                     { url: '/api/dashboard/session', method: 'get', status: 409 },
                     { url: '/api/dashboard/session', method: 'post', status: 200 }
                 ]));
