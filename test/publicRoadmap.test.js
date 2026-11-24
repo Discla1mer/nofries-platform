@@ -62,7 +62,7 @@ test('paid work is Done without prices, copy limits and undated planned lanes ca
     const paid = data.items.find(i => i.id === 'paid-assessments');
     expect(paid.lane).toBe('Done');
     expect(paid.text).toContain('NIST CSF 2.0 and ISO 27001 readiness self-assessments are available as a paid add-on.');
-    expect(paid.text).toContain('We invoice manually, then our staff enable access.');
+    expect(paid.text).not.toMatch(/invoice|price/);
     expect(paid.text).toContain('The ISO 27001 readiness self-assessment is not certification. For accredited certification, use an accredited certification body.');
     expect(paid.link).toEqual({ href: '/pricing.html#pricing-assessments', label: 'See pricing and how to get access' });
     expect(data.items.find(i => i.id === 'adviser-paid-status')).toMatchObject({ lane: 'Done',

@@ -26,7 +26,7 @@ function renderRoadmap(data = readRoadmap()) {
         `<h1>${escape(data.title)}</h1><p class="home-lead">${escape(data.lead)}</p>`,
         `<p>Last updated <time datetime="${escape(data.lastUpdated)}">${formatDate(data.lastUpdated)}</time>.</p>`,
         `<p>${escape(data.notice)}</p><p>What you can use depends on the access your organisation has agreed.</p>`,
-        `<p>${escape(data.serviceNote)} <a href="/pricing.html#pricing-pilot">See service details</a>.</p>`, '</header>',
+        `<p>${escape(data.serviceNote)} <a href="/pricing.html#pricing-pilot">See 90-day service details</a>.</p>`, '</header>',
         '<nav class="roadmap-jump" aria-label="Roadmap sections">'];
     for (const lane of Object.keys(data.lanes)) lines.push(`<a href="#${LANE_IDS[lane]}">${escape(lane)}</a>`);
     lines.push('</nav>', '<dl class="roadmap-legend">');
