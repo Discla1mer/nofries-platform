@@ -10,7 +10,7 @@ const PUBLIC_REPOSITORY = Object.freeze({ full_name: 'Discla1mer/nofries-platfor
 const CI_PATH = '.github/workflows/ci.yml';
 const CI_WORKFLOW_SHA256 = '090f984cfa7f7d20b62b8d8c4293155dea455302a15c2dba46162b8d884189c8';
 const CI_SOURCES = Object.freeze({
-    'package.json': '9dfc37865a95920b0320485b43c750670100e3c9439641152b8b95db3067949a',
+    'package.json': '0d583d3fa8c3cea25a113c46bcbfb40e02b90ba2470f1ab0406882a5754da961',
     'scripts/ci-journey-sequencer.js': '0cfe1e2f72d1694b604621b65d85ab7617032dcc985b8f13ce666f2c65f00306',
     'scripts/ci-journey-order.js': 'b09a4f16700a0ea6558b7208375e9d347f6f6a6e23b69922ce63491d7d8d9d81',
     'scripts/check-dependency-audit.js': 'f730b5f8ef36adec690e0ff02e53dfaeef4486de521ae2ef76bf9f612a989f9a'
