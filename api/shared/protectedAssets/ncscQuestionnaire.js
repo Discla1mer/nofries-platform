@@ -1727,6 +1727,24 @@
             const campaign = resultsCampaign(win);
             const boardExportGate = options.boardExportGate || (content => content());
             const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
+            // Keep the same gated anchor and keyboard focus while one shared probe settles.
+            const availability = enquiryAvailable(win);
+            const resultHelp = (label, full = false) => {
+                const slot = node('div', full ? 'picture-next-steps-help' : 'ncsc-results-contact');
+                if (full && campaignOfferBridge[campaign]) slot.append(node('p', '', campaignOfferBridge[campaign]));
+                slot.append(gated(() => {
+                    const link = node('a', 'dashboard-button');
+                    function show(available) {
+                        link.textContent = available ? 'Fix these with No Fries' : 'Email hello@nofries.nz';
+                        link.href = available ? '/contact.html?service=managed_security_90' : 'mailto:hello@nofries.nz';
+                        if (label) link.setAttribute('aria-label', link.textContent + ': ' + label);
+                    }
+                    show(false);
+                    availability.then(available => { if (live()) show(available); });
+                    return link;
+                }));
+                return slot;
+            };
             if (campaign === 'board') {
                 const section = node('section', 'ncsc-board-next-step picture-summary');
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
@@ -1741,13 +1759,12 @@
                         ? 'Your saved No answer reports a gap in checking payment and bank-detail changes through a trusted, separate route.'
                         : 'Confirm how payment and bank-detail changes are checked. These saved answers do not establish a payment-check gap.'),
                     node('p', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route.'));
-                panel.append(section, managedSecurityOffer(node, gated, win, () => live(), campaign));
+                panel.append(section, resultHelp('', true));
             }
             const questionnaireFirst = !isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier');
             if (questionnaireFirst) renderQuestionnaireAnswers(panel);
             if (results) {
-                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps'));
-                if (campaign !== 'scam') panel.append(managedSecurityOffer(node, gated, win, () => live(), campaign));
+                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps', gap => [resultHelp(gap.title)]));
             }
             if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
             renderNextSteps(panel);
@@ -1819,6 +1836,7 @@
                     }); detail.append(item);
                 }); panel.append(detail);
             });
+            panel.append(campaign === 'scam' ? resultHelp('Results summary') : resultHelp('', true));
         }
         // Show the reported (lower) figure first; the upper figure follows in a plain sentence.
         function leadWithLowerBound(card, valueSelector, model) {
