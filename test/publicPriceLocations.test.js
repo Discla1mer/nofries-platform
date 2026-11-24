@@ -12,8 +12,10 @@ const price = 'NZ$99 + GST per organisation per month or NZ$990 + GST per year (
 // Uses the public ship lists, plus the separately generated /try document.
 // Staff-only quotes, data fixtures, styles, API responses and dynamically
 // concatenated numbers are outside this literal source check.
-test('price literals are absent from public page and script sources outside Pricing', () => {
-    const files = [...PUBLIC_ROOT_FILES.filter(f => f.endsWith('.html') && f !== 'pricing.html'),
+test('price literals are absent outside Pricing and the Browns Bay offer', () => {
+    // /offer is the only local special-offer exception and owns its rates.
+    const pricePages = new Set(['pricing.html', 'offer.html']);
+    const files = [...PUBLIC_ROOT_FILES.filter(f => f.endsWith('.html') && !pricePages.has(f)),
         ...PUBLIC_SCRIPT_FILES.map(f => 'js/' + f), 'demo/try/document.js'];
     for (const file of files) {
         const normalized = read(file).replace(/&dollar;|&#(?:36|x24);/gi, '$').replace(/&nbsp;/g, ' ');
