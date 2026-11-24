@@ -1867,10 +1867,19 @@
             const section = node('section', 'ncsc-questionnaire-answers'); section.setAttribute('aria-labelledby', 'ncsc-questionnaire-answers-title');
             const title = node('h3', '', report.title); title.id = 'ncsc-questionnaire-answers-title';
             section.append(title, node('p', '', 'Suggested answers from this saved assessment. Not answered means the detail is missing or cannot be confirmed from your answers.'), node('p', '', report.scope));
+            const nextEvidence = resultsCampaign(win) === 'supplier' && report.items.find(item => item.evidence);
+            if (nextEvidence) {
+                const next = button('Jump to the first answer to verify', function () {
+                    focusTarget(section.querySelector('[id="ncsc-supplier-first-evidence"]'));
+                }, 'dashboard-button dashboard-button-secondary');
+                section.append(node('p', '', 'Start with an answer that needs evidence. Verify the exact question before giving it to your customer.'), next);
+            }
             const list = node('ol');
             report.items.forEach(function (item) {
                 const row = node('li'); row.setAttribute('data-answer-id', item.id);
-                row.append(node('h4', '', item.question), node('strong', '', 'Suggested answer: ' + item.answer),
+                const question = node('h4', '', item.question);
+                if (item === nextEvidence) { question.id = 'ncsc-supplier-first-evidence'; question.tabIndex = -1; }
+                row.append(question, node('strong', '', 'Suggested answer: ' + item.answer),
                     node('p', 'dashboard-muted', item.basis), node('p', '', item.action));
                 if (item.evidence) row.append(node('p', '', item.evidence));
                 list.append(row);
