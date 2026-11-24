@@ -434,24 +434,14 @@
         supplier: 'Use any gaps behind your questionnaire answers to choose an improvement. For example, review access to customer files and keep the updated access list as evidence for your next answer.',
         board: 'Choose a practical improvement from your top gaps. The written progress summary can show your board what changed and what still needs attention.'
     };
-    function managedSecurityOffer(node, gated, win, stillCurrent, campaign, availability) {
+    function managedSecurityOffer(node, gated, win, stillCurrent, campaign) {
         const help = node('div', 'picture-next-steps-help'); help.hidden = true;
         const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
         if (campaignOfferBridge[campaign]) help.append(node('p', '', campaignOfferBridge[campaign]));
         help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
             gated(() => link), node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
-        (availability || enquiryAvailable(win)).then(available => {
-            if (!stillCurrent()) return;
-            if (!available && availability) help.replaceChildren(gated(() => resultsContactLink(node, false)));
-            help.hidden = !available && !availability;
-        });
+        enquiryAvailable(win).then(available => { if (available && stillCurrent()) help.hidden = false; });
         return help;
-    }
-    function resultsContactLink(node, available, label) {
-        const link = node('a', 'dashboard-button', available ? 'Fix these with No Fries' : 'Email hello@nofries.nz');
-        link.href = available ? '/contact.html?service=managed_security_90' : 'mailto:hello@nofries.nz';
-        if (label) link.setAttribute('aria-label', link.textContent + ': ' + label);
-        return link;
     }
     // Prints one block on its own (one A4 page for the board summary): every
     // sibling along its path to <body> is hidden for print only, then
@@ -1735,12 +1725,22 @@
             const campaign = resultsCampaign(win);
             const boardExportGate = options.boardExportGate || (content => content());
             const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
+            // Keep the same gated anchor and keyboard focus while one shared probe settles.
             const availability = enquiryAvailable(win);
-            const compactHelp = label => {
-                const slot = node('div', 'ncsc-results-contact');
-                availability.then(available => {
-                    if (live()) slot.append(gated(() => resultsContactLink(node, available, label)));
-                });
+            const resultHelp = (label, full = false) => {
+                const slot = node('div', full ? 'picture-next-steps-help' : 'ncsc-results-contact');
+                if (full && campaignOfferBridge[campaign]) slot.append(node('p', '', campaignOfferBridge[campaign]));
+                slot.append(gated(() => {
+                    const link = node('a', 'dashboard-button');
+                    function show(available) {
+                        link.textContent = available ? 'Fix these with No Fries' : 'Email hello@nofries.nz';
+                        link.href = available ? '/contact.html?service=managed_security_90' : 'mailto:hello@nofries.nz';
+                        if (label) link.setAttribute('aria-label', link.textContent + ': ' + label);
+                    }
+                    show(false);
+                    availability.then(available => { if (live()) show(available); });
+                    return link;
+                }));
                 return slot;
             };
             if (campaign === 'board') {
@@ -1757,12 +1757,12 @@
                         ? 'Your saved No answer reports a gap in checking payment and bank-detail changes through a trusted, separate route.'
                         : 'Confirm how payment and bank-detail changes are checked. These saved answers do not establish a payment-check gap.'),
                     node('p', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route.'));
-                panel.append(section, managedSecurityOffer(node, gated, win, () => live(), campaign, availability));
+                panel.append(section, resultHelp('', true));
             }
             const questionnaireFirst = !isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier');
             if (questionnaireFirst) renderQuestionnaireAnswers(panel);
             if (results) {
-                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps', gap => [compactHelp(gap.title)]));
+                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps', gap => [resultHelp(gap.title)]));
             }
             if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
             renderNextSteps(panel);
@@ -1834,7 +1834,7 @@
                     }); detail.append(item);
                 }); panel.append(detail);
             });
-            panel.append(campaign === 'scam' ? compactHelp('Results summary') : managedSecurityOffer(node, gated, win, () => live(), campaign, availability));
+            panel.append(campaign === 'scam' ? resultHelp('Results summary') : resultHelp('', true));
         }
         // Show the reported (lower) figure first; the upper figure follows in a plain sentence.
         function leadWithLowerBound(card, valueSelector, model) {
