@@ -169,7 +169,11 @@ async function pricingKeyboard(page, route) {
     const target = page.locator('main a:visible');
     for (let step = 0; step < await target.count(); step++) {
         await page.keyboard.press('Tab');
-        if ((await page.locator(':focus').getAttribute('href'))?.startsWith(href)) return true;
+        const focusedHref = await page.locator(':focus').getAttribute('href');
+        if (!focusedHref) continue;
+        const focused = new URL(focusedHref, page.url());
+        const path = focused.pathname === '/pricing' ? focused.pathname + focused.hash : focused.pathname + focused.search;
+        if (path === href) return true;
     }
     assert.fail(route + ': keyboard could not reach ' + href);
 }
