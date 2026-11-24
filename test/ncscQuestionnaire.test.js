@@ -3923,6 +3923,19 @@ describe('campaign Results next steps', () => {
             expect(dom.window.fetch).toHaveBeenCalledTimes(1);
         } finally { ui.controller.destroy(); }
     });
+    test('supplier Results links to the first existing evidence suggestion', async () => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand()); await h.execute(submitCommand());
+        const ui = await resumeUi(h, { dom: campaignDom('supplier') });
+        try {
+            control(ui, 'Jump to the first answer to verify').click();
+            const target = byId(ui, 'ncsc-supplier-first-evidence');
+            const first = renderer.questionnaireAnswers(projectNcscDetail([...h.versions.values()][0]), metadata()).items.find(item => item.evidence);
+            expect(target.textContent).toBe(first.question);
+            expect(target.parentElement.textContent).toContain(first.evidence);
+            expect(target.tabIndex).toBe(-1);
+            expect(ui.document.activeElement).toBe(target);
+        } finally { ui.controller.destroy(); }
+    });
     test.each(['yes', 'partial', 'unknown', 'not_applicable', 'no'])('scam guidance makes a gap claim only for a supported saved No (%s)', async option => {
         const h = await backend(); await h.execute(createCommand());
         await h.execute(saveCommand('assessment-a', 0, 'answers', allResponses(option))); await h.execute(submitCommand());
