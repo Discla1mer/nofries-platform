@@ -96,7 +96,7 @@ test('the homepage keeps only one compact MSP section below its Dashboard entry'
 
 test('pricing stays on the pricing page, not the homepage', () => {
     const price = 'NZ$1,250 + GST';
-    const offer = '<a href="/pricing.html#pricing-pilot">pricing and what’s included in 90-day managed security</a>';
+    const offer = '<a href="/pricing#pricing-pilot">pricing and what’s included in 90-day managed security</a>';
     assert.ok(html.includes(offer));
     const pricingPage = fs.readFileSync(path.join(root, 'pricing.html'), 'utf8');
     assert.ok(pricingPage.includes(price + ' for 90 days'));
