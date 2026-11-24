@@ -234,3 +234,19 @@ test('sign-in record alone is not a starter, workspace or membership checkpoint'
     const h = harness(sessionThenLookup(json(200, { rows: [{ ...row('only@example.test'), plan: null }] }))); await h.submit();
     expect(h.nodes.get('accountLookupResults').textContent).toContain('Last confirmed onboarding checkpoint: None confirmed here');
 });
+
+test('every list and lookup cell names its column so narrow screens can show labelled cards', async () => {
+    const cells = node => [...(node.tagName === 'TD' ? [node] : []), ...node.children.flatMap(cells)];
+    const listed = { rows: [{ provider: 'external', readable: true, email: 'card@example.test', accountType: 'company', plan: 'starter',
+        createdAt: '2026-11-01T00:00:00.000Z', activatedAt: null, signup: 'unfinished', signIn: 'none', organisationsComplete: true,
+        organisations: [{ name: 'Card Ltd', kind: 'own' }] }], truncated: false };
+    const list = harness(jest.fn(async url => url === '/api/dashboard/session' ? session : json(200, listed)));
+    await [...list.nodes.get('accountListLoad').events.click][0]();
+    expect(cells(list.nodes.get('accountListResults')).map(cell => cell.getAttribute('data-label')))
+        .toEqual(['Email', 'Type', 'Account formed', 'Signup', 'Sign-in record', 'Organisations', 'Plan', 'Actions']);
+    const lookup = harness(sessionThenLookup(reply('card@example.test')));
+    lookup.nodes.get('accountLookupEmail').value = 'card@example.test'; await lookup.submit();
+    const labels = cells(lookup.nodes.get('accountLookupResults')).map(cell => cell.getAttribute('data-label'));
+    expect(labels).toEqual(['Email', 'Store', 'Schema', 'Plan', 'Type', 'Organisation', 'Sign-in record', 'Activated (UTC)',
+        'Recorded end date, not enforced (UTC)', 'Revision', 'Dashboard access']);
+});
