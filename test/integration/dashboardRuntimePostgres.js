@@ -1039,8 +1039,9 @@ function registerRealPostgresTests() {
             } finally { f.state.hook = previousHook; }
         }, 7 * 60000);
         test.each([['company', 'Guest'], ['consultant', 'Guest'], ['consultant', 'Member'], ['company', 'External'], ['consultant', 'External'],
-            ['company', 'ExternalAssertion'], ['consultant', 'ExternalAssertion']])('production %s %s journey verifies email, accepts real terms and opens its dashboard without manual admission', async (accountType, userType) => {
+            ['company', 'ExternalAssertion'], ['consultant', 'ExternalAssertion'], ['consultant', 'ExternalDeferred']])('production %s %s journey verifies email, accepts real terms and opens its dashboard without manual admission', async (accountType, userType) => {
             const external = userType.startsWith('External'), assertionCalls = [];
+            const deferred = userType === 'ExternalDeferred';
             const graphAttempts = { requests: 0, tokenScopes: 0 };
             const expectNoGraphAttempts = () => {
                 if (external) expect(graphAttempts).toEqual({ requests: 0, tokenScopes: 0 });
@@ -1082,7 +1083,8 @@ function registerRealPostgresTests() {
             const originalConnection = firstJourneyPool ? await connectionIdentity(firstJourneyPool.raw) : null;
             const h = customerProductionHarness({ pool: firstJourneyPool?.restricted || f.restrictedPool, instanceId: f.instanceId, restoreEpoch: f.state.restoreEpoch,
                 identity: { ...f.customerIdentity, audience: uid(7) }, now: Date.now(), starter: true, external, customerClientId: external ? uid(105) : null,
-                ...(external ? { configureExternal({ dependencies }) {
+                ...(external ? { configureExternal({ env, dependencies }) {
+                    if (deferred) env.NOFRIES_DEFER_STARTER_DETAILS = 'true';
                     // Count before denying: a caught provider failure must still
                     // expose any Graph dependency throughout this customer journey.
                     const isGraphTarget = value => {
@@ -1135,10 +1137,10 @@ function registerRealPostgresTests() {
             if (external) {
                 const provisional = await h.loginExternal(); expect(provisional.response.status).toBe(303);
                 const before = await request(h.app).get('/api/external-customer-signup/state').set('Cookie', provisional.cookie);
-                expect(before.body.state).toEqual({ status: 'setup_details', email: 'synthetic@gmail.com' });
+                expect(before.body.state).toEqual({ status: 'setup_details', email: 'synthetic@gmail.com', ...(deferred ? { deferredDetails: true } : {}) });
                 expect((await request(h.app).get('/api/dashboard/session').set('Cookie', provisional.cookie)).status).toBeGreaterThanOrEqual(400);
                 const submitted = await post('/api/external-customer-signup/setup', provisional.cookie,
-                    { accountType, organisationName: 'Unrelated synthetic business', details }).set('X-CSRF-Token', before.body.csrfToken);
+                    { accountType, organisationName: 'Unrelated synthetic business', details: deferred ? { authorityConfirmed: true } : details }).set('X-CSRF-Token', before.body.csrfToken);
                 expect({ status: submitted.status, body: submitted.body }).toEqual({ status: 200, body: { state: { status: 'continue_authentication' } } });
                 expect(h.state.delivered).toEqual([]);
                 expect((await request(h.app).get('/api/dashboard/session').set('Cookie', provisional.cookie)).status).toBeGreaterThanOrEqual(400);
@@ -1221,12 +1223,36 @@ function registerRealPostgresTests() {
                 const list = await request(h.app).get('/api/dashboard/organisations?limit=50').set('Cookie', login.cookie);
                 expect(list.body.bindings).toEqual(directory.body.bindings);
             };
-            if (accountType === 'consultant' && userType === 'External') await assertBareConsultantLanding();
+            if (accountType === 'consultant' && (userType === 'External' || deferred)) await assertBareConsultantLanding();
             const { createProductionDashboardConfiguration } = require('../../lib/dashboardProduction');
             const { createProductionCustomerSignupConfiguration, createExternalCustomerSignupConfiguration } = require('../../lib/customerSignupProduction');
             const { starterAccountKey } = require('../../api/shared/customerSignup/starterAccountAllocation');
             const retainedAccount = JSON.parse(authorityContainer.records.get(`customer-starter/${starterAccountKey(current.email)}.json`));
             const ownSlot = retainedAccount.organisations[0];
+            const detailEnrollment = await ownerPool.query('SELECT count(*)::int AS count FROM nofries.dashboard_deferred_agreements WHERE tenant_id = $1 AND organisation_id = $2',
+                [ownSlot.tenantId, ownSlot.organisationId]);
+            expect(detailEnrollment.rows[0].count).toBe(deferred ? 1 : 0);
+            if (accountType === 'consultant' && (userType === 'External' || deferred)) {
+                expect(ownSlot.kind).toBe('own');
+                expect(retainedAccount.planId).toBe('nf-starter-2026-09-r1');
+                expect(retainedAccount.organisations).toHaveLength(1);
+                expect(current).toMatchObject({ schemaVersion: 2, revision: 0 });
+                const membership = (await ownerPool.query('SELECT payload FROM nofries.dashboard_membership_states WHERE tenant_id = $1 AND organisation_id = $2',
+                    [ownSlot.tenantId, ownSlot.organisationId])).rows[0].payload;
+                expect(membership.revision).toBe(2);
+                expect(membership.memberships).toHaveLength(1);
+                const [member] = membership.memberships;
+                expect(member).toMatchObject({ status: 'active', roles: ['admin'] });
+                expect(Date.parse(member.validUntil) - Date.parse(member.validFrom)).toBe(14 * 86400000);
+            }
+            if (deferred) {
+                const negotiated = await request(h.app).get('/api/dashboard/session').set('Cookie', login.cookie)
+                    .set('X-NoFries-Dashboard-Capabilities', 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1');
+                expect(negotiated.status).toBe(200);
+                expect(negotiated.body.representativeDetailsAvailable).toBe(true);
+                expect(negotiated.body).not.toHaveProperty('questionnaireExportGateAvailable');
+                expect((await ownerPool.query('SELECT count(*)::int AS count FROM nofries.dashboard_representative_details')).rows[0].count).toBe(0);
+            }
             const quota = (external ? createExternalCustomerSignupConfiguration(h.env,
                 createProductionDashboardConfiguration(h.env, h.dependencies), h.dependencies, h.dependencies.externalCustomer)
                 : createProductionCustomerSignupConfiguration(h.env,
@@ -1288,13 +1314,13 @@ function registerRealPostgresTests() {
                     status: 409, body: { code: 'dashboard_initialization_required' } });
                 // A fresh login deliberately requires the ordinary served loader
                 // to initialize its new gate; login alone does not reuse the old one.
-                if (accountType === 'consultant' && userType === 'External') await assertBareConsultantLanding(true);
+                if (accountType === 'consultant' && (userType === 'External' || deferred)) await assertBareConsultantLanding(true);
                 const { servedDashboard } = require('../helpers/servedDashboard');
                 const rendered = await servedDashboard({ app: h.app, cookie: login.cookie,
                     now: new Date(h.state.now).toISOString(), origin: h.env.NOFRIES_PUBLIC_URL,
                     ...(accountType === 'consultant' ? { hash: '#organisations', chooseOrganisationLabel: directory.body.bindings[0].organisationLabel } : {}) });
                 expect({ state: rendered.state, hidden: rendered.hidden }).toEqual({ state: 'ready', hidden: false });
-                if (!(accountType === 'consultant' && userType === 'External')) expect(rendered.trace).toEqual(expect.arrayContaining([
+                if (!(accountType === 'consultant' && (userType === 'External' || deferred))) expect(rendered.trace).toEqual(expect.arrayContaining([
                     { url: '/api/dashboard/session', method: 'get', status: 409 },
                     { url: '/api/dashboard/session', method: 'post', status: 200 }
                 ]));
