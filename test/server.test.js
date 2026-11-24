@@ -381,7 +381,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(response.text).not.toContain('Initial set-up starts at NZ$750 + GST');
         expect(response.text).not.toContain('NZ$895');
         expect(response.text).not.toContain('up to 10 users');
-        expect(response.text).toContain('No Fries Managed IT covers agreed user support, work computers and business tools.');
+        expect(response.text).not.toContain('No Fries Managed IT covers agreed user support, work computers and business tools.');
         expect(response.text).not.toContain('Sales Agency');
         expect(response.text).not.toContain('luna.nofries.nz');
         expect(response.text).not.toContain('up to two typical computers');
