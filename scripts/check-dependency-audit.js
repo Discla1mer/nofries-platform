@@ -393,13 +393,13 @@ function sortedMap(value) {
 // exercised by the offline SDK tests.
 function isReviewedApiMsalOverride(surfaceId, manifest, lock) {
     if (surfaceId !== 'api-runtime' ||
-        manifest.dependencies?.['@azure/msal-node'] !== '7.2.2' ||
+        manifest.dependencies?.['@azure/msal-node'] !== '7.2.3' ||
         JSON.stringify(manifest.overrides) !==
-            JSON.stringify({ '@azure/identity': { '@azure/msal-node': '7.2.2' } }) ||
+            JSON.stringify({ '@azure/identity': { '@azure/msal-node': '7.2.3' } }) ||
         lock.packages['node_modules/@azure/identity']?.version !== '4.14.1') return false;
     const nodes = lockedMsalNodes(lock);
     return nodes.length === 1 && nodes[0][0] === 'node_modules/@azure/msal-node' &&
-        nodes[0][1]?.version === '7.2.2';
+        nodes[0][1]?.version === '7.2.3';
 }
 
 function validateManifestLock(surfaceId, manifest, lock, { allowManifestOverrides = false } = {}) {

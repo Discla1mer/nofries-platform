@@ -516,7 +516,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@azure/msal-node",
-      "version": "7.2.2",
+      "version": "7.2.3",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -524,7 +524,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@azure/msal-node/node_modules/@azure/msal-common",
-      "version": "16.16.2",
+      "version": "16.17.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -8892,7 +8892,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/@azure/msal-node",
-      "version": "7.2.2",
+      "version": "7.2.3",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -8900,7 +8900,7 @@
     {
       "lockfile": "api/package-lock.json",
       "path": "node_modules/@azure/msal-node/node_modules/@azure/msal-common",
-      "version": "16.16.2",
+      "version": "16.17.0",
       "license": "MIT",
       "development": false,
       "optional": false
