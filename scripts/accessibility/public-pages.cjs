@@ -226,6 +226,7 @@ async function adLinks(page, base, route) {
                 }
             } finally { await context.close(); }
         }
+        await require('./browns-bay-offer.cjs')(browser, base);
         assert.deepEqual(unexpected, [], 'Unexpected network request or page error');
         assert.deepEqual(failures, [], 'Public accessibility failures');
     } finally {
