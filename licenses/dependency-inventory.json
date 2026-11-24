@@ -116,8 +116,8 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@anthropic-ai/sdk",
-      "version": "0.133.0",
-      "license": "MIT",
+      "version": "1.6.0",
+      "license": "Apache-2.0",
       "development": true,
       "optional": false
     },
@@ -372,7 +372,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@azure-rest/core-client",
-      "version": "2.8.0",
+      "version": "2.9.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -384,22 +384,6 @@
       "license": "MIT",
       "development": false,
       "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@azure/ai-projects",
-      "version": "2.5.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@azure/ai-projects/node_modules/@azure/core-lro",
-      "version": "3.4.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
     },
     {
       "lockfile": "package-lock.json",
@@ -456,14 +440,6 @@
       "license": "MIT",
       "development": false,
       "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@azure/core-sse",
-      "version": "2.4.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
     },
     {
       "lockfile": "package-lock.json",
@@ -1163,14 +1139,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/@googleapis/sheets",
-      "version": "18.1.3",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/@hono/node-server",
       "version": "2.1.8",
       "license": "MIT",
@@ -1428,7 +1396,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/ansi",
-      "version": "2.0.9",
+      "version": "2.1.1",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -1436,55 +1404,23 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/checkbox",
-      "version": "5.2.2",
+      "version": "5.3.1",
       "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/checkbox/node_modules/@inquirer/core",
-      "version": "12.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/checkbox/node_modules/signal-exit",
-      "version": "4.1.0",
-      "license": "ISC",
       "development": true,
       "optional": false
     },
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/confirm",
-      "version": "6.2.0",
+      "version": "6.4.1",
       "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/confirm/node_modules/@inquirer/core",
-      "version": "12.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/confirm/node_modules/signal-exit",
-      "version": "4.1.0",
-      "license": "ISC",
       "development": true,
       "optional": false
     },
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/core",
-      "version": "12.0.4",
+      "version": "12.1.1",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -1500,31 +1436,15 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/editor",
-      "version": "5.3.0",
+      "version": "5.5.0",
       "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/editor/node_modules/@inquirer/core",
-      "version": "12.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/editor/node_modules/signal-exit",
-      "version": "4.1.0",
-      "license": "ISC",
       "development": true,
       "optional": false
     },
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/external-editor",
-      "version": "3.0.4",
+      "version": "3.1.1",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -1540,7 +1460,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/figures",
-      "version": "2.0.9",
+      "version": "2.1.1",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -1548,79 +1468,31 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/input",
-      "version": "5.1.3",
+      "version": "5.2.1",
       "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/input/node_modules/@inquirer/core",
-      "version": "12.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/input/node_modules/signal-exit",
-      "version": "4.1.0",
-      "license": "ISC",
       "development": true,
       "optional": false
     },
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/search",
-      "version": "4.3.0",
+      "version": "4.4.1",
       "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/search/node_modules/@inquirer/core",
-      "version": "12.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/search/node_modules/signal-exit",
-      "version": "4.1.0",
-      "license": "ISC",
       "development": true,
       "optional": false
     },
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/select",
-      "version": "5.2.2",
+      "version": "5.3.1",
       "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/select/node_modules/@inquirer/core",
-      "version": "12.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@inquirer/select/node_modules/signal-exit",
-      "version": "4.1.0",
-      "license": "ISC",
       "development": true,
       "optional": false
     },
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@inquirer/type",
-      "version": "4.2.0",
+      "version": "4.3.1",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -2019,8 +1891,16 @@
     },
     {
       "lockfile": "package-lock.json",
+      "path": "node_modules/@modelcontextprotocol/core",
+      "version": "2.4.0",
+      "license": "Apache-2.0",
+      "development": true,
+      "optional": true
+    },
+    {
+      "lockfile": "package-lock.json",
       "path": "node_modules/@modelcontextprotocol/sdk",
-      "version": "1.32.1",
+      "version": "1.32.2",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -2195,8 +2075,16 @@
     },
     {
       "lockfile": "package-lock.json",
+      "path": "node_modules/@modelcontextprotocol/server",
+      "version": "2.4.0",
+      "license": "Apache-2.0",
+      "development": true,
+      "optional": true
+    },
+    {
+      "lockfile": "package-lock.json",
       "path": "node_modules/@modelcontextprotocol/server-filesystem",
-      "version": "2026.8.31",
+      "version": "2.3.0",
       "license": "SEE LICENSE IN LICENSE",
       "development": true,
       "optional": true
@@ -2204,7 +2092,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@mongodb-js/saslprep",
-      "version": "1.5.0",
+      "version": "1.6.3",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -2500,7 +2388,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opencode-ai/sdk",
-      "version": "1.18.34",
+      "version": "1.19.6",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -2508,15 +2396,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/api",
-      "version": "1.9.1",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@opentelemetry/api-logs",
-      "version": "0.223.2",
+      "version": "1.10.0",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2524,7 +2404,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/context-async-hooks",
-      "version": "2.10.0",
+      "version": "3.1.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2532,7 +2412,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/core",
-      "version": "2.10.0",
+      "version": "3.1.0",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2540,31 +2420,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/exporter-trace-otlp-http",
-      "version": "0.223.2",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@opentelemetry/exporter-trace-otlp-http/node_modules/@opentelemetry/core",
-      "version": "2.12.1",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@opentelemetry/exporter-trace-otlp-http/node_modules/@opentelemetry/resources",
-      "version": "2.12.1",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@opentelemetry/exporter-trace-otlp-http/node_modules/@opentelemetry/sdk-trace",
-      "version": "2.12.1",
+      "version": "0.301.2",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2572,7 +2428,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/otlp-exporter-base",
-      "version": "0.223.2",
+      "version": "0.301.2",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2580,7 +2436,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/otlp-exporter-base/node_modules/@opentelemetry/core",
-      "version": "2.12.1",
+      "version": "3.1.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2588,7 +2444,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/otlp-transformer",
-      "version": "0.223.2",
+      "version": "0.301.2",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2596,23 +2452,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/otlp-transformer/node_modules/@opentelemetry/core",
-      "version": "2.12.1",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@opentelemetry/otlp-transformer/node_modules/@opentelemetry/resources",
-      "version": "2.12.1",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@opentelemetry/otlp-transformer/node_modules/@opentelemetry/sdk-trace",
-      "version": "2.12.1",
+      "version": "3.1.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2620,7 +2460,15 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/resources",
-      "version": "2.10.0",
+      "version": "3.1.1",
+      "license": "Apache-2.0",
+      "development": true,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/@opentelemetry/resources/node_modules/@opentelemetry/core",
+      "version": "3.1.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2628,7 +2476,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/sdk-logs",
-      "version": "0.223.2",
+      "version": "3.1.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2636,15 +2484,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/sdk-logs/node_modules/@opentelemetry/core",
-      "version": "2.12.1",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@opentelemetry/sdk-logs/node_modules/@opentelemetry/resources",
-      "version": "2.12.1",
+      "version": "3.1.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2652,7 +2492,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/sdk-metrics",
-      "version": "2.12.1",
+      "version": "3.1.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2660,15 +2500,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/sdk-metrics/node_modules/@opentelemetry/core",
-      "version": "2.12.1",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@opentelemetry/sdk-metrics/node_modules/@opentelemetry/resources",
-      "version": "2.12.1",
+      "version": "3.1.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2676,23 +2508,15 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/sdk-trace",
-      "version": "2.10.0",
+      "version": "3.1.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/@opentelemetry/sdk-trace-base",
-      "version": "2.10.0",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@opentelemetry/sdk-trace-node",
-      "version": "2.10.0",
+      "path": "node_modules/@opentelemetry/sdk-trace/node_modules/@opentelemetry/core",
+      "version": "3.1.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2700,7 +2524,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@opentelemetry/semantic-conventions",
-      "version": "1.43.0",
+      "version": "1.45.0",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -2916,7 +2740,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@redis/bloom",
-      "version": "5.12.1",
+      "version": "5.12.4",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -2924,7 +2748,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@redis/client",
-      "version": "5.12.1",
+      "version": "5.12.4",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -2932,7 +2756,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@redis/json",
-      "version": "5.12.1",
+      "version": "5.12.4",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -2940,7 +2764,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@redis/search",
-      "version": "5.12.1",
+      "version": "5.12.4",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -2948,7 +2772,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@redis/time-series",
-      "version": "5.12.1",
+      "version": "5.12.4",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -3356,7 +3180,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/@typespec/ts-http-runtime",
-      "version": "0.3.5",
+      "version": "0.3.11",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -3899,14 +3723,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/binaryextensions",
-      "version": "6.11.0",
-      "license": "Artistic-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/body-parser",
       "version": "1.20.9",
       "license": "MIT",
@@ -3956,7 +3772,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/bson",
-      "version": "7.3.2",
+      "version": "7.3.4",
       "license": "Apache-2.0",
       "development": true,
       "optional": true
@@ -4056,14 +3872,6 @@
       "license": "MIT",
       "development": true,
       "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/charenc",
-      "version": "0.0.2",
-      "license": "BSD-3-Clause",
-      "development": true,
-      "optional": true
     },
     {
       "lockfile": "package-lock.json",
@@ -4227,14 +4035,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/complex.js",
-      "version": "2.4.3",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/component-emitter",
       "version": "1.3.1",
       "license": "MIT",
@@ -4331,14 +4131,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/crypt",
-      "version": "0.0.2",
-      "license": "BSD-3-Clause",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/csv-parse",
       "version": "7.0.3",
       "license": "MIT",
@@ -4367,14 +4159,6 @@
       "version": "2.6.9",
       "license": "MIT",
       "development": false,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/decimal.js",
-      "version": "10.6.0",
-      "license": "MIT",
-      "development": true,
       "optional": false
     },
     {
@@ -4535,14 +4319,6 @@
       "version": "1.0.11",
       "license": "Apache-2.0",
       "development": false,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/editions",
-      "version": "6.22.0",
-      "license": "Artistic-2.0",
-      "development": true,
       "optional": false
     },
     {
@@ -4715,14 +4491,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/es6-promisify",
-      "version": "7.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/esbuild",
       "version": "0.28.2",
       "license": "MIT",
@@ -4743,14 +4511,6 @@
       "version": "1.0.3",
       "license": "MIT",
       "development": false,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/escape-latex",
-      "version": "1.2.0",
-      "license": "MIT",
-      "development": true,
       "optional": false
     },
     {
@@ -5163,14 +4923,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/fraction.js",
-      "version": "5.3.4",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/fresh",
       "version": "0.5.2",
       "license": "MIT",
@@ -5196,22 +4948,6 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/gaxios",
-      "version": "7.3.1",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/gcp-metadata",
-      "version": "9.2.3",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/gcp-metadata/node_modules/gaxios",
       "version": "8.3.3",
       "license": "Apache-2.0",
       "development": true,
@@ -5219,8 +4955,8 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/gcp-metadata/node_modules/google-logging-utils",
-      "version": "2.2.0",
+      "path": "node_modules/gcp-metadata",
+      "version": "9.2.3",
       "license": "Apache-2.0",
       "development": true,
       "optional": false
@@ -5244,7 +4980,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/get-east-asian-width",
-      "version": "1.6.0",
+      "version": "1.7.0",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -5355,51 +5091,11 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/google-auth-library/node_modules/gaxios",
-      "version": "8.3.3",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/google-auth-library/node_modules/google-logging-utils",
-      "version": "2.2.0",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/google-logging-utils",
-      "version": "1.1.3",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/googleapis-common",
-      "version": "9.3.1",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/googleapis-common/node_modules/gaxios",
-      "version": "8.3.3",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/googleapis-common/node_modules/google-logging-utils",
       "version": "2.2.0",
       "license": "Apache-2.0",
       "development": true,
-      "optional": true
+      "optional": false
     },
     {
       "lockfile": "package-lock.json",
@@ -5683,14 +5379,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/is-buffer",
-      "version": "1.1.6",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/is-circular",
       "version": "1.0.2",
       "license": "MIT",
@@ -5878,22 +5566,6 @@
       "path": "node_modules/istanbul-reports",
       "version": "3.2.0",
       "license": "BSD-3-Clause",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/istextorbinary",
-      "version": "9.5.0",
-      "license": "Artistic-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/javascript-natural-sort",
-      "version": "0.7.1",
-      "license": "MIT",
       "development": true,
       "optional": false
     },
@@ -6507,22 +6179,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/mathjs",
-      "version": "15.2.0",
-      "license": "Apache-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/md5",
-      "version": "2.3.0",
-      "license": "BSD-3-Clause",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/media-typer",
       "version": "0.3.0",
       "license": "UNDECLARED",
@@ -6628,7 +6284,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/mongodb-connection-string-url",
-      "version": "7.0.2",
+      "version": "7.0.3",
       "license": "Apache-2.0",
       "development": true,
       "optional": true
@@ -6636,8 +6292,16 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/mongoose",
-      "version": "9.12.1",
+      "version": "9.13.0",
       "license": "MIT",
+      "development": true,
+      "optional": true
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/mongoose/node_modules/gaxios",
+      "version": "7.3.1",
+      "license": "Apache-2.0",
       "development": true,
       "optional": true
     },
@@ -6651,8 +6315,16 @@
     },
     {
       "lockfile": "package-lock.json",
+      "path": "node_modules/mongoose/node_modules/google-logging-utils",
+      "version": "1.2.0",
+      "license": "Apache-2.0",
+      "development": true,
+      "optional": true
+    },
+    {
+      "lockfile": "package-lock.json",
       "path": "node_modules/mongoose/node_modules/mongodb",
-      "version": "7.8.0",
+      "version": "7.9.1",
       "license": "Apache-2.0",
       "development": true,
       "optional": true
@@ -6716,7 +6388,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/natural",
-      "version": "8.1.1",
+      "version": "8.2.6",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -6972,7 +6644,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/ora",
-      "version": "9.4.1",
+      "version": "10.0.0",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -6980,7 +6652,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/ora/node_modules/ansi-regex",
-      "version": "6.3.0",
+      "version": "6.6.0",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -6988,7 +6660,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/ora/node_modules/chalk",
-      "version": "5.6.2",
+      "version": "6.0.1",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -6996,7 +6668,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/ora/node_modules/string-width",
-      "version": "8.2.2",
+      "version": "8.3.0",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -7008,14 +6680,6 @@
       "license": "MIT",
       "development": true,
       "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/os-tmpdir",
-      "version": "1.0.2",
-      "license": "MIT",
-      "development": true,
-      "optional": true
     },
     {
       "lockfile": "package-lock.json",
@@ -7230,14 +6894,6 @@
       "path": "node_modules/pdfjs-dist",
       "version": "5.4.296",
       "license": "Apache-2.0",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/pem",
-      "version": "1.14.8",
-      "license": "MIT",
       "development": true,
       "optional": true
     },
@@ -7476,16 +7132,8 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/promptfoo",
-      "version": "0.125.1",
+      "version": "0.126.0",
       "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/@opentelemetry/core",
-      "version": "2.12.0",
-      "license": "Apache-2.0",
       "development": true,
       "optional": false
     },
@@ -7508,7 +7156,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/promptfoo/node_modules/chokidar",
-      "version": "5.0.0",
+      "version": "6.0.0",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -7876,7 +7524,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/read-excel-file",
-      "version": "9.3.10",
+      "version": "9.3.20",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -7892,7 +7540,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/redis",
-      "version": "5.12.1",
+      "version": "5.12.4",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -8068,7 +7716,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/saxen",
-      "version": "11.1.1",
+      "version": "11.2.0",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -8078,14 +7726,6 @@
       "path": "node_modules/saxes",
       "version": "6.0.0",
       "license": "ISC",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/seedrandom",
-      "version": "3.0.5",
-      "license": "MIT",
       "development": true,
       "optional": false
     },
@@ -8683,22 +8323,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/textextensions",
-      "version": "6.11.0",
-      "license": "Artistic-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/tiny-emitter",
-      "version": "2.1.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/toidentifier",
       "version": "1.0.1",
       "license": "MIT",
@@ -8724,7 +8348,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/tr46",
-      "version": "5.1.1",
+      "version": "6.0.0",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -8783,14 +8407,6 @@
       "version": "1.6.18",
       "license": "UNDECLARED",
       "development": false,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/typed-function",
-      "version": "4.2.2",
-      "license": "MIT",
-      "development": true,
       "optional": false
     },
     {
@@ -8875,14 +8491,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/url-template",
-      "version": "2.0.8",
-      "license": "BSD",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/util-deprecate",
       "version": "1.0.2",
       "license": "MIT",
@@ -8923,14 +8531,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/version-range",
-      "version": "4.15.0",
-      "license": "Artistic-2.0",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/web-streams-polyfill",
       "version": "3.3.3",
       "license": "MIT",
@@ -8940,7 +8540,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/webidl-conversions",
-      "version": "7.0.0",
+      "version": "8.0.1",
       "license": "BSD-2-Clause",
       "development": true,
       "optional": true
@@ -8948,7 +8548,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/whatwg-url",
-      "version": "14.2.0",
+      "version": "15.1.0",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -8996,7 +8596,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/worker-f",
-      "version": "0.1.20",
+      "version": "0.1.25",
       "license": "MIT",
       "development": true,
       "optional": true
