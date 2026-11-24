@@ -58,7 +58,7 @@ async function main() {
             let settle;
             const pending = new Promise(resolve => { settle = resolve; });
             const context = await browser.newContext({ viewport: { width: 375, height: 844 }, permissions: ['clipboard-read', 'clipboard-write'] });
-            await context.route('**/*', route => {
+            await context.route('**/*', async route => {
                 const request = route.request(); assert.equal(new URL(request.url()).origin, origin); assert.equal(request.method(), 'GET');
                 if (request.resourceType() !== 'document') assert.ok(!request.url().includes('utm_'));
                 if (new URL(request.url()).pathname === '/api/enquiry') {
