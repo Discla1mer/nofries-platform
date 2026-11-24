@@ -24,6 +24,7 @@
     "js-yaml": "4.3.2",
     "node-forge": "file:vendor/node-forge-rsa-validated/nofries-node-forge-rsa-validated-1.4.0-nofries.1.tgz",
     "promptfoo": "0.126.0",
+    "simple-git": "4.0.2",
     "supertest": "^7.3.2"
   },
   "overrides": {

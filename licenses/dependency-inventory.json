@@ -1731,6 +1731,38 @@
     },
     {
       "lockfile": "package-lock.json",
+      "path": "node_modules/@kwsites/file-exists",
+      "version": "1.1.1",
+      "license": "MIT",
+      "development": true,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/@kwsites/file-exists/node_modules/debug",
+      "version": "4.4.3",
+      "license": "MIT",
+      "development": true,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/@kwsites/file-exists/node_modules/ms",
+      "version": "2.1.3",
+      "license": "MIT",
+      "development": true,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/@kwsites/promise-deferred",
+      "version": "1.1.1",
+      "license": "MIT",
+      "development": true,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
       "path": "node_modules/@langfuse/client",
       "version": "5.10.1",
       "license": "MIT",
@@ -2744,6 +2776,22 @@
       "license": "MIT",
       "development": true,
       "optional": true
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/@simple-git/args-pathspec",
+      "version": "1.0.4",
+      "license": "MIT",
+      "development": true,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/@simple-git/argv-parser",
+      "version": "2.0.1",
+      "license": "MIT",
+      "development": true,
+      "optional": false
     },
     {
       "lockfile": "package-lock.json",
@@ -7902,6 +7950,30 @@
       "path": "node_modules/signal-exit",
       "version": "3.0.7",
       "license": "ISC",
+      "development": true,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/simple-git",
+      "version": "4.0.2",
+      "license": "MIT",
+      "development": true,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/simple-git/node_modules/debug",
+      "version": "4.4.3",
+      "license": "MIT",
+      "development": true,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/simple-git/node_modules/ms",
+      "version": "2.1.3",
+      "license": "MIT",
       "development": true,
       "optional": false
     },
