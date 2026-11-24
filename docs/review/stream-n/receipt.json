@@ -1,0 +1,121 @@
+{
+  "passed": true,
+  "syntheticOnly": true,
+  "viewport": {
+    "width": 375,
+    "height": 844
+  },
+  "browser": "154.0.8037.57",
+  "results": [
+    {
+      "campaign": "insurance",
+      "answer": "no",
+      "gate": null,
+      "first": "Answers for your insurer or customer questionnaire",
+      "screenshot": "insurance-375.png"
+    },
+    {
+      "campaign": "supplier",
+      "answer": "no",
+      "gate": null,
+      "first": "Answers for your insurer or customer questionnaire",
+      "screenshot": "supplier-375.png"
+    },
+    {
+      "campaign": "board",
+      "answer": "no",
+      "gate": null,
+      "first": "Summary for your board or insurer",
+      "screenshot": "board-375.png"
+    },
+    {
+      "campaign": "scam",
+      "answer": "no",
+      "gate": null,
+      "first": "Payment-check gap and next step",
+      "screenshot": "scam-375.png"
+    },
+    {
+      "campaign": "none",
+      "answer": "no",
+      "gate": null,
+      "first": "Suggested follow-ups",
+      "screenshot": "none-375.png"
+    },
+    {
+      "campaign": "unknown",
+      "answer": "no",
+      "gate": null,
+      "first": "Suggested follow-ups",
+      "screenshot": "unknown-375.png"
+    },
+    {
+      "campaign": "scam",
+      "answer": "unknown",
+      "gate": null,
+      "first": "Check payment changes safely",
+      "screenshot": "scam-unknown-answer-375.png"
+    },
+    {
+      "campaign": "board",
+      "answer": "no",
+      "gate": "details_required",
+      "first": "Summary for your board or insurer",
+      "screenshot": "board-gated-375.png"
+    },
+    {
+      "campaign": "scam",
+      "answer": "no",
+      "gate": "details_required",
+      "first": "Payment-check gap and next step",
+      "screenshot": "scam-gated-375.png"
+    },
+    {
+      "campaign": "insurance",
+      "answer": "no",
+      "gate": "details_required",
+      "first": "Answers for your insurer or customer questionnaire",
+      "screenshot": "insurance-gated-375.png"
+    }
+  ],
+  "errors": [],
+  "storageWrites": 0,
+  "transportWrites": 0,
+  "requests": {
+    "GET /": 10,
+    "GET /style.css": 10,
+    "GET /home.css": 10,
+    "GET /app/dashboard.css": 10,
+    "GET /api/shared/protectedAssets/dashboardShell.js": 10,
+    "GET /api/shared/protectedAssets/ncscAssessmentClient.js": 10,
+    "GET /api/shared/protectedAssets/ncscQuestionnaire.js": 10,
+    "GET /images/paper-texture.webp": 10,
+    "GET /api/enquiry": 3
+  },
+  "sources": [
+    {
+      "path": "style.css",
+      "sha256": "864fa278e6cf54a69306b7e1d4f0316b6b72ec152ee0c4a1a1074f33970609d6"
+    },
+    {
+      "path": "home.css",
+      "sha256": "6082a1a2669c5539f6e0fbb8c9ae3a1f52004c199ccb75e7f005aedc0ce341c5"
+    },
+    {
+      "path": "app/dashboard.css",
+      "sha256": "ade0e6c39b2022b02a8b5885ceffe3943e15fbfae22aa3ce9dc19bb11b2fad1c"
+    },
+    {
+      "path": "api/shared/protectedAssets/dashboardShell.js",
+      "sha256": "ecf5ea09975988e4b2a0bb5867caec3c18da9b5291e636423974a015ab7d9c16"
+    },
+    {
+      "path": "api/shared/protectedAssets/ncscAssessmentClient.js",
+      "sha256": "bde1e5918f587be543437d89fc443f4df83b4f6099154de0b8c4e7cc9cad242c"
+    },
+    {
+      "path": "api/shared/protectedAssets/ncscQuestionnaire.js",
+      "sha256": "a1b6cd17b9a01fc34495ef801711857b6b853914637e0ae625a39cd1fef4dc53"
+    }
+  ]
+}
