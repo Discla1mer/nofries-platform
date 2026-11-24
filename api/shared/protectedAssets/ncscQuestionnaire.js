@@ -1730,6 +1730,12 @@
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
                 section.append(node('h3', '', 'Summary for your board or insurer'),
                     boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied)), copied);
+                if (campaign === 'board' && topGaps(results, metadata, 1).length) {
+                    section.append(node('p', '', 'Use a reported gap to agree a next action, an owner and a date with your board.'),
+                        button('Go to your top gaps', function () {
+                            focusTarget(panel.querySelector('[id="ncsc-results-top-gaps"]'));
+                        }, 'dashboard-button dashboard-button-secondary'));
+                }
                 panel.append(section);
             } else if (campaign === 'scam') {
                 const payment = questionnaireAnswers(acknowledged, metadata).items.find(item => item.id === 'payment-checks');
