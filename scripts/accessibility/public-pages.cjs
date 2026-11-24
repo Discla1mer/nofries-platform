@@ -145,6 +145,15 @@ async function publicHeader(page, route, width) {
             const bounds = await login.boundingBox(), headerBounds = await header.boundingBox();
             assert.ok(bounds.width >= 44 && bounds.height >= 44, 'Log in keeps its tap target');
             assert.ok(Math.abs(bounds.x + bounds.width - headerBounds.x - headerBounds.width) < 1, 'Log in remains on the right');
+            if (width === 375) {
+                await page.locator('#dashboardSkipLink').focus();
+                await page.keyboard.press('Enter');
+                assert.ok(await page.locator('#main-content').evaluate(el => el === document.activeElement), 'Skip link reaches homepage content');
+                await page.keyboard.press('Tab');
+                assert.ok(await page.locator('#homepagePrimary').evaluate(el => el === document.activeElement), 'Tab reaches Create account');
+                await page.keyboard.press('Tab');
+                assert.ok(await page.locator('.homepage-actions a[href="/try"]').evaluate(el => el === document.activeElement), 'Tab reaches Try the demo');
+            }
             // The gateway uses the same document for signed-in states, without the public hero.
             await page.locator('#gatewayPublic').evaluate(el => { el.hidden = true; });
             assert.ok(await brand.isVisible(), 'Gateway keeps its home link when the hero is hidden');
@@ -198,7 +207,7 @@ async function adLinks(page, base, route) {
         if (fs.existsSync(path.join(dist, 'contact.html'))) routes.push('/contact.html');
         else console.log('Contact form absent: deferred to #42/#43, not a passing contact-form check.');
         routes.push('/fictional-nist-example.html');
-        for (const route of routes) for (const width of route === '/' ? [1280, 701, 700, 390, 320] : adPages.includes(route) ? [1280, 375, 320] : [1280, 320]) for (const scale of [1, 2]) {
+        for (const route of routes) for (const width of route === '/' ? [1280, 701, 700, 390, 375, 320] : adPages.includes(route) ? [1280, 375, 320] : [1280, 320]) for (const scale of [1, 2]) {
             const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
             try {
                 const page = await context.newPage(); page.setDefaultTimeout(5000);
@@ -233,7 +242,7 @@ async function adLinks(page, base, route) {
         fs.writeFileSync(evidence, JSON.stringify({ summary, results }, null, 2));
         console.log(JSON.stringify({ ...summary, evidence }));
         if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '## Public accessibility\n' +
-            `${results.length} cases (1280/320 CSS pixels, plus homepage 390/700/701px × 100/200% measured text).\n\n` +
+            `${results.length} cases (1280/320 CSS pixels, plus homepage 375/390/700/701px × 100/200% measured text).\n\n` +
             '| Page | Width | Text | Failing state |\n| --- | ---: | ---: | --- |\n' +
             failures.map(f => `| ${f.route} | ${f.width} | ${f.scale * 100}% | ${f.state} |`).join('\n') + '\n');
         if (browser) await browser.close();
