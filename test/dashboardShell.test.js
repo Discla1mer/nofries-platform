@@ -300,11 +300,33 @@ test('the Services tab leads with the 90-day managed security offer as a plain c
     assert.equal(link.href, '/contact.html?service=managed_security_90');
     const pricing = Array.from(offer.querySelectorAll('a')).find(item => item.href === '/pricing#pricing-pilot');
     assert.ok(pricing);
-    assert.equal(pricing.parentElement, offer, 'pricing stays in the visible offer instead of being reparented into a service detail');
+    assert.equal(pricing.parentElement, link.parentElement, 'pricing stays with the Contact action');
+    assert.equal(pricing.parentElement.parentElement, offer, 'offer actions stay in the visible offer');
     const details = dom.root.querySelectorAll('.dashboard-service-detail');
     assert.ok(details.length >= 2);
     details.forEach(detail => assert.ok(!Array.from(detail.querySelectorAll('a')).includes(pricing)));
     assert.equal(offer.querySelectorAll('form').length, 0);
+});
+
+test('Services withholds both paths to the offer until representative details are ready', async () => {
+    for (const status of ['details_required', 'result_required', 'ready']) {
+        const dom = mount(view(), {
+            initialRoute: 'services',
+            representativeDetails: { read: async () => ({ status }) }
+        });
+        await new Promise(resolve => setImmediate(resolve));
+        const offer = dom.root.querySelector('.dashboard-offer-panel');
+        const gate = offer.querySelector('.dashboard-details-gate');
+        const links = Array.from(offer.querySelectorAll('a'));
+        if (status === 'ready') {
+            assert.deepEqual(links.map(link => link.href), ['/contact.html?service=managed_security_90', '/pricing#pricing-pilot']);
+            links.forEach(link => assert.equal(link.parentElement.parentElement, gate));
+            assert.equal(gate.parentElement, offer);
+        } else {
+            assert.equal(links.length, 0);
+        }
+        dom.controller.destroy();
+    }
 });
 
 test('disabled services explain policy availability rather than implying provider setup is sufficient', () => {

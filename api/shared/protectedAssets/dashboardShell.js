@@ -840,7 +840,11 @@
             offerLink.href = '/contact.html?service=managed_security_90';
             const pricingLink = element('a', '', 'See pricing and what’s included');
             pricingLink.href = '/pricing#pricing-pilot';
-            offer.append(gated(() => offerLink), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'), pricingLink);
+            offer.append(gated(() => {
+                const actions = element('div');
+                actions.append(offerLink, pricingLink);
+                return actions;
+            }), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
             main.append(offer);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {
