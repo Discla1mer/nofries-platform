@@ -55,11 +55,16 @@ async function main() {
         const cases = [['insurance'], ['supplier'], ['board'], ['scam'], [''], ['unknown'], ['scam', 'unknown'], ['board', 'no', 'details_required'], ['scam', 'no', 'details_required'], ['insurance', 'no', 'details_required'], ['supplier', 'no', null, false], ['scam', 'no', 'details_required', false]];
         let defaultMarkup;
         for (const [campaign, answer = 'no', gate = null, available = true] of cases) {
+            let settle;
+            const pending = new Promise(resolve => { settle = resolve; });
             const context = await browser.newContext({ viewport: { width: 375, height: 844 }, permissions: ['clipboard-read', 'clipboard-write'] });
             await context.route('**/*', route => {
                 const request = route.request(); assert.equal(new URL(request.url()).origin, origin); assert.equal(request.method(), 'GET');
                 if (request.resourceType() !== 'document') assert.ok(!request.url().includes('utm_'));
-                if (!available && new URL(request.url()).pathname === '/api/enquiry') return route.fulfill({ json: { available: false } });
+                if (new URL(request.url()).pathname === '/api/enquiry') {
+                    await pending;
+                    return route.fulfill({ json: { available } });
+                }
                 requests.push({ path: new URL(request.url()).pathname, method: request.method() }); return route.continue();
             });
             const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
@@ -73,6 +78,12 @@ async function main() {
             await page.getByRole('button', { name: 'Save and submit assessment' }).click();
             await page.getByRole('dialog').getByRole('button', { name: 'Submit', exact: true }).click();
             const panel = page.locator('.ncsc-results'); await panel.waitFor();
+            if (!gate) {
+                const initial = panel.locator(':scope > :last-child a');
+                await initial.waitFor(); assert.equal(await initial.getAttribute('href'), 'mailto:hello@nofries.nz');
+            }
+            settle();
+            if (!gate && available) await panel.locator(':scope > :last-child a[href^="/contact"]').waitFor();
             const headings = await panel.locator(':scope > section > h3').allTextContents();
             const first = campaign === 'insurance' || campaign === 'supplier' ? 'Answers for your insurer or customer questionnaire' : campaign === 'board' ? 'Summary for your board or insurer' : campaign === 'scam' ? (answer === 'no' ? 'Payment-check gap and next step' : 'Check payment changes safely') : 'Your top three gaps';
             assert.equal(headings[0], first);
@@ -102,6 +113,7 @@ async function main() {
                 while (await panel.getByRole('button', { name: 'Add your details' }).count()) await panel.getByRole('button', { name: 'Add your details' }).first().click();
                 await panel.getByRole('button', { name: 'Copy answers', exact: true }).waitFor();
             }
+            if (available) await panel.locator(':scope > :last-child a[href^="/contact"]').waitFor();
             const gapLinks = panel.locator('.picture-top-gap .ncsc-results-contact a');
             assert.equal(await gapLinks.count(), answer === 'no' ? 3 : 0);
             const destination = available ? '/contact.html?service=managed_security_90' : 'mailto:hello@nofries.nz';
