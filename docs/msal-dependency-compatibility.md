@@ -1,11 +1,11 @@
 # MSAL dependency remediation
 
-Root and API directly pin `@azure/msal-node` 7.2.2 for
+Root and API directly pin `@azure/msal-node` 7.2.3 for
 [GHSA-xcx6-jx8p-x3h5](https://github.com/advisories/GHSA-xcx6-jx8p-x3h5).
 `@azure/identity` is 4.14.1 in root, API and the connector manifest, and moves
 together with MSAL in one reviewed change. Identity 4.14 declares
 `@azure/msal-node` `^7.1.0`, so the pairing is now within Identity's declared
-range. The narrowly scoped Identity → MSAL 7.2.2 override remains as an exact
+range. The narrowly scoped Identity → MSAL 7.2.3 override remains as an exact
 pin. Promptfoo's Identity range (`^4.13.3`) now resolves to the root 4.14.1
 copy, so each lock holds a single Identity and a single MSAL install.
 Promptfoo and vendor archives retain their versions. A refreshed audit also
