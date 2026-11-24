@@ -13,8 +13,8 @@ the release that made them available.
 
 ## Evidence and interpretation
 
-Snapshot: NZ FY27 Q2 (Oct–Dec 2026). Integration main and independently verified
-live are both `62a970280592b55fba08a8ffe8f041a034d61e21`, per the
+Snapshot: NZ FY27 Q2 (Oct–Dec 2026). At the paid-feature activation checkpoint, the verified
+live release was `62a970280592b55fba08a8ffe8f041a034d61e21`, per the
 [`62a9702` release receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7077287283).
 The [activation receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099)
 records `NOFRIES_PAID_FRAMEWORKS_ENABLED=true` and
@@ -64,6 +64,8 @@ by the description and the public feature-status registry.
 
 | Done source PR | Verified merge commit | Release inclusion |
 | --- | --- | --- |
+| [#567](https://github.com/Discla1mer/nofries-platform/pull/567) | `d2b63739c47092192b0be0cf395e4cc2342c3a82` | [24 November release receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986): consultant landing fix for #561. |
+| [#563](https://github.com/Discla1mer/nofries-platform/pull/563) | `8f7443f1302e89be1767f5b8a6df2f375e53f0ed` | [24 November release receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986): included in `64aed4c`; #564 adds tests only. |
 | [#249](https://github.com/Discla1mer/nofries-platform/pull/249) | `82a4bf4df2f040a75102b949cd70bbc9b6f786fc` | Ancestor of `9977199`. |
 | [#300](https://github.com/Discla1mer/nofries-platform/pull/300) | `70bad3bb4e742688e0f36f51fe5a20ec364fce0b` | Ancestor of `9977199`. |
 | [#397](https://github.com/Discla1mer/nofries-platform/pull/397) | `dbe81b8dbc2649bb9c8bf8674e57a5d4dee9c286` | Ancestor of `9977199`. |
@@ -96,7 +98,7 @@ release-engineering evidence.
 ```json
 {
   "title": "What’s next.",
-  "lastUpdated": "2026-11-23",
+  "lastUpdated": "2026-11-25",
   "lead": "What you can use today, what is being built and what is planned.",
   "notice": "Planned work has no confirmed dates. Scope, order and availability may change, and planned work does not promise subscription inclusion.",
   "serviceNote": "90-day managed security includes a written summary you can give your board or insurer now. That summary is part of the paid service. We work through three improvements with you. For each improvement, the agreed scope needs to say whether No Fries, you or your IT provider makes the change. Hands-on changes by No Fries need to be separately agreed in that scope. Managed IT is the separate day-to-day service.",
@@ -112,6 +114,8 @@ release-engineering evidence.
     {"id": "paid-assessments", "lane": "Done", "period": "Oct–Dec 2026", "title": "Paid readiness self-assessments", "text": "NIST CSF 2.0 and ISO 27001 readiness self-assessments are available as a paid add-on. We invoice manually, then our staff enable access. The ISO 27001 readiness self-assessment is not certification. For accredited certification, use an accredited certification body.", "prs": [501, 518, 528, 530, 538, 546], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099", "link": {"href": "/pricing.html#pricing-assessments", "label": "See pricing and how to get access"}},
     {"id": "adviser-paid-status", "lane": "Done", "period": "Oct–Dec 2026", "title": "Paid assessment status for advisers", "text": "Advisers can see paid assessment status for the client organisations they are authorised to manage. They see status only, not answers or results.", "prs": [527, 555], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099"},
     {"id": "simpler-signin", "lane": "Done", "period": "Oct–Dec 2026", "title": "Simpler sign-up", "text": "Set up your organisation with its name and a confirmation that you are authorised to set it up. We ask for your name, role and business address after your first result, before you share a board or insurer summary or request a service.", "prs": [531, 539], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099"},
+    {"id": "consultant-dashboard", "lane": "Done", "period": "Oct–Dec 2026", "title": "Consultant dashboard after sign-in", "text": "Fixed an issue that could stop consultants opening their dashboard after signing in, while it was checking paid assessment status.", "prs": [567], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986"},
+    {"id": "dashboard-support-reference", "lane": "Done", "period": "Oct–Dec 2026", "title": "A reference for dashboard support", "text": "Some temporary problems loading your dashboard now show a support reference. If you see one, give it to No Fries when you ask for help.", "prs": [563], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986"},
     {"id": "signup-return", "lane": "In progress", "title": "Returning to an unfinished sign-up", "text": "Planned guidance that brings an interrupted sign-up back to the same account. These changes are still being checked.", "prs": [424]},
     {"id": "weighted-assessment", "lane": "In progress", "title": "Updated NCSC questions", "text": "A planned 16-question assessment with weighted scoring. Existing submitted results keep their original scoring.", "prs": [440]},
     {"id": "contact-request", "lane": "In progress", "title": "Ask No Fries to contact you", "text": "A planned request button on results and Services that explains what staff will see before you choose it. Nothing is shared through this request unless you ask. This is separate from the existing link to the contact form.", "prs": [440, 454, 461]},
