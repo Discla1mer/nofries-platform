@@ -3884,12 +3884,12 @@ describe('insurer and customer questionnaire answers', () => {
 describe('campaign Results next steps', () => {
     const renderer = require('../api/shared/protectedAssets/ncscQuestionnaire');
     const cases = [
-        ['insurance', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps']],
-        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps']],
-        ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        ['insurance', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'ncsc-next-steps']],
+        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'ncsc-next-steps']],
+        ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
         ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['unrecognised', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']]
+        ['', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        ['unrecognised', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']]
     ];
     const campaignDom = campaign => {
         const dom = interactiveDom();
@@ -3917,7 +3917,8 @@ describe('campaign Results next steps', () => {
                 expect(dom.window.navigator.clipboard.writeText).toHaveBeenCalledWith(renderer.boardSummary(projectNcscDetail(before[0]), metadata()).text);
                 control(ui, 'Print board summary').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
             }
-            await until(() => !panel.querySelector('.picture-next-steps-help').hidden);
+            await until(() => panel.querySelector('.picture-next-steps-help').querySelector('a')?.href === '/contact.html?service=managed_security_90');
+            expect(panel.children.at(-1).querySelector('a').href).toBe('/contact.html?service=managed_security_90');
             expect(panel.querySelector('.picture-next-steps-help').querySelector('a').href).toBe('/contact.html?service=managed_security_90');
             expect(dom.window.fetch).toHaveBeenCalledWith('/api/enquiry', expect.objectContaining({ method: 'GET' }));
             expect(dom.window.fetch).toHaveBeenCalledTimes(1);
