@@ -1,0 +1,130 @@
+{
+  "viewport": {
+    "width": 375,
+    "height": 844
+  },
+  "browser": "154.0.8037.57",
+  "synthetic": true,
+  "journeys": [
+    {
+      "entry": "board",
+      "destination": "signup",
+      "tag": "meta/paid/board",
+      "documents": [
+        "/login?intent=create",
+        "/signup?provider=external&intent=create",
+        "/dashboard"
+      ],
+      "heading": "Summary for your board or insurer"
+    },
+    {
+      "entry": "board",
+      "destination": "contact",
+      "tag": "meta/paid/board",
+      "documents": [
+        "/contact.html"
+      ],
+      "heading": "90-day managed security"
+    },
+    {
+      "entry": "supplier",
+      "destination": "signup",
+      "tag": "meta/paid/supplier",
+      "documents": [
+        "/login?intent=create",
+        "/signup?provider=external&intent=create",
+        "/dashboard"
+      ],
+      "heading": "Answers for your insurer or customer questionnaire"
+    },
+    {
+      "entry": "supplier",
+      "destination": "contact",
+      "tag": "meta/paid/supplier",
+      "documents": [
+        "/contact.html"
+      ],
+      "heading": "90-day managed security"
+    },
+    {
+      "entry": "insurance",
+      "destination": "signup",
+      "tag": "meta/paid/insurance",
+      "documents": [
+        "/login?intent=create",
+        "/signup?provider=external&intent=create",
+        "/dashboard"
+      ],
+      "heading": "Answers for your insurer or customer questionnaire"
+    },
+    {
+      "entry": "insurance",
+      "destination": "contact",
+      "tag": "meta/paid/insurance",
+      "documents": [
+        "/contact.html"
+      ],
+      "heading": "90-day managed security"
+    },
+    {
+      "entry": "scam",
+      "destination": "signup",
+      "tag": "meta/paid/scam",
+      "documents": [
+        "/login?intent=create",
+        "/signup?provider=external&intent=create",
+        "/dashboard"
+      ],
+      "heading": "Check payment changes safely"
+    },
+    {
+      "entry": "scam",
+      "destination": "contact",
+      "tag": "meta/paid/scam",
+      "documents": [
+        "/contact.html"
+      ],
+      "heading": "90-day managed security"
+    },
+    {
+      "entry": "direct",
+      "destination": "signup",
+      "tag": null,
+      "documents": [
+        "/login?intent=create",
+        "/signup?provider=external&intent=create",
+        "/dashboard"
+      ],
+      "heading": "Suggested follow-ups"
+    },
+    {
+      "entry": "direct",
+      "destination": "contact",
+      "tag": null,
+      "documents": [
+        "/contact.html"
+      ],
+      "heading": "Talk to No Fries"
+    },
+    {
+      "entry": "first-touch",
+      "destination": "signup",
+      "tag": "meta/paid/scam",
+      "documents": [
+        "/login?intent=create",
+        "/signup?provider=external&intent=create",
+        "/dashboard"
+      ],
+      "heading": "Check payment changes safely"
+    },
+    {
+      "entry": "first-touch",
+      "destination": "contact",
+      "tag": "meta/paid/scam",
+      "documents": [
+        "/contact.html"
+      ],
+      "heading": "90-day managed security"
+    }
+  ]
+}
