@@ -183,13 +183,14 @@ describe('build-lane dependency audit policy', () => {
         const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '../api/package-lock.json')));
         expect(() => validateManifestLock('api-runtime', manifest, lock)).not.toThrow();
         for (const overrides of [
-            { '@azure/msal-node': '7.2.2' },
-            { '@azure/identity': { '@azure/msal-node': '^7.2.2' } },
+            { '@azure/msal-node': '7.2.3' },
+            { '@azure/identity': { '@azure/msal-node': '^7.2.3' } },
+            { '@azure/identity': { '@azure/msal-node': '7.2.2' } },
             { '@azure/identity': { '@azure/msal-node': '7.2.1' } },
             { '@azure/identity': { '@azure/msal-node': '7.1.1' } },
             { '@azure/identity': '4.14.1' },
             { ...manifest.overrides, other: '1.0.0' },
-            ['7.2.2'], [], null, '7.2.2', ''
+            ['7.2.3'], [], null, '7.2.3', ''
         ]) expect(() => validateManifestLock('api-runtime', { ...manifest, overrides }, lock))
             .toThrow(/explicitly audited/);
         for (const mutate of [
@@ -197,7 +198,7 @@ describe('build-lane dependency audit policy', () => {
             value => { value.packages['node_modules/@azure/msal-node'].version = '7.1.1'; },
             value => { value.packages['node_modules/@azure/identity'].version = '4.14.0'; },
             value => { value.packages['node_modules/@azure/identity'].version = '4.13.1'; },
-            value => { value.packages['node_modules/other/node_modules/@azure/msal-node'] = { version: '7.2.2' }; }
+            value => { value.packages['node_modules/other/node_modules/@azure/msal-node'] = { version: '7.2.3' }; }
         ]) {
             const changed = structuredClone(lock); mutate(changed);
             expect(() => validateManifestLock('api-runtime', manifest, changed)).toThrow(/explicitly audited/);
@@ -215,15 +216,18 @@ describe('build-lane dependency audit policy', () => {
         identityAlias.packages['node_modules/hidden'] = { name: '@azure/msal-node', version: '7.0.1' };
         expect(() => validateManifestLock('api-runtime', manifest, identityAlias)).toThrow(/explicitly audited/);
         const changed = structuredClone(manifest);
-        changed.dependencies['@azure/msal-node'] = '^7.2.2';
+        changed.dependencies['@azure/msal-node'] = '^7.2.3';
         const drift = structuredClone(lock); drift.packages[''].dependencies = changed.dependencies;
         expect(() => validateManifestLock('api-runtime', changed, drift)).toThrow(/explicitly audited/);
-        // The previous direct pin no longer matches the reviewed Identity/MSAL pairing.
-        const previous = structuredClone(manifest);
-        previous.dependencies['@azure/msal-node'] = '7.1.1';
-        previous.overrides = { '@azure/identity': { '@azure/msal-node': '7.1.1' } };
-        const previousLock = structuredClone(lock); previousLock.packages[''].dependencies = previous.dependencies;
-        expect(() => validateManifestLock('api-runtime', previous, previousLock)).toThrow(/explicitly audited/);
+        // Older reviewed pins must fail even if their own manifest and lock agree.
+        for (const version of ['7.1.1', '7.2.2']) {
+            const previous = structuredClone(manifest), previousLock = structuredClone(lock);
+            previous.dependencies['@azure/msal-node'] = version;
+            previous.overrides = { '@azure/identity': { '@azure/msal-node': version } };
+            previousLock.packages[''].dependencies = previous.dependencies;
+            previousLock.packages['node_modules/@azure/msal-node'].version = version;
+            expect(() => validateManifestLock('api-runtime', previous, previousLock)).toThrow(/explicitly audited/);
+        }
         expect(() => validateManifestLock('other', manifest, lock)).toThrow(/explicitly audited/);
     });
 
