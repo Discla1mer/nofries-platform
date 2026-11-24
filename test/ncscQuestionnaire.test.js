@@ -3884,7 +3884,7 @@ describe('insurer and customer questionnaire answers', () => {
 describe('campaign Results next steps', () => {
     const renderer = require('../api/shared/protectedAssets/ncscQuestionnaire');
     const cases = [
-        ['insurance', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'ncsc-next-steps']],
+        ['insurance', ['ncsc-questionnaire-answers', 'ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps']],
         ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'ncsc-next-steps']],
         ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
         ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
@@ -3912,7 +3912,7 @@ describe('campaign Results next steps', () => {
             expect([...h.versions.values()]).toEqual(before);
             expect(dom.window.sessionStorage.getItem).toHaveBeenCalledWith('nofries-enquiry-campaign');
             expect(dom.window.sessionStorage.setItem).not.toHaveBeenCalled(); expect(dom.window.sessionStorage.removeItem).not.toHaveBeenCalled();
-            if (campaign === 'board') {
+            if (campaign === 'board' || campaign === 'insurance') {
                 control(ui, 'Copy board summary').click();
                 expect(dom.window.navigator.clipboard.writeText).toHaveBeenCalledWith(renderer.boardSummary(projectNcscDetail(before[0]), metadata()).text);
                 control(ui, 'Print board summary').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
@@ -3984,7 +3984,7 @@ describe('campaign Results next steps', () => {
             expect(ui.root.querySelector('.picture-next-steps-help')?.querySelector('a')).toBeFalsy();
             status = 'ready'; ui.root.querySelectorAll('button').filter(b => b.textContent === label).forEach(b => b.click());
             await until(() => control(ui, 'Copy answers'));
-            if (campaign === 'board') expect(control(ui, 'Copy board summary')).toBeTruthy();
+            if (campaign === 'board' || campaign === 'insurance') expect(control(ui, 'Copy board summary')).toBeTruthy();
             if (campaign === 'scam') expect(ui.root.querySelector('.picture-next-steps-help').querySelector('a')).toBeTruthy();
         } finally { ui.controller.destroy(); }
     });

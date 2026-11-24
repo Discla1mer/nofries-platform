@@ -1745,7 +1745,7 @@
                 }));
                 return slot;
             };
-            if (campaign === 'board') {
+            function appendBoardSummary() {
                 const section = node('section', 'ncsc-board-next-step picture-summary');
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
                 section.append(node('h3', '', 'Summary for your board or insurer'),
@@ -1757,7 +1757,9 @@
                         }, 'dashboard-button dashboard-button-secondary'));
                 }
                 panel.append(section);
-            } else if (campaign === 'scam') {
+            }
+            if (campaign === 'board') appendBoardSummary();
+            else if (campaign === 'scam') {
                 const payment = questionnaireAnswers(acknowledged, metadata).items.find(item => item.id === 'payment-checks');
                 const section = node('section', 'ncsc-payment-next-step');
                 section.append(node('h3', '', payment.answer === 'No' ? 'Payment-check gap and next step' : 'Check payment changes safely'),
@@ -1769,6 +1771,7 @@
             }
             const questionnaireFirst = !isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier');
             if (questionnaireFirst) renderQuestionnaireAnswers(panel);
+            if (questionnaireFirst && campaign === 'insurance') appendBoardSummary();
             if (results) {
                 panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps', gap => [resultHelp(gap.title)]));
             }
