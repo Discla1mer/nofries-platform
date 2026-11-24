@@ -124,13 +124,13 @@
 // stored or sent. Any other visitor sees the page unchanged.
 (function () {
     const MESSAGES = {
-        insurance: ['Get your cyber insurance answers right in about 15 minutes.',
+        insurance: ['Filling out a cyber insurance form?',
             'List your key accounts, including email and online banking, and mark which ones have multi-factor authentication turned on. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
-        supplier: ['Answer your customer’s security questionnaire with confidence.',
+        supplier: ['Has a customer sent you a security questionnaire?',
             'Pick one question about who can see customer files. Check the access list for the folder where you keep them. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
-        board: ['Give your board a straight answer on cyber security.',
+        board: ['Has your board asked about cyber security?',
             'For your next board meeting, write down when your team last restored a file from backup. If nobody knows, record that as an open question. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
-        scam: ['Would your business stop a fake invoice? Find out in about 15 minutes.',
+        scam: ['Could your team spot a fake invoice?',
             'If bank details change, call your supplier on a number you already know to verify the change before paying. Do not use the number on the invoice. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.']
     };
     try {
