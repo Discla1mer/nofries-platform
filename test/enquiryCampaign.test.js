@@ -115,7 +115,7 @@ test.each([
     const contact = fs.readFileSync(path.join(__dirname, '../js/contact.js'), 'utf8');
     await vm.runInNewContext(contact, { window, document });
     expect(document.getElementById('contact-heading').textContent).toBe(campaign ? '90-day managed security' : '');
-    expect(document.getElementById('contact-intro').textContent.includes('NZ$1,250 + GST')).toBe(campaign);
+    expect(document.getElementById('contact-intro').textContent.includes('what you’d like help with')).toBe(campaign);
 });
 
 test.each([

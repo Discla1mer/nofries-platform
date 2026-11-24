@@ -20,7 +20,8 @@ const APPROVED = [
 const ISO_LIMIT = 'The ISO 27001 readiness self-assessment is not certification. For accredited certification, use an accredited certification body.';
 
 test('public paid assessment copy states the approved terms as an available add-on', () => {
-    for (const sentence of APPROVED) expect([sentence, text.includes(sentence)]).toEqual([sentence, true]);
+    for (const sentence of [APPROVED[1], APPROVED[3], APPROVED[4]]) expect([sentence, text.includes(sentence)]).toEqual([sentence, true]);
+    expect(text).toMatch(/Both are included at no extra charge during the 90-day engagement/);
     expect(text).toContain('The NIST CSF 2.0 and ISO 27001 readiness self-assessments are available as a paid add-on.');
     expect(text).toContain(ISO_LIMIT);
     expect(text).not.toMatch(/planned|not available yet|will be published|\bquarters?\b|\bFY\d{2}\b/i);

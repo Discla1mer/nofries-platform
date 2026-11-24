@@ -13,6 +13,8 @@
     "Origin-Agent-Cluster": "?1"
   },
   "routes": [
+    { "route": "/pricing", "rewrite": "/pricing.html" },
+    { "route": "/api/pricing/paid", "methods": ["GET"], "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "no-store" } },
     {
       "route": "/login",
       "rewrite": "/login.html",
