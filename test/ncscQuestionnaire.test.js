@@ -3947,6 +3947,20 @@ describe('campaign Results next steps', () => {
             expect(step.querySelector('h3').textContent).toBe(option === 'no' ? 'Payment-check gap and next step' : 'Check payment changes safely');
         } finally { ui.controller.destroy(); }
     });
+    test.each(['no', 'yes'])('board Results links to reported gaps only when present (%s)', async answer => {
+        const h = await backend(); await h.execute(createCommand());
+        await h.execute(saveCommand('assessment-a', 0, 'answers', allResponses(answer))); await h.execute(submitCommand());
+        const ui = await resumeUi(h, { dom: campaignDom('board') });
+        try {
+            const action = control(ui, 'Go to your top gaps');
+            expect(Boolean(action)).toBe(answer === 'no');
+            if (action) {
+                action.click();
+                expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-results-top-gaps'));
+            }
+            expect(byId(ui, 'ncsc-board-summary').value).toBe(renderer.boardSummary(projectNcscDetail([...h.versions.values()][0]), metadata()).text);
+        } finally { ui.controller.destroy(); }
+    });
     test('reads only canonical stored tags, never URL, helper, localStorage or blocked storage', () => {
         for (const tag of [null, '', 'insurance', '/paid/board', 'meta/paid/BOARD', 'meta/paid/board/extra', 'meta/paid/scam\n', 'a'.repeat(41) + '//scam']) {
             const win = { sessionStorage: { getItem: () => tag } };

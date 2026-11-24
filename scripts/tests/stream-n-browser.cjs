@@ -136,6 +136,9 @@ async function main() {
                     await page.evaluate(() => { window.boardPrint = null; addEventListener('beforeprint', () => { window.boardPrint = document.querySelector('.picture-print-only')?.textContent; }); });
                     await page.keyboard.press('Enter');
                     assert.equal(await page.evaluate(() => window.boardPrint), await input.inputValue());
+                    await panel.getByRole('button', { name: 'Go to your top gaps' }).focus();
+                    await page.keyboard.press('Enter');
+                    assert.equal(await page.evaluate(() => document.activeElement.id), 'ncsc-results-top-gaps');
                 }
             }
             if (campaign === 'supplier') {
