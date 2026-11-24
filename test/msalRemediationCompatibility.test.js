@@ -49,7 +49,7 @@ function tokenBody(nonce = 'trusted-nonce') {
 
 test.each(consumers)('%s confidential client discards hostile routing/cache metadata and preserves trusted PKCE/nonce/cache', async (_name, req) => {
     const msal = req('@azure/msal-node');
-    expect(req('@azure/msal-node/package.json').version).toBe('7.2.2');
+    expect(req('@azure/msal-node/package.json').version).toBe('7.2.3');
     const posts = [], gets = [];
     const app = new msal.ConfidentialClientApplication({ auth: { clientId: client,
         clientSecret: 'OFFLINE_SECRET', authority, knownAuthorities: ['login.microsoftonline.com'],
@@ -160,7 +160,7 @@ test('every governed locked MSAL copy is fixed; full-closure mode requires every
         const nodes = Object.entries(lock.packages).filter(([node]) => node.endsWith('/@azure/msal-node'));
         expect(nodes.length).toBe(1);
         for (const [node, entry] of nodes) {
-            expect(entry.version).toBe('7.2.2');
+            expect(entry.version).toBe('7.2.3');
             if (fullClosure || (directory === '.' && node === 'node_modules/@azure/msal-node')) {
                 expect(JSON.parse(fs.readFileSync(path.resolve(directory, node, 'package.json'))).version).toBe(entry.version);
             }
