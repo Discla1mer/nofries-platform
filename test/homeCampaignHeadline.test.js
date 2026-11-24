@@ -47,6 +47,8 @@ test('other pages are never changed', () => {
 
 test('the preview explains how to discuss results and keeps the service offer on pricing', () => {
     expect(html).toContain('Use your results to decide what to discuss with your IT provider.');
-    expect(html).toContain('href="/pricing.html#pricing-pilot"');
+    expect(html).toContain('about 15 minutes');
+    expect(html).toContain('href="/pricing#pricing-pilot">No Fries can fix these with you</a>');
+    expect(html).toContain('href="/pricing#pricing-pilot"');
     expect(html).not.toContain('Take your results to your IT provider.');
 });
