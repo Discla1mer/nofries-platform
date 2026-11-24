@@ -284,3 +284,29 @@ h1, h2 { font-family: var(--font-serif); font-weight: 600; }
 .operator-loading-panel h1, .console-heading h1 { font-size: clamp(32px, 4.2vw, 52px); line-height: 1.1; letter-spacing: -.01em; }
 .operator-brand img { border-radius: 0; object-fit: contain; }
 input, select, textarea { background: #fff; }
+
+/* Account lookup and list: one control style, and labelled cards on narrow screens. */
+#accountLookupForm input { min-height: 44px; border: 1px solid var(--line); border-radius: 8px; }
+#accountLookupForm button, #accountListLoad { min-height: 44px; border: 1px solid var(--teal-dark); font: inherit; font-weight: 700; cursor: pointer; }
+#accountLookupResults td button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--teal-dark); border-radius: 8px; background: var(--panel); color: var(--teal-dark); font: inherit; font-weight: 700; cursor: pointer; }
+#accountLookupResults td button:disabled { opacity: .55; cursor: progress; }
+#accountLookupResults td ul { margin: 6px 0 0; padding-left: 18px; }
+@media (max-width: 700px) {
+    #accountLookupPanel, #accountListPanel { padding: 16px; border-radius: 14px; }
+    #accountLookupForm { display: grid; grid-template-columns: 1fr; }
+    #accountLookupForm input, #accountLookupForm button { width: 100%; }
+    :is(#accountLookupResults, #accountListResults) table,
+    :is(#accountLookupResults, #accountListResults) tbody,
+    :is(#accountLookupResults, #accountListResults) tr { display: block; width: 100%; }
+    :is(#accountLookupResults, #accountListResults) caption { display: block; padding-bottom: 8px; text-align: left; }
+    :is(#accountLookupResults, #accountListResults) thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    :is(#accountLookupResults, #accountListResults) tr { margin: 0 0 12px; border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px; background: #fff; }
+    :is(#accountLookupResults, #accountListResults) td { display: grid; grid-template-columns: minmax(6.5rem, 38%) minmax(0, 1fr); grid-auto-flow: dense; gap: 6px 10px; min-width: 0 !important; padding: 10px 0; overflow-wrap: anywhere; }
+    :is(#accountLookupResults, #accountListResults) tr td:last-child { border-bottom: 0; }
+    :is(#accountLookupResults, #accountListResults) td[data-label]::before { grid-row: 1; grid-column: 1; content: attr(data-label); color: var(--muted); font-size: 13px; font-weight: 700; }
+    :is(#accountLookupResults, #accountListResults) td[data-label] > * { grid-column: 2; margin: 0; }
+    #accountListLoad { margin-bottom: 12px; }
+    :is(#accountLookupResults, #accountListResults) td[colspan] { display: block; }
+    #accountListResults td.account-plan { white-space: normal; }
+    #accountListResults .account-actions { min-width: 0; }
+}

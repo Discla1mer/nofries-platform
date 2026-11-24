@@ -13,6 +13,9 @@
     const STATUS = { active: 'Active', expired: 'Active (recorded end date passed, not enforced)', revoked: 'Revoked', missing: 'No sign-in record', unknown: 'Not scanned (cap reached)' };
     let active = null;
     const text = value => value === null || value === undefined || value === '' ? '—' : String(value);
+    // Each cell carries its column name so narrow screens can show rows as labelled cards (operator.css).
+    const labelled = (cell, label) => { cell.setAttribute('data-label', label); return cell; };
+    const LIST_COLUMNS = ['Email', 'Type', 'Account formed', 'Signup', 'Sign-in record', 'Organisations', 'Plan', 'Actions'];
     function select(row) { window.nofriesAccountSelection = row; window.dispatchEvent(new Event('nofries-account-selection')); }
     function reset() {
         active?.abort(); active = null; select(null); result.replaceChildren(); button.disabled = false; result.setAttribute('aria-busy', 'false');
@@ -121,11 +124,11 @@
             const body = table.createTBody();
             value.rows.forEach(row => {
                 const tr = body.insertRow();
-                COLUMNS.forEach(([key]) => { tr.insertCell().textContent = key === 'status' ? STATUS[row.status] || text(row.status) : text(row[key]); });
-                membershipCell(row, tr.insertCell());
+                COLUMNS.forEach(([key, label]) => { labelled(tr.insertCell(), label).textContent = key === 'status' ? STATUS[row.status] || text(row.status) : text(row[key]); });
+                membershipCell(row, labelled(tr.insertCell(), 'Dashboard access'));
                 if (row.selector) {
                     const choose = document.createElement('button'); choose.type = 'button'; choose.textContent = 'Select account';
-                    choose.addEventListener('click', () => select(row)); tr.insertCell().append(choose);
+                    choose.addEventListener('click', () => select(row)); labelled(tr.insertCell(), 'Select').append(choose);
                 }
             });
             result.append(table);
@@ -225,27 +228,29 @@
             const table = document.createElement('table');
             table.createCaption().textContent = 'Customer accounts, newest first';
             const head = table.createTHead().insertRow();
-            ['Email', 'Type', 'Account formed', 'Signup', 'Sign-in record', 'Organisations', 'Plan', 'Actions'].forEach(label => {
+            LIST_COLUMNS.forEach(label => {
                 const cell = document.createElement('th'); cell.scope = 'col'; cell.textContent = label; head.append(cell);
             });
             const body = table.createTBody();
             value.rows.forEach(row => {
                 const tr = body.insertRow();
                 if (!row.readable) { const cell = tr.insertCell(); cell.colSpan = 8; cell.textContent = 'An account record could not be read.'; return; }
-                Object.assign(tr.insertCell(), { className: 'account-email', textContent: row.email });
-                tr.insertCell().textContent = row.accountType === 'consultant' ? 'Consultant' : 'Company';
-                Object.assign(tr.insertCell(), { className: 'account-date', textContent: date(row.createdAt) });
-                Object.assign(tr.insertCell(), { className: 'account-signup', textContent: row.signup === 'activated' ? `Activated ${date(row.activatedAt)}` : 'Unfinished' });
-                tr.insertCell().textContent = SIGN_IN[row.signIn] || text(row.signIn);
-                const orgs = tr.insertCell();
+                let column = 0;
+                const cell = () => labelled(tr.insertCell(), LIST_COLUMNS[column++]);
+                Object.assign(cell(), { className: 'account-email', textContent: row.email });
+                cell().textContent = row.accountType === 'consultant' ? 'Consultant' : 'Company';
+                Object.assign(cell(), { className: 'account-date', textContent: date(row.createdAt) });
+                Object.assign(cell(), { className: 'account-signup', textContent: row.signup === 'activated' ? `Activated ${date(row.activatedAt)}` : 'Unfinished' });
+                cell().textContent = SIGN_IN[row.signIn] || text(row.signIn);
+                const orgs = cell();
                 const list = document.createElement('ul');
                 row.organisations.forEach(org => list.append(Object.assign(document.createElement('li'),
                     { textContent: org.kind === 'client' ? `${org.name} (client)` : org.name })));
                 orgs.append(list);
                 if (!row.organisationsComplete) orgs.append(Object.assign(document.createElement('p'), { textContent: 'Client list could not be read in full.' }));
-                Object.assign(tr.insertCell(), { className: 'account-plan', textContent: text(row.plan) });
+                Object.assign(cell(), { className: 'account-plan', textContent: text(row.plan) });
                 // The cell stays a table cell; the flex layout lives on a wrapper inside it.
-                const actionsCell = tr.insertCell(); actionsCell.className = 'account-actions-cell';
+                const actionsCell = cell(); actionsCell.className = 'account-actions-cell';
                 const actions = document.createElement('div'); actions.className = 'account-actions'; actionsCell.append(actions);
                 const openButton = document.createElement('button'); openButton.type = 'button'; openButton.textContent = 'Open';
                 openButton.setAttribute('aria-label', `Open ${row.email}`);
