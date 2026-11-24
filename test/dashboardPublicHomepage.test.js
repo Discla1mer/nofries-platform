@@ -18,7 +18,7 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
     assert.match(html, /property="og:title" content="No Fries \| Dashboard\. Managed IT\."/);
     assert.equal((html.match(/<h1\b/g) || []).length, 1);
     assert.match(html, /<p class="homepage-lockup"><span class="lockup-row"><span class="lockup-word">No<\/span><img class="lockup-mark" src="\/images\/nofries-mark-large\.webp" width="640" height="640" alt=""><\/span> <span class="lockup-row"><span class="lockup-word">Fries<\/span> <span class="lockup-tagline">Dashboard\.<br>Managed IT\.<\/span><\/span><\/p>/);
-    assert.match(html, /<h1 id="home-title" class="homepage-headline">Know where your business stands on cyber security in about 15 minutes\.<\/h1>/);
+    assert.match(html, /<h1 id="home-title" class="homepage-headline">Need to answer a cyber security question today\?<\/h1>/);
     assert.match(html, /A free check for New Zealand small businesses, based on guidance from New Zealand’s National Cyber Security Centre \(NCSC\)\./);
     assert.match(html, /Free dashboard; it doesn’t expire · No card required/);
     assert.doesNotMatch(html, /Free to start|trial/i);
@@ -87,20 +87,20 @@ test('the homepage keeps only one compact MSP section below its Dashboard entry'
     assert.equal(html.split('id="other-services"').length - 1, 1);
     const other = html.match(/<section class="gateway-other-services"[\s\S]*?<\/section>/)[0];
     assert.deepEqual([...other.matchAll(/href="([^"]+)"/g)].map(match => match[1]), ['/managed-it.html']);
-    assert.match(other, /Microsoft 365 backup is included from the Managed tier/);
-    assert.match(other, /Security hardening and alert review are included in Secure/);
+    assert.match(other, /Compare plans for support/);
+    assert.doesNotMatch(other, /included from|included in/);
     assert.ok(other.length < 650, 'secondary service information stays compact');
     assert.ok(html.indexOf('id="other-services"') > html.indexOf('Create account'));
     assert.match(html, /aria-label="Dashboard benefits"/);
 });
 
-test('the linked managed security offer is the only homepage price', () => {
+test('pricing stays on the pricing page, not the homepage', () => {
     const price = 'NZ$1,250 + GST';
-    const offer = price + ', our <a href="/pricing.html#pricing-pilot">90-day managed security offer</a>';
+    const offer = '<a href="/pricing.html#pricing-pilot">pricing and what’s included in 90-day managed security</a>';
     assert.ok(html.includes(offer));
     const pricingPage = fs.readFileSync(path.join(root, 'pricing.html'), 'utf8');
     assert.ok(pricingPage.includes(price + ' for 90 days'));
-    assert.doesNotMatch(html.replace(offer, ''), /managed-it-per-user-price|managed-it-price-summary|managed-it-price-extras|id="pricing-dialog"|NZ\$|\$\d/);
+    assert.doesNotMatch(html, /managed-it-per-user-price|managed-it-price-summary|managed-it-price-extras|id="pricing-dialog"|NZ\$|\$\d/);
     const { MANAGED_IT_POLICY } = require('../api/shared/managedItPolicy');
     assert.equal(MANAGED_IT_POLICY.customerFacingServiceName, 'No Fries Managed IT');
     assert.ok(Number.isFinite(MANAGED_IT_POLICY.pricing.perUserMonthly));
