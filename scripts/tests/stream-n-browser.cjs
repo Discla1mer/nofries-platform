@@ -52,13 +52,14 @@ async function main() {
         const origin = 'http://127.0.0.1:' + server.address().port;
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
         const results = [], errors = [], requests = [];
-        const cases = [['insurance'], ['supplier'], ['board'], ['scam'], [''], ['unknown'], ['scam', 'unknown'], ['board', 'no', 'details_required'], ['scam', 'no', 'details_required'], ['insurance', 'no', 'details_required']];
+        const cases = [['insurance'], ['supplier'], ['board'], ['scam'], [''], ['unknown'], ['scam', 'unknown'], ['board', 'no', 'details_required'], ['scam', 'no', 'details_required'], ['insurance', 'no', 'details_required'], ['supplier', 'no', null, false], ['scam', 'no', 'details_required', false]];
         let defaultMarkup;
-        for (const [campaign, answer = 'no', gate = null] of cases) {
+        for (const [campaign, answer = 'no', gate = null, available = true] of cases) {
             const context = await browser.newContext({ viewport: { width: 375, height: 844 }, permissions: ['clipboard-read', 'clipboard-write'] });
             await context.route('**/*', route => {
                 const request = route.request(); assert.equal(new URL(request.url()).origin, origin); assert.equal(request.method(), 'GET');
                 if (request.resourceType() !== 'document') assert.ok(!request.url().includes('utm_'));
+                if (!available && new URL(request.url()).pathname === '/api/enquiry') return route.fulfill({ json: { available: false } });
                 requests.push({ path: new URL(request.url()).pathname, method: request.method() }); return route.continue();
             });
             const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
@@ -83,7 +84,7 @@ async function main() {
             if (campaign === 'scam') {
                 await panel.locator('.picture-next-steps-help').waitFor();
                 assert.equal(await panel.locator('.ncsc-payment-next-step + .picture-next-steps-help').count(), 1);
-                if (!gate) assert.equal(await panel.getByRole('link', { name: 'Fix these with No Fries' }).getAttribute('href'), '/contact.html?service=managed_security_90');
+                if (!gate) assert.equal(await panel.getByRole('link', { name: 'Fix these with No Fries', exact: true }).getAttribute('href'), '/contact.html?service=managed_security_90');
             }
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
             if (!campaign) defaultMarkup = await panel.innerHTML();
@@ -91,14 +92,25 @@ async function main() {
             await page.evaluate(() => document.fonts.ready);
             await panel.locator('h2').evaluate(el => el.scrollIntoView({ block: 'start', behavior: 'instant' }));
             const name = (campaign || 'none') + (answer === 'unknown' ? '-unknown-answer' : '') + (gate ? '-gated' : '');
-            await page.screenshot({ path: path.join(artifacts, name + '-375.png') });
+            await page.screenshot({ path: path.join(artifacts, name + (available ? '' : '-offline') + '-375.png') });
             if (gate) {
+                assert.equal(await panel.locator('a[href^="mailto:"]').count(), 0);
                 await panel.getByRole('button', { name: 'Add your details' }).first().waitFor();
                 assert.equal(await panel.getByRole('button', { name: /Copy answers|Print answers|Copy board summary|Print board summary/ }).count(), 0);
                 assert.equal(await panel.getByRole('link', { name: 'Fix these with No Fries' }).count(), 0);
                 await page.evaluate(() => { window.fixtureGate = 'ready'; });
                 while (await panel.getByRole('button', { name: 'Add your details' }).count()) await panel.getByRole('button', { name: 'Add your details' }).first().click();
                 await panel.getByRole('button', { name: 'Copy answers', exact: true }).waitFor();
+            }
+            const gapLinks = panel.locator('.picture-top-gap .ncsc-results-contact a');
+            assert.equal(await gapLinks.count(), answer === 'no' ? 3 : 0);
+            const destination = available ? '/contact.html?service=managed_security_90' : 'mailto:hello@nofries.nz';
+            for (const link of await gapLinks.all()) assert.equal(await link.getAttribute('href'), destination);
+            assert.equal(await panel.locator(':scope > :last-child a').getAttribute('href'), destination);
+            if (await gapLinks.count()) {
+                await gapLinks.first().focus();
+                await page.keyboard.press('Tab');
+                assert.ok(await gapLinks.nth(1).evaluate(el => el === document.activeElement));
             }
             if (['insurance', 'supplier', 'board'].includes(campaign)) {
                 const input = panel.locator(campaign === 'board' ? '#ncsc-board-summary' : '#ncsc-questionnaire-answer-text');
