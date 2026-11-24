@@ -1,0 +1,59 @@
+{
+  "campaign": "board",
+  "viewport": {
+    "width": 375,
+    "height": 844
+  },
+  "captures": [
+    "01-flag-off-signup",
+    "02-flag-on-signup",
+    "03-terms",
+    "04-question-one",
+    "05-first-result",
+    "06-summary-gate",
+    "09-questionnaire-readable",
+    "10-questionnaire-export-gate",
+    "07-later-details",
+    "11-questionnaire-exports-ready",
+    "08-summary-ready"
+  ],
+  "prints": [
+    {
+      "file": "questionnaire-flag-off.pdf",
+      "questionnaireIncluded": true
+    },
+    {
+      "file": "questionnaire-before-details.pdf",
+      "questionnaireIncluded": false
+    },
+    {
+      "file": "questionnaire-after-details.pdf",
+      "questionnaireIncluded": true
+    },
+    {
+      "file": "questionnaire-after-reload.pdf",
+      "questionnaireIncluded": true
+    }
+  ],
+  "writes": 1,
+  "audits": 1,
+  "detailReads": 14,
+  "persistence": "Synthetic supplemental row written to disk and validated on each service read, including after reload",
+  "assertions": [
+    "flag off full fields",
+    "flag on minimal signup through question one",
+    "first result before capture",
+    "summary gate",
+    "D suggestions readable with E on",
+    "E off questionnaire Copy/Print unchanged with outstanding details",
+    "failed details read withholds exports",
+    "whole-page and browser print exclude questionnaire before capture",
+    "cancel",
+    "lost response retry",
+    "post-save persisted confirmation",
+    "questionnaire Copy/Print after save and reload",
+    "agreement bytes unchanged"
+  ],
+  "errors": [],
+  "blocked": []
+}
