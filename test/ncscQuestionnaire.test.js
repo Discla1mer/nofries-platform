@@ -3943,7 +3943,12 @@ describe('campaign Results next steps', () => {
         const ui = await resumeUi(h, { dom: campaignDom('scam') });
         try {
             const step = ui.root.querySelector('.ncsc-payment-next-step');
-            expect(step.textContent).toContain('known phone number or another trusted, separate route');
+            const checks = Array.from(step.querySelector('ol').children).map(item => item.textContent);
+            expect(checks).toEqual([
+                expect.stringMatching(/^Pause the payment/),
+                expect.stringContaining('known phone number or another trusted, separate route'),
+                expect.stringMatching(/^Record who confirmed/)
+            ]);
             expect(step.querySelector('h3').textContent).toBe(option === 'no' ? 'Payment-check gap and next step' : 'Check payment changes safely');
         } finally { ui.controller.destroy(); }
     });

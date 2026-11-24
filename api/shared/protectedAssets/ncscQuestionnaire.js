@@ -1765,8 +1765,13 @@
                 section.append(node('h3', '', payment.answer === 'No' ? 'Payment-check gap and next step' : 'Check payment changes safely'),
                     node('p', '', payment.answer === 'No'
                         ? 'Your saved No answer reports a gap in checking payment and bank-detail changes through a trusted, separate route.'
-                        : 'Confirm how payment and bank-detail changes are checked. These saved answers do not establish a payment-check gap.'),
-                    node('p', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route.'));
+                        : 'Confirm how payment and bank-detail changes are checked. These saved answers do not establish a payment-check gap.'));
+                const paymentChecks = node('ol');
+                paymentChecks.append(
+                    node('li', '', 'Pause the payment when the account details change.'),
+                    node('li', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route. Do not use contact details from the new request.'),
+                    node('li', '', 'Record who confirmed the details and when. If you cannot confirm the change, do not pay yet.'));
+                section.append(paymentChecks);
                 panel.append(section, resultHelp('', true));
             }
             const questionnaireFirst = !isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier');
