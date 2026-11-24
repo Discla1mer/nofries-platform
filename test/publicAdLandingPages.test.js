@@ -21,8 +21,8 @@ test.each(pages)('%s gives the free check before the paid offer, without assuran
     expect(html.match(/<li>/g).length).toBeLessThanOrEqual(4);
     expect(text).toMatch(/15 minutes.*free check.*top three gaps, ranked.*summary for your board or insurer.*Results reflect your answers/);
     expect(html).toContain('href="/login?intent=create">Create a free account</a>');
-    expect(text).toContain('NZ$1,250 + GST for 90 days.');
-    expect(html).toContain('href="/contact.html?service=managed_security_90"');
+    expect(text).toContain('See pricing and what’s included');
+    expect(html).toContain('href="/pricing#pricing-pilot"');
     expect(html.indexOf('/login?intent=create')).toBeLessThan(html.indexOf('id="managed-title"'));
     expect(text).not.toMatch(/NCSC[- ]approved|certif(?:ied|ication)|guarantee|insur(?:er|ance) acceptance|\bpass(?:ing)?\b|24\/7/i);
     expect(html).not.toMatch(/\son\w+=|\sstyle=|<iframe|<form|facebook|pixel|analytics/i);
@@ -55,8 +55,8 @@ test('the sitemap contains every landing and only indexable public pages', () =>
         const url = new URL(location), name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         expect(url.origin).toBe('https://nofries.nz');
         expect(url.search + url.hash).toBe('');
-        expect(PUBLIC_ROOT_FILES).toContain(name);
-        expect(read(name)).not.toMatch(/<meta[^>]+content="noindex/);
+        expect(PUBLIC_ROOT_FILES).toContain(name === 'pricing' ? 'pricing.html' : name);
+        expect(read(name === 'pricing' ? 'pricing.html' : name)).not.toMatch(/<meta[^>]+content="noindex/);
         expect(config.routes.find(rule => rule.route === url.pathname)?.headers?.['X-Robots-Tag'] || '').not.toMatch(/noindex|none/);
     }
     expect(PUBLIC_ROOT_FILES).toContain('sitemap.xml');

@@ -295,7 +295,7 @@ test('the Services tab leads with the 90-day managed security offer as a plain c
     const dom = mount(view(), { initialRoute: 'services' });
     const offer = dom.root.querySelector('.dashboard-offer-panel');
     assert.ok(offer);
-    assert.match(offer.textContent, /NZ\$1,250 \+ GST for 90 days/);
+    assert.match(offer.textContent, /Get help working through the gaps in your assessment/);
     const link = Array.from(offer.querySelectorAll('a')).find(item => item.textContent === 'Ask about 90-day managed security');
     assert.equal(link.href, '/contact.html?service=managed_security_90');
     assert.equal(offer.querySelectorAll('form').length, 0);

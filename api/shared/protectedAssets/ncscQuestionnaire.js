@@ -437,9 +437,10 @@
     function managedSecurityOffer(node, gated, win, stillCurrent, campaign) {
         const help = node('div', 'picture-next-steps-help'); help.hidden = true;
         const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
+        const pricing = node('a', '', 'See pricing and what’s included'); pricing.href = '/pricing#pricing-pilot';
         if (campaignOfferBridge[campaign]) help.append(node('p', '', campaignOfferBridge[campaign]));
-        help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
-            gated(() => link), node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
+        help.append(node('p', 'picture-offer', 'Get help with your assessment gaps through 90-day managed security.'),
+            gated(() => link), node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'), pricing);
         enquiryAvailable(win).then(available => { if (available && stillCurrent()) help.hidden = false; });
         return help;
     }

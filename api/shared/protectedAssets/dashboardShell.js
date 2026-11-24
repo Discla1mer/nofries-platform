@@ -833,13 +833,14 @@
             main.append(element('p', 'dashboard-intro', 'What is included, what needs setup and what can be scoped separately?'));
             const subscription = panel('Your plan: ' + planNames[model.subscription], 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
             subscription.classList.add('dashboard-subscription-panel'); main.append(subscription);
-            // The standing paid offer (pricing.html). A plain link to the contact
-            // form with the offer named; nothing is sent from the dashboard.
-            const offer = panel('90-day managed security', 'NZ$1,250 + GST for 90 days. We set your baseline, fix three gaps with you, review progress at two month-ends and give you a written summary for your board or insurer. No automatic renewal.');
+            // The standing offer links to its public pricing and terms.
+            const offer = panel('90-day managed security', 'Get help working through the gaps in your assessment.');
             offer.classList.add('dashboard-offer-panel');
             const offerLink = element('a', 'dashboard-button', 'Ask about 90-day managed security');
             offerLink.href = '/contact.html?service=managed_security_90';
-            offer.append(gated(() => offerLink), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
+            const pricingLink = element('a', '', 'See pricing and what’s included');
+            pricingLink.href = '/pricing#pricing-pilot';
+            offer.append(gated(() => offerLink), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'), pricingLink);
             main.append(offer);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {
@@ -857,7 +858,7 @@
                 // Nothing is sent from the dashboard, and the form does not include assessment answers.
                 const ask = element('a', 'dashboard-button', 'Ask No Fries about this service');
                 ask.href = '/contact.html?service=' + encodeURIComponent(item.key);
-                detail.append(gated(() => ask), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
+                detail.append(gated(() => ask), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'), pricingLink);
                 const control = button(service.state === 'not_included' ? 'How to scope this service'
                     : service.state === 'disabled' ? 'About availability' : 'What is needed for setup', function () {
                     detail.hidden = !detail.hidden; control.setAttribute('aria-expanded', String(!detail.hidden));
