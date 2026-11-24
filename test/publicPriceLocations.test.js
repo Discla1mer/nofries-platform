@@ -9,6 +9,9 @@ const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 const pricePattern = /\$\s*\d/;
 const price = 'NZ$99 + GST per organisation per month or NZ$990 + GST per year (two months free).';
 
+// Uses the public ship lists, plus the separately generated /try document.
+// Staff-only quotes, data fixtures, styles, API responses and dynamically
+// concatenated numbers are outside this literal source check.
 test('price literals are absent from public page and script sources outside Pricing', () => {
     const files = [...PUBLIC_ROOT_FILES.filter(f => f.endsWith('.html') && f !== 'pricing.html'),
         ...PUBLIC_SCRIPT_FILES.map(f => 'js/' + f), 'demo/try/document.js'];

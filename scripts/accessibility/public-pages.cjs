@@ -158,6 +158,21 @@ async function publicHeader(page, route, width) {
     await page.evaluate(() => window.scrollTo(0, 0));
     return { hiddenBrand, loginVisible: true };
 }
+// Start at the keyboard skip link and reach the primary new pricing journey
+// through real Tab events, not element.focus() on the destination itself.
+async function pricingKeyboard(page, route) {
+    const href = route === '/pricing' ? '/contact.html?service=managed_security_90' :
+        route === '/managed-it.html' ? '/pricing#pricing-managed-it' : '/pricing#pricing-pilot';
+    await page.locator('a.skip-link').focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator(':focus').getAttribute('id'), 'main-content', route + ': keyboard skip link');
+    const target = page.locator('main a:visible');
+    for (let step = 0; step < await target.count(); step++) {
+        await page.keyboard.press('Tab');
+        if ((await page.locator(':focus').getAttribute('href'))?.startsWith(href)) return true;
+    }
+    assert.fail(route + ': keyboard could not reach ' + href);
+}
 async function adLinks(page, base, route) {
     const query = '?utm_source=meta&utm_medium=paid_social&utm_campaign=review&utm_content=phone%20preview&utm_term=NZ%26SMB&fbclid=ignored';
     await page.goto(base + route + query);
@@ -183,6 +198,15 @@ async function adLinks(page, base, route) {
     await page.locator('.ad-landing .button').click({ trial: true });
     assert.deepEqual(await page.context().cookies(), []);
     assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
+    if (route === '/insurance.html') {
+        await page.goto(offer.href);
+        const enquiry = page.locator('[aria-labelledby="pricing-pilot"] #pricing-pilot-enquiry');
+        await enquiry.click();
+        await page.waitForFunction(() => document.getElementById('contact-message')?.value.includes('90-day managed security'));
+        assert.equal(await page.evaluate(() => window.enquiryCampaign()), 'meta/paid_social/review');
+        await page.evaluate(() => window.clearEnquiryCampaign());
+        await page.goto(base + route + query);
+    }
     if (process.env.NOFRIES_AD_SCREENSHOTS) {
         fs.mkdirSync(process.env.NOFRIES_AD_SCREENSHOTS, { recursive: true });
         await page.screenshot({ path: path.join(process.env.NOFRIES_AD_SCREENSHOTS, route.slice(1, -5) + '-375.png'), fullPage: true });
@@ -215,10 +239,12 @@ async function adLinks(page, base, route) {
                 const header = await publicHeader(page, route, width);
                 const links = adPages.includes(route) && width === 375 && scale === 1 ? await adLinks(page, base, route) : null;
                 const doubled = scale === 2 ? await doubleText(page) : 0;
+                const keyboard = width === 375 && (adPages.includes(route) || ['/pricing', '/managed-it.html'].includes(route))
+                    ? await pricingKeyboard(page, route) : null;
                 const pageState = { axe: await scan(page), layout: await layout(page) };
                 const probe = route === '/login' ? await signupContrast(page) : null;
                 const hint = route === '/report.html' ? await reportHint(page) : null;
-                const entry = { route, width, scale, doubled, page: pageState, header, probe, hint, links };
+                const entry = { route, width, scale, doubled, page: pageState, header, probe, hint, links, keyboard };
                 if (probe && (probe.candidate.ratio < 4.5 || probe.candidateScan.violations.length)) failures.push({ route, width, scale, state: 'signup-error-contrast' });
                 if (hint && !hint.pass) failures.push({ route, width, scale, state: 'persistent-report-hint' });
                 results.push(entry);

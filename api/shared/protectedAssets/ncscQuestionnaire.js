@@ -440,7 +440,8 @@
         const pricing = node('a', '', 'See pricing and what’s included'); pricing.href = '/pricing#pricing-pilot';
         if (campaignOfferBridge[campaign]) help.append(node('p', '', campaignOfferBridge[campaign]));
         help.append(node('p', 'picture-offer', 'Get help with your assessment gaps through 90-day managed security.'),
-            gated(() => link), node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'), pricing);
+            gated(() => { const actions = node('div', ''); actions.append(link, pricing); return actions; }),
+            node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
         enquiryAvailable(win).then(available => { if (available && stillCurrent()) help.hidden = false; });
         return help;
     }

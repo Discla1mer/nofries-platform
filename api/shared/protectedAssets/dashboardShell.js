@@ -858,7 +858,7 @@
                 // Nothing is sent from the dashboard, and the form does not include assessment answers.
                 const ask = element('a', 'dashboard-button', 'Ask No Fries about this service');
                 ask.href = '/contact.html?service=' + encodeURIComponent(item.key);
-                detail.append(gated(() => ask), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'), pricingLink);
+                detail.append(gated(() => ask), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
                 const control = button(service.state === 'not_included' ? 'How to scope this service'
                     : service.state === 'disabled' ? 'About availability' : 'What is needed for setup', function () {
                     detail.hidden = !detail.hidden; control.setAttribute('aria-expanded', String(!detail.hidden));

@@ -298,6 +298,12 @@ test('the Services tab leads with the 90-day managed security offer as a plain c
     assert.match(offer.textContent, /Get help working through the gaps in your assessment/);
     const link = Array.from(offer.querySelectorAll('a')).find(item => item.textContent === 'Ask about 90-day managed security');
     assert.equal(link.href, '/contact.html?service=managed_security_90');
+    const pricing = Array.from(offer.querySelectorAll('a')).find(item => item.href === '/pricing#pricing-pilot');
+    assert.ok(pricing);
+    assert.equal(pricing.parentElement, offer, 'pricing stays in the visible offer instead of being reparented into a service detail');
+    const details = dom.root.querySelectorAll('.dashboard-service-detail');
+    assert.ok(details.length >= 2);
+    details.forEach(detail => assert.ok(!Array.from(detail.querySelectorAll('a')).includes(pricing)));
     assert.equal(offer.querySelectorAll('form').length, 0);
 });
 
