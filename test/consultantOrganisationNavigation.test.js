@@ -36,7 +36,7 @@ async function flush() { for (let i = 0; i < 35; i += 1) await Promise.resolve()
 
 // Actual loader and dashboard shell, with controlled DOM and transport. This
 // proves navigation and request identity, not browser layout or live access.
-function harness(hash = '#organisations', localStorage) {
+function harness(hash = '#organisations', localStorage, provider = 'staff') {
     const { document, window } = createDom();
     if (localStorage) window.localStorage = localStorage;
     const createElement = document.createElement;
@@ -50,7 +50,7 @@ function harness(hash = '#organisations', localStorage) {
     Object.entries(elements).forEach(([id, node]) => { node.id = id; });
     const findId = (node, id) => !node ? null : node.id === id ? node : node.children.map(child => findId(child, id)).find(Boolean) || null;
     document.body = document.createElement('body'); document.body.dataset.page = 'operator-dashboard';
-    document.body.dataset.customerProvider = 'staff'; document.body.append(elements.dashboardEntry);
+    document.body.dataset.customerProvider = provider; document.body.append(elements.dashboardEntry);
     document.getElementById = id => elements[id] || findId(document.body, id);
     document.querySelectorAll = selector => document.body.querySelectorAll(selector);
     document.querySelector = selector => document.body.querySelector(selector);
@@ -571,6 +571,35 @@ test('the last opened organisation ID is remembered and reopened on the next pla
     expect(JSON.parse(next.requests[2].init.body)).toEqual({ bindingId: B, expectedGeneration: GA, operationId: expect.stringMatching(/^[0-9a-f-]{36}$/) });
     await next.reply(2, 200, { schemaVersion: 1, generation: GB, selectedBindingId: B });
     expect(next.requests[3].url).toBe('/api/dashboard/session');
+});
+
+test.each([false, true])('a bare External Consultant visit with no selected binding offers only the own workspace (initialising: %s)', async fresh => {
+    const h = lastOpened(harness('', memoryStorage(), 'external'), memoryStorage()); await flush();
+    expect(h.requests[0]).toMatchObject({ url: '/api/dashboard/session', init: { method: 'GET' } });
+    const account = state(null, GA, { clientSetupAvailable: true });
+    let index = 0;
+    if (fresh) {
+        await h.reply(index++, 409, { code: 'dashboard_initialization_required' });
+        expect(h.requests[index]).toMatchObject({ url: '/api/dashboard/session', init: { method: 'POST' } });
+        await h.reply(index++, 200, { schemaVersion: 1, initialized: true });
+        expect(h.requests[index]).toMatchObject({ url: '/api/dashboard/session', init: { method: 'GET' } });
+    }
+    await h.reply(index++, 200, account);
+    expect(h.requests[index].url).toBe('/api/dashboard/organisations?limit=50');
+    await h.reply(index++, 200, listing([row(A, 'Own consultancy')]));
+    expect(h.requests[index].url).toBe('/api/customer-signup/clients');
+    await h.reply(index++, 200, clients([]));
+    expect(h.status).toBe('selection');
+    expect(h.elements.dashboardApp.hidden).toBe(true);
+    expect(h.requests).toHaveLength(index);
+    const [own, ...others] = h.elements.dashboardChoices.querySelectorAll('button');
+    expect(others).toEqual([]);
+    expect(own.textContent).toBe('Own consultancy');
+    expect(own.hidden).toBe(false);
+    expect(own.disabled).not.toBe(true);
+    own.click(); await flush();
+    expect(h.requests[index]).toMatchObject({ url: '/api/dashboard/selection', init: { method: 'POST' } });
+    expect(JSON.parse(h.requests[index].init.body)).toMatchObject({ bindingId: A, expectedGeneration: GA });
 });
 
 test('D-018 a fresh tab ignores a previous browser-wide selection', async () => {
