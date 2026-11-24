@@ -87,12 +87,16 @@ async function main() {
             const headings = await panel.locator(':scope > section > h3').allTextContents();
             const first = campaign === 'insurance' || campaign === 'supplier' ? 'Answers for your insurer or customer questionnaire' : campaign === 'board' ? 'Summary for your board or insurer' : campaign === 'scam' ? (answer === 'no' ? 'Payment-check gap and next step' : 'Check payment changes safely') : 'Your top three gaps';
             assert.equal(headings[0], first);
+            if (campaign === 'insurance') assert.equal(headings[1], 'Summary for your board or insurer');
             await panel.locator('.picture-next-steps-help').waitFor();
             assert.equal(await panel.locator('.picture-next-steps-help').count(), 1);
             assert.equal(await panel.locator('.picture-top-gaps').count(), 1);
             assert.equal(await panel.locator('.picture-top-gap').count(), answer === 'no' ? 3 : 0);
             assert.equal(await panel.locator('.ncsc-questionnaire-answers').count(), 1);
             if (campaign === 'scam') {
+                const paymentChecks = panel.locator('.ncsc-payment-next-step ol > li');
+                assert.equal(await paymentChecks.count(), 3);
+                assert.match(await paymentChecks.nth(1).textContent(), /known phone number/);
                 await panel.locator('.picture-next-steps-help').waitFor();
                 assert.equal(await panel.locator('.ncsc-payment-next-step + .picture-next-steps-help').count(), 1);
                 if (!gate) assert.equal(await panel.getByRole('link', { name: 'Fix these with No Fries', exact: true }).getAttribute('href'), '/contact.html?service=managed_security_90');
