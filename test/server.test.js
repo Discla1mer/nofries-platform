@@ -2882,3 +2882,11 @@ describe('configured dashboard actual HTTP transport', () => {
         }
     });
 });
+
+describe('Express 5 catch-all and well-known compatibility', () => {
+    test.each([['/api/', 'legacy_workspace_retired'], ['/api/billing/', 'billing_disabled'], ['/api/billing/x', 'billing_disabled']])('%s keeps its 410 code', async (url, code) => {
+        const response = await request(app).get(url);
+        expect(response.status).toBe(410);
+        expect(response.body.code).toBe(code);
+    });
+});

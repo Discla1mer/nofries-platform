@@ -1907,64 +1907,8 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/accepts",
-      "version": "2.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/content-disposition",
-      "version": "1.1.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/cookie-signature",
-      "version": "1.2.2",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/debug",
-      "version": "4.4.3",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/@modelcontextprotocol/sdk/node_modules/eventsource-parser",
       "version": "3.1.1",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/express",
-      "version": "5.2.1",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/finalhandler",
-      "version": "2.1.1",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/fresh",
-      "version": "2.0.0",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -1979,96 +1923,8 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/media-typer",
-      "version": "1.1.1",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/merge-descriptors",
-      "version": "2.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/mime-db",
-      "version": "1.54.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/mime-types",
-      "version": "3.0.2",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/ms",
-      "version": "2.1.3",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/negotiator",
-      "version": "1.1.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/negotiator/node_modules/content-type",
-      "version": "2.1.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/@modelcontextprotocol/sdk/node_modules/raw-body",
       "version": "3.0.2",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/send",
-      "version": "1.2.1",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/serve-static",
-      "version": "2.2.1",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/type-is",
-      "version": "2.1.0",
-      "license": "MIT",
-      "development": true,
-      "optional": true
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/@modelcontextprotocol/sdk/node_modules/type-is/node_modules/content-type",
-      "version": "2.1.0",
       "license": "MIT",
       "development": true,
       "optional": true
@@ -3398,7 +3254,7 @@
       "path": "node_modules/accepts",
       "version": "1.3.8",
       "license": "UNDECLARED",
-      "development": false,
+      "development": true,
       "optional": false
     },
     {
@@ -3535,14 +3391,6 @@
       "version": "2.0.1",
       "license": "Python-2.0",
       "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/array-flatten",
-      "version": "1.1.1",
-      "license": "UNDECLARED",
-      "development": false,
       "optional": false
     },
     {
@@ -4068,8 +3916,8 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/content-disposition",
-      "version": "0.5.4",
-      "license": "UNDECLARED",
+      "version": "2.0.1",
+      "license": "MIT",
       "development": false,
       "optional": false
     },
@@ -4100,8 +3948,8 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/cookie-signature",
-      "version": "1.0.6",
-      "license": "UNDECLARED",
+      "version": "1.2.2",
+      "license": "MIT",
       "development": false,
       "optional": false
     },
@@ -4628,7 +4476,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/express",
-      "version": "4.22.2",
+      "version": "5.3.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -4664,6 +4512,78 @@
       "license": "MIT",
       "development": true,
       "optional": true
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/express/node_modules/accepts",
+      "version": "2.0.0",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/express/node_modules/content-type",
+      "version": "2.1.0",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/express/node_modules/debug",
+      "version": "4.4.3",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/express/node_modules/media-typer",
+      "version": "1.1.1",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/express/node_modules/mime-db",
+      "version": "1.54.0",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/express/node_modules/mime-types",
+      "version": "3.0.2",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/express/node_modules/ms",
+      "version": "2.1.3",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/express/node_modules/negotiator",
+      "version": "1.1.0",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/express/node_modules/type-is",
+      "version": "2.1.0",
+      "license": "MIT",
+      "development": false,
+      "optional": false
     },
     {
       "lockfile": "package-lock.json",
@@ -4844,7 +4764,23 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/finalhandler",
-      "version": "1.3.2",
+      "version": "2.1.1",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/finalhandler/node_modules/debug",
+      "version": "4.4.3",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/finalhandler/node_modules/ms",
+      "version": "2.1.3",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -4924,7 +4860,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/fresh",
-      "version": "0.5.2",
+      "version": "2.0.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -5454,7 +5390,7 @@
       "path": "node_modules/is-promise",
       "version": "4.0.0",
       "license": "MIT",
-      "development": true,
+      "development": false,
       "optional": false
     },
     {
@@ -6204,7 +6140,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/merge-descriptors",
-      "version": "1.0.3",
+      "version": "2.0.0",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -6222,15 +6158,7 @@
       "path": "node_modules/methods",
       "version": "1.1.2",
       "license": "UNDECLARED",
-      "development": false,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/mime",
-      "version": "1.6.0",
-      "license": "MIT",
-      "development": false,
+      "development": true,
       "optional": false
     },
     {
@@ -6406,7 +6334,7 @@
       "path": "node_modules/negotiator",
       "version": "0.6.3",
       "license": "UNDECLARED",
-      "development": false,
+      "development": true,
       "optional": false
     },
     {
@@ -6558,7 +6486,7 @@
       "path": "node_modules/once",
       "version": "1.4.0",
       "license": "ISC",
-      "development": true,
+      "development": false,
       "optional": false
     },
     {
@@ -6875,14 +6803,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/path-to-regexp",
-      "version": "0.1.13",
-      "license": "MIT",
-      "development": false,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/pdf-parse",
       "version": "2.4.5",
       "license": "Apache-2.0",
@@ -7139,14 +7059,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/accepts",
-      "version": "2.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/promptfoo/node_modules/chalk",
       "version": "6.0.1",
       "license": "MIT",
@@ -7157,62 +7069,6 @@
       "lockfile": "package-lock.json",
       "path": "node_modules/promptfoo/node_modules/chokidar",
       "version": "6.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/content-disposition",
-      "version": "2.0.1",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/content-type",
-      "version": "2.1.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/cookie-signature",
-      "version": "1.2.2",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/debug",
-      "version": "4.4.3",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/express",
-      "version": "5.3.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/finalhandler",
-      "version": "2.1.1",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/fresh",
-      "version": "2.0.0",
       "license": "MIT",
       "development": true,
       "optional": false
@@ -7251,54 +7107,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/media-typer",
-      "version": "1.1.1",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/merge-descriptors",
-      "version": "2.0.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/mime-db",
-      "version": "1.54.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/mime-types",
-      "version": "3.0.2",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/ms",
-      "version": "2.1.3",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/negotiator",
-      "version": "1.1.0",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/promptfoo/node_modules/openai",
       "version": "7.28.0",
       "license": "Apache-2.0",
@@ -7323,33 +7131,9 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/send",
-      "version": "1.2.1",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/serve-static",
-      "version": "2.2.1",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/promptfoo/node_modules/signal-exit",
       "version": "4.1.0",
       "license": "ISC",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
-      "path": "node_modules/promptfoo/node_modules/type-is",
-      "version": "2.1.0",
-      "license": "MIT",
       "development": true,
       "optional": false
     },
@@ -7654,7 +7438,7 @@
       "path": "node_modules/router",
       "version": "2.2.0",
       "license": "MIT",
-      "development": true,
+      "development": false,
       "optional": false
     },
     {
@@ -7662,7 +7446,7 @@
       "path": "node_modules/router/node_modules/debug",
       "version": "4.4.3",
       "license": "MIT",
-      "development": true,
+      "development": false,
       "optional": false
     },
     {
@@ -7670,7 +7454,7 @@
       "path": "node_modules/router/node_modules/ms",
       "version": "2.1.3",
       "license": "MIT",
-      "development": true,
+      "development": false,
       "optional": false
     },
     {
@@ -7678,7 +7462,7 @@
       "path": "node_modules/router/node_modules/path-to-regexp",
       "version": "8.4.2",
       "license": "MIT",
-      "development": true,
+      "development": false,
       "optional": false
     },
     {
@@ -7748,7 +7532,31 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/send",
-      "version": "0.19.2",
+      "version": "1.2.1",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/send/node_modules/debug",
+      "version": "4.4.3",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/send/node_modules/mime-db",
+      "version": "1.54.0",
+      "license": "MIT",
+      "development": false,
+      "optional": false
+    },
+    {
+      "lockfile": "package-lock.json",
+      "path": "node_modules/send/node_modules/mime-types",
+      "version": "3.0.2",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -7780,7 +7588,7 @@
     {
       "lockfile": "package-lock.json",
       "path": "node_modules/serve-static",
-      "version": "1.16.3",
+      "version": "2.2.1",
       "license": "MIT",
       "development": false,
       "optional": false
@@ -8267,14 +8075,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/supertest/node_modules/cookie-signature",
-      "version": "1.2.2",
-      "license": "MIT",
-      "development": true,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/supports-color",
       "version": "7.2.0",
       "license": "MIT",
@@ -8499,14 +8299,6 @@
     },
     {
       "lockfile": "package-lock.json",
-      "path": "node_modules/utils-merge",
-      "version": "1.0.1",
-      "license": "UNDECLARED",
-      "development": false,
-      "optional": false
-    },
-    {
-      "lockfile": "package-lock.json",
       "path": "node_modules/uuid",
       "version": "13.0.2",
       "license": "MIT",
@@ -8614,7 +8406,7 @@
       "path": "node_modules/wrappy",
       "version": "1.0.2",
       "license": "ISC",
-      "development": true,
+      "development": false,
       "optional": false
     },
     {

@@ -293,7 +293,8 @@ describe('dashboard administration Node/Express integration', () => {
             request: nativeRequests.get('capabilities') });
         expect(JSON.stringify(capability.body)).not.toContain('request');
         const beforeSynthetic = policy.mock.calls.length;
-        const adminLayer = app._router.stack.find(layer => !layer.route && layer.regexp.toString().includes('api\\/dashboard-admin'));
+        // Express 5 router layers expose match() instead of a v4 regexp.
+        const adminLayer = app.router.stack.find(layer => !layer.route && layer.match('/api/dashboard-admin/capabilities') && !layer.match('/api/other-route'));
         expect(adminLayer).toBeDefined();
         const synthetic = wire(); synthetic.path = '/capabilities';
         const denied = await new Promise((resolve, reject) => {

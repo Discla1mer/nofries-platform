@@ -872,11 +872,18 @@ app.post('/api/prospect/chat', asyncRoute(async (req, res) => {
     }
 }));
 
-app.all(['/api/lifecycle', '/api/lifecycle/*'], asyncRoute(async (req, res) => {
+// Express 5 exposes a named wildcard as an array of decoded segments; the
+// route handlers expect the Express 4 joined form ('' for the bare prefix).
+function splatPath(req) {
+    const splat = req.params && req.params.splat;
+    return Array.isArray(splat) ? splat.join('/') : '';
+}
+
+app.all(['/api/lifecycle', '/api/lifecycle/*splat'], asyncRoute(async (req, res) => {
     let result;
     try {
         result = await handleLifecycleRequest(req, {
-            path: req.params && req.params[0] || ''
+            path: splatPath(req)
         });
     } catch (error) {
         result = lifecycleErrorResponse(error, console);
@@ -884,11 +891,11 @@ app.all(['/api/lifecycle', '/api/lifecycle/*'], asyncRoute(async (req, res) => {
     sendResult(res, result);
 }));
 
-app.all(['/api/service-desk', '/api/service-desk/*'], asyncRoute(async (req, res) => {
+app.all(['/api/service-desk', '/api/service-desk/*splat'], asyncRoute(async (req, res) => {
     let result;
     try {
         result = await handleServiceDeskRequest(req, {
-            path: req.params && req.params[0] || ''
+            path: splatPath(req)
         });
     } catch (error) {
         result = serviceDeskErrorResponse(error, console);
@@ -896,11 +903,11 @@ app.all(['/api/service-desk', '/api/service-desk/*'], asyncRoute(async (req, res
     sendResult(res, result);
 }));
 
-app.all(['/api/customer-portal', '/api/customer-portal/*'], asyncRoute(async (req, res) => {
+app.all(['/api/customer-portal', '/api/customer-portal/*splat'], asyncRoute(async (req, res) => {
     let result;
     try {
         result = await handleCustomerPortalRequest(req, {
-            path: req.params && req.params[0] || ''
+            path: splatPath(req)
         });
     } catch (error) {
         result = customerPortalErrorResponse(error, console);
@@ -908,11 +915,11 @@ app.all(['/api/customer-portal', '/api/customer-portal/*'], asyncRoute(async (re
     sendResult(res, result);
 }));
 
-app.all(['/api/datto-rmm', '/api/datto-rmm/*'], asyncRoute(async (req, res) => {
+app.all(['/api/datto-rmm', '/api/datto-rmm/*splat'], asyncRoute(async (req, res) => {
     let result;
     try {
         result = await handleDattoRmmRequest(req, {
-            path: req.params && req.params[0] || ''
+            path: splatPath(req)
         });
     } catch (error) {
         result = dattoRmmErrorResponse(error, console);
@@ -920,11 +927,11 @@ app.all(['/api/datto-rmm', '/api/datto-rmm/*'], asyncRoute(async (req, res) => {
     sendResult(res, result);
 }));
 
-app.all(['/api/sales', '/api/sales/*'], asyncRoute(async (req, res) => {
+app.all(['/api/sales', '/api/sales/*splat'], asyncRoute(async (req, res) => {
     let result;
     try {
         result = await handleSalesRequest(req, {
-            path: req.params && req.params[0] || ''
+            path: splatPath(req)
         });
     } catch (error) {
         result = errorResponse(error, console);
@@ -956,14 +963,14 @@ app.post('/api/mcp-oauth-token', express.urlencoded({ extended: false, limit: '3
     sendResult(res, await handleMcpOauthTokenRequest(req));
 }));
 
-app.all('/api/billing/*', (req, res) => {
+app.all('/api/billing/{*splat}', (req, res) => {
     res.status(410).json({
         error: 'Public subscription billing is disabled for the tenant pilot',
         code: 'billing_disabled'
     });
 });
 
-app.all('/api/*', (req, res) => {
+app.all('/api/{*splat}', (req, res) => {
     res.status(410).json({
         error: 'This legacy API route has been retired',
         code: 'legacy_workspace_retired'
@@ -1031,7 +1038,7 @@ app.get(['/mssp', '/mssp/', '/workspace', '/workspace/', '/app', '/app/', '/app/
     res.redirect(302, '/scoping');
 });
 
-app.get(['/sample-report.html', '/share', '/share/*', '/share.html', '/about.html', '/About.html'], (req, res) => {
+app.get(['/sample-report.html', '/share', '/share/*splat', '/share.html', '/about.html', '/About.html'], (req, res) => {
     res.redirect(302, '/');
 });
 
@@ -1236,7 +1243,7 @@ function mountPublicAssets(application) {
     });
 
     application.get('/.well-known/security.txt', (req, res) => {
-        res.sendFile(path.join(__dirname, '.well-known', 'security.txt'));
+        res.sendFile('security.txt', { root: path.join(__dirname, '.well-known') });
     });
     application.use('/images', express.static(path.join(__dirname, 'images'), publicStaticOptions()));
     application.use('/assets', express.static(path.join(__dirname, 'assets'), publicStaticOptions()));
