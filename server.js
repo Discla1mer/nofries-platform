@@ -963,14 +963,14 @@ app.post('/api/mcp-oauth-token', express.urlencoded({ extended: false, limit: '3
     sendResult(res, await handleMcpOauthTokenRequest(req));
 }));
 
-app.all('/api/billing/*splat', (req, res) => {
+app.all('/api/billing/{*splat}', (req, res) => {
     res.status(410).json({
         error: 'Public subscription billing is disabled for the tenant pilot',
         code: 'billing_disabled'
     });
 });
 
-app.all('/api/*splat', (req, res) => {
+app.all('/api/{*splat}', (req, res) => {
     res.status(410).json({
         error: 'This legacy API route has been retired',
         code: 'legacy_workspace_retired'
@@ -1243,7 +1243,7 @@ function mountPublicAssets(application) {
     });
 
     application.get('/.well-known/security.txt', (req, res) => {
-        res.sendFile(path.join(__dirname, '.well-known', 'security.txt'));
+        res.sendFile('security.txt', { root: path.join(__dirname, '.well-known') });
     });
     application.use('/images', express.static(path.join(__dirname, 'images'), publicStaticOptions()));
     application.use('/assets', express.static(path.join(__dirname, 'assets'), publicStaticOptions()));
