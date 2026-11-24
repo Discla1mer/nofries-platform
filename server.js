@@ -970,6 +970,9 @@ app.all('/api/billing/{*splat}', (req, res) => {
     });
 });
 
+const { readPublicPaidPricing } = require('./api/shared/publicPaidPricing');
+app.get('/api/pricing/paid', (_req, res) => sendResult(res, readPublicPaidPricing()));
+
 app.all('/api/{*splat}', (req, res) => {
     res.status(410).json({
         error: 'This legacy API route has been retired',
@@ -1219,6 +1222,7 @@ function mountPublicAssets(application) {
         .filter((fileName) => fileName !== '.well-known/security.txt')
         .map((fileName) => [`/${fileName}`, fileName]);
     rootRoutes.push(['/', 'index.html']);
+    rootRoutes.push(['/pricing', 'pricing.html']);
     rootRoutes.push(['/offer', 'offer.html']);
     rootRoutes.forEach(([route, fileName]) => {
         application.get(route, (req, res) => {

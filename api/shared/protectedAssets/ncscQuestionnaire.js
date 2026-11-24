@@ -437,9 +437,11 @@
     function managedSecurityOffer(node, gated, win, stillCurrent, campaign) {
         const help = node('div', 'picture-next-steps-help'); help.hidden = true;
         const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
+        const pricing = node('a', '', 'See pricing and what’s included'); pricing.href = '/pricing#pricing-pilot';
         if (campaignOfferBridge[campaign]) help.append(node('p', '', campaignOfferBridge[campaign]));
-        help.append(node('p', 'picture-offer', '90-day managed security: NZ$1,250 + GST. We fix three gaps with you and give you a written summary for your board or insurer.'),
-            gated(() => link), node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
+        help.append(node('p', 'picture-offer', 'Get help with your assessment gaps through 90-day managed security.'),
+            gated(() => { const actions = node('div', ''); actions.append(link, pricing); return actions; }),
+            node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
         enquiryAvailable(win).then(available => { if (available && stillCurrent()) help.hidden = false; });
         return help;
     }
@@ -1725,11 +1727,35 @@
             const campaign = resultsCampaign(win);
             const boardExportGate = options.boardExportGate || (content => content());
             const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
+            // Keep the same gated anchor and keyboard focus while one shared probe settles.
+            const availability = enquiryAvailable(win);
+            const resultHelp = (label, full = false) => {
+                const slot = node('div', full ? 'picture-next-steps-help' : 'ncsc-results-contact');
+                if (full && campaignOfferBridge[campaign]) slot.append(node('p', '', campaignOfferBridge[campaign]));
+                slot.append(gated(() => {
+                    const link = node('a', 'dashboard-button');
+                    function show(available) {
+                        link.textContent = available ? 'Fix these with No Fries' : 'Email hello@nofries.nz';
+                        link.href = available ? '/contact.html?service=managed_security_90' : 'mailto:hello@nofries.nz';
+                        if (label) link.setAttribute('aria-label', link.textContent + ': ' + label);
+                    }
+                    show(false);
+                    availability.then(available => { if (live()) show(available); });
+                    return link;
+                }));
+                return slot;
+            };
             if (campaign === 'board') {
                 const section = node('section', 'ncsc-board-next-step picture-summary');
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
                 section.append(node('h3', '', 'Summary for your board or insurer'),
                     boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied)), copied);
+                if (campaign === 'board' && topGaps(results, metadata, 1).length) {
+                    section.append(node('p', '', 'Use a reported gap to agree a next action, an owner and a date with your board.'),
+                        button('Go to your top gaps', function () {
+                            focusTarget(panel.querySelector('[id="ncsc-results-top-gaps"]'));
+                        }, 'dashboard-button dashboard-button-secondary'));
+                }
                 panel.append(section);
             } else if (campaign === 'scam') {
                 const payment = questionnaireAnswers(acknowledged, metadata).items.find(item => item.id === 'payment-checks');
@@ -1739,13 +1765,12 @@
                         ? 'Your saved No answer reports a gap in checking payment and bank-detail changes through a trusted, separate route.'
                         : 'Confirm how payment and bank-detail changes are checked. These saved answers do not establish a payment-check gap.'),
                     node('p', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route.'));
-                panel.append(section, managedSecurityOffer(node, gated, win, () => live(), campaign));
+                panel.append(section, resultHelp('', true));
             }
             const questionnaireFirst = !isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier');
             if (questionnaireFirst) renderQuestionnaireAnswers(panel);
             if (results) {
-                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps'));
-                if (campaign !== 'scam') panel.append(managedSecurityOffer(node, gated, win, () => live(), campaign));
+                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps', gap => [resultHelp(gap.title)]));
             }
             if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
             renderNextSteps(panel);
@@ -1817,6 +1842,7 @@
                     }); detail.append(item);
                 }); panel.append(detail);
             });
+            panel.append(campaign === 'scam' ? resultHelp('Results summary') : resultHelp('', true));
         }
         // Show the reported (lower) figure first; the upper figure follows in a plain sentence.
         function leadWithLowerBound(card, valueSelector, model) {
@@ -1867,10 +1893,19 @@
             const section = node('section', 'ncsc-questionnaire-answers'); section.setAttribute('aria-labelledby', 'ncsc-questionnaire-answers-title');
             const title = node('h3', '', report.title); title.id = 'ncsc-questionnaire-answers-title';
             section.append(title, node('p', '', 'Suggested answers from this saved assessment. Not answered means the detail is missing or cannot be confirmed from your answers.'), node('p', '', report.scope));
+            const nextEvidence = resultsCampaign(win) === 'supplier' && report.items.find(item => item.evidence);
+            if (nextEvidence) {
+                const next = button('Jump to the first answer to verify', function () {
+                    focusTarget(section.querySelector('[id="ncsc-supplier-first-evidence"]'));
+                }, 'dashboard-button dashboard-button-secondary');
+                section.append(node('p', '', 'Start with an answer that needs evidence. Verify the exact question before giving it to your customer.'), next);
+            }
             const list = node('ol');
             report.items.forEach(function (item) {
                 const row = node('li'); row.setAttribute('data-answer-id', item.id);
-                row.append(node('h4', '', item.question), node('strong', '', 'Suggested answer: ' + item.answer),
+                const question = node('h4', '', item.question);
+                if (item === nextEvidence) { question.id = 'ncsc-supplier-first-evidence'; question.tabIndex = -1; }
+                row.append(question, node('strong', '', 'Suggested answer: ' + item.answer),
                     node('p', 'dashboard-muted', item.basis), node('p', '', item.action));
                 if (item.evidence) row.append(node('p', '', item.evidence));
                 list.append(row);

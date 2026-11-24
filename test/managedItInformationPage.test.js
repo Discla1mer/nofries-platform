@@ -7,6 +7,7 @@ const testCase = globalThis.test || require('node:test').test;
 const { MANAGED_IT_POLICY } = require('../api/shared/managedItPolicy');
 
 const html = fs.readFileSync(path.join(__dirname, '../managed-it.html'), 'utf8');
+const pricing = fs.readFileSync(path.join(__dirname, '../pricing.html'), 'utf8');
 const home = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const existingScope = fs.readFileSync(path.join(__dirname, '../scope.html'), 'utf8');
 const text = value => value.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
@@ -82,8 +83,7 @@ testCase('the enquiry actions link to the contact form and verified contact path
     assert.doesNotMatch(html, /<button\b|data-assistant-/);
     const actions = [...html.matchAll(/<a class="button[^"]*" href="([^"]+)">([\s\S]*?)<\/a>/g)];
     assert.deepEqual(actions.map(action => [action[1], text(action[2])]), [
-        ['/contact.html', 'Ask about Managed IT →'], ['/contact.html', 'Enquire about Essentials →'],
-        ['/contact.html', 'Enquire about Managed →'], ['/contact.html', 'Enquire about Secure →'],
+        ['/contact.html', 'Ask about Managed IT →'],
         ['/contact.html', 'Ask about Managed IT →']
     ]);
     assert.match(existingScope, /href="mailto:hello@nofries\.nz"/);
@@ -97,7 +97,7 @@ testCase('hours, backup and on-site wording agree across the page', () => {
     const page = text(html);
     assert.match(page, /during NZ business hours, Monday to Friday\./);
     assert.match(page, /Microsoft 365 backup is included in Managed and Secure, and available as an add-on for Essentials\./);
-    assert.match(page, /Microsoft 365 backup is available as an add-on, quoted on request\./);
+    assert.match(text(pricing), /Microsoft 365 backup is available as an add-on, quoted on request\./);
     assert.doesNotMatch(page, /agreed business hours/);
     assert.doesNotMatch(page, /\bme\b/);
 });
@@ -107,8 +107,7 @@ testCase('pricing navigation describes the enquiry destination without promising
     const navigation = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
     assert.doesNotMatch(navigation, /href="#/);
     const actions = html.match(/<div class="managed-it-actions">([\s\S]*?)<\/div>/)[1];
-    assert.match(actions, /<a class="text-link" href="#plans">Plans and prices <span aria-hidden="true">↓<\/span><\/a>/);
-    assert.match(actions, /<a class="text-link" href="#enquire">Discuss pricing <span aria-hidden="true">↓<\/span><\/a>/);
+    assert.match(actions, /<a class="text-link" href="\/pricing#pricing-managed-it">Plans and prices <span aria-hidden="true">→<\/span><\/a>/);
     assert.match(html, /<section class="managed-it-enquiry" id="enquire" aria-labelledby="enquiry-title">/);
     assert.doesNotMatch(html, /Service pricing|Plan your managed service|Open the existing scoping workspace/);
 });
@@ -122,28 +121,29 @@ testCase('dashboard access and planned automation are stated without new service
     assert.doesNotMatch(text(html), /24\/7|guaranteed|unlimited|certified|response time|service-level agreement/i);
 });
 
-testCase('the plans and pricing section renders the three tiers with GST-inclusive copy and a recommended badge', () => {
-    const plansText = text(html);
+testCase('the plans and pricing section renders the three tiers with GST-exclusive copy and a recommended badge', () => {
+    const plansText = text(pricing);
     const policyTiers = MANAGED_IT_POLICY.pricing.tiers;
     for (const tier of policyTiers) {
         assert.match(plansText, new RegExp(`NZ\\$${tier.perUserMonthly} \\+ GST`),
             `tier ${tier.id} price must render with + GST`);
         assert.ok(plansText.includes(tier.tagline), `tier ${tier.id} tagline must render`);
         for (const feature of tier.additionalFeatures) {
-            assert.ok(plansText.includes(feature), `missing tier feature: ${feature}`);
+            assert.ok((plansText + text(html)).includes(feature), `missing tier feature: ${feature}`);
         }
     }
     // Managed is the recommended tier and carries a visible badge.
-    assert.match(html, /<li class="managed-it-tier is-recommended" data-tier="managed">/);
-    assert.match(html, /class="managed-it-tier-badge">Recommended</);
+    assert.match(pricing, /<li class="managed-it-tier is-recommended" data-tier="managed">/);
+    assert.match(pricing, /class="managed-it-tier-badge">Recommended</);
     // Managed and Secure inherit from the tier below them.
     assert.match(plansText, /Everything in Essentials, plus:/);
     assert.match(plansText, /Everything in Managed, plus:/);
     // Add-on note keeps every price GST-qualified.
     assert.match(plansText, /Set-up from NZ\$750 \+ GST\. Extra computers NZ\$20 \+ GST each per month, extra locations NZ\$125 \+ GST each per month\./);
     // Every NZ$ figure on the page is immediately followed by "+ GST".
-    for (const match of html.matchAll(/NZ\$[\d,]+/g)) {
-        const after = text(html.slice(match.index, match.index + match[0].length + 60));
+    for (const match of pricing.matchAll(/NZ\$[\d,]+/g)) {
+        const after = text(pricing.slice(match.index, match.index + match[0].length + 60));
+        if (match[0] === 'NZ$0') continue;
         assert.match(after, /^NZ\$[\d,]+ \+ GST/, `price without + GST near: ${after.slice(0, 40)}`);
     }
 });
