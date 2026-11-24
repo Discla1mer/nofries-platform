@@ -3884,12 +3884,12 @@ describe('insurer and customer questionnaire answers', () => {
 describe('campaign Results next steps', () => {
     const renderer = require('../api/shared/protectedAssets/ncscQuestionnaire');
     const cases = [
-        ['insurance', ['ncsc-questionnaire-answers', 'ncsc-board-next-step picture-summary', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps']],
-        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps']],
-        ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        ['insurance', ['ncsc-questionnaire-answers', 'ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps']],
+        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'ncsc-next-steps']],
+        ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
         ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['unrecognised', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']]
+        ['', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        ['unrecognised', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']]
     ];
     const campaignDom = campaign => {
         const dom = interactiveDom();
@@ -3917,10 +3917,24 @@ describe('campaign Results next steps', () => {
                 expect(dom.window.navigator.clipboard.writeText).toHaveBeenCalledWith(renderer.boardSummary(projectNcscDetail(before[0]), metadata()).text);
                 control(ui, 'Print board summary').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
             }
-            await until(() => !panel.querySelector('.picture-next-steps-help').hidden);
+            await until(() => panel.querySelector('.picture-next-steps-help').querySelector('a')?.href === '/contact.html?service=managed_security_90');
+            expect(panel.children.at(-1).querySelector('a').href).toBe('/contact.html?service=managed_security_90');
             expect(panel.querySelector('.picture-next-steps-help').querySelector('a').href).toBe('/contact.html?service=managed_security_90');
             expect(dom.window.fetch).toHaveBeenCalledWith('/api/enquiry', expect.objectContaining({ method: 'GET' }));
             expect(dom.window.fetch).toHaveBeenCalledTimes(1);
+        } finally { ui.controller.destroy(); }
+    });
+    test('supplier Results links to the first existing evidence suggestion', async () => {
+        const h = await backend(); await h.execute(createCommand()); await h.execute(saveCommand()); await h.execute(submitCommand());
+        const ui = await resumeUi(h, { dom: campaignDom('supplier') });
+        try {
+            control(ui, 'Jump to the first answer to verify').click();
+            const target = byId(ui, 'ncsc-supplier-first-evidence');
+            const first = renderer.questionnaireAnswers(projectNcscDetail([...h.versions.values()][0]), metadata()).items.find(item => item.evidence);
+            expect(target.textContent).toBe(first.question);
+            expect(target.parentElement.textContent).toContain(first.evidence);
+            expect(target.tabIndex).toBe(-1);
+            expect(ui.document.activeElement).toBe(target);
         } finally { ui.controller.destroy(); }
     });
     test.each(['yes', 'partial', 'unknown', 'not_applicable', 'no'])('scam guidance makes a gap claim only for a supported saved No (%s)', async option => {
@@ -3931,6 +3945,20 @@ describe('campaign Results next steps', () => {
             const step = ui.root.querySelector('.ncsc-payment-next-step');
             expect(step.textContent).toContain('known phone number or another trusted, separate route');
             expect(step.querySelector('h3').textContent).toBe(option === 'no' ? 'Payment-check gap and next step' : 'Check payment changes safely');
+        } finally { ui.controller.destroy(); }
+    });
+    test.each(['no', 'yes'])('board Results links to reported gaps only when present (%s)', async answer => {
+        const h = await backend(); await h.execute(createCommand());
+        await h.execute(saveCommand('assessment-a', 0, 'answers', allResponses(answer))); await h.execute(submitCommand());
+        const ui = await resumeUi(h, { dom: campaignDom('board') });
+        try {
+            const action = control(ui, 'Go to your top gaps');
+            expect(Boolean(action)).toBe(answer === 'no');
+            if (action) {
+                action.click();
+                expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-results-top-gaps'));
+            }
+            expect(byId(ui, 'ncsc-board-summary').value).toBe(renderer.boardSummary(projectNcscDetail([...h.versions.values()][0]), metadata()).text);
         } finally { ui.controller.destroy(); }
     });
     test('reads only canonical stored tags, never URL, helper, localStorage or blocked storage', () => {

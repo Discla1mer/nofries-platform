@@ -19,11 +19,12 @@ test('the homepage reassurance matches the page sans text', () => {
 });
 
 test('the roadmap keeps service summaries distinct from planned reports', () => {
-    expect(roadmap).toContain('90-day managed security includes a written summary you can give your board or insurer now.');
-    expect(roadmap).toContain('Managed IT is the separate day-to-day service.');
-    expect(roadmap).toContain('We work through three improvements with you.');
-    expect(roadmap).toContain('the agreed scope needs to say whether No Fries, you or your IT provider makes the change.');
-    expect(roadmap).toContain('Hands-on changes by No Fries need to be separately agreed in that scope.');
+    expect(roadmap).toContain('Managed IT and 90-day managed security are separate services.');
+    const pricing = fs.readFileSync(path.join(__dirname, '../pricing.html'), 'utf8');
+    expect(pricing).toContain('A written summary you can give your board or insurer.');
+    expect(pricing).toContain('Three improvements we work through with you.');
+    expect(pricing).toContain('the agreed scope needs to say whether No Fries, you or your IT provider makes the change.');
+    expect(pricing).toContain('Hands-on changes by No Fries need to be separately agreed in that scope.');
     expect(roadmap).not.toMatch(/fix three gaps with you|three improvements we own/i);
     expect(roadmap).toContain('a report you can download yourself are not available yet.');
     expect(roadmap).toContain('href="/pricing.html#pricing-pilot"');

@@ -94,13 +94,12 @@ test('the homepage keeps only one compact MSP section below its Dashboard entry'
     assert.match(html, /aria-label="Dashboard benefits"/);
 });
 
-test('the linked managed security offer is the only homepage price', () => {
+test('the homepage links to central pricing without quoting a price', () => {
     const price = 'NZ$1,250 + GST';
-    const offer = price + ', our <a href="/pricing.html#pricing-pilot">90-day managed security offer</a>';
-    assert.ok(html.includes(offer));
+    assert.match(html, /\/pricing(?:\.html)?#pricing-pilot/);
     const pricingPage = fs.readFileSync(path.join(root, 'pricing.html'), 'utf8');
     assert.ok(pricingPage.includes(price + ' for 90 days'));
-    assert.doesNotMatch(html.replace(offer, ''), /managed-it-per-user-price|managed-it-price-summary|managed-it-price-extras|id="pricing-dialog"|NZ\$|\$\d/);
+    assert.doesNotMatch(html, /managed-it-per-user-price|managed-it-price-summary|managed-it-price-extras|id="pricing-dialog"|NZ\$|\$\d/);
     const { MANAGED_IT_POLICY } = require('../api/shared/managedItPolicy');
     assert.equal(MANAGED_IT_POLICY.customerFacingServiceName, 'No Fries Managed IT');
     assert.ok(Number.isFinite(MANAGED_IT_POLICY.pricing.perUserMonthly));

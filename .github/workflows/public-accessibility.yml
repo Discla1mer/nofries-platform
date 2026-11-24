@@ -34,6 +34,8 @@ jobs:
         env:
           NOFRIES_A11Y_RESULTS: ${{ runner.temp }}/public-accessibility.json
         run: node scripts/accessibility/public-pages.cjs
+      - name: Follow service links by keyboard at 375px
+        run: node scripts/accessibility/service-links.cjs
       - name: Retain synthetic audit results on success or failure
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

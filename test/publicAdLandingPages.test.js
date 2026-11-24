@@ -21,8 +21,8 @@ test.each(pages)('%s gives the free check before the paid offer, without assuran
     expect(html.match(/<li>/g).length).toBeLessThanOrEqual(4);
     expect(text).toMatch(/15 minutes.*free check.*top three gaps, ranked.*summary for your board or insurer.*Results reflect your answers/);
     expect(html).toContain('href="/login?intent=create">Create a free account</a>');
-    expect(text).toContain('NZ$1,250 + GST for 90 days.');
-    expect(html).toContain('href="/contact.html?service=managed_security_90"');
+    expect(text).toContain('See pricing and what’s included');
+    expect(html).toContain('href="/pricing#pricing-pilot"');
     expect(html.indexOf('/login?intent=create')).toBeLessThan(html.indexOf('id="managed-title"'));
     expect(text).not.toMatch(/NCSC[- ]approved|certif(?:ied|ication)|guarantee|insur(?:er|ance) acceptance|\bpass(?:ing)?\b|24\/7/i);
     expect(html).not.toMatch(/\son\w+=|\sstyle=|<iframe|<form|facebook|pixel|analytics/i);
@@ -55,16 +55,15 @@ test('the sitemap contains every landing and only indexable public pages', () =>
         const url = new URL(location), name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         expect(url.origin).toBe('https://nofries.nz');
         expect(url.search + url.hash).toBe('');
-        expect(PUBLIC_ROOT_FILES).toContain(name);
-        expect(read(name)).not.toMatch(/<meta[^>]+content="noindex/);
+        expect(PUBLIC_ROOT_FILES).toContain(name === 'pricing' ? 'pricing.html' : name);
+        expect(read(name === 'pricing' ? 'pricing.html' : name)).not.toMatch(/<meta[^>]+content="noindex/);
         expect(config.routes.find(rule => rule.route === url.pathname)?.headers?.['X-Robots-Tag'] || '').not.toMatch(/noindex|none/);
     }
     expect(PUBLIC_ROOT_FILES).toContain('sitemap.xml');
     expect(read('robots.txt')).toContain('Sitemap: https://nofries.nz/sitemap.xml');
 });
 
-function forwarded(search, page = 'ad-landing') {
-    const hrefs = ['/login?intent=create', '/contact.html?service=managed_security_90#message', '/pricing.html?utm_source=old', '//elsewhere.example/path'];
+function forwarded(search, page = 'ad-landing', hrefs = ['/login?intent=create', '/contact.html?service=managed_security_90#message', '/pricing.html?utm_source=old', '//elsewhere.example/path']) {
     const links = hrefs.map(href => ({ href, getAttribute() { return this.href; }, setAttribute(_name, value) { this.href = value; } }));
     const document = { body: { dataset: { page } }, addEventListener() {}, querySelectorAll: selector => selector === 'a[href^="/"]' ? links : [] };
     const location = new URL('https://nofries.nz/insurance.html' + search);
@@ -90,4 +89,28 @@ test('UTMs survive every internal link without replacing intent, service or frag
 test('an untagged landing and other public pages keep their original URLs', () => {
     expect(forwarded('')).toEqual(forwarded('?fbclid=ignored'));
     expect(forwarded('?utm_source=meta', 'dashboard-pricing')).toEqual(forwarded(''));
+});
+
+
+test('the campaign hop keeps the validated same-tab tag through the anchored Contact CTA', () => {
+    const ad = read('insurance.html').match(/class="ad-contact" href="([^"]+)"/)[1];
+    const [pricing] = forwarded('?utm_source=Meta&utm_medium=paid&utm_campaign=Cover-2026&utm_term=other&fbclid=private', 'ad-landing', [ad]);
+    const pricingUrl = new URL(pricing, 'https://nofries.nz');
+    expect(pricingUrl.pathname + pricingUrl.hash).toBe('/pricing#pricing-pilot');
+    const pilotArticle = read('pricing.html').match(/<section aria-labelledby="pricing-pilot"[\s\S]*?<\/section>/)[0];
+    const href = pilotArticle.match(/id="pricing-pilot-enquiry" href="([^"]+)"/)[1];
+    const stored = new Map();
+    const sessionStorage = { getItem: key => stored.get(key), setItem: (key, value) => stored.set(key, value) };
+    vm.runInNewContext(read('js/enquiry-availability.js'), {
+        window: { location: pricingUrl, sessionStorage }, URLSearchParams
+    });
+    const contact = new URL(href, 'https://nofries.nz');
+    expect(contact.pathname).toBe('/contact.html');
+    expect(Object.fromEntries(contact.searchParams)).toEqual({ service: 'managed_security_90' });
+    const window = { location: contact, sessionStorage };
+    vm.runInNewContext(read('js/enquiry-availability.js'), {
+        window, document: { currentScript: { dataset: { enquiryForm: 'true' } } }, URLSearchParams
+    });
+    expect(window.enquiryTopic()).toBe('90-day managed security');
+    expect(window.enquiryCampaign()).toBe('meta/paid/cover-2026');
 });
