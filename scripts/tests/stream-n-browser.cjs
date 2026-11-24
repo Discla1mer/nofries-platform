@@ -75,6 +75,7 @@ async function main() {
             const headings = await panel.locator(':scope > section > h3').allTextContents();
             const first = campaign === 'insurance' || campaign === 'supplier' ? 'Answers for your insurer or customer questionnaire' : campaign === 'board' ? 'Summary for your board or insurer' : campaign === 'scam' ? (answer === 'no' ? 'Payment-check gap and next step' : 'Check payment changes safely') : 'Your top three gaps';
             assert.equal(headings[0], first);
+            if (campaign === 'insurance') assert.equal(headings[1], 'Summary for your board or insurer');
             await panel.locator('.picture-next-steps-help').waitFor();
             assert.equal(await panel.locator('.picture-next-steps-help').count(), 1);
             assert.equal(await panel.locator('.picture-top-gaps').count(), 1);
