@@ -258,6 +258,24 @@ async function adLinks(page, base, route) {
                 }
             } finally { await context.close(); }
         }
+        // A direct home visit can reach contact by keyboard before and after availability.
+        const contactContext = await browser.newContext({ viewport: { width: 375, height: 900 } });
+        try {
+            const page = await contactContext.newPage(); page.setDefaultTimeout(5000);
+            for (const promoted of [false, true]) {
+                await page.route(base + '/api/enquiry', route => route.fulfill({ json: { available: promoted, promote: promoted } }));
+                await page.goto(base);
+                const href = promoted ? '/contact.html' : 'mailto:hello@nofries.nz';
+                const contact = page.getByRole('link', { name: 'Talk to No Fries', exact: true });
+                await page.waitForFunction(target => document.querySelector('#homepageEnquiry a').getAttribute('href') === target, href);
+                await page.locator('#dashboardSkipLink').focus();
+                for (let i = 0; i < 18 && !await contact.evaluate(el => el === document.activeElement); i++) await page.keyboard.press('Tab');
+                assert.ok(await contact.evaluate(el => el === document.activeElement), '375px homepage contact is keyboard reachable');
+                assert.equal(await contact.getAttribute('href'), href);
+                if (promoted) assert.equal((await page.request.get(base + href)).status(), 200);
+                await page.unroute(base + '/api/enquiry');
+            }
+        } finally { await contactContext.close(); }
         assert.deepEqual(unexpected, [], 'Unexpected network request or page error');
         assert.deepEqual(failures, [], 'Public accessibility failures');
     } finally {

@@ -12,10 +12,11 @@ function browser(availability) {
         getAttribute(name) { return this[name]; },
         setAttribute(name, value) { this[name] = value; }
     };
-    const enquiry = { hidden: true };
+    const contact = { href: 'mailto:hello@nofries.nz', setAttribute(name, value) { this[name] = value; } };
+    const enquiry = { querySelector: selector => selector === 'a' ? contact : null };
     const document = { body: { dataset: { page: 'dashboard-home' } }, getElementById: id => id === 'homepagePrimary' ? link : id === 'homepageEnquiry' ? enquiry : null };
     const context = { document, window: { enquiryAvailability: availability }, AbortController, setTimeout, clearTimeout };
-    return { link, enquiry, context, run: () => vm.runInNewContext(script, context) };
+    return { link, contact, context, run: () => vm.runInNewContext(script, context) };
 }
 function expectSignup(page) {
     expect(page.link.href).toBe('/login?intent=create');
@@ -26,6 +27,7 @@ test('static and no-JavaScript entry preserve signup, login and the arrow', () =
     expect(html).toMatch(/id="homepagePrimary"[^>]*href="\/login\?intent=create">Create account <span aria-hidden="true">→<\/span>/);
     expect(html).toContain('class="homepage-login" href="/login?intent=login"');
     expect(html).not.toContain('>Get early access');
+    expect(html).toContain('<p id="homepageEnquiry">Need help getting started? <a href="mailto:hello@nofries.nz">Talk to No Fries</a>.');
     expect(html.indexOf('/js/enquiry-availability.js')).toBeLessThan(html.indexOf('/js/enquiry-home.js'));
     expect(require('../lib/publicAssets').PUBLIC_SCRIPT_FILES).toEqual(expect.arrayContaining(['enquiry-availability.js', 'enquiry-home.js']));
 });
@@ -37,12 +39,14 @@ test.each([
     const page = browser(async () => status);
     await page.run();
     expectSignup(page);
+    expect(page.contact.href).toBe('mailto:hello@nofries.nz');
 });
 
 test.each(['missing', 'rejected'])('keeps signup when the availability check is %s', async mode => {
     const page = browser(mode === 'missing' ? undefined : async () => { throw Error('unavailable'); });
     await page.run();
     expectSignup(page);
+    expect(page.contact.href).toBe('mailto:hello@nofries.nz');
 });
 
 test('promotes only after the read finishes with explicit success', async () => {
@@ -50,10 +54,11 @@ test('promotes only after the read finishes with explicit success', async () => 
     const page = browser(() => new Promise(r => { resolve = r; }));
     const result = page.run();
     expectSignup(page);
+    expect(page.contact.href).toBe('mailto:hello@nofries.nz');
     resolve({ available: true, promote: true });
     await result;
     expectSignup(page);
-    expect(page.enquiry.hidden).toBe(false);
+    expect(page.contact.href).toBe('/contact.html');
 });
 
 test('a stalled real availability client times out and late success cannot switch the CTA', async () => {
@@ -67,9 +72,11 @@ test('a stalled real availability client times out and late success cannot switc
         await jest.advanceTimersByTimeAsync(5000);
         await result;
         expectSignup(page);
+        expect(page.contact.href).toBe('mailto:hello@nofries.nz');
         resolve(Response.json({ available: true, promote: true }));
         await jest.advanceTimersByTimeAsync(0);
         expectSignup(page);
+        expect(page.contact.href).toBe('mailto:hello@nofries.nz');
         expect(jest.getTimerCount()).toBe(0);
     } finally { jest.useRealTimers(); }
 });
