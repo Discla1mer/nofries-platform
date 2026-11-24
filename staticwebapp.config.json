@@ -784,6 +784,18 @@
       }
     },
     {
+      "route": "/api/dashboard/organisations/paid-framework-status",
+      "methods": [
+        "GET"
+      ],
+      "allowedRoles": [
+        "anonymous"
+      ],
+      "headers": {
+        "Cache-Control": "private, no-store, max-age=0"
+      }
+    },
+    {
       "route": "/api/dashboard/work-queue",
       "methods": [
         "GET"
@@ -806,6 +818,18 @@
     },
     {
       "route": "/api/dashboard/selection",
+      "methods": [
+        "POST"
+      ],
+      "allowedRoles": [
+        "anonymous"
+      ],
+      "headers": {
+        "Cache-Control": "private, no-store, max-age=0"
+      }
+    },
+    {
+      "route": "/api/dashboard/representative-details",
       "methods": [
         "POST"
       ],
