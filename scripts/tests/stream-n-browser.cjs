@@ -81,6 +81,9 @@ async function main() {
             assert.equal(await panel.locator('.picture-top-gap').count(), answer === 'no' ? 3 : 0);
             assert.equal(await panel.locator('.ncsc-questionnaire-answers').count(), 1);
             if (campaign === 'scam') {
+                const paymentChecks = panel.locator('.ncsc-payment-next-step ol > li');
+                assert.equal(await paymentChecks.count(), 3);
+                assert.match(await paymentChecks.nth(1).textContent(), /known phone number/);
                 await panel.locator('.picture-next-steps-help').waitFor();
                 assert.equal(await panel.locator('.ncsc-payment-next-step + .picture-next-steps-help').count(), 1);
                 if (!gate) assert.equal(await panel.getByRole('link', { name: 'Fix these with No Fries' }).getAttribute('href'), '/contact.html?service=managed_security_90');
