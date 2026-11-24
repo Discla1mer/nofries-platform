@@ -33,7 +33,8 @@ test('every item has source PRs; only Done has release proof and a period', () =
                 'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7074953928',
                 'https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704',
                 // Activation of the paid-frameworks and deferred-details flags on 62a9702.
-                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099'
+                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099',
+                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986'
             ]).toContain(item.release);
             for (const pr of item.prs) expect(source).toMatch(new RegExp(`\\| \\[#${pr}\\]\\([^\\n]+\\| \\x60[a-f0-9]{40}\\x60 \\|`));
         } else {
@@ -108,6 +109,14 @@ test('942ea19 examples and the activated items are Done in Oct–Dec 2026', () =
         expect(data.items.find(item => item.id === id)).toMatchObject({ period: 'Oct–Dec 2026', lane: 'Done',
             release: 'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099' });
     }
-    expect(data.lastUpdated).toBe('2026-11-23');
+    expect(data.lastUpdated).toBe('2026-11-25');
     expect(data.items.filter(item => item.lane === 'Done' && item.period !== 'Oct–Dec 2026')).toEqual([]);
+});
+
+test('consultant landing and limited dashboard support references have release evidence', () => {
+    const release = 'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986';
+    for (const [id, pr] of [['consultant-dashboard', 567], ['dashboard-support-reference', 563]]) {
+        expect(data.items.find(item => item.id === id)).toMatchObject({ lane: 'Done', prs: [pr], release });
+    }
+    expect(data.items.find(item => item.id === 'dashboard-support-reference').text).toMatch(/^Some temporary problems loading your dashboard/);
 });
