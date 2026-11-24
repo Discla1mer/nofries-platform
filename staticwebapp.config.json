@@ -831,6 +831,7 @@
     {
       "route": "/api/dashboard/representative-details",
       "methods": [
+        "GET",
         "POST"
       ],
       "allowedRoles": [

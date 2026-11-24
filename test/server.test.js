@@ -255,7 +255,7 @@ describe('dormant dashboard document', () => {
             login: ['GET'], 'ncsc/assessments': ['GET', 'POST'], 'ncsc/assessments/*': ['GET', 'POST'],
             'improvement/*': ['GET', 'POST'], 'frameworks/*': ['GET', 'POST'],
             session: ['GET', 'POST'], organisations: ['GET'], 'organisations/paid-framework-status': ['GET'],
-            'representative-details': ['POST'], selection: ['POST'], logout: ['POST'], 'contact-requests': ['POST'], 'work-queue': ['GET'],
+            'representative-details': ['GET', 'POST'], selection: ['POST'], logout: ['POST'], 'contact-requests': ['POST'], 'work-queue': ['GET'],
             bootstrap: ['GET'], 'app.js': ['GET'], 'dashboard.css': ['GET'],
             'modules/overview': ['GET'], 'modules/ai_governance': ['GET'], 'modules/cyber_security': ['GET'],
             'modules/it_optimisation': ['GET'], 'modules/improvement_plan': ['GET'], 'modules/evidence': ['GET'],

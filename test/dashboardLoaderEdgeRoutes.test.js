@@ -20,6 +20,13 @@ function covered(routes, target) {
     return false;
 }
 
+test('the details read is a GET, so its edge route admits GET and POST', () => {
+    for (const file of ['staticwebapp.config.json', 'azure/staticwebapp.config.example.json']) {
+        const rule = JSON.parse(fs.readFileSync(path.join(root, file), 'utf8')).routes.find(route => route.route === '/api/dashboard/representative-details');
+        expect(rule.methods).toEqual(['GET', 'POST']);
+    }
+});
+
 describe.each(['staticwebapp.config.json', 'azure/staticwebapp.config.example.json'])('%s', file => {
     const routes = JSON.parse(fs.readFileSync(path.join(root, file), 'utf8')).routes;
     test('finds the loader API paths', () => {
