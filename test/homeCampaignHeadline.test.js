@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const script = fs.readFileSync(path.join(__dirname, '../js/home.js'), 'utf8');
-const DEFAULT_TITLE = 'Know where your business stands on cyber security in about 15 minutes.';
+const DEFAULT_TITLE = 'Need to answer a cyber security question today?';
 
 function land(search, page = 'dashboard-home') {
     const title = { textContent: DEFAULT_TITLE }, lead = { textContent: 'default lead', classList: { add() {} } };
@@ -23,10 +23,10 @@ test('the static page keeps the default headline and names the lead', () => {
 });
 
 test.each([
-    ['?utm_source=meta&utm_campaign=insurance', /insurance answers/],
-    ['?utm_campaign=Insurance-Nov', /insurance answers/],
+    ['?utm_source=meta&utm_campaign=insurance', /cyber insurance form/],
+    ['?utm_campaign=Insurance-Nov', /cyber insurance form/],
     ['?utm_campaign=supplier_q4', /security questionnaire/],
-    ['?utm_campaign=board', /board a straight answer/],
+    ['?utm_campaign=board', /board asked about cyber security/],
     ['?utm_campaign=scam', /fake invoice/]
 ])('campaign %s gets its fixed headline', (search, pattern) => {
     const page = land(search);
@@ -45,8 +45,8 @@ test('other pages are never changed', () => {
     expect(land('?utm_campaign=insurance', 'pricing')).toEqual({ title: DEFAULT_TITLE, lead: 'default lead' });
 });
 
-test('the preview and benefits offer No Fries help alongside the IT provider', () => {
-    expect(html).toContain('or have No Fries fix them with you.');
+test('the preview explains how to discuss results and keeps the service offer on pricing', () => {
+    expect(html).toContain('Use your results to decide what to discuss with your IT provider.');
     expect(html).toContain('href="/pricing.html#pricing-pilot"');
     expect(html).not.toContain('Take your results to your IT provider.');
 });
