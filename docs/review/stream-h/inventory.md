@@ -97,4 +97,4 @@ text. Preserve the prior N/A and contact-request availability distinctions.
 Record fresh independent copy review of all three drafts, this checklist and the
 PR descriptions, together with final-head hosted CI, in the descriptions.
 
-- `offer.html` (public route `/offer`): Browns Bay local licence enquiry. Linked from the homepage footer; quote details point to pricing.
+- `offer.html` (public route `/offer`): Browns Bay local licence enquiry. Linked from the homepage footer; special pricing appears on the offer page only, subject to vendor confirmation.
