@@ -13,6 +13,7 @@
     "Origin-Agent-Cluster": "?1"
   },
   "routes": [
+    { "route": "/offer", "rewrite": "/offer.html" },
     {
       "route": "/login",
       "rewrite": "/login.html",
