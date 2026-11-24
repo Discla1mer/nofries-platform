@@ -370,8 +370,9 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(response.text).not.toContain('Tell us about your people, devices and current set-up.');
         expect(response.text).not.toContain('one useful question at a time');
         expect(response.text).not.toContain('Plan your Lean Managed IT service.');
-        expect(response.text).toContain('Microsoft 365 backup is included from the Managed tier.');
-        expect(response.text).toContain('Security hardening and alert review are included in Secure.');
+        expect(response.text).toContain('Compare plans for support with users, work computers and business tools.');
+        expect(response.text).toContain('href="/managed-it.html">Explore Managed IT');
+        expect(response.text).not.toContain('Security hardening and alert review are included in Secure.');
         expect(response.text).not.toContain('id="managed-it-per-user-price"');
         expect(response.text).toContain('<title>No Fries | Dashboard. Managed IT.</title>');
         expect(response.text).not.toContain('Automatic updates and connected data feeds are planned');
@@ -380,7 +381,7 @@ describe('No Fries MSP discovery-to-onboarding workspace', () => {
         expect(response.text).not.toContain('Initial set-up starts at NZ$750 + GST');
         expect(response.text).not.toContain('NZ$895');
         expect(response.text).not.toContain('up to 10 users');
-        expect(response.text).toContain('No Fries Managed IT covers agreed user support, work computers and business tools.');
+        expect(response.text).not.toContain('No Fries Managed IT covers agreed user support, work computers and business tools.');
         expect(response.text).not.toContain('Sales Agency');
         expect(response.text).not.toContain('luna.nofries.nz');
         expect(response.text).not.toContain('up to two typical computers');
