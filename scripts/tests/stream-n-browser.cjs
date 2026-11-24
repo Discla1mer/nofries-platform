@@ -129,7 +129,7 @@ async function main() {
                 await input.focus(); await page.keyboard.press('Tab');
                 const copy = panel.getByRole('button', { name: campaign === 'board' ? 'Copy board summary' : 'Copy answers', exact: true });
                 assert.equal(await copy.evaluate(el => document.activeElement === el), true); await page.keyboard.press('Enter');
-                assert.equal(await page.evaluate(() => navigator.clipboard.readText()), await input.inputValue());
+                assert.equal((await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n'), await input.inputValue());
                 await page.keyboard.press('Tab');
                 assert.equal(await page.evaluate(() => document.activeElement.textContent), campaign === 'board' ? 'Print board summary' : 'Print answers');
                 if (campaign === 'board') {
