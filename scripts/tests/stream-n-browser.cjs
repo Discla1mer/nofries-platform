@@ -114,6 +114,11 @@ async function main() {
                     assert.equal(await page.evaluate(() => window.boardPrint), await input.inputValue());
                 }
             }
+            if (campaign === 'supplier') {
+                const first = panel.getByRole('button', { name: 'Jump to the first answer to verify' });
+                await first.focus(); await page.keyboard.press('Enter');
+                assert.equal(await page.evaluate(() => document.activeElement.id), 'ncsc-supplier-first-evidence');
+            }
             assert.deepEqual(await page.evaluate(() => window.storageWrites), []);
             const writes = (await page.evaluate(() => window.transportCalls)).filter(call => call.method !== 'GET');
             assert.equal(writes.length, 1);
