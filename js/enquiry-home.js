@@ -24,6 +24,7 @@
         const status = await window.enquiryAvailability();
         if (status.funnel === true) homeVisit();
         if (status.available !== true || status.promote !== true) return;
-        enquiry.hidden = false;
-    } catch (_) { /* The account entry remains usable without this read. */ }
+        const contact = enquiry.querySelector('a');
+        if (contact) contact.setAttribute('href', '/contact.html');
+    } catch (_) { /* Signup and the email fallback remain usable without this read. */ }
 }());

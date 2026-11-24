@@ -23,22 +23,13 @@ test('published entries state the approved paid terms, the ISO limit and the sig
     expect(data.published[0].text).toMatch(/fictional.*made-up/);
     expect(data.published[0].text).toContain('do not provide access');
     expect(data.published.find(e => e.id === 'paid-assessments').text).toBe('Paid NIST CSF 2.0 and ISO 27001 readiness self-assessments are now available. ' +
-        'NZ$99 + GST per organisation per month or NZ$990 + GST per year (two months free). ' +
-        'One plan includes both the NIST CSF 2.0 and ISO 27001 readiness self-assessments. There is no per-framework charge. ' +
-        'Both are included at no extra charge during the NZ$1,250 + GST 90-day engagement. ' +
-        'Advisers pay the same rate per client organisation and we invoice the adviser. ' +
-        'We invoice manually, then our staff enable access. No payment card is needed. ' +
         'The ISO 27001 readiness self-assessment is not certification. For accredited certification, use an accredited certification body.');
     expect(data.published.find(e => e.id === 'adviser-paid-status').text).toBe('Advisers can see paid assessment status for the client organisations they are authorised to manage. They see status only, not answers or results.');
     expect(data.published.find(e => e.id === 'simpler-sign-up').text).toContain('We ask for your name, role and business address after your first result');
     expect(data.published.find(e => e.id === 'service-responsibilities').text).toBe('The pricing page now explains that, for each improvement, the agreed scope says whether No Fries, you or your IT provider makes the change, and that hands-on changes by No Fries must be agreed separately. The clarification preserves the agreed service scope and existing terms.');
     expect(html).not.toMatch(/readiness self-assessments are planned|Prices will be published|not available yet/i);
     expect(html).not.toMatch(/\b(?:certified|compliant|audit)\b|\b\d{4}-\d{2}-\d{2}\b/i);
-    // Deliberate change: the paid assessments are available, and public pages are
-    // not flag-gated, so the changelog may now name prices. Only the approved
-    // NZ$99 / NZ$990 terms and the existing NZ$1,250 engagement may appear.
-    expect([...html.matchAll(/NZ\$([\d,]+)/g)].map(m => m[1])).toEqual(['99', '990', '1,250']);
-    expect(html).not.toMatch(/(?<!NZ)\$\s*\d/);
+    expect(html).not.toMatch(/\$\s*\d/);
 });
 
 test('engineering evidence never appears in customer HTML', () => {

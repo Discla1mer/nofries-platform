@@ -125,13 +125,13 @@
 (function () {
     const MESSAGES = {
         insurance: ['Filling out a cyber insurance form?',
-            'List your key accounts, including email and online banking, and mark which ones have multi-factor authentication turned on. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
+            'List your key accounts, including email and online banking, and mark which ones have multi-factor authentication turned on. The free check takes about 15 minutes and covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
         supplier: ['Has a customer sent you a security questionnaire?',
-            'Pick one question about who can see customer files. Check the access list for the folder where you keep them. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
+            'Pick one question about who can see customer files. Check the access list for the folder where you keep them. The free check takes about 15 minutes and covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
         board: ['Has your board asked about cyber security?',
-            'For your next board meeting, write down when your team last restored a file from backup. If nobody knows, record that as an open question. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
+            'For your next board meeting, write down when your team last restored a file from backup. If nobody knows, record that as an open question. The free check takes about 15 minutes and covers New Zealand’s National Cyber Security Centre (NCSC) guidance.'],
         scam: ['Could your team spot a fake invoice?',
-            'If bank details change, call your supplier on a number you already know to verify the change before paying. Do not use the number on the invoice. The free check covers New Zealand’s National Cyber Security Centre (NCSC) guidance.']
+            'If bank details change, call your supplier on a number you already know to verify the change before paying. Do not use the number on the invoice. The free check takes about 15 minutes and covers New Zealand’s National Cyber Security Centre (NCSC) guidance.']
     };
     try {
         if (!document.body || document.body.dataset.page !== 'dashboard-home') return;

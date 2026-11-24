@@ -72,7 +72,9 @@ window.mountEnquiryForm = async function (root, prefill) {
 
     if (!prefill && typeof window.enquiryCampaign === 'function' && window.enquiryCampaign()) {
         field('contact-heading').textContent = '90-day managed security';
-        field('contact-intro').textContent = 'NZ$1,250 + GST for 90 days. We help you fix three security gaps and give you a written summary for your board or insurer. Tell us about your organisation below.';
+        field('contact-intro').textContent = 'Tell us what you’d like help with below.';
+        const pricingLink = field('contact-service-pricing');
+        if (pricingLink) pricingLink.hidden = false;
     }
 
     // Arriving from a dashboard service card: start the message with that service.
