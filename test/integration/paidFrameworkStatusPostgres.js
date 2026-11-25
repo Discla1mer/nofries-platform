@@ -9,20 +9,21 @@ module.exports = function registerPaidFrameworkStatusPostgres({ httpSetup, httpJ
     const { createPostgresDashboardRepository } = require('../../api/shared/appLifecycle/postgresDashboardRepository');
     const { STATUS_SQL } = require('../../api/shared/assessmentLifecycle/paidFrameworkStatus');
     const NIST = { moduleId: 'cyber_security', profileId: 'nf-nist-csf-2-0-core', version: '2026-09-08.1' };
+    const ISO = { moduleId: 'cyber_security', profileId: 'nf-iso-27001-2022-readiness', version: '2026-11-19.1' };
     const ROUTE = 'organisations/paid-framework-status';
     const CAPABILITIES = 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1 paid-status-v1';
     const clone = value => JSON.parse(JSON.stringify(value));
     const owner = () => getOwnerPool();
 
-    async function setup({ paid = true, accountType = 'consultant' } = {}) {
+    async function setup({ paid = true, accountType = 'consultant', pin = NIST } = {}) {
         const h = await httpSetup({ customerProvider: true, customerAccountType: accountType, paidFrameworksEnabled: paid,
             prepareCanonical(initial) {
                 initial.membershipState = { ...initial.membershipState,
                     invitations: initial.membershipState.invitations.map(row => ({ ...row, roles: ['admin'] })),
                     memberships: initial.membershipState.memberships.map(row => ({ ...row, roles: ['admin'] })) };
                 initial.entitlementState = { ...initial.entitlementState, grants: initial.entitlementState.grants.map((grant, index) =>
-                    index === 0 ? { ...grant, modules: ['cyber_security', 'overview'], frameworks: [clone(NIST)] } : grant) };
-                initial.flags = { ...initial.flags, enabled: { ...initial.flags.enabled, cyber_security: true }, frameworks: [clone(NIST)] };
+                    index === 0 ? { ...grant, modules: ['cyber_security', 'overview'], frameworks: [clone(pin)] } : grant) };
+                initial.flags = { ...initial.flags, enabled: { ...initial.flags.enabled, cyber_security: true }, frameworks: [clone(pin)] };
             } });
         await h.initialize();
         const session = await h.get('session'); httpJson(session, 200); h.generation = session.body.generation;
@@ -45,12 +46,12 @@ module.exports = function registerPaidFrameworkStatusPostgres({ httpSetup, httpJ
             binding.bindingId, JSON.stringify({ planId: 'nf-starter-2026-09-r1', scope, subjectKey: starter.subjectKey,
                 accountType: 'consultant', kind: 'client' }), activated ? JSON.stringify({ synthetic: 'activated' }) : null]);
     }
-    async function head(scope, assessmentId, revision, status, updatedAt) {
+    async function head(scope, assessmentId, revision, status, updatedAt, pin = NIST) {
         const record = { state: { tenantId: scope.tenantId, organisationId: scope.organisationId, assessmentId, revision,
-            moduleId: 'cyber_security', profileRef: { profileId: NIST.profileId, profileVersion: NIST.version }, status, updatedAt } };
+            moduleId: 'cyber_security', profileRef: { profileId: pin.profileId, profileVersion: pin.version }, status, updatedAt } };
         await owner().query(`INSERT INTO nofries.dashboard_framework_revisions (tenant_id,organisation_id,profile_id,profile_version,
             assessment_id,revision,idempotency_key,intent_sha256,record_sha256,record) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`,
-        [scope.tenantId, scope.organisationId, NIST.profileId, NIST.version, assessmentId, revision, 'key-' + revision,
+        [scope.tenantId, scope.organisationId, pin.profileId, pin.version, assessmentId, revision, 'key-' + revision,
             'a'.repeat(64), 'b'.repeat(64), JSON.stringify(record)]);
     }
     const scopeFor = () => ({ tenantId: crypto.randomUUID(), organisationId: crypto.randomUUID() });
@@ -113,10 +114,48 @@ module.exports = function registerPaidFrameworkStatusPostgres({ httpSetup, httpJ
             for (const table of Object.keys(before).filter(table => table !== 'dashboard_runtime_audit')) expect(after[table]).toEqual(before[table]);
             const audit = after.dashboard_runtime_audit.filter(item => !before.dashboard_runtime_audit.some(old => old.event_id === item.event_id));
             expect(audit.map(item => [item.tenant_id, item.organisation_id, item.session_sha256, item.payload.action, item.payload.module]).sort())
-                .toEqual([a, b].map(binding => [binding.scope.tenantId, binding.scope.organisationId, h.sessionSha256, 'assessment.read', 'cyber_security']).sort());
+                .toEqual([a, b].map(binding => [binding.scope.tenantId, binding.scope.organisationId, h.sessionSha256, 'adviser.client_status.read', 'cyber_security']).sort());
             const session = await h.get('session'); httpJson(session, 200);
             expect(session.body).toMatchObject({ selectedBindingId: h.binding.bindingId, generation: h.generation });
             await loginClean();
+        });
+
+        test('the cursor excludes the preceding client and only the granted ISO version contributes status', async () => {
+            const h = await setup({ pin: ISO }), starter = await account(h);
+            const clients = [await h.addBinding(scopeFor()), await h.addBinding(scopeFor())].sort(byBinding);
+            const [first, second] = clients;
+            await client(starter, first, 1);
+            await client(starter, second, 2);
+            await head(second.scope, 'current', 0, 'submitted', h.state.now, ISO);
+            await head(second.scope, 'old', 0, 'created', h.state.now, { ...ISO, version: '2026-01-01.1' });
+            const response = await h.get(ROUTE + '?afterBindingId=' + first.bindingId, h.generation);
+            httpJson(response, 200);
+            expect(response.body.rows).toEqual([{ bindingId: second.bindingId, ...ISO, status: 'submitted' }]);
+            const end = await h.get(ROUTE + '?afterBindingId=' + second.bindingId, h.generation);
+            httpJson(end, 200);
+            expect(end.body.rows).toEqual([]);
+        });
+
+        test('a removed client membership contributes neither status nor read audit', async () => {
+            const h = await setup(), starter = await account(h), a = await h.addBinding(scopeFor());
+            await client(starter, a, 1);
+            const initial = await h.status();
+            httpJson(initial, 200);
+            expect(initial.body.rows).toEqual([row(a, 'not_started')]);
+            const actorSubjectKey = subject(h.principal);
+            const repository = createPostgresDashboardRepository({ database: evidenceSeedDatabase(h), clock: () => h.state.now,
+                authoriseAdministration: command => ['authority.read', 'membership.command'].includes(command.type)
+                    && command.actorSubjectKey === actorSubjectKey && command.tenantId === a.scope.tenantId
+                    && command.organisationId === a.scope.organisationId });
+            const current = await repository.readAuthoritySnapshot(a.scope, { authenticated: true, subjectKey: actorSubjectKey });
+            await repository.executeAuthorityCommand({ ...a.scope, operationId: nextId(), actorSubjectKey,
+                type: 'membership.command', expectedRevisions: clone(current.revisions), payload: { action: 'remove',
+                    payload: { membershipId: current.snapshot.membershipState.memberships[0].membershipId } } });
+            const before = await exportAll();
+            const next = await h.status();
+            httpJson(next, 200);
+            expect(next.body.rows).toEqual([]);
+            expect((await exportAll()).dashboard_runtime_audit).toEqual(before.dashboard_runtime_audit);
         });
 
         test('revocation hides the client on the next request and fails a request already assembling', async () => {

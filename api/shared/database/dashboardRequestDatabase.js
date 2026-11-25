@@ -1496,7 +1496,7 @@ async function statusAudit(inv, tx, business, resolvedAt) {
     const event = inv.inspect(() => freeze({ schemaVersion: 1, eventType: 'dashboard.operation', eventId: uuid(inv.options.newId()),
         requestId: inv.capture.requestId, actorSubjectKey: subjectOf(inv.capture.identityPayload),
         tenantId: business.scope.tenantId, organisationId: business.scope.organisationId,
-        action: 'assessment.read', module: 'cyber_security', result: 'succeeded', occurredAt }));
+        action: 'adviser.client_status.read', module: 'cyber_security', result: 'succeeded', occurredAt }));
     const projected = inv.inspect(() => auditProjection(inv, business, event));
     inv.inspect(() => copy(projected.envelope, MAX_SMALL));
     const parameters = AUDIT_COLUMNS.map(key => ['payload', 'scope_json'].includes(key) ? JSON.stringify(projected.row[key]) : projected.row[key]);

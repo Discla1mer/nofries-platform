@@ -52,7 +52,7 @@ function setup({ refs = [NIST], proof = true, heads = { [NIST.profileId]: 'in-pr
     };
     return h;
 }
-const reads = h => h.state.committed.auditRows.filter(row => row.payload.action === 'assessment.read');
+const reads = h => h.state.committed.auditRows.filter(row => row.payload.action === 'adviser.client_status.read');
 
 test('an authorised adviser sees status-only rows for an activated client with paired audit and no selection change', async () => {
     const h = setup({ refs: [NIST, ISO], heads: { [NIST.profileId]: 'created', [ISO.profileId]: 'submitted' } });
