@@ -1,4 +1,5 @@
 'use strict';
+const openQuestion = require('./helpers/open-ncsc-question.cjs');
 
 // Actual local Chromium + the existing synthetic preview and real renderer/CSS.
 // Uses existing installations only; no real account, authentication or network.
@@ -54,7 +55,7 @@ async function openAssessment(page, index) {
     // Desktop shows the sidebar link; narrow layouts show the task link instead.
     if (await page.locator('.ncsc-assessment-list').count() === 0) await page.locator('.dashboard-module-link[data-module="cyber_security"]:visible').first().click();
     await page.locator('.ncsc-assessment-list button').nth(index).click();
-    await page.locator('#ncsc-question-index').waitFor();
+    await page.locator('#ncsc-question-text').waitFor();
 }
 async function layout(page, name, width) {
     const metric = await page.evaluate(() => {
@@ -108,7 +109,7 @@ async function layout(page, name, width) {
 
             // Sparse draft: unanswered items, a saved N/A explanation and a local unsaved answer.
             await openAssessment(page, 0);
-            await page.getByLabel('Question', { exact: true }).selectOption('3');
+            await openQuestion(page, 3);
             await press(page, page.locator('.ncsc-answer input[value="yes"]'), 'Space');
             await press(page, button(page, 'Review and submit'));
             assert.equal(await focusedId(page), 'ncsc-review-title', 'Opening review moves focus to its heading');

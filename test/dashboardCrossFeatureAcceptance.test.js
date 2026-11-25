@@ -10,7 +10,7 @@ afterEach(() => { active?.close(); active = null; jest.clearAllTimers(); jest.us
 
 async function editor(account) {
     active = await harness(account); await flush(); await active.open(); await active.resume();
-    expect(active.byId('ncsc-question-index').value).toBe('2'); return active;
+    expect(active.byId('ncsc-answer-' + active.cyber.metadata.questions[2].id + '-yes')).toBeTruthy(); return active;
 }
 function expectUsable(h, input) {
     expect(h.status).toBe('ready'); expect(h.elements.dashboardApp.hidden).toBe(false);
@@ -31,7 +31,7 @@ describe.each(['company', 'consultant'])('%s saved assessment across account acc
             await flush(); expect(h.requests).toHaveLength(first + 1); expectUsable(h, input);
             await h.refresh(first); expectUsable(h, input);
             expect(input.value).toBe('Synthetic local rationale, not yet saved.'); expect(answer.checked).toBe(true);
-            expect(h.byId('ncsc-question-index').children[2].textContent).toContain('Not saved yet');
+            expect(h.byId('ncsc-save-status').textContent).toMatch(/saving|not saved yet/i);
             expect(h.requests.slice(first)).toHaveLength(5);
             expect(h.requests.slice(first).every(row => row.init.method === 'GET')).toBe(true);
         }
@@ -58,10 +58,10 @@ describe.each(['company', 'consultant'])('%s saved assessment across account acc
         expect(initial).toMatchObject({ revision: 1, progress: { answered: 2 } });
         expect(initial.responses.some(row => row.itemId === h.cyber.metadata.questions[2].id)).toBe(false);
         h.button('Back to assessments').click(); await flush(); await h.serve(h.requests.length - 1); await h.resume();
-        expect(h.byId('ncsc-question-index').value).toBe('3');
-        const picker = h.byId('ncsc-question-index'); picker.value = '2'; h.event(picker, 'change');
+        expect(h.byId('ncsc-answer-' + h.cyber.metadata.questions[3].id + '-yes')).toBeTruthy();
+        h.button('Previous question').click();
         expect(h.byId('ncsc-answer-' + h.cyber.metadata.questions[2].id + '-no').checked).toBe(true);
-        expect(h.byId('ncsc-question-index').children[2].textContent).not.toContain('Not saved yet');
+        expect(h.byId('ncsc-save-status').textContent).not.toMatch(/saving|not saved yet/i);
         expect(h.backend.versions.get(ASSESSMENT)).toEqual(saved); expect(h.backend.mutations).toHaveLength(1);
         expect(h.requests.filter(row => row.init.method === 'POST')).toHaveLength(1);
     });
@@ -86,7 +86,7 @@ test('Consultant return guards dirty saved answers; Stay and Discard preserve st
     const first = h.requests.length, back = h.byId('consultantPortfolioControls');
     back.onclick(); await flush(); expect(h.button('Stay here')).toBeDefined();
     h.button('Stay here').click(); await flush(); expect(h.requests).toHaveLength(first);
-    expect(h.byId('ncsc-question-index').children[2].textContent).toContain('Not saved yet');
+    expect(h.byId('ncsc-save-status').textContent).toMatch(/saving|not saved yet/i);
     back.onclick(); await flush(); h.button('Discard unsent changes').click(); await flush();
     expect(h.window.location.hash).toBe('#organisations'); expect(h.elements.dashboardApp.hidden).toBe(true);
     await h.reply(first, 200, h.session); await h.reply(first + 1, 200, h.directory);
@@ -96,7 +96,7 @@ test('Consultant return guards dirty saved answers; Stay and Discard preserve st
     // avoiding another selection command merely to validate saved readback.
     h.window.location.hash = '#cyber-security'; h.window.dispatch('pagehide');
     h.window.dispatch('focus'); await flush(); await h.open(h.requests.length - 1); await h.resume();
-    expect(h.byId('ncsc-question-index').value).toBe('2');
-    expect(h.byId('ncsc-question-index').children[2].textContent).not.toContain('Not saved yet');
+    expect(h.byId('ncsc-answer-' + h.cyber.metadata.questions[2].id + '-yes')).toBeTruthy();
+    expect(h.byId('ncsc-save-status').textContent).not.toMatch(/saving|not saved yet/i);
     expect(h.requests.every(row => row.init.method === 'GET')).toBe(true);
 });

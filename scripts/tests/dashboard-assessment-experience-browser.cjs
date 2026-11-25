@@ -108,7 +108,7 @@ async function main() {
             }
             await search.fill('assessment-b');
             await keyboardFocus(page, action(page, 'Continue assessment')); await page.keyboard.press('Enter');
-            await page.locator('#ncsc-question-index').waitFor();
+            await page.locator('#ncsc-question-text').waitFor();
             assert.match(await page.locator('.ncsc-status').textContent(), /14 of 14 answered/);
             await action(page, 'Back to assessments').click();
             await search.waitFor(); assert.equal(await search.inputValue(), 'assessment-b');

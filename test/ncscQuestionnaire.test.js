@@ -11,6 +11,7 @@ const { createNcscAssessmentService, normaliseNcscCommand, projectNcscDetail, pr
 const { makeVersion, stableIntent } = require('../api/shared/assessmentLifecycle/postgresNcscAssessmentStore');
 const { ncscFixture, createClock, createContext, allResponses, createCommand, saveCommand,
     submitCommand, clone } = require('./fixtures/ncscAssessmentFixture');
+const { goToQuestion, questionIndex } = require('./fixtures/questionNavigation');
 const { createDom } = require('./fixtures/dashboardDom');
 
 const PREFIX = '/api/dashboard/ncsc/assessments';
@@ -289,8 +290,10 @@ async function until(predicate, label = 'UI state') {
     while (!predicate() && Date.now() < end) await pause();
     expect(Boolean(predicate())).toBe(true);
 }
+const currentQuestion = ui => questionIndex(ui.root, metadata().questions);
+const navigate = (ui, index) => goToQuestion(ui.root, metadata().questions, index);
 function choose(ui, index, option, rationale) {
-    const selector = byId(ui, 'ncsc-question-index'); selector.value = String(index); event(selector, 'change');
+    navigate(ui, index);
     const id = metadata().questions[index].id, input = byId(ui, `ncsc-answer-${id}-${option}`);
     input.checked = true; event(input, 'change');
     if (rationale !== undefined) enter(byId(ui, `ncsc-rationale-${id}`), rationale);
@@ -327,7 +330,7 @@ async function createInUi(h, options = {}) {
 async function resumeUi(h, options = {}) {
     const ui = mountUi(h, options); await until(() => savedActions(ui).length > 0);
     savedActions(ui)[0].click();
-    await until(() => byId(ui, 'ncsc-question-index')); return ui;
+    await until(() => byId(ui, 'ncsc-question-text')); return ui;
 }
 
 describe('saved assessment list pagination and resume', () => {
@@ -463,7 +466,7 @@ describe('saved assessment list pagination and resume', () => {
             expect(ui.root.querySelector('.ncsc-errors').hidden).toBe(true);
             expect(h.calls.slice(requests).map(call => [call.init.method, call.url])).toEqual([['GET', PREFIX + '?limit=50']]);
             expect(h.records).toEqual(saved);
-            savedActions(ui)[0].click(); await until(() => byId(ui, 'ncsc-question-index'));
+            savedActions(ui)[0].click(); await until(() => byId(ui, 'ncsc-question-text'));
             expect(h.calls.at(-1).url).toBe(PREFIX + '/' + assessmentId);
             expect(ui.root.textContent).toContain('2 of 14 answered');
             expect(ui.root.textContent).not.toContain('Please check these answers');
@@ -510,7 +513,7 @@ describe('saved assessment list pagination and resume', () => {
         expect(savedActions(ui)).toHaveLength(2);
         filter.value = 'submitted'; event(filter, 'change');
         expect(savedActions(ui)).toHaveLength(1); expect(h.calls).toHaveLength(1);
-        savedActions(ui)[0].click(); await until(() => Boolean(byId(ui, 'ncsc-question-index')));
+        savedActions(ui)[0].click(); await until(() => Boolean(byId(ui, 'ncsc-question-text')));
         expect(h.calls.at(-1).url).toBe(PREFIX + '/assessment-submitted');
         expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
         expect(h.records).toHaveLength(4); ui.controller.destroy();
@@ -581,7 +584,7 @@ describe('saved assessment list pagination and resume', () => {
         expect(ui.root.textContent).toContain('1 of 2 assessments');
         expect(ui.root.textContent).not.toContain('Search applies to assessments shown so far.');
         expect(h.calls).toHaveLength(2);
-        savedActions(ui)[0].click(); await until(() => Boolean(byId(ui, 'ncsc-question-index')));
+        savedActions(ui)[0].click(); await until(() => Boolean(byId(ui, 'ncsc-question-text')));
         expect(h.calls.at(-1).url).toBe(PREFIX + '/assessment-next');
         expect(h.records).toHaveLength(2); ui.controller.destroy();
     });
@@ -601,13 +604,13 @@ describe('saved assessment list pagination and resume', () => {
         const onLocation = jest.fn();
         const ui = mountUi(h, { initialAssessmentId: 'assessment-a', initialQuestionIndex: 4, onLocation });
         try {
-            await until(() => byId(ui, 'ncsc-question-index'));
-            expect(byId(ui, 'ncsc-question-index').value).toBe('4');
+            await until(() => byId(ui, 'ncsc-question-text'));
+            expect(currentQuestion(ui)).toBe(4);
             expect(onLocation).toHaveBeenLastCalledWith({ assessmentId: 'assessment-a', questionIndex: 4 });
             choose(ui, 4, 'yes');
             const calls = h.calls.length, notifications = onLocation.mock.calls.length;
             expect(ui.controller.showQuestion({ assessmentId: 'assessment-a', questionIndex: 2 })).toBe(true);
-            expect(byId(ui, 'ncsc-question-index').value).toBe('2');
+            expect(currentQuestion(ui)).toBe(2);
             expect(ui.controller.showQuestion({ assessmentId: 'assessment-a', questionIndex: 4 })).toBe(true);
             expect(byId(ui, 'ncsc-answer-' + metadata().questions[4].id + '-yes').checked).toBe(true);
             expect(onLocation).toHaveBeenCalledTimes(notifications);
@@ -625,7 +628,7 @@ describe('saved assessment list pagination and resume', () => {
         await h.execute(createCommand('assessment-other', 'seed-other', 'Synthetic other scope.'));
         const ui = mountUi(h, { initialAssessmentId: 'assessment-target' });
         try {
-            await until(() => byId(ui, 'ncsc-question-index'));
+            await until(() => byId(ui, 'ncsc-question-text'));
             expect(h.calls.map(call => call.url)).toEqual([PREFIX + '/assessment-target']);
             expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
             expect(h.records).toHaveLength(2);
@@ -656,7 +659,7 @@ describe('saved assessment list pagination and resume', () => {
             expect(ui.root.textContent).toContain('Loading the selected assessment.');
             expect(control(ui, 'Back to assessments')).toBeDefined();
             await pause(); expect(read).toHaveBeenCalledTimes(2);
-            gate.resolve(); await until(() => byId(ui, 'ncsc-question-index'));
+            gate.resolve(); await until(() => byId(ui, 'ncsc-question-text'));
             retry.click(); await pause(); expect(read).toHaveBeenCalledTimes(2);
             expect(ui.root.textContent).toContain('Synthetic exact retry scope.');
             expect(ui.root.textContent).not.toContain('Synthetic other scope.');
@@ -689,7 +692,7 @@ describe('saved assessment list pagination and resume', () => {
             firstRetry.click(); await pause();
             expect(read).toHaveBeenCalledTimes(2);
             control(ui, 'Retry loading this assessment').click();
-            await until(() => byId(ui, 'ncsc-question-index'));
+            await until(() => byId(ui, 'ncsc-question-text'));
             expect(read.mock.calls.map(args => args[0])).toEqual([id, id, id]);
             expect(ui.root.textContent).toContain('Synthetic twice-unavailable saved scope.');
             expect(ui.root.textContent).not.toContain('Synthetic unrelated saved scope.');
@@ -727,7 +730,7 @@ describe('saved assessment list pagination and resume', () => {
             enter(byId(ui, 'ncsc-scope'), 'New unsent scope after cancelling the read.');
             gate.resolve(); await pause(); await pause();
             expect(byId(ui, 'ncsc-scope').value).toBe('New unsent scope after cancelling the read.');
-            expect(byId(ui, 'ncsc-question-index')).toBeUndefined();
+            expect(byId(ui, 'ncsc-question-text')).toBeUndefined();
             expect(ui.root.textContent).not.toContain('Synthetic stale saved scope.');
             expect(ui.root.textContent).not.toContain('This assessment is not available.');
             expect(list).toHaveBeenCalledTimes(1);
@@ -791,7 +794,7 @@ describe('saved assessment list pagination and resume', () => {
             if (kind === 'destroyed') { ui.controller.destroy(); gate.resolve(); }
             await until(() => reads === 1); for (let i = 0; i < 20; i++) await pause();
             expect(ui.root.textContent).not.toContain('Synthetic private other scope.');
-            expect(byId(ui, 'ncsc-question-index')).toBeUndefined();
+            expect(byId(ui, 'ncsc-question-text')).toBeUndefined();
             expect(control(ui, 'Create assessment')).toBeUndefined();
             expect(h.records).toHaveLength(1);
             expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
@@ -903,12 +906,12 @@ describe('saved assessment list pagination and resume', () => {
             expect(assessments().slice(0, 50).map(item => item.textContent)).toEqual(firstPage);
             expect(h.calls[1].url).toBe(`${PREFIX}?limit=50&afterAssessmentId=${ids[49]}`);
             assessments().at(-1).click();
-            await until(() => byId(ui, 'ncsc-question-index'));
+            await until(() => byId(ui, 'ncsc-question-text'));
             expect(h.calls.at(-1).url).toBe(`${PREFIX}/${resumedId}`);
             expect(ui.root.textContent).toContain(`Synthetic saved scope for ${resumedId}`);
             expect(ui.root.textContent).toContain('2 of 14 answered');
-            expect(byId(ui, 'ncsc-question-index').value).toBe('2');
-            const selector = byId(ui, 'ncsc-question-index'); selector.value = '0'; event(selector, 'change');
+            expect(currentQuestion(ui)).toBe(2);
+            navigate(ui, 0);
             expect(byId(ui, `ncsc-answer-${rows[0].itemId}-unknown`).checked).toBe(true);
             expect(h.calls).toHaveLength(3);
             expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
@@ -964,7 +967,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
             expect(arc.getAttribute('pathLength')).toBe(String(questions.length));
             for (const [index, question] of questions.entries()) {
                 choose(ui, index, 'yes');
-                expect(steps.children.filter(step => step.getAttribute('aria-current') === 'step').map(step => step.dataset.domain))
+                expect(steps.querySelectorAll('button').filter(step => step.getAttribute('aria-current') === 'step').map(step => step.dataset.domain))
                     .toEqual([controls.find(control => control.id === question.controlId).domainId]);
                 expect(arc.getAttribute('stroke-dasharray')).toBe((index + 1) + ' ' + (questions.length - index - 1));
             }
@@ -979,13 +982,9 @@ describe('questionnaire draft progress and unanswered navigation', () => {
             { ...rows[1], optionId: 'not_applicable', rationale: { text: 'Synthetic pending exclusion.' } },
             { ...rows[3], optionId: 'no' }
         ]));
-        const ui = await resumeUi(h), picker = byId(ui, 'ncsc-question-index');
-        expect(picker.value).toBe('2');
+        const ui = await resumeUi(h);
+        expect(currentQuestion(ui)).toBe(2);
         expect(ui.root.querySelector('legend').textContent).toBe(metadata().questions[2].smallBusiness.question);
-        expect(picker.children[0].textContent).toContain('Unknown');
-        expect(picker.children[1].textContent).toContain('Not applicable, to confirm');
-        expect(picker.children[2].textContent).toContain('Unanswered');
-        expect(picker.children[3].textContent).toContain('No');
         expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('3 of 14 answered · About 11 min left');
         expect(h.records).toHaveLength(2); ui.controller.destroy();
     });
@@ -995,7 +994,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         await h.execute(saveCommand('assessment-a', 0, 'all-unknown', allResponses('unknown')));
         if (submitted) await h.execute(submitCommand());
         const ui = await resumeUi(h);
-        expect(byId(ui, 'ncsc-question-index').value).toBe('0');
+        expect(currentQuestion(ui)).toBe(0);
         expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('14 of 14 answered · Complete');
         if (submitted) expect(control(ui, 'Next unanswered question')).toBeUndefined();
         else expect(control(ui, 'Next unanswered question').disabled).toBe(true);
@@ -1042,26 +1041,15 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         ui.controller.destroy();
     });
 
-    test('compact question selector preserves every full prompt, question order and unsaved answer status', async () => {
+    test('Previous and Next preserve the full prompt, question order and unsaved responses', async () => {
         const h = await backend(), ui = await createInUi(h, { autosaveIdleMs: 60000 }), questions = metadata().questions;
         try {
-            const picker = byId(ui, 'ncsc-question-index');
-            expect(picker.children).toHaveLength(questions.length);
             questions.forEach((question, index) => {
-                expect(picker.children[index].value).toBe(String(index));
-                expect(picker.children[index].textContent).toBe((index + 1) + ' of ' + questions.length + ' · Unanswered');
-                picker.value = String(index); event(picker, 'change');
+                navigate(ui, index);
                 expect(ui.root.querySelector('legend').textContent).toBe(question.smallBusiness.question);
             });
-            const help = byId(ui, picker.getAttribute('aria-describedby'));
-            expect(help.textContent).toBe('The full question is below. Answers save automatically a moment after each change.');
             choose(ui, 0, 'unknown'); choose(ui, 1, 'not_applicable', 'Synthetic pending claim');
-            expect(picker.children[0].textContent).toBe('1 of ' + questions.length + ' · Unknown · Not saved yet');
-            expect(picker.children[1].textContent).toBe('2 of ' + questions.length + ' · Not applicable, to confirm · Not saved yet');
             control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
-            const saved = byId(ui, 'ncsc-question-index');
-            expect(saved.children[0].textContent).toBe('1 of ' + questions.length + ' · Unknown');
-            expect(saved.children[1].textContent).toBe('2 of ' + questions.length + ' · Not applicable, to confirm');
             expect(Object.fromEntries(h.records.at(-1).payload.responses.map(row => [row.itemId, row.optionId])))
                 .toEqual({ [questions[0].id]: 'unknown', [questions[1].id]: 'not_applicable' });
         } finally { ui.controller.destroy(); }
@@ -1078,29 +1066,29 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(byId(ui, rationale.id)).toBe(rationale); expect(ui.document.activeElement).toBe(rationale);
         expect(rationale.selectionStart).toBe(3); expect(rationale.selectionEnd).toBe(7);
         expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('2 of 14 answered · About 12 min left');
-        expect(byId(ui, 'ncsc-question-index').children[1].textContent).toContain('Not applicable, to confirm · Not saved yet');
+        expect(byId(ui, 'ncsc-answer-' + metadata().questions[1].id + '-not_applicable').checked).toBe(true);
         control(ui, 'Clear answer').click();
         expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · About 13 min left');
         expect(byId(ui, 'ncsc-save-status').textContent).toContain('Newer changes are not saved yet.');
-        expect(byId(ui, 'ncsc-question-index').children[1].textContent).not.toContain('Not saved yet');
+        expect(ui.root.querySelector('fieldset').querySelectorAll('input').some(radio => radio.checked)).toBe(false);
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
         expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · About 13 min left');
-        const picker = byId(ui, 'ncsc-question-index'); picker.value = '0'; event(picker, 'change');
+        navigate(ui, 0);
         control(ui, 'Clear answer').click();
         expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('0 of 14 answered · About 14 min left');
-        expect(picker.children[0].textContent).toContain('Unanswered · Not saved yet');
+        expect(byId(ui, 'ncsc-save-status').textContent).toContain('not saved yet');
         ui.controller.destroy();
     });
 
     test('next unanswered wraps, skips local explicit responses and focuses the destination question', async () => {
-        const h = await backend(), ui = await createInUi(h), picker = byId(ui, 'ncsc-question-index');
+        const h = await backend(), ui = await createInUi(h);
         expect(control(ui, 'Previous question').className).toContain('dashboard-button-secondary');
         expect(control(ui, 'Next question').className).toBe('dashboard-button');
-        picker.value = '13'; event(picker, 'change'); control(ui, 'Next unanswered question').click();
-        expect(picker.value).toBe('0'); expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
+        navigate(ui, 13); control(ui, 'Next unanswered question').click();
+        expect(currentQuestion(ui)).toBe(0); expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
         choose(ui, 1, 'unknown'); choose(ui, 0, 'not_applicable', 'Synthetic pending claim');
         control(ui, 'Next unanswered question').click();
-        expect(picker.value).toBe('2'); expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
+        expect(currentQuestion(ui)).toBe(2); expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
         expect(ui.root.querySelector('.ncsc-navigation-summary')).toBeFalsy();
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
@@ -1117,7 +1105,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
             toggle.click();
             expect(toggle.getAttribute('aria-expanded')).toBe('true'); expect(more.classList.contains('ncsc-navigation-collapsed')).toBe(false);
             control(ui, 'Next unanswered question').click();
-            expect(byId(ui, 'ncsc-question-index').value).toBe('1');
+            expect(currentQuestion(ui)).toBe(1);
             toggle.click(); expect(h.records).toHaveLength(1);
         } finally { ui.controller.destroy(); }
     });
@@ -1126,24 +1114,16 @@ describe('questionnaire draft progress and unanswered navigation', () => {
     // catalogue has one, so these focus tests follow the wording rather than pin it.
     const plainQuestion = question => question.smallBusiness.question || question.smallBusiness.meaning;
 
-    test('arrow keys move the question picker without loading questions; Enter or Go opens the choice and focuses its text', async () => {
-        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
-        const keydown = (element, key) => { for (const handler of element.events.keydown || []) handler({ key, preventDefault() {} }); };
-        try {
-            const picker = byId(ui, 'ncsc-question-index');
-            // Arrow presses change the select value (and fire change in some browsers) but leave question 1 on screen.
-            for (const value of ['1', '2', '3']) { keydown(picker, 'ArrowDown'); picker.value = value; event(picker, 'change'); }
-            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[0]));
-            keydown(picker, 'Enter');
-            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[3]));
+    test('each function opens its first question and focuses the legend without writing', async () => {
+        const h = await backend(), ui = await createInUi(h), { domains, controls, questions } = metadata();
+        for (const domain of domains) {
+            const step = control(ui, domain.title);
+            step.click();
+            const first = questions.find(question => controls.some(item => item.id === question.controlId && item.domainId === domain.id));
             expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
-            const current = byId(ui, 'ncsc-question-index'); keydown(current, 'ArrowDown'); current.value = '6'; event(current, 'change');
-            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[3]));
-            control(ui, 'Go').click();
-            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[6]));
-            expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-question-text'));
-            expect(h.records).toHaveLength(1);
-        } finally { ui.controller.destroy(); }
+            expect(ui.document.activeElement.textContent).toBe(plainQuestion(first));
+        }
+        expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
 
     test('a save that finishes after Next unanswered keeps focus on the question text, not the page heading', async () => {
@@ -1160,52 +1140,31 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
-    test('a keystroke that cannot move the picker, or a pointer press, does not hold back a pointer choice', async () => {
-        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
-        const fire = (element, type, value) => { for (const handler of element.events[type] || []) handler(value); };
-        try {
-            const picker = byId(ui, 'ncsc-question-index');
-            fire(picker, 'keydown', { key: 'Shift', preventDefault() {} }); picker.value = '2'; event(picker, 'change');
-            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[2]));
-            const current = byId(ui, 'ncsc-question-index');
-            fire(current, 'keydown', { key: 'ArrowDown', preventDefault() {} }); fire(current, 'pointerdown', {});
-            current.value = '5'; event(current, 'change');
-            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[5]));
-        } finally { ui.controller.destroy(); }
-    });
-
-    test('a keyboard choice in the question picker survives an autosave that re-renders before Enter or Go', async () => {
+    test('the focused function step survives an autosave repaint', async () => {
         const h = await backend(), gate = deferred();
         const client = { ...h.client, save: async (command, settings) => { await gate.promise; return h.client.save(command, settings); } };
         const ui = await createInUi(h, { client, autosaveIdleMs: 40 }), questions = metadata().questions;
-        const keydown = (element, key) => { for (const handler of element.events.keydown || []) handler({ key, preventDefault() {} }); };
         try {
             choose(ui, 0, 'yes'); await until(() => h.calls.length > 0 && ui.root.querySelector('.ncsc-status').textContent.startsWith('Saving'));
-            const picker = byId(ui, 'ncsc-question-index'); picker.focus();
-            keydown(picker, 'ArrowDown'); picker.value = '4'; event(picker, 'change');
+            const step = control(ui, metadata().domains[0].title); step.focus();
             gate.resolve(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
-            const current = byId(ui, 'ncsc-question-index');
-            expect(current).not.toBe(picker);
-            expect(current.value).toBe('4');
+            expect(ui.document.activeElement).toBe(control(ui, metadata().domains[0].title));
             expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[0]));
-            keydown(current, 'Enter');
-            expect(ui.root.querySelector('legend').textContent).toBe(plainQuestion(questions[4]));
-            expect(byId(ui, 'ncsc-question-index').value).toBe('4');
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
-    test('detached navigation and picker controls cannot change the current selection after a render', async () => {
+    test('detached navigation and stepper controls cannot change the current selection after a render', async () => {
         const h = await backend(), ui = await createInUi(h);
-        const oldPicker = byId(ui, 'ncsc-question-index'), oldJump = control(ui, 'Next unanswered question');
+        const oldStep = control(ui, metadata().domains.at(-1).title), oldJump = control(ui, 'Next unanswered question');
         const oldNext = control(ui, 'Next question');
         choose(ui, 0, 'unknown'); control(ui, 'Next unanswered question').click();
         const oldPrevious = control(ui, 'Previous question'); expect(oldPrevious.disabled).toBe(false);
         choose(ui, 1, 'unknown');
-        oldJump.click(); oldNext.click(); oldPrevious.click(); expect(byId(ui, 'ncsc-question-index').value).toBe('1');
+        oldJump.click(); oldNext.click(); oldPrevious.click(); expect(currentQuestion(ui)).toBe(1);
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
-        const current = byId(ui, 'ncsc-question-index'), before = ui.root.textContent;
-        expect(current).not.toBe(oldPicker); oldPicker.value = '7'; event(oldPicker, 'change'); oldJump.click(); oldNext.click(); oldPrevious.click();
-        expect(current.value).toBe('1'); expect(ui.root.textContent).toBe(before); ui.controller.destroy();
+        const before = ui.root.textContent;
+        expect(control(ui, metadata().domains.at(-1).title)).not.toBe(oldStep); oldStep.click(); oldJump.click(); oldNext.click(); oldPrevious.click();
+        expect(currentQuestion(ui)).toBe(1); expect(ui.root.textContent).toBe(before); ui.controller.destroy();
     });
 
     test('next unresolved includes missing, Unknown and pending N/A, skips resolved answers and wraps without saving', async () => {
@@ -1214,16 +1173,15 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(control(ui, 'Next question still to confirm').disabled).toBe(true);
         choose(ui, 1, 'unknown'); choose(ui, 3, 'not_applicable', 'Synthetic pending claim');
         choose(ui, 5, 'yes'); control(ui, 'Clear answer').click();
-        const picker = byId(ui, 'ncsc-question-index');
-        picker.value = '0'; event(picker, 'change');
+        navigate(ui, 0);
         for (const target of ['1', '3', '5', '1']) {
             control(ui, 'Next question still to confirm').click();
-            expect(picker.value).toBe(target);
+            expect(currentQuestion(ui)).toBe(Number(target));
             expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
         }
         const detached = control(ui, 'Next question still to confirm');
-        choose(ui, 1, 'yes'); detached.click(); expect(picker.value).toBe('1');
-        control(ui, 'Next question still to confirm').click(); expect(picker.value).toBe('3');
+        choose(ui, 1, 'yes'); detached.click(); expect(currentQuestion(ui)).toBe(1);
+        control(ui, 'Next question still to confirm').click(); expect(currentQuestion(ui)).toBe(3);
         expect(h.records).toHaveLength(1);
         expect(ui.root.textContent).toContain('You can still submit with Unknown and Not applicable answers.');
         ui.controller.destroy(); detached.click(); expect(ui.root.textContent).toBe('');
@@ -1240,7 +1198,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         const before = ui.root.querySelector('.ncsc-results').textContent;
         for (const target of ['1', '3', '1']) {
             control(ui, 'Next question still to confirm').click();
-            expect(byId(ui, 'ncsc-question-index').value).toBe(target);
+            expect(currentQuestion(ui)).toBe(Number(target));
             expect(ui.root.querySelectorAll('input').filter(input => input.type === 'radio').every(input => input.disabled)).toBe(true);
         }
         expect(control(ui, 'Save progress')).toBeUndefined();
@@ -1264,7 +1222,7 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(descriptions[0].textContent).toContain('Last saved: ');
         expect(descriptions[0].textContent).toContain(' UTC');
         expect(h.calls).toHaveLength(1);
-        buttons[1].click(); await until(() => Boolean(byId(ui, 'ncsc-question-index')));
+        buttons[1].click(); await until(() => Boolean(byId(ui, 'ncsc-question-text')));
         expect(h.calls.at(-1).url).toContain('/assessment-b');
         expect(h.records).toHaveLength(2); ui.controller.destroy();
     });
@@ -1322,7 +1280,7 @@ describe('saved-only draft observations', () => {
         const jump = byId(ui, 'ncsc-draft-observation-' + metadata().questions[3].id);
         const writes = h.records.length;
         jump.click(); jump.click();
-        expect(byId(ui, 'ncsc-question-index').value).toBe('3');
+        expect(currentQuestion(ui)).toBe(3);
         expect(ui.document.activeElement).toBe(ui.root.querySelector('legend'));
         expect(h.records).toHaveLength(writes);
         choose(ui, 3, 'unknown'); control(ui, 'Save progress').click();
@@ -1446,7 +1404,7 @@ describe('question assistance source integration', () => {
         expect(JSON.stringify(h.records)).not.toContain('Ephemeral context only');
         ui.controller.destroy();
         const resumed = await resumeUi(h, { assistance });
-        const selector = byId(resumed, 'ncsc-question-index'); selector.value = '0'; event(selector, 'change');
+        navigate(resumed, 0);
         expect(byId(resumed, 'ncsc-assistance-notes-' + id).value).toBe('');
         resumed.controller.destroy();
     });
@@ -1482,7 +1440,7 @@ describe('question assistance source integration', () => {
     test('all questions retain guidance without mentioning switched-off AI or upload', async () => {
         const h = await backend(), ui = await createInUi(h);
         for (let i = 0; i < metadata().questions.length; i++) {
-            const selector = byId(ui, 'ncsc-question-index'); selector.value = String(i); event(selector, 'change');
+            navigate(ui, i);
             expect(ui.root.textContent).toContain('How to answer this question');
             expect(ui.root.textContent).not.toContain('Help me answer this question');
             expect(ui.root.textContent).not.toContain('AI suggestions need your review');
@@ -1768,22 +1726,19 @@ describe('submitted assessment results', () => {
 });
 
 describe('questionnaire form accessibility', () => {
-    test('every accepted question has visible input guidance and an illustrative example without changing or saving an answer', async () => {
+    test('every accepted question has an adjacent guidance example without changing or saving an answer', async () => {
         const h = await backend(); await h.execute(createCommand());
         const ui = mountUi(h, { initialAssessmentId: 'assessment-a' });
         try {
-            await until(() => byId(ui, 'ncsc-question-index'));
+            await until(() => byId(ui, 'ncsc-question-text'));
             const retainedRecords = clone(h.records), retainedCalls = h.calls.length;
             const acceptedDisplay = JSON.stringify(metadata()), examples = new Set();
             for (const [index, question] of metadata().questions.entries()) {
-                const picker = byId(ui, 'ncsc-question-index'); picker.value = String(index); event(picker, 'change');
+                navigate(ui, index);
                 const fieldset = ui.root.querySelector('fieldset'), hint = byId(ui, 'ncsc-input-guidance-' + question.id);
                 expect(fieldset.querySelector('legend').textContent).toBe(question.smallBusiness.question);
-                expect(hint.parentElement).toBe(fieldset);
-                expect(hint.textContent.length).toBeGreaterThan(40);
-                expect(hint.textContent).not.toBe(question.prompt);
-                expect(hint.textContent).not.toBe(question.guidance.summary);
-                expect(fieldset.getAttribute('aria-describedby')).toBe(hint.id);
+                expect(hint).toBeUndefined();
+                expect(fieldset.getAttribute('aria-describedby')).toBeNull();
                 const guidance = ui.root.querySelectorAll('details').find(item => item.querySelector('summary').textContent === 'Guidance and evidence examples');
                 const example = guidance.querySelector('.ncsc-input-example');
                 expect(example.textContent).toMatch(/^Example: .+ (Yes|Partial|No|Unknown)\b/);
@@ -1808,7 +1763,7 @@ describe('questionnaire form accessibility', () => {
         const h = await backend(); await h.execute(createCommand());
         const ui = mountUi(h, { initialAssessmentId: 'assessment-a' });
         try {
-            await until(() => byId(ui, 'ncsc-question-index'));
+            await until(() => byId(ui, 'ncsc-question-text'));
             const retainedRecords = clone(h.records), retainedCalls = h.calls.length;
             choose(ui, 0, 'partial');
             const guidance = ui.root.querySelectorAll('details').find(item => item.querySelector('summary').textContent === 'Guidance and evidence examples');
@@ -1816,7 +1771,7 @@ describe('questionnaire form accessibility', () => {
             expect(guidance.querySelector('.ncsc-input-example').textContent).toContain('Example:');
             control(ui, 'Next question').click(); control(ui, 'Previous question').click();
             expect(byId(ui, 'ncsc-answer-' + metadata().questions[0].id + '-partial').checked).toBe(true);
-            expect(byId(ui, 'ncsc-question-index').children[0].textContent).toContain('Partial · Not saved yet');
+            expect(byId(ui, 'ncsc-save-status').textContent).toContain('not saved yet');
             expect(h.records).toEqual(retainedRecords); expect(h.calls).toHaveLength(retainedCalls);
         } finally { ui.controller.destroy(); }
     });
@@ -1828,9 +1783,8 @@ describe('questionnaire form accessibility', () => {
         try {
             const question = metadata().questions[0];
             const fieldset = ui.root.querySelector('fieldset');
-            // Nothing but the short hint and the Unknown reassurance sits between the question and its choices.
             const beforeChoices = fieldset.children.slice(0, fieldset.children.findIndex(child => child.className === 'ncsc-answer-tiles'));
-            expect(beforeChoices.map(child => child.tagName.toLowerCase())).toEqual(['legend', 'p', 'p']);
+            expect(beforeChoices.map(child => child.tagName.toLowerCase())).toEqual(['legend']);
             expect(fieldset.querySelectorAll('details')).toHaveLength(0);
             const help = byId(ui, 'ncsc-question-help-' + question.id);
             expect(help.tagName.toLowerCase()).toBe('details');
@@ -1838,7 +1792,8 @@ describe('questionnaire form accessibility', () => {
             expect(help.children[0].textContent).toBe('Help with this question');
             const layout = ui.root.querySelector('.ncsc-focus-layout');
             expect(layout.children[0].contains(fieldset)).toBe(true);
-            expect(layout.children[1]).toBe(help);
+            expect(layout.children[1].contains(help)).toBe(true);
+            expect(layout.children[1].contains(byId(ui, 'ncsc-glossary'))).toBe(true);
             expect(Boolean(help.open)).toBe(openByDefault);
             expect(queries).toContain('(max-width: 30rem)');
             // No content is lost: the example, checks, framework wording and every answer meaning remain.
@@ -1848,8 +1803,8 @@ describe('questionnaire form accessibility', () => {
             expect(help.textContent).toContain('What the answers mean');
             for (const id of question.responseOptionIds) {
                 const input = byId(ui, `ncsc-answer-${question.id}-${id}`), definition = byId(ui, input.getAttribute('aria-describedby'));
-                expect(definition.textContent.length).toBeGreaterThan(20);
-                expect(help.textContent).toContain(definition.textContent);
+                expect(definition.textContent.length).toBeGreaterThan(0);
+                expect(definition.textContent.length).toBeLessThan(80);
             }
             // The person's open or closed choice survives the re-render that answering causes.
             help.open = !openByDefault; event(help, 'toggle');
@@ -1869,7 +1824,8 @@ describe('questionnaire form accessibility', () => {
             const input = byId(ui, `ncsc-answer-${question.id}-${id}`), label = input.parentElement;
             expect(label.tagName).toBe('LABEL'); expect(label.getAttribute('for')).toBe(input.id);
             expect(byId(ui, input.getAttribute('aria-labelledby')).textContent).toBe(metadata().responseOptions.find(option => option.id === id).label);
-            expect(byId(ui, input.getAttribute('aria-describedby')).textContent).toContain(explanation);
+            expect(byId(ui, input.getAttribute('aria-describedby')).parentElement.parentElement).toBe(label);
+            expect(byId(ui, 'ncsc-question-help-' + question.id).textContent).toContain(explanation);
         }
         choose(ui, 0, 'not_applicable', 'Synthetic pending exclusion.');
         const help = byId(ui, `ncsc-rationale-help-${question.id}`);
@@ -1906,7 +1862,7 @@ describe('questionnaire form accessibility', () => {
             expect(JSON.stringify(metadata())).toBe(acceptedDisplay);
             const readOnly = await resumeUi(h, { presentationMode: 'read-only' });
             try {
-                const picker = byId(readOnly, 'ncsc-question-index'); picker.value = String(index); event(picker, 'change');
+                navigate(readOnly, index);
                 expect(byId(readOnly, `ncsc-rationale-${id}`).readOnly).toBe(true);
                 expect(readOnly.root.textContent).not.toContain('Not handling payments is not enough');
             } finally { readOnly.controller.destroy(); }
@@ -1955,7 +1911,7 @@ describe('questionnaire form accessibility', () => {
         links[1].click();
         const question = questions[1], errorId = `ncsc-error-${question.id}`;
         expect(ui.document.activeElement).toBe(byId(ui, `ncsc-answer-${question.id}-${question.responseOptionIds[0]}`));
-        expect(ui.root.querySelector('fieldset').getAttribute('aria-describedby').split(' ')).toEqual(['ncsc-input-guidance-' + question.id, errorId]);
+        expect(ui.root.querySelector('fieldset').getAttribute('aria-describedby')).toBe(errorId);
         for (const id of question.responseOptionIds) {
             const radio = byId(ui, `ncsc-answer-${question.id}-${id}`);
             expect(radio.getAttribute('aria-invalid')).toBe('true');
@@ -1975,7 +1931,7 @@ describe('questionnaire form accessibility', () => {
         expect(ui.document.activeElement).toBe(rationale);
         expect(rationale.getAttribute('aria-describedby').split(' ')).toEqual([`ncsc-rationale-help-${question.id}`, `ncsc-error-${question.id}`]);
         expect(rationale.getAttribute('aria-invalid')).toBe('true');
-        expect(ui.root.querySelector('fieldset').getAttribute('aria-describedby')).toBe('ncsc-input-guidance-' + question.id);
+        expect(ui.root.querySelector('fieldset').getAttribute('aria-describedby')).toBeNull();
         expect(ui.root.querySelectorAll('input').every(input => input.getAttribute('aria-invalid') === null)).toBe(true);
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
@@ -2117,8 +2073,8 @@ describe('questionnaire public controls and retained mutation intent', () => {
         expect(h.records[1].payload.responses).toEqual([{ itemId: question.id, optionId: 'not_applicable', rationale: { text: rationale.value } }]);
         expect(ui.root.querySelector('[role="status"]').getAttribute('aria-live')).toBe('polite');
         ui.controller.destroy(); const resumed = await resumeUi(h);
-        expect(byId(resumed, 'ncsc-question-index').value).toBe('1');
-        const selector = byId(resumed, 'ncsc-question-index'); selector.value = '0'; event(selector, 'change');
+        expect(currentQuestion(resumed)).toBe(1);
+        navigate(resumed, 0);
         expect(byId(resumed, rationale.id).value).toBe(rationale.value);
         expect(resumed.root.textContent).toMatch(/pending claim|not applicable, to confirm/i);
         control(resumed, 'Clear answer').click(); control(resumed, 'Save progress').click();
@@ -2406,7 +2362,7 @@ describe('questionnaire boundary and navigation regressions', () => {
         savedActions(ui)[0].click();
         await until(() => ui.root.textContent.includes('The saved assessment could not be loaded.'));
         expect(control(ui, 'Retry loading this assessment')).toBeDefined();
-        expect(byId(ui, 'ncsc-question-index')).toBeUndefined();
+        expect(byId(ui, 'ncsc-question-text')).toBeUndefined();
         expect(control(ui, 'Save progress')).toBeUndefined(); expect(control(ui, 'Review and submit')).toBeUndefined();
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
@@ -2440,7 +2396,7 @@ describe('questionnaire boundary and navigation regressions', () => {
         expect(h.records).toHaveLength(6); expect(save).toHaveBeenCalledTimes(1);
         const rejected = save.mock.calls[0][0];
         for (let index = 10; index < rows.length; index += 1) {
-            const selector = byId(ui, 'ncsc-question-index'); selector.value = String(index); event(selector, 'change');
+            navigate(ui, index);
             expect(byId(ui, `ncsc-rationale-${metadata().questions[index].id}`).value).toBe(rows[index].rationale.text);
             enter(byId(ui, `ncsc-rationale-${metadata().questions[index].id}`), 'Shortened unsent claim.');
         }
@@ -2493,10 +2449,9 @@ describe('questionnaire boundary and navigation regressions', () => {
         expect(save).toHaveBeenCalledTimes(2);
         const first = save.mock.calls[0][0], pending = clone(save.mock.calls[1][0]);
         expect(first.idempotencyKey).not.toBe(pending.idempotencyKey);
-        expect(byId(ui, 'ncsc-question-index').children.filter(option => option.textContent.includes('Not saved yet')))
-            .toHaveLength(14 - first.payload.responses.length);
         expect(byId(ui, 'ncsc-save-status').textContent).toContain('This operation is unconfirmed.');
         control(ui, 'Review and submit').click();
+        expect(ui.root.querySelectorAll('.ncsc-review-unsaved')).toHaveLength(14 - first.payload.responses.length);
         expect(control(ui, 'Save and submit assessment').disabled).toBe(true); expect(control(ui, 'Try the save again')).toBeDefined();
         control(ui, 'Back to questions').click();
         const leave = jest.fn(); expect(await ui.controller.requestLeave(leave)).toBe(false); expect(leave).not.toHaveBeenCalled();
@@ -3003,7 +2958,7 @@ describe('batched automatic save', () => {
         expect(h.records).toHaveLength(before);
         const off = await resumeUi(h, { autosaveIdleMs: 0 });
         try {
-            expect(byId(off, 'ncsc-question-index-help').textContent).toBe('The full question is below.');
+            expect(byId(off, 'ncsc-question-index-help')).toBeUndefined();
             expect(byId(off, 'ncsc-save').className).toBe('dashboard-button');
             choose(off, 0, 'yes'); await settle();
             expect(h.records).toHaveLength(before);
@@ -3260,17 +3215,14 @@ describe('questionnaire native unload lifecycle and task hierarchy', () => {
         } finally { ui.controller.destroy(); }
     });
 
-    test('Save stays primary while final Submit carries its adjacent read-only consequence', async () => {
+    test('Save stays primary and Review opens without writing', async () => {
         const h = await backend(), ui = await createInUi(h);
         try {
             const save = control(ui, 'Save progress'), submit = control(ui, 'Review and submit');
             expect(save.classList.contains('dashboard-button')).toBe(true);
             expect(submit.classList.contains('dashboard-text-button')).toBe(true);
-            const warning = byId(ui, submit.getAttribute('aria-describedby'));
-            expect(warning.textContent).toMatch(/read-only/);
-            expect(warning.textContent).toMatch(/saved first/);
-            expect(warning.parentElement).toBe(submit.parentElement);
-            expect(warning.parentElement.children.indexOf(warning)).toBeLessThan(warning.parentElement.children.indexOf(submit));
+            expect(submit.getAttribute('aria-describedby')).toBeNull();
+            submit.click(); expect(ui.root.querySelector('.ncsc-review')).toBeTruthy();
             expect(h.records).toHaveLength(1);
         } finally { ui.controller.destroy(); }
     });
@@ -3345,7 +3297,7 @@ describe('final submission review step', () => {
             expect(h.calls.length).toBe(before);
             control(ui, 'Change question 12').click();
             expect(ui.root.querySelector('.ncsc-review')).toBeNull();
-            expect(byId(ui, 'ncsc-question-index').value).toBe('11');
+            expect(currentQuestion(ui)).toBe(11);
             const input = byId(ui, `ncsc-answer-${questions[11].id}-no`); input.checked = true; event(input, 'change');
             control(ui, 'Return to review').click();
             expect(byId(ui, 'ncsc-review-range').textContent).toContain('1 answer marked not applicable, to confirm.');
@@ -3414,7 +3366,7 @@ describe('final submission review step', () => {
     test('a cleared saved answer is shown as unanswered and not saved yet', async () => {
         const h = await sparseDraft(), ui = await resumeUi(h);
         try {
-            const selector = byId(ui, 'ncsc-question-index'); selector.value = '0'; event(selector, 'change');
+            navigate(ui, 0);
             control(ui, 'Clear answer').click(); control(ui, 'Review and submit').click();
             expect(reviewItem(ui, 0).textContent).toContain('Unanswered (answer cleared)');
             expect(reviewItem(ui, 0).textContent).toContain('Not saved yet'); expect(posts(h)).toHaveLength(0);
@@ -3426,7 +3378,7 @@ describe('final submission review step', () => {
         try {
             control(ui, 'Review and submit').click();
             control(ui, 'Edit question 6').click();
-            expect(byId(ui, 'ncsc-question-index').value).toBe('5');
+            expect(currentQuestion(ui)).toBe(5);
             expect(ui.document.activeElement.textContent).toBe(question.smallBusiness.question);
             const input = byId(ui, `ncsc-answer-${question.id}-unknown`); input.checked = true; event(input, 'change');
             control(ui, 'Return to review').click();
@@ -3491,7 +3443,7 @@ describe('final submission review step', () => {
             const statusText = ui.root.querySelector('.ncsc-status').textContent;
             expect(statusText).toBe('Assessment submitted. Your answers are now read-only.');
             expect(ui.root.textContent).not.toMatch(/Saved revision|Your progress is saved|Choose one answer/);
-            expect(byId(ui, 'ncsc-question-index').value).toBe('0');
+            expect(currentQuestion(ui)).toBe(0);
             const first = metadata().questions[0];
             expect(byId(ui, `ncsc-input-guidance-${first.id}`).textContent).toBe('This is the answer you submitted. Submitted answers cannot be changed.');
         } finally { ui.controller.destroy(); }
@@ -3502,7 +3454,7 @@ describe('final submission review step', () => {
         const ui = mountUi(h, { initialAssessmentId: 'assessment-a', initialQuestionIndex: 2 });
         try {
             await until(() => ui.root.querySelector('.ncsc-sealed'));
-            expect(byId(ui, 'ncsc-question-index').value).toBe('0');
+            expect(currentQuestion(ui)).toBe(0);
             expect(ui.root.querySelector('.ncsc-status').textContent).not.toMatch(/Saved revision/);
             expect(ui.root.textContent).not.toMatch(/Choose one answer for your whole declared scope/);
         } finally { ui.controller.destroy(); }
@@ -3673,7 +3625,7 @@ describe('final submission review step', () => {
             expect(ui.root.querySelector('.ncsc-review')).not.toBeNull(); expect(posts(h)).toHaveLength(0);
             control(ui, 'Back to assessments').click(); control(ui, 'Discard unsent changes').click();
             await until(() => savedActions(ui).length === 1); expect(posts(h)).toHaveLength(0);
-            savedActions(ui)[0].click(); await until(() => byId(ui, 'ncsc-question-index'));
+            savedActions(ui)[0].click(); await until(() => byId(ui, 'ncsc-question-text'));
             expect(ui.root.querySelector('.ncsc-review')).toBeNull(); expect(control(ui, 'Return to review')).toBeUndefined();
         } finally { ui.controller.destroy(); }
     });
@@ -3701,7 +3653,7 @@ describe('reconciled persona journey', () => {
             gate.resolve(); await until(() => control(ui, 'Save progress') && !control(ui, 'Save progress').disabled);
             expect(ui.document.activeElement).toBe(control(ui, 'Save progress'));
             save.click();
-            expect(byId(ui, 'ncsc-question-index')).toBeDefined();
+            expect(byId(ui, 'ncsc-question-text')).toBeDefined();
             expect(h.records.filter(record => record.action === 'save')).toHaveLength(1);
         } finally { gate.resolve(); ui.controller.destroy(); }
     });

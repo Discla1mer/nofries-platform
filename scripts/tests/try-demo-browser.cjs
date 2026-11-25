@@ -100,6 +100,13 @@ async function run(browser, origin, name, viewport) {
     await page.locator('#ncsc-scope').fill('Brightwater Joinery (fictional): all 9 staff, workshop and office laptops, Microsoft 365.');
     await press(page.getByRole('button', { name: 'Create assessment', exact: true }));
     await main(page).getByText('0 of 14 answered').waitFor();
+    const steps = page.locator('.ncsc-function-step');
+    assert.equal(await steps.count(), 5);
+    for (const index of [1, 0]) {
+        await steps.nth(index).press('Enter');
+        assert.equal(await steps.nth(index).getAttribute('aria-current'), 'step');
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'ncsc-question-text');
+    }
     for (let index = 0; index < ANSWERS.length; index++) {
         await press(page.locator('main fieldset label').filter({ has: page.locator('input[value="' + ANSWERS[index] + '"]') }).first());
         if (index === 1) await shot(page, name + '-2-question.png');

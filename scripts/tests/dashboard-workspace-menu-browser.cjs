@@ -1,4 +1,5 @@
 'use strict';
+const openQuestion = require('./helpers/open-ncsc-question.cjs');
 
 // Optional served-source Chromium acceptance using the installed Playwright.
 // NOFRIES_MENU_ARTIFACTS selects an external directory for screenshots/receipts.
@@ -225,7 +226,7 @@ async function visit(page, shell, hash = '#overview') {
 async function openAssessment(page) {
     await activate(page, link(page, 'cyber_security'));
     await page.locator('.ncsc-assessment-list button').first().click();
-    await page.locator('#ncsc-question-index').selectOption('1');
+    await openQuestion(page, 1);
 }
 async function expectHeading(page, title) {
     await page.waitForFunction(title => document.querySelector('.dashboard-main h1')?.textContent === title, title);

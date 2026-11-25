@@ -228,7 +228,7 @@ describe('v2 results in the questionnaire', () => {
         expect(ui.root.querySelector('legend').textContent).toBe(NCSC_V2_CONTEXT.profile.questions[0].prompt);
         expect(ui.root.textContent).toContain('Sometimes, but not written down or checked');
         expect(ui.root.textContent).toContain('It happens sometimes, but it is not written down, owned or checked.');
-        expect(ui.root.textContent).toContain('Not sure? Choose I don\'t know.');
+        expect(ui.root.textContent).toContain('Not sure? You can check later.');
         // v1 worked examples are keyed by question id and never shown on a v2 question with the same id.
         expect(ui.root.textContent).not.toContain('This matches Partial');
         ui.controller.destroy();

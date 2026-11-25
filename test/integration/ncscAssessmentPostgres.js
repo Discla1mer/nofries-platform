@@ -219,7 +219,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             const emit = (element, name) => { for (const fn of element.events[name] || []) fn({ target: element, currentTarget: element, preventDefault() {} }); };
             const enter = (element, value) => { element.value = value; emit(element, 'input'); };
             function answer(ui, index, option, text) {
-                const select = id(ui, 'ncsc-question-index'); select.value = String(index); emit(select, 'change');
+                require('../fixtures/questionNavigation').goToQuestion(ui.root, metadata.questions, index);
                 const question = metadata.questions[index], radio = id(ui, `ncsc-answer-${question.id}-${option}`);
                 radio.checked = true; emit(radio, 'change');
                 if (text !== undefined) enter(id(ui, `ncsc-rationale-${question.id}`), text);
@@ -228,7 +228,7 @@ module.exports = function registerNcscAssessmentPostgresTests() {
                 const ui = uiFor(transport);
                 await until(() => ui.root.querySelector('.ncsc-assessment-list')?.querySelectorAll('button').length > 0);
                 ui.root.querySelector('.ncsc-assessment-list').querySelectorAll('button')[0].click();
-                await until(() => id(ui, 'ncsc-question-index')); return ui;
+                await until(() => id(ui, 'ncsc-question-text')); return ui;
             }
 
             const transport = composed(first, { loseSave: true }); let ui = uiFor(transport);
@@ -248,9 +248,8 @@ module.exports = function registerNcscAssessmentPostgresTests() {
             ui.controller.destroy();
 
             const restarted = composed(first); ui = await resume(restarted);
-            const resumedQuestion = id(ui, 'ncsc-question-index');
-            expect(resumedQuestion.value).toBe('1');
-            resumedQuestion.value = '0'; emit(resumedQuestion, 'change');
+            expect(id(ui, 'ncsc-answer-' + metadata.questions[1].id + '-yes')).toBeDefined();
+            button(ui, 'Previous question').click();
             expect(id(ui, `ncsc-rationale-${metadata.questions[0].id}`).value).toBe(rationale);
             expect(ui.root.textContent).toContain(declaration);
             button(ui, 'Clear answer').click(); button(ui, 'Save progress').click();

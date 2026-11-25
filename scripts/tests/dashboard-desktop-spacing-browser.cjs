@@ -283,7 +283,7 @@ async function overview(page, base, route) {
 async function questionnaire(page, base, route, submitted = false) {
     await ready(page, base, route, '#cyber-security');
     await page.locator('.ncsc-assessment-list').getByRole('button', { name: submitted ? 'View results' : 'Continue assessment', exact: true }).first().click();
-    await page.locator(submitted ? '.ncsc-result-metrics' : '.ncsc-question-index').waitFor();
+    await page.locator(submitted ? '.ncsc-result-metrics' : '#ncsc-question-text').waitFor();
 }
 async function keyboardFocus(page, route, width, extra) {
     const railLinks = page.locator('.dashboard-rail [data-module]');
