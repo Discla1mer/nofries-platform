@@ -102,9 +102,41 @@
             example: 'Guest Wi-Fi is separate, but everyday user devices can freely reach backup and administration systems. This matches Partial.'
         }
     };
-    // A small-business scope example. "Use this example" copies it into the box.
-    const SCOPE_EXAMPLE = ['People: the owner and two part-time staff.', 'Devices: the till, the office laptop and the owner\'s phone.',
-        'Places and online services: the café, email and the online booking system.', 'Not included: staff personal phones.'];
+    // Scope builder (#605): choices compose the scope statement, so the saved
+    // declaration stays plain text with the same limits and validation.
+    const SCOPE_CHOICES = Object.freeze({
+        headcount: ['Just me', '2 to 5 people', '6 to 20 people', '21 to 50 people', '51 to 200 people', 'More than 200 people'],
+        sites: ['One site', 'Two sites', '3 to 5 sites', 'More than 5 sites', 'No fixed site'],
+        people: ['Owners and directors', 'Office staff', 'Site or field staff', 'Contractors', 'Volunteers'],
+        devices: ['Laptops', 'Desktop computers', 'Shared office computer', 'Company phones', 'Personal phones used for work', 'Tablets', 'Till or EFTPOS', 'Servers', 'Printers and scanners', 'Cameras and smart devices'],
+        services: ['Microsoft 365', 'Google Workspace', 'Xero', 'MYOB', 'Online banking', 'Website', 'Online shop', 'Booking system', 'Customer database or CRM', 'Cloud file storage'],
+        excluded: ['Staff personal phones', 'Guest Wi-Fi', 'Systems another company runs', 'Home networks']
+    });
+    const SCOPE_GROUPS = [['people', 'Who is included'], ['devices', 'Devices'], ['services', 'Online services'], ['excluded', 'Leaving out']];
+    const KEEP_CASE = /^(Microsoft|Google|Xero|MYOB|EFTPOS|CRM|Wi-Fi)/;
+    function emptyScopeChoices() {
+        return { headcount: '', sites: '', homeWorking: false, people: [], devices: [], services: [], excluded: [], otherServices: '' };
+    }
+    function listText(items) {
+        const words = items.map(item => item.split(' ').map(word => KEEP_CASE.test(word) ? word : word.toLowerCase()).join(' '));
+        if (words.length < 2) return words.join('');
+        // An item that already contains "and" gets a serial comma so the list still reads clearly.
+        const last = words.some(word => word.includes(' and ')) ? ', and ' : ' and ';
+        return words.slice(0, -1).join(', ') + last + words[words.length - 1];
+    }
+    function composeScope(choices) {
+        const lines = [], services = choices.services.concat(choices.otherServices.split(',').map(item => item.trim()).filter(Boolean));
+        if (choices.headcount || choices.people.length) lines.push('People: ' + [choices.headcount, choices.people.length ? listText(choices.people) : ''].filter(Boolean).join(': ') + '.');
+        if (choices.devices.length) lines.push('Devices: ' + listText(choices.devices) + '.');
+        if (choices.sites || choices.homeWorking) lines.push('Places: ' + [choices.sites ? choices.sites.toLowerCase() : '', choices.homeWorking ? 'people working from home' : ''].filter(Boolean).join(', plus ') + '.');
+        if (services.length) lines.push('Online services: ' + listText(services) + '.');
+        if (choices.excluded.length) lines.push('Not included: ' + listText(choices.excluded) + '.');
+        return lines.map(line => line.charAt(0).toUpperCase() + line.slice(1)).join('\n');
+    }
+    function scopeSectionsDone(choices) {
+        return [choices.headcount || choices.people.length, choices.devices.length, choices.sites || choices.homeWorking,
+            choices.services.length || choices.otherServices.trim(), choices.excluded.length].filter(Boolean).length;
+    }
     const SCOPE_DESCRIBED_BY = 'ncsc-scope-note ncsc-scope-help';
     const PROFILE_FIELDS = ['frameworkId', 'frameworkVersion', 'profileId', 'profileVersion', 'catalogueSha256', 'sourceCatalogueSha256'];
     // Scoring v2 (#399): the 16-question profile 2026-11-18.1 and the graded
@@ -755,7 +787,7 @@
         let errors = [];
         let leave = null;
         let view = 'list';
-        let declaration = '';
+        let declaration = '', scopeChoices = null, scopeGenerated = '';
         let content;
         let status;
         let errorBox;
@@ -959,7 +991,7 @@
         }
         function deny() {
             abortRequests(); epoch += 1; selected = null; acknowledged = null; drafts.clear(); assistanceNotes.clear(); summaries = [];
-            pending = null; busy = false; loading = false; declaration = ''; errors = []; conflict = false; reviewing = false; returnToReview = null;
+            pending = null; busy = false; loading = false; declaration = ''; scopeChoices = null; scopeGenerated = ''; errors = []; conflict = false; reviewing = false; returnToReview = null;
             finishLeave(false); view = 'denied'; statusText = ''; render();
         }
         function fixedFailure(error) {
@@ -1190,7 +1222,7 @@
             acknowledged = null; selected = null; drafts.clear(); assistanceNotes.clear(); reviewing = false; returnToReview = null;
             // Validation belongs to the departed form. Clear it before the list
             // renders, because its question controls and drafts no longer exist.
-            view = 'list'; declaration = ''; errors = []; statusText = ''; loadList(false);
+            view = 'list'; declaration = ''; scopeChoices = null; scopeGenerated = ''; errors = []; statusText = ''; loadList(false);
         }
         function renderAssessmentRead() {
             const target = selected;
@@ -1205,7 +1237,7 @@
             introduction.append(node('p', '', 'Pick up where you left off, or view the results of a submitted assessment. Only saved progress appears here.'));
             if (editable) {
                 const start = button('Start an assessment', function () {
-                    view = 'create'; declaration = ''; errors = []; render();
+                    view = 'create'; declaration = ''; scopeChoices = null; scopeGenerated = ''; errors = []; render();
                     const scope = content.querySelector('textarea'); if (scope) scope.focus();
                 }, summaries.length ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button');
                 // Starting is pointless once nothing more can be submitted; say why beside the control.
@@ -1315,7 +1347,7 @@
                 summaries = Array.from(map.values()); nextAfter = result.nextAfterAssessmentId; listLoaded = true;
                 allowance = result.submissionAllowance ? copy(result.submissionAllowance) : null;
                 appended = append;
-                if (startNewWhenEmpty && !append && view === 'list' && !summaries.length && !allowanceExhausted()) { view = 'create'; declaration = ''; errors = []; autoStarted = true; }
+                if (startNewWhenEmpty && !append && view === 'list' && !summaries.length && !allowanceExhausted()) { view = 'create'; declaration = ''; scopeChoices = null; scopeGenerated = ''; errors = []; autoStarted = true; }
                 startNewWhenEmpty = false;
             } catch (error) { if (live(expected)) fixedFailure(error); }
             finally {
@@ -1352,32 +1384,75 @@
         }
         function renderCreate() {
             const renderedEpoch = epoch;
-            content.append(node('p', '', 'Describe what this assessment covers: the people, devices, places and online services. Put each on its own line, and say what you are leaving out.'));
-            content.append(node('p', 'dashboard-muted', 'For example, for a small café:'));
-            const scopeExamples = node('ul', 'ncsc-scope-examples');
-            SCOPE_EXAMPLE.forEach(function (text) { scopeExamples.append(node('li', '', text)); });
-            content.append(scopeExamples);
-            const useExample = button('Use this example', function () {
-                if (busy || pending) return;
-                // Fill an empty box; otherwise add the example below what is already written.
-                const text = SCOPE_EXAMPLE.join('\n'), current = input.value.replace(/\s+$/, '');
-                input.value = current ? current + '\n' + text : text; declaration = input.value; edited();
-                input.focus(); if (typeof input.setSelectionRange === 'function') input.setSelectionRange(input.value.length, input.value.length);
-            }, 'dashboard-button dashboard-button-secondary');
-            useExample.id = 'ncsc-scope-use-example'; useExample.setAttribute('aria-controls', 'ncsc-scope');
-            content.append(useExample);
-            const label = node('label', '', 'Assessment scope'); label.setAttribute('for', 'ncsc-scope');
+            if (!scopeChoices) scopeChoices = emptyScopeChoices();
+            const locked = () => busy || !!pending || !live(renderedEpoch);
+            content.append(node('p', '', 'Pick what this assessment covers. We write the scope statement for you, and you can edit it.'));
+            const builder = node('div', 'ncsc-scope-builder');
+            const meter = node('p', 'ncsc-scope-meter'); meter.id = 'ncsc-scope-meter'; meter.setAttribute('aria-live', 'polite');
+            function refresh(fromChoices) {
+                const done = scopeSectionsDone(scopeChoices); meter.dataset.done = String(done);
+                meter.textContent = done === 5 ? 'Scope ready' : done + ' of 5 sections chosen';
+                if (!fromChoices) return;
+                const text = composeScope(scopeChoices);
+                // Rewrite the statement only while it is still ours, so hand edits are never lost.
+                if (input.value === scopeGenerated || !input.value.trim()) { input.value = text; declaration = text; scopeGenerated = text; edited(); update.hidden = true; }
+                else update.hidden = false;
+            }
+            function select(key, label) {
+                const field = node('label', 'ncsc-scope-field', label), control = node('select');
+                control.id = 'ncsc-scope-' + key; control.append(node('option', '', 'Choose'));
+                control.children[0].value = '';
+                SCOPE_CHOICES[key].forEach(function (text) { const option = node('option', '', text); option.value = text; control.append(option); });
+                control.value = scopeChoices[key]; control.disabled = locked();
+                control.addEventListener('change', function () { if (locked()) return; scopeChoices[key] = control.value; refresh(true); });
+                field.append(control); return field;
+            }
+            const basics = node('div', 'ncsc-scope-row');
+            const home = node('label', 'ncsc-scope-check'), homeBox = node('input'); homeBox.type = 'checkbox'; homeBox.id = 'ncsc-scope-home';
+            homeBox.checked = scopeChoices.homeWorking; homeBox.disabled = locked();
+            homeBox.addEventListener('change', function () { if (locked()) return; scopeChoices.homeWorking = !!homeBox.checked; refresh(true); });
+            home.append(homeBox, node('span', '', 'People work from home'));
+            basics.append(select('headcount', 'How many people use your systems?'), select('sites', 'Sites'), home);
+            builder.append(basics);
+            SCOPE_GROUPS.forEach(function (group) {
+                const set = node('fieldset', 'ncsc-scope-group'); set.append(node('legend', '', group[1]));
+                const chips = node('div', 'ncsc-scope-chips');
+                SCOPE_CHOICES[group[0]].forEach(function (text) {
+                    const chip = button(text, function () {
+                        if (locked()) return;
+                        const list = scopeChoices[group[0]], at = list.indexOf(text);
+                        if (at >= 0) list.splice(at, 1); else list.push(text);
+                        chip.setAttribute('aria-pressed', String(at < 0)); refresh(true);
+                    }, 'ncsc-scope-chip');
+                    chip.setAttribute('aria-pressed', String(scopeChoices[group[0]].includes(text))); chip.disabled = locked();
+                    chips.append(chip);
+                });
+                set.append(chips);
+                if (group[0] === 'services') {
+                    const other = node('label', 'ncsc-scope-field', 'Other online services (separate with commas)'), otherInput = node('input');
+                    otherInput.id = 'ncsc-scope-other'; otherInput.value = scopeChoices.otherServices; otherInput.maxLength = 300; otherInput.readOnly = locked();
+                    otherInput.addEventListener('input', function () { if (locked()) return; scopeChoices.otherServices = otherInput.value; refresh(true); });
+                    other.append(otherInput); set.append(other);
+                }
+                builder.append(set);
+            });
+            content.append(builder);
+            const label = node('label', 'ncsc-scope-label', 'Your scope statement'); label.setAttribute('for', 'ncsc-scope');
             // Linked to the box so keyboard and screen reader users hear it when they reach the field.
             const note = node('p', 'dashboard-muted', 'You can\'t edit the scope once the assessment starts. If it needs to change later, you can start a new assessment.'); note.id = 'ncsc-scope-note';
-            const input = node('textarea', 'ncsc-textarea'); input.id = 'ncsc-scope'; input.value = declaration; input.rows = 5; input.readOnly = busy || !!pending;
+            const input = node('textarea', 'ncsc-textarea'); input.id = 'ncsc-scope'; input.value = declaration; input.rows = 6; input.readOnly = busy || !!pending;
             input.setAttribute('aria-describedby', SCOPE_DESCRIBED_BY); input.required = true;
-            input.addEventListener('input', function () { if (live(renderedEpoch) && !busy && !pending) { declaration = input.value; edited(); } });
+            input.addEventListener('input', function () { if (live(renderedEpoch) && !busy && !pending) { declaration = input.value; edited(); refresh(false); } });
             input.addEventListener('keydown', function (event) {
                 if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || !live(renderedEpoch)) return;
                 event.preventDefault(); if (!start.disabled) createAssessment();
             });
-            const help = node('p', 'dashboard-muted', 'Up to 4,000 characters. Press Ctrl+Enter, or Cmd+Enter on a Mac, to create the assessment.'); help.id = 'ncsc-scope-help';
-            content.append(label, note, input, help);
+            const update = button('Update from my choices', function () {
+                if (locked()) return; scopeGenerated = input.value; refresh(true); input.focus();
+            }, 'dashboard-text-button'); update.id = 'ncsc-scope-update'; update.hidden = true;
+            const help = node('p', 'dashboard-muted', 'Press Ctrl+Enter, or Cmd+Enter on a Mac, to start.'); help.id = 'ncsc-scope-help';
+            content.append(meter, label, note, input, update, help);
+            refresh(false);
             const usage = allowanceNote(); if (usage) content.append(usage);
             controls = node('div', 'ncsc-actions');
             const start = button('Create assessment', createAssessment);
@@ -2402,7 +2477,7 @@
                 if (!result || !live(expected) || pending !== operation) return false;
                 const detail = cleanDetail(result.assessment, command.assessmentId);
                 if (command.action === 'create') {
-                    selected = command.assessmentId; acknowledged = detail; resetDrafts(); declaration = ''; view = 'assessment'; activeQuestion = 0;
+                    selected = command.assessmentId; acknowledged = detail; resetDrafts(); declaration = ''; scopeChoices = null; scopeGenerated = ''; view = 'assessment'; activeQuestion = 0;
                 } else if (!acknowledged || detail.revision >= acknowledged.revision) {
                     const old = acknowledged; acknowledged = detail;
                     questions.forEach(function (question) {
@@ -2540,7 +2615,7 @@
                 if (live(decision.epoch) && leave === decision) { decision.showErrors = !ok && errors.length > 0; finishLeave(ok); }
             });
             save.disabled = busy || !!pending;
-            const discard = button('Discard unsent changes', function () { if (pending || busy) return; if (acknowledged) resetDrafts(); declaration = ''; errors = []; finishLeave(true); }, 'dashboard-text-button');
+            const discard = button('Discard unsent changes', function () { if (pending || busy) return; if (acknowledged) resetDrafts(); declaration = ''; scopeChoices = null; scopeGenerated = ''; errors = []; finishLeave(true); }, 'dashboard-text-button');
             const stay = button('Stay here', function () { finishLeave(false); }, 'dashboard-text-button');
             discard.disabled = busy || !!pending; dialog.append(save, discard, stay);
             dialog.addEventListener('keydown', function (event) {
@@ -2592,7 +2667,7 @@
             submitPrompt = false; submitLocked = false;
             if (leave) { leave.resolve(false); leave = null; }
             removeDialog(); dialog = null;
-            pending = null; drafts.clear(); assistanceNotes.clear(); summaries = []; selected = null; acknowledged = null; declaration = ''; errors = []; workshopPanel = null; reviewing = false; returnToReview = null;
+            pending = null; drafts.clear(); assistanceNotes.clear(); summaries = []; selected = null; acknowledged = null; declaration = ''; scopeChoices = null; scopeGenerated = ''; errors = []; workshopPanel = null; reviewing = false; returnToReview = null;
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
         }
         render();

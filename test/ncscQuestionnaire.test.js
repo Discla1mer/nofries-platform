@@ -3721,7 +3721,7 @@ describe('reconciled persona journey', () => {
         } finally { ui.controller.destroy(); }
     });
 
-    test('the scope step links its note to the box, fills a small-business example and creates with Ctrl+Enter or Cmd+Enter', async () => {
+    test('the scope step links its note to the box, builds the statement from choices and creates with Ctrl+Enter or Cmd+Enter', async () => {
         const keydown = (element, init) => { for (const handler of element.events.keydown || []) handler({ preventDefault() {}, ...init }); };
         for (const modifier of ['ctrlKey', 'metaKey']) {
             const h = await backend(), ui = mountUi(h, { startNew: true });
@@ -3732,11 +3732,19 @@ describe('reconciled persona journey', () => {
                 expect(described).toEqual(['ncsc-scope-note', 'ncsc-scope-help']);
                 expect(byId(ui, 'ncsc-scope-note').textContent).toMatch(/^You can't edit the scope once the assessment starts\./);
                 expect(byId(ui, 'ncsc-scope-help').textContent).toContain('Ctrl+Enter');
-                expect(ui.root.querySelector('.ncsc-scope-examples').textContent).toContain('café');
+                expect(byId(ui, 'ncsc-scope-meter').textContent).toBe('0 of 5 sections chosen');
                 keydown(scope, { key: 'Enter' }); expect(h.records).toHaveLength(0);
-                control(ui, 'Use this example').click();
-                expect(scope.value).toBe(ui.root.querySelector('.ncsc-scope-examples').children.map(item => item.textContent).join('\n'));
-                expect(ui.document.activeElement).toBe(scope);
+                const headcount = byId(ui, 'ncsc-scope-headcount'); headcount.value = '6 to 20 people'; event(headcount, 'change');
+                control(ui, 'Office staff').click(); control(ui, 'Laptops').click(); control(ui, 'Company phones').click();
+                const sites = byId(ui, 'ncsc-scope-sites'); sites.value = 'Two sites'; event(sites, 'change');
+                const home = byId(ui, 'ncsc-scope-home'); home.checked = true; event(home, 'change');
+                control(ui, 'Microsoft 365').click(); control(ui, 'Xero').click(); enter(byId(ui, 'ncsc-scope-other'), 'Payroll app');
+                control(ui, 'Staff personal phones').click();
+                expect(control(ui, 'Laptops').getAttribute('aria-pressed')).toBe('true');
+                expect(scope.value).toBe(['People: 6 to 20 people: office staff.', 'Devices: laptops and company phones.',
+                    'Places: two sites, plus people working from home.', 'Online services: Microsoft 365, Xero and payroll app.',
+                    'Not included: staff personal phones.'].join('\n'));
+                expect(byId(ui, 'ncsc-scope-meter').textContent).toBe('Scope ready');
                 keydown(scope, { key: 'Enter', [modifier]: true });
                 await until(() => control(ui, 'Save progress'));
                 expect(h.records).toHaveLength(1);
@@ -3745,13 +3753,18 @@ describe('reconciled persona journey', () => {
         }
     });
 
-    test('Use this example adds below scope text already written', async () => {
+    test('choices never overwrite a hand-edited scope statement until asked', async () => {
         const h = await backend(), ui = mountUi(h, { startNew: true });
         try {
             await until(() => byId(ui, 'ncsc-scope'));
-            enter(byId(ui, 'ncsc-scope'), 'Synthetic own line.\n');
-            control(ui, 'Use this example').click();
-            expect(byId(ui, 'ncsc-scope').value).toMatch(/^Synthetic own line\.\nPeople: /);
+            control(ui, 'Laptops').click();
+            expect(byId(ui, 'ncsc-scope').value).toBe('Devices: laptops.');
+            enter(byId(ui, 'ncsc-scope'), 'Synthetic own line.');
+            control(ui, 'Tablets').click();
+            expect(byId(ui, 'ncsc-scope').value).toBe('Synthetic own line.');
+            expect(byId(ui, 'ncsc-scope-update').hidden).toBe(false);
+            control(ui, 'Update from my choices').click();
+            expect(byId(ui, 'ncsc-scope').value).toBe('Devices: laptops and tablets.');
             expect(h.records).toHaveLength(0);
         } finally { ui.controller.destroy(); }
     });
