@@ -2129,16 +2129,18 @@
         'nf-iso-27001-2022-readiness': ['2026-11-19.1', 'ISO 27001 readiness'] };
     const PAID_STATUS_LABELS = { not_started: 'Not started', in_progress: 'In progress', submitted: 'Submitted' };
     // Status only, for the bindings on this exact directory page and session
-    // generation. Any refusal or failure shows no status for the page.
+    // generation. Any refusal or failure shows no status for the page: the
+    // status line is display-only, so a network error, an HTML gateway page or
+    // an unreadable body must not take the organisation list down with it.
+    // A stale cycle is still caught by the check below.
     async function paidFrameworkStatus(cycle, value, bindings, cursor, refresh) {
         const statuses = new Map(bindings.map(function (binding) { return [binding.bindingId, []]; }));
         let result;
         try {
             result = await request(cycle, '/api/dashboard/organisations/paid-framework-status' + (cursor === null ? '' : '?afterBindingId=' + cursor),
                 undefined, value.generation, undefined, refresh);
-        } catch (error) {
-            if (error && (error.timeout || error.platform)) result = { status: 503 };
-            else throw error;
+        } catch (_) {
+            result = { status: 503 };
         }
         if (!current(cycle) || refresh && !currentRefresh(cycle, refresh)) throw invalid();
         const page = result.status === 200 ? result.value : null;
