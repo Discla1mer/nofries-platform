@@ -52,6 +52,8 @@ const focusProbe = process.env.NOFRIES_DESKTOP_FOCUS_PROBE === '1';
 const narrowFocusProbe = process.env.NOFRIES_DESKTOP_NARROW_FOCUS_PROBE === '1';
 const supplementOnly = process.env.NOFRIES_DESKTOP_SUPPLEMENT_ONLY === '1';
 const baselineControl = process.env.NOFRIES_DESKTOP_CONTROL === '1';
+const historicalCssHash = '49e1d2aeda552738fb9ae03cc8d37e827f1f6f85b5a68655de930e3a5a93d050';
+if (baselineControl) assert.equal(sha256(baseCss), historicalCssHash, 'Historical control requires the qualified PR590 CSS');
 assert.ok(!baselineControl || (cssOverride && !expectedWide), 'Known-failure control requires explicit immutable base CSS and no candidate expectations');
 const fullMode = !guardsOnly && !focusProbe && !narrowFocusProbe && !supplementOnly;
 assert.ok(!narrowFocusProbe || (!focusProbe && !guardsOnly && !supplementOnly && !baselineControl && !baseline && !process.env.NOFRIES_DESKTOP_CONTROL_RESUME), 'Narrow native-focus regression runs independently without baseline gaps or resumed observations');
@@ -71,7 +73,7 @@ if (baseline) {
     assert.equal(baseline.mode, 'full', 'Full candidate parity requires a full baseline, not a probe or supplemental run');
     assert.equal(new Set(baseline.results.map(row => row.id)).size, baseline.results.length, 'Baseline IDs are unique');
     assert.deepEqual(baseline.results.map(row => row.id).sort(), expectedInventory.slice().sort(), 'Baseline exact case inventory');
-    assert.equal(baseline.baseCssSha256, '49e1d2aeda552738fb9ae03cc8d37e827f1f6f85b5a68655de930e3a5a93d050', 'Baseline CSS is immutable qualified PR590 source');
+    assert.equal(baseline.baseCssSha256, historicalCssHash, 'Baseline CSS is immutable qualified PR590 source');
     const runtimeHashes = values => Object.fromEntries(Object.entries(values).filter(([file]) => !['app/dashboard.css', 'scripts/tests/dashboard-desktop-spacing-browser.cjs'].includes(file)));
     assert.deepEqual(runtimeHashes(baseline.sourceHashesBefore), runtimeHashes(before), 'Baseline runtime/doc/public styles match candidate');
 }
@@ -95,6 +97,7 @@ const bindings = [spacedName, unbrokenName].map((organisationLabel, index) => ({
 const summaries = fixtures.tenants[0].assessments.map(item => Object.fromEntries([
     'assessmentId', 'moduleId', 'profileRef', 'status', 'revision', 'revisionSha256', 'createdAt', 'updatedAt', 'progress'
 ].map(key => [key, item[key]])));
+const submitted = fixtures.tenants[0].assessments.find(item => item.status === 'submitted');
 const moduleModel = { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt,
     module: model.modules.find(item => item.key === 'cyber_security'), summary: model.summary, services: model.services,
     admissionGranted: false, providerAccessGranted: false, metadata: fixtures.metadata, presentationMode: 'editable' };
@@ -127,6 +130,10 @@ const server = http.createServer((req, res) => {
         body = JSON.stringify({ schemaVersion: 1, bindings: available, nextAfterBindingId: null });
     }
     else if (pathname === '/api/dashboard/bootstrap') { body = JSON.stringify(model); }
+    else if (pathname === '/api/dashboard/modules/overview') {
+        body = JSON.stringify({ page: { schemaVersion: 1, assessments: summaries, nextAfterAssessmentId: null },
+            detail: { schemaVersion: 1, assessment: submitted }, actions: null });
+    }
     else if (pathname === '/api/enquiry') { body = JSON.stringify({ available: false }); }
     else if (pathname === '/api/dashboard/modules/cyber_security') { body = JSON.stringify(moduleModel); }
     else if (pathname === '/api/dashboard/ncsc/assessments') { body = JSON.stringify({ schemaVersion: 1, assessments: summaries, nextAfterAssessmentId: null }); }
@@ -235,7 +242,13 @@ async function geometry(page, route, view, width, extra = {}) {
         closeTo(metric.header.x, metric.entry.x, id + ': header/entry left');
         closeTo(metric.header.width, metric.entry.width, id + ': header/entry width');
     }
-    if (metric.questionnaire) assert.ok(metric.questionnaire.width <= metric.rootFont * 58 + 1, id + ': editor remains <=58rem');
+    if (!baselineControl && ['questionnaire', 'results', 'questionnaire-print'].includes(view)) {
+        assert.ok(metric.questionnaire, id + ': question view is visible');
+        closeTo(metric.questionnaire.x, metric.main.x + metric.main.paddingLeft, id + ': focus view starts at content edge');
+        closeTo(metric.questionnaire.width, metric.workspaceInner, id + ': focus view fills content width');
+    } else if (metric.questionnaire) {
+        assert.ok(metric.questionnaire.width <= metric.rootFont * 58 + 1, id + ': capped editor remains <=58rem');
+    }
     if (metric.textarea) assert.ok(metric.textarea.width <= metric.questionnaire.width + 1, id + ': textarea stays within editor');
     const desktopReady = metric.state === 'ready' && metric.innerWidth >= 1220 && extra.media !== 'print';
     if (expectedWide && desktopReady) {

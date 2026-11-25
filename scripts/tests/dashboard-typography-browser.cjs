@@ -136,7 +136,11 @@ const server = http.createServer((request, response) => {
         else if (url.pathname === '/dashboard.css') { body = styles[variant]; type = 'text/css'; }
         else if (url.pathname === '/app.js') { body = apps[variant]; type = 'text/javascript'; }
         else if (url.pathname === '/large-text.css') { body = 'html { font-size: 125%; }'; type = 'text/css'; }
-        else if (['/style.css', '/home.css', '/favicon.svg', '/images/nofrieslogo.png'].includes(url.pathname)) {
+        else if (url.pathname === '/api/enquiry') { body = JSON.stringify({ available: false }); type = 'application/json'; }
+        else if (url.pathname === '/assets/fonts/fraunces-latin-opsz-normal.woff2' || url.pathname === '/images/paper-texture.webp') {
+            body = fs.readFileSync(path.join(root, url.pathname.slice(1)));
+            type = url.pathname.endsWith('.woff2') ? 'font/woff2' : 'image/webp';
+        } else if (['/style.css', '/home.css', '/favicon.svg', '/images/nofrieslogo.png'].includes(url.pathname)) {
             body = fs.readFileSync(path.join(root, url.pathname.slice(1)));
             type = url.pathname.endsWith('.css') ? 'text/css' : url.pathname.endsWith('.svg') ? 'image/svg+xml' : 'image/png';
         }
@@ -226,7 +230,7 @@ async function observe(page) {
         browser = await chromium.launch({ headless: true,
             executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
         const observations = new Map();
-        const cases = [1440, 768, 390, 320].flatMap(width => ['overview', 'overview-draft', 'questionnaire', 'results', 'services']
+        const cases = [1440, 768, 390, 320].flatMap(width => ['questionnaire', 'overview', 'overview-draft', 'results', 'services']
             .map(view => ({ width, view })));
         cases.push({ width: 390, view: 'questionnaire', largeText: true },
             { width: 390, view: 'overview', largeText: true },
@@ -250,6 +254,7 @@ async function observe(page) {
             await page.goto(origin + '/dashboard?variant=' + variant + '&view=' + scenario.view +
                 (scenario.largeText ? '&largeText=1' : ''));
             await prepare(page, scenario.view);
+            await page.evaluate(() => document.fonts.ready.then(() => true));
             if (variant === 'after' && ['overview', 'overview-draft'].includes(scenario.view)) {
                 assert.equal(await page.locator('.picture-heading h2').textContent(), 'Cyber baseline');
                 assert.equal(await page.locator('.picture-heading .dashboard-eyebrow').count(), 0);
@@ -272,6 +277,18 @@ async function observe(page) {
             assert.deepEqual(result.violations, []);
             assert.ok(result.scrollWidth <= result.viewport + 1, key + ': no horizontal overflow');
             if (variant === 'after') {
+                if (scenario.view === 'questionnaire') {
+                    const width = await page.locator('.ncsc-focus-layout').evaluate(layout => {
+                        const main = layout.closest('.dashboard-main'), style = getComputedStyle(main);
+                        return { available: main.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+                            actual: layout.getBoundingClientRect().width };
+                    });
+                    assert.ok(Math.abs(width.actual - width.available) <= 1,
+                        key + ': focus layout should fill ' + width.available + 'px, measured ' + width.actual + 'px');
+                    if (scenario.width === 1440) assert.ok(width.actual > 58 * result.rootFontSize,
+                        key + ': desktop exercise must exceed the former 58rem limit');
+                    result.focusWidth = width;
+                }
                 assert.deepEqual(result.weights, ['400', '600'], key + ': two restrained weights');
                 for (const control of result.controls) assert.ok(control.height >= 44, key + ': usable target ' + control.label);
                 assert.equal(result.bodyWeight, '400'); assert.deepEqual(result.fontStyles, ['normal']);
