@@ -15,7 +15,7 @@ module.exports = async function checkBrownsBayOffer(browser, base) {
         await page.getByRole('heading', { level: 1 }).waitFor();
         assert.equal(await page.locator('.ad-price').innerText(), 'NZ$30.04 + GST per computer per month');
         assert.ok(await page.getByText(/NZ\$100 per 30 minutes/).isVisible());
-        assert.ok(await page.getByText(/Offer pricing and availability are subject to confirmation/).isVisible());
+        assert.ok(await page.getByText(/no minimum number of computers/).isVisible());
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
         await page.reload(); await page.keyboard.press('Tab');
         assert.equal(await page.locator(':focus').innerText(), 'Skip to content');
