@@ -35,7 +35,7 @@
     const SIGNIN_RETURN = 'nofries-return-route';
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
     const DIGEST = /^[0-9a-f]{64}$/;
-    const ROUTES = ['overview', 'ai-governance', 'cyber-security', 'it-optimisation', 'improvement-plan', 'evidence', 'board-reports', 'services'];
+    const ROUTES = ['overview', 'ai-governance', 'cyber-security', 'it-optimisation', 'improvement-plan', 'evidence', 'board-reports', 'services', 'settings'];
     const ids = { entry: 'dashboardEntry', panel: 'dashboardStatusPanel', heading: 'dashboardHeading', message: 'dashboardMessage',
         status: 'dashboardStatus', retry: 'dashboardRetry', signIn: 'dashboardSignIn', signOut: 'dashboardSignOut',
         chooser: 'dashboardChooser', choices: 'dashboardChoices', more: 'dashboardMore', app: 'dashboardApp' };
@@ -59,6 +59,15 @@
     const accountToggle = document.getElementById('dashboardAccountToggle');
     const accountSwitch = document.getElementById('dashboardSwitchAccount');
     const emailSettings = document.getElementById('dashboardEmailSettings');
+    const settings = document.getElementById('dashboardSettings');
+    if (settings) settings.addEventListener('click', function (event) {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0) return;
+        event.preventDefault();
+        if (settings.hidden || !controller || active.busy || active.authorityPending || unresolved) return;
+        setAccountMenuOpen(false);
+        accountToggle.focus();
+        controller.navigate('settings');
+    });
     if (accountSwitch) accountSwitch.setAttribute('href', externalCustomer ? '/api/external-customer-auth/login?account=choose'
         : customerProvider === 'legacy' ? '/api/customer-auth/login' : '/login');
     function setAccountMenuOpen(open) {
@@ -422,6 +431,7 @@
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
         elements.signOut.disabled = state === 'loading';
         if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
+        if (settings) settings.hidden = state !== 'ready' || cycle.session?.purpose !== 'customer';
         if (emailSettings) emailSettings.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
         if (cycle.session || state === 'unauthenticated' || state === 'expired') renderAccountIdentity(cycle);
         if (accountMenu) {
@@ -871,6 +881,7 @@
         cycle.improvement = !!improvement;
         cycle.displayContract = displayContract(model);
         controller = factory.mount(elements.app, model, { window: window, initialRoute: currentRoute(),
+            ...(fresh.purpose === 'customer' ? { settingsAccount: { name: fresh.accountName, label: fresh.accountLabel } } : {}),
             ...(fresh.accountType === 'consultant' ? { onOpenOrganisations: function () { return openOrganisations(cycle); } } : {}),
             ...(skipLink ? { omitSkipLink: true } : {}),
             ...(cyber ? { mountCyber: cyber } : {}),
