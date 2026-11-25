@@ -2,7 +2,7 @@
 
 // Optional actual-Chromium layout acceptance using installed Playwright only.
 // node scripts/tests/dashboard-wide-layout-browser.cjs
-// NOFRIES_EXPECT_WIDE_LAYOUT=1 also checks the intended >1220px widening.
+// NOFRIES_EXPECT_WIDE_LAYOUT=1 explicitly checks expansion beyond the 1180px shell cap.
 // NOFRIES_WIDE_LAYOUT_ARTIFACTS selects an external artifact directory.
 // NOFRIES_WIDE_LAYOUT_BASELINE points to an earlier results.json for geometry
 // comparisons. NOFRIES_WIDE_LAYOUT_CSS selects retained CSS for a RED control.
@@ -56,14 +56,19 @@ model.context.displayName = spacedName;
 const binding = '10000000-0000-4000-8000-000000000001';
 const bindings = [spacedName, unbrokenName].map((organisationLabel, index) => ({
     bindingId: index ? '10000000-0000-4000-8000-000000000002' : binding, organisationLabel }));
+const selected = fixtures.tenants[0].assessments.find(item => item.status === 'submitted');
 const summaries = fixtures.tenants[0].assessments.map(item => Object.fromEntries([
     'assessmentId', 'moduleId', 'profileRef', 'status', 'revision', 'revisionSha256', 'createdAt', 'updatedAt', 'progress'
 ].map(key => [key, item[key]])));
 const moduleModel = { schemaVersion: 1, context: model.context, generatedAt: model.generatedAt,
     module: model.modules.find(item => item.key === 'cyber_security'), summary: model.summary, services: model.services,
     admissionGranted: false, providerAccessGranted: false, metadata: fixtures.metadata, presentationMode: 'editable' };
-const assets = Object.fromEntries(['style.css', 'home.css', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png',
-    'images/nofrieslogo.png', 'js/organisation-setup.js', 'js/home.js'].map(file => ['/' + file, file]));
+const assets = Object.fromEntries(['style.css', 'home.css', 'managed-it.css', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png',
+    'images/nofrieslogo.png', 'images/nofries-mark-large.webp', 'images/paper-texture.webp',
+    'assets/fonts/fraunces-latin-opsz-normal.woff2', 'assets/fonts/fraunces-latin-opsz-italic.woff2',
+    'js/enquiry-availability.js', 'js/enquiry-home.js', 'js/organisation-setup.js', 'js/home.js'].map(file => ['/' + file, file]));
+const assetTypes = { '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+    '.webp': 'image/webp', '.woff2': 'font/woff2', '.png': 'image/png' };
 const requests = [], blocked = [], errors = [], knownBaselineGaps = [], results = [];
 let state = 'ready', selectionUnbrokenProbe = false;
 const server = http.createServer((req, res) => {
@@ -75,6 +80,9 @@ const server = http.createServer((req, res) => {
     if (routes.includes(pathname) || pathname === '/signup') {
         const document = pathname === '/' ? gateway : pathname === '/signup' ? signup : dashboard;
         body = document.html; type = 'text/html'; res.setHeader('Content-Security-Policy', document.contentSecurityPolicy);
+    } else if (pathname === '/managed-it.html') {
+        body = read('managed-it.html'); type = 'text/html';
+        res.setHeader('Content-Security-Policy', require('../../staticwebapp.config.json').globalHeaders['Content-Security-Policy']);
     } else if (pathname === '/api/dashboard/app.js') { body = app; type = 'text/javascript'; }
     else if (pathname === '/api/dashboard/dashboard.css') { body = css; type = 'text/css'; }
     else if (pathname === '/api/dashboard/session') {
@@ -88,6 +96,8 @@ const server = http.createServer((req, res) => {
         body = JSON.stringify({ schemaVersion: 1, bindings: available, nextAfterBindingId: null });
     }
     else if (pathname === '/api/dashboard/bootstrap') { body = JSON.stringify(model); }
+    else if (pathname === '/api/dashboard/modules/overview') { body = JSON.stringify({ page: { schemaVersion: 1, assessments: summaries, nextAfterAssessmentId: null }, detail: { schemaVersion: 1, assessment: selected }, actions: null }); }
+    else if (pathname === '/api/enquiry') { body = JSON.stringify({ available: false, promote: false }); }
     else if (pathname === '/api/dashboard/modules/cyber_security') { body = JSON.stringify(moduleModel); }
     else if (pathname === '/api/dashboard/ncsc/assessments') { body = JSON.stringify({ schemaVersion: 1, assessments: summaries, nextAfterAssessmentId: null }); }
     else if (pathname.startsWith('/api/dashboard/ncsc/assessments/')) {
@@ -97,8 +107,7 @@ const server = http.createServer((req, res) => {
         body = JSON.stringify({ state: { status: 'terms', termsText: 'Synthetic layout agreement. No consent is submitted.',
             termsVersion: 'synthetic-v1', termsDigest: 'a'.repeat(64) }, csrfToken: 'c'.repeat(43) });
     } else if (assets[pathname]) {
-        body = read(assets[pathname]); type = pathname.endsWith('.css') ? 'text/css' : pathname.endsWith('.js') ? 'text/javascript' :
-            pathname.endsWith('.svg') ? 'image/svg+xml' : pathname.endsWith('.ico') ? 'image/x-icon' : 'image/png';
+        body = read(assets[pathname]); type = assetTypes[path.extname(pathname)];
     }
     if (body === undefined) { blocked.push({ method: req.method, path: pathname }); res.statusCode = 404; return res.end(); }
     res.setHeader('Content-Type', type); res.end(body);
@@ -110,13 +119,13 @@ async function geometry(page, route, view, width, extra = {}) {
             const node = document.querySelector(selector);
             if (!node || !node.getClientRects().length) return null;
             const r = node.getBoundingClientRect(), s = getComputedStyle(node);
-            return { x: r.x, width: r.width, right: r.right, maxWidth: s.maxWidth,
+            return { x: r.x, width: r.width, right: r.right, contentWidth: node.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight), maxWidth: s.maxWidth,
                 color: s.color, background: s.backgroundColor, borderRadius: s.borderRadius, fontSize: s.fontSize };
         };
         const visible = node => node.getClientRects().length > 0;
         return { innerWidth, scrollWidth: document.documentElement.scrollWidth,
             entry: bounds('#dashboardEntry'), header: bounds('.site-header'), layout: bounds('.dashboard-layout'),
-            main: bounds('.dashboard-main'), rail: bounds('.dashboard-rail'), questionnaire: bounds('.ncsc-questionnaire'),
+            main: bounds('.dashboard-main'), rail: bounds('.dashboard-rail'), questionnaire: bounds('.ncsc-questionnaire'), focus: bounds('.ncsc-focus-header'),
             chooser: bounds('#dashboardChooser'), signup: bounds('#signup'), access: bounds('.access-layout'),
             dialog: bounds('dialog[open]'), state: document.body.dataset.dashboardState,
             overflowingControls: [...document.querySelectorAll('textarea, select, input:not([type="radio"]):not([type="checkbox"]), #dashboardChoices button')]
@@ -136,16 +145,28 @@ async function geometry(page, route, view, width, extra = {}) {
     else assert.ok(metric.scrollWidth <= metric.innerWidth + 1, overflowMessage);
     assert.deepEqual(metric.overflowingControls, [], `${label}: controls exceed viewport`);
     assert.deepEqual(metric.styleViolations, [], `${label}: CSP violations`);
-    if (metric.main) assert.ok(metric.main.width <= 1441, `${label}: main exceeds 90rem`);
-    if (metric.questionnaire) assert.ok(metric.questionnaire.width <= 929, `${label}: questionnaire exceeds 58rem`);
+    const fullWorkspace = metric.state === 'ready' && metric.innerWidth >= 1220 && extra.media !== 'print';
+    if (metric.main && fullWorkspace) {
+        assert.ok(Math.abs(metric.main.x - metric.rail.right) <= 1 && Math.abs(metric.main.right - metric.layout.right) <= 1,
+            `${label}: main must fill the space beside the rail`);
+        const gutter = metric.innerWidth >= 1600 ? 32 : 24;
+        assert.ok(Math.abs(metric.main.width - metric.main.contentWidth - 2 * gutter) <= 1, `${label}: main content gutters`);
+    } else if (metric.main) assert.ok(metric.main.width <= 1441, `${label}: main exceeds 90rem`);
+    if (['questionnaire', 'results', 'leave-dialog', 'questionnaire-print', 'results-print'].includes(view)) {
+        assert.ok(metric.focus && metric.questionnaire, `${label}: questionnaire and focus header must be visible`);
+        for (const box of [metric.questionnaire, metric.focus]) {
+            assert.ok(Math.abs(box.width - metric.main.contentWidth) <= 1, `${label}: focus mode must fill main content`);
+        }
+    } else if (view === 'assessment-list') {
+        assert.ok(metric.questionnaire && !metric.focus && metric.questionnaire.width <= 929, `${label}: preserve the 58rem list cap`);
+    }
     if (metric.entry) {
         assert.ok(metric.entry.x >= -1 && metric.entry.right <= metric.innerWidth + 1, `${label}: shell outside viewport`);
-        if (metric.state !== 'ready' || width <= 1220 || extra.zoom || extra.media === 'print') {
+        if (!fullWorkspace) {
             assert.ok(metric.entry.width <= 1181, `${label}: existing shell cap must be retained`);
-        } else if (expectedWide) {
-            assert.ok(metric.entry.width > 1180, `${label}: wide ready shell must expand`);
-            assert.ok(metric.entry.width <= 1729, `${label}: ready shell exceeds 108rem`);
-            assert.ok(metric.entry.x >= 20, `${label}: retain outer gutters`);
+        } else {
+            assert.ok(Math.abs(metric.entry.width - metric.innerWidth) <= 1, `${label}: wide ready shell fills viewport`);
+            if (expectedWide) assert.ok(metric.entry.width > 1180, `${label}: wide ready shell must expand`);
         }
         if (metric.header) {
             assert.ok(Math.abs(metric.header.x - metric.entry.x) <= 1 && Math.abs(metric.header.width - metric.entry.width) <= 1,
@@ -156,7 +177,7 @@ async function geometry(page, route, view, width, extra = {}) {
         const old = baseline.results.find(item => item.route === route && item.view === view && item.width === width && !item.zoom && item.media === extra.media);
         assert.ok(old, `${label}: baseline observation missing`);
         if (extra.knownBaselineGap) assert.equal(metric.scrollWidth, old.scrollWidth, `${label}: known initial selection overflow changed`);
-        if (metric.state !== 'ready' || width <= 1220 || extra.media === 'print') {
+        if (!fullWorkspace) {
             for (const key of ['entry', 'header', 'main', 'questionnaire', 'chooser', 'signup', 'access', 'dialog']) {
                 if (metric[key] && old[key]) for (const dimension of ['x', 'width']) {
                     assert.ok(Math.abs(metric[key][dimension] - old[key][dimension]) <= 1, `${label}: ${key}.${dimension} changed`);
@@ -202,9 +223,11 @@ async function keyboardSkip(page) {
     assert.equal(focused.outline, 'solid'); assert.ok(parseFloat(focused.width) >= 2);
     return focused;
 }
-async function questionnaire(page, base, route, submitted = false) {
+async function questionnaire(page, base, route, submitted = false, listWidth) {
     await ready(page, base, route, '#cyber-security');
-    const button = page.locator('.ncsc-assessment-list button').filter({ hasText: submitted ? 'submitted' : 'in-progress' }).first();
+    const row = submitted ? selected : fixtures.tenants[0].assessments.find(item => item.status === 'in-progress');
+    const button = page.getByRole('button', { name: submitted ? 'View results' : 'Continue assessment', exact: true }).and(page.locator('[data-assessment-id="' + row.assessmentId + '"]'));
+    if (listWidth) { await button.waitFor(); await geometry(page, route, 'assessment-list', listWidth); }
     await button.click(); await page.locator(submitted ? '.ncsc-result-metrics' : '#ncsc-question-text').waitFor();
 }
 async function overview(page, base, route) {
@@ -253,7 +276,7 @@ async function main() {
                 await overview(page, base, route); await geometry(page, route, 'overview-unbroken', width);
                 model.context.displayName = spacedName;
                 await readyChooser(page); await geometry(page, route, 'ready-chooser', width);
-                await questionnaire(page, base, route); await geometry(page, route, 'questionnaire', width);
+                await questionnaire(page, base, route, false, width); await geometry(page, route, 'questionnaire', width);
                 // Make only an unsent local draft, then inspect the real leave
                 // dialog. Stay here returns to the draft without any API write.
                 await page.locator('input[value="yes"]').check();
@@ -261,6 +284,9 @@ async function main() {
                 await page.locator('.ncsc-leave-dialog[open]').waitFor();
                 await geometry(page, route, 'leave-dialog', width);
                 await page.getByRole('button', { name: 'Stay here', exact: true }).click();
+                await page.getByRole('button', { name: 'Back to assessments', exact: true }).click();
+                await page.keyboard.press('Escape');
+                assert.equal(await page.locator('.ncsc-leave-dialog[open]').count(), 0);
                 await page.getByRole('button', { name: 'Back to assessments', exact: true }).click();
                 await page.getByRole('button', { name: 'Discard unsent changes', exact: true }).click();
                 await questionnaire(page, base, route, true); await geometry(page, route, 'results', width);
@@ -271,10 +297,12 @@ async function main() {
             state = 'public'; await visit(page, base + '/');
             await page.waitForFunction(() => document.body.dataset.dashboardState === 'unauthenticated');
             await geometry(page, '/', 'public-home', width);
-            await page.getByRole('button', { name: 'Managed IT', exact: true }).click();
-            await page.locator('#service-dialog[open]').waitFor();
-            await geometry(page, '/', 'public-dialog', width); await page.keyboard.press('Escape');
-            assert.equal(await page.locator('#service-dialog').evaluate(node => node.open), false);
+            const service = page.getByRole('link', { name: 'Explore Managed IT' });
+            assert.equal(await service.getAttribute('href'), '/managed-it.html');
+            await service.focus(); await page.keyboard.press('Enter');
+            await page.waitForURL(base + '/managed-it.html'); await page.locator('main h1').waitFor();
+            await geometry(page, '/managed-it.html', 'public-service', width);
+            await page.goBack(); await page.getByRole('link', { name: 'Explore Managed IT' }).waitFor();
             await visit(page, base + '/signup'); await page.getByRole('checkbox').waitFor();
             await geometry(page, '/signup', 'signup', width);
             // Keep this unchanged source defect visible, outside the strict
