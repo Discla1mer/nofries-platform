@@ -766,8 +766,7 @@
         let questionRegion;
         let questionIndex;
         let pendingPickerChoice = null;
-        let questionProgress, savedSummary;
-        let navigationSummary;
+        let questionProgress, progressArc, functionSteps;
         let nextUnanswered;
         let nextUnresolved;
         let assistanceRequest = null;
@@ -924,24 +923,24 @@
         function updateQuestionNavigation() {
             if (!live() || !acknowledged || !questionIndex || !questionProgress) return;
             const sealed = acknowledged.status === 'submitted';
-            let answered = 0, unresolved = 0, saved = 0;
+            let answered = 0;
             questions.forEach(function (question, index) {
                 const value = displayedAnswer(question), option = optionById.get(value.optionId);
                 if (value.optionId !== null) answered += 1;
-                if (['unknown', 'not_applicable'].includes(value.optionId)) unresolved += 1;
                 const label = value.optionId === 'not_applicable' ? 'Not applicable, to confirm' : option ? option.label : 'Unanswered';
                 const changed = !sealed && !equal(value, savedAnswer(question.id));
-                if (value.optionId !== null && !changed) saved += 1;
                 const unsaved = changed ? ' · Not saved yet' : '';
                 questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
             });
-            const missing = questions.length - answered, dirty = sealed ? 0 : dirtyEntries().length, saving = savingNow();
-            if (savedSummary) savedSummary.textContent = saved + ' of ' + questions.length + ' saved';
-            questionProgress.textContent = answered + ' of ' + questions.length + ' answered' + (missing ? ' · ' + missing + ' to go' : '') +
-                (unresolved ? ' · ' + unresolved + ' to check later (unknown, or marked not applicable, to confirm)' : '') +
-                (sealed ? ' · submitted' : !editable ? ' · saved' : saving ? ' · saving…' : dirty ? ' · ' + dirty + ' not saved yet' +
-                    (missingExplanation() ? ' (a not applicable answer needs an explanation)' : '') : ' · all saved') + '.';
-            if (navigationSummary) navigationSummary.textContent = 'Question ' + (activeQuestion + 1) + ' of ' + questions.length + ' · ' + missing + ' unanswered';
+            const missing = questions.length - answered;
+            questionProgress.textContent = answered + ' of ' + questions.length + ' answered · ' +
+                (missing ? 'About ' + missing + ' min left' : 'Complete');
+            progressArc.setAttribute('stroke-dasharray', answered + ' ' + missing);
+            const control = metadata.controls.find(item => item.id === questions[activeQuestion].controlId);
+            for (const step of functionSteps.children) {
+                if (step.dataset.domain === control.domainId) step.setAttribute('aria-current', 'step');
+                else step.removeAttribute('aria-current');
+            }
             if (nextUnanswered) nextUnanswered.disabled = unansweredIndex(activeQuestion) === -1;
             if (nextUnresolved) nextUnresolved.disabled = unresolvedIndex(activeQuestion) === -1;
         }
@@ -950,12 +949,6 @@
         function savingNow() {
             if (!acknowledged || acknowledged.status === 'submitted' || !editable || !dirtyEntries().length) return false;
             return busy && !!pending && pending.command.action === 'save' || autosaveTimer !== null && canAutosave(false);
-        }
-        function missingExplanation() {
-            return questions.some(function (question) {
-                const value = drafts.get(question.id).value, option = optionById.get(value.optionId);
-                return !!option && !option.applicable && (!value.rationale || !validText(value.rationale.text));
-            });
         }
         function deny() {
             abortRequests(); epoch += 1; selected = null; acknowledged = null; drafts.clear(); assistanceNotes.clear(); summaries = [];
@@ -1077,22 +1070,15 @@
             useProfile(acknowledged && !['create', 'denied'].includes(view) && profileFor(acknowledged.profileRef) || baseMetadata);
             const focused = captureFocus(root);
             const observations = root.querySelector('.ncsc-draft-observations');
-            const progressOpen = !!(savedSummary && savedSummary.parentElement.open && acknowledged &&
-                savedSummary.dataset.assessmentId === acknowledged.assessmentId);
             const observationsOpen = !!(observations && observations.open && acknowledged &&
                 observations.dataset.assessmentId === acknowledged.assessmentId);
             const scrollX = win && win.scrollX, scrollY = win && win.scrollY;
-            // Retain the progress block's height while acknowledging Save. Otherwise
-            // removing an unsaved-count line moves the button under a double click.
-            const savingFocus = focused && ['ncsc-save', 'ncsc-save-status'].includes(focused.id);
-            const progressHeight = savingFocus && questionProgress && typeof questionProgress.getBoundingClientRect === 'function'
-                ? questionProgress.getBoundingClientRect().height : null;
             // A keyboard choice in the question picker waits for Enter or Go. Keep it
             // when a save re-renders the page so the choice is not lost.
             const pickerChoice = questionIndex && acknowledged && questionIndex.value !== String(activeQuestion)
                 ? { assessmentId: acknowledged.assessmentId, value: questionIndex.value } : null;
             pendingPickerChoice = pickerChoice;
-            questionIndex = null; questionProgress = null; savedSummary = null; navigationSummary = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
+            questionIndex = null; questionProgress = null; progressArc = null; functionSteps = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
             if (!acknowledged || acknowledged.status === 'submitted' || !editable) { reviewing = false; returnToReview = null; }
             // Keep the live region attached so asynchronous updates change an
             // existing accessible status rather than insert prefilled content.
@@ -1102,14 +1088,13 @@
             root.append(errorBox, content);
             if (view === 'denied') content.append(node('p', '', 'This assessment is not available. Reopen the dashboard through your authenticated organisation context.'));
             else if (view === 'create') renderCreate();
-            else if (acknowledged) renderAssessment(observationsOpen, progressOpen);
+            else if (acknowledged) renderAssessment(observationsOpen);
             else if (view === 'assessment' && selected) renderAssessmentRead();
             else renderList();
             // Reuse the optional disclosure so open state survives save/recovery
             // renders. Stable IDs also restore keyboard focus inside it.
             if (view !== 'denied') { if (!workshopPanel) workshopPanel = workshopDownloads(); root.append(workshopPanel); }
             root.append(provenance()); updateStatus(); renderErrors();
-            if (questionProgress && Number.isFinite(progressHeight)) questionProgress.style.setProperty('min-height', progressHeight + 'px');
             if (leave) renderLeave();
             else if (submitPrompt) renderSubmitDialog();
             else restoreFocus(root, focused, heading);
@@ -1397,7 +1382,7 @@
                 return await perform(command, []);
             } catch (error) { fixedFailure(error); return false; }
         }
-        function renderAssessment(observationsOpen, progressOpen) {
+        function renderAssessment(observationsOpen) {
             const renderedEpoch = epoch;
             const sealed = acknowledged.status === 'submitted';
             content.append(button('Back to assessments', function () { requestLeave(returnToList); }, 'dashboard-text-button'));
@@ -1423,17 +1408,27 @@
             if (conflict) renderConflict();
             if (pending) renderPending();
             if (reviewing) { renderReview(); return; }
-            questionProgress = node('p', 'ncsc-draft-progress'); questionProgress.id = 'ncsc-draft-progress';
-            if (sealed) content.append(questionProgress);
-            else {
-                const details = node('details', 'ncsc-guidance'); details.open = progressOpen;
-                savedSummary = node('summary', ''); savedSummary.id = 'ncsc-saved-summary';
-                savedSummary.dataset.assessmentId = acknowledged.assessmentId;
-                details.append(savedSummary, questionProgress); content.append(details);
+            const header = node('div', 'ncsc-focus-header');
+            functionSteps = node('ol', 'ncsc-function-steps');
+            functionSteps.setAttribute('aria-label', 'Assessment functions');
+            for (const domain of metadata.domains) {
+                const step = node('li', '', domain.title);
+                step.dataset.domain = domain.id;
+                functionSteps.append(step);
             }
-            // The glossary explains the progress words, so it sits right after progress.
-            if (!sealed) content.append(glossary());
-            if (!sealed) renderDraftObservations(observationsOpen);
+            const svg = name => doc.createElementNS('http://www.w3.org/2000/svg', name);
+            const ring = svg('svg');
+            ring.setAttribute('viewBox', '0 0 40 40'); ring.setAttribute('aria-hidden', 'true');
+            const track = svg('circle'); progressArc = svg('circle');
+            for (const circle of [track, progressArc]) {
+                circle.setAttribute('cx', '20'); circle.setAttribute('cy', '20'); circle.setAttribute('r', '16');
+                ring.append(circle);
+            }
+            progressArc.setAttribute('pathLength', String(questions.length));
+            progressArc.setAttribute('transform', 'rotate(-90 20 20)');
+            questionProgress = node('span'); questionProgress.id = 'ncsc-draft-progress';
+            const progress = node('div', 'ncsc-focus-progress'); progress.append(ring, questionProgress);
+            header.append(functionSteps, progress); content.append(header);
             const indexLabel = node('label', '', 'Question'); indexLabel.setAttribute('for', 'ncsc-question-index');
             const index = node('select', 'ncsc-question-index'); index.id = 'ncsc-question-index';
             index.setAttribute('aria-describedby', 'ncsc-question-index-help');
@@ -1492,7 +1487,7 @@
                 controls.append(final);
             }
             content.append(controls);
-            content.append(node('p', 'dashboard-muted', 'Resolved means answered Yes, Partial or No; it does not mean implemented. To submit, answer every question and explain each not applicable answer. Unknown answers, and answers marked not applicable, to confirm, are allowed. A submitted baseline is read-only and is not a certification.'));
+            if (!sealed) { content.append(glossary()); renderDraftObservations(observationsOpen); }
         }
         // Counts and navigation from acknowledged answers only. Never evaluate a
         // draft, infer a risk ranking, or reuse another assessment's baseline.
@@ -1945,7 +1940,10 @@
             const entry = acknowledged.status === 'submitted' ? { value: savedAnswer(question.id) } : drafts.get(question.id);
             const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
             const domain = metadata.domains.find(function (item) { return control && item.id === control.domainId; });
-            questionRegion.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && plainControlTitle(control.title)].filter(Boolean).join(' · ')));
+            const layout = node('div', 'ncsc-focus-layout');
+            const answers = node('div', 'ncsc-focus-answers');
+            layout.append(answers); questionRegion.append(layout);
+            answers.append(node('p', 'dashboard-eyebrow', [domain && domain.title, control && plainControlTitle(control.title)].filter(Boolean).join(' · ')));
             // A stable id lets a save that re-renders the page keep focus on the
             // question text instead of dropping it to the page heading.
             const legend = node('legend', '', plainQuestion(question));
@@ -1967,7 +1965,6 @@
                 const checks = node('ul');
                 question.smallBusiness.checks.forEach(function (text) { checks.append(node('li', '', text)); });
                 help.append(node('h3', '', 'What to check'), checks,
-                    node('p', 'dashboard-muted', 'Use these checks to choose one overall answer. If only some parts are in place, choose Partial. These are guidance, not separately saved or scored answers.'),
                     node('h3', '', 'Full framework question'), node('p', '', question.prompt));
             }
             // Narrow screens hide the definition under each choice; the same
@@ -1985,6 +1982,7 @@
             if (acknowledged.status === 'submitted') fieldset.append(node('p', 'dashboard-badge', 'Your answer: ' + (optionById.get(entry.value.optionId)?.label || 'Not answered')));
             if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', isV2(metadata)
                 ? 'Not sure? Choose I don\'t know. You can ask your IT provider later.' : 'Not sure? Unknown is fine. You can ask your IT provider later.'));
+            const tiles = node('div', 'ncsc-answer-tiles'); fieldset.append(tiles);
             const writable = canEdit();
             question.responseOptionIds.forEach(function (id) {
                 const option = optionById.get(id); const label = node('label', 'ncsc-option');
@@ -2004,9 +2002,9 @@
                     if (firstAnswer) funnelStep('first_answer');
                     const current = questionRegion.querySelector('[id="' + input.id + '"]'); if (current) current.focus();
                 });
-                fieldset.append(label);
+                tiles.append(label);
             });
-            questionRegion.append(fieldset);
+            answers.append(fieldset);
             const selectedOption = optionById.get(entry.value.optionId);
             if (selectedOption && !selectedOption.applicable) {
                 const label = node('label', '', 'Why this does not apply'); label.setAttribute('for', 'ncsc-rationale-' + question.id);
@@ -2027,15 +2025,15 @@
                     drafts.set(question.id, { value: { itemId: question.id, optionId: selectedOption.id, rationale: { text: rationale.value } }, generation: ++editGeneration });
                     showNeeded(); edited();
                 });
-                questionRegion.append(label, needed, rationale, help);
+                answers.append(label, needed, rationale, help);
             }
             if (writable) {
                 const clear = button('Clear answer', function () {
                     drafts.set(question.id, { value: { itemId: question.id, optionId: null, rationale: null }, generation: ++editGeneration }); renderQuestion(); edited();
                 }, 'dashboard-text-button');
-                clear.id = 'ncsc-clear-answer'; questionRegion.append(clear);
+                clear.id = 'ncsc-clear-answer'; answers.append(clear);
             }
-            questionRegion.append(help);
+            layout.append(help);
             const guidance = node('details', 'ncsc-guidance'); guidance.append(node('summary', '', 'Guidance and evidence examples'));
             if (inputGuidance) guidance.append(node('p', 'ncsc-input-example', 'Example: ' + inputGuidance.example));
             if (question.guidance) {
@@ -2060,7 +2058,7 @@
                 });
                 guidance.append(sources);
             }
-            questionRegion.append(guidance);
+            help.append(guidance);
             renderAssistance(question, writable);
             const nav = node('div', 'ncsc-question-navigation');
             const previous = button('Previous question', function () {
@@ -2069,7 +2067,6 @@
             const next = button('Next question', function () {
                 if (questionRegion.contains(next) && activeQuestion < questions.length - 1) { activeQuestion += 1; renderAssessmentQuestion(); }
             }); next.disabled = activeQuestion === questions.length - 1;
-            navigationSummary = node('span', 'ncsc-navigation-summary');
             const navigationActions = node('div', 'ncsc-navigation-actions'); navigationActions.append(previous, next);
             // On narrow screens the bar sticks to the bottom of the screen with
             // Previous and Next; the two jump buttons sit behind More. Wider
@@ -2097,7 +2094,7 @@
                 if (index !== -1) { activeQuestion = index; renderAssessmentQuestion(); }
             }, 'dashboard-text-button');
             nextUnresolved = unresolved; more.append(unresolved);
-            nav.append(navigationSummary, navigationActions); questionRegion.append(nav); updateQuestionNavigation();
+            nav.append(navigationActions); questionRegion.append(nav); updateQuestionNavigation();
             // A bar taller than a quarter of the screen (enlarged text, a short
             // landscape phone) would cover answers, so it stays in the page below
             // the choices instead of sticking (WCAG 1.4.4, 1.4.10).
@@ -2117,7 +2114,6 @@
                 if (watcher) watcher.disconnect();
                 if (win && typeof win.removeEventListener === 'function') win.removeEventListener('resize', fitNavigation);
             };
-            questionRegion.append(node('p', 'dashboard-muted', 'Still to confirm means a question has no answer yet, is answered Unknown, or is answered Not applicable. You can still submit with Unknown and Not applicable answers.'));
             applyInlineErrors();
             restoreFocus(questionRegion, focused, fieldset.querySelector('legend'));
         }
