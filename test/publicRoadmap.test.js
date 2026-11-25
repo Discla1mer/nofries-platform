@@ -86,7 +86,12 @@ test('paid work is Done without prices, copy limits and undated planned lanes ca
 test('roadmap links and inbound public fragments resolve without changing unlisted previews', () => {
     for (const match of html.matchAll(/href="([^"]+)"/g)) {
         const url = new URL(match[1], 'https://nofries.nz/roadmap.html');
-        expect(url.origin).toBe('https://nofries.nz');
+        // Primary sources for the figures and frameworks are the only external links.
+        if (url.origin !== 'https://nofries.nz') {
+            expect(['https://www.ncsc.govt.nz', 'https://www.nist.gov', 'https://www.iso.org', 'https://www.cisecurity.org']).toContain(url.origin);
+            expect(html).toContain(`href="${match[1]}" rel="noopener"`);
+            continue;
+        }
         const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         if (['login', 'try'].includes(file)) continue; // Existing routed entry points.
         expect(fs.existsSync(path.join(root, file))).toBe(true);
@@ -109,7 +114,7 @@ test('942ea19 examples and the activated items are Done in Oct–Dec 2026', () =
         expect(data.items.find(item => item.id === id)).toMatchObject({ period: 'Oct–Dec 2026', lane: 'Done',
             release: 'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099' });
     }
-    expect(data.lastUpdated).toBe('2026-11-25');
+    expect(data.lastUpdated).toBe('2026-11-26');
     expect(data.items.filter(item => item.lane === 'Done' && item.period !== 'Oct–Dec 2026')).toEqual([]);
 });
 
@@ -119,4 +124,16 @@ test('consultant landing and limited dashboard support references have release e
         expect(data.items.find(item => item.id === id)).toMatchObject({ lane: 'Done', prs: [pr], release });
     }
     expect(data.items.find(item => item.id === 'dashboard-support-reference').text).toMatch(/^Some temporary problems loading your dashboard/);
+});
+
+test('every item belongs to one line of work with a short map label', () => {
+    const { THEMES } = require('../scripts/generate-roadmap');
+    for (const item of data.items) {
+        expect(Object.keys(THEMES)).toContain(item.theme);
+        expect(item.short.length).toBeGreaterThan(0);
+        expect(item.short.length).toBeLessThanOrEqual(20);
+        expect(html).toMatch(new RegExp(`data-roadmap-item="${item.id}"[^>]* data-theme="${item.theme}" data-short="[^"]+">`));
+    }
+    expect(html).toContain('<script src="/js/roadmap.js" defer></script>');
+    expect(html).not.toMatch(/ style="/);
 });
