@@ -61,7 +61,7 @@ const { createEnquiryService, isHoneypotEnquiry } = require('./api/shared/enquir
 const { errorResult: enquiryErrorResult } = require('./api/enquiry');
 const { API_SECURITY_HEADERS, assertSameOriginForMutation, clearDefaultPragmaForImmutable } = require('./api/shared/securityHeaders');
 const { requestBodySize } = require('./api/shared/requestLimits');
-const { readCompletionStats, createFunnelCountReader, createFunnelCountWriter, createServerFunnelCounter, funnelCountsEnabled, handleFunnelCountRequest,
+const { createStaffFunnelReader, createFunnelCountWriter, createServerFunnelCounter, funnelCountsEnabled, handleFunnelCountRequest,
     isAssessmentSubmit } = require('./api/shared/funnelCounts');
 const { PATH: UNSUBSCRIBE_PATH, MAX_BODY_BYTES: UNSUBSCRIBE_BODY_BYTES, createUnsubscribeWriter, handleUnsubscribeRequest } = require('./api/shared/lifecycleEmail/unsubscribeEndpoint');
 const { PATH: EMAIL_SETTINGS_PAGE, LEGACY_PATH: EMAIL_SETTINGS_LEGACY, REWRITE_PATH: EMAIL_SETTINGS_REWRITE, MAX_BODY_BYTES: EMAIL_SETTINGS_BODY_BYTES, handleEmailSettingsRequest, legacyEmailSettingsRedirect } = require('./api/shared/lifecycleEmail/emailSettings');
@@ -244,14 +244,13 @@ function createNoFriesApp(configuration = {}) {
         }
     } catch (_) { throw new BrowserAuthError(503, 'browser_auth_dashboard_unavailable'); }
     const apiEnvironment = authEnvironment || process.env;
-    const dailyFunnelReader = funnelPool ? createFunnelCountReader({ pool: funnelPool }) : null;
     const dashboardAdmin = createDashboardAdminHandlers({ service: dashboardAdminService,
         accountActions: dashboardAdminAccountActions,
         signupListService: dashboardAdminSignupListService,
         accountLookupReader: dashboardAdminAccountLookup,
         readOperatorSession: dashboard ? cookie => dashboard.authServices.session.readSessionDetails(cookie) : null,
         // #151 F5: aggregate counts only; the handler adds the route only with the flag on.
-        funnelReader: dailyFunnelReader ? async () => ({ ...await dailyFunnelReader(), completion: await readCompletionStats(funnelPool) }) : null,
+        funnelReader: funnelPool ? createStaffFunnelReader({ pool: funnelPool }) : null,
         env: apiEnvironment, requestBudgetMs: dashboardAdminRequestBudgetMs });
 
 const app = express();

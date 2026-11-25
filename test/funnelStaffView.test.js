@@ -10,7 +10,7 @@ const { createDashboardAdminHandlers } = require('../api/shared/dashboardAdmin/h
 const { DashboardAdminError } = require('../api/shared/dashboardAdmin/service');
 const { readBrowserSessionDetails } = require('../api/shared/browserAuth');
 const { MemoryBrowserSessionStore } = require('../api/shared/browserSessionStore');
-const { FUNNEL_EVENTS, READ_SQL, createFunnelCountReader, funnelWindow, projectFunnelView } = require('../api/shared/funnelCounts');
+const { FUNNEL_EVENTS, READ_SQL, createStaffFunnelReader, createFunnelCountReader, funnelWindow, projectFunnelView } = require('../api/shared/funnelCounts');
 const { buildDashboardAdminDocument } = require('../lib/dashboardAdminDocument');
 
 const uid = n => '71000000-0000-4000-8000-' + String(n).padStart(12, '0');
@@ -109,6 +109,30 @@ describe('staff funnel route', () => {
         expect(h.service.authorise).toHaveBeenCalledTimes(2);
         expect((await h.handler.handle(wire('capabilities'), 'capabilities')).body).toEqual({ lookup: true, recovery: [], funnel: true });
     });
+
+    test.each(['22023', '42501', '57014', '22007', '22008', 'acquire'])(
+        'optional timing failure %s preserves the authenticated daily counts', async reason => {
+            const daily = { query: async sql => sql === READ_SQL ? { rows: [{ day: '2026-11-13', event: 'visit', count: '17' }] } : {},
+                release: jest.fn() };
+            const timing = { query: jest.fn(async sql => {
+                const failsAtRole = ['22023', '42501'].includes(reason);
+                if (failsAtRole ? sql.startsWith('SET LOCAL ROLE') : sql.startsWith('WITH saves')) {
+                    throw Object.assign(new Error('synthetic timing failure'), { code: reason });
+                }
+            }), release: jest.fn() };
+            const connect = jest.fn().mockResolvedValueOnce(daily);
+            if (reason === 'acquire') connect.mockRejectedValueOnce(new Error('pool unavailable'));
+            else connect.mockResolvedValueOnce(timing);
+            const h = await harness({ reader: createStaffFunnelReader({ pool: { connect }, now: () => new Date(NOW) }) });
+            const response = await h.handler.handle(wire('funnel'), 'funnel');
+            expect(response.status).toBe(200);
+            expect(response.body.completion).toBeNull();
+            expect(response.body.days.at(-1).counts.visit).toBe(17);
+            if (reason !== 'acquire') {
+                expect(timing.query).toHaveBeenCalledWith('ROLLBACK');
+                expect(timing.release).toHaveBeenCalledWith(false);
+            }
+        });
 
     test.each([['off', null], ['not exactly true', 'TRUE']])('flag %s: no route, no capability, no panel and no script', async (_name, flag) => {
         const h = await harness({ flag });

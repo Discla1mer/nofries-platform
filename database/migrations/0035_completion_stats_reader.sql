@@ -1,4 +1,18 @@
--- Read capability only. Runtime SET membership is a separate owner operation.
+-- #584: the staff funnel reads completion times from the existing free-check
+-- revisions. The purpose role can only read eligible rows. SET-only login
+-- membership (WITH SET TRUE, INHERIT FALSE) is a separate owner operation.
+-- The payload column contains answers as well as timestamps: the row policy
+-- below limits eligible revisions but cannot mask JSON keys within each row.
+--
+-- Rollback: first revoke any runtime login membership to disable the panel's
+-- timing query. Existing daily counts continue. In the target database:
+--   DROP POLICY completion_stats_select ON nofries.dashboard_ncsc_assessment_revisions;
+--   REVOKE SELECT (tenant_id, organisation_id, assessment_id, revision, payload)
+--     ON nofries.dashboard_ncsc_assessment_revisions FROM nofries_completion_stats_reader;
+--   REVOKE USAGE ON SCHEMA nofries FROM nofries_completion_stats_reader;
+-- Drop the cluster role only after confirming it has no remaining dependencies
+-- or memberships in other databases. Reconcile only 0035's schema_migrations
+-- row after a full rollback and before reapplying. No assessment rows change.
 DO $precheck$
 BEGIN
     IF to_regclass('nofries.dashboard_ncsc_assessment_revisions') IS NULL THEN
@@ -42,7 +56,12 @@ END
 $capability_baseline$;
 
 GRANT USAGE ON SCHEMA nofries TO nofries_completion_stats_reader;
+REVOKE ALL ON nofries.dashboard_ncsc_assessment_revisions FROM nofries_completion_stats_reader;
 GRANT SELECT (tenant_id, organisation_id, assessment_id, revision, payload)
     ON nofries.dashboard_ncsc_assessment_revisions TO nofries_completion_stats_reader;
 CREATE POLICY completion_stats_select ON nofries.dashboard_ncsc_assessment_revisions
-    FOR SELECT TO nofries_completion_stats_reader USING (true);
+    FOR SELECT TO nofries_completion_stats_reader USING (
+        (payload#>>'{state,createdAt}')::timestamptz BETWEEN now() - interval '90 days' AND now()
+        AND ((payload#>>'{state,submission,revision}') IS NULL
+            OR revision <= (payload#>>'{state,submission,revision}')::integer)
+    );

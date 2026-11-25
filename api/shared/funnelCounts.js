@@ -260,7 +260,7 @@ SELECT CASE WHEN count(*) >= 10 THEN count(*)::integer END AS count,
     CASE WHEN count(*) >= 10 THEN percentile_cont(0.8) WITHIN GROUP (ORDER BY active) END AS "activeP80"
 FROM checks`;
 
-async function readCompletionStats(pool) {
+async function queryCompletionStats(pool) {
     const client = await acquireClient(pool, ACQUIRE_TIMEOUT_MS);
     let discard = false;
     try {
@@ -272,9 +272,19 @@ async function readCompletionStats(pool) {
         return rows[0];
     } catch (error) {
         try { await client.query('ROLLBACK'); } catch (_) { discard = true; }
-        if (error.code === '42501' || error.code === '42704') return null;
         throw error;
     } finally { client.release(discard); }
+}
+
+// Timing is optional: a missing role, bad timestamp, timeout or pool failure
+// must not discard the daily counts that the staff route has already read.
+function readCompletionStats(pool) {
+    return queryCompletionStats(pool).catch(() => null);
+}
+
+function createStaffFunnelReader(options) {
+    const readDaily = createFunnelCountReader(options);
+    return async () => ({ ...await readDaily(), completion: await readCompletionStats(options.pool) });
 }
 
 // Read-only, under the runtime role, with the same short timeouts as writes.
@@ -371,6 +381,7 @@ module.exports = {
     FUNNEL_VIEW_DAYS,
     READ_SQL,
     createFunnelCountReader,
+    createStaffFunnelReader,
     readCompletionStats,
     funnelWindow,
     projectFunnelView,

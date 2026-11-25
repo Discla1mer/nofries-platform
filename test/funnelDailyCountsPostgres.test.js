@@ -124,6 +124,17 @@ test('native discovery accepts only explicit loopback test URLs', () => {
             await seed('unfinished', 1, 2, false);
             for (let i = 0; i < 9; i++) await seed('assessment-' + i, 1, i < 5 ? 2 : 20);
             expect(await readCompletionStats(runtimePool)).toEqual({ count: null, elapsedMedian: null, elapsedP80: null, activeMedian: null, activeP80: null });
+            const client = await runtimePool.connect();
+            try {
+                await client.query('BEGIN READ ONLY');
+                await client.query('SET LOCAL ROLE nofries_completion_stats_reader');
+                const visible = await client.query(`SELECT assessment_id, revision FROM nofries.dashboard_ncsc_assessment_revisions`);
+                expect(visible.rows.some(row => row.assessment_id === 'old' || row.revision === 2)).toBe(false);
+                expect(visible.rows).toHaveLength(19);
+            } finally {
+                await client.query('ROLLBACK');
+                client.release();
+            }
             await seed('tenth', 89, 20);
             expect(await readCompletionStats(runtimePool)).toEqual({ count: 10, elapsedMedian: 11, elapsedP80: 20, activeMedian: 3.5, activeP80: 5 });
         } finally { await controlPool.query(`REVOKE nofries_completion_stats_reader FROM ${quoteIdentifier(role)}`); }
