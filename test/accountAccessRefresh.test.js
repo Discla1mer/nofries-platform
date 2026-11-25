@@ -81,6 +81,8 @@ function harness(options = {}) {
         const toggle = document.createElement('button'); toggle.id = 'dashboardAccountToggle'; toggle.type = 'button';
         toggle.textContent = 'Account'; toggle.setAttribute('aria-expanded', 'false');
         const actions = document.createElement('div'); actions.id = 'dashboardAccountActions'; actions.hidden = true;
+        const settings = document.createElement('a'); settings.id = 'dashboardSettings'; settings.hidden = true;
+        settings.setAttribute('href', '#settings'); actions.append(settings);
         if (options.emailSettings) {
             const email = document.createElement('a'); email.id = 'dashboardEmailSettings'; email.hidden = true;
             email.setAttribute('href', '/account/email'); actions.append(email);
@@ -328,6 +330,25 @@ test('a control character in the signed-in name fails closed', async () => {
     expect(h.document.getElementById('dashboardAccountIdentity')).toBeNull();
 });
 
+test('Settings requires a ready customer workspace and clears its profile when the session expires', async () => {
+    const h = harness({ hash: '#settings', accountMenu: true }); await flush();
+    const link = h.document.getElementById('dashboardSettings');
+    expect(link.hidden).toBe(true);
+    await h.open(state(A, GA, { purpose: 'customer', accountName: 'Alex Example' }));
+    expect(link.hidden).toBe(false);
+    expect(h.elements.dashboardApp.querySelector('h1').textContent).toBe('Settings');
+    expect(h.elements.dashboardApp.textContent).toContain('Alex Example');
+    h.window.dispatch('focus'); await flush();
+    await h.reply(4, 401, { code: 'dashboard_authentication_required' });
+    expect(link.hidden).toBe(true);
+    expect(h.elements.dashboardApp.textContent).not.toContain('Alex Example');
+
+    const staff = harness({ hash: '#settings', accountMenu: true }); await flush();
+    await staff.open(state());
+    expect(staff.document.getElementById('dashboardSettings').hidden).toBe(true);
+    expect(staff.elements.dashboardApp.querySelector('h1').textContent).not.toBe('Settings');
+});
+
 test('Account offers Email settings to signed-in customers only and hides it when access expires', async () => {
     const h = harness({ hash: '#overview', accountMenu: true, emailSettings: true }); await flush();
     await h.open(state(A, GA, { purpose: 'customer', accountType: 'company' }));
@@ -351,7 +372,7 @@ test('native Account actions retain guarded consultant return and disappear afte
     const back = h.document.getElementById('consultantPortfolioControls');
     expect(menu.hidden).toBe(false); expect(back.parentElement).toBe(actions);
     expect(h.elements.dashboardSignOut.parentElement).toBe(actions);
-    expect(actions.children).toEqual([back, h.elements.dashboardSignOut]);
+    expect(actions.children).toEqual([back, h.document.getElementById('dashboardSettings'), h.elements.dashboardSignOut]);
     expect(h.document.body.dataset.dashboardAccountType).toBe('consultant');
     h.document.getElementById('dashboardAccountToggle').click();
     expect(actions.hidden).toBe(false);

@@ -151,6 +151,11 @@
         let model;
         try { model = validate(input); } catch (error) { return showState(root, 'denied'); }
         const permitted = model.modules.map(function (item) { return item.key; });
+        const settingsRoute = { key: 'settings', route: 'settings', label: 'Settings' };
+        function resolveRoute(route) {
+            if (options.settingsAccount && (route === 'settings' || route === '#settings')) return settingsRoute;
+            return registry.resolveRoute(route, permitted);
+        }
         const available = registry.modules.filter(function (item) { return permitted.includes(item.key); });
         // Presentation priority only: destinations still come from the current
         // server-filtered registry, and readiness comes from its display state.
@@ -324,7 +329,7 @@
                 typeof token.entry !== 'string' || !/^[1-9][0-9]{0,8}$/.test(token.entry)) return null;
             let entry = historyEntries.get(token.entry);
             if (!entry && Number.isInteger(token.position) && token.position >= 0 && token.position <= 1000000 &&
-                registry.resolveRoute(token.route, permitted) && win.location.hash === '#' + token.route) {
+                resolveRoute(token.route) && win.location.hash === '#' + token.route) {
                 const pointer = win.history.state.nofriesCyber;
                 entry = { id: token.entry, route: token.route, position: token.position, hash: win.location.hash,
                     location: token.route === 'cyber-security' && pointer && pointer.organisationId === model.context.organisationId &&
@@ -362,7 +367,7 @@
         }
         function commitNavigation(route, changeLocation, focus, initialAssessmentId, sourceAssessment, historyTarget) {
             if (!active()) return;
-            const requested = registry.resolveRoute(route, permitted);
+            const requested = resolveRoute(route);
             const target = requested || first;
             if (child && current.key === target.key && !historyTarget) {
                 if (focus) main.querySelector('h1').focus();
@@ -381,7 +386,7 @@
         }
         function navigate(route, changeLocation, historyTarget, initialAssessmentId, sourceAssessment) {
             if (!active()) return Promise.resolve(false);
-            const requested = registry.resolveRoute(route, permitted) || first;
+            const requested = resolveRoute(route) || first;
             if (navigation) return navigation.promise;
             if (!child && !historyTarget || child && current.key === requested.key && !historyTarget) {
                 commitNavigation(route, changeLocation, changeLocation, initialAssessmentId, sourceAssessment); return Promise.resolve(true);
@@ -430,6 +435,11 @@
             const head = element('header', 'dashboard-page-heading');
             const title = element('h1', '', current.label); title.tabIndex = -1;
             head.append(element('p', 'dashboard-eyebrow', 'Your organisation / ' + current.label), title);
+            if (current === settingsRoute) {
+                main.append(head);
+                renderSettings();
+                return;
+            }
             // Navigation already labels a planned module "Coming next". Do not repeat it in the page badge.
             if (stateFor(current.key) !== 'planned') head.append(badge(moduleStates[stateFor(current.key)]));
             main.append(head);
@@ -471,6 +481,23 @@
         function informationRead(value) {
             if (disposed || !canonicalInstant(value) || Date.parse(value) <= Date.parse(informationAt)) return;
             informationAt = value; showInformationTime();
+        }
+        function renderSettings() {
+            const account = panel('Your account');
+            const { name, label } = options.settingsAccount;
+            if (name) account.append(element('p', '', name));
+            if (label && label !== name) account.append(element('p', '', label));
+            if (!name && !label) account.append(element('p', '', 'You are signed in.'));
+            if (model.currentUser.jobTitle) account.append(element('p', '', model.currentUser.jobTitle));
+            const notifications = panel('Notifications');
+            const preferences = element('a', '', 'Manage lifecycle email preferences');
+            preferences.href = '/account/email';
+            notifications.append(preferences);
+            const privacy = panel('Data and privacy');
+            const requests = element('a', '', 'Request a data export or deletion');
+            requests.href = '/privacy.html#requests';
+            privacy.append(requests);
+            main.append(account, notifications, privacy, panel('Organisation profile', model.context.displayName));
         }
         function renderOverview() {
             if (options.demoGuide === true) {
@@ -905,7 +932,7 @@
             if (!managedHistory) { navigate(win.location.hash, false); main.querySelector('h1').focus(); return; }
             let entry = readEntry();
             if (!entry && eventType === 'hashchange' && observedEntry) {
-                const target = registry.resolveRoute(win.location.hash, permitted) || first;
+                const target = resolveRoute(win.location.hash) || first;
                 entry = makeEntry(target.route, observedEntry.position + 1, win.location.hash);
                 win.history.replaceState(stateWith(entry), '', win.location.hash);
             }
