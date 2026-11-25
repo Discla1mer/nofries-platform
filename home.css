@@ -1596,10 +1596,12 @@ body[data-page="product-roadmap"] .public-roadmap .roadmap-counts a:not(.button)
 @media (max-width: 900px) {
     .roadmap-list.is-compact .roadmap-lane article { display: inline-flex; margin: 0 6px 8px 0; padding: 0; border: 0; }
     .roadmap-list.is-compact .roadmap-lane article > :not(h3) { display: none; }
-    .roadmap-list.is-compact .roadmap-lane article h3 { margin: 0; padding: 8px 12px; min-height: 44px; display: flex; align-items: center; border: 1px solid var(--line); border-left: 5px solid var(--rm-c); border-radius: 10px; background: var(--paper, #f6f2ea); font: 500 .9rem/1.3 var(--font-sans); cursor: pointer; }
+    .roadmap-list.is-compact .roadmap-lane article h3 { margin: 0; font: inherit; }
+    .roadmap-item-button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-left: 5px solid var(--rm-c); border-radius: 10px; background: var(--paper, #f6f2ea); color: var(--ink); font: 500 .9rem/1.3 var(--font-sans); text-align: left; cursor: pointer; }
+    .roadmap-item-button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     .roadmap-list.is-compact .roadmap-lane article[data-theme="check"] { --rm-c: var(--rm-check); }
     .roadmap-list.is-compact .roadmap-lane article[data-theme="fix"] { --rm-c: var(--rm-fix); }
     .roadmap-list.is-compact .roadmap-lane article[data-theme="prove"] { --rm-c: var(--rm-prove); }
     .roadmap-list.is-compact .roadmap-lane article[data-theme="run"] { --rm-c: var(--rm-run); }
-    .roadmap-list.is-compact .roadmap-lane article.is-selected h3 { box-shadow: inset 0 0 0 2px var(--ink); font-weight: 700; }
+    .roadmap-item-button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); font-weight: 700; }
 }

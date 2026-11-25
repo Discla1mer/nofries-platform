@@ -28,21 +28,27 @@
         map.append(svg, tip);
         map.hidden = false; themes.hidden = false; detail.hidden = false; detail.tabIndex = -1;
         const wide = window.matchMedia('(min-width: 901px)');
-        const syncList = () => { list.open = !wide.matches; };
-        // On narrow screens the list is the map: titles only, select one to read it in the panel.
-        list.classList.add('is-compact');
-        for (const item of items) {
-            const heading = item.article.querySelector('h3');
-            heading.tabIndex = 0; heading.setAttribute('role', 'button');
+        // On narrow screens the list is the map: titles only, each a real button inside its heading.
+        // Wide screens keep plain headings, so the list stays a normal accessible fallback.
+        function setCompact(compact) {
+            list.classList.toggle('is-compact', compact);
+            for (const item of items) {
+                const heading = item.article.querySelector('h3');
+                const button = heading.querySelector('button');
+                if (compact && !button) {
+                    const control = document.createElement('button');
+                    control.type = 'button'; control.className = 'roadmap-item-button'; control.textContent = item.title;
+                    control.setAttribute('aria-pressed', String(item === selected));
+                    heading.replaceChildren(control);
+                } else if (!compact && button) heading.textContent = item.title;
+            }
         }
+        const syncList = () => { list.open = !wide.matches; setCompact(!wide.matches); };
         list.addEventListener('click', event => {
-            const article = event.target.closest('article[data-theme]');
-            if (!article || wide.matches || event.target.closest('a')) return;
-            choose(article.dataset.roadmapItem, false); detail.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        });
-        list.addEventListener('keydown', event => {
-            const article = event.target.closest('article[data-theme]');
-            if (article && !wide.matches && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); choose(article.dataset.roadmapItem, false); detail.focus({ preventScroll: false }); }
+            const control = event.target.closest('.roadmap-item-button');
+            if (!control) return;
+            choose(control.closest('article').dataset.roadmapItem, false);
+            detail.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         });
         syncList(); wide.addEventListener('change', syncList);
 
@@ -130,7 +136,11 @@
 
         function choose(id, refocus) {
             selected = items.find(item => item.id === id) || selected;
-            for (const each of items) each.article.classList.toggle('is-selected', each === selected);
+            for (const each of items) {
+                each.article.classList.toggle('is-selected', each === selected);
+                const control = each.article.querySelector('.roadmap-item-button');
+                if (control) control.setAttribute('aria-pressed', String(each === selected));
+            }
             showDetail(); draw();
             if (refocus) { const again = svg.querySelector(`[data-id="${id}"]`); if (again) again.focus(); }
         }
