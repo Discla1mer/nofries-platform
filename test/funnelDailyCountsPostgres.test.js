@@ -80,6 +80,55 @@ test('native discovery accepts only explicit loopback test URLs', () => {
         }
     });
 
+    test('completion reader suppresses small cohorts and measures only saves through submission in the 90-day window', async () => {
+        const { readCompletionStats } = require('../api/shared/funnelCounts');
+        const capability = 'nofries_completion_stats_reader';
+        expect(await readCompletionStats(runtimePool)).toBeNull();
+        const rights = await ownerPool.query(`SELECT rolcanlogin, rolinherit, rolbypassrls, rolsuper
+            FROM pg_roles WHERE rolname=$1`, [capability]);
+        expect(rights.rows).toEqual([{ rolcanlogin: false, rolinherit: false, rolbypassrls: false, rolsuper: false }]);
+        const grants = await ownerPool.query(`SELECT c.relname,
+            has_any_column_privilege($1,c.oid,'SELECT') AS read,
+            has_any_column_privilege($1,c.oid,'UPDATE,INSERT') OR has_table_privilege($1,c.oid,'DELETE,TRUNCATE') AS write
+            FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname='nofries' AND c.relkind IN ('r','p','v','m','f')`, [capability]);
+        expect(grants.rows.filter(row => row.read || row.write)).toEqual([
+            { relname: 'dashboard_ncsc_assessment_revisions', read: true, write: false }]);
+        const tenantId = crypto.randomUUID(), organisationId = crypto.randomUUID();
+        await ownerPool.query('INSERT INTO nofries.dashboard_tenants VALUES ($1,1,0,$2)', [tenantId,
+            { schemaVersion: 1, tenantId, displayName: 'Synthetic tenant', recordStatus: 'active', revision: 0 }]);
+        await ownerPool.query('INSERT INTO nofries.dashboard_organisations (tenant_id,organisation_id,schema_version,revision,payload) VALUES ($1,$2,1,0,$3)',
+            [tenantId, organisationId, { schemaVersion: 1, tenantId, organisationId, displayName: 'Synthetic organisation', domains: [],
+                recordStatus: 'active', revision: 0 }]);
+        async function seed(id, ageDays, minutes, submitted = true) {
+            const start = Date.now() - ageDays * 86400000;
+            const stamp = offset => new Date(start + offset * 60000).toISOString();
+            let parent = null;
+            for (const revision of submitted ? [0, 1, 2] : [0]) {
+                const identity = { tenantId, organisationId, assessmentId: id, revision };
+                const state = { ...identity, createdAt: stamp(0), updatedAt: stamp([0, minutes, minutes + 30][revision]),
+                    submission: revision ? { submittedAt: stamp(minutes), revision: 1 } : null };
+                const payload = { ...identity, schemaVersion: 1, state, scopePopulation: null, rationales: [], evidence: [], risk: null,
+                    submission: state.submission };
+                const digest = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+                await ownerPool.query(`INSERT INTO nofries.dashboard_ncsc_assessment_revisions
+                    (tenant_id,organisation_id,assessment_id,revision,schema_version,payload_sha256,parent_revision,parent_sha256,payload)
+                    VALUES ($1,$2,$3,$4,1,$5,$6,$7,$8)`,
+                [tenantId, organisationId, id, revision, digest, revision ? revision - 1 : null, parent, payload]);
+                parent = digest;
+            }
+        }
+        await controlPool.query(`GRANT nofries_completion_stats_reader TO ${quoteIdentifier(role)} WITH SET TRUE, INHERIT FALSE`);
+        try {
+            await seed('old', 91, 2);
+            await seed('unfinished', 1, 2, false);
+            for (let i = 0; i < 9; i++) await seed('assessment-' + i, 1, i < 5 ? 2 : 20);
+            expect(await readCompletionStats(runtimePool)).toEqual({ count: null, elapsedMedian: null, elapsedP80: null, activeMedian: null, activeP80: null });
+            await seed('tenth', 89, 20);
+            expect(await readCompletionStats(runtimePool)).toEqual({ count: 10, elapsedMedian: 11, elapsedP80: 20, activeMedian: 3.5, activeP80: 5 });
+        } finally { await controlPool.query(`REVOKE nofries_completion_stats_reader FROM ${quoteIdentifier(role)}`); }
+    });
+
     test('table forces RLS, has only aggregate columns, and runtime has no DELETE or TRUNCATE', async () => {
         const rel = (await ownerPool.query("SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid='nofries.funnel_daily_counts'::regclass")).rows[0];
         expect(rel).toEqual({ relrowsecurity: true, relforcerowsecurity: true });

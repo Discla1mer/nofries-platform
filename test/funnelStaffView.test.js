@@ -191,6 +191,19 @@ describe('staff funnel table', () => {
         expect(ids.funnelStatus.textContent).toBe('Funnel counts loaded for 2026-10-15 to 2026-11-13.');
     });
 
+    test.each([
+        [null, 'not available yet'],
+        [{ count: null }, 'Not enough completed checks yet'],
+        [{ count: 10, elapsedMedian: 11, elapsedP80: 20, activeMedian: 3.5, activeP80: 5 }, 'Active time — median 3.5 min, 80th percentile 5 min']
+    ])('staff can load the completion panel with the existing funnel control', async (completion, expected) => {
+        const view = { ...projectFunnelView([], funnelWindow(new Date())), completion };
+        const { ids } = mount({ capabilities: [200, { funnel: true }], funnel: [200, view] });
+        await flush();
+        await ids.funnelLoad.listeners.click();
+        expect(text(ids.funnelResult)).toContain('Free check completion time');
+        expect(text(ids.funnelResult)).toContain(expected);
+    });
+
     test('stays hidden without the capability, and a malformed view shows an error, not a table', async () => {
         expect(mount({ capabilities: [200, { lookup: true, recovery: [] }] }).ids.funnelPanel.hidden).toBe(true);
         const { ids } = mount({ capabilities: [200, { funnel: true }], funnel: [200, { days: [] }] });

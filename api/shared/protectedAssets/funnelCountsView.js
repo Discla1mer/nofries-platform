@@ -54,7 +54,19 @@
         for (const event of EVENTS) totalRow.append(node('td', String(totals[event])));
         foot.append(totalRow);
         table.append(head, rows, foot);
-        result.replaceChildren(table); result.hidden = false;
+        const completion = body.completion;
+        const summary = node('section');
+        summary.append(node('h3', 'Free check completion time'));
+        if (!completion) summary.append(node('p', 'Completion time is not available yet.'));
+        else if (completion.count === null) summary.append(node('p', 'Not enough completed checks yet.'));
+        else {
+            const minutes = value => Number(value.toFixed(1)) + ' min';
+            summary.append(node('p', completion.count + ' completed checks started in the last 90 days.'),
+                node('p', 'Elapsed time — median ' + minutes(completion.elapsedMedian) + ', 80th percentile ' + minutes(completion.elapsedP80) + '.'),
+                node('p', 'Active time — median ' + minutes(completion.activeMedian) + ', 80th percentile ' + minutes(completion.activeP80) +
+                    '. Each gap between saves counts for up to five minutes.'));
+        }
+        result.replaceChildren(table, summary); result.hidden = false;
         status.textContent = 'Funnel counts loaded for ' + body.from + ' to ' + body.to + '.';
     }
     async function access() {
