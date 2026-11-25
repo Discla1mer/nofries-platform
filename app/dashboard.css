@@ -667,3 +667,14 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
     .ncsc-function-steps [aria-current="step"] { flex: 5; font-size: 1rem; }
 }
 @media (max-height: 28rem) { .ncsc-focus-header { position: static; } }
+/* Chart kit (#604): gauge and answer mix on the Overview result cards. */
+.nf-chart { display: block; max-width: 100%; height: auto; }
+.nf-chart-gauge { width: min(100%, 16rem); margin: .25rem auto .5rem; }
+.picture-answer-mix { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin: .25rem 0 .75rem; }
+.nf-chart-donut { width: 8.5rem; flex: 0 0 8.5rem; }
+.picture-answer-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.picture-answer-legend li { display: flex; align-items: center; gap: .5rem; }
+.picture-answer-legend li::before { content: ""; width: .8rem; height: .8rem; border-radius: .2rem; background: #b9ae9b; }
+.picture-answer-legend .picture-answer-solid::before { background: #65470d; }
+.picture-answer-legend .picture-answer-partial::before { background: #dbb157; }
+.picture-answer-legend .picture-answer-no::before { background: #8a2b21; }
