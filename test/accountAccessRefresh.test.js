@@ -82,7 +82,7 @@ function harness(options = {}) {
         toggle.textContent = 'Account'; toggle.setAttribute('aria-expanded', 'false');
         const actions = document.createElement('div'); actions.id = 'dashboardAccountActions'; actions.hidden = true;
         const settings = document.createElement('a'); settings.id = 'dashboardSettings'; settings.hidden = true;
-        settings.setAttribute('href', '#settings'); actions.append(settings);
+        settings.setAttribute('href', '/dashboard#settings'); actions.append(settings);
         if (options.emailSettings) {
             const email = document.createElement('a'); email.id = 'dashboardEmailSettings'; email.hidden = true;
             email.setAttribute('href', '/account/email'); actions.append(email);
