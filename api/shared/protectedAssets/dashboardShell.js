@@ -791,6 +791,12 @@
                 childRoot.append(element('p', '', 'The Improvement Plan could not load. Reopen it through your authenticated dashboard.'));
             }
         }
+        function emptyIllustration(file) {
+            const image = element('img', 'dashboard-empty-illustration');
+            image.src = '/images/illustrations/' + file;
+            image.alt = '';
+            return image;
+        }
         function renderModule(baselineToken) {
             const plan = current.key === 'improvement_plan';
             if (plan && options.demoGuide === true) {
@@ -808,6 +814,7 @@
             const home = available.find(function (item) { return item.key === 'overview'; });
             if (!plan) {
                 const section = panel('This workspace is not open yet.', 'For now, use the parts of the dashboard that are available.');
+                if (current.key === 'evidence') section.prepend(emptyIllustration('evidence-empty.webp'));
                 if (cyber) section.append(button('Review saved assessment', function () { navigate(cyber.route, true); }));
                 if (home) section.append(button('Return to Overview', function () { navigate(home.route, true); }));
                 main.append(section);
@@ -835,10 +842,12 @@
                         copy.textContent = 'We could not check every saved assessment from here. Open Cyber Security to see a submitted result or continue a draft.';
                         section.append(button('Open Cyber Security', function () { navigate(cyber.route, true); }));
                     } else if (baseline && baseline.draftId) {
+                        section.prepend(emptyIllustration('plan-empty.webp'));
                         title.textContent = 'Your improvement plan appears after you submit your first assessment';
                         copy.textContent = 'You have a draft assessment. Submit it to create your baseline. This page does not list gaps yet.';
                         section.append(button('Continue your draft', function () { navigate(cyber.route, true, undefined, baseline.draftId); }));
                     } else {
+                        section.prepend(emptyIllustration('plan-empty.webp'));
                         copy.textContent = 'There is no submitted assessment yet. Start one in Cyber Security, then come back here after you submit it.';
                         section.append(button('Open assessment', function () { navigate(cyber.route, true); }));
                     }
@@ -851,6 +860,7 @@
                     homeButton();
                 });
             } else {
+                section.prepend(emptyIllustration('plan-empty.webp'));
                 if (cyber) section.append(button('Open assessment', function () { navigate(cyber.route, true); }));
                 homeButton();
             }

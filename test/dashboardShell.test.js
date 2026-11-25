@@ -510,6 +510,18 @@ test('the public demo starts with the assessment and explains the plan instead o
     dom.controller.destroy();
 });
 
+test('Evidence alone illustrates its workspace placeholder', async () => {
+    const dom = mount();
+    await dom.controller.navigate('evidence');
+    const image = dom.root.querySelector('img');
+    assert.equal(image.src, '/images/illustrations/evidence-empty.webp');
+    assert.equal(image.alt, '');
+    assert.equal(image.parentElement.children[0], image);
+    await dom.controller.navigate('board-reports');
+    assert.equal(dom.root.querySelector('img'), null);
+    dom.controller.destroy();
+});
+
 test('planned improvement plan distinguishes a draft from a submitted baseline', async () => {
     const model = readyCyber();
     model.modules.find(item => item.key === 'improvement_plan').state = 'planned';
@@ -524,6 +536,7 @@ test('planned improvement plan distinguishes a draft from a submitted baseline',
     await dom.controller.navigate('improvement-plan');
     for (let step = 0; step < 5; step += 1) await Promise.resolve();
     assert.match(dom.root.textContent, /appears after you submit your first assessment/);
+    assert.equal(dom.root.querySelector('img').src, '/images/illustrations/plan-empty.webp');
     assert.match(dom.root.textContent, /You have a draft assessment/);
     const resume = [...buttons(dom)].find(item => item.textContent === 'Continue your draft');
     assert.ok(resume);

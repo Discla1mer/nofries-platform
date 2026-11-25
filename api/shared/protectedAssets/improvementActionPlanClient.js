@@ -267,6 +267,7 @@
             const item = node('button', label); item.type = 'button'; item.className = 'dashboard-button'; item.disabled = !!disabled;
             item.addEventListener('click', function () { if (active() && !item.disabled) action(); }); return item;
         }
+        const emptyListMessage = 'No saved improvement plans are available for this organisation.';
         const toolbar = node('section'), status = node('p'), picker = node('select');
         toolbar.className = 'picture-toolbar'; toolbar.setAttribute('aria-label', 'Improvement plan controls');
         status.setAttribute('role', 'status'); picker.setAttribute('aria-label', 'Saved improvement plans');
@@ -449,6 +450,7 @@
         function render() {
             if (!alive || mounted.get(root) !== controller) return;
             status.textContent = message;
+            if (message === emptyListMessage && !initialSource && !target) status.prepend(planIllustration());
             if (busy && !focusAfterRead) {
                 if (inControls(doc.activeElement)) focusAfterRead = doc.activeElement;
             }
@@ -531,7 +533,7 @@
                 if (result.status !== 200) { unavailable(result.status, false, result.value); return false; }
                 const value = page(result.value, after); scope = value.scope; rows = value.plans; next = value.nextAfterPlanId; pageAsOf = value.asOf;
                 accepted();
-                message = rows.length ? 'Choose a saved plan or refresh the selected plan.' : 'No saved improvement plans are available for this organisation.';
+                message = rows.length ? 'Choose a saved plan or refresh the selected plan.' : emptyListMessage;
                 if (!more) clearView();
                 if (!more && !rows.length && !target && readLatest) {
                     latest = null; message = 'Looking for your latest submitted assessment…'; render();
@@ -547,10 +549,17 @@
             } catch (_) { if (active() && token === serial) unavailable(null, false); return false; }
             finally { if (alive && token === serial) { busy = false; render(); } }
         }
+        function planIllustration() {
+            const image = node('img');
+            image.className = 'dashboard-empty-illustration';
+            image.src = '/images/illustrations/plan-empty.webp';
+            image.alt = '';
+            return image;
+        }
         function renderEmpty() {
             clearView();
             const panel = node('section'); panel.className = 'dashboard-panel'; panel.setAttribute('aria-label', 'No improvement plan yet');
-            panel.append(node('h2', 'No improvement plan yet'));
+            panel.append(planIllustration(), node('h2', 'No improvement plan yet'));
             if (latest) {
                 panel.append(node('p', 'Create a plan from your latest submitted assessment (submitted ' + nzDateTime(latest.submittedAt) + '). ' +
                     'It lists the gaps to fix and the answers to check, so you can give each one an owner and a due date.'),

@@ -164,7 +164,7 @@ function harness(options = {}) {
             if (options.improvement) window.NoFriesImprovementActionPlanClient = { mount: (root, input) => {
                 const controller = require('../api/shared/protectedAssets/improvementActionPlanClient').mount(root, { ...input,
                     request: async (path, body) => { const result = await input.request(path, body);
-                        return { status: result.status, value: JSON.parse(JSON.stringify(result.value)) }; },
+                        return JSON.parse(JSON.stringify(result)); },
                     ...(input.sourceAssessment ? { sourceAssessment: JSON.parse(JSON.stringify(input.sourceAssessment)) } : {}),
                     ...(input.initialTarget ? { initialTarget: JSON.parse(JSON.stringify(input.initialTarget)) } : {}) });
                 improvementMounts.push({ root, input, controller }); return controller;
@@ -232,6 +232,7 @@ describe('mounted retained Improvement Plan', () => {
         expect(await h.improvementMounts[0].controller.ready).toBe(true);
         expect(h.elements.dashboardApp.textContent).not.toContain('workspace is coming next');
         expect(h.elements.dashboardApp.querySelector('[aria-label="Saved improvement plans"]')).not.toBeNull();
+        expect(h.elements.dashboardApp.querySelector('img').src).toBe('/images/illustrations/plan-empty.webp');
         expect(h.requests.some(item => item.url.includes('/ncsc/'))).toBe(false);
         h.window.dispatch('pagehide');
         expect(h.elements.dashboardApp.children).toHaveLength(0);

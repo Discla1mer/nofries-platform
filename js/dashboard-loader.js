@@ -2012,7 +2012,7 @@
                     if ([401, 403].includes(result.status)) {
                         const error = invalid(); error.status = result.status; failure(cycle, error); throw error;
                     }
-                    return result;
+                    return { status: result.status, value: result.value };
                 },
                 // Only after the plan client has validated the response.
                 onAccepted: function () { informationRead(cycle); }

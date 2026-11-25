@@ -289,6 +289,7 @@ html:has(body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true
 .ncsc-question-picker .ncsc-question-go { flex: 0 0 auto; }
 .ncsc-questionnaire button:disabled { cursor: default; opacity: .55; }
 /* Improvement Plan cards: the topic's work, then owner and due date in a scannable pair (F1-R10). */
+.dashboard-empty-illustration { display: block; width: 100%; max-width: 10rem; height: auto; margin: 0 auto 1rem; }
 .improvement-action-work { margin: .75rem 0; font-size: 1.05rem; line-height: 1.6; }
 .improvement-action-key { display: grid; grid-template-columns: minmax(5.5rem, max-content) minmax(0, 1fr); gap: .35rem 1rem; margin: .75rem 0 1rem; }
 .improvement-action-key dt { font-weight: var(--dashboard-weight-regular); }
