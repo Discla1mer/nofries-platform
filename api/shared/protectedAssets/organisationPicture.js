@@ -174,10 +174,21 @@
             svgNode('text', { x: 80, y: 88, 'text-anchor': 'middle', 'font-size': 28, 'font-weight': 600, fill: CHART_TONES.ink }, [String(centre)])
         ]);
     }
+    // Small ring for one NCSC function: reported figure solid, "up to" figure paler behind it.
+    function ringSpec(lower, upper, label, text) {
+        const low = clampPercent(lower), high = Math.max(low, clampPercent(upper)), round = value => Math.round(value * 10) / 10;
+        const arc = { cx: 40, cy: 40, r: 30, fill: 'none', 'stroke-width': 9, pathLength: 100, transform: 'rotate(-90 40 40)' };
+        return svgNode('svg', { viewBox: '0 0 80 80', class: 'nf-chart nf-chart-ring', role: 'img', 'aria-label': label }, [
+            svgNode('circle', Object.assign({}, arc, { stroke: CHART_TONES.track, transform: undefined })),
+            svgNode('circle', Object.assign({}, arc, { stroke: CHART_TONES.partial, 'stroke-dasharray': round(high) + ' 100', 'data-band': 'upper' })),
+            svgNode('circle', Object.assign({}, arc, { stroke: CHART_TONES.solid, 'stroke-dasharray': round(low) + ' 100', 'data-band': 'lower' })),
+            svgNode('text', { x: 40, y: 45, 'text-anchor': 'middle', 'font-size': 15, 'font-weight': 700, fill: CHART_TONES.ink }, [text])
+        ]);
+    }
     function draw(doc, spec) {
         if (typeof spec === 'string') return doc.createTextNode ? doc.createTextNode(spec) : spec;
         const element = typeof doc.createElementNS === 'function' ? doc.createElementNS('http://www.w3.org/2000/svg', spec.tag) : doc.createElement(spec.tag);
-        Object.keys(spec.attrs).forEach(key => element.setAttribute(key, String(spec.attrs[key])));
+        Object.keys(spec.attrs).forEach(key => { if (spec.attrs[key] !== undefined) element.setAttribute(key, String(spec.attrs[key])); });
         spec.children.forEach(child => { if (typeof child === 'string') element.textContent = child; else element.append(draw(doc, child)); });
         if (spec.attrs.role === 'img') element.setAttribute('focusable', 'false');
         return element;
@@ -506,7 +517,8 @@
             if (isEmpty) {
                 // A new organisation leads with one plain action, before any detail.
                 const empty = node('section', 'picture-first-use');
-                empty.append(node('p', 'picture-first-use-eyebrow', 'Welcome to No Fries'),
+                const art = node('img', 'picture-illustration'); art.src = '/images/illustrations/overview-empty.webp'; art.alt = '';
+                empty.append(art, node('p', 'picture-first-use-eyebrow', 'Welcome to No Fries'),
                     node('h2', '', 'Start your cyber check'),
                     node('p', 'picture-first-use-intro', 'No saved assessments yet. Answer questions about your business to see where you stand and what to fix first.'));
                 if (typeof options.openCyber === 'function') {
@@ -961,7 +973,7 @@
             });
             root.append(guide, metrics, informationSection(result));
             const domains = node('section', 'picture-domains');
-            domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm.'));
+            domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'The dark part shows what you reported as in place. The lighter part shows answers still to confirm.'));
             leadWithLowerBound(implementationMetric, result);
             const lowerPercent = percentNumber(result.lowerDisplay), upperPercent = percentNumber(result.upperDisplay);
             if (lowerPercent !== null && upperPercent !== null && questionnaire.enoughAnswersToEstimate(result)) {
@@ -990,6 +1002,10 @@
                     track.style.setProperty('--picture-upper', domain.upperPercentTenths / 10 + '%');
                     const uncertainty = node('span', 'picture-domain-uncertainty'); uncertainty.setAttribute('aria-hidden', 'true');
                     track.append(meter, uncertainty); row.append(track);
+                    // Wide screens show a ring instead of the bar (CSS shows one or the other, never both).
+                    const low = domain.lowerPercentTenths / 10, high = domain.upperPercentTenths / 10;
+                    row.prepend(draw(doc, ringSpec(low, high, domain.title + ': ' + domain.attainment + ' reported as in place',
+                        high > low ? Math.round(low) + '–' + Math.round(high) : Math.round(low) + '%')));
                 }
                 row.append(node('p', 'picture-domain-detail', domain.completed + ' of ' + domain.total + ' answers confirmed'));
                 domains.append(row);
@@ -1199,5 +1215,5 @@
         } else start(null);
         return controller;
     }
-    return Object.freeze({ mount, topGaps, confirmNext, actionSummary, preferredAssessmentId, charts: Object.freeze({ gaugeSpec, donutSpec, draw, percentNumber }) });
+    return Object.freeze({ mount, topGaps, confirmNext, actionSummary, preferredAssessmentId, charts: Object.freeze({ gaugeSpec, donutSpec, ringSpec, draw, percentNumber }) });
 }));
