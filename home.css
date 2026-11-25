@@ -1553,7 +1553,7 @@ body[data-page="product-roadmap"] { --rm-check: var(--green); --rm-fix: var(--re
 .roadmap-mark { position: absolute; width: 30px; height: 30px; padding: 0; border: 2px solid #fff; border-radius: 50%; background: var(--red); color: #fff; font: 700 .85rem/26px var(--font-sans); text-align: center; transform: translate(-50%, -50%); cursor: help; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
 .roadmap-mark span { display: none; position: absolute; left: 50%; bottom: 36px; z-index: 2; width: max-content; max-width: min(220px, 70vw); padding: 7px 10px; border-radius: 8px; background: var(--ink); color: #f6f2ea; font: 500 .8rem/1.35 var(--font-sans); text-align: left; transform: translateX(-50%); pointer-events: none; }
 .roadmap-mark:is(:hover, :focus-visible, :focus) span { display: block; }
-.roadmap-m1 { left: 2.6%; top: 7.5%; } .roadmap-m2 { left: 2.6%; top: 15.5%; } .roadmap-m3 { left: 56%; top: 61%; } .roadmap-m4 { left: 96%; top: 33%; }
+.roadmap-m1 { left: 2.6%; top: 7.5%; } .roadmap-m2 { left: 34%; top: 16%; } .roadmap-m3 { left: 56%; top: 61%; } .roadmap-m4 { left: 96%; top: 33%; }
 .roadmap-m5 { left: 44%; top: 12%; } .roadmap-m6 { left: 77%; top: 12%; } .roadmap-m7 { left: 37%; top: 5%; } .roadmap-m8 { left: 77%; top: 32%; }
 .roadmap-why { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
 .roadmap-panel { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper, #f6f2ea); }
@@ -1589,7 +1589,7 @@ body[data-page="product-roadmap"] { --rm-check: var(--green); --rm-fix: var(--re
 @media (max-width: 900px) {
     .public-roadmap-intro, .roadmap-shots, .roadmap-why, .roadmap-fw { grid-template-columns: minmax(0, 1fr); }
     .roadmap-map { display: none; }
-    .roadmap-mark { width: 22px; height: 22px; border-width: 1px; font-size: .75rem; line-height: 20px; }
+    .roadmap-mark { width: 26px; height: 26px; border-width: 1px; font-size: .75rem; line-height: 24px; }
     .roadmap-big { grid-template-columns: minmax(0, 1fr); }
 }
 body[data-page="product-roadmap"] .public-roadmap .roadmap-counts a:not(.button) { color: var(--muted); font-weight: 400; text-decoration: none; }

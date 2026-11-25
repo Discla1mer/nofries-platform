@@ -106,7 +106,7 @@
                 for (const point of points) {
                     const { item } = point, on = item === selected;
                     const stop = el('g', { class: 'roadmap-stop', tabindex: 0, role: 'button', 'data-id': item.id, 'data-lane': item.lane,
-                        'aria-label': `${item.title}, ${item.lane}`, 'aria-pressed': String(on) });
+                        'aria-label': `${item.short}: ${item.title}, ${item.lane}`, 'aria-pressed': String(on) });
                     if (item.lane === 'In progress') stop.append(el('circle', { cx: point.x, cy: point.y, r: 9, class: 'roadmap-pulse' }));
                     stop.append(el('circle', { cx: point.x, cy: point.y, r: 20, class: 'roadmap-hit' }));
                     if (on) stop.append(el('circle', { cx: point.x, cy: point.y, r: 16, class: 'roadmap-selected' }));
