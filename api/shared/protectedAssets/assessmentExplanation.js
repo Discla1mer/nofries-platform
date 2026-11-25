@@ -57,7 +57,7 @@
             function block(title, text, citations) { blocks.push({ title, text, citations }); }
             const prefix = 'submission.evaluation.';
             block('Saved submission', 'Assessment ' + assessment.assessmentId + ', saved submitted revision ' + assessment.revision +
-                ', submitted ' + assessment.submission.submittedAt + '. This explanation describes that saved result and declared scope.',
+                '. This explanation describes that saved result and declared scope.',
             [saved('submission.revision'), saved('submission.submittedAt'), saved('scopePopulation.description'),
                 saved('submission.responseSetSha256'), saved(prefix + 'outputSha256'), catalogue('profileRef')]);
             if (topic === 'range') {
@@ -114,7 +114,7 @@
                     [saved(topic === 'unresolved' ? prefix + 'countsCompletion.unknown' : 'responses')]);
                 }
             }
-            block('Limits of this explanation', 'Risk priority is not calculated. The saved calculation has no trend. These gap indicators are not an audit, certification, compliance finding or proof of effective controls.',
+            block('Limits of this explanation', 'Risk priority is not calculated. The saved calculation has no trend.',
             [saved(prefix + 'remediationPriority.status'), saved(prefix + 'trend.status'), catalogue('claim'), catalogue('limitations')]);
             // Access the validated saved evaluation, never a caller-supplied model
             // response, as the identity of the explanation's source.

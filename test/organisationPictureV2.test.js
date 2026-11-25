@@ -130,7 +130,7 @@ describe('Overview with v1 and v2 results in one organisation', () => {
         expect(calculation).toContain('This saved result: 7.85–10.85 reported or possible credits ÷ 31 included question weights × 100 = 25.3%–35.0%.');
         expect(calculation).toContain('Each question has a weight of 1, 2 or 3.');
         expect(calculation).not.toContain('equal weight');
-        expect(calculation).toContain('This is a No Fries planning score from your answers, not an official NCSC or CS-CMM rating.');
+        expect(calculation).toContain('This self-reported assessment helps you plan improvements.');
         expect(dom.root.querySelector('.ncsc-result-provenance').textContent).toContain('2026-11-18.1');
         // Change over time compares only the other v2 result and says why the v1 one is left out.
         const trend = dom.root.querySelector('.picture-trend');

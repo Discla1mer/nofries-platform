@@ -166,7 +166,7 @@ async function prepare(page, view) {
         await activate(page, page.locator('.picture-follow-up article details > summary').first());
     } else if (view === 'overview-draft') {
         await page.locator('.picture-empty').waitFor();
-        assert.match(await page.locator('.picture-empty').textContent(), /Saved progress is not a score/);
+        assert.match(await page.locator('.picture-empty').textContent(), /responses saved/);
         assert.equal(await page.locator('.picture-metrics').count(), 0);
     } else if (view === 'questionnaire') {
         const index = page.getByLabel('Question', { exact: true }); await index.waitFor();
@@ -259,7 +259,7 @@ async function observe(page) {
                 assert.equal(await details.getAttribute('open'), null);
                 await activate(page, summary); assert.equal(await details.getAttribute('open'), '');
                 const record = scenario.view === 'overview-draft' ? seed.assessments[0] : seed.assessments.at(-1);
-                for (const text of [record.assessmentId, record.updatedAt, fixtures.metadata.title,
+                for (const text of [record.assessmentId, fixtures.metadata.title,
                     fixtures.metadata.profileRef.profileVersion, seed.model.context.displayName]) {
                     assert.ok((await details.textContent()).includes(text));
                 }

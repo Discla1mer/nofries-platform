@@ -78,14 +78,14 @@ test('connected view preserves golden server range, uncertainty and completion w
     assert.match(dom.root.textContent, /7 partial and 2 absent/);
     assert.match(dom.root.textContent, /2 still to confirm/);
     assert.match(dom.root.textContent, /including 1 answer marked not applicable, to confirm/);
-    assert.match(dom.root.textContent, /not a performance score/);
+    assert.doesNotMatch(dom.root.textContent, /not a performance score|This filter changes only|Counts are not a combined total/);
     assert.doesNotMatch(dom.root.textContent, /Supporting evidence|Tested or observed coverage|evidence upload/i);
     assert.equal(dom.root.querySelectorAll('meter').length, dom.fixtures.metadata.domains.length);
-    assert.match(dom.root.textContent, /Risk priority: not calculated/);
+    assert.match(dom.root.querySelector('.picture-calculation').textContent, /does not establish risk priority, control effectiveness, audit assurance or certification/);
     assert.equal(dom.root.querySelectorAll('.picture-metric').length, 2);
     assert.match(dom.root.textContent, /All 14 responses are saved/);
     assert.match(dom.root.textContent, /6.5–8.5 reported or possible credits ÷ 14/);
-    assert.match(dom.root.textContent, /overall result weights questions, not the five function percentages/);
+    assert.match(dom.root.textContent, /overall result weights questions across the five functions/);
     assert.match(dom.root.textContent, /Not applicable answers count as not yet met, and they stay in your result\. There is no review that changes that\./);
     assert.doesNotMatch(dom.root.textContent, /Reviews are coming soon|until a reviewer confirms|Approval is not available/i);
     assert.equal(dom.root.querySelectorAll('.picture-domain-detail').length, 5);
@@ -97,6 +97,11 @@ test('saved Overview identifies source, scope, framework and revision without in
         dom.fixtures.metadata.title, dom.fixtures.metadata.profileRef.profileVersion,
         'Saved revision', record.assessmentId, 'What to do next',
         'CC BY 4.0']) assert.ok(dom.root.textContent.includes(value), value);
+    const licences = dom.root.querySelectorAll('a').filter(link => link.textContent === 'CC BY 4.0');
+    assert.equal(licences.length, 1);
+    assert.equal(licences[0].href, 'https://creativecommons.org/licenses/by/4.0/');
+    assert.equal(licences[0].parentElement.tagName, 'FOOTER');
+    assert.equal(licences[0].parentElement.children.map(child => child.textContent).join(''), dom.fixtures.metadata.attribution);
     for (const hidden of [record.submission.evaluation.outputSha256, record.submission.responseSetSha256,
         'SHA-256', 'evaluatorSourceSha256', 'Evaluator', 'Score contract']) assert.ok(!dom.root.textContent.includes(hidden), hidden);
     assert.equal(dom.root.querySelectorAll('input').length, 0);
@@ -107,11 +112,21 @@ test('saved Overview identifies source, scope, framework and revision without in
 
 test('freshness copy distinguishes the saved baseline from a live organisation check', async () => {
     const record = mixed(), dom = setup({ records: [record] }); await flush();
-    assert.match(dom.root.textContent, /saved assessment of the selected scope, not a live check of connected systems/);
+    const links = dom.root.querySelectorAll('a').filter(link => link.textContent === 'How to read this');
+    assert.equal(links.length, 1);
+    const details = dom.root.querySelector('.picture-calculation'), summary = details.querySelector('summary');
+    assert.equal(links[0].href, '#' + summary.id);
+    links[0].click();
+    assert.equal(details.open, true);
+    assert.equal(dom.document.activeElement, summary);
     assert.match(dom.root.textContent, /Refresh reloads saved assessments/);
     assert.match(dom.root.textContent, /does not check whether answers still reflect the organisation today/);
     assert.doesNotMatch(dom.root.textContent, /Current substantiated coverage/);
-    assert.match(dom.root.querySelector('.picture-source').textContent, /Submitted .*NZ time/);
+    const date = dom.root.querySelector('.picture-source').textContent;
+    assert.match(date, /^Submitted .*NZ time$/);
+    // Self-contained print summaries retain their own source and date.
+    const shown = dom.root.querySelectorAll('p').concat(dom.root.querySelectorAll('li'), dom.root.querySelectorAll('option'), dom.root.querySelectorAll('dd'));
+    assert.deepEqual(shown.filter(node => node.textContent.includes(date.replace(/^Submitted /, ''))), [dom.root.querySelector('.picture-source')]);
     assert.doesNotMatch(dom.root.querySelector('.picture-source').textContent, /revision|T\d\d:/);
     assert.match(dom.root.textContent, /46\.4%–60\.7%/);
     dom.controller.destroy();
@@ -129,7 +144,7 @@ test('the primary saved summary is concise and exact source details remain acces
     const provenance = dom.root.querySelector('.ncsc-result-provenance');
     assert.equal(provenance.querySelector('summary').textContent, 'Source and calculation details');
     assert.equal(provenance.getAttribute('open'), null);
-    for (const value of [record.assessmentId, record.updatedAt, 'Synthetic organisation A',
+    for (const value of [record.assessmentId, 'Synthetic organisation A',
         dom.fixtures.metadata.title, dom.fixtures.metadata.profileRef.profileVersion]) {
         assert.ok(provenance.textContent.includes(value), value);
     }
@@ -155,7 +170,7 @@ test('same-day choices remain unambiguous without changing exact selected IDs or
     const options = picker.querySelectorAll('option');
     assert.deepEqual(options.map(option => option.value), ids);
     assert.equal(new Set(options.map(option => option.textContent)).size, ids.length);
-    assert.ok(options[0].textContent.endsWith(ids[0]));
+    assert.equal(options[0].textContent, 'Selected · In progress · ' + ids[0]);
     assert.ok(options[1].textContent.endsWith(ids[1]));
     assert.ok(options[2].textContent.endsWith('22222222…'));
     assert.ok(options[3].textContent.endsWith('33333333…'));
@@ -164,26 +179,20 @@ test('same-day choices remain unambiguous without changing exact selected IDs or
     assert.deepEqual(reads, [ids[0], ids[2]]); assert.equal(writes, 0);
     const provenance = dom.root.querySelector('.ncsc-result-provenance');
     assert.ok(provenance.textContent.includes(ids[2]));
-    assert.ok(provenance.textContent.includes(template.updatedAt));
+    assert.ok(!provenance.textContent.includes(template.updatedAt));
     assert.equal(dom.root.querySelector('.picture-source').textContent.includes(ids[2]), false);
     dom.controller.destroy();
 });
 
-test('D-017 shows the full scope, status and date in the selector and wrapping caption', async () => {
+test('the selected scope wraps as one accessible chip per declared line without a duplicate caption', async () => {
     const record = clone(buildFixtures().tenants[0].assessments[0]);
     const long = 'Synthetic head office, two retail sites,\n  the warehouse laptops and every cloud service we pay for each month';
     record.scopePopulation.description = long;
     const dom = setup({ records: [record] }); await flush();
-    const picker = dom.root.querySelector('.picture-toolbar').querySelector('select');
-    const option = picker.querySelector('option');
-    const flat = long.replace(/\s+/g, ' ');
-    assert.ok(option.textContent.startsWith(flat + ' · In progress · '));
-    assert.ok(option.textContent.endsWith(' NZ time'));
-    assert.equal(option.title, flat + option.textContent.slice(option.textContent.indexOf(' · In progress · ')));
-    assert.equal(picker.title, option.title);
-    assert.equal(dom.root.querySelector('.picture-selected-title').textContent, option.title);
-    // The full scope is still shown on the page (one list item per line since #268).
-    long.split('\n').map(line => line.trim()).forEach(line => assert.ok(dom.root.textContent.includes(line)));
+    const chips = dom.root.querySelector('.picture-scope').querySelector('ul');
+    assert.deepEqual(chips.querySelectorAll('li').map(chip => chip.textContent), long.split('\n').map(line => line.trim()));
+    assert.equal(dom.root.querySelector('.picture-selected-title'), null);
+    for (const line of long.split('\n').map(line => line.trim())) assert.equal(dom.root.textContent.split(line).length - 1, 1);
     dom.controller.destroy();
 });
 
@@ -192,17 +201,16 @@ test('a single saved choice omits its technical ID while the draft source disclo
     const dom = setup({ records: [record] }); await flush();
     const option = dom.root.querySelector('.picture-toolbar').querySelector('option');
     assert.equal(option.value, record.assessmentId);
-    assert.ok(option.textContent.startsWith(record.scopePopulation.description + ' · In progress · '));
-    assert.ok(option.textContent.endsWith(' NZ time'));
+    assert.equal(option.textContent, 'Selected · In progress');
     assert.doesNotMatch(option.textContent, /revision|T\d\d:/);
     assert.equal(dom.root.querySelector('.picture-source').textContent.includes(record.assessmentId), false);
     const provenance = dom.root.querySelector('.ncsc-result-provenance');
-    for (const value of [record.assessmentId, record.updatedAt, dom.fixtures.metadata.title,
+    for (const value of [record.assessmentId, dom.fixtures.metadata.title,
         dom.fixtures.metadata.profileRef.profileVersion, 'Synthetic organisation A']) {
         assert.ok(provenance.textContent.includes(value), value);
     }
     assert.match(dom.root.textContent, /In progress/);
-    assert.match(dom.root.textContent, /Saved progress is not a score/);
+    assert.doesNotMatch(dom.root.textContent, /Saved progress is not a score/);
     assert.equal(dom.root.querySelector('.picture-metrics'), null);
     dom.controller.destroy();
 });
@@ -215,7 +223,8 @@ test('same-time assessments with different scopes have recognisable picker label
     const dom = setup({ records: [first, second] }); await flush();
     const choices = dom.root.querySelector('.picture-toolbar').querySelectorAll('option');
     assert.equal(choices.length, 2);
-    assert.ok(choices.some(choice => choice.textContent.startsWith('Café premises · ')));
+    assert.ok(choices.some(choice => choice.textContent === 'Selected · In progress'));
+    assert.equal(dom.root.querySelector('.picture-scope').querySelector('li').textContent, 'Café premises');
     assert.ok(choices.some(choice => choice.textContent.startsWith('Online shop · ')));
     for (const choice of choices) assert.equal(choice.textContent.includes(choice.value), false);
     dom.controller.destroy();
@@ -237,7 +246,7 @@ test('two follow-up categories preserve unknown/N/A and profile-ordered saved de
     assert.match(categories[0].textContent, /Not applicable answers count as not yet met, and they stay in your result/);
     assert.doesNotMatch(categories[0].textContent, /reviewer|Reviews are coming soon/);
     assert.doesNotMatch(follow.textContent, /Supporting-evidence gaps|Supporting evidence:|upload/);
-    assert.match(follow.textContent, /not a combined total or a risk ranking/);
+    assert.doesNotMatch(follow.textContent, /not a combined total or a risk ranking/);
     assert.ok(categories[0].querySelectorAll('article').every(article => /Saved answer:/.test(article.textContent)));
     assert.equal(follow.querySelectorAll('input').length, 0);
     assert.equal(follow.querySelectorAll('button').length, 0);
@@ -298,7 +307,7 @@ test('follow-up guidance separates next actions from evidence without changing c
     }
     assert.equal(follow.querySelectorAll('button').length, 0);
     assert.equal(follow.querySelectorAll('input').length, 0);
-    assert.match(follow.textContent, /Questions follow the profile order\./);
+    assert.doesNotMatch(follow.textContent, /Questions follow the profile order\./);
     assert.doesNotMatch(follow.textContent, /uploaded here/);
     dom.controller.destroy();
 });
@@ -355,7 +364,7 @@ test('a saved draft shows progress with no submitted score', async () => {
     const record = buildFixtures().tenants[0].assessments[0];
     const dom = setup({ records: [record] }); await flush();
     assert.match(dom.root.textContent, /In progress/);
-    assert.match(dom.root.textContent, /Saved progress is not a score/);
+    assert.doesNotMatch(dom.root.textContent, /Saved progress is not a score/);
     assert.equal(dom.root.querySelectorAll('meter').length, 0);
     assert.doesNotMatch(dom.root.textContent, /Reported implementation|100\.0%/);
 });
@@ -517,13 +526,12 @@ test('D-004: a scope written one item per line is shown as a readable list witho
     assert.equal(record.scopePopulation.description, 'Included: 12 staff and their laptops\n- Included: Auckland office\n\nExcluded: warehouse systems');
 });
 
-test('D-004: a one-line scope stays a single paragraph', async () => {
+test('a one-line scope has one chip in the same accessible list as a multiline scope', async () => {
     const record = clone(buildFixtures().tenants[0].assessments[0]);
     record.scopePopulation.description = 'Whole organisation';
     const dom = setup({ records: [record] }); await flush();
     const scope = dom.root.querySelector('.picture-scope');
-    assert.equal(scope.querySelectorAll('li').length, 0);
-    assert.ok(scope.querySelectorAll('p').some(item => item.textContent === 'Whole organisation'));
+    assert.deepEqual(scope.querySelector('ul').querySelectorAll('li').map(chip => chip.textContent), ['Whole organisation']);
 });
 
 test('scope text is rendered as text and leaving a destroyed picture is inert', async () => {
@@ -651,11 +659,11 @@ test('follow-up domain filtering preserves saved scores, profile order and keybo
     const { follow, filter, categories } = followUp(dom);
     const label = follow.querySelector('label');
     assert.equal(label.textContent, 'Filter follow-up by NCSC function'); assert.equal(label.htmlFor, filter.id);
-    assert.ok(filter.getAttribute('aria-describedby'));
+    assert.equal(filter.getAttribute('aria-describedby'), null);
     assert.equal(filter.value, '');
     assert.deepEqual(filter.querySelectorAll('option').map(option => [option.value, option.textContent]),
         [['', 'All functions'], ...dom.fixtures.metadata.domains.map(domain => [domain.id, domain.title])]);
-    assert.match(follow.textContent, /Assessment scores and totals stay unchanged/);
+    assert.doesNotMatch(follow.textContent, /Assessment scores and totals stay unchanged/);
     const status = follow.querySelector('.picture-follow-up-status');
     assert.equal(status.getAttribute('role'), 'status'); assert.equal(status.getAttribute('aria-live'), 'polite');
     const metrics = dom.root.querySelector('.picture-metrics'), metricText = metrics.textContent;
@@ -1132,7 +1140,7 @@ test('a single submitted assessment explains that there is nothing to compare ye
     assert.equal(section.querySelectorAll('button').length, 0);
     assert.equal(section.querySelector('table'), null);
     assert.deepEqual(reads, [only.assessmentId]);
-    assert.match(dom.root.textContent, /Change over time compares submitted answers only; it is not a risk trend/);
+    assert.equal(section.querySelector('.picture-trend-history'), null);
     dom.controller.destroy();
 });
 
@@ -1161,7 +1169,7 @@ test('comparing submitted assessments shows saved ranges and coverage without di
     assert.doesNotMatch(section.textContent, /Up \d|Down \d|No change/);
     const history = section.querySelector('.picture-trend-history').querySelectorAll('li');
     assert.equal(history.length, 2);
-    assert.match(history[0].textContent, /100\.0% reported implementation .*\(shown above\)/);
+    assert.equal(history[0].textContent, 'Selected assessment');
     assert.equal(history[0].getAttribute('aria-current'), 'true');
     assert.match(history[1].textContent, /0\.0% reported implementation/);
     // The replaced Compare button hands focus to the section heading.
@@ -1326,7 +1334,7 @@ test('with assessments still unloaded, the comparison is labelled as against the
     assert.deepEqual(trendRows(dom)[0], ['Overall', '100.0%', '46.4%–60.7%']);
     assert.match(section.textContent, /Compared with the previous assessment, submitted 10 Oct 2026, [^.]+\./);
     assert.deepEqual(section.querySelector('.picture-trend-history').querySelectorAll('li')
-        .map(item => item.textContent.slice(0, 11)), ['10 Nov 2026', '10 Oct 2026', '10 Sept 202']);
+        .map(item => item.textContent.slice(0, 11)), ['Selected as', '10 Oct 2026', '10 Sept 202']);
     dom.controller.destroy();
 });
 
@@ -1405,7 +1413,7 @@ test('top three gaps put priority-tier controls first, then not-in-place before 
         const question = questions[[11, 4, 5][index]];
         assert.ok(item.text.includes('Why it matters:') && item.text.includes(question.guidance.summary));
         assert.ok(item.text.includes('What to do next:') && item.text.includes(question.smallBusiness.meaning));
-        assert.match(item.text, /You can start this with your team\.|Ask your IT provider to help with this\./);
+        assert.doesNotMatch(item.text, /Ask your IT provider to help with this\./);
     });
     assert.match(items[0].text, /Your answer: No/);
     assert.match(items[2].text, /Your answer: Partial/);
@@ -1524,7 +1532,7 @@ describe('next step under the top gaps', () => {
         assert.equal(link.textContent, 'Fix these with No Fries');
         assert.equal(link.href, '/contact.html?service=managed_security_90');
         assert.match(help.textContent, /90-day managed security/);
-        assert.doesNotMatch(help.textContent, /\$\s*\d/);
+        assert.doesNotMatch(help.textContent, /\$\s*\d|opens the contact form/i);
         const pricing = Array.from(help.querySelectorAll('a')).find(item => item.href === '/pricing#pricing-pilot');
         assert.ok(pricing, 'Results link to the central offer instead of repeating its price');
         assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
