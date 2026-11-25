@@ -83,10 +83,6 @@ function harness(options = {}) {
         const actions = document.createElement('div'); actions.id = 'dashboardAccountActions'; actions.hidden = true;
         const settings = document.createElement('a'); settings.id = 'dashboardSettings'; settings.hidden = true;
         settings.setAttribute('href', '/dashboard#settings'); actions.append(settings);
-        if (options.emailSettings) {
-            const email = document.createElement('a'); email.id = 'dashboardEmailSettings'; email.hidden = true;
-            email.setAttribute('href', '/account/email'); actions.append(email);
-        }
         actions.append(elements.dashboardSignOut); menu.append(toggle, actions); elements.dashboardStatusPanel.append(menu);
     }
     document.head = document.createElement('head');
@@ -337,6 +333,8 @@ test('Settings requires a ready customer workspace and clears its profile when t
     await h.open(state(A, GA, { purpose: 'customer', accountName: 'Alex Example' }));
     expect(link.hidden).toBe(false);
     expect(h.elements.dashboardApp.querySelector('h1').textContent).toBe('Settings');
+    const preferences = Array.from(h.elements.dashboardApp.querySelectorAll('a')).find(link => link.href === '/account/email');
+    expect(preferences.textContent).toBe('Manage lifecycle email preferences');
     expect(h.elements.dashboardApp.textContent).toContain('Alex Example');
     h.window.dispatch('focus'); await flush();
     await h.reply(4, 401, { code: 'dashboard_authentication_required' });
@@ -347,20 +345,6 @@ test('Settings requires a ready customer workspace and clears its profile when t
     await staff.open(state());
     expect(staff.document.getElementById('dashboardSettings').hidden).toBe(true);
     expect(staff.elements.dashboardApp.querySelector('h1').textContent).not.toBe('Settings');
-});
-
-test('Account offers Email settings to signed-in customers only and hides it when access expires', async () => {
-    const h = harness({ hash: '#overview', accountMenu: true, emailSettings: true }); await flush();
-    await h.open(state(A, GA, { purpose: 'customer', accountType: 'company' }));
-    const email = h.document.getElementById('dashboardEmailSettings');
-    expect(email.hidden).toBe(false);
-    expect(email.getAttribute('href')).toBe('/account/email');
-    h.window.dispatch('focus'); await flush();
-    await h.reply(4, 401, { code: 'dashboard_authentication_required' });
-    expect(email.hidden).toBe(true);
-    const staff = harness({ hash: '#overview', accountMenu: true, emailSettings: true }); await flush();
-    await staff.open(state());
-    expect(staff.document.getElementById('dashboardEmailSettings').hidden).toBe(true);
 });
 
 test('native Account actions retain guarded consultant return and disappear after session expiry', async () => {
@@ -408,7 +392,7 @@ test.each(['index.html', 'app/dashboard.html'])('%s keeps one sign-out inside th
     expect(menu).not.toMatch(/id="dashboard(?:Retry|SignIn)"/);
     expect(menu).not.toMatch(/role="menu(?:item)?"/);
     expect(menu).toContain('<a class="button" id="dashboardSwitchAccount" data-dashboard-leave href="/login?account=choose" hidden>Switch account</a>');
-    expect(menu).toContain('<a class="button" id="dashboardEmailSettings" data-dashboard-leave href="/account/email" hidden>Email settings</a>');
+    expect(menu).not.toContain('/account/email');
 });
 test('malformed account session fails closed instead of treating bad authority as an outage', async () => {
     const h = await portfolio(); h.event('focus'); await flush();

@@ -45,6 +45,8 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 .dashboard-topbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1.1rem clamp(1rem, 3vw, 2.5rem); border-bottom: 1px solid var(--dashboard-line); background: var(--dashboard-surface, #f6f2ea); }
 .dashboard-main { max-width: 90rem; padding: 2rem clamp(1rem, 3vw, 2.5rem) 3rem; margin: 0 auto; }
 .dashboard-page-heading { margin-bottom: 1.25rem; }
+.dashboard-settings-heading h1:focus-visible { outline-color: var(--green); }
+.dashboard-settings-illustration { width: 4rem; height: 4rem; vertical-align: middle; }
 .dashboard-page-heading .dashboard-eyebrow { margin-bottom: .5rem; }
 .dashboard-page-heading h1 { margin-bottom: .6rem; }
 .dashboard-badge { display: inline-block; font-size: var(--dashboard-font-small); font-weight: var(--dashboard-weight-regular); padding: .3rem .65rem; border-radius: .35rem; border: 1px solid var(--dashboard-control-border); background: var(--dashboard-surface); color: var(--dashboard-blue); }
@@ -345,6 +347,7 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-draft-observation-group { margin-top: 1rem; min-width: 0; }
 .ncsc-draft-observation-list { padding-left: 1.25rem; }
 .ncsc-draft-observation-list .dashboard-text-button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.ncsc-focus-help details > summary { font-family: var(--font-sans); font-weight: var(--dashboard-weight-emphasis); }
 .ncsc-glossary dt { margin-top: .75rem; font-weight: 700; }
 .ncsc-glossary dd { margin: .25rem 0 0; }
 .ncsc-preserve-text { white-space: pre-wrap; overflow-wrap: anywhere; }

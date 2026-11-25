@@ -436,6 +436,11 @@
             const title = element('h1', '', current.label); title.tabIndex = -1;
             head.append(element('p', 'dashboard-eyebrow', 'Your organisation / ' + current.label), title);
             if (current === settingsRoute) {
+                head.classList.add('dashboard-settings-heading');
+                const illustration = element('img', 'dashboard-settings-illustration');
+                illustration.src = '/images/illustrations/settings.webp';
+                illustration.alt = '';
+                head.append(illustration);
                 main.append(head);
                 renderSettings();
                 return;
