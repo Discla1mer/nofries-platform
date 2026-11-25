@@ -1410,7 +1410,8 @@
                     activeQuestion = questions.findIndex(question => controls.some(control => control.id === question.controlId));
                     renderAssessmentQuestion();
                 }, 'ncsc-function-step');
-                step.dataset.domain = domain.id; step.id = 'ncsc-step-' + domain.id;
+                step.id = 'ncsc-step-' + domain.id;
+                step.dataset.domain = domain.id;
                 item.append(step); functionSteps.append(item);
             }
             const svg = name => doc.createElementNS('http://www.w3.org/2000/svg', name);
@@ -2059,8 +2060,10 @@
             // landscape phone) would cover answers, so it stays in the page below
             // the choices instead of sticking (WCAG 1.4.4, 1.4.10).
             stopNavigationFit();
+            const header = functionSteps.parentElement;
             const fitNavigation = function () {
                 if (!nav.isConnected) { stopNavigationFit(); return; }
+                header.classList[win && header.offsetHeight > win.innerHeight / 3 ? 'add' : 'remove']('ncsc-stepper-static');
                 const tall = Boolean(win && nav.offsetHeight > (win.innerHeight || 0) / 4);
                 nav.classList[tall ? 'add' : 'remove']('ncsc-navigation-static');
             };
@@ -2069,6 +2072,7 @@
             // (rotation, browser bars); stopped when the question is replaced.
             const watcher = win && typeof win.ResizeObserver === 'function' ? new win.ResizeObserver(fitNavigation) : null;
             if (watcher) watcher.observe(nav);
+            if (watcher) watcher.observe(header);
             if (win && typeof win.addEventListener === 'function') win.addEventListener('resize', fitNavigation);
             stopNavigation = function () {
                 if (watcher) watcher.disconnect();
