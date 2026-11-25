@@ -1223,6 +1223,7 @@ function mountPublicAssets(application) {
         .map((fileName) => [`/${fileName}`, fileName]);
     rootRoutes.push(['/', 'index.html']);
     rootRoutes.push(['/pricing', 'pricing.html']);
+    rootRoutes.push(['/offer', 'offer.html']);
     rootRoutes.forEach(([route, fileName]) => {
         application.get(route, (req, res) => {
             if (fileName.endsWith('.html')) {

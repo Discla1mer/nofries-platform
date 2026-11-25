@@ -2369,7 +2369,7 @@ describe('ready Cyber composition', () => {
     const footerTargets = [
         [false, 0, '/roadmap.html'],
         [true, 0, '/'], [true, 1, '/pricing.html'], [true, 2, '/managed-it.html'], [true, 3, '/roadmap.html'],
-        [true, 4, '/contact.html'], [true, 5, '/privacy.html'], [true, 6, '/terms.html']
+        [true, 4, '/contact.html'], [true, 5, '/privacy.html'], [true, 6, '/terms.html'], [true, 7, '/offer']
     ];
     test.each(footerTargets)('footer gateway=%s link=%s preserves draft, focus and first destination %s', async (gateway, index, target) => {
         const h = harness({ gateway, cyber: true, hash: '#cyber-security' }); await ready(h);
