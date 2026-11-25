@@ -18,7 +18,7 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
     assert.match(html, /property="og:title" content="No Fries \| Dashboard\. Managed IT\."/);
     assert.equal((html.match(/<h1\b/g) || []).length, 1);
     assert.match(html, /<p class="homepage-lockup"><span class="lockup-row"><span class="lockup-word">No<\/span><img class="lockup-mark" src="\/images\/nofries-mark-large\.webp" width="640" height="640" alt=""><\/span> <span class="lockup-row"><span class="lockup-word">Fries<\/span> <span class="lockup-tagline">Dashboard\.<br>Managed IT\.<\/span><\/span><\/p>/);
-    assert.match(html, /<h1 id="home-title" class="homepage-headline">Need to answer a cyber security question today\?<\/h1>/);
+    assert.match(html, /<h1 id="home-title" class="homepage-headline">Know where your business stands on cyber security in about 15 minutes\.<\/h1>/);
     assert.match(html, /A free check for New Zealand small businesses, based on guidance from New Zealand’s National Cyber Security Centre \(NCSC\)\./);
     assert.match(html, /Free dashboard; it doesn’t expire · No card required/);
     assert.doesNotMatch(html, /Free to start|trial/i);

@@ -1401,9 +1401,6 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 
 /* Public reading scale: body 16px, navigation 16px, supporting text 14px.
    Keep warm brand colours on a quiet surface behind small text. */
-body:is([data-page="dashboard-home"], [data-page="managed-it-information"], [data-page="product-roadmap"]) {
-    background-image: none;
-}
 body:is([data-page="dashboard-home"], [data-page="managed-it-information"], [data-page="product-roadmap"]) .site-header nav a {
     display: inline-flex; align-items: center; justify-content: center;
     min-height: 44px; min-width: 44px; padding: 8px 10px; font-size: 1rem;
