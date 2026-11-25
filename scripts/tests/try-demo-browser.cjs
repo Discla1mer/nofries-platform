@@ -106,7 +106,8 @@ async function run(browser, origin, name, viewport) {
         if (index < ANSWERS.length - 1) await press(page.getByRole('button', { name: 'Next question', exact: true }));
     }
     await press(page.getByRole('button', { name: 'Save progress', exact: true }));
-    await main(page).getByText(/14 of 14 answered.*all saved/).waitFor();
+    await main(page).getByText('14 of 14 answered · Complete', { exact: true }).waitFor();
+    await page.locator('#ncsc-save-status').filter({ hasText: /Your progress is saved/ }).waitFor();
     await press(page.getByRole('button', { name: 'Review and submit', exact: true }));
     await page.getByRole('heading', { name: 'Review your answers before submitting' }).waitFor();
     await press(page.getByRole('button', { name: 'Save and submit assessment', exact: true }));
