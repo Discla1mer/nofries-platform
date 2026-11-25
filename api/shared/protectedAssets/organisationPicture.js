@@ -900,7 +900,16 @@
                     ' answers are Yes, Partial or No. Most answers are Unknown or Not applicable, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
                     (typeof options.openCyber === 'function' ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp, true);
             const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
-            root.append(metrics, informationSection(result));
+            const calculation = node('details', 'picture-calculation');
+            const summary = node('summary', '', 'How the implementation range is calculated');
+            summary.id = id + '-reading-guide';
+            const guide = node('a', '', 'How to read this'); guide.href = '#' + summary.id;
+            guide.addEventListener('click', event => {
+                event.preventDefault();
+                if (!live() || !root.contains(guide)) return;
+                calculation.open = true; summary.focus();
+            });
+            root.append(guide, metrics, informationSection(result));
             const domains = node('section', 'picture-domains');
             domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm.'));
             leadWithLowerBound(implementationMetric, result);
@@ -1021,16 +1030,6 @@
                 renderFilter(domain);
             });
             root.append(follow);
-            const calculation = node('details', 'picture-calculation');
-            const summary = node('summary', '', 'How the implementation range is calculated');
-            summary.id = id + '-reading-guide';
-            const guide = node('a', '', 'How to read this'); guide.href = '#' + summary.id;
-            guide.addEventListener('click', event => {
-                event.preventDefault();
-                if (!live() || !root.contains(guide)) return;
-                calculation.open = true; summary.focus();
-            });
-            implementationMetric.append(guide);
             calculation.append(summary, node('p', '', 'This self-reported assessment helps you plan improvements. It does not establish risk priority, control effectiveness, audit assurance or certification.'), v2
                 // v2 (#399): weighted questions and graded credit, held in hundredths.
                 ? node('p', '', 'Each question has a weight of 1, 2 or 3. Your answer earns all, part or none of that weight: Yes, in place and checked earns all of it, Partly in place half, Sometimes but not written down or checked a quarter, and No nothing. The extra login method question earns part of its weight by method. I don\'t know, missing and Not applicable answers earn nothing in the lower figure and all of the weight in the upper figure.')
